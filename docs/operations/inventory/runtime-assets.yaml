@@ -196,6 +196,8 @@ profiles:
     next_action:
       - do not migrate as active Agent scope
       - keep only audit or decommission notes
+      - archive or remove profile runtime state only during final migration with owner
+        approval
 
 services:
   - id: service.hermes-gateways

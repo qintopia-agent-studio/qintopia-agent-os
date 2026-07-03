@@ -24,5 +24,6 @@ tags:
   - worktool
   - audit-only
 next_actions:
-  - Confirm no server service, cron, profile, or gateway dependency remains.
-  - Archive or remove server WorkTool directories only after owner approval.
+  - Re-check service, cron, process, port, and nginx references during final migration.
+  - Archive or remove server WorkTool directories and disabled units only after owner
+    approval.

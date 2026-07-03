@@ -24,5 +24,6 @@ tags:
   - qiwe
   - rollback-reference
 next_actions:
-  - Confirm no live service or rollback dependency remains.
+  - Decide during final migration whether to disable and archive the root user
+    openclaw-gateway unit.
   - Remove only after owner approval.

@@ -58,6 +58,7 @@ become versioned.
   preflight, and production-adjacent PR evidence.
 - Added M5 runtime sidecar adoption closure documentation.
 - Added `pnpm fmt:sidecar` and `pnpm check:sidecar` sidecar validation commands.
+- Added M7 read-only decommission evidence for WorkTool, Xiaoqin WorkTool, and OpenClaw.
 
 ### Changed
 
@@ -92,3 +93,5 @@ become versioned.
 - Marked the adopted M5 runtime, MCP, workflow, and deploy package records as active
   monorepo contracts while keeping server cutover and Huabaosi shadow adoption out of M5
   scope.
+- Marked M7 WorkTool decommission classification complete while deferring all server
+  cleanup to final migration.

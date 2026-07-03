@@ -8,6 +8,10 @@ OS channel work.
 - Local source: `../worktool-hermes-plugin`
 - Local branch observed on 2026-07-03: `master`
 - Local reference observed on 2026-07-03: `04e95e1556cb820f5630a0f4781073cddf23c4f4`
+- Server plugin path observed on 2026-07-03:
+  `/home/ubuntu/.hermes/profiles/xiaoqin/plugins/worktool-platform`
+- Server unit observed on 2026-07-03: `hermes-gateway-xiaoqin-worktool.service` is
+  loaded, disabled, and inactive.
 
 ## Decision
 

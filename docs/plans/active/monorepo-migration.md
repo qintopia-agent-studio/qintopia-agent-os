@@ -71,7 +71,7 @@ and future programming agents.
 | M5 runtime sidecar adoption | Complete    | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
 | M6 agents adoption          | Complete    | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
-| M7 WorkTool decommission    | In progress | WorkTool references classified and either deprecated or removed                                                    |
+| M7 WorkTool decommission    | Complete    | WorkTool references classified and either deprecated or final-migration cleanup items                              |
 | M8 CI/CD deployment gate    | Complete    | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
 | M9 server cutover           | Not started | server deploys reviewed commit SHA from this repo with smoke and rollback                                          |
 
@@ -242,6 +242,19 @@ and future programming agents.
   - kept M9 server cutover, production systemd changes, and Huabaosi shadow branch
     adoption out of M5 scope
   - fixed M5 package docs to use monorepo-root validation commands
+- Completed M7 WorkTool decommission classification without server mutation:
+  - re-checked WorkTool, Xiaoqin WorkTool, and OpenClaw server state read-only
+  - confirmed directories still exist for `/home/ubuntu/worktool-gateway`,
+    `/home/ubuntu/.hermes/profiles/xiaoqin`,
+    `/home/ubuntu/.hermes/profiles/xiaoqin/plugins/worktool-platform`, and
+    `/opt/qiwe-openclaw-adapter`
+  - confirmed disabled/inactive units exist for `worktool-gateway.service`,
+    `hermes-gateway-xiaoqin-worktool.service`, `qiwe-openclaw-adapter.service`, and
+    `openclaw-embedding-proxy.service`
+  - confirmed root user `openclaw-gateway.service` is still enabled but inactive/dead
+  - confirmed no listener on ports `18557` or `8787`, while current nginx config still
+    references `127.0.0.1:18557`
+  - deferred all server cleanup, archive, disable, and nginx changes to final migration
 
 ## Update Rule
 
@@ -255,17 +268,15 @@ Every migration PR must update:
 
 Non-complete phases after M5 closure:
 
-- M7 WorkTool decommission: In progress.
-- M9 server cutover: Not started and blocked on M7 cleanup decisions plus owner-approved
-  deployment window.
+- M9 server cutover: Not started and requires owner-approved deployment window.
 
 Recommended order:
 
-1. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
-   server WorkTool/OpenClaw directories as retained audit archives.
-2. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
+1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-3. Prepare M9 server cutover only after a reviewed commit SHA passes CI and
+2. Prepare M9 server cutover only after a reviewed commit SHA passes CI and
    `pnpm deploy:preflight`.
+3. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
+   only after owner approval.
 4. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.

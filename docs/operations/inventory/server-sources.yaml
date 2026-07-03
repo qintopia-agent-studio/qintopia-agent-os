@@ -139,7 +139,7 @@ records:
       path: /home/ubuntu/worktool-gateway
       kind: server-local-directory
       reference: no-git
-      state: inactive-service
+      state: directory-exists-disabled-user-service
     disposition: deprecated
     target:
       - deprecated/worktool
@@ -151,18 +151,19 @@ records:
       runtime_profile: false
       secrets: possible
     validation:
-      status: inactive
+      status: final-migration-cleanup-required
       commands: []
     next_action:
-      - confirm no service dependency
-      - archive or remove after owner approval
+      - re-check service, cron, process, port, and nginx references during final
+        migration
+      - archive or remove directory and disabled user unit only after owner approval
 
   - id: server.openclaw-legacy
     source:
       path: /opt/qiwe-openclaw-adapter
       kind: server-local-directory
       reference: no-git
-      state: inactive-service
+      state: directory-exists-disabled-system-units-enabled-inactive-root-user-unit
     disposition: deprecated
     target:
       - deprecated/openclaw
@@ -174,7 +175,9 @@ records:
       runtime_profile: false
       secrets: possible
     validation:
-      status: inactive
+      status: final-migration-cleanup-required
       commands: []
     next_action:
       - keep only rollback/audit notes until owner confirms retirement
+      - decide whether to disable and archive root user openclaw-gateway during final
+        migration

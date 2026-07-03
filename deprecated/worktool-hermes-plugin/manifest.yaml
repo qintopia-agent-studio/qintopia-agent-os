@@ -25,5 +25,6 @@ tags:
   - hermes-plugin
   - audit-only
 next_actions:
-  - Keep as audit-only reference unless owner approves full removal.
+  - Keep as audit-only reference unless owner approves full removal during final
+    migration.
   - Do not use for new Agent OS channel work.

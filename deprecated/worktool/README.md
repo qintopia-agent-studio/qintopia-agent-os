@@ -10,8 +10,9 @@ decommission evidence and audit notes.
 - Local reference observed on 2026-07-03: `b95e746e0254894705bc63051937a3afbf4013c1`
 - Local state observed on 2026-07-03: ahead of `origin/master` by 1 commit
 - Server source: `/home/ubuntu/worktool-gateway`
-- Server state observed on 2026-07-03: directory exists, no matching systemd service or
-  timer found by read-only scan
+- Server state observed on 2026-07-03: directory exists; ubuntu user
+  `worktool-gateway.service` is loaded, disabled, and inactive; nginx still has current
+  `18557` references that must be reconciled during final migration.
 
 ## Decision
 
