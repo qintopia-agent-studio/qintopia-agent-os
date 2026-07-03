@@ -65,7 +65,7 @@ and future programming agents.
 | --------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
 | M0 repository bootstrap     | Complete    | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                   |
 | M1 inventory                | Complete    | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
-| M2 registry contract        | Not started | registry schemas and package manifest templates exist and validate                                                 |
+| M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                 |
 | M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
 | M4 first skill adoption     | Not started | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
 | M5 runtime sidecar adoption | Not started | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
@@ -111,6 +111,12 @@ and future programming agents.
   review-pool until patch extraction.
 - Classified WorkTool, WorkTool Hermes plugin, Xiaoqin WorkTool runtime, and OpenClaw
   legacy paths as deprecated inventory inputs.
+- Completed M2 registry contract:
+  - added package manifest and registry index JSON Schemas
+  - added domain registry indexes
+  - added manifest templates for agents, skills, workflows, MCP, runtime, deploy, and
+    deprecated packages
+  - added `pnpm registry:check` and wired it into `pnpm check`
 
 ## Update Rule
 
@@ -122,8 +128,7 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Add registry schema and package manifest templates.
-2. Add inventory validation in CI once the registry schema exists.
-3. Decide the first adopt PR scope, likely `skills/qiwe`.
-4. Before adopting `skills/qiwe`, compare the server untracked QiWe backup file and
+1. Decide the first adopt PR scope, likely `skills/qiwe`.
+2. Before adopting `skills/qiwe`, compare the server untracked QiWe backup file and
    record whether it has audit value.
+3. Add inventory validation after M2 registry checks have settled.

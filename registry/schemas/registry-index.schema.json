@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qintopia.local/schemas/registry-index.schema.json",
+  "title": "Qintopia Agent OS Registry Index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["registry_version", "domain", "entries"],
+  "properties": {
+    "registry_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "domain": {
+      "enum": [
+        "agents",
+        "skills",
+        "workflows",
+        "mcp",
+        "runtime",
+        "deploy",
+        "deprecated"
+      ]
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "manifest", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "manifest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": ["planned", "draft", "adopting", "active", "deprecated", "removed"]
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

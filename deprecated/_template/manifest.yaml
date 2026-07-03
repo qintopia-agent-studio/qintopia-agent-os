@@ -1,0 +1,24 @@
+id: deprecated/example-legacy
+type: deprecated
+name: Example Legacy Area
+owner: TBD
+status: deprecated
+risk_level: medium
+description: Replace with the historical or audit-only material purpose.
+source:
+  path: TBD
+  reference: TBD
+  disposition: deprecated
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+validation:
+  commands:
+    - pnpm check
+dependencies: []
+tags:
+  - deprecated
+next_actions:
+  - Replace template values before archival or removal.

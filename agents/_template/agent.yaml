@@ -1,0 +1,24 @@
+id: agents/example-agent
+type: agent
+name: Example Agent
+owner: TBD
+status: draft
+risk_level: medium
+description: Replace with the Agent profile purpose and boundaries.
+source:
+  path: TBD
+  reference: TBD
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm check
+dependencies: []
+tags:
+  - agent
+next_actions:
+  - Replace template values before adoption.

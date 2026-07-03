@@ -1,0 +1,24 @@
+id: deploy/example-deploy
+type: deploy
+name: Example Deploy Area
+owner: TBD
+status: draft
+risk_level: high
+description: Replace with the deploy, smoke, rollback, or release area purpose.
+source:
+  path: TBD
+  reference: TBD
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm check
+dependencies: []
+tags:
+  - deploy
+next_actions:
+  - Replace template values before adoption.

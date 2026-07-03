@@ -30,6 +30,8 @@ become versioned.
   baseline, and reports index to complete the M3 documentation migration.
 - Added M1 migration inventory records for local sources, server sources, runtime
   profiles, and Agent OS services.
+- Added M2 registry schemas, domain indexes, package manifest templates, and
+  `pnpm registry:check`.
 
 ### Changed
 
@@ -41,3 +43,4 @@ become versioned.
   runtime baseline documents.
 - Marked M1 inventory complete in the migration plan and linked the inventory from the
   documentation hub.
+- Marked M2 registry contract complete and wired registry validation into `pnpm check`.

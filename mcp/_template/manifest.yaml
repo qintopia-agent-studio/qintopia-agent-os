@@ -1,0 +1,24 @@
+id: mcp/example-adapter
+type: mcp
+name: Example MCP Adapter
+owner: TBD
+status: draft
+risk_level: medium
+description: Replace with the MCP server or adapter purpose and boundaries.
+source:
+  path: TBD
+  reference: TBD
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm check
+dependencies: []
+tags:
+  - mcp
+next_actions:
+  - Replace template values before adoption.

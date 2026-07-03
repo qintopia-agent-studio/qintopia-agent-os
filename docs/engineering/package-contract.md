@@ -42,6 +42,10 @@ status: draft
 The exact schema will be enforced after registry validation is added. Until then, these
 fields are the expected contract for migration work.
 
+The enforced schema now lives at
+[`../../registry/schemas/package-manifest.schema.json`](../../registry/schemas/package-manifest.schema.json).
+Run `pnpm registry:check` before adding or changing package manifests.
+
 ## Placement Rules
 
 - Agent identity, prompt, memory policy, allowed tools, and forbidden actions belong in
@@ -56,3 +60,13 @@ fields are the expected contract for migration work.
 Do not create top-level language buckets such as `python/`, `rust/`, or `typescript/`.
 Rust, Python, TypeScript, shell, and SQL belong inside the package that owns the
 capability.
+
+## Templates
+
+- `agents/_template/agent.yaml`
+- `skills/_template/manifest.yaml`
+- `workflows/_template/workflow.yaml`
+- `mcp/_template/manifest.yaml`
+- `runtime/_template/manifest.yaml`
+- `deploy/_template/manifest.yaml`
+- `deprecated/_template/manifest.yaml`

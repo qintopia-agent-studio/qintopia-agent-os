@@ -1,0 +1,24 @@
+id: workflows/example-workflow
+type: workflow
+name: Example Workflow
+owner: TBD
+status: draft
+risk_level: medium
+description: Replace with the cross-Agent or cross-skill workflow purpose.
+source:
+  path: TBD
+  reference: TBD
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm check
+dependencies: []
+tags:
+  - workflow
+next_actions:
+  - Replace template values before adoption.
