@@ -5,6 +5,12 @@
 - Human entrypoint: `README.md`
 - Agent-facing rules: `AGENTS.md`
 - Claude Code rules: `CLAUDE.md`
+- Documentation hub: `docs/README.md`
+- Architecture overview: `docs/architecture/agent-os-overview.md`
+- Collaboration model: `docs/engineering/collaboration-model.md`
+- Migration policy: `docs/engineering/migration-policy.md`
+- Server change policy: `docs/engineering/server-change-policy.md`
+- Source document inventory: `docs/operations/source-document-inventory.md`
 - Registry indexes: `registry/`
 - Agent packages: `agents/`
 - Skill packages: `skills/`
@@ -129,9 +135,11 @@ Before a PR:
 
 1. `README.md`
 2. `AGENTS.md`
-3. `docs/plans/active/monorepo-migration.md` for migration work
-4. Target package README or manifest
-5. Relevant docs under `docs/engineering/` or `docs/operations/`
+3. `docs/README.md`
+4. `docs/architecture/agent-os-overview.md`
+5. `docs/plans/active/monorepo-migration.md` for migration work
+6. Target package README or manifest
+7. Relevant docs under `docs/engineering/` or `docs/operations/`
 
 Report what you read, what you plan to touch, validation commands, and production
 boundaries before making broad changes.

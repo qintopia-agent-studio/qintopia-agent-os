@@ -22,8 +22,14 @@ become versioned.
   expanded `.gitignore`.
 - Added `CONTRIBUTING.md`, PR template, CODEOWNERS, and GitHub Actions CI for repository
   checks.
+- Added documentation hubs at `docs/README.md` and `docs/README.zh-CN.md`.
+- Added architecture, engineering, and operations indexes for the docs tree.
+- Added an Agent OS architecture overview, collaboration model, package contract,
+  migration policy, server change policy, and source document inventory.
 
 ### Changed
 
 - Moved migration status out of root README and agent rule files; root docs now link to
   the migration plan instead of embedding transient state.
+- Linked the English and Chinese root READMEs and connected root collaboration files to
+  the docs hub.

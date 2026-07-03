@@ -9,10 +9,12 @@
 
 1. 阅读 `README.md` / `README.zh-CN.md`。
 2. 阅读 `AGENTS.md` / `AGENTS.zh-CN.md`。
-3. 判断目标 domain：`agents`、`skills`、`workflows`、`mcp`、`runtime`、
+3. 阅读 `docs/README.md` / `docs/README.zh-CN.md`。
+4. 阅读 `docs/architecture/agent-os-overview.md`。
+5. 判断目标 domain：`agents`、`skills`、`workflows`、`mcp`、`runtime`、
    `deploy`、`docs`、`fixtures`、`tools` 或 `deprecated`。
-4. 如果目标 package 已有 README 或 manifest，先阅读它。
-5. 如果任务是迁移，先阅读 `docs/plans/active/monorepo-migration.md`。
+6. 如果目标 package 已有 README 或 manifest，先阅读它。
+7. 如果任务是迁移，先阅读 `docs/plans/active/monorepo-migration.md`。
 
 ## 核心边界
 

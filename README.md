@@ -1,5 +1,7 @@
 # Qintopia Agent OS Monorepo
 
+[中文](README.zh-CN.md)
+
 This repository is the source of truth for Qintopia Agent OS. It uses a
 capability/plugin monorepo structure: directories are organized by Agent OS domain and
 business capability, not by programming language.
@@ -65,6 +67,11 @@ All changes go through git:
 The server is a deployment target, not an editing workspace. Do not edit docs, code,
 scripts, wrappers, workers, runbooks, or runtime templates directly on the server or
 inside `.hermes`.
+
+## Documentation
+
+Start from [docs/README.md](docs/README.md) for architecture, engineering rules, source
+document inventory, migration policy, and operations references.
 
 ## Migration
 

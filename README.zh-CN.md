@@ -1,5 +1,7 @@
 # Qintopia Agent OS Monorepo
 
+[English](README.md)
+
 这个仓库是 Qintopia Agent OS 的单一事实源。它采用 Capability / Plugin
 Monorepo 结构：目录按 Agent OS 领域和业务能力组织，而不是按编程语言组织。
 
@@ -59,6 +61,11 @@ qintopia-agent-os-monorepo/
 
 服务器是部署目标，不是编辑现场。不要直接在服务器或 `.hermes`
 运行目录里修改文档、代码、脚本、wrapper、worker、runbook 或 runtime template。
+
+## 文档
+
+架构、工程规则、源文档盘点、迁移规则和运维参考从
+[docs/README.zh-CN.md](docs/README.zh-CN.md) 开始阅读。
 
 ## 迁移
 
