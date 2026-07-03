@@ -14,11 +14,16 @@ canonical architecture, engineering, package, or deployment docs.
   implications.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
+- [m9-server-cutover-runbook.md](m9-server-cutover-runbook.md): final migration runbook
+  for monorepo checkout, sidecar service cutover, deprecated runtime cleanup,
+  acceptance, and rollback.
 
 ## Checks
 
 - `pnpm agents:check`: validates active Agent package templates and dry-run
   expectations.
+- `pnpm deploy:preflight`: validates non-mutating deployment gates before any server
+  cutover.
 
 ## Rules
 

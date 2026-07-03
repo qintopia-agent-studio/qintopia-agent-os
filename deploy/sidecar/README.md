@@ -25,7 +25,8 @@ approves a monorepo deployment path.
 Server deployment must use git and an approved commit SHA. Do not edit files directly on
 the server and do not use `scp` overwrites as a normal release path.
 
-Monorepo deployment cutover is tracked in `docs/monorepo-cutover-plan.md`.
+The sidecar-specific cutover plan is `docs/monorepo-cutover-plan.md`. The global M9
+execution contract is `../../docs/operations/m9-server-cutover-runbook.md`.
 
 ## Current Server Caveat
 

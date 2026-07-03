@@ -61,19 +61,19 @@ and future programming agents.
 
 ## Migration Phases
 
-| Phase                       | Status      | Exit criteria                                                                                                      |
-| --------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
-| M0 repository bootstrap     | Complete    | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                   |
-| M1 inventory                | Complete    | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
-| M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                 |
-| M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
-| M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
-| M5 runtime sidecar adoption | Complete    | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
-| M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
-| M6 agents adoption          | Complete    | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
-| M7 WorkTool decommission    | Complete    | WorkTool references classified and either deprecated or final-migration cleanup items                              |
-| M8 CI/CD deployment gate    | Complete    | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
-| M9 server cutover           | Not started | server deploys reviewed commit SHA from this repo with smoke and rollback                                          |
+| Phase                       | Status   | Exit criteria                                                                                                      |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| M0 repository bootstrap     | Complete | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                   |
+| M1 inventory                | Complete | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
+| M2 registry contract        | Complete | registry schemas and package manifest templates exist and validate                                                 |
+| M3 docs migration           | Complete | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
+| M4 first skill adoption     | Complete | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
+| M5 runtime sidecar adoption | Complete | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
+| M5.5 anti-drift guardrails  | Complete | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
+| M6 agents adoption          | Complete | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
+| M7 WorkTool decommission    | Complete | WorkTool references classified and either deprecated or final-migration cleanup items                              |
+| M8 CI/CD deployment gate    | Complete | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
+| M9 server cutover           | Prepared | runbook exists; server deploy still waits for owner-approved window                                                |
 
 ## Progress Log
 
@@ -255,6 +255,11 @@ and future programming agents.
   - confirmed no listener on ports `18557` or `8787`, while current nginx config still
     references `127.0.0.1:18557`
   - deferred all server cleanup, archive, disable, and nginx changes to final migration
+- Prepared M9 server cutover without server mutation:
+  - added `docs/operations/m9-server-cutover-runbook.md`
+  - linked the runbook from operations docs
+  - kept server deploy, cleanup, archive, systemd, and nginx changes blocked on an
+    owner-approved migration window
 
 ## Update Rule
 
@@ -268,14 +273,14 @@ Every migration PR must update:
 
 Non-complete phases after M5 closure:
 
-- M9 server cutover: Not started and requires owner-approved deployment window.
+- M9 server cutover: Prepared and requires owner-approved deployment window.
 
 Recommended order:
 
 1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-2. Prepare M9 server cutover only after a reviewed commit SHA passes CI and
-   `pnpm deploy:preflight`.
+2. Fill the required-input table in `docs/operations/m9-server-cutover-runbook.md` when
+   the owner approves a target SHA and migration window.
 3. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
    only after owner approval.
 4. Add deploy smoke and rollback notes before any production wiring changes for

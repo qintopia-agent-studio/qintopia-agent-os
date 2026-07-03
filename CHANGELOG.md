@@ -59,6 +59,8 @@ become versioned.
 - Added M5 runtime sidecar adoption closure documentation.
 - Added `pnpm fmt:sidecar` and `pnpm check:sidecar` sidecar validation commands.
 - Added M7 read-only decommission evidence for WorkTool, Xiaoqin WorkTool, and OpenClaw.
+- Added M9 server cutover runbook for monorepo checkout, sidecar service cutover,
+  deprecated runtime cleanup, acceptance, and rollback.
 
 ### Changed
 
@@ -95,3 +97,5 @@ become versioned.
   scope.
 - Marked M7 WorkTool decommission classification complete while deferring all server
   cleanup to final migration.
+- Marked M9 server cutover prepared while keeping all server mutations blocked until an
+  owner-approved migration window.

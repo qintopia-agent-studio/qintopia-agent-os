@@ -4,6 +4,9 @@ This plan describes how to move production sidecar deployment from the standalon
 `qintopia-msg-sidecar` checkout to this monorepo. It is a plan, not an approved deploy
 runbook.
 
+For the full M9 migration window, rollback, deprecated runtime cleanup, and acceptance
+contract, use `../../../docs/operations/m9-server-cutover-runbook.md`.
+
 ## Current Production Model
 
 - Server checkout: `/home/ubuntu/qintopia-msg-sidecar`
