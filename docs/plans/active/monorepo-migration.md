@@ -267,12 +267,14 @@ and future programming agents.
 - Pushed local `master` to the approved GitHub remote.
 - Ran M9 read-only server preflight:
   - server target checkout `/home/ubuntu/qintopia-agent-os-monorepo` is not present
-  - server SSH identity cannot read the private GitHub repo yet
+  - server SSH identity could not read the private GitHub repo yet
   - server is missing Node.js and pnpm from `PATH`
   - server has Rust 1.96.1 available
   - root filesystem is about 91% used with about 5.6G available
   - current sidecar remains active from `/home/ubuntu/qintopia-msg-sidecar` at
     `codex/huabaosi-localization-shadow@b16c247a19ec751c08de75ae2d312f35b765f317`
+- Added the server bot SSH alias `github-qintopia-agent-os`; read-only repo access now
+  returns `master@c621b1e119127d951f6b2c10cd2cb01aa46da569`.
 
 ## Update Rule
 
@@ -292,13 +294,11 @@ Recommended order:
 
 1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-2. Add a private-repo deploy path for
-   `git@github.com:qintopia-agent-studio/qintopia-agent-os.git` on the server.
-3. Install or expose Node.js and pnpm on the server before trying monorepo CI checks.
-4. Confirm disk headroom for dependency install and Rust release build.
-5. Fill the target commit SHA and migration window in
+2. Install or expose Node.js and pnpm on the server before trying monorepo CI checks.
+3. Confirm disk headroom for dependency install and Rust release build.
+4. Fill the target commit SHA and migration window in
    `docs/operations/m9-server-cutover-runbook.md`.
-6. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
+5. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
    only after owner approval.
-7. Add deploy smoke and rollback notes before any production wiring changes for
+6. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.

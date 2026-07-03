@@ -64,6 +64,7 @@ become versioned.
 - Added the approved GitHub remote and expanded CODEOWNERS for Agent OS monorepo
   collaboration.
 - Added M9 read-only server preflight findings and migration blockers.
+- Recorded server bot SSH access for the Agent OS monorepo remote.
 
 ### Changed
 
