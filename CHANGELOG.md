@@ -35,6 +35,9 @@ become versioned.
 - Added M4A `skills/qiwe` package metadata, registry entry, and server backup review.
 - Imported the QiWe plugin source snapshot into `skills/qiwe` with docs, fixtures, and
   tests.
+- Added M5 sidecar package contracts for `runtime/sidecar`, `runtime/postgres`,
+  `mcp/context-server`, `mcp/message-store`, `workflows/activity-promotion`, and
+  `deploy/sidecar`.
 
 ### Changed
 
@@ -50,3 +53,5 @@ become versioned.
 - Marked M4 first skill adoption in progress.
 - Marked M4 first skill adoption complete.
 - Added `pnpm test:qiwe` to the repository check path.
+- Marked M5 runtime sidecar adoption in progress and registered the new sidecar package
+  contracts in the domain registries.

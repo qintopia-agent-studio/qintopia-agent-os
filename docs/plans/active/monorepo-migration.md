@@ -68,7 +68,7 @@ and future programming agents.
 | M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                 |
 | M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
 | M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
-| M5 runtime sidecar adoption | Not started | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
+| M5 runtime sidecar adoption | In progress | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M6 agents adoption          | Not started | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
 | M7 WorkTool decommission    | Not started | WorkTool references classified and either deprecated or removed                                                    |
 | M8 CI/CD deployment gate    | Not started | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
@@ -131,6 +131,20 @@ and future programming agents.
   - added `skills/qiwe/docs/source-snapshot.md`
   - added `pnpm test:qiwe` and wired it into `pnpm check`
   - verified package-local tests with `pnpm test:qiwe`
+- Started M5 runtime sidecar adoption with package contracts, not full source import:
+  - added `runtime/sidecar` for the Rust service and worker runtime contract
+  - added `runtime/postgres` for migrations, schema notes, and the Agent OS fact source
+  - added `mcp/context-server` for answer-context, knowledge, and evidence routing
+  - added `mcp/message-store` for controlled message and discussion-evidence lookup
+  - added `workflows/activity-promotion` for the Agent OS operations control-plane flow
+  - added `deploy/sidecar` for git-based rollout, smoke, and rollback contracts
+  - registered the new packages in `registry/runtime.yaml`, `registry/mcp.yaml`,
+    `registry/workflows.yaml`, and `registry/deploy.yaml`
+  - confirmed local `../qintopia-message-sidecar` is clean at
+    `eda2652f21999e4f32699463413372accbd3b76e`
+  - confirmed server `/home/ubuntu/qintopia-msg-sidecar` is clean but on
+    `codex/huabaosi-localization-shadow@b16c247a19ec751c08de75ae2d312f35b765f317`; treat
+    that branch as review-pool until owner approval
 
 ## Update Rule
 
@@ -142,8 +156,10 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Start M5 runtime sidecar adoption by splitting `../qintopia-message-sidecar` into
-   runtime, MCP, workflow, and deploy package contracts.
-2. Add inventory validation after M2 registry checks have settled.
-3. Add deploy smoke and rollback notes before any production wiring changes for
+1. Continue M5 by importing the reviewed sidecar source into the new package split while
+   preserving tests, fixtures, docs, and Rust toolchain constraints.
+2. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
+   review-pool input, not an approved roadmap item.
+3. Add inventory validation after M2 registry checks have settled.
+4. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.

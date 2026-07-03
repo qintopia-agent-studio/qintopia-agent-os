@@ -1,3 +1,13 @@
 registry_version: 1
 domain: runtime
-entries: []
+entries:
+  - id: runtime/postgres
+    path: runtime/postgres
+    manifest: runtime/postgres/manifest.yaml
+    status: adopting
+    notes: Agent OS system fact source migrations and data-design contract.
+  - id: runtime/sidecar
+    path: runtime/sidecar
+    manifest: runtime/sidecar/manifest.yaml
+    status: adopting
+    notes: Message capture and worker runtime contract from qintopia-message-sidecar.

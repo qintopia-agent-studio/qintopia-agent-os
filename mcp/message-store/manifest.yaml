@@ -1,0 +1,29 @@
+id: mcp/message-store
+type: mcp
+name: Message Store MCP
+owner: TBD
+status: adopting
+risk_level: medium
+description: MCP surface for controlled message search and discussion evidence lookup.
+source:
+  path: ../qintopia-message-sidecar/src/mcp_server.rs
+  reference: eda2652f21999e4f32699463413372accbd3b76e
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - cd ../qintopia-message-sidecar && cargo test
+    - cd ../qintopia-message-sidecar && scripts/context-acceptance-smoke.sh
+dependencies:
+  - runtime/postgres
+tags:
+  - mcp
+  - message-store
+  - evidence
+next_actions:
+  - Import source and fixtures after privacy boundaries are reviewed.
+  - Add focused tests for discussion-history versus live-ops routing.

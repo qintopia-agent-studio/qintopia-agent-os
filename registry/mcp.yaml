@@ -1,3 +1,13 @@
 registry_version: 1
 domain: mcp
-entries: []
+entries:
+  - id: mcp/context-server
+    path: mcp/context-server
+    manifest: mcp/context-server/manifest.yaml
+    status: adopting
+    notes: Safe answer-context and evidence-routing MCP surface.
+  - id: mcp/message-store
+    path: mcp/message-store
+    manifest: mcp/message-store/manifest.yaml
+    status: adopting
+    notes: Controlled Postgres-backed message and discussion-evidence lookup.

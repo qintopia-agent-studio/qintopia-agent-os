@@ -1,0 +1,37 @@
+id: workflows/activity-promotion
+type: workflow
+name: Activity Promotion Control Plane
+owner: TBD
+status: adopting
+risk_level: high
+description:
+  Multi-Agent control-plane workflow for activity promotion assets, evidence, and
+  group-send readiness.
+source:
+  path: ../qintopia-message-sidecar/src/operations.rs
+  reference: eda2652f21999e4f32699463413372accbd3b76e
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - cd ../qintopia-message-sidecar && scripts/operations-control-plane-smoke.sh
+    - cd ../qintopia-message-sidecar && cargo test
+dependencies:
+  - runtime/postgres
+  - runtime/sidecar
+  - mcp/context-server
+tags:
+  - workflow
+  - operations-control-plane
+  - xiaoman
+  - wenyuange
+  - huabaosi
+  - erhua
+next_actions:
+  - Import workflow source and no-credential smoke coverage.
+  - Keep group-send execution out of scope until reviewed send adapter and final
+    confirmation gates exist.

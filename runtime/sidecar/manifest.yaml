@@ -1,0 +1,37 @@
+id: runtime/sidecar
+type: runtime
+name: Qintopia Message Sidecar Runtime
+owner: TBD
+status: adopting
+risk_level: high
+description:
+  Rust service contract for Agent OS message capture, workers, and runtime checks.
+source:
+  path: ../qintopia-message-sidecar
+  reference: eda2652f21999e4f32699463413372accbd3b76e
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - cd ../qintopia-message-sidecar && cargo fmt --check
+    - cd ../qintopia-message-sidecar && cargo test
+    - cd ../qintopia-message-sidecar && cargo check
+    - cd ../qintopia-message-sidecar && scripts/operations-control-plane-smoke.sh
+dependencies:
+  - runtime/postgres
+  - mcp/context-server
+  - mcp/message-store
+tags:
+  - rust
+  - nats
+  - worker
+  - message-capture
+next_actions:
+  - Import source after package split review and keep Hermes reply path independence
+    explicit.
+  - Reconcile local main with the server Huabaosi shadow branch before adopting shadow
+    files.

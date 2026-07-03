@@ -1,0 +1,32 @@
+id: deploy/sidecar
+type: deploy
+name: Sidecar Deployment
+owner: TBD
+status: adopting
+risk_level: high
+description:
+  Git-based rollout, smoke, and rollback contract for Agent OS sidecar services.
+source:
+  path: ../qintopia-message-sidecar/scripts/server-deploy.sh
+  reference: eda2652f21999e4f32699463413372accbd3b76e
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - cd ../qintopia-message-sidecar && cargo test
+    - cd ../qintopia-message-sidecar && scripts/operations-control-plane-smoke.sh
+dependencies:
+  - runtime/sidecar
+  - runtime/postgres
+tags:
+  - deploy
+  - systemd
+  - smoke
+  - rollback
+next_actions:
+  - Import deployment script and runbook after source layout is accepted.
+  - Add monorepo release gate that deploys only reviewed commit SHAs.
