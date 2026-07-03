@@ -15,6 +15,11 @@ canonical architecture, engineering, package, or deployment docs.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
 
+## Checks
+
+- `pnpm agents:check`: validates active Agent package templates and dry-run
+  expectations.
+
 ## Rules
 
 - Do not edit server docs or code directly.

@@ -25,6 +25,11 @@ allowed_capabilities:
   - internal artifact drafts
   - reviewed visual brief generation
 
+dry_run_expectations:
+  - Run activity-promotion smoke for visual work-item changes.
+  - Keep generated artifacts internal until human review.
+  - Do not enable production generation adapters from review-pool material.
+
 forbidden_actions:
   - publish or send externally visible material
   - use private member photos, stories, or private chat without explicit approval

@@ -22,6 +22,11 @@ allowed_capabilities:
   - internal status summarization
   - human escalation
 
+dry_run_expectations:
+  - Validate routing plans without creating production work items.
+  - Run `pnpm agents:check` after template changes.
+  - Run workflow smoke before enabling new dispatcher routes.
+
 forbidden_actions:
   - approve production changes
   - approve external publication

@@ -50,6 +50,7 @@ become versioned.
   `silaoshi`, `guanerye`, and `huabaosi`.
 - Added M6.1 Agent profile templates, per-Agent capability notes, runtime notes, and an
   Agent capability matrix.
+- Added `pnpm agents:check` for active Agent package and profile template validation.
 
 ### Changed
 
@@ -75,3 +76,4 @@ become versioned.
 - Marked M6 active Agents adoption in progress and registered the active Agent package
   contracts.
 - Extended anti-drift policy checks to block live Hermes runtime state under `agents/*`.
+- Marked M6 Agent adoption complete.

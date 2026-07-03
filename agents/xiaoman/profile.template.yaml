@@ -25,8 +25,13 @@ prompt_sections:
 
 allowed_capabilities:
   - workflows/activity-promotion
-  - runtime/sidecar operations request planning
+  - runtime/sidecar
   - controlled handoff to Huabaosi, Wenyuange, Erhua, or Silaoshi
+
+dry_run_expectations:
+  - Run `pnpm smoke:sidecar` for activity-promotion workflow changes.
+  - Use fixture records for activity source or handoff behavior changes.
+  - Confirm no direct external send is introduced.
 
 forbidden_actions:
   - parse daily_digests.markdown as an automatic source

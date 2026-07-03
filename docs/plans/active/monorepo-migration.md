@@ -70,7 +70,7 @@ and future programming agents.
 | M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
 | M5 runtime sidecar adoption | In progress | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
-| M6 agents adoption          | In progress | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
+| M6 agents adoption          | Complete    | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
 | M7 WorkTool decommission    | In progress | WorkTool references classified and either deprecated or removed                                                    |
 | M8 CI/CD deployment gate    | Not started | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
 | M9 server cutover           | Not started | server deploys reviewed commit SHA from this repo with smoke and rollback                                          |
@@ -216,6 +216,14 @@ and future programming agents.
   - linked the capability matrix from the documentation hub and operations index
   - extended `pnpm policy:check` to block live Hermes runtime files or directories under
     `agents/*`
+- Completed M6 agents adoption:
+  - added `tools/agents/check-agents.mjs`
+  - added `pnpm agents:check` and wired it into `pnpm check`
+  - required each active Agent package to include `README.md`, `agent.yaml`,
+    `profile.template.yaml`, `capabilities.md`, `runtime-notes.md`, and
+    `docs/source-snapshot.md`
+  - required `profile.template.yaml` to declare dry-run expectations
+  - kept `xiaoqin` out of active Agents and `huabaosi` in draft/review-pool
 
 ## Update Rule
 
@@ -227,8 +235,8 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Continue M6 by adding profile-template render checks and package-level dry-run smoke
-   commands for active Agents.
+1. Move to M8 by adding CI deployment gates around `pnpm check`, secret scanning, and
+   deploy preflight rules.
 2. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
    server WorkTool/OpenClaw directories as retained audit archives.
 3. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a

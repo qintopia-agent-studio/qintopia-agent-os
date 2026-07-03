@@ -24,6 +24,11 @@ allowed_capabilities:
   - mcp/message-store
   - evidence artifact creation through runtime/sidecar
 
+dry_run_expectations:
+  - Run context or message-store smoke before changing lookup behavior.
+  - Verify live-ops questions still route away from static knowledge.
+  - Confirm member-scoped and internal evidence remains filtered.
+
 forbidden_actions:
   - expose raw internal documents or private message history to front-office Agents
   - answer live availability or booking state from static knowledge alone

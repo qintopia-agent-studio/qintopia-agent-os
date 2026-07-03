@@ -29,6 +29,11 @@ allowed_capabilities:
   - runbook and rollback drafting
   - handoff preparation
 
+dry_run_expectations:
+  - Run local or sandbox checks only unless production approval exists.
+  - Include validation and rollback notes for production-adjacent plans.
+  - Confirm no secrets or destructive commands are required.
+
 forbidden_actions:
   - modify, restart, deploy, or reconfigure production services without approval
   - read, print, copy, or rotate secrets

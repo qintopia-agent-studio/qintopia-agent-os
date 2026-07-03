@@ -30,6 +30,11 @@ allowed_capabilities:
   - mcp/message-store
   - erhua trainer memory through audited sidecar tools
 
+dry_run_expectations:
+  - Run `pnpm test:qiwe` for QiWe reply and send guard changes.
+  - Run context MCP smoke before changing lookup or trainer memory behavior.
+  - Use fixtures or dry-run paths before any external send path.
+
 forbidden_actions:
   - promise availability, price, refund, compensation, contract, or policy exception
   - expose internal SOP, member records, private chat, or unrestricted message history

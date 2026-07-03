@@ -31,6 +31,11 @@ allowed_capabilities:
   - reviewed scheduled operations scripts
   - workflow support for activity and resident operations
 
+dry_run_expectations:
+  - Classify scheduled scripts into workflow packages before execution.
+  - Run script-level dry-run or fixture checks before any group send.
+  - Confirm public announcements and member handling remain approval-gated.
+
 forbidden_actions:
   - publish announcements without approval
   - commit resources or budget

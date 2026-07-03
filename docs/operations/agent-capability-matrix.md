@@ -23,6 +23,28 @@ not a permission implementation.
 - Profile packages may contain reviewed templates and contracts, not live runtime state.
 - `xiaoqin` is not an active Agent package.
 - Huabaosi shadow/Rust material remains review-pool until owner approval.
+- Every active Agent template must declare `dry_run_expectations`.
+
+## Minimum Checks
+
+Run before changing an Agent package:
+
+```bash
+pnpm agents:check
+pnpm policy:check
+```
+
+Run package-specific checks when touching behavior:
+
+| Agent       | Minimum behavior check                                                   |
+| ----------- | ------------------------------------------------------------------------ |
+| `default`   | routing dry-run note plus relevant workflow smoke before enabling routes |
+| `erhua`     | `pnpm test:qiwe`                                                         |
+| `xiaoman`   | `pnpm smoke:sidecar`                                                     |
+| `wenyuange` | context/message-store smoke for lookup behavior                          |
+| `silaoshi`  | script-level dry-run after scheduled jobs are split into workflows       |
+| `guanerye`  | local or sandbox validation only unless production approval exists       |
+| `huabaosi`  | `pnpm smoke:sidecar`; production visual adapter remains out of scope     |
 
 ## Runtime State Exclusions
 
