@@ -7,6 +7,9 @@
 - Claude Code rules: `CLAUDE.md`
 - Documentation hub: `docs/README.md`
 - Architecture overview: `docs/architecture/agent-os-overview.md`
+- Product scope: `docs/product/agent-os-prd.md`
+- Agent OS design: `docs/agent-os/README.md`
+- Runtime baseline: `docs/operations/runtime-baseline.md`
 - Collaboration model: `docs/engineering/collaboration-model.md`
 - Migration policy: `docs/engineering/migration-policy.md`
 - Server change policy: `docs/engineering/server-change-policy.md`
@@ -137,9 +140,11 @@ Before a PR:
 2. `AGENTS.md`
 3. `docs/README.md`
 4. `docs/architecture/agent-os-overview.md`
-5. `docs/plans/active/monorepo-migration.md` for migration work
-6. Target package README or manifest
-7. Relevant docs under `docs/engineering/` or `docs/operations/`
+5. `docs/product/agent-os-prd.md` for product scope changes
+6. `docs/agent-os/README.md` for Agent OS design changes
+7. `docs/plans/active/monorepo-migration.md` for migration work
+8. Target package README or manifest
+9. Relevant docs under `docs/engineering/` or `docs/operations/`
 
 Report what you read, what you plan to touch, validation commands, and production
 boundaries before making broad changes.

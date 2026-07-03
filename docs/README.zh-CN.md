@@ -8,12 +8,16 @@ OS 的文档入口，用来串联当前 monorepo 结构、服务器上只读盘�
 ## 从这里开始
 
 1. 当前架构：[architecture/agent-os-overview.md](architecture/agent-os-overview.md)
-2. 协作和 PR 流程：[engineering/collaboration-model.md](engineering/collaboration-model.md)
-3. Package 契约：[engineering/package-contract.md](engineering/package-contract.md)
-4. 迁移规则：[engineering/migration-policy.md](engineering/migration-policy.md)
-5. 服务器变更规则：[engineering/server-change-policy.md](engineering/server-change-policy.md)
-6. 源文档盘点：[operations/source-document-inventory.md](operations/source-document-inventory.md)
-7. 当前迁移计划：[plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
+2. 产品范围：[product/agent-os-prd.md](product/agent-os-prd.md)
+3. Agent OS 设计：[agent-os/README.md](agent-os/README.md)
+4. 运行时基线：[operations/runtime-baseline.md](operations/runtime-baseline.md)
+5. 协作和 PR 流程：[engineering/collaboration-model.md](engineering/collaboration-model.md)
+6. Package 契约：[engineering/package-contract.md](engineering/package-contract.md)
+7. 迁移规则：[engineering/migration-policy.md](engineering/migration-policy.md)
+8. 服务器变更规则：[engineering/server-change-policy.md](engineering/server-change-policy.md)
+9. 源文档盘点：[operations/source-document-inventory.md](operations/source-document-inventory.md)
+10. 报告索引：[reports/README.md](reports/README.md)
+11. 当前迁移计划：[plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
 
 ## 目录地图
 
@@ -27,7 +31,7 @@ docs/
 ├── plans/                            # 进行中和已完成计划
 ├── product/                          # 产品和业务文档
 ├── reports/                          # 内部同步报告和生成报告
-└── agent-os/                         # Agent OS 历史文档或迁移暂存区
+└── agent-os/                         # 领域模型、契约、验收测试
 ```
 
 ## 来源处理规则

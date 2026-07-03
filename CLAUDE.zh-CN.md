@@ -11,10 +11,13 @@
 2. 阅读 `AGENTS.md` / `AGENTS.zh-CN.md`。
 3. 阅读 `docs/README.md` / `docs/README.zh-CN.md`。
 4. 阅读 `docs/architecture/agent-os-overview.md`。
-5. 判断目标 domain：`agents`、`skills`、`workflows`、`mcp`、`runtime`、
+5. 可能影响产品范围时阅读 `docs/product/agent-os-prd.md`。
+6. 可能影响 Agent OS 设计时阅读 `docs/agent-os/README.md`。
+7. 可能影响 runtime 行为时阅读 `docs/operations/runtime-baseline.md`。
+8. 判断目标 domain：`agents`、`skills`、`workflows`、`mcp`、`runtime`、
    `deploy`、`docs`、`fixtures`、`tools` 或 `deprecated`。
-6. 如果目标 package 已有 README 或 manifest，先阅读它。
-7. 如果任务是迁移，先阅读 `docs/plans/active/monorepo-migration.md`。
+9. 如果目标 package 已有 README 或 manifest，先阅读它。
+10. 如果任务是迁移，先阅读 `docs/plans/active/monorepo-migration.md`。
 
 ## 核心边界
 

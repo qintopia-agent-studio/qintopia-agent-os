@@ -67,6 +67,12 @@ qintopia-agent-os-monorepo/
 架构、工程规则、源文档盘点、迁移规则和运维参考从
 [docs/README.zh-CN.md](docs/README.zh-CN.md) 开始阅读。
 
+产品和 Agent OS 实现上下文优先读：
+
+- [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
+- [docs/agent-os/README.md](docs/agent-os/README.md)
+- [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)
+
 ## 迁移
 
 迁移状态、源目录 inventory、adoption 顺序和进度更新统一维护在

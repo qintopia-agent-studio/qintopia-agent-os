@@ -8,6 +8,8 @@ canonical architecture, engineering, package, or deployment docs.
 
 - [source-document-inventory.md](source-document-inventory.md): read-only inventory of
   server and local documents reviewed during the documentation organization pass.
+- [runtime-baseline.md](runtime-baseline.md): production runtime baseline and migration
+  implications.
 
 ## Rules
 

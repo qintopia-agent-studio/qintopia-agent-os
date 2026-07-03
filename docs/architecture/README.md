@@ -10,6 +10,10 @@ review and source classification.
 
 - [agent-os-overview.md](agent-os-overview.md): current Agent OS architecture baseline,
   control plane boundaries, and monorepo mapping.
+- [../agent-os/domain-model.md](../agent-os/domain-model.md): shared business object
+  language used by architecture and packages.
+- [../operations/runtime-baseline.md](../operations/runtime-baseline.md): production
+  runtime baseline and migration implications.
 
 ## Adoption Notes
 

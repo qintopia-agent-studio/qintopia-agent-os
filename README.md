@@ -73,6 +73,12 @@ inside `.hermes`.
 Start from [docs/README.md](docs/README.md) for architecture, engineering rules, source
 document inventory, migration policy, and operations references.
 
+For product and Agent OS implementation context, read:
+
+- [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
+- [docs/agent-os/README.md](docs/agent-os/README.md)
+- [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)
+
 ## Migration
 
 Migration status, source inventories, adoption order, and progress updates live in

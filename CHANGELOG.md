@@ -26,6 +26,8 @@ become versioned.
 - Added architecture, engineering, and operations indexes for the docs tree.
 - Added an Agent OS architecture overview, collaboration model, package contract,
   migration policy, server change policy, and source document inventory.
+- Added product scope, Agent OS domain model, Agent contracts, acceptance tests, runtime
+  baseline, and reports index to complete the M3 documentation migration.
 
 ### Changed
 
@@ -33,3 +35,5 @@ become versioned.
   the migration plan instead of embedding transient state.
 - Linked the English and Chinese root READMEs and connected root collaboration files to
   the docs hub.
+- Updated collaborator reading paths to include product scope, Agent OS design, and
+  runtime baseline documents.

@@ -12,10 +12,13 @@ Before editing:
 2. Read `AGENTS.md`.
 3. Read `docs/README.md`.
 4. Read `docs/architecture/agent-os-overview.md`.
-5. Identify the target domain: `agents`, `skills`, `workflows`, `mcp`, `runtime`,
+5. Read `docs/product/agent-os-prd.md` when product scope may change.
+6. Read `docs/agent-os/README.md` when Agent OS design may change.
+7. Read `docs/operations/runtime-baseline.md` when runtime behavior may change.
+8. Identify the target domain: `agents`, `skills`, `workflows`, `mcp`, `runtime`,
    `deploy`, `docs`, `fixtures`, `tools`, or `deprecated`.
-6. Read the target package README or manifest if it exists.
-7. If the task is a migration, read `docs/plans/active/monorepo-migration.md`.
+9. Read the target package README or manifest if it exists.
+10. If the task is a migration, read `docs/plans/active/monorepo-migration.md`.
 
 ## Core Boundaries
 
