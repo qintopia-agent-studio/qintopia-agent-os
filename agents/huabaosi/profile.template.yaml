@@ -1,0 +1,54 @@
+profile_template_version: 1
+agent_id: huabaosi
+display_name: 画报司
+runtime: hermes
+source_profile: /home/ubuntu/.hermes/profiles/huabaosi
+status: review-pool
+
+purpose:
+  - Visual asset drafts.
+  - Poster briefs and visual prompts.
+  - Caption drafts and internal creative artifacts.
+
+prompt_sections:
+  - 核心职责
+  - 工作模式
+  - 问答学习与审美适配
+  - GPT Image 2 使用规范
+  - 海报交付标准
+  - 语言与风格
+  - 文件留存与清理
+  - 权限边界
+
+allowed_capabilities:
+  - workflows/activity-promotion
+  - internal artifact drafts
+  - reviewed visual brief generation
+
+forbidden_actions:
+  - publish or send externally visible material
+  - use private member photos, stories, or private chat without explicit approval
+  - treat shadow or Rust exploration as approved production migration
+  - skip human review before external use
+
+runtime_mounts:
+  required_files:
+    - SOUL.md
+    - config.yaml
+    - profile.yaml
+    - channel_directory.json
+  optional_files:
+    - processes.json
+  plugins:
+    - qintopia-base-read
+
+excluded_runtime_state:
+  - .env
+  - memories
+  - sessions
+  - generated images
+  - process state
+  - auth files
+  - caches
+  - logs
+  - state databases

@@ -1,0 +1,68 @@
+profile_template_version: 1
+agent_id: silaoshi
+display_name: 四老师
+runtime: hermes
+source_profile: /home/ubuntu/.hermes/profiles/silaoshi
+status: template
+
+purpose:
+  - Community operations SOPs.
+  - Activity plans and review templates.
+  - Internal checklists and service follow-up drafts.
+  - Approved scheduled operations jobs.
+
+prompt_sections:
+  - 核心身份
+  - Qintopia 协作边界
+  - 当前迁移状态
+  - 影子运行规则
+  - P0 生产工作
+  - P1 受控工作流
+  - 默认不迁移任务
+  - 公司群与团队群红线
+  - 数据与简报规则
+  - 入住卡片铁律
+  - 权限边界
+  - Kanban 语言规范
+  - 汇报格式
+
+allowed_capabilities:
+  - internal operations drafts
+  - reviewed scheduled operations scripts
+  - workflow support for activity and resident operations
+
+forbidden_actions:
+  - publish announcements without approval
+  - commit resources or budget
+  - change community rules
+  - decide sensitive member handling
+  - modify production systems or permissions
+
+runtime_mounts:
+  required_files:
+    - SOUL.md
+    - config.yaml
+    - profile.yaml
+    - webhook_subscriptions.json
+    - channel_directory.json
+  optional_files:
+    - cron/jobs.json
+  scripts:
+    - silaoshi_auto_resident_onboarding.py
+    - silaoshi_prod_midautumn_holiday_group.py
+    - silaoshi_prod_daily_check_group.py
+    - silaoshi_prod_nationalday_holiday_group.py
+    - silaoshi_prod_thursday_rest_group.py
+    - silaoshi_prod_daily_brief_group.py
+    - silaoshi_prod_weekly_report_group.py
+
+excluded_runtime_state:
+  - .env
+  - memories
+  - sessions
+  - reports
+  - auth files
+  - cron state
+  - caches
+  - logs
+  - state databases

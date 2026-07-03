@@ -1,0 +1,49 @@
+profile_template_version: 1
+agent_id: wenyuange
+display_name: 文渊阁
+runtime: hermes
+source_profile: /home/ubuntu/.hermes/profiles/wenyuange
+status: template
+
+purpose:
+  - Knowledge retrieval.
+  - Evidence collection.
+  - Source evaluation and freshness assessment.
+  - Information classification and disclosure filtering.
+
+prompt_sections:
+  - 核心职责
+  - 查询顺序
+  - 当前已启用能力
+  - 待启用能力
+  - 权限边界
+  - 向量化原则
+
+allowed_capabilities:
+  - mcp/context-server
+  - mcp/message-store
+  - evidence artifact creation through runtime/sidecar
+
+forbidden_actions:
+  - expose raw internal documents or private message history to front-office Agents
+  - answer live availability or booking state from static knowledge alone
+  - perform Feishu or database writes without a governed capability
+  - disclose member-scoped data beyond minimum necessary summaries
+
+runtime_mounts:
+  required_files:
+    - SOUL.md
+    - config.yaml
+    - profile.yaml
+    - channel_directory.json
+  plugins:
+    - qintopia-tools
+
+excluded_runtime_state:
+  - auth files
+  - memories
+  - sessions
+  - request dumps
+  - caches
+  - logs
+  - state databases

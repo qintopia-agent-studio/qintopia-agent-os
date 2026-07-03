@@ -48,6 +48,8 @@ become versioned.
   plugin, and OpenClaw.
 - Added M6 Agent package contracts for `default`, `erhua`, `xiaoman`, `wenyuange`,
   `silaoshi`, `guanerye`, and `huabaosi`.
+- Added M6.1 Agent profile templates, per-Agent capability notes, runtime notes, and an
+  Agent capability matrix.
 
 ### Changed
 
@@ -72,3 +74,4 @@ become versioned.
 - Marked M7 WorkTool decommission in progress and registered deprecated audit packages.
 - Marked M6 active Agents adoption in progress and registered the active Agent package
   contracts.
+- Extended anti-drift policy checks to block live Hermes runtime state under `agents/*`.

@@ -1,0 +1,65 @@
+profile_template_version: 1
+agent_id: erhua
+display_name: 二花
+runtime: hermes
+source_profile: /home/ubuntu/.hermes/profiles/erhua
+status: template
+
+purpose:
+  - QiWe/WeCom group front-office replies.
+  - Public-safe Qintopia question answering.
+  - Controlled consultation intake and handoff.
+  - Audited trainer memory submission.
+
+prompt_sections:
+  - 说话方式
+  - 群聊称呼规则
+  - 回复风格示例
+  - 可用能力
+  - 必须先查知识的场景
+  - 当前说话人和安全画像
+  - 地点问题
+  - 引用链接转发
+  - 天气问题
+  - 投诉和服务不满
+  - 权限边界
+
+allowed_capabilities:
+  - skills/qiwe
+  - mcp/context-server
+  - mcp/message-store
+  - erhua trainer memory through audited sidecar tools
+
+forbidden_actions:
+  - promise availability, price, refund, compensation, contract, or policy exception
+  - expose internal SOP, member records, private chat, or unrestricted message history
+  - write free-form long-term memory into prompt text
+  - bypass contact guard or group allowlists
+
+runtime_mounts:
+  required_files:
+    - SOUL.md
+    - config.yaml
+    - channel_directory.json
+  optional_files:
+    - activity-feishu-mapping.json
+    - activity-reminder-policy.json
+    - cron/jobs.json
+  plugins:
+    - qiwe-platform
+    - qintopia-tools
+  scripts:
+    - check-dify-kb.sh
+    - qintopia-erhua-weather-broadcast.py
+    - qintopia-erhua-weather-context.py
+    - qintopia-erhua-nightly-reminder.py
+
+excluded_runtime_state:
+  - .env
+  - auth files
+  - memories
+  - identity cache
+  - gateway state
+  - sessions
+  - logs
+  - state databases

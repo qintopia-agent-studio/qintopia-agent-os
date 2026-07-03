@@ -12,6 +12,8 @@ canonical architecture, engineering, package, or deployment docs.
   server and local documents reviewed during the documentation organization pass.
 - [runtime-baseline.md](runtime-baseline.md): production runtime baseline and migration
   implications.
+- [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
+  capabilities, approval boundaries, and runtime-state exclusions.
 
 ## Rules
 

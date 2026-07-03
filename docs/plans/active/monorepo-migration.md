@@ -207,6 +207,15 @@ and future programming agents.
   - registered the Agent packages in `registry/agents.yaml`
   - extended `pnpm policy:check` to require active Agent records and block
     `agents/xiaoqin`
+- Continued M6.1 Agent profile templating:
+  - performed read-only structure inventory for active profiles without copying `.env`,
+    memories, sessions, auth files, logs, caches, state databases, or request dumps
+  - added `profile.template.yaml`, `capabilities.md`, and `runtime-notes.md` for
+    `default`, `erhua`, `xiaoman`, `wenyuange`, `silaoshi`, `guanerye`, and `huabaosi`
+  - added `docs/operations/agent-capability-matrix.md`
+  - linked the capability matrix from the documentation hub and operations index
+  - extended `pnpm policy:check` to block live Hermes runtime files or directories under
+    `agents/*`
 
 ## Update Rule
 
@@ -218,8 +227,8 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Continue M6 by converting approved non-secret SOUL/config behavior into reviewed
-   profile templates for each active Agent.
+1. Continue M6 by adding profile-template render checks and package-level dry-run smoke
+   commands for active Agents.
 2. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
    server WorkTool/OpenClaw directories as retained audit archives.
 3. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a

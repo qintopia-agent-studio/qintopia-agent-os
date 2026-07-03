@@ -1,0 +1,48 @@
+profile_template_version: 1
+agent_id: default
+display_name: 大总管
+runtime: hermes
+source_profile: /home/ubuntu/.hermes
+status: template
+
+purpose:
+  - Global fallback profile.
+  - Request classification and cross-Agent routing.
+  - Human-owner escalation for high-risk decisions.
+
+prompt_sections:
+  - 核心职责
+  - 可用能力
+  - Kanban 卡片语言规范
+  - 权限边界
+  - 投诉受理调度规则
+
+allowed_capabilities:
+  - workflow routing through Agent OS work items
+  - internal status summarization
+  - human escalation
+
+forbidden_actions:
+  - approve production changes
+  - approve external publication
+  - approve spending, refund, compensation, or policy exceptions
+  - store long-term business state in Hermes runtime files
+
+runtime_mounts:
+  required_files:
+    - SOUL.md
+    - config.yaml
+    - profile.yaml
+    - channel_directory.json
+  optional_files:
+    - cron/jobs.json
+
+excluded_runtime_state:
+  - .env
+  - auth files
+  - memories
+  - sessions
+  - caches
+  - logs
+  - state databases
+  - generated worklogs

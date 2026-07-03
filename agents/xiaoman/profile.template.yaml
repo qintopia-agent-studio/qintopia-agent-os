@@ -1,0 +1,57 @@
+profile_template_version: 1
+agent_id: xiaoman
+display_name: 小满
+runtime: hermes
+source_profile: /home/ubuntu/.hermes/profiles/xiaoman
+status: template
+
+purpose:
+  - Activity and community-event operations.
+  - Structured event signal intake.
+  - Governed creation of visual, evidence, and send-preparation work items.
+
+prompt_sections:
+  - 角色定位
+  - 核心职责
+  - 工作对象
+  - 标准工作流
+  - 问答学习与工作习惯适配
+  - 与其他 Agent 的关系
+  - 技术能力与数据流
+  - 交付标准
+  - 语言规范
+  - 权限边界
+  - 工作风格
+
+allowed_capabilities:
+  - workflows/activity-promotion
+  - runtime/sidecar operations request planning
+  - controlled handoff to Huabaosi, Wenyuange, Erhua, or Silaoshi
+
+forbidden_actions:
+  - parse daily_digests.markdown as an automatic source
+  - call other Agents through raw prompt handoff
+  - publish unconfirmed field notes as facts
+  - send external messages directly
+
+runtime_mounts:
+  required_files:
+    - SOUL.md
+    - config.yaml
+    - profile.yaml
+    - webhook_subscriptions.json
+    - channel_directory.json
+  optional_files:
+    - cron/jobs.json
+  plugins:
+    - qintopia-tools
+
+excluded_runtime_state:
+  - .env
+  - memories
+  - sessions
+  - webhook runtime state
+  - auth files
+  - caches
+  - logs
+  - state databases

@@ -24,6 +24,8 @@ The check currently enforces:
   bootstrap migration that predates `schema_change_log`.
 - Active packages cannot source from WorkTool, Xiaoqin, or Huabaosi shadow material
   without the correct disposition.
+- Agent packages cannot include live Hermes runtime state such as `.env`, auth files,
+  memories, sessions, caches, logs, state databases, request dumps, or secrets.
 
 ## Why This Exists
 
@@ -35,6 +37,7 @@ Without executable checks, future contributors can accidentally:
 - treat a legacy deploy script as the current production deploy entrypoint
 - add migrations without design notes
 - bypass review-pool classification for high-risk runtime work
+- commit live profile state into `agents/*` while trying to template a profile
 
 The check is intentionally narrow. It catches direction changes that should require an
 owner decision, not every possible style or quality issue.

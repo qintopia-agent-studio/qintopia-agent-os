@@ -32,6 +32,29 @@ const addError = (message) => {
   errors.push(message);
 };
 
+const walkFiles = (relativeDir) => {
+  const root = path.join(repoRoot, relativeDir);
+  if (!fs.existsSync(root)) {
+    return [];
+  }
+
+  const files = [];
+  const visit = (absoluteDir, relativeBase) => {
+    for (const entry of fs.readdirSync(absoluteDir, { withFileTypes: true })) {
+      const relativePath = path.join(relativeBase, entry.name);
+      const absolutePath = path.join(absoluteDir, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolutePath, relativePath);
+      } else if (entry.isFile()) {
+        files.push(relativePath);
+      }
+    }
+  };
+
+  visit(root, relativeDir);
+  return files.sort();
+};
+
 const inventoryFiles = [
   "docs/operations/inventory/local-sources.yaml",
   "docs/operations/inventory/server-sources.yaml",
@@ -189,6 +212,65 @@ for (const requiredAgentId of [
 
 if (agentIds.has("agents/xiaoqin")) {
   addError("registry/agents.yaml: xiaoqin must not be registered as an active Agent");
+}
+
+const forbiddenAgentRuntimePathParts = new Set([
+  "memories",
+  "sessions",
+  "cache",
+  "logs",
+  "state",
+  "tmp",
+  "secrets",
+  "image_cache",
+  "audio_cache",
+  "sandboxes",
+  "pairing",
+]);
+const forbiddenAgentRuntimeFileNames = new Set([
+  ".env",
+  "auth.json",
+  "auth.lock",
+  "gateway.pid",
+  "gateway.lock",
+  "gateway_state.json",
+  "state.db",
+  "state.db-shm",
+  "state.db-wal",
+  ".hermes_history",
+  ".skills_prompt_snapshot.json",
+  "feishu_seen_message_ids.json",
+]);
+const forbiddenAgentRuntimeFilePatterns = [
+  /^\.env\./,
+  /\.db$/,
+  /\.sqlite$/,
+  /\.sqlite3$/,
+  /\.db-shm$/,
+  /\.db-wal$/,
+  /request_dump/i,
+];
+
+for (const file of walkFiles("agents")) {
+  const parts = file.split(path.sep);
+  const basename = path.basename(file);
+
+  if (parts.includes("_template")) {
+    continue;
+  }
+
+  if (parts.some((part) => forbiddenAgentRuntimePathParts.has(part))) {
+    addError(
+      `${file}: agents packages must not include live Hermes runtime directories`
+    );
+  }
+
+  if (
+    forbiddenAgentRuntimeFileNames.has(basename) ||
+    forbiddenAgentRuntimeFilePatterns.some((pattern) => pattern.test(basename))
+  ) {
+    addError(`${file}: agents packages must not include live Hermes runtime files`);
+  }
 }
 
 const deprecatedRegistry = readYaml("registry/deprecated.yaml");

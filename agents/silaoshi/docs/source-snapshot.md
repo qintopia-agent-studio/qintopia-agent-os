@@ -1,7 +1,6 @@
 # Silaoshi Source Snapshot
 
-Snapshot date: 2026-07-03
-Mode: read-only inventory
+Snapshot date: 2026-07-03 Mode: read-only inventory
 
 ## Observed Runtime
 

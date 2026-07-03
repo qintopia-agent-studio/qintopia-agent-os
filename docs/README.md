@@ -13,20 +13,22 @@ and the local historical documents that still contain useful design evidence.
 2. Product scope: [product/agent-os-prd.md](product/agent-os-prd.md)
 3. Agent OS design: [agent-os/README.md](agent-os/README.md)
 4. Runtime baseline: [operations/runtime-baseline.md](operations/runtime-baseline.md)
-5. Collaboration and PR flow:
+5. Agent capability matrix:
+   [operations/agent-capability-matrix.md](operations/agent-capability-matrix.md)
+6. Collaboration and PR flow:
    [engineering/collaboration-model.md](engineering/collaboration-model.md)
-6. Package contract: [engineering/package-contract.md](engineering/package-contract.md)
-7. Migration policy: [engineering/migration-policy.md](engineering/migration-policy.md)
-8. Anti-drift policy:
+7. Package contract: [engineering/package-contract.md](engineering/package-contract.md)
+8. Migration policy: [engineering/migration-policy.md](engineering/migration-policy.md)
+9. Anti-drift policy:
    [engineering/anti-drift-policy.md](engineering/anti-drift-policy.md)
-9. Server change policy:
-   [engineering/server-change-policy.md](engineering/server-change-policy.md)
-10. Source document inventory:
+10. Server change policy:
+    [engineering/server-change-policy.md](engineering/server-change-policy.md)
+11. Source document inventory:
     [operations/source-document-inventory.md](operations/source-document-inventory.md)
-11. M1 source inventory:
+12. M1 source inventory:
     [operations/inventory/README.md](operations/inventory/README.md)
-12. Reports index: [reports/README.md](reports/README.md)
-13. Active migration plan:
+13. Reports index: [reports/README.md](reports/README.md)
+14. Active migration plan:
     [plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
 
 ## Directory Map
