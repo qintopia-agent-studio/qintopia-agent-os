@@ -1,10 +1,10 @@
 # QiWe Skill
 
-Status: adopting metadata only
+Status: adopting source snapshot
 
 This package is the future monorepo home for the QiWe / WeCom Hermes platform adapter.
-M4A registers the package contract, source reference, validation command, and server
-backup review. It does not copy or change production source code.
+M4B imports a clean source snapshot from `../qiwei-hermes-plugin@6f69794`. It does not
+change production server files.
 
 ## Current Source
 
@@ -49,14 +49,13 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
 
 ## Validation
 
-Source validation currently runs from the source repository:
+Package validation:
 
 ```bash
-cd ../qiwei-hermes-plugin
-python3 -m unittest discover -s tests -v
+pnpm test:qiwe
 ```
 
-M4A validation result on 2026-07-03:
+M4B validation result on 2026-07-03:
 
 - `Ran 155 tests`
 - `OK`
@@ -93,14 +92,11 @@ tracked behavior such as passive pipeline, NATS capture, rich/revoke/voice/hando
 tools, activity handling, and context preparation. It should not be used as the adoption
 source. Keep it as server-side audit evidence until owner approves cleanup.
 
-## M4B Adoption Work
+## M4C Adoption Work
 
-Before copying source into this package:
+Before production wiring changes:
 
-1. Decide whether to preserve git history or import as a clean package snapshot.
-2. Copy only source, docs, fixtures, tests, and examples; exclude caches and local
-   state.
-3. Keep runtime secrets and `.env` files out of git.
-4. Update `manifest.yaml` source reference to the exact imported commit.
-5. Keep `python3 -m unittest discover -s tests -v` passing from the package location.
-6. Add deploy smoke and rollback notes before production wiring changes.
+1. Add deploy smoke and rollback notes.
+2. Decide server cutover from the old plugin checkout to this monorepo package.
+3. Use reviewed commit SHA deployment only; do not hot-edit the server checkout.
+4. Confirm server backup cleanup or archival with owner approval.

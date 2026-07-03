@@ -33,6 +33,8 @@ become versioned.
 - Added M2 registry schemas, domain indexes, package manifest templates, and
   `pnpm registry:check`.
 - Added M4A `skills/qiwe` package metadata, registry entry, and server backup review.
+- Imported the QiWe plugin source snapshot into `skills/qiwe` with docs, fixtures, and
+  tests.
 
 ### Changed
 
@@ -46,3 +48,5 @@ become versioned.
   documentation hub.
 - Marked M2 registry contract complete and wired registry validation into `pnpm check`.
 - Marked M4 first skill adoption in progress.
+- Marked M4 first skill adoption complete.
+- Added `pnpm test:qiwe` to the repository check path.

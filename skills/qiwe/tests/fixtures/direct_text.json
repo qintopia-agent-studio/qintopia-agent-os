@@ -1,0 +1,10 @@
+{
+  "fromUser": "7881303308049798",
+  "toUser": "1688857683805864",
+  "fromGroup": "0",
+  "baseMsgType": "VX_NORMAL",
+  "commonMsgType": "TEXT",
+  "eventCode": "single_msg_event",
+  "content": "二花，附近有什么吃饭的地方？",
+  "data": "{\"TenantId\": 0, \"base64RawData\": \"ChUIChIRCKiNx5KdgIADEgbkuozoirEKEggAEg4KDEDkuozoirHigIVoaQ==\", \"cmd\": 15000, \"customParam\": \"\", \"fromRoomId\": 0, \"guid\": \"91355723-5CA4-46C3-A2E9-1E3434C51DF3\", \"isRoomNotice\": 1, \"msgData\": {\"atList\": [], \"content\": \"二花，附近有什么吃饭的地方？\"}, \"msgServerId\": 1002001, \"msgType\": 0, \"msgUniqueIdentifier\": \"direct-msg-001\", \"receiverId\": 1688857683805864, \"referId\": 0, \"requestId\": \"07bd7ac6600628527811a4c084576d83\", \"senderId\": 7881303308049798, \"senderName\": \"\", \"seq\": 4891098, \"timestamp\": 1780139999, \"userId\": \"1688857683805864\", \"newMsgType\": \"TEXT\"}"
+}

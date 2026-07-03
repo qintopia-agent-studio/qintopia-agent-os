@@ -18,7 +18,7 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cd ../qiwei-hermes-plugin && python3 -m unittest discover -s tests -v
+    - pnpm test:qiwe
     - pnpm check
 dependencies:
   - agents/erhua
@@ -30,6 +30,6 @@ tags:
   - hermes-platform
   - erhua
 next_actions:
-  - Decide source import strategy for M4B.
-  - Import source, docs, fixtures, and tests without caches or runtime state.
+  - Add deploy smoke and rollback notes before production wiring changes.
+  - Decide server cutover from the old plugin checkout to this monorepo package.
   - Preserve server backup review as audit evidence until owner cleanup approval.

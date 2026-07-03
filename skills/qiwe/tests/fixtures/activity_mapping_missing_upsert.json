@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "provider": "feishu_bitable",
+  "mode": "live",
+  "upsertKey": "activity_id",
+  "fields": {
+    "activity_subject": "活动名称"
+  }
+}

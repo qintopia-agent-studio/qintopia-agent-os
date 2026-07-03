@@ -1,0 +1,10 @@
+{
+  "fromUser": 7881303308049798,
+  "toUser": 1688857683805864,
+  "fromGroup": "10789255155259073",
+  "baseMsgType": "VX_NORMAL",
+  "commonMsgType": "SOLITAIRE",
+  "eventCode": "group_msg_event",
+  "content": "",
+  "data": "{\"TenantId\":0,\"base64RawData\":\"CooBI0dyb3VwIE5vdGUK5o6l6b6Z5pWw5o2u5qC85byP5rWL6K+VCuWJqum4readkcK356em5omY6YKm5pWw5a2X5ri45rCR56S+5Yy6KOmEoOmCkeWMuuefs+S6leihl+mBk+WkquWcn+i3rzQ1N+WPtyk7IAoyMDI2LzA2LzExOwoKMS4g5bym6buYEjgKBDAtNjQSABoAIgEuKIa7rOCOgIAOMAE6HAiGu6zgjoCADhAAGgEuIKivqtEGKgQ2OS0yMgBAAQ==\",\"cmd\":15000,\"customParam\":\"\",\"fromRoomId\":10789255155259073,\"guid\":\"91355723-5CA4-46C3-A2E9-1E3434C51DF3\",\"isRoomNotice\":1,\"msgData\":{\"solitaireInfo\":{\"authorId\":7881303308049798,\"exampleRange\":\"\",\"hasHeader\":true,\"items\":[{\"range\":\"69-2\",\"timestamp\":1781176232,\"userId\":7881303308049798}],\"loss\":true,\"tailRange\":\"\",\"titleRange\":\"0-64\"},\"title\":\"#Group Note\\n接龙数据格式测试\\n剪鸭村·秦托邦数字游民社区(鄠邑区石井街道太土路457号); \\n2026/06/11;\\n\\n1. 弦默\"},\"msgServerId\":1017194,\"msgType\":213,\"msgUniqueIdentifier\":\"8971589583608054865\",\"receiverId\":1688857683805864,\"referId\":0,\"requestId\":\"07056f65befea3132b329ca55ec46692\",\"senderId\":7881303308049798,\"senderName\":\"\",\"seq\":4896636,\"timestamp\":1781176277,\"userId\":\"1688857683805864\"}"
+}

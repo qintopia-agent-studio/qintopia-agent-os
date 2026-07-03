@@ -1,0 +1,33 @@
+{
+  "enabled": false,
+  "provider": "feishu_bitable",
+  "appTokenEnv": "QINTOPIA_FEISHU_ACTIVITY_APP_TOKEN",
+  "tableIdEnv": "QINTOPIA_FEISHU_ACTIVITY_TABLE_ID",
+  "recordIdStateKey": "activity_id",
+  "upsertKey": "activity_id",
+  "mode": "dry_run",
+  "fields": {
+    "activity_id": "活动ID",
+    "source_group_id": "群ID",
+    "source_message_id": "最后接龙消息ID",
+    "source_sender_id": "发起人",
+    "activity_subject": "活动内容",
+    "activity_type": "活动类型",
+    "activity_detail": "活动信息",
+    "start_time": "活动计划时间",
+    "solitaire_created_at": "接龙发起时间",
+    "participant_count": "参与人数",
+    "participant_names": "参与人名单",
+    "promo_text": "宣传语",
+    "last_seen_at": "最后更新时间",
+    "status": "状态",
+    "raw_summary": "原文摘要"
+  },
+  "fieldTypes": {
+    "start_time": "datetime",
+    "solitaire_created_at": "datetime",
+    "participant_count": "number",
+    "participant_names": "text_list",
+    "last_seen_at": "datetime"
+  }
+}

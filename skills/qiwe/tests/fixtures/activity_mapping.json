@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "provider": "feishu_bitable",
+  "mode": "dry_run",
+  "upsertKey": "activity_id",
+  "fields": {
+    "activity_id": "活动ID",
+    "activity_subject": "标题A",
+    "participant_count": "人数A",
+    "participant_names": "名单A"
+  },
+  "fieldTypes": {
+    "participant_count": "number",
+    "participant_names": "text_list"
+  }
+}

@@ -9,7 +9,8 @@
     "format:check": "prettier --check .",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\"",
     "registry:check": "node tools/registry/check-registry.mjs",
-    "check": "pnpm format:check && pnpm lint:md && pnpm registry:check"
+    "test:qiwe": "cd skills/qiwe && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
+    "check": "pnpm format:check && pnpm lint:md && pnpm registry:check && pnpm test:qiwe"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",

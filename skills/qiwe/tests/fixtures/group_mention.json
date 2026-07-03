@@ -1,0 +1,10 @@
+{
+  "fromUser": "7881303308049798",
+  "toUser": "1688857683805864",
+  "fromGroup": "10733506388826175",
+  "baseMsgType": "VX_NORMAL",
+  "commonMsgType": "TEXT_ALT",
+  "eventCode": "group_msg_event",
+  "content": "@二花 hi",
+  "data": "{\"TenantId\":0,\"base64RawData\":\"ChUIChIRCKiNx5KdgIADEgbkuozoirEKEggAEg4KDEDkuozoirHigIVoaQ==\",\"cmd\":15000,\"customParam\":\"\",\"fromRoomId\":10733506388826175,\"guid\":\"91355723-5CA4-46C3-A2E9-1E3434C51DF3\",\"isRoomNotice\":1,\"msgData\":{\"atList\":[{\"nickname\":\"二花\",\"userId\":\"1688857683805864\"}],\"content\":\"@二花 hi\",\"moreDetail\":[{\"subtype\":10,\"text\":\"1688857683805864\"},{\"subtype\":0,\"text\":\"@二花 hi\"}],\"reply\":{}},\"msgServerId\":1001503,\"msgType\":2,\"msgUniqueIdentifier\":\"7044924045046088437\",\"receiverId\":1688857683805864,\"referId\":0,\"requestId\":\"07bd7ac6600628527811a4c084576d83\",\"senderId\":7881303308049798,\"senderName\":\"\",\"seq\":4891098,\"timestamp\":1780139007,\"userId\":\"1688857683805864\",\"newMsgType\":\"TEXT_ALT\"}"
+}

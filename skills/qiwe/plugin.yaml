@@ -1,0 +1,301 @@
+name: qiwe-platform
+label: QiWe
+kind: platform
+version: 0.1.0
+description: >
+  QiWe third-party webhook platform adapter for Hermes Agent. Receives group/direct
+  webhooks, routes triggered messages into Hermes, replies through QiWe
+  sendText/sendHyperText, and exposes controlled Hermes tools for native QiWe location
+  cards, approved private direct messages, whitelisted rich/media/card sends, message
+  revocation, voice transcription, approved direct-contact requests, and human-support
+  group handoff. Identity lookup and audit are internal channel functions, not
+  general-purpose contact tools for the agent.
+author: Qintopia
+provides_tools:
+  - qiwe_send_location_card
+  - qiwe_send_direct_message
+  - qiwe_send_rich_message
+  - qiwe_revoke_message
+  - qiwe_voice_to_text
+  - qiwe_handoff_to_human
+  - qiwe_request_direct_contact
+requires_env:
+  - name: QIWE_TOKEN
+    description: "QiWe third-party API token"
+    prompt: "QiWe API token"
+    password: true
+  - name: QIWE_BOT_NAMES
+    description: "Comma-separated bot display names that trigger replies"
+    prompt: "Bot names"
+    password: false
+optional_env:
+  - name: QIWE_API_URL
+    description: "QiWe doApi URL"
+    prompt: "QiWe API URL"
+    password: false
+  - name: QIWE_GUID
+    description: "Fallback QiWe guid when a webhook payload does not include one"
+    prompt: "QiWe guid"
+    password: false
+  - name: QIWE_BOT_USER_ID
+    description:
+      "QiWe bot user ID used for mention detection and self-message filtering"
+    prompt: "Bot user ID"
+    password: false
+  - name: QIWE_WEBHOOK_HOST
+    description: "Webhook bind host"
+    prompt: "Webhook host"
+    password: false
+  - name: QIWE_WEBHOOK_PORT
+    description: "Webhook bind port"
+    prompt: "Webhook port"
+    password: false
+  - name: QIWE_WEBHOOK_PATH
+    description: "Webhook path, defaults to /qiwe/webhook"
+    prompt: "Webhook path"
+    password: false
+  - name: QIWE_DEDUPE_TTL_SECONDS
+    description: "Webhook message-id dedupe TTL in seconds"
+    prompt: "Dedupe TTL seconds"
+    password: false
+  - name: QIWE_LOCATION_DEDUPE_TTL_SECONDS
+    description: "Location-card tool idempotency TTL in seconds"
+    prompt: "Location idempotency TTL seconds"
+    password: false
+  - name: QIWE_DIRECT_TOOL_DEDUPE_TTL_SECONDS
+    description: "Approved direct-message tool idempotency TTL in seconds"
+    prompt: "Direct-message idempotency TTL seconds"
+    password: false
+  - name: QIWE_RICH_MESSAGE_DEDUPE_TTL_SECONDS
+    description: "Whitelisted rich/media/card message tool idempotency TTL in seconds"
+    prompt: "Rich-message idempotency TTL seconds"
+    password: false
+  - name: QIWE_REVOKE_MESSAGE_DEDUPE_TTL_SECONDS
+    description: "Message-revoke tool idempotency TTL in seconds"
+    prompt: "Revoke-message idempotency TTL seconds"
+    password: false
+  - name: QIWE_VOICE_TO_TEXT_DEDUPE_TTL_SECONDS
+    description: "Voice-to-text tool idempotency TTL in seconds"
+    prompt: "Voice-to-text idempotency TTL seconds"
+    password: false
+  - name: QIWE_HUMAN_HANDOFF_ENABLED
+    description:
+      "Enable controlled group handoff that quotes a question and mentions a configured
+      human support account; defaults to false"
+    prompt: "Enable human handoff? (true/false)"
+    password: false
+  - name: QIWE_HUMAN_HANDOFF_GROUPS_JSON
+    description:
+      'JSON object mapping QiWe group IDs to human handoff targets, for example
+      {"10859791146538059":{"user_id":"1688854741472532","display_name":"秦托邦小客服"}}'
+    prompt: "Human handoff group mapping JSON"
+    password: false
+  - name: QIWE_HUMAN_HANDOFF_USER_ID
+    description:
+      "Optional legacy fallback QiWe user ID for human handoff when no group mapping is
+      configured"
+    prompt: "Fallback human support QiWe user ID"
+    password: false
+  - name: QIWE_HUMAN_HANDOFF_DISPLAY_NAME
+    description: "Human support display name used for audit/tool responses"
+    prompt: "Human support display name"
+    password: false
+  - name: QIWE_HUMAN_HANDOFF_DEDUPE_TTL_SECONDS
+    description: "Human-support handoff tool idempotency TTL in seconds"
+    prompt: "Human handoff idempotency TTL seconds"
+    password: false
+  - name: QIWE_CONTACT_REQUEST_DEDUPE_TTL_SECONDS
+    description: "Approved direct-contact request tool idempotency TTL in seconds"
+    prompt: "Direct-contact request idempotency TTL seconds"
+    password: false
+  - name: QIWE_CONTACT_GUARD_ENABLED
+    description:
+      "Check direct/private recipients with QiWe contact list before sending; defaults
+      to true"
+    prompt: "Enable direct-recipient contact guard? (true/false)"
+    password: false
+  - name: QIWE_CONTACT_GUARD_CACHE_TTL_SECONDS
+    description: "TTL for direct-recipient normal-friend checks; defaults to 300"
+    prompt: "Contact guard cache TTL seconds"
+    password: false
+  - name: QIWE_CONTACT_GUARD_PAGE_LIMIT
+    description: "Page size for QiWe external contact list checks; defaults to 100"
+    prompt: "Contact guard page size"
+    password: false
+  - name: QIWE_CONTACT_GUARD_MAX_PAGES
+    description:
+      "Maximum QiWe external contact pages to inspect before blocking; defaults to 20"
+    prompt: "Contact guard max pages"
+    password: false
+  - name: QIWE_DIRECT_ENABLED
+    description: "Allow direct/private QiWe messages to trigger Hermes"
+    prompt: "Enable direct messages? (true/false)"
+    password: false
+  - name: QIWE_DIRECT_ALLOWED_USERS
+    description: "Comma-separated sender IDs allowed to trigger direct/private replies"
+    prompt: "Direct allowed sender IDs"
+    password: false
+  - name: QIWE_DIRECT_ALLOW_ALL
+    description: "Allow every direct/private sender; defaults to false"
+    prompt: "Allow all direct senders? (true/false)"
+    password: false
+  - name: QIWE_ALLOWED_USERS
+    description: "Comma-separated QiWe sender IDs allowed to trigger the bot"
+    prompt: "Allowed sender IDs"
+    password: false
+  - name: QIWE_ALLOW_ALL_USERS
+    description: "Allow all QiWe sender IDs"
+    prompt: "Allow all users? (true/false)"
+    password: false
+  - name: QIWE_HOME_GROUP
+    description: "Default QiWe group ID for cron or notification delivery"
+    prompt: "Home group ID"
+    password: false
+  - name: QIWE_STATE_DIR
+    description: "Private runtime state directory for QiWe audit records and caches"
+    prompt: "QiWe state directory"
+    password: false
+  - name: QIWE_IDENTITY_LOOKUP_ENABLED
+    description:
+      "Resolve sender display names internally from room/contact APIs; defaults to true"
+    prompt: "Enable QiWe identity lookup? (true/false)"
+    password: false
+  - name: QIWE_IDENTITY_CACHE_TTL_SECONDS
+    description: "TTL for sender display-name cache; defaults to 86400"
+    prompt: "Identity cache TTL seconds"
+    password: false
+  - name: QIWE_AUDIT_ENABLED
+    description:
+      "Write redacted private JSONL channel audit records when QIWE_STATE_DIR is set"
+    prompt: "Enable QiWe audit? (true/false)"
+    password: false
+  - name: QIWE_VOICE_TO_TEXT_ENABLED
+    description: "Allow controlled QiWe voice-to-text helper calls; defaults to false"
+    prompt: "Enable QiWe voice transcription? (true/false)"
+    password: false
+  - name: QIWE_VOICE_TO_TEXT_POLL_ATTEMPTS
+    description: "Voice-to-text query poll attempts when explicitly enabled"
+    prompt: "Voice transcription poll attempts"
+    password: false
+  - name: QIWE_VOICE_TO_TEXT_POLL_INTERVAL_SECONDS
+    description: "Voice-to-text query poll interval in seconds when explicitly enabled"
+    prompt: "Voice transcription poll interval seconds"
+    password: false
+  - name: QIWE_PIPELINE_ENABLED
+    description:
+      "Enable the extensible QiWe normalized-message pipeline; defaults to false"
+    prompt: "Enable QiWe message pipeline? (true/false)"
+    password: false
+  - name: QIWE_PASSIVE_PIPELINE_ENABLED
+    description: "Enable passive non-mention processors; defaults to false"
+    prompt: "Enable passive QiWe processors? (true/false)"
+    password: false
+  - name: QIWE_SOLITAIRE_PROCESSOR_ENABLED
+    description:
+      "Enable passive WeChat group solitaire activity collection; defaults to false"
+    prompt: "Enable solitaire activity processor? (true/false)"
+    password: false
+  - name: QIWE_PASSIVE_ALLOWED_GROUPS
+    description:
+      "Comma-separated QiWe group IDs allowed for passive processors; empty allows all
+      when passive processors are enabled"
+    prompt: "Passive processor allowed group IDs"
+    password: false
+  - name: QIWE_SOLITAIRE_LLM_PARSE_ENABLED
+    description:
+      "Enable Hermes ctx.llm structured parsing for WeChat solitaire activity bodies;
+      without it solitaire messages are not converted to activities"
+    prompt: "Enable solitaire LLM parsing? (true/false)"
+    password: false
+  - name: QIWE_SOLITAIRE_LLM_TIMEOUT_SECONDS
+    description: "Solitaire LLM parser request timeout in seconds; defaults to 20"
+    prompt: "Solitaire parser timeout seconds"
+    password: false
+  - name: QIWE_ACTIVE_ATTACHMENT_PREPROCESS_ENABLED
+    description:
+      "Enable active @mention attachment preprocessing before Hermes dispatch; defaults
+      to false"
+    prompt: "Enable active attachment preprocessing? (true/false)"
+    password: false
+  - name: QIWE_ACTIVITY_FEISHU_MAPPING
+    description: "Path to configurable Feishu activity field mapping JSON"
+    prompt: "Feishu activity mapping path"
+    password: false
+  - name: QINTOPIA_FEISHU_ACTIVITY_APP_ID
+    description:
+      "Dedicated Feishu activity-management app ID used only for activity table field
+      probes and live writes"
+    prompt: "Feishu activity app ID"
+    password: false
+  - name: QINTOPIA_FEISHU_ACTIVITY_APP_SECRET
+    description: "Dedicated Feishu activity-management app secret"
+    prompt: "Feishu activity app secret"
+    password: true
+  - name: QINTOPIA_FEISHU_ACTIVITY_APP_TOKEN
+    description: "Feishu Base app token for the activity plan table"
+    prompt: "Feishu activity Base app token"
+    password: false
+  - name: QINTOPIA_FEISHU_ACTIVITY_TABLE_ID
+    description: "Feishu Base table ID for the activity plan table"
+    prompt: "Feishu activity table ID"
+    password: false
+  - name: QINTOPIA_FEISHU_ACTIVITY_WRITE_ENABLE
+    description:
+      "Required extra confirmation gate for Feishu live activity writes; live writes are
+      blocked unless true"
+    prompt: "Enable Feishu activity live writes? (true/false)"
+    password: false
+  - name: QINTOPIA_FEISHU_ACTIVITY_ALLOWED_GROUPS
+    description:
+      "Comma-separated QiWe group IDs allowed to sync activities to Feishu live mode"
+    prompt: "Feishu activity allowed source groups"
+    password: false
+  - name: QINTOPIA_FEISHU_ACTIVITY_USE_HERMES_CONFIG
+    description:
+      "Opt in to reusing HERMES_HOME/config.yaml feishu app_id/app_secret for activity
+      live writes; defaults to false"
+    prompt: "Reuse Hermes Feishu app credentials for activity writes? (true/false)"
+    password: false
+  - name: QINTOPIA_FEISHU_ACTIVITY_HERMES_CONFIG
+    description:
+      "Optional explicit Hermes config.yaml path for Feishu credential fallback"
+    prompt: "Hermes config path for Feishu fallback"
+    password: false
+  - name: QIWE_ACTIVITY_REMINDER_ENABLED
+    description:
+      "Enable ActivityStore-driven group activity reminders; defaults to false"
+    prompt: "Enable activity reminders? (true/false)"
+    password: false
+  - name: QIWE_ACTIVITY_REMINDER_DRY_RUN
+    description:
+      "Record due reminder payloads without sending group messages; defaults to true"
+    prompt: "Dry-run activity reminders? (true/false)"
+    password: false
+  - name: QIWE_ACTIVITY_REMINDER_SCAN_INTERVAL_SECONDS
+    description: "Activity reminder scan interval in seconds; defaults to 60"
+    prompt: "Activity reminder scan interval seconds"
+    password: false
+  - name: QIWE_ACTIVITY_REMINDER_ALLOWED_GROUPS
+    description: "Comma-separated QiWe group IDs allowed for live activity reminders"
+    prompt: "Allowed activity reminder group IDs"
+    password: false
+  - name: QIWE_NATS_CAPTURE_ENABLED
+    description: "Enable best-effort NATS sidecar capture; defaults to false"
+    prompt: "Enable NATS capture? (true/false)"
+    password: false
+  - name: QIWE_NATS_URL
+    description: "NATS URL for sidecar capture; defaults to nats://127.0.0.1:4222"
+    prompt: "NATS URL"
+    password: false
+  - name: QIWE_NATS_RAW_SUBJECT
+    description: "NATS subject for raw QiWe webhook payloads"
+    prompt: "Raw capture subject"
+    password: false
+  - name: QIWE_NATS_MESSAGE_SUBJECT
+    description: "NATS subject for normalized QiWe message events"
+    prompt: "Message capture subject"
+    password: false
+  - name: QIWE_NATS_CAPTURE_TIMEOUT_SECONDS
+    description: "Per-publish NATS capture timeout; defaults to 0.5"
+    prompt: "NATS capture timeout seconds"
+    password: false

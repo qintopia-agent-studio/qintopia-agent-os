@@ -67,7 +67,7 @@ and future programming agents.
 | M1 inventory                | Complete    | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
 | M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                 |
 | M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
-| M4 first skill adoption     | In progress | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
+| M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
 | M5 runtime sidecar adoption | Not started | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M6 agents adoption          | Not started | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
 | M7 WorkTool decommission    | Not started | WorkTool references classified and either deprecated or removed                                                    |
@@ -124,6 +124,13 @@ and future programming agents.
   - recorded read-only review of the server QiWe backup file
   - verified the current source repository with
     `python3 -m unittest discover -s tests -v`
+- Completed M4 first skill adoption by importing `../qiwei-hermes-plugin@6f69794` into
+  `skills/qiwe`:
+  - imported plugin source, `plugin.yaml`, docs, scripts, fixtures, and tests
+  - excluded `.git`, source README/AGENTS, caches, `.DS_Store`, and runtime state
+  - added `skills/qiwe/docs/source-snapshot.md`
+  - added `pnpm test:qiwe` and wired it into `pnpm check`
+  - verified package-local tests with `pnpm test:qiwe`
 
 ## Update Rule
 
@@ -135,7 +142,8 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Complete M4B by importing `../qiwei-hermes-plugin` source, docs, fixtures, and tests
-   into `skills/qiwe` while excluding caches and runtime state.
-2. Keep QiWe unit tests passing from the package location.
-3. Add inventory validation after M2 registry checks have settled.
+1. Start M5 runtime sidecar adoption by splitting `../qintopia-message-sidecar` into
+   runtime, MCP, workflow, and deploy package contracts.
+2. Add inventory validation after M2 registry checks have settled.
+3. Add deploy smoke and rollback notes before any production wiring changes for
+   `skills/qiwe`.

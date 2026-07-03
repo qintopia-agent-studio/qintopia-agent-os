@@ -1,0 +1,10 @@
+{
+  "fromUser": "7881300111925221",
+  "toUser": "1688857683805864",
+  "fromGroup": "10789255155259073",
+  "baseMsgType": "VX_NORMAL",
+  "commonMsgType": "TEXT_ALT",
+  "eventCode": "group_msg_event",
+  "content": "我之前买的team号 9块钱还带质保 不过 这商家太厚道 干不下去了 不干了[捂脸]",
+  "data": "{\"TenantId\":0,\"base64RawData\":\"CmQIABJgCl7miJHkuYvliY3kubDnmoR0ZWFt5Y+3IDnlnZfpkrHov5jluKbotKjkv50g5LiN6L+HIOi/meWVhuWutuWkquWOmumBkyDlubLkuI3kuIvljrvkuoYg5LiN5bmy5LqGCg4IAxIKCghb5o2C6IS4XQ==\",\"cmd\":15000,\"customParam\":\"\",\"fromRoomId\":10789255155259073,\"guid\":\"91355723-5CA4-46C3-A2E9-1E3434C51DF3\",\"isRoomNotice\":1,\"msgData\":{\"atList\":[],\"content\":\"我之前买的team号 9块钱还带质保 不过 这商家太厚道 干不下去了 不干了[捂脸]\",\"moreDetail\":[{\"subtype\":0,\"text\":\"我之前买的team号 9块钱还带质保 不过 这商家太厚道 干不下去了 不干了\"},{\"subtype\":3,\"text\":\"[捂脸]\"}],\"reply\":{}},\"msgServerId\":1001381,\"msgType\":2,\"msgUniqueIdentifier\":\"3356665448929586116\",\"receiverId\":1688857683805864,\"referId\":0,\"requestId\":\"c6ef01d15fa9950d95a9a36d822f259b\",\"senderId\":7881300111925221,\"senderName\":\"\",\"seq\":4891049,\"timestamp\":1780136661,\"userId\":\"1688857683805864\",\"newMsgType\":\"TEXT_ALT\"}"
+}
