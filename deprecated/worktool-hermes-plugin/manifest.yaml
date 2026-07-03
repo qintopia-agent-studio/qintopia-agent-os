@@ -1,0 +1,29 @@
+id: deprecated/worktool-hermes-plugin
+type: deprecated
+name: WorkTool Hermes Plugin
+owner: TBD
+status: deprecated
+risk_level: medium
+description: Historical Hermes plugin for WorkTool kept only for migration audit.
+source:
+  path: ../worktool-hermes-plugin
+  reference: 04e95e1556cb820f5630a0f4781073cddf23c4f4
+  disposition: deprecated
+production_boundary:
+  external_sends: true
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm policy:check
+dependencies:
+  - deprecated/worktool
+tags:
+  - deprecated
+  - worktool
+  - hermes-plugin
+  - audit-only
+next_actions:
+  - Keep as audit-only reference unless owner approves full removal.
+  - Do not use for new Agent OS channel work.

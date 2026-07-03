@@ -35,12 +35,12 @@ Agent OS sidecar workers, Postgres, NATS, Feishu, knowledge stores
 
 ## Known Deprecated Or Legacy Areas
 
-| Area                                        | Direction                                                    |
-| ------------------------------------------- | ------------------------------------------------------------ |
-| WorkTool gateway and WorkTool Hermes plugin | Deprecate or remove after reference audit                    |
-| OpenClaw QiWe adapter                       | Keep only as rollback/audit reference until owner retires it |
-| Hermes Kanban                               | Do not build new workflows on it                             |
-| Server-local one-off copies                 | Inventory first; do not copy wholesale into git              |
+| Area                                        | Direction                                                                                            |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| WorkTool gateway and WorkTool Hermes plugin | Registered under `deprecated/`; remove only after owner-approved cleanup                             |
+| OpenClaw QiWe adapter                       | Registered under `deprecated/openclaw`; keep only as rollback/audit reference until owner retires it |
+| Hermes Kanban                               | Do not build new workflows on it                                                                     |
+| Server-local one-off copies                 | Inventory first; do not copy wholesale into git                                                      |
 
 ## Server Handling Rules
 

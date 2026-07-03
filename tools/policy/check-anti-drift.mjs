@@ -171,6 +171,20 @@ const domainRegistries = [
   "registry/deprecated.yaml",
 ];
 
+const deprecatedRegistry = readYaml("registry/deprecated.yaml");
+const deprecatedIds = new Set(
+  (deprecatedRegistry.entries ?? []).map((entry) => entry.id)
+);
+for (const requiredDeprecatedId of [
+  "deprecated/worktool",
+  "deprecated/worktool-hermes-plugin",
+  "deprecated/openclaw",
+]) {
+  if (!deprecatedIds.has(requiredDeprecatedId)) {
+    addError(`registry/deprecated.yaml: missing ${requiredDeprecatedId}`);
+  }
+}
+
 for (const registryPath of domainRegistries) {
   const registry = readYaml(registryPath);
   for (const entry of registry.entries ?? []) {

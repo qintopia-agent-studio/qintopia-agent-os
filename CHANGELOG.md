@@ -44,6 +44,8 @@ become versioned.
 - Added `pnpm test:sidecar` and `pnpm smoke:sidecar`.
 - Added a sidecar monorepo cutover plan under `deploy/sidecar/docs/`.
 - Added `pnpm policy:check` and M5.5 anti-drift policy documentation.
+- Added deprecated package records and a decommission plan for WorkTool, WorkTool Hermes
+  plugin, and OpenClaw.
 
 ### Changed
 
@@ -65,3 +67,4 @@ become versioned.
 - Marked the migrated sidecar deploy script as a legacy snapshot rather than the current
   monorepo-native production deploy entrypoint.
 - Wired anti-drift policy checks into `pnpm check`.
+- Marked M7 WorkTool decommission in progress and registered deprecated audit packages.

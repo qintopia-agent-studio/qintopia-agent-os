@@ -1,3 +1,18 @@
 registry_version: 1
 domain: deprecated
-entries: []
+entries:
+  - id: deprecated/worktool
+    path: deprecated/worktool
+    manifest: deprecated/worktool/manifest.yaml
+    status: deprecated
+    notes: Historical WorkTool Android and gateway material kept for decommission audit.
+  - id: deprecated/worktool-hermes-plugin
+    path: deprecated/worktool-hermes-plugin
+    manifest: deprecated/worktool-hermes-plugin/manifest.yaml
+    status: deprecated
+    notes: Historical WorkTool Hermes plugin kept for migration audit.
+  - id: deprecated/openclaw
+    path: deprecated/openclaw
+    manifest: deprecated/openclaw/manifest.yaml
+    status: deprecated
+    notes: Legacy QiWe rollback adapter kept as rollback or audit reference.

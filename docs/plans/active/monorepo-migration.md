@@ -71,7 +71,7 @@ and future programming agents.
 | M5 runtime sidecar adoption | In progress | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
 | M6 agents adoption          | Not started | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
-| M7 WorkTool decommission    | Not started | WorkTool references classified and either deprecated or removed                                                    |
+| M7 WorkTool decommission    | In progress | WorkTool references classified and either deprecated or removed                                                    |
 | M8 CI/CD deployment gate    | Not started | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
 | M9 server cutover           | Not started | server deploys reviewed commit SHA from this repo with smoke and rollback                                          |
 
@@ -177,6 +177,22 @@ and future programming agents.
   - enforce sidecar deploy script as a legacy snapshot before M9 cutover
   - enforce Postgres migration and data-design note consistency
   - verified `pnpm policy:check`
+- Started M7 WorkTool decommission:
+  - confirmed local `../worktool` exists at `b95e746e0254894705bc63051937a3afbf4013c1`
+    and is ahead of `origin/master` by 1 commit, so it remains audit-only
+  - confirmed local `../worktool-hermes-plugin` exists at
+    `04e95e1556cb820f5630a0f4781073cddf23c4f4`
+  - confirmed server directories still exist for `/home/ubuntu/worktool-gateway`,
+    `/home/ubuntu/.hermes/profiles/xiaoqin`,
+    `/home/ubuntu/.hermes/profiles/xiaoqin/plugins/worktool-platform`, and
+    `/opt/qiwe-openclaw-adapter`
+  - confirmed read-only service scan found no matching `worktool`, `xiaoqin`, or
+    `openclaw` systemd service or timer
+  - added deprecated package records for `deprecated/worktool`,
+    `deprecated/worktool-hermes-plugin`, and `deprecated/openclaw`
+  - added `deprecated/worktool/decommission-plan.md`
+  - registered the deprecated packages in `registry/deprecated.yaml`
+  - extended `pnpm policy:check` to require these deprecated package records
 
 ## Update Rule
 
@@ -188,8 +204,10 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
+1. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
+   server WorkTool/OpenClaw directories as retained audit archives.
+2. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-2. Decide whether to move next into M6 agents adoption or M7 WorkTool decommission.
-3. Add deploy smoke and rollback notes before any production wiring changes for
+3. Decide whether to move next into M6 agents adoption after M7 cleanup classification.
+4. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.
