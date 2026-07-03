@@ -16,6 +16,8 @@ production_boundary:
   secrets: true
 validation:
   commands:
+    - pnpm check
+    - pnpm deploy:preflight
     - cargo test --manifest-path runtime/sidecar/Cargo.toml
     - pnpm smoke:sidecar
 dependencies:

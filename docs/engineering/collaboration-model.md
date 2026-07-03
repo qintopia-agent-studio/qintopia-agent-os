@@ -43,17 +43,18 @@ Every PR should state whether it touches:
 
 Docs-only PRs should still run `pnpm check`.
 
-## CI/CD Direction
+## CI/CD Gate
 
-The initial CI gate runs repository formatting and Markdown linting. As packages are
-adopted, CI should grow in this order:
+The current CI gate runs the repository check path:
 
-1. manifest and registry validation
-2. package-level tests and fixture replay
-3. secret scanning
-4. build checks for runtime packages
-5. deploy dry-run checks
-6. smoke checks for production-adjacent packages
+- formatting and Markdown linting
+- manifest and registry validation
+- package-level checks and fixture-backed smoke checks
+- anti-drift policy checks
+- secret and runtime-state scanning
+- deployment preflight checks
 
 Release jobs should deploy a reviewed commit SHA. They should not copy local uncommitted
 files or hot-edit server checkouts.
+
+See [ci-cd-gates.md](ci-cd-gates.md) for the executable gate list.

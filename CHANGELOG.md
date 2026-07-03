@@ -51,6 +51,11 @@ become versioned.
 - Added M6.1 Agent profile templates, per-Agent capability notes, runtime notes, and an
   Agent capability matrix.
 - Added `pnpm agents:check` for active Agent package and profile template validation.
+- Added `pnpm secrets:check` for secret and runtime-state scanning.
+- Added `pnpm deploy:preflight` and `pnpm deploy:preflight:ci` for non-mutating
+  deployment gate validation.
+- Added CI/CD gate documentation for repository checks, secret scanning, deployment
+  preflight, and production-adjacent PR evidence.
 
 ### Changed
 
@@ -77,3 +82,7 @@ become versioned.
   contracts.
 - Extended anti-drift policy checks to block live Hermes runtime state under `agents/*`.
 - Marked M6 Agent adoption complete.
+- Wired secret scanning and CI-safe deployment preflight into `pnpm check`.
+- Strengthened GitHub Actions CI to install Node.js, pnpm, Python, and Rust before
+  running the full repository check path.
+- Marked M8 CI/CD deployment gate complete.

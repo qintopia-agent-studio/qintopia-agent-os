@@ -30,7 +30,7 @@
 
 - 安装依赖：`pnpm install`
 - 格式化：`pnpm format`
-- 检查格式和 Markdown：`pnpm check`
+- 仓库级检查：`pnpm check`
 - Markdown lint：`pnpm lint:md`
 
 搜索文件和文本时使用 `rg` 和 `rg --files`。

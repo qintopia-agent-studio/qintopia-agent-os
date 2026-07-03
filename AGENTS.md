@@ -30,7 +30,7 @@
 
 - Install dependencies: `pnpm install`
 - Format: `pnpm format`
-- Check formatting and Markdown: `pnpm check`
+- Repository check: `pnpm check`
 - Markdown lint: `pnpm lint:md`
 
 Use `rg` and `rg --files` for search.

@@ -14,6 +14,8 @@ reviewed, migrated, and deployed.
 - [anti-drift-policy.md](anti-drift-policy.md): executable guardrails that keep
   deprecated paths, review-pool work, and legacy deploy scripts from becoming approved
   direction accidentally.
+- [ci-cd-gates.md](ci-cd-gates.md): repository checks, secret scanning, deployment
+  preflight, and CI requirements.
 - [server-change-policy.md](server-change-policy.md): allowed and disallowed server
   activity.
 

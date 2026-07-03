@@ -72,7 +72,7 @@ and future programming agents.
 | M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
 | M6 agents adoption          | Complete    | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
 | M7 WorkTool decommission    | In progress | WorkTool references classified and either deprecated or removed                                                    |
-| M8 CI/CD deployment gate    | Not started | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
+| M8 CI/CD deployment gate    | Complete    | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
 | M9 server cutover           | Not started | server deploys reviewed commit SHA from this repo with smoke and rollback                                          |
 
 ## Progress Log
@@ -224,6 +224,15 @@ and future programming agents.
     `docs/source-snapshot.md`
   - required `profile.template.yaml` to declare dry-run expectations
   - kept `xiaoqin` out of active Agents and `huabaosi` in draft/review-pool
+- Completed M8 CI/CD deployment gate:
+  - added `tools/security/check-secrets.mjs` and `pnpm secrets:check`
+  - added `tools/deploy/preflight.mjs`, `pnpm deploy:preflight`, and
+    `pnpm deploy:preflight:ci`
+  - wired secret scanning and CI-safe deployment preflight into `pnpm check`
+  - strengthened GitHub Actions to install Node.js, pnpm, Python, and Rust before
+    running `pnpm check`
+  - added `docs/engineering/ci-cd-gates.md` and linked it from engineering docs
+  - kept deployment preflight non-mutating; actual server cutover remains M9
 
 ## Update Rule
 
@@ -235,11 +244,11 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Move to M8 by adding CI deployment gates around `pnpm check`, secret scanning, and
-   deploy preflight rules.
-2. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
+1. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
    server WorkTool/OpenClaw directories as retained audit archives.
-3. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
+2. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
+3. Prepare M9 server cutover only after a reviewed commit SHA passes CI and
+   `pnpm deploy:preflight`.
 4. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.
