@@ -11,6 +11,9 @@ reviewed, migrated, and deployed.
   and placement rules.
 - [migration-policy.md](migration-policy.md): migration dispositions, required migration
   records, and WorkTool cleanup policy.
+- [anti-drift-policy.md](anti-drift-policy.md): executable guardrails that keep
+  deprecated paths, review-pool work, and legacy deploy scripts from becoming approved
+  direction accidentally.
 - [server-change-policy.md](server-change-policy.md): allowed and disallowed server
   activity.
 
@@ -21,3 +24,5 @@ reviewed, migrated, and deployed.
   [../plans/active/monorepo-migration.md](../plans/active/monorepo-migration.md).
 - Put source inventories and runtime evidence under [../operations/](../operations/).
 - Add executable checks when package changes make that practical.
+- Add anti-drift policy checks when a migration boundary must be enforced for all future
+  contributors.

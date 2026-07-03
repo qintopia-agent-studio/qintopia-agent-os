@@ -43,6 +43,7 @@ become versioned.
   workflow docs, deploy runbook, and smoke scripts.
 - Added `pnpm test:sidecar` and `pnpm smoke:sidecar`.
 - Added a sidecar monorepo cutover plan under `deploy/sidecar/docs/`.
+- Added `pnpm policy:check` and M5.5 anti-drift policy documentation.
 
 ### Changed
 
@@ -63,3 +64,4 @@ become versioned.
 - Wired sidecar tests and no-credential sidecar smokes into `pnpm check`.
 - Marked the migrated sidecar deploy script as a legacy snapshot rather than the current
   monorepo-native production deploy entrypoint.
+- Wired anti-drift policy checks into `pnpm check`.

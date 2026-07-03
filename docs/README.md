@@ -17,14 +17,16 @@ and the local historical documents that still contain useful design evidence.
    [engineering/collaboration-model.md](engineering/collaboration-model.md)
 6. Package contract: [engineering/package-contract.md](engineering/package-contract.md)
 7. Migration policy: [engineering/migration-policy.md](engineering/migration-policy.md)
-8. Server change policy:
+8. Anti-drift policy:
+   [engineering/anti-drift-policy.md](engineering/anti-drift-policy.md)
+9. Server change policy:
    [engineering/server-change-policy.md](engineering/server-change-policy.md)
-9. Source document inventory:
-   [operations/source-document-inventory.md](operations/source-document-inventory.md)
-10. M1 source inventory:
+10. Source document inventory:
+    [operations/source-document-inventory.md](operations/source-document-inventory.md)
+11. M1 source inventory:
     [operations/inventory/README.md](operations/inventory/README.md)
-11. Reports index: [reports/README.md](reports/README.md)
-12. Active migration plan:
+12. Reports index: [reports/README.md](reports/README.md)
+13. Active migration plan:
     [plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
 
 ## Directory Map

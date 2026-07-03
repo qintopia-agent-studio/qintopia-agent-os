@@ -69,6 +69,7 @@ and future programming agents.
 | M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
 | M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
 | M5 runtime sidecar adoption | In progress | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
+| M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
 | M6 agents adoption          | Not started | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
 | M7 WorkTool decommission    | Not started | WorkTool references classified and either deprecated or removed                                                    |
 | M8 CI/CD deployment gate    | Not started | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
@@ -166,6 +167,16 @@ and future programming agents.
   current monorepo-native production deploy entrypoint.
 - Added `deploy/sidecar/docs/monorepo-cutover-plan.md` to capture the M9 server cutover
   sequence, preconditions, validation, rollback, and Huabaosi shadow branch boundary.
+- Completed M5.5 anti-drift guardrails:
+  - added `tools/policy/check-anti-drift.mjs`
+  - added `pnpm policy:check` and wired it into `pnpm check`
+  - added `docs/engineering/anti-drift-policy.md`
+  - enforce WorkTool/Xiaoqin deprecation boundaries in inventory and active package
+    sources
+  - enforce Huabaosi shadow work as review-pool unless owner-approved
+  - enforce sidecar deploy script as a legacy snapshot before M9 cutover
+  - enforce Postgres migration and data-design note consistency
+  - verified `pnpm policy:check`
 
 ## Update Rule
 
@@ -179,6 +190,6 @@ Every migration PR must update:
 
 1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-2. Add inventory validation after M2 registry checks have settled.
+2. Decide whether to move next into M6 agents adoption or M7 WorkTool decommission.
 3. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.
