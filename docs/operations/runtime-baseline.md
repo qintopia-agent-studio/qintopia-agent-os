@@ -26,6 +26,7 @@ Agent OS sidecar workers, Postgres, NATS, Feishu, knowledge stores
 | Area               | Current role                                         | Migration direction                                             |
 | ------------------ | ---------------------------------------------------- | --------------------------------------------------------------- |
 | Hermes gateways    | Profile-bound Agent runtime services                 | Convert config and units to templates                           |
+| Agent profiles     | Active runtime identities and Agent behavior         | Registered under `agents/*`; copy only reviewed templates       |
 | Erhua QiWe adapter | Current QiWe production path                         | First skill adoption candidate through `skills/qiwe`            |
 | Message sidecar    | Message capture, data workers, context/MCP functions | Split across `runtime/sidecar`, `mcp/`, `workflows/`, `deploy/` |
 | Postgres           | Data plane and fact store                            | Keep schemas and migrations under git                           |

@@ -171,6 +171,26 @@ const domainRegistries = [
   "registry/deprecated.yaml",
 ];
 
+const agentsRegistry = readYaml("registry/agents.yaml");
+const agentIds = new Set((agentsRegistry.entries ?? []).map((entry) => entry.id));
+for (const requiredAgentId of [
+  "agents/default",
+  "agents/erhua",
+  "agents/xiaoman",
+  "agents/wenyuange",
+  "agents/silaoshi",
+  "agents/guanerye",
+  "agents/huabaosi",
+]) {
+  if (!agentIds.has(requiredAgentId)) {
+    addError(`registry/agents.yaml: missing ${requiredAgentId}`);
+  }
+}
+
+if (agentIds.has("agents/xiaoqin")) {
+  addError("registry/agents.yaml: xiaoqin must not be registered as an active Agent");
+}
+
 const deprecatedRegistry = readYaml("registry/deprecated.yaml");
 const deprecatedIds = new Set(
   (deprecatedRegistry.entries ?? []).map((entry) => entry.id)

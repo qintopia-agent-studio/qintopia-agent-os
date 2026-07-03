@@ -1,0 +1,35 @@
+id: agents/wenyuange
+type: agent
+name: Wenyuange
+owner: TBD
+status: adopting
+risk_level: medium
+description:
+  Knowledge, evidence, source-evaluation, and disclosure-filtering Agent for traceable
+  internal answers and workflow evidence.
+source:
+  path: /home/ubuntu/.hermes/profiles/wenyuange
+  reference: runtime-state-2026-07-03-read-only
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm smoke:sidecar
+    - pnpm registry:check
+    - pnpm policy:check
+dependencies:
+  - mcp/context-server
+  - mcp/message-store
+  - runtime/sidecar
+tags:
+  - agent
+  - knowledge
+  - evidence
+  - hermes-profile
+next_actions:
+  - Convert approved knowledge and disclosure rules into reviewed templates.
+  - Keep raw message and member data behind controlled MCP and disclosure filters.

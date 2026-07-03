@@ -46,6 +46,8 @@ become versioned.
 - Added `pnpm policy:check` and M5.5 anti-drift policy documentation.
 - Added deprecated package records and a decommission plan for WorkTool, WorkTool Hermes
   plugin, and OpenClaw.
+- Added M6 Agent package contracts for `default`, `erhua`, `xiaoman`, `wenyuange`,
+  `silaoshi`, `guanerye`, and `huabaosi`.
 
 ### Changed
 
@@ -68,3 +70,5 @@ become versioned.
   monorepo-native production deploy entrypoint.
 - Wired anti-drift policy checks into `pnpm check`.
 - Marked M7 WorkTool decommission in progress and registered deprecated audit packages.
+- Marked M6 active Agents adoption in progress and registered the active Agent package
+  contracts.

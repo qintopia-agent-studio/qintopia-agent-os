@@ -1,0 +1,36 @@
+id: agents/erhua
+type: agent
+name: Erhua
+owner: TBD
+status: adopting
+risk_level: high
+description:
+  QiWe/WeCom front-office Agent for controlled group replies, consultation intake,
+  handoff, and trainer memory submission.
+source:
+  path: /home/ubuntu/.hermes/profiles/erhua
+  reference: runtime-state-2026-07-03-read-only
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm test:qiwe
+    - pnpm registry:check
+    - pnpm policy:check
+dependencies:
+  - skills/qiwe
+  - mcp/context-server
+  - mcp/message-store
+  - runtime/sidecar
+tags:
+  - agent
+  - qiwe
+  - front-office
+  - hermes-profile
+next_actions:
+  - Convert non-secret SOUL and config behavior into reviewed templates.
+  - Keep trainer memory in audited Postgres-backed overlays, not free-form prompt edits.

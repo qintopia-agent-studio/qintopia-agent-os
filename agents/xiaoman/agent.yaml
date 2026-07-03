@@ -1,0 +1,33 @@
+id: agents/xiaoman
+type: agent
+name: Xiaoman
+owner: TBD
+status: adopting
+risk_level: medium
+description:
+  Activity and community-event operations Agent that creates governed work items from
+  structured signals and human-confirmed inputs.
+source:
+  path: /home/ubuntu/.hermes/profiles/xiaoman
+  reference: runtime-state-2026-07-03-read-only
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm smoke:sidecar
+    - pnpm registry:check
+    - pnpm policy:check
+dependencies:
+  - workflows/activity-promotion
+  - runtime/sidecar
+tags:
+  - agent
+  - activity-ops
+  - hermes-profile
+next_actions:
+  - Convert approved profile behavior into reviewed templates.
+  - Split reusable event-signal and activity-source behavior into workflow packages.

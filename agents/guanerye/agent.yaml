@@ -1,0 +1,32 @@
+id: agents/guanerye
+type: agent
+name: Guanerye
+owner: TBD
+status: adopting
+risk_level: high
+description:
+  Engineering automation and technical analysis Agent for plans, dry-runs, validation,
+  rollback, and handoff material.
+source:
+  path: /home/ubuntu/.hermes/profiles/guanerye
+  reference: runtime-state-2026-07-03-read-only
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm registry:check
+    - pnpm policy:check
+dependencies:
+  - runtime/sidecar
+tags:
+  - agent
+  - engineering
+  - automation
+  - hermes-profile
+next_actions:
+  - Convert approved engineering automation rules into reviewed templates.
+  - Keep production-change approval requirements explicit in all runbooks.

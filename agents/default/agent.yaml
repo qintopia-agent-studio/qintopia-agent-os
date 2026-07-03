@@ -1,0 +1,31 @@
+id: agents/default
+type: agent
+name: Default Dispatcher
+owner: TBD
+status: adopting
+risk_level: high
+description:
+  Global Hermes fallback and future dispatcher profile for routing, coordination, and
+  escalation.
+source:
+  path: /home/ubuntu/.hermes
+  reference: runtime-state-2026-07-03-read-only
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm registry:check
+    - pnpm policy:check
+dependencies:
+  - runtime/sidecar
+tags:
+  - agent
+  - dispatcher
+  - hermes-profile
+next_actions:
+  - Split dispatcher rules from runtime state before any production cutover.
+  - Add a dry-run routing smoke before enabling new workflows through default.

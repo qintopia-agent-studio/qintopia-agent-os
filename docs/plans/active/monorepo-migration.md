@@ -70,7 +70,7 @@ and future programming agents.
 | M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
 | M5 runtime sidecar adoption | In progress | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
-| M6 agents adoption          | Not started | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
+| M6 agents adoption          | In progress | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
 | M7 WorkTool decommission    | In progress | WorkTool references classified and either deprecated or removed                                                    |
 | M8 CI/CD deployment gate    | Not started | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
 | M9 server cutover           | Not started | server deploys reviewed commit SHA from this repo with smoke and rollback                                          |
@@ -193,6 +193,20 @@ and future programming agents.
   - added `deprecated/worktool/decommission-plan.md`
   - registered the deprecated packages in `registry/deprecated.yaml`
   - extended `pnpm policy:check` to require these deprecated package records
+- Started M6 active agents adoption:
+  - confirmed server runtime profiles exist for `default`, `erhua`, `xiaoman`,
+    `wenyuange`, `silaoshi`, `guanerye`, `huabaosi`, and deprecated `xiaoqin`
+  - confirmed active Hermes user services for `default`, `erhua`, `xiaoman`,
+    `wenyuange`, `silaoshi`, `guanerye`, and `huabaosi`
+  - added agent package contracts for `agents/default`, `agents/erhua`,
+    `agents/xiaoman`, `agents/wenyuange`, `agents/silaoshi`, `agents/guanerye`, and
+    `agents/huabaosi`
+  - kept `agents/huabaosi` as draft/review-pool for source disposition because Huabaosi
+    shadow/Rust material remains unapproved
+  - did not register `xiaoqin` as an active Agent package
+  - registered the Agent packages in `registry/agents.yaml`
+  - extended `pnpm policy:check` to require active Agent records and block
+    `agents/xiaoqin`
 
 ## Update Rule
 
@@ -204,10 +218,11 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
+1. Continue M6 by converting approved non-secret SOUL/config behavior into reviewed
+   profile templates for each active Agent.
+2. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
    server WorkTool/OpenClaw directories as retained audit archives.
-2. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
+3. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-3. Decide whether to move next into M6 agents adoption after M7 cleanup classification.
 4. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.

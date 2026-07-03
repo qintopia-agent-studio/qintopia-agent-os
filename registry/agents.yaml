@@ -1,3 +1,38 @@
 registry_version: 1
 domain: agents
-entries: []
+entries:
+  - id: agents/default
+    path: agents/default
+    manifest: agents/default/agent.yaml
+    status: adopting
+    notes: Global Hermes fallback and future dispatcher profile.
+  - id: agents/erhua
+    path: agents/erhua
+    manifest: agents/erhua/agent.yaml
+    status: adopting
+    notes: QiWe front-office Agent package contract.
+  - id: agents/xiaoman
+    path: agents/xiaoman
+    manifest: agents/xiaoman/agent.yaml
+    status: adopting
+    notes: Activity and community-event operations Agent package contract.
+  - id: agents/wenyuange
+    path: agents/wenyuange
+    manifest: agents/wenyuange/agent.yaml
+    status: adopting
+    notes: Knowledge, evidence, and disclosure-filtering Agent package contract.
+  - id: agents/silaoshi
+    path: agents/silaoshi
+    manifest: agents/silaoshi/agent.yaml
+    status: adopting
+    notes: Community operations Agent package contract.
+  - id: agents/guanerye
+    path: agents/guanerye
+    manifest: agents/guanerye/agent.yaml
+    status: adopting
+    notes: Engineering automation and technical analysis Agent package contract.
+  - id: agents/huabaosi
+    path: agents/huabaosi
+    manifest: agents/huabaosi/agent.yaml
+    status: draft
+    notes: Visual asset Agent contract; shadow/Rust material remains review-pool.

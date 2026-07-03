@@ -1,0 +1,31 @@
+id: agents/silaoshi
+type: agent
+name: Silaoshi
+owner: TBD
+status: adopting
+risk_level: medium
+description:
+  Community operations Agent for SOPs, activity plans, internal checklists, follow-up
+  templates, and operations summaries.
+source:
+  path: /home/ubuntu/.hermes/profiles/silaoshi
+  reference: runtime-state-2026-07-03-read-only
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm registry:check
+    - pnpm policy:check
+dependencies:
+  - runtime/sidecar
+tags:
+  - agent
+  - community-ops
+  - hermes-profile
+next_actions:
+  - Classify scheduled scripts by workflow and external-send risk.
+  - Move approved reusable operations jobs into workflow packages before deployment.

@@ -9,8 +9,9 @@ profiles:
       path: /home/ubuntu/.hermes
       kind: hermes-profile-root
       reference: runtime-state
-    disposition: runtime-only
+    disposition: template
     target:
+      - agents/default
       - runtime/hermes
     owner: TBD
     risk_level: high
@@ -22,6 +23,7 @@ profiles:
       secrets: true
     next_action:
       - inventory non-secret config templates only
+      - split dispatcher behavior into agents/default
 
   - id: profile.erhua
     source:
