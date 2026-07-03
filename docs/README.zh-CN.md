@@ -16,8 +16,9 @@ OS 的文档入口，用来串联当前 monorepo 结构、服务器上只读盘�
 7. 迁移规则：[engineering/migration-policy.md](engineering/migration-policy.md)
 8. 服务器变更规则：[engineering/server-change-policy.md](engineering/server-change-policy.md)
 9. 源文档盘点：[operations/source-document-inventory.md](operations/source-document-inventory.md)
-10. 报告索引：[reports/README.md](reports/README.md)
-11. 当前迁移计划：[plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
+10. M1 来源盘点：[operations/inventory/README.md](operations/inventory/README.md)
+11. 报告索引：[reports/README.md](reports/README.md)
+12. 当前迁移计划：[plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
 
 ## 目录地图
 

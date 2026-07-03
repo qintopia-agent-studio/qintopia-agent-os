@@ -1,0 +1,256 @@
+inventory_version: 1
+inventory_date: "2026-07-03"
+scope: server-runtime-assets
+server: ubuntu@122.51.77.220
+mode: read-only
+profiles:
+  - id: profile.default
+    source:
+      path: /home/ubuntu/.hermes
+      kind: hermes-profile-root
+      reference: runtime-state
+    disposition: runtime-only
+    target:
+      - runtime/hermes
+    owner: TBD
+    risk_level: high
+    plugins: []
+    scripts: []
+    production_boundary:
+      external_sends: possible
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - inventory non-secret config templates only
+
+  - id: profile.erhua
+    source:
+      path: /home/ubuntu/.hermes/profiles/erhua
+      kind: hermes-profile
+      reference: runtime-state
+    disposition: template
+    target:
+      - agents/erhua
+      - skills/qiwe
+      - skills/qintopia-tools
+      - skills/qintopia-weather
+      - runtime/hermes
+    owner: TBD
+    risk_level: high
+    plugins:
+      - qiwe-platform
+      - qintopia-tools
+    scripts:
+      - check-dify-kb.sh
+      - qintopia-erhua-weather-broadcast.py
+      - qintopia-erhua-weather-context.py
+      - qintopia-erhua-nightly-reminder.py
+    production_boundary:
+      external_sends: true
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - convert SOUL/config/script behavior into templates after secret stripping
+      - adopt qiwe-platform through skills/qiwe first
+      - split weather scripts into skills/qintopia-weather
+
+  - id: profile.xiaoman
+    source:
+      path: /home/ubuntu/.hermes/profiles/xiaoman
+      kind: hermes-profile
+      reference: runtime-state
+    disposition: template
+    target:
+      - agents/xiaoman
+      - skills/qintopia-tools
+      - workflows/xiaoman-activity-signal
+    owner: TBD
+    risk_level: medium
+    plugins:
+      - qintopia-tools
+    scripts: []
+    production_boundary:
+      external_sends: possible
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - inventory qintopia-tools profile differences before shared adoption
+
+  - id: profile.wenyuange
+    source:
+      path: /home/ubuntu/.hermes/profiles/wenyuange
+      kind: hermes-profile
+      reference: runtime-state
+    disposition: template
+    target:
+      - agents/wenyuange
+      - skills/knowledge-retrieval
+      - skills/qintopia-tools
+    owner: TBD
+    risk_level: medium
+    plugins:
+      - qintopia-tools
+    scripts: []
+    production_boundary:
+      external_sends: false
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - preserve knowledge and disclosure boundaries in agent package
+      - inventory qintopia-tools profile differences
+
+  - id: profile.silaoshi
+    source:
+      path: /home/ubuntu/.hermes/profiles/silaoshi
+      kind: hermes-profile
+      reference: runtime-state
+    disposition: template
+    target:
+      - agents/silaoshi
+      - workflows/silaoshi-daily-ops
+      - runtime/hermes
+    owner: TBD
+    risk_level: medium
+    plugins: []
+    scripts:
+      - silaoshi_auto_resident_onboarding.py
+      - silaoshi_prod_midautumn_holiday_group.py
+      - silaoshi_prod_daily_check_group.py
+      - silaoshi_prod_nationalday_holiday_group.py
+      - silaoshi_prod_thursday_rest_group.py
+      - silaoshi_prod_daily_brief_group.py
+      - silaoshi_prod_weekly_report_group.py
+    production_boundary:
+      external_sends: true
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - classify scheduled scripts by workflow and external-send risk
+
+  - id: profile.guanerye
+    source:
+      path: /home/ubuntu/.hermes/profiles/guanerye
+      kind: hermes-profile
+      reference: runtime-state
+    disposition: template
+    target:
+      - agents/guanerye
+      - workflows/activity-promotion
+      - runtime/hermes
+    owner: TBD
+    risk_level: high
+    plugins: []
+    scripts:
+      - send_promo_reminder.sh
+    production_boundary:
+      external_sends: true
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - review production-operation boundaries before adoption
+
+  - id: profile.huabaosi
+    source:
+      path: /home/ubuntu/.hermes/profiles/huabaosi
+      kind: hermes-profile
+      reference: runtime-state
+    disposition: review-pool
+    target:
+      - agents/huabaosi
+      - workflows/visual-asset-request
+      - skills/feishu-base
+    owner: TBD
+    risk_level: medium
+    plugins:
+      - qintopia-base-read
+    scripts: []
+    production_boundary:
+      external_sends: false
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - separate approved Huabaosi profile behavior from unapproved Rust/shadow work
+      - inventory qintopia-base-read before adoption
+
+  - id: profile.xiaoqin
+    source:
+      path: /home/ubuntu/.hermes/profiles/xiaoqin
+      kind: hermes-profile
+      reference: runtime-state
+    disposition: deprecated
+    target:
+      - deprecated/worktool
+      - deprecated/worktool-hermes-plugin
+    owner: TBD
+    risk_level: medium
+    plugins:
+      - worktool-platform
+      - qintopia-tools
+    scripts: []
+    production_boundary:
+      external_sends: possible
+      runtime_profile: true
+      secrets: true
+    next_action:
+      - do not migrate as active Agent scope
+      - keep only audit or decommission notes
+
+services:
+  - id: service.hermes-gateways
+    source:
+      kind: systemd-user-services
+      names:
+        - hermes-gateway.service
+        - hermes-gateway-erhua.service
+        - hermes-gateway-xiaoman.service
+        - hermes-gateway-wenyuange.service
+        - hermes-gateway-silaoshi.service
+        - hermes-gateway-guanerye.service
+        - hermes-gateway-huabaosi.service
+    disposition: template
+    target:
+      - runtime/systemd
+      - runtime/hermes
+      - deploy/
+    risk_level: high
+    next_action:
+      - create systemd templates and smoke checks in later runtime phase
+
+  - id: service.message-sidecar-workers
+    source:
+      kind: systemd-system-services
+      names:
+        - qintopia-message-sidecar.service
+        - qintopia-message-embedding-worker.service
+        - qintopia-message-identity-worker.service
+        - qintopia-agentos-member-profile-worker.service
+        - qintopia-agentos-graph-projection-worker.service
+        - qintopia-agentos-event-signal-worker.service
+        - qintopia-agentos-daily-digest-worker.service
+        - qintopia-agentos-daily-digest-publisher.service
+        - qintopia-agentos-raw-archive-worker.service
+    disposition: adopt
+    target:
+      - runtime/sidecar
+      - runtime/systemd
+      - deploy/
+      - workflows/
+    risk_level: high
+    next_action:
+      - adopt with sidecar package and deployment runbooks
+
+  - id: service.infrastructure
+    source:
+      kind: systemd-system-services
+      names:
+        - nginx.service
+        - nats-server.service
+        - hermes-dashboard.service
+    disposition: template
+    target:
+      - runtime/nginx
+      - runtime/systemd
+      - deploy/
+    risk_level: medium
+    next_action:
+      - wrap as infrastructure dependencies, not Agent packages

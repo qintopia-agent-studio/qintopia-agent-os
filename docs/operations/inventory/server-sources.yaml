@@ -1,0 +1,180 @@
+inventory_version: 1
+inventory_date: "2026-07-03"
+scope: server-sources
+server: ubuntu@122.51.77.220
+mode: read-only
+records:
+  - id: server.qintopia-agent-os
+    source:
+      path: /home/ubuntu/qintopia-agent-os
+      kind: git-repository
+      branch: codex/rust-agent-os-baseline
+      reference: 76ed8cb
+      state: clean
+    disposition: review-pool
+    target:
+      - docs/operations/source-document-inventory.md
+      - review-pool/server-agent-os
+    owner: TBD
+    risk_level: medium
+    production_boundary:
+      external_sends: false
+      database_writes: false
+      runtime_profile: false
+      secrets: false
+    validation:
+      status: docs-reviewed-read-only
+      commands: []
+    next_action:
+      - keep server-authored Rust and Huabaosi exploration out of approved roadmap
+      - adopt only owner-approved docs or designs
+
+  - id: server.qintopia-msg-sidecar
+    source:
+      path: /home/ubuntu/qintopia-msg-sidecar
+      kind: git-repository
+      branch: codex/huabaosi-localization-shadow
+      reference: b16c247
+      state: clean
+    disposition: review-pool
+    target:
+      - runtime/sidecar
+      - mcp/context-server
+      - deploy/
+      - review-pool/huabaosi-shadow
+    owner: TBD
+    risk_level: high
+    production_boundary:
+      external_sends: possible
+      database_writes: true
+      runtime_profile: false
+      secrets: true
+    validation:
+      status: server-branch-diff-needs-reconcile
+      commands:
+        - qintopia-message-sidecar check
+    next_action:
+      - reconcile with local ../qintopia-message-sidecar main before adoption
+      - treat Huabaosi shadow changes as review-pool until owner approval
+
+  - id: server.qiwe-platform
+    source:
+      path: /home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform
+      kind: git-repository
+      branch: main
+      reference: 6f69794
+      state: dirty-untracked-backup
+    disposition: adopt
+    target:
+      - skills/qiwe
+      - fixtures/qiwe
+      - deploy/
+    owner: TBD
+    risk_level: high
+    production_boundary:
+      external_sends: true
+      database_writes: false
+      runtime_profile: true
+      secrets: true
+    validation:
+      status: pending-backup-review
+      commands:
+        - python3 -m unittest discover -s tests -v
+        - curl http://127.0.0.1:18661/health
+    next_action:
+      - compare untracked backup before package adoption
+      - adopt from local clean git source first, then verify against server
+
+  - id: server.qintopia-hermes-erhua-plugin
+    source:
+      path: /home/ubuntu/.hermes/plugins/qintopia_hermes_erhua_plugin
+      kind: git-repository
+      branch: main
+      reference: 90e6186
+      state: clean
+    disposition: deprecated
+    target:
+      - deprecated/qintopia-hermes-erhua-plugin
+    owner: TBD
+    risk_level: medium
+    production_boundary:
+      external_sends: possible
+      database_writes: false
+      runtime_profile: true
+      secrets: possible
+    validation:
+      status: legacy-review-needed
+      commands: []
+    next_action:
+      - confirm whether default profile still depends on it
+      - keep as legacy reference or retire after owner review
+
+  - id: server.hermes-agent-core
+    source:
+      path: /home/ubuntu/.hermes/hermes-agent
+      kind: git-repository
+      branch: main
+      reference: c76d035c1
+      state: dirty
+    disposition: review-pool
+    target:
+      - runtime/hermes
+      - review-pool/hermes-agent-core-patches
+    owner: TBD
+    risk_level: high
+    production_boundary:
+      external_sends: true
+      database_writes: possible
+      runtime_profile: true
+      secrets: possible
+    validation:
+      status: patch-extraction-required
+      commands: []
+    next_action:
+      - extract server-local patch stack into review docs before touching Hermes core
+      - do not adopt dirty checkout wholesale
+
+  - id: server.worktool-gateway
+    source:
+      path: /home/ubuntu/worktool-gateway
+      kind: server-local-directory
+      reference: no-git
+      state: inactive-service
+    disposition: deprecated
+    target:
+      - deprecated/worktool
+    owner: TBD
+    risk_level: medium
+    production_boundary:
+      external_sends: possible
+      database_writes: false
+      runtime_profile: false
+      secrets: possible
+    validation:
+      status: inactive
+      commands: []
+    next_action:
+      - confirm no service dependency
+      - archive or remove after owner approval
+
+  - id: server.openclaw-legacy
+    source:
+      path: /opt/qiwe-openclaw-adapter
+      kind: server-local-directory
+      reference: no-git
+      state: inactive-service
+    disposition: deprecated
+    target:
+      - deprecated/openclaw
+    owner: TBD
+    risk_level: medium
+    production_boundary:
+      external_sends: true
+      database_writes: false
+      runtime_profile: false
+      secrets: possible
+    validation:
+      status: inactive
+      commands: []
+    next_action:
+      - keep only rollback/audit notes until owner confirms retirement

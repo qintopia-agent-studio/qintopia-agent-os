@@ -21,8 +21,10 @@ and the local historical documents that still contain useful design evidence.
    [engineering/server-change-policy.md](engineering/server-change-policy.md)
 9. Source document inventory:
    [operations/source-document-inventory.md](operations/source-document-inventory.md)
-10. Reports index: [reports/README.md](reports/README.md)
-11. Active migration plan:
+10. M1 source inventory:
+    [operations/inventory/README.md](operations/inventory/README.md)
+11. Reports index: [reports/README.md](reports/README.md)
+12. Active migration plan:
     [plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
 
 ## Directory Map

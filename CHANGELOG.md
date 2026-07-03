@@ -28,6 +28,8 @@ become versioned.
   migration policy, server change policy, and source document inventory.
 - Added product scope, Agent OS domain model, Agent contracts, acceptance tests, runtime
   baseline, and reports index to complete the M3 documentation migration.
+- Added M1 migration inventory records for local sources, server sources, runtime
+  profiles, and Agent OS services.
 
 ### Changed
 
@@ -37,3 +39,5 @@ become versioned.
   the docs hub.
 - Updated collaborator reading paths to include product scope, Agent OS design, and
   runtime baseline documents.
+- Marked M1 inventory complete in the migration plan and linked the inventory from the
+  documentation hub.

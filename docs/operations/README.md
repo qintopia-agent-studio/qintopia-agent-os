@@ -6,6 +6,8 @@ canonical architecture, engineering, package, or deployment docs.
 
 ## Documents
 
+- [inventory/README.md](inventory/README.md): M1 migration inventory for local sources,
+  server sources, runtime assets, profiles, and services.
 - [source-document-inventory.md](source-document-inventory.md): read-only inventory of
   server and local documents reviewed during the documentation organization pass.
 - [runtime-baseline.md](runtime-baseline.md): production runtime baseline and migration

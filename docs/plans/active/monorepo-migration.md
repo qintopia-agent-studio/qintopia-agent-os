@@ -64,7 +64,7 @@ and future programming agents.
 | Phase                       | Status      | Exit criteria                                                                                                      |
 | --------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
 | M0 repository bootstrap     | Complete    | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                   |
-| M1 inventory                | Not started | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
+| M1 inventory                | Complete    | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
 | M2 registry contract        | Not started | registry schemas and package manifest templates exist and validate                                                 |
 | M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
 | M4 first skill adoption     | Not started | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
@@ -101,6 +101,16 @@ and future programming agents.
   moving transient migration state back into those files.
 - Completed M3 docs migration by adding product scope, Agent OS domain/contract/test
   docs, runtime baseline, reports index, and updated read paths for collaborators.
+- Completed M1 inventory first pass:
+  - `docs/operations/inventory/local-sources.yaml`
+  - `docs/operations/inventory/server-sources.yaml`
+  - `docs/operations/inventory/runtime-assets.yaml`
+- Confirmed local `../qintopia-agent-os` is dirty and must not be used as a clean
+  adoption source until reviewed.
+- Confirmed server `.hermes/hermes-agent` is a dirty runtime checkout and must stay in
+  review-pool until patch extraction.
+- Classified WorkTool, WorkTool Hermes plugin, Xiaoqin WorkTool runtime, and OpenClaw
+  legacy paths as deprecated inventory inputs.
 
 ## Update Rule
 
@@ -113,6 +123,7 @@ Every migration PR must update:
 ## Immediate Next Actions
 
 1. Add registry schema and package manifest templates.
-2. Create per-source inventory records for each sibling repository.
-3. Create inventory records for server `.hermes/profiles/*` runtime assets.
-4. Decide the first adopt PR scope, likely `skills/qiwe`.
+2. Add inventory validation in CI once the registry schema exists.
+3. Decide the first adopt PR scope, likely `skills/qiwe`.
+4. Before adopting `skills/qiwe`, compare the server untracked QiWe backup file and
+   record whether it has audit value.

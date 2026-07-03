@@ -1,0 +1,171 @@
+inventory_version: 1
+inventory_date: "2026-07-03"
+scope: local-sibling-sources
+root: /Users/evans/qintopia
+records:
+  - id: local.qintopia-agent-os
+    source:
+      path: ../qintopia-agent-os
+      kind: git-repository
+      branch: master
+      reference: d321bac
+      state: dirty
+    disposition: adopt
+    target:
+      - docs/
+      - agents/
+      - skills/qintopia-tools
+      - skills/qintopia-weather
+      - workflows/
+      - deprecated/
+    owner: TBD
+    risk_level: high
+    production_boundary:
+      external_sends: true
+      database_writes: possible
+      runtime_profile: true
+      secrets: false
+    validation:
+      status: source-dirty
+      commands:
+        - git -C ../qintopia-agent-os status --short
+    next_action:
+      - separate committed source from local uncommitted work before adoption
+      - inventory docs already adopted into M3 documentation
+      - classify qintopia-tools, profile templates, reports, and historical POCs
+    notes:
+      - Local repository currently has uncommitted docs, qintopia-tools, and script
+        changes.
+      - Do not use it as a clean adoption source until the dirty state is reviewed.
+
+  - id: local.qintopia-message-sidecar
+    source:
+      path: ../qintopia-message-sidecar
+      kind: git-repository
+      branch: main
+      reference: eda2652
+      state: clean
+    disposition: adopt
+    target:
+      - runtime/sidecar
+      - runtime/postgres
+      - mcp/context-server
+      - mcp/postgres
+      - workflows/
+      - deploy/
+    owner: TBD
+    risk_level: high
+    production_boundary:
+      external_sends: possible
+      database_writes: true
+      runtime_profile: false
+      secrets: true
+    validation:
+      status: pending-package-adoption
+      commands:
+        - cargo test
+        - scripts/context-acceptance-smoke.sh
+    next_action:
+      - split sidecar into runtime, MCP, workflows, and deploy package records
+      - preserve data-design docs and migrations with source references
+      - add fixture replay before production wiring
+
+  - id: local.qiwei-hermes-plugin
+    source:
+      path: ../qiwei-hermes-plugin
+      kind: git-repository
+      branch: main
+      reference: 6f69794
+      state: clean
+    disposition: adopt
+    target:
+      - skills/qiwe
+      - deploy/
+      - fixtures/qiwe
+    owner: TBD
+    risk_level: high
+    production_boundary:
+      external_sends: true
+      database_writes: false
+      runtime_profile: true
+      secrets: true
+    validation:
+      status: pending-package-adoption
+      commands:
+        - python3 -m unittest discover -s tests -v
+    next_action:
+      - use as first skill adoption candidate
+      - add package README, manifest, fixtures, and smoke boundary notes
+      - reconcile server backup file before deployment
+
+  - id: local.worktool
+    source:
+      path: ../worktool
+      kind: git-repository
+      branch: master
+      reference: b95e746
+      state: clean
+    disposition: deprecated
+    target:
+      - deprecated/worktool
+    owner: TBD
+    risk_level: medium
+    production_boundary:
+      external_sends: possible
+      database_writes: false
+      runtime_profile: false
+      secrets: possible
+    validation:
+      status: audit-only
+      commands: []
+    next_action:
+      - keep only protocol/audit material if needed
+      - remove future product references after dependency audit
+
+  - id: local.worktool-hermes-plugin
+    source:
+      path: ../worktool-hermes-plugin
+      kind: git-repository
+      branch: master
+      reference: 04e95e1
+      state: clean
+    disposition: deprecated
+    target:
+      - deprecated/worktool-hermes-plugin
+    owner: TBD
+    risk_level: medium
+    production_boundary:
+      external_sends: possible
+      database_writes: false
+      runtime_profile: true
+      secrets: possible
+    validation:
+      status: audit-only
+      commands: []
+    next_action:
+      - keep only migration/audit notes if owner needs them
+      - do not build new channel work on this plugin
+
+  - id: local.root-docs
+    source:
+      path: ../docs
+      kind: local-directory
+      reference: no-git
+      state: present
+    disposition: review-pool
+    target:
+      - docs/reports
+      - docs/product
+    owner: TBD
+    risk_level: low
+    production_boundary:
+      external_sends: false
+      database_writes: false
+      runtime_profile: false
+      secrets: possible
+    validation:
+      status: pending-review
+      commands: []
+    next_action:
+      - inspect only when a product/report migration task needs it
+      - do not bulk import unknown documents
