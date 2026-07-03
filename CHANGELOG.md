@@ -32,6 +32,7 @@ become versioned.
   profiles, and Agent OS services.
 - Added M2 registry schemas, domain indexes, package manifest templates, and
   `pnpm registry:check`.
+- Added M4A `skills/qiwe` package metadata, registry entry, and server backup review.
 
 ### Changed
 
@@ -44,3 +45,4 @@ become versioned.
 - Marked M1 inventory complete in the migration plan and linked the inventory from the
   documentation hub.
 - Marked M2 registry contract complete and wired registry validation into `pnpm check`.
+- Marked M4 first skill adoption in progress.

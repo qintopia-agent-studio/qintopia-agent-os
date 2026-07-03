@@ -67,7 +67,7 @@ and future programming agents.
 | M1 inventory                | Complete    | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
 | M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                 |
 | M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
-| M4 first skill adoption     | Not started | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
+| M4 first skill adoption     | In progress | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
 | M5 runtime sidecar adoption | Not started | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M6 agents adoption          | Not started | active profile templates migrated into `agents/*` with runtime-only state excluded                                 |
 | M7 WorkTool decommission    | Not started | WorkTool references classified and either deprecated or removed                                                    |
@@ -117,6 +117,13 @@ and future programming agents.
   - added manifest templates for agents, skills, workflows, MCP, runtime, deploy, and
     deprecated packages
   - added `pnpm registry:check` and wired it into `pnpm check`
+- Started M4 first skill adoption with `skills/qiwe` metadata:
+  - added `skills/qiwe/README.md`
+  - added `skills/qiwe/manifest.yaml`
+  - registered `skills/qiwe` in `registry/skills.yaml`
+  - recorded read-only review of the server QiWe backup file
+  - verified the current source repository with
+    `python3 -m unittest discover -s tests -v`
 
 ## Update Rule
 
@@ -128,7 +135,7 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Decide the first adopt PR scope, likely `skills/qiwe`.
-2. Before adopting `skills/qiwe`, compare the server untracked QiWe backup file and
-   record whether it has audit value.
+1. Complete M4B by importing `../qiwei-hermes-plugin` source, docs, fixtures, and tests
+   into `skills/qiwe` while excluding caches and runtime state.
+2. Keep QiWe unit tests passing from the package location.
 3. Add inventory validation after M2 registry checks have settled.

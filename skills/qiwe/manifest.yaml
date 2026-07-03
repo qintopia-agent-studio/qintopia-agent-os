@@ -1,0 +1,35 @@
+id: skills/qiwe
+type: skill
+name: QiWe Hermes Platform Skill
+owner: TBD
+status: adopting
+risk_level: high
+description:
+  QiWe / WeCom Hermes platform adapter for Erhua group replies, controlled channel
+  tools, passive activity capture, and governed outbound actions.
+source:
+  path: ../qiwei-hermes-plugin
+  reference: 6f69794
+  disposition: adopt
+production_boundary:
+  external_sends: true
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - cd ../qiwei-hermes-plugin && python3 -m unittest discover -s tests -v
+    - pnpm check
+dependencies:
+  - agents/erhua
+  - runtime/hermes
+  - deploy
+tags:
+  - qiwe
+  - wecom
+  - hermes-platform
+  - erhua
+next_actions:
+  - Decide source import strategy for M4B.
+  - Import source, docs, fixtures, and tests without caches or runtime state.
+  - Preserve server backup review as audit evidence until owner cleanup approval.

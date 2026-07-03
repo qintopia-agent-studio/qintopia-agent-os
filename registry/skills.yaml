@@ -1,3 +1,8 @@
 registry_version: 1
 domain: skills
-entries: []
+entries:
+  - id: skills/qiwe
+    path: skills/qiwe
+    manifest: skills/qiwe/manifest.yaml
+    status: adopting
+    notes: M4A metadata adoption only; source still lives in ../qiwei-hermes-plugin.
