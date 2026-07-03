@@ -38,6 +38,10 @@ become versioned.
 - Added M5 sidecar package contracts for `runtime/sidecar`, `runtime/postgres`,
   `mcp/context-server`, `mcp/message-store`, `workflows/activity-promotion`, and
   `deploy/sidecar`.
+- Imported the reviewed sidecar source snapshot into the M5 package split, including
+  Rust source, config templates, fixtures, migrations, data-design docs, MCP docs,
+  workflow docs, deploy runbook, and smoke scripts.
+- Added `pnpm test:sidecar` and `pnpm smoke:sidecar`.
 
 ### Changed
 
@@ -55,3 +59,4 @@ become versioned.
 - Added `pnpm test:qiwe` to the repository check path.
 - Marked M5 runtime sidecar adoption in progress and registered the new sidecar package
   contracts in the domain registries.
+- Wired sidecar tests and no-credential sidecar smokes into `pnpm check`.

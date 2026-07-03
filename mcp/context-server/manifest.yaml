@@ -6,7 +6,7 @@ status: adopting
 risk_level: high
 description: MCP surface for safe Agent answer context, knowledge, and evidence routing.
 source:
-  path: ../qintopia-message-sidecar/src/context_mcp_server.rs
+  path: runtime/sidecar/src/context_mcp_server.rs
   reference: eda2652f21999e4f32699463413372accbd3b76e
   disposition: adopt
 production_boundary:
@@ -16,8 +16,8 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cd ../qintopia-message-sidecar && cargo test
-    - cd ../qintopia-message-sidecar && scripts/context-acceptance-smoke.sh
+    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - deploy/sidecar/scripts/context-acceptance-smoke.sh
 dependencies:
   - runtime/postgres
 tags:
@@ -26,5 +26,4 @@ tags:
   - knowledge
   - evidence
 next_actions:
-  - Import MCP source and operations doc after runtime package split is accepted.
   - Preserve live-ops refusal guardrails in fixture coverage.

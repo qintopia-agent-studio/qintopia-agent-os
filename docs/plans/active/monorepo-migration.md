@@ -145,6 +145,23 @@ and future programming agents.
   - confirmed server `/home/ubuntu/qintopia-msg-sidecar` is clean but on
     `codex/huabaosi-localization-shadow@b16c247a19ec751c08de75ae2d312f35b765f317`; treat
     that branch as review-pool until owner approval
+- Continued M5 by importing the reviewed local sidecar source snapshot:
+  - imported Rust crate files into `runtime/sidecar`
+  - imported migrations and data-design docs into `runtime/postgres`
+  - imported context MCP and message-store MCP docs into `mcp/*/docs`
+  - imported operations control-plane docs into `workflows/activity-promotion/docs`
+  - imported deployment runbook and scripts into `deploy/sidecar`
+  - excluded `.git`, `target`, `vendor`, real `.env`, credentials, and server-only state
+  - added `runtime/sidecar/docs/source-snapshot.md`
+  - patched migration path resolution so the sidecar reads `runtime/postgres/migrations`
+    by default inside the monorepo
+  - patched no-credential deploy smokes to run against `runtime/sidecar`
+  - added `pnpm test:sidecar` and `pnpm smoke:sidecar`
+  - wired sidecar unit tests and no-credential sidecar smokes into `pnpm check`
+  - verified `cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml`
+  - verified `cargo test --manifest-path runtime/sidecar/Cargo.toml` with 172 tests
+  - verified `deploy/sidecar/scripts/operations-control-plane-smoke.sh`
+  - verified `deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh`
 
 ## Update Rule
 
@@ -156,8 +173,9 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Continue M5 by importing the reviewed sidecar source into the new package split while
-   preserving tests, fixtures, docs, and Rust toolchain constraints.
+1. Finish M5 by adding source-layout notes for deployment cutover and deciding whether
+   `deploy/sidecar/scripts/server-deploy.sh` should become a monorepo-native deploy
+   script or remain a legacy source snapshot until M9.
 2. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
 3. Add inventory validation after M2 registry checks have settled.

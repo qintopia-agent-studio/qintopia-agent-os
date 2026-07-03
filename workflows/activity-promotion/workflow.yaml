@@ -8,7 +8,7 @@ description:
   Multi-Agent control-plane workflow for activity promotion assets, evidence, and
   group-send readiness.
 source:
-  path: ../qintopia-message-sidecar/src/operations.rs
+  path: runtime/sidecar/src/operations.rs
   reference: eda2652f21999e4f32699463413372accbd3b76e
   disposition: adopt
 production_boundary:
@@ -18,8 +18,8 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cd ../qintopia-message-sidecar && scripts/operations-control-plane-smoke.sh
-    - cd ../qintopia-message-sidecar && cargo test
+    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - deploy/sidecar/scripts/operations-control-plane-smoke.sh
 dependencies:
   - runtime/postgres
   - runtime/sidecar
@@ -32,6 +32,5 @@ tags:
   - huabaosi
   - erhua
 next_actions:
-  - Import workflow source and no-credential smoke coverage.
   - Keep group-send execution out of scope until reviewed send adapter and final
     confirmation gates exist.

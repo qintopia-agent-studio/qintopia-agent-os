@@ -6,7 +6,7 @@ status: adopting
 risk_level: high
 description: Migration and schema contract for the Agent OS system fact source.
 source:
-  path: ../qintopia-message-sidecar/migrations
+  path: runtime/postgres/migrations
   reference: eda2652f21999e4f32699463413372accbd3b76e
   disposition: adopt
 production_boundary:
@@ -16,13 +16,13 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cd ../qintopia-message-sidecar && cargo test
-    - cd ../qintopia-message-sidecar && scripts/operations-control-plane-smoke.sh
+    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - pnpm smoke:sidecar
 dependencies: []
 tags:
   - postgres
   - migrations
   - fact-source
 next_actions:
-  - Import migrations with matching data-design notes.
   - Add migration inventory validation before server cutover.
+  - Add a migration/design-note consistency checker.

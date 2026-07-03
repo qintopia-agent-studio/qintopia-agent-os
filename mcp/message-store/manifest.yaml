@@ -6,7 +6,7 @@ status: adopting
 risk_level: medium
 description: MCP surface for controlled message search and discussion evidence lookup.
 source:
-  path: ../qintopia-message-sidecar/src/mcp_server.rs
+  path: runtime/sidecar/src/mcp_server.rs
   reference: eda2652f21999e4f32699463413372accbd3b76e
   disposition: adopt
 production_boundary:
@@ -16,8 +16,8 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cd ../qintopia-message-sidecar && cargo test
-    - cd ../qintopia-message-sidecar && scripts/context-acceptance-smoke.sh
+    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - deploy/sidecar/scripts/context-acceptance-smoke.sh
 dependencies:
   - runtime/postgres
 tags:
@@ -25,5 +25,4 @@ tags:
   - message-store
   - evidence
 next_actions:
-  - Import source and fixtures after privacy boundaries are reviewed.
   - Add focused tests for discussion-history versus live-ops routing.

@@ -1,0 +1,42 @@
+[
+  {
+    "signal": "activity_events",
+    "agent": "小满",
+    "template": "补录和复盘今日活动事件，重点检查 {activity_count} 个活动/聚会信号的时间、参与人和素材回收。"
+  },
+  {
+    "signal": "services",
+    "agent": "小管家",
+    "template": "确认 {service_count} 条服务/设施问题的处理状态，必要时同步群内进展。"
+  },
+  {
+    "signal": "operations",
+    "agent": "文渊阁",
+    "template": "更新 {operation_count} 条 FAQ/SOP 候选，尤其是工具入口、活动模板和设施故障流程。"
+  },
+  {
+    "signal": "content_or_activities",
+    "agent": "画报司",
+    "template": "收集活动照片、海报和现场素材线索。"
+  },
+  {
+    "signal": "content_or_activities",
+    "agent": "关二爷",
+    "template": "判断活动和成员故事是否适合转为公众号/自媒体内容。"
+  },
+  {
+    "signal": "questions",
+    "agent": "四老师",
+    "template": "协助梳理 {question_count} 条未回答问题和内部协作待办。"
+  },
+  {
+    "signal": "empty_digest",
+    "agent": "小满",
+    "template": "今日暂无明显可分派事项，保持常规巡检。"
+  },
+  {
+    "signal": "always",
+    "agent": "大总管",
+    "template": "关注高风险事项和跨 Agent 协作验收。"
+  }
+]

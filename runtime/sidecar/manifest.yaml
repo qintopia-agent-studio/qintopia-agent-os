@@ -7,7 +7,7 @@ risk_level: high
 description:
   Rust service contract for Agent OS message capture, workers, and runtime checks.
 source:
-  path: ../qintopia-message-sidecar
+  path: runtime/sidecar
   reference: eda2652f21999e4f32699463413372accbd3b76e
   disposition: adopt
 production_boundary:
@@ -17,10 +17,10 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cd ../qintopia-message-sidecar && cargo fmt --check
-    - cd ../qintopia-message-sidecar && cargo test
-    - cd ../qintopia-message-sidecar && cargo check
-    - cd ../qintopia-message-sidecar && scripts/operations-control-plane-smoke.sh
+    - cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml
+    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - cargo check --manifest-path runtime/sidecar/Cargo.toml
+    - pnpm smoke:sidecar
 dependencies:
   - runtime/postgres
   - mcp/context-server
@@ -31,7 +31,6 @@ tags:
   - worker
   - message-capture
 next_actions:
-  - Import source after package split review and keep Hermes reply path independence
-    explicit.
+  - Add monorepo smoke wrappers for no-credential sidecar and operations checks.
   - Reconcile local main with the server Huabaosi shadow branch before adopting shadow
     files.

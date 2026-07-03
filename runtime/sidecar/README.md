@@ -1,7 +1,7 @@
 # Runtime: Sidecar
 
-`runtime/sidecar` is the Agent OS data and worker service contract for the existing
-`qintopia-message-sidecar` Rust service.
+`runtime/sidecar` is the Agent OS data and worker service package adopted from the
+existing `qintopia-message-sidecar` Rust service.
 
 ## Current Source
 
@@ -24,7 +24,7 @@ must not block webhook ACKs or group replies.
 
 ## Package Split
 
-This package owns the service runtime and workers. Related contracts are split out so
+This package owns the service runtime and workers. Related packages are split out so
 reviewers can reason about risk:
 
 - `runtime/postgres`: migrations, schema notes, and database runbooks.
@@ -41,22 +41,34 @@ reviewers can reason about risk:
 - Runtime profile: no direct Hermes profile mutation.
 - Secrets: uses runtime-only env vars and database URLs; never commit real env files.
 
-## Validation Before Source Import
+## Imported Contents
 
-Run in `../qintopia-message-sidecar`:
+- Rust crate: `Cargo.toml`, `Cargo.lock`, and `src/`.
+- Runtime config templates: `config/agentos/`.
+- Replay fixtures: `fixtures/`.
+- Safe env template: `.env.example`.
+- Source-specific agent rules: `AGENTS.md`.
+
+Migrations are intentionally owned by `runtime/postgres`. The sidecar loads
+`../postgres/migrations` by default inside this monorepo. Set
+`QINTOPIA_SIDECAR_MIGRATIONS_DIR` to override the path for legacy deployments or local
+experiments.
+
+## Validation
+
+Run from the monorepo root:
 
 ```bash
-cargo fmt --check
-cargo test
-cargo check
-scripts/operations-control-plane-smoke.sh
+pnpm test:sidecar
 ```
 
-Use guarded apply smokes only with explicit owner approval and configured local or
-server database credentials.
+For source-level checks during M5:
 
-## Next Migration Step
+```bash
+cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml
+cargo check --manifest-path runtime/sidecar/Cargo.toml
+```
 
-Import the sidecar source in a narrow follow-up commit after the package split is
-reviewed. Preserve the Rust toolchain boundary, tests, fixtures, docs, and deployment
-smoke scripts.
+Use smoke scripts under `deploy/sidecar/scripts/` only with the documented environment
+and owner approval. Guarded apply smokes can write Postgres state when explicitly
+enabled.

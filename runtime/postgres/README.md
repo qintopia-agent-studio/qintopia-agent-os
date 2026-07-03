@@ -6,14 +6,15 @@ is the system fact source for business and workflow state.
 ## Current Source
 
 - Local source: `../qintopia-message-sidecar/migrations`
-- Design notes: `../qintopia-message-sidecar/docs/data-design`
+- Adopted migrations: `runtime/postgres/migrations`
+- Design notes: `runtime/postgres/docs/data-design`
 - Adopted reference: `eda2652f21999e4f32699463413372accbd3b76e`
 
 ## Responsibility
 
-This package will hold versioned migrations, schema design notes, acceptance fixtures,
-and rollback guidance for the Agent OS database. Migrations must be idempotent and safe
-to run on sidecar startup.
+This package holds versioned migrations, schema design notes, acceptance fixtures, and
+rollback guidance for the Agent OS database. Migrations must be idempotent and safe to
+run on sidecar startup.
 
 ## Boundaries
 
@@ -30,5 +31,4 @@ application there.
 
 ## Validation
 
-Before importing or changing migrations, run the sidecar tests and the relevant guarded
-smoke from the source repository.
+Before changing migrations, run the sidecar tests and the relevant guarded smoke.

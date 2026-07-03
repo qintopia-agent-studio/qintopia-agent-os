@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_DIR="${QINTOPIA_SIDECAR_REPO_DIR:-/home/ubuntu/qintopia-msg-sidecar}"
+ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
+BIN="${QINTOPIA_SIDECAR_BIN:-${REPO_DIR}/target/release/qintopia-message-sidecar}"
+
+if [[ ! -r "$ENV_FILE" ]]; then
+  printf 'missing readable env file: %s\n' "$ENV_FILE" >&2
+  exit 2
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+exec "$BIN" mcp-context
