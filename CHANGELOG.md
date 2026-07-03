@@ -42,6 +42,7 @@ become versioned.
   Rust source, config templates, fixtures, migrations, data-design docs, MCP docs,
   workflow docs, deploy runbook, and smoke scripts.
 - Added `pnpm test:sidecar` and `pnpm smoke:sidecar`.
+- Added a sidecar monorepo cutover plan under `deploy/sidecar/docs/`.
 
 ### Changed
 
@@ -60,3 +61,5 @@ become versioned.
 - Marked M5 runtime sidecar adoption in progress and registered the new sidecar package
   contracts in the domain registries.
 - Wired sidecar tests and no-credential sidecar smokes into `pnpm check`.
+- Marked the migrated sidecar deploy script as a legacy snapshot rather than the current
+  monorepo-native production deploy entrypoint.

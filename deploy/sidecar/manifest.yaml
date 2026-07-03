@@ -4,8 +4,7 @@ name: Sidecar Deployment
 owner: TBD
 status: adopting
 risk_level: high
-description:
-  Git-based rollout, smoke, and rollback contract for Agent OS sidecar services.
+description: Legacy deploy snapshot and cutover planning for Agent OS sidecar services.
 source:
   path: deploy/sidecar/scripts/server-deploy.sh
   reference: eda2652f21999e4f32699463413372accbd3b76e
@@ -24,8 +23,11 @@ dependencies:
   - runtime/postgres
 tags:
   - deploy
+  - legacy-snapshot
   - systemd
   - smoke
   - rollback
 next_actions:
+  - Decide in M9 whether to convert the legacy snapshot into a monorepo-native deploy
+    script or replace it with a new release script.
   - Add monorepo release gate that deploys only reviewed commit SHAs.

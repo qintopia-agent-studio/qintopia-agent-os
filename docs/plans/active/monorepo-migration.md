@@ -162,6 +162,10 @@ and future programming agents.
   - verified `cargo test --manifest-path runtime/sidecar/Cargo.toml` with 172 tests
   - verified `deploy/sidecar/scripts/operations-control-plane-smoke.sh`
   - verified `deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh`
+- Marked `deploy/sidecar/scripts/server-deploy.sh` as a legacy source snapshot, not the
+  current monorepo-native production deploy entrypoint.
+- Added `deploy/sidecar/docs/monorepo-cutover-plan.md` to capture the M9 server cutover
+  sequence, preconditions, validation, rollback, and Huabaosi shadow branch boundary.
 
 ## Update Rule
 
@@ -173,11 +177,8 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-1. Finish M5 by adding source-layout notes for deployment cutover and deciding whether
-   `deploy/sidecar/scripts/server-deploy.sh` should become a monorepo-native deploy
-   script or remain a legacy source snapshot until M9.
-2. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
+1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-3. Add inventory validation after M2 registry checks have settled.
-4. Add deploy smoke and rollback notes before any production wiring changes for
+2. Add inventory validation after M2 registry checks have settled.
+3. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.
