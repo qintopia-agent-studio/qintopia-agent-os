@@ -4,10 +4,10 @@ entries:
   - id: runtime/postgres
     path: runtime/postgres
     manifest: runtime/postgres/manifest.yaml
-    status: adopting
+    status: active
     notes: Agent OS system fact source migrations and data-design contract.
   - id: runtime/sidecar
     path: runtime/sidecar
     manifest: runtime/sidecar/manifest.yaml
-    status: adopting
+    status: active
     notes: Message capture and worker runtime contract from qintopia-message-sidecar.

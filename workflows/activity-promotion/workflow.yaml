@@ -2,7 +2,7 @@ id: workflows/activity-promotion
 type: workflow
 name: Activity Promotion Control Plane
 owner: TBD
-status: adopting
+status: active
 risk_level: high
 description:
   Multi-Agent control-plane workflow for activity promotion assets, evidence, and
@@ -18,7 +18,7 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - pnpm test:sidecar
     - deploy/sidecar/scripts/operations-control-plane-smoke.sh
 dependencies:
   - runtime/postgres

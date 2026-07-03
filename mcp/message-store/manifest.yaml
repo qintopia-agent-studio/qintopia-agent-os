@@ -2,7 +2,7 @@ id: mcp/message-store
 type: mcp
 name: Message Store MCP
 owner: TBD
-status: adopting
+status: active
 risk_level: medium
 description: MCP surface for controlled message search and discussion evidence lookup.
 source:
@@ -16,7 +16,7 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - pnpm test:sidecar
     - deploy/sidecar/scripts/context-acceptance-smoke.sh
 dependencies:
   - runtime/postgres
@@ -25,4 +25,5 @@ tags:
   - message-store
   - evidence
 next_actions:
-  - Add focused tests for discussion-history versus live-ops routing.
+  - Keep discussion-history and live-ops routing checks in sidecar tests and context
+    acceptance smoke when expanding retrieval behavior.

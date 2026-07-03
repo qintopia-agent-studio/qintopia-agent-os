@@ -68,7 +68,7 @@ and future programming agents.
 | M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                 |
 | M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
 | M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
-| M5 runtime sidecar adoption | In progress | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
+| M5 runtime sidecar adoption | Complete    | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
 | M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
 | M6 agents adoption          | Complete    | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
 | M7 WorkTool decommission    | In progress | WorkTool references classified and either deprecated or removed                                                    |
@@ -233,6 +233,15 @@ and future programming agents.
     running `pnpm check`
   - added `docs/engineering/ci-cd-gates.md` and linked it from engineering docs
   - kept deployment preflight non-mutating; actual server cutover remains M9
+- Completed M5 runtime sidecar adoption closure:
+  - added `docs/plans/completed/m5-runtime-sidecar-adoption.md`
+  - marked M5 package registry entries and manifests active for the adopted
+    `eda2652f21999e4f32699463413372accbd3b76e` local sidecar source as monorepo
+    contracts, not production cutover
+  - added `pnpm fmt:sidecar` and `pnpm check:sidecar`
+  - kept M9 server cutover, production systemd changes, and Huabaosi shadow branch
+    adoption out of M5 scope
+  - fixed M5 package docs to use monorepo-root validation commands
 
 ## Update Rule
 
@@ -243,6 +252,14 @@ Every migration PR must update:
 - package manifest/README when a package is adopted or its contract changes
 
 ## Immediate Next Actions
+
+Non-complete phases after M5 closure:
+
+- M7 WorkTool decommission: In progress.
+- M9 server cutover: Not started and blocked on M7 cleanup decisions plus owner-approved
+  deployment window.
+
+Recommended order:
 
 1. Finish M7 by performing an owner-approved server cleanup pass or explicitly marking
    server WorkTool/OpenClaw directories as retained audit archives.

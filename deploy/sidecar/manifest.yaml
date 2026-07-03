@@ -2,7 +2,7 @@ id: deploy/sidecar
 type: deploy
 name: Sidecar Deployment
 owner: TBD
-status: adopting
+status: active
 risk_level: high
 description: Legacy deploy snapshot and cutover planning for Agent OS sidecar services.
 source:
@@ -32,4 +32,4 @@ tags:
 next_actions:
   - Decide in M9 whether to convert the legacy snapshot into a monorepo-native deploy
     script or replace it with a new release script.
-  - Add monorepo release gate that deploys only reviewed commit SHAs.
+  - Use `pnpm deploy:preflight` before any approved production cutover.

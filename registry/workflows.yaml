@@ -4,5 +4,5 @@ entries:
   - id: workflows/activity-promotion
     path: workflows/activity-promotion
     manifest: workflows/activity-promotion/workflow.yaml
-    status: adopting
+    status: active
     notes: Multi-Agent operations control-plane workflow for activity promotion.

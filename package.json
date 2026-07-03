@@ -15,9 +15,11 @@
     "deploy:preflight": "node tools/deploy/preflight.mjs",
     "deploy:preflight:ci": "node tools/deploy/preflight.mjs --ci",
     "test:qiwe": "cd skills/qiwe && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
+    "fmt:sidecar": "cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml",
+    "check:sidecar": "cargo check --manifest-path runtime/sidecar/Cargo.toml",
     "test:sidecar": "cargo test --manifest-path runtime/sidecar/Cargo.toml",
     "smoke:sidecar": "deploy/sidecar/scripts/operations-control-plane-smoke.sh && deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh",
-    "check": "pnpm format:check && pnpm lint:md && pnpm registry:check && pnpm agents:check && pnpm policy:check && pnpm secrets:check && pnpm deploy:preflight:ci && pnpm test:qiwe && pnpm test:sidecar && pnpm smoke:sidecar"
+    "check": "pnpm format:check && pnpm lint:md && pnpm registry:check && pnpm agents:check && pnpm policy:check && pnpm secrets:check && pnpm deploy:preflight:ci && pnpm test:qiwe && pnpm fmt:sidecar && pnpm check:sidecar && pnpm test:sidecar && pnpm smoke:sidecar"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",

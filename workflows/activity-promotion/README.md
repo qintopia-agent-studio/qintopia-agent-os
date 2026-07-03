@@ -37,8 +37,7 @@ control-plane workflow, not an autonomous publish path.
 Use the local no-credential smoke first:
 
 ```bash
-cd ../qintopia-message-sidecar
-scripts/operations-control-plane-smoke.sh
+deploy/sidecar/scripts/operations-control-plane-smoke.sh
 ```
 
 The Postgres apply smoke is guarded and must only run with explicit owner approval and

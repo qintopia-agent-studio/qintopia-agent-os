@@ -2,7 +2,7 @@ id: runtime/postgres
 type: runtime
 name: Agent OS Postgres Runtime
 owner: TBD
-status: adopting
+status: active
 risk_level: high
 description: Migration and schema contract for the Agent OS system fact source.
 source:
@@ -16,7 +16,8 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - pnpm policy:check
+    - pnpm test:sidecar
     - pnpm smoke:sidecar
 dependencies: []
 tags:
@@ -24,5 +25,5 @@ tags:
   - migrations
   - fact-source
 next_actions:
-  - Add migration inventory validation before server cutover.
-  - Add a migration/design-note consistency checker.
+  - Add migration rollback notes before any destructive schema change.
+  - Re-run M9 server readiness before applying migrations outside local smoke.

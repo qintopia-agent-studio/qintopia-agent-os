@@ -4,5 +4,5 @@ entries:
   - id: deploy/sidecar
     path: deploy/sidecar
     manifest: deploy/sidecar/manifest.yaml
-    status: adopting
+    status: active
     notes: Git-based rollout, smoke, and rollback contract for sidecar services.

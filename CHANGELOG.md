@@ -56,6 +56,8 @@ become versioned.
   deployment gate validation.
 - Added CI/CD gate documentation for repository checks, secret scanning, deployment
   preflight, and production-adjacent PR evidence.
+- Added M5 runtime sidecar adoption closure documentation.
+- Added `pnpm fmt:sidecar` and `pnpm check:sidecar` sidecar validation commands.
 
 ### Changed
 
@@ -86,3 +88,7 @@ become versioned.
 - Strengthened GitHub Actions CI to install Node.js, pnpm, Python, and Rust before
   running the full repository check path.
 - Marked M8 CI/CD deployment gate complete.
+- Marked M5 runtime sidecar adoption complete.
+- Marked the adopted M5 runtime, MCP, workflow, and deploy package records as active
+  monorepo contracts while keeping server cutover and Huabaosi shadow adoption out of M5
+  scope.

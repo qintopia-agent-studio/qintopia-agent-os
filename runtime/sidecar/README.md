@@ -65,8 +65,8 @@ pnpm test:sidecar
 For source-level checks during M5:
 
 ```bash
-cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml
-cargo check --manifest-path runtime/sidecar/Cargo.toml
+pnpm fmt:sidecar
+pnpm check:sidecar
 ```
 
 Use smoke scripts under `deploy/sidecar/scripts/` only with the documented environment

@@ -2,7 +2,7 @@ id: runtime/sidecar
 type: runtime
 name: Qintopia Message Sidecar Runtime
 owner: TBD
-status: adopting
+status: active
 risk_level: high
 description:
   Rust service contract for Agent OS message capture, workers, and runtime checks.
@@ -17,9 +17,9 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml
-    - cargo test --manifest-path runtime/sidecar/Cargo.toml
-    - cargo check --manifest-path runtime/sidecar/Cargo.toml
+    - pnpm fmt:sidecar
+    - pnpm check:sidecar
+    - pnpm test:sidecar
     - pnpm smoke:sidecar
 dependencies:
   - runtime/postgres
@@ -31,6 +31,6 @@ tags:
   - worker
   - message-capture
 next_actions:
-  - Add monorepo smoke wrappers for no-credential sidecar and operations checks.
-  - Reconcile local main with the server Huabaosi shadow branch before adopting shadow
-    files.
+  - Keep server Huabaosi shadow branch in review-pool unless owner explicitly approves
+    adoption.
+  - Use M9 cutover plan before changing production systemd units or server checkout.

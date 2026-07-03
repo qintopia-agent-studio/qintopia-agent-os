@@ -2,7 +2,7 @@ id: mcp/context-server
 type: mcp
 name: Context MCP Server
 owner: TBD
-status: adopting
+status: active
 risk_level: high
 description: MCP surface for safe Agent answer context, knowledge, and evidence routing.
 source:
@@ -16,7 +16,7 @@ production_boundary:
   secrets: true
 validation:
   commands:
-    - cargo test --manifest-path runtime/sidecar/Cargo.toml
+    - pnpm test:sidecar
     - deploy/sidecar/scripts/context-acceptance-smoke.sh
 dependencies:
   - runtime/postgres
@@ -26,4 +26,5 @@ tags:
   - knowledge
   - evidence
 next_actions:
-  - Preserve live-ops refusal guardrails in fixture coverage.
+  - Run context acceptance smoke against the server only after M9 has an approved commit
+    SHA and runtime env.
