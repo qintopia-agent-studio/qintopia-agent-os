@@ -1,0 +1,18 @@
+{
+  "name": "qintopia-agent-os-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Qintopia Agent OS capability/plugin monorepo.",
+  "packageManager": "pnpm@10.29.2",
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\"",
+    "check": "pnpm format:check && pnpm lint:md"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "markdownlint-cli2": "^0.23.0",
+    "prettier": "^3.9.4"
+  }
+}

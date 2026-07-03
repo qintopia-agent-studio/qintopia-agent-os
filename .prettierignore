@@ -1,0 +1,10 @@
+node_modules/
+target/
+.git/
+pnpm-lock.yaml
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.pdf

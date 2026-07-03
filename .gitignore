@@ -1,0 +1,107 @@
+# OS files
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.secret
+secrets/
+
+# Node / JavaScript / TypeScript
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+!.yarn/patches/
+!.yarn/plugins/
+!.yarn/releases/
+!.yarn/sdks/
+dist/
+build/
+coverage/
+.nyc_output/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.venv/
+venv/
+env/
+.coverage
+htmlcov/
+*.egg-info/
+pip-wheel-metadata/
+
+# Rust
+target/
+
+# Java / Android / Gradle
+.gradle/
+.idea/
+*.iml
+local.properties
+.externalNativeBuild/
+.cxx/
+captures/
+app/build/
+*/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Editors
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs and runtime output
+logs/
+tmp/
+.cache/
+cache/
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Generated archives and binaries
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.7z
+*.bin
+*.dmg
+
+# Local scratch and generated reports
+.codex-tmp/
+scratch/
+out/

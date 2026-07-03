@@ -1,0 +1,8 @@
+packages:
+  - "agents/*"
+  - "skills/*"
+  - "workflows/*"
+  - "mcp/*"
+  - "runtime/*"
+  - "deploy/*"
+  - "tools/*"
