@@ -63,6 +63,7 @@ become versioned.
   deprecated runtime cleanup, acceptance, and rollback.
 - Added the approved GitHub remote and expanded CODEOWNERS for Agent OS monorepo
   collaboration.
+- Added M9 read-only server preflight findings and migration blockers.
 
 ### Changed
 

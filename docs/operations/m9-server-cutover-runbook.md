@@ -47,6 +47,37 @@ pnpm check
 pnpm deploy:preflight
 ```
 
+## Preflight Dry Run
+
+2026-07-03 read-only preflight results:
+
+| Check                 | Result                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| Local remote          | `origin` points to `git@github.com:qintopia-agent-studio/qintopia-agent-os.git`    |
+| Local pushed branch   | `master` pushed successfully                                                       |
+| Local HEAD at check   | `a0658e28aee570c56ce1a932ff68b84b43fbbacb`                                         |
+| GitHub default branch | `master`                                                                           |
+| Server target path    | `/home/ubuntu/qintopia-agent-os-monorepo` missing                                  |
+| Server GitHub access  | blocked: current server SSH identity cannot read the private repo                  |
+| Server Node.js        | missing from `PATH`                                                                |
+| Server pnpm           | missing from `PATH`                                                                |
+| Server Rust           | `cargo 1.96.1`, `rustc 1.96.1` observed                                            |
+| Server disk           | `/` at 91% used, about 5.6G available                                              |
+| Current sidecar       | active, enabled, running from `/home/ubuntu/qintopia-msg-sidecar`                  |
+| Current sidecar SHA   | `b16c247a19ec751c08de75ae2d312f35b765f317` on `codex/huabaosi-localization-shadow` |
+
+Blocking items before cutover:
+
+1. Add a deploy path for the private GitHub repo. Prefer a dedicated read-only deploy
+   key for `qintopia-agent-studio/qintopia-agent-os`; do not reuse legacy deploy keys if
+   GitHub rejects them or they are tied to another repository.
+2. Install or expose Node.js and pnpm on the server so `pnpm install --frozen-lockfile`,
+   `pnpm check`, and `pnpm deploy:preflight` can run from the monorepo checkout.
+3. Confirm available disk is sufficient for the monorepo checkout, dependencies, and
+   Rust release build.
+4. Reconfirm whether the Huabaosi shadow branch should remain review-pool before the
+   active service is repointed.
+
 ## Pre-Cutover Freeze
 
 Before any server mutation:
