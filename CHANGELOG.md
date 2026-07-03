@@ -61,6 +61,8 @@ become versioned.
 - Added M7 read-only decommission evidence for WorkTool, Xiaoqin WorkTool, and OpenClaw.
 - Added M9 server cutover runbook for monorepo checkout, sidecar service cutover,
   deprecated runtime cleanup, acceptance, and rollback.
+- Added the approved GitHub remote and expanded CODEOWNERS for Agent OS monorepo
+  collaboration.
 
 ### Changed
 

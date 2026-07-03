@@ -1,7 +1,7 @@
-# Fill concrete owners before protected branches are enabled.
-* @PatrickLiveCool
+# Repository-wide owners.
+* @detroxryo @noraincode @PatrickLiveCool @qiaopengjun5162
 
-/runtime/ @PatrickLiveCool
-/deploy/ @PatrickLiveCool
-/docs/engineering/ @PatrickLiveCool
-/docs/operations/ @PatrickLiveCool
+/runtime/ @detroxryo @noraincode @PatrickLiveCool @qiaopengjun5162
+/deploy/ @detroxryo @noraincode @PatrickLiveCool @qiaopengjun5162
+/docs/engineering/ @detroxryo @noraincode @PatrickLiveCool @qiaopengjun5162
+/docs/operations/ @detroxryo @noraincode @PatrickLiveCool @qiaopengjun5162

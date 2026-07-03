@@ -27,17 +27,18 @@ M9 does not cover:
 
 Fill these before the migration window:
 
-| Field                  | Value  |
-| ---------------------- | ------ |
-| Owner approver         | TBD    |
-| Migration operator     | TBD    |
-| Reviewers              | TBD    |
-| Target branch          | master |
-| Target commit SHA      | TBD    |
-| Previous sidecar SHA   | TBD    |
-| Server start time      | TBD    |
-| Rollback decision time | TBD    |
-| Rollback owner         | TBD    |
+| Field                  | Value                                                        |
+| ---------------------- | ------------------------------------------------------------ |
+| Owner approver         | PatrickLiveCool                                              |
+| Migration operator     | TBD                                                          |
+| Reviewers              | detroxryo, noraincode, PatrickLiveCool, qiaopengjun5162      |
+| Monorepo remote        | `git@github.com:qintopia-agent-studio/qintopia-agent-os.git` |
+| Target branch          | master                                                       |
+| Target commit SHA      | TBD                                                          |
+| Previous sidecar SHA   | TBD                                                          |
+| Server start time      | TBD                                                          |
+| Rollback decision time | TBD                                                          |
+| Rollback owner         | PatrickLiveCool                                              |
 
 The target SHA must pass:
 
@@ -50,9 +51,9 @@ pnpm deploy:preflight
 
 Before any server mutation:
 
-1. Freeze direct server edits for Agent OS, sidecar, Hermes profile templates, and
-   legacy WorkTool/OpenClaw paths.
-2. Confirm no one is making `scp` source updates or direct server commits.
+1. Confirm direct server edits for Agent OS, sidecar, Hermes profile templates, and
+   legacy WorkTool/OpenClaw paths remain frozen.
+2. Confirm no one is making `scp` source updates, hotfixes, or direct server commits.
 3. Confirm local `master` is clean and pushed to the approved remote.
 4. Confirm the server can fetch the approved monorepo remote.
 5. Re-run read-only server inventory and compare with:
@@ -94,7 +95,7 @@ Preparation sequence:
 ```bash
 cd /home/ubuntu
 test ! -e qintopia-agent-os-monorepo || true
-git clone <approved-monorepo-remote> qintopia-agent-os-monorepo
+git clone git@github.com:qintopia-agent-studio/qintopia-agent-os.git qintopia-agent-os-monorepo
 cd /home/ubuntu/qintopia-agent-os-monorepo
 git checkout master
 git fetch origin

@@ -260,6 +260,10 @@ and future programming agents.
   - linked the runbook from operations docs
   - kept server deploy, cleanup, archive, systemd, and nginx changes blocked on an
     owner-approved migration window
+- Added the approved GitHub remote for M9:
+  `git@github.com:qintopia-agent-studio/qintopia-agent-os.git`
+- Updated repository code owners to `detroxryo`, `noraincode`, `PatrickLiveCool`, and
+  `qiaopengjun5162`.
 
 ## Update Rule
 
@@ -279,8 +283,8 @@ Recommended order:
 
 1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-2. Fill the required-input table in `docs/operations/m9-server-cutover-runbook.md` when
-   the owner approves a target SHA and migration window.
+2. Fill the target commit SHA and migration window in
+   `docs/operations/m9-server-cutover-runbook.md`.
 3. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
    only after owner approval.
 4. Add deploy smoke and rollback notes before any production wiring changes for
