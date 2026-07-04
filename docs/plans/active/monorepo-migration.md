@@ -293,8 +293,9 @@ and future programming agents.
   - changed sidecar artifact upload to run in parallel with `pnpm check` on `master`
     pushes, while requiring deployment downloads to come from a successful workflow run
     for the approved commit SHA
-  - replaced the broad hand-written Cargo target cache with the Rust-specific
-    `Swatinem/rust-cache@v2` dependency cache
+  - removed the broad hand-written Cargo target cache; deferred Rust dependency caching
+    because the first Rust-specific cache trial produced post-step metadata cleanup
+    noise under the pinned Rust 1.75.0 toolchain
   - kept pull-request CI focused on `pnpm check`; release artifact upload remains a
     `master` push output only
 

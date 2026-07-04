@@ -109,10 +109,9 @@ become versioned.
   pnpm, or Rust builds on the production server.
 - Pinned sidecar CI checks and artifact builds to Rust 1.75.0 to match the sidecar
   `rust-version`, with `rustfmt` installed for the sidecar format gate.
-- Upgraded GitHub Actions workflow actions to Node.js 24-compatible major versions and
-  added Cargo caching for sidecar checks and artifact builds.
+- Upgraded GitHub Actions workflow actions to Node.js 24-compatible major versions.
 - Optimized CI wall-clock time by running the `sidecar-artifact` upload in parallel with
   `pnpm check` on `master` pushes, while keeping deployment gated to successful workflow
   runs for the approved commit SHA.
-- Replaced the broad hand-written Cargo target cache with the Rust-specific
-  `Swatinem/rust-cache@v2` dependency cache.
+- Removed broad Cargo target caching and deferred Rust dependency caching until it can
+  run cleanly with the pinned Rust 1.75.0 toolchain.

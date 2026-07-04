@@ -67,9 +67,11 @@ M9 server verification. The server should download and verify this artifact for 
 approved commit SHA, then set the executable bit after checksum verification, instead of
 rebuilding the sidecar on the server.
 
-Both CI jobs use the Rust-specific `Swatinem/rust-cache@v2` cache action for
-`runtime/sidecar`. The action runs on Node.js 24 and caches Cargo dependency artifacts
-with Rust-aware cleanup instead of restoring a broad hand-written `target` cache.
+Rust dependency caching is intentionally not enabled yet. The sidecar is pinned to Rust
+1.75.0 for server compatibility, and the first Rust-specific cache trial produced
+post-step metadata cleanup noise against newer registry crates. Keep CI clean first;
+revisit Rust caching only with a tested cache command that is compatible with the pinned
+toolchain.
 
 Required production-adjacent PR evidence:
 
