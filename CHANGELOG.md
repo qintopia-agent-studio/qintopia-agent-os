@@ -75,6 +75,9 @@ become versioned.
   services now running from the monorepo checkout and verified CI artifact.
 - Added `deploy/sidecar/scripts/github-app-git.sh` for GitHub App based private repo
   fetches without storing installation tokens in git remotes or config.
+- Added `docs/operations/server-directory-plan.md` to define the target server
+  filesystem, release/current model, Hermes runtime boundary, and legacy cleanup
+  candidates.
 
 ### Changed
 
@@ -142,3 +145,11 @@ become versioned.
   units include `QINTOPIA_SIDECAR_MIGRATIONS_DIR`.
 - Documented the GitHub App `Contents: read` path as the replacement direction for the
   server bot SSH alias.
+- Updated migration planning to treat M9-D as a partial cutover, with M9-F required to
+  remove remaining `/home/ubuntu/qintopia-msg-sidecar` worker and MCP references.
+- Clarified that direct `qintopia-agent-os-artifacts/<sha>` service paths are a
+  transition model and that future releases should use immutable release directories
+  with stable `current` and `previous` symlinks.
+- Reframed the adopted standalone sidecar deployment docs as historical rollback
+  evidence and pointed deploy contributors to the current M9 runbook plus M10
+  release/current server plan.

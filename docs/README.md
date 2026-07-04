@@ -29,8 +29,10 @@ and the local historical documents that still contain useful design evidence.
     [operations/inventory/README.md](operations/inventory/README.md)
 13. M9 server cutover runbook:
     [operations/m9-server-cutover-runbook.md](operations/m9-server-cutover-runbook.md)
-14. Reports index: [reports/README.md](reports/README.md)
-15. Active migration plan:
+14. Server directory plan:
+    [operations/server-directory-plan.md](operations/server-directory-plan.md)
+15. Reports index: [reports/README.md](reports/README.md)
+16. Active migration plan:
     [plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
 
 ## Directory Map

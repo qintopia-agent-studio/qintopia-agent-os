@@ -3,6 +3,12 @@
 This document defines the monorepo-native systemd target shape for the M9 sidecar
 cutover. It is preparation material, not approval to mutate the server.
 
+The M9 shape below is a transition model: units point directly at
+`qintopia-agent-os-artifacts/<sha>`. The target direction for M10 is immutable
+`qintopia-agent-os-releases/<sha>` directories plus stable `current` and `previous`
+symlinks. See `docs/operations/server-directory-plan.md` before adding new deploy
+automation.
+
 ## Goal
 
 Move sidecar services away from the standalone checkout and server-local release build:
@@ -17,6 +23,14 @@ to a reviewed monorepo checkout plus a verified CI artifact:
 ```text
 /home/ubuntu/qintopia-agent-os-monorepo
 /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar
+```
+
+After M9-F removes all live references to `/home/ubuntu/qintopia-msg-sidecar`, the next
+deployment iteration should move from artifact paths to release paths:
+
+```text
+/home/ubuntu/qintopia-agent-os-releases/current
+/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar
 ```
 
 ## Non-Mutating Preview
@@ -59,6 +73,10 @@ The renderer produces the full known sidecar service family:
 M9 is a cutover, not a worker expansion. Do not enable a service or timer that was not
 already active unless the owner explicitly approves that addition during the window.
 
+M9-F should include the remaining already-active `qintopia-agentos-*` workers that still
+reference `/home/ubuntu/qintopia-msg-sidecar`. It should not enable operations timers or
+real external adapter paths.
+
 ## Unit Contract
 
 Every target service must use:
@@ -68,6 +86,16 @@ WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
 EnvironmentFile=/etc/qintopia/message-sidecar.env
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations
 ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar <subcommand>
+```
+
+The M10 release/current contract should use:
+
+```text
+WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
+EnvironmentFile=/etc/qintopia/message-sidecar.env
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations
+Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-target-sha>
+ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
 ```
 
 The identity worker may also use:

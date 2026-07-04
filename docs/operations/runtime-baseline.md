@@ -1,6 +1,6 @@
 # Runtime Baseline
 
-Updated: 2026-07-03
+Updated: 2026-07-04
 
 This document summarizes the production runtime baseline from local and server read-only
 documents. It is not a deployment runbook. Use it to decide what needs inventory,
@@ -34,10 +34,39 @@ Agent OS sidecar workers, Postgres, NATS, Feishu, knowledge stores
 | NATS               | Worker dependency                                    | Wrap as infrastructure dependency                               |
 | nginx/systemd      | Runtime entry and service management                 | Template under `runtime/` and `deploy/`                         |
 
+## Current Server Deployment State
+
+The 2026-07-04 M9-D cutover moved only the first three sidecar services to the monorepo
+checkout plus verified CI artifact. The server is still mixed:
+
+| Runtime path                                     | Current role                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `/home/ubuntu/qintopia-agent-os-monorepo`        | new deploy checkout for runbooks, scripts, migrations, and docs              |
+| `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` | transition path for verified CI sidecar binaries                             |
+| `/home/ubuntu/qintopia-msg-sidecar`              | legacy checkout still used by six AgentOS workers and Hermes MCP context     |
+| `/home/ubuntu/.hermes`                           | live Hermes runtime; not a release directory and not safe to copy wholesale  |
+| `/home/ubuntu/.hermes/profiles/*`                | live profile state; versioned files must be extracted into templates/bundles |
+
+The target deployment model is versioned releases:
+
+```text
+/home/ubuntu/qintopia-agent-os-releases/<approved-sha>
+/home/ubuntu/qintopia-agent-os-releases/current
+/home/ubuntu/qintopia-agent-os-releases/previous
+```
+
+Systemd services and Hermes-managed profile links should eventually point at `current`.
+Rollback should switch `current` back to `previous` and restart the approved services.
+
 ## Known Deprecated Or Legacy Areas
 
 | Area                                        | Direction                                                                                            |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `/home/ubuntu/qintopia-msg-sidecar`         | remove only after M9-F migrates legacy workers and Hermes MCP context                                |
+| `/home/ubuntu/qintopia-agent-os`            | review-pool only; do not use as source of truth                                                      |
+| `/home/ubuntu/qintopia-hermes-runtime`      | review for unique evidence, then archive or delete                                                   |
+| `/home/ubuntu/qintopia-migration`           | archive evidence or delete after owner review                                                        |
+| `/home/ubuntu/qintopia-worklog-guard-*`     | archive or delete after confirming no timer/process reference                                        |
 | WorkTool gateway and WorkTool Hermes plugin | Registered under `deprecated/`; remove only after owner-approved cleanup                             |
 | OpenClaw QiWe adapter                       | Registered under `deprecated/openclaw`; keep only as rollback/audit reference until owner retires it |
 | Hermes Kanban                               | Do not build new workflows on it                                                                     |
@@ -55,9 +84,12 @@ Agent OS sidecar workers, Postgres, NATS, Feishu, knowledge stores
 
 ## Next Runtime Documentation Work
 
-M3 establishes documentation entrypoints. Later migration phases should add:
+Next migration phases should add:
 
-- per-source inventory records
+- M9-F legacy worker and Hermes MCP path migration evidence
+- release/current directory runbook and renderer support
+- Hermes profile bundle rules for Erhua and other agents
+- skill bundle rules for `skills/qiwe` and profile-local plugins
 - systemd and nginx templates
 - deploy dry-run output
 - smoke check runbooks

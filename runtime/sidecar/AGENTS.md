@@ -7,7 +7,10 @@
 - Database migrations: `../postgres/migrations/`
 - Versioned data design docs: `../postgres/docs/data-design/`
 - Server deployment scripts: `../../deploy/sidecar/scripts/`
-- Server deployment runbook: `../../deploy/sidecar/docs/server-deployment.md`
+- Current cutover runbook: `../../docs/operations/m9-server-cutover-runbook.md`
+- Target server directory plan: `../../docs/operations/server-directory-plan.md`
+- Legacy standalone deployment snapshot:
+  `../../deploy/sidecar/docs/server-deployment.md`
 - Sidecar entrypoint: `src/main.rs`
 - NATS consumer loop: `src/consumer.rs`
 - Postgres persistence: `src/db.rs`
@@ -32,6 +35,8 @@ From the monorepo root, prefer:
   failures must not be able to block Hermes webhook ACK or replies.
 - Keep compatibility with the server Rust toolchain: `rustc/cargo 1.75.0`.
 - Manage this project through the monorepo root git repository.
+- Treat `deploy/sidecar/docs/server-deployment.md` as historical rollback evidence, not
+  the current deployment path.
 - Do not commit database credentials or server-only env files.
 - Use runtime SQLx queries, not compile-time `query!` macros, so builds do not require
   database access.

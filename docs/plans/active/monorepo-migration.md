@@ -1,6 +1,6 @@
 # Qintopia Agent OS Monorepo Migration Plan
 
-Owner: TBD Updated: 2026-07-04
+Owner: PatrickLiveCool Updated: 2026-07-04
 
 ## Goal
 
@@ -61,19 +61,20 @@ and future programming agents.
 
 ## Migration Phases
 
-| Phase                       | Status                          | Exit criteria                                                                                                                                                                       |
-| --------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M0 repository bootstrap     | Complete                        | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                                                    |
-| M1 inventory                | Complete                        | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                                                  |
-| M2 registry contract        | Complete                        | registry schemas and package manifest templates exist and validate                                                                                                                  |
-| M3 docs migration           | Complete                        | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                                              |
-| M4 first skill adoption     | Complete                        | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                                                  |
-| M5 runtime sidecar adoption | Complete                        | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                                                |
-| M5.5 anti-drift guardrails  | Complete                        | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                                                         |
-| M6 agents adoption          | Complete                        | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                                                  |
-| M7 WorkTool decommission    | Complete                        | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                               |
-| M8 CI/CD deployment gate    | Complete                        | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                              |
-| M9 server cutover           | Active service cutover complete | GitHub App artifact download, DB preflight/migrations, and approved active systemd service family cutover passed; timers, external adapters, and deprecated cleanup remain deferred |
+| Phase                       | Status                   | Exit criteria                                                                                                                                         |
+| --------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 repository bootstrap     | Complete                 | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                      |
+| M1 inventory                | Complete                 | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                    |
+| M2 registry contract        | Complete                 | registry schemas and package manifest templates exist and validate                                                                                    |
+| M3 docs migration           | Complete                 | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                |
+| M4 first skill adoption     | Complete                 | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                    |
+| M5 runtime sidecar adoption | Complete                 | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                  |
+| M5.5 anti-drift guardrails  | Complete                 | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                           |
+| M6 agents adoption          | Complete                 | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                    |
+| M7 WorkTool decommission    | Complete                 | WorkTool references classified and either deprecated or final-migration cleanup items                                                                 |
+| M8 CI/CD deployment gate    | Complete                 | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                |
+| M9 server cutover           | Partial cutover complete | GitHub App artifact download, DB preflight/migrations, and three approved sidecar services cut over; legacy worker and MCP references still need M9-F |
+| M10 release model           | Planned                  | versioned release directories and `current`/`previous` symlinks replace direct artifact paths and server-local profile/plugin copies                  |
 
 ## Progress Log
 
@@ -392,6 +393,22 @@ and future programming agents.
     `GIT_ASKPASS` helper and the server-local GitHub App key
   - added `deploy/sidecar/scripts/github-app-git.sh` so future server `git fetch`
     operations do not depend on the bot SSH alias or stored tokens
+- Reconciled the live server directory direction after M9-D/M9-E:
+  - recorded the target server filesystem shape in
+    `docs/operations/server-directory-plan.md`
+  - confirmed the current deployment is a transition model:
+    `/home/ubuntu/qintopia-agent-os-monorepo` plus
+    `/home/ubuntu/qintopia-agent-os-artifacts/<sha>`
+  - set the target model to immutable `/home/ubuntu/qintopia-agent-os-releases/<sha>`
+    directories with stable `current` and `previous` symlinks
+  - confirmed `/home/ubuntu/.hermes` remains live Hermes runtime state, not a release
+    directory
+  - identified remaining legacy references to `/home/ubuntu/qintopia-msg-sidecar` from
+    six `qintopia-agentos-*` workers and Hermes `mcp-context` processes
+  - classified old server directories such as `/home/ubuntu/qintopia-agent-os`,
+    `/home/ubuntu/qintopia-hermes-runtime`, `/home/ubuntu/qintopia-migration`,
+    `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and OpenClaw as archive or cleanup
+    candidates after runtime references are removed
 
 ## Update Rule
 
@@ -405,9 +422,15 @@ Every migration PR must update:
 
 Remaining follow-up after the active service cutover:
 
-- M9 monitoring and evidence: the approved active sidecar service family is repointed to
-  the monorepo artifact, and production remains on
-  `c70378408c53de5f4166e8b9bde45b15a97cabb0` until a later approved repoint.
+- M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
+  the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
+  still reference `/home/ubuntu/qintopia-msg-sidecar`.
+- M10 release/current model: replace direct
+  `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
+  directories and stable `current`/`previous` symlinks.
+- M9 monitoring and evidence: production remains on
+  `c70378408c53de5f4166e8b9bde45b15a97cabb0` for the three repointed services until a
+  later approved repoint.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
 - Deprecated runtime cleanup: WorkTool, Xiaoqin WorkTool, OpenClaw, and related nginx
@@ -415,16 +438,27 @@ Remaining follow-up after the active service cutover:
 
 Recommended order:
 
-1. Commit and push the repository-side M9-D evidence and renderer guard fix.
-2. Switch the server monorepo checkout `origin` to plain HTTPS and verify future fetches
-   through `deploy/sidecar/scripts/github-app-git.sh`.
-3. Monitor the three repointed services and check recent journals before enabling any
-   additional workers or timers.
+1. Complete M9-F by repointing remaining active
+   `qintopia-agentos-member-profile-worker`, `qintopia-agentos-graph-projection-worker`,
+   `qintopia-agentos-raw-archive-worker`, `qintopia-agentos-event-signal-worker`,
+   `qintopia-agentos-daily-digest-worker`, and `qintopia-agentos-daily-digest-publisher`
+   services away from `/home/ubuntu/qintopia-msg-sidecar`.
+2. Move Hermes `mcp-context` command references away from
+   `/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp` and into a
+   reviewed monorepo/release-managed command path.
+3. Design M10 release packaging:
+   - `sidecar-runtime` release payload
+   - `hermes-profile-bundle-<agent>` payloads for reviewed non-secret profile files
+   - `skill-bundle-<skill>` payloads for Hermes plugins such as `skills/qiwe`
+   - `qintopia-agent-os-releases/<sha>` with `current` and `previous` symlinks
 4. Do not repoint production to a newer commit just because docs changed; use a new
-   approved target SHA and artifact only when there is a production code change.
+   approved target SHA and artifact only when there is a production runtime change.
 5. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-6. During the final cleanup window, archive or remove WorkTool/Xiaoqin/OpenClaw
-   directories, legacy units, and nginx references only after owner approval.
+6. After no process, unit, timer, cron, MCP command, or nginx route references legacy
+   paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
+   `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
+   `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and
+   OpenClaw paths only with owner approval.
 7. Add deploy smoke and rollback notes before any production wiring changes for
-   `skills/qiwe`.
+   `skills/qiwe` or Erhua profile bundles.

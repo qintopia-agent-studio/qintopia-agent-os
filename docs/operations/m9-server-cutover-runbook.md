@@ -2,9 +2,14 @@
 
 M9 moves production deployment from scattered server checkouts and ad hoc updates to
 this monorepo. The approved M9-D active service cutover was executed on 2026-07-04 for
-the three sidecar services listed below. This document now serves as the evidence record
-for that cutover and the reusable runbook for future approved repoints or cleanup
-windows.
+the three sidecar services listed below. The server is currently in a transitional
+state: some services run from verified CI artifacts, while legacy workers and Hermes MCP
+commands still reference the old `/home/ubuntu/qintopia-msg-sidecar` checkout.
+
+This document is the evidence record for the cutover and the reusable runbook for future
+approved repoints or cleanup windows. The target direction is described in
+`docs/operations/server-directory-plan.md`: immutable release directories with
+`current`/`previous` symlinks should replace direct artifact paths after M9-F.
 
 ## Scope
 
@@ -61,6 +66,11 @@ GitHub retains only the latest two sidecar CI artifacts. Download and verify the
 approved target artifact before it is older than the current build plus one rollback
 build, or preserve the verified server copy under
 `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>`.
+
+`/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is a transition path. The next release
+model should promote verified payloads into
+`/home/ubuntu/qintopia-agent-os-releases/<sha>` and point systemd/Hermes managed mounts
+at `/home/ubuntu/qintopia-agent-os-releases/current`.
 
 ## Preflight And Cutover Evidence
 
@@ -167,6 +177,20 @@ units.
 | Server git auth          | `git ls-remote` passed through temporary `GIT_ASKPASS` and the server-local App key    |
 | Verified master SHA      | `60cfeadbd972aa4b6a32c76d794cb42f0bc11568`                                             |
 | Persistent credential    | none; token is short-lived and not stored in the remote URL, git config, or shell args |
+
+2026-07-04 read-only follow-up identified the remaining mixed-state references:
+
+| Area                        | Current state                                                                                                                                    | Required follow-up                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| New sidecar services        | `qintopia-message-sidecar`, `qintopia-message-embedding-worker`, and `qintopia-message-identity-worker` run from artifact `c703784...`           | keep monitored until next approved repoint |
+| Legacy AgentOS workers      | six `qintopia-agentos-*` workers still run from `/home/ubuntu/qintopia-msg-sidecar/target/release/qintopia-message-sidecar`                      | M9-F repoint to approved artifact/release  |
+| Hermes MCP context commands | live `mcp-context` processes still start from `/home/ubuntu/qintopia-msg-sidecar`                                                                | move to monorepo/release-managed command   |
+| Server checkout             | `/home/ubuntu/qintopia-agent-os-monorepo` is on the latest `master` checkout, but runtime artifact remains pinned to the approved production SHA | do not auto-promote docs-only commits      |
+| Directory cleanup           | old checkouts, WorkTool, Xiaoqin, OpenClaw, migration, and worklog guard directories still exist                                                 | archive only after no references remain    |
+
+M9 is therefore not finished as a full server cleanup. It is safe only to say the first
+approved service family cutover passed. Complete M9-F before removing
+`/home/ubuntu/qintopia-msg-sidecar`.
 
 ## Pre-Cutover Freeze
 
@@ -301,7 +325,7 @@ approves test audit rows during the window.
 The sidecar service family should point to the monorepo checkout only after preflight
 passes.
 
-Expected service shape:
+Current transition service shape:
 
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
@@ -309,6 +333,19 @@ ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopi
 EnvironmentFile=/etc/qintopia/message-sidecar.env
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations
 ```
+
+Target release/current service shape:
+
+```text
+WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
+ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
+EnvironmentFile=/etc/qintopia/message-sidecar.env
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations
+Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-target-sha>
+```
+
+For M9-F, repoint the remaining already-active legacy workers first. Do not enable the
+operations timers or external adapter paths during the same window.
 
 For exact sidecar command details, use `deploy/sidecar/docs/systemd-cutover-plan.md` and
 render the target unit review files before copying anything into `/etc/systemd/system`:
@@ -335,11 +372,20 @@ window. Do not enable new workers by default.
 
 ## Deprecated Runtime Cleanup
 
-Cleanup is allowed only after owner approval during M9.
+Cleanup is allowed only after owner approval and after M9-F removes live references to
+legacy paths.
 
 Deprecated assets currently classified for final-migration handling:
 
+- `/home/ubuntu/qintopia-msg-sidecar`
+- `/home/ubuntu/qintopia-agent-os`
+- `/home/ubuntu/qintopia-hermes-runtime`
+- `/home/ubuntu/qintopia-message-sidecar-build`
+- `/home/ubuntu/qintopia-artifacts`
+- `/home/ubuntu/qintopia-migration`
+- `/home/ubuntu/qintopia-worklog-guard-*`
 - `/home/ubuntu/worktool-gateway`
+- `/home/ubuntu/worktool-gateway-old`
 - `/home/ubuntu/.hermes/profiles/xiaoqin`
 - `/home/ubuntu/.hermes/profiles/xiaoqin/plugins/worktool-platform`
 - `/opt/qiwe-openclaw-adapter`

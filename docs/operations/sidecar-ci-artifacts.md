@@ -59,6 +59,13 @@ model: once an artifact has been downloaded and verified on the server, the serv
 under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` remains separate
 from GitHub artifact retention.
 
+`qintopia-agent-os-artifacts/<sha>` is the current transition path. The target release
+model should promote verified payloads into immutable
+`/home/ubuntu/qintopia-agent-os-releases/<sha>` directories and run services through a
+stable `/home/ubuntu/qintopia-agent-os-releases/current` symlink. In that model, GitHub
+Actions artifacts are the transport, while the server release directory is the runtime
+source.
+
 ## Server Download
 
 For the private repository, downloading GitHub Actions artifacts requires GitHub API
@@ -143,3 +150,20 @@ listing, and worker check-only or dry-run commands.
 
 Production environment files remain outside git and are loaded only during approved M9
 verification or service start.
+
+## Beyond Sidecar
+
+The sidecar artifact proves the binary release path. Agent OS also needs release
+payloads for Hermes-managed capabilities:
+
+| Payload                         | Purpose                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------- |
+| `sidecar-runtime`               | Rust sidecar binary, checksums, migrations, and runtime manifest                            |
+| `hermes-profile-bundle-<agent>` | reviewed non-secret files for a Hermes profile such as Erhua `SOUL.md`, config, MCP command |
+| `skill-bundle-<skill>`          | reviewed Hermes plugin or skill package such as `skills/qiwe`                               |
+| `workflow-bundle-<workflow>`    | reviewed scheduled or cross-Agent workflow scripts and manifests                            |
+
+Hermes itself is not rebuilt by this repository. Hermes remains the runtime. These
+payloads update what Hermes mounts or executes: profile files, plugins, scripts, MCP
+commands, and sidecar services. Live Hermes state stays on the server and must not be
+overwritten by artifacts.

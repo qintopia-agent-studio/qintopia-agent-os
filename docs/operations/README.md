@@ -12,6 +12,8 @@ canonical architecture, engineering, package, or deployment docs.
   server and local documents reviewed during the documentation organization pass.
 - [runtime-baseline.md](runtime-baseline.md): production runtime baseline and migration
   implications.
+- [server-directory-plan.md](server-directory-plan.md): target server filesystem shape,
+  transition directories, legacy cleanup candidates, and Hermes runtime boundary.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
 - [sidecar-ci-artifacts.md](sidecar-ci-artifacts.md): M9.1 sidecar artifact contract, CI

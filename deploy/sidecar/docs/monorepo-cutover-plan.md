@@ -22,7 +22,7 @@ monorepo-native systemd unit target, use `systemd-cutover-plan.md`.
 The Huabaosi shadow branch is review-pool input, not an approved production roadmap
 item.
 
-## Target Production Model
+## M9 Transition Model
 
 - Server checkout: `/home/ubuntu/qintopia-agent-os-monorepo`
 - Git branch: `master`
@@ -40,6 +40,32 @@ and rollback checks.
 M9-D completed this cutover for the approved active service family on 2026-07-04 at
 `c70378408c53de5f4166e8b9bde45b15a97cabb0`. Future use of this plan should be treated as
 a new repoint or cleanup window, not as permission to enable additional services.
+
+M9 is not the final server shape. M9-F still needs to remove live references to the old
+`/home/ubuntu/qintopia-msg-sidecar` checkout from the remaining active
+`qintopia-agentos-*` workers and Hermes `mcp-context` command path.
+
+## M10 Target Release Model
+
+The target model after M9-F is:
+
+```text
+/home/ubuntu/qintopia-agent-os-releases/<approved-sha>
+/home/ubuntu/qintopia-agent-os-releases/current
+/home/ubuntu/qintopia-agent-os-releases/previous
+```
+
+In that model, systemd and Hermes-managed profile links should use `current`:
+
+```text
+WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations
+ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
+```
+
+Hermes profile directories remain live runtime state. Only reviewed non-secret profile
+files, plugins, scripts, policies, and MCP command wrappers should become symlinks or
+mounts from the release directory.
 
 ## Cutover Preconditions
 
