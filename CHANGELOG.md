@@ -65,6 +65,8 @@ become versioned.
   collaboration.
 - Added M9 read-only server preflight findings and migration blockers.
 - Recorded server bot SSH access for the Agent OS monorepo remote.
+- Added M9.1 sidecar CI artifact build, manifest, checksum, upload, server fetch, and
+  artifact-only smoke workflow.
 
 ### Changed
 
@@ -103,3 +105,7 @@ become versioned.
   cleanup to final migration.
 - Marked M9 server cutover prepared while keeping all server mutations blocked until an
   owner-approved migration window.
+- Updated M9 runbook to deploy a CI-built sidecar artifact instead of requiring Node.js,
+  pnpm, or Rust builds on the production server.
+- Pinned sidecar CI checks and artifact builds to Rust 1.75.0 to match the sidecar
+  `rust-version`.

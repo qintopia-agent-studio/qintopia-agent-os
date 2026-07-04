@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
 cd "$MONOREPO_ROOT"
+if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
+  BIN_CMD=("$QINTOPIA_SIDECAR_BIN")
+else
+  BIN_CMD=("${CARGO:-cargo}" run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" --)
+fi
 
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_SHADOW_ENABLE:-}" != "1" ]]; then
   echo "xiaoman activity shadow read smoke skipped: set QINTOPIA_XIAOMAN_ACTIVITY_SHADOW_ENABLE=1 to run against Feishu Base" >&2
@@ -36,7 +41,7 @@ SHADOW_DATE="${QINTOPIA_XIAOMAN_ACTIVITY_SHADOW_DATE:-$(date +%F)}"
 run_json() {
   local operation="$1"
   local payload="$2"
-  cargo run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" -- xiaoman-activity "$operation" \
+  "${BIN_CMD[@]}" xiaoman-activity "$operation" \
     --payload-json "$payload" \
     --use-feishu-base \
     --apply

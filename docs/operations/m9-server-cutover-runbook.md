@@ -47,6 +47,11 @@ pnpm check
 pnpm deploy:preflight
 ```
 
+M9.1 also requires a successful `sidecar-artifact` CI job for the target SHA. The server
+must deploy the CI-built artifact after verifying `artifact-manifest.json` and
+`SHA256SUMS`; it should not rebuild the sidecar with local Node.js, pnpm, or Rust
+tooling during the migration window.
+
 ## Preflight Dry Run
 
 2026-07-03 read-only preflight results:
@@ -59,19 +64,19 @@ pnpm deploy:preflight
 | GitHub default branch | `master`                                                                           |
 | Server target path    | `/home/ubuntu/qintopia-agent-os-monorepo` missing                                  |
 | Server GitHub access  | pass through bot account and `github-qintopia-agent-os` SSH alias                  |
-| Server Node.js        | missing from `PATH`                                                                |
-| Server pnpm           | missing from `PATH`                                                                |
-| Server Rust           | `cargo 1.96.1`, `rustc 1.96.1` observed                                            |
-| Server disk           | `/` at about 90% used, about 5.7G available                                        |
+| Server Node.js        | missing from `PATH`; not required for artifact-based M9.1                          |
+| Server pnpm           | missing from `PATH`; not required for artifact-based M9.1                          |
+| Server Rust           | `cargo 1.96.1`, `rustc 1.96.1` observed; not required for artifact deploy          |
+| Server artifact tools | `curl`, `jq`, `unzip`, `sha256sum`, and `tar` available                            |
+| Server disk           | `/` at about 50% used, about 29G available after cleanup                           |
 | Current sidecar       | active, enabled, running from `/home/ubuntu/qintopia-msg-sidecar`                  |
 | Current sidecar SHA   | `b16c247a19ec751c08de75ae2d312f35b765f317` on `codex/huabaosi-localization-shadow` |
 
 Blocking items before cutover:
 
-1. Install or expose Node.js and pnpm on the server so `pnpm install --frozen-lockfile`,
-   `pnpm check`, and `pnpm deploy:preflight` can run from the monorepo checkout.
-2. Confirm available disk is sufficient for the monorepo checkout, dependencies, and
-   Rust release build.
+1. Confirm the approved target SHA has a successful `sidecar-artifact` CI artifact.
+2. Provide a short-lived GitHub token or GitHub CLI session for private repository
+   artifact download during the migration window.
 3. Reconfirm whether the Huabaosi shadow branch should remain review-pool before the
    active service is repointed.
 
@@ -130,31 +135,33 @@ git fetch origin
 git checkout <approved-target-sha>
 git status --short --branch
 git rev-parse HEAD
-pnpm install --frozen-lockfile
-pnpm check
-pnpm deploy:preflight
 ```
 
 If the checkout already exists, use `git fetch` and
 `git checkout <approved-target-sha>`. Do not edit files in place.
 
-## Sidecar Build And Preflight
+## Sidecar Artifact Fetch And Preflight
 
-Build the sidecar from the monorepo checkout:
+Fetch the CI-built artifact for the approved commit SHA:
 
 ```bash
-cargo build --release --locked --manifest-path runtime/sidecar/Cargo.toml
+export GITHUB_TOKEN="<short-lived-token>"
+deploy/sidecar/scripts/fetch-ci-artifact.sh \
+  --sha <approved-target-sha> \
+  --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
-Run local binary checks without changing systemd:
+Run binary checks without changing systemd:
 
 ```bash
 set -a
 . /etc/qintopia/message-sidecar.env
 set +a
-runtime/sidecar/target/release/qintopia-message-sidecar check
-runtime/sidecar/target/release/qintopia-message-sidecar run-embedding-worker --check-only
-runtime/sidecar/target/release/qintopia-message-sidecar run-identity-worker --check-only --batch-size 5
+ARTIFACT_DIR=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
+"${ARTIFACT_DIR}/qintopia-message-sidecar" check
+"${ARTIFACT_DIR}/qintopia-message-sidecar" run-embedding-worker --check-only
+"${ARTIFACT_DIR}/qintopia-message-sidecar" run-identity-worker --check-only --batch-size 5
 deploy/sidecar/scripts/operations-control-plane-smoke.sh
 deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
 ```
@@ -171,7 +178,7 @@ Expected service shape:
 
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
-ExecStart=/home/ubuntu/qintopia-agent-os-monorepo/runtime/sidecar/target/release/qintopia-message-sidecar <subcommand>
+ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar <subcommand>
 EnvironmentFile=/etc/qintopia/message-sidecar.env
 ```
 
@@ -227,8 +234,10 @@ Minimum acceptance checks:
 
 ```bash
 git rev-parse HEAD
-pnpm deploy:preflight
-runtime/sidecar/target/release/qintopia-message-sidecar check
+ARTIFACT_DIR=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+cd "$ARTIFACT_DIR" && sha256sum -c SHA256SUMS
+export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
+"${ARTIFACT_DIR}/qintopia-message-sidecar" check
 deploy/sidecar/scripts/operations-control-plane-smoke.sh
 deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
 systemctl is-active qintopia-message-sidecar.service

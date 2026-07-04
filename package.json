@@ -14,6 +14,7 @@
     "secrets:check": "node tools/security/check-secrets.mjs",
     "deploy:preflight": "node tools/deploy/preflight.mjs",
     "deploy:preflight:ci": "node tools/deploy/preflight.mjs --ci",
+    "artifact:sidecar": "node tools/deploy/build-sidecar-artifact.mjs",
     "test:qiwe": "cd skills/qiwe && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
     "fmt:sidecar": "cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml",
     "check:sidecar": "cargo check --manifest-path runtime/sidecar/Cargo.toml",

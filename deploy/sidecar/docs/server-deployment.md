@@ -1,5 +1,10 @@
 # Server Deployment Runbook
 
+This is the adopted standalone sidecar runbook from before the Agent OS monorepo
+cutover. Keep it as historical deployment evidence and rollback reference. M9 should use
+`../../../docs/operations/m9-server-cutover-runbook.md` and the CI-built sidecar
+artifact path instead of rebuilding from this standalone checkout.
+
 This sidecar runs on the Hermes server and persists QiWe/Hermes message events from
 local NATS JetStream into the Postgres tunnel exposed on the server.
 

@@ -14,6 +14,8 @@ canonical architecture, engineering, package, or deployment docs.
   implications.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
+- [sidecar-ci-artifacts.md](sidecar-ci-artifacts.md): M9.1 sidecar artifact contract, CI
+  build output, checksum verification, and server download requirements.
 - [m9-server-cutover-runbook.md](m9-server-cutover-runbook.md): final migration runbook
   for monorepo checkout, sidecar service cutover, deprecated runtime cleanup,
   acceptance, and rollback.
@@ -22,6 +24,7 @@ canonical architecture, engineering, package, or deployment docs.
 
 - `pnpm agents:check`: validates active Agent package templates and dry-run
   expectations.
+- `pnpm artifact:sidecar`: builds the sidecar release artifact layout locally.
 - `pnpm deploy:preflight`: validates non-mutating deployment gates before any server
   cutover.
 

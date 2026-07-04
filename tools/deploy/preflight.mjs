@@ -19,6 +19,7 @@ const requiredScripts = [
   "policy:check",
   "secrets:check",
   "deploy:preflight:ci",
+  "artifact:sidecar",
   "test:qiwe",
   "test:sidecar",
   "smoke:sidecar",
@@ -29,6 +30,7 @@ const requiredDocs = [
   "docs/engineering/server-change-policy.md",
   "docs/engineering/ci-cd-gates.md",
   "deploy/sidecar/docs/monorepo-cutover-plan.md",
+  "docs/operations/sidecar-ci-artifacts.md",
 ];
 
 const requiredCheckFragments = [
@@ -109,6 +111,21 @@ if (exists("deploy/sidecar/manifest.yaml")) {
     addError(
       "deploy/sidecar/manifest.yaml: validation commands must include pnpm gates"
     );
+  }
+}
+
+const ciWorkflow = exists(".github/workflows/ci.yml")
+  ? readText(".github/workflows/ci.yml")
+  : "";
+for (const phrase of [
+  "sidecar-artifact",
+  "actions/upload-artifact@v4",
+  "qintopia-message-sidecar-linux-x86_64-gnu",
+  "actions/setup-node@v4",
+  "dtolnay/rust-toolchain@1.75.0",
+]) {
+  if (!ciWorkflow.includes(phrase)) {
+    addError(`.github/workflows/ci.yml: must include ${phrase}`);
   }
 }
 

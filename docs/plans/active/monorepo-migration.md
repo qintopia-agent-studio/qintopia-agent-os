@@ -275,6 +275,19 @@ and future programming agents.
     `codex/huabaosi-localization-shadow@b16c247a19ec751c08de75ae2d312f35b765f317`
 - Added the server bot SSH alias `github-qintopia-agent-os`; read-only repo access now
   returns `master@c621b1e119127d951f6b2c10cd2cb01aa46da569`.
+- Started M9.1 CI artifact release path:
+  - added `tools/deploy/build-sidecar-artifact.mjs`
+  - added `pnpm artifact:sidecar`
+  - added CI `sidecar-artifact` job with Rust 1.75.0 and `actions/upload-artifact@v4`
+  - added `deploy/sidecar/scripts/fetch-ci-artifact.sh` for server-side artifact
+    download, manifest verification, and checksum verification
+  - updated no-credential sidecar smoke scripts so M9 can validate the downloaded binary
+    through `QINTOPIA_SIDECAR_BIN` without server-side cargo
+  - added `docs/operations/sidecar-ci-artifacts.md`
+  - updated M9 runbook and sidecar cutover plan so the server deploys a CI-built
+    artifact instead of rebuilding with local Node.js, pnpm, or Rust tooling
+  - confirmed the server has `curl`, `jq`, `unzip`, `sha256sum`, and `tar`, and has
+    about 29G available on `/`
 
 ## Update Rule
 
@@ -294,8 +307,9 @@ Recommended order:
 
 1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
    review-pool input, not an approved roadmap item.
-2. Install or expose Node.js and pnpm on the server before trying monorepo CI checks.
-3. Confirm disk headroom for dependency install and Rust release build.
+2. Validate `sidecar-artifact` on GitHub Actions for the approved target SHA.
+3. Dry-run `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <target-sha>` on the
+   server with a short-lived GitHub token.
 4. Fill the target commit SHA and migration window in
    `docs/operations/m9-server-cutover-runbook.md`.
 5. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units

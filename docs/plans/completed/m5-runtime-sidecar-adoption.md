@@ -56,5 +56,5 @@ review-pool material. M5 did not adopt that branch as product direction.
 
 - M7 should finish WorkTool/OpenClaw cleanup decisions.
 - M9 should perform the reviewed server cutover using an approved commit SHA,
-  `pnpm deploy:preflight`, server build checks, service health checks, smokes, and
-  rollback notes.
+  `pnpm deploy:preflight`, CI-built artifact verification, service health checks,
+  smokes, and rollback notes.

@@ -7,11 +7,16 @@ SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
 cd "$MONOREPO_ROOT"
 
 FIXTURE_PATH="${QINTOPIA_XIAOMAN_ACTIVITY_FIXTURE_PATH:-${SIDECAR_DIR}/fixtures/xiaoman_activity_records.json}"
+if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
+  BIN_CMD=("$QINTOPIA_SIDECAR_BIN")
+else
+  BIN_CMD=("${CARGO:-cargo}" run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" --)
+fi
 
 run_json() {
   local operation="$1"
   local payload="$2"
-  cargo run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" -- xiaoman-activity "$operation" \
+  "${BIN_CMD[@]}" xiaoman-activity "$operation" \
     --payload-json "$payload" \
     --fixture-path "$FIXTURE_PATH" \
     --apply
@@ -60,7 +65,7 @@ PY
 
 set +e
 feishu_error="$(
-  cargo run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" -- xiaoman-activity record-get \
+  "${BIN_CMD[@]}" xiaoman-activity record-get \
     --payload-json '{"record_id":"rec_plan_20260628","table_role":"activity_plan","actor_agent":"xiaoman","operation":"record-get","dry_run":false}' \
     --use-feishu-base \
     --apply 2>&1
@@ -77,7 +82,7 @@ if [[ "$feishu_error" != *"QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN is requir
 fi
 
 write_output="$(
-  cargo run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" -- xiaoman-activity status-update \
+  "${BIN_CMD[@]}" xiaoman-activity status-update \
     --payload-json '{"record_id":"rec_plan_20260628","table_role":"activity_plan","status":"待人工确认","actor_agent":"xiaoman","operation":"status-update","dry_run":false}' \
     --apply
 )"

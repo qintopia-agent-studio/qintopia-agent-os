@@ -25,15 +25,16 @@ item.
 
 - Server checkout: `/home/ubuntu/qintopia-agent-os-monorepo`
 - Git branch: `master`
-- Build root: repository root
 - Sidecar crate: `runtime/sidecar`
 - Migration source: `runtime/postgres/migrations`
 - Runtime env file: `/etc/qintopia/message-sidecar.env`
-- Binary after build:
-  `/home/ubuntu/qintopia-agent-os-monorepo/runtime/sidecar/target/release/qintopia-message-sidecar`
+- Artifact directory: `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>`
+- Runtime binary:
+  `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar`
 
 Systemd units should point to the monorepo checkout only after the target commit has
-passed local CI, server build, smoke, and rollback checks.
+passed local CI, CI artifact upload, server-side manifest/checksum verification, smoke,
+and rollback checks.
 
 ## Cutover Preconditions
 
@@ -44,8 +45,10 @@ passed local CI, server build, smoke, and rollback checks.
   - kept in review-pool
   - discarded
 - `pnpm check` passes locally on the exact target commit.
-- `cargo build --release --locked --manifest-path runtime/sidecar/Cargo.toml` passes on
-  the server.
+- `sidecar-artifact` CI passes and uploads `qintopia-message-sidecar-linux-x86_64-gnu`
+  for the exact target commit.
+- `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <approved-target-sha>` verifies
+  `artifact-manifest.json` and `SHA256SUMS` on the server.
 - `deploy/sidecar/scripts/operations-control-plane-smoke.sh` passes on the server.
 - Apply smokes that write Postgres are explicitly approved before they run.
 - Rollback command and previous standalone commit are recorded before service changes.
@@ -70,14 +73,16 @@ passed local CI, server build, smoke, and rollback checks.
    cd /home/ubuntu/qintopia-agent-os-monorepo
    git checkout master
    git rev-parse HEAD
-   pnpm install --frozen-lockfile
-   pnpm check
+   git status --short --branch
    ```
 
-3. Build sidecar from monorepo:
+3. Fetch the CI-built sidecar artifact for the approved commit SHA:
 
    ```bash
-   cargo build --release --locked --manifest-path runtime/sidecar/Cargo.toml
+   export GITHUB_TOKEN="<short-lived-token>"
+   deploy/sidecar/scripts/fetch-ci-artifact.sh \
+     --sha <approved-target-sha> \
+     --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
    ```
 
 4. Validate without service cutover:
@@ -86,19 +91,21 @@ passed local CI, server build, smoke, and rollback checks.
    set -a
    . /etc/qintopia/message-sidecar.env
    set +a
-   runtime/sidecar/target/release/qintopia-message-sidecar check
+   ARTIFACT_DIR=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+   export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
+   "${ARTIFACT_DIR}/qintopia-message-sidecar" check
    deploy/sidecar/scripts/operations-control-plane-smoke.sh
    deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
    ```
 
-5. Install or update systemd units to point to the monorepo binary and working
-   directory.
+5. Install or update systemd units to point to the CI-built artifact and monorepo
+   working directory.
 
    The service should use:
 
    ```text
    WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
-   ExecStart=/home/ubuntu/qintopia-agent-os-monorepo/runtime/sidecar/target/release/qintopia-message-sidecar run
+   ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar run
    ```
 
    Worker units should use the same binary and explicit subcommands.
@@ -118,8 +125,11 @@ passed local CI, server build, smoke, and rollback checks.
    set -a
    . /etc/qintopia/message-sidecar.env
    set +a
-   runtime/sidecar/target/release/qintopia-message-sidecar check
+   ARTIFACT_DIR=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+   export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
+   "${ARTIFACT_DIR}/qintopia-message-sidecar" check
    deploy/sidecar/scripts/operations-control-plane-smoke.sh
+   deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
    ```
 
 ## Rollback

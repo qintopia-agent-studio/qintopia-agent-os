@@ -52,7 +52,14 @@ belongs to a reviewed runbook using an approved commit SHA.
 ## GitHub Actions
 
 The GitHub Actions CI workflow runs on pull requests and pushes to `master`. It installs
-Node.js, pnpm, Python, and Rust, then runs `pnpm check`.
+Node.js, pnpm, Python, and Rust 1.75.0, then runs `pnpm check`.
+
+After `pnpm check` passes, the `sidecar-artifact` job builds and uploads the
+`qintopia-message-sidecar-linux-x86_64-gnu` workflow artifact. The artifact contains the
+release binary, `artifact-manifest.json`, and `SHA256SUMS` for M9 server verification.
+The server should download and verify this artifact for an approved commit SHA, then set
+the executable bit after checksum verification, instead of rebuilding the sidecar on the
+server.
 
 Required production-adjacent PR evidence:
 

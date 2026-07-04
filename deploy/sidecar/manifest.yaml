@@ -18,6 +18,7 @@ validation:
   commands:
     - pnpm check
     - pnpm deploy:preflight
+    - pnpm artifact:sidecar
     - cargo test --manifest-path runtime/sidecar/Cargo.toml
     - pnpm smoke:sidecar
 dependencies:
@@ -32,4 +33,5 @@ tags:
 next_actions:
   - Decide in M9 whether to convert the legacy snapshot into a monorepo-native deploy
     script or replace it with a new release script.
-  - Use `pnpm deploy:preflight` before any approved production cutover.
+  - Use the CI-built sidecar artifact and verify artifact-manifest.json plus SHA256SUMS
+    before any approved production cutover.
