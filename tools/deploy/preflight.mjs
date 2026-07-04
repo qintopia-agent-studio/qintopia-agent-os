@@ -19,6 +19,7 @@ const requiredScripts = [
   "policy:check",
   "secrets:check",
   "deploy:preflight:ci",
+  "deploy:github-app-git:check",
   "deploy:postgres:schema:preflight",
   "deploy:systemd:check",
   "artifact:sidecar",
@@ -36,6 +37,7 @@ const requiredDocs = [
   "deploy/sidecar/docs/systemd-cutover-plan.md",
   "docs/operations/sidecar-ci-artifacts.md",
   "docs/operations/m9-server-cutover-runbook.md",
+  "deploy/sidecar/scripts/github-app-git.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
@@ -49,6 +51,7 @@ const requiredCheckFragments = [
   "pnpm policy:check",
   "pnpm secrets:check",
   "pnpm deploy:preflight:ci",
+  "pnpm deploy:github-app-git:check",
   "pnpm deploy:systemd:check",
   "pnpm test:qiwe",
   "pnpm test:sidecar",
@@ -91,6 +94,36 @@ for (const fragment of requiredCheckFragments) {
 for (const docPath of requiredDocs) {
   if (!exists(docPath)) {
     addError(`${docPath}: required deploy gate document is missing`);
+  }
+}
+
+if (exists("deploy/sidecar/scripts/github-app-git.sh")) {
+  const githubAppGitScript = readText("deploy/sidecar/scripts/github-app-git.sh");
+  for (const unsafeFragment of [
+    "x-access-token:",
+    "https://x-access-token:",
+    'GITHUB_APP_INSTALLATION_TOKEN"',
+    "GITHUB_APP_INSTALLATION_TOKEN'",
+  ]) {
+    if (githubAppGitScript.includes(unsafeFragment)) {
+      addError(
+        "deploy/sidecar/scripts/github-app-git.sh: installation token must not be passed through git URL, argv, or environment token value"
+      );
+    }
+  }
+  for (const requiredFragment of [
+    "GIT_ASKPASS",
+    "GIT_TERMINAL_PROMPT=0",
+    "token_file=",
+    'cat "$token_file"',
+    "/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens",
+    '.permissions.contents == "read" or .permissions.contents == "write"',
+  ]) {
+    if (!githubAppGitScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/github-app-git.sh: must use GitHub App askpass git auth (${requiredFragment})`
+      );
+    }
   }
 }
 

@@ -158,6 +158,16 @@ rendered unit. The unit was patched to
 verified active. Keep this environment line in all future rendered sidecar service
 units.
 
+2026-07-04 M9-E migrated repository fetch verification to GitHub App credentials:
+
+| Check                    | Result                                                                                 |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| Required App permissions | `Actions: read`, `Contents: read`, `Metadata: read`                                    |
+| Contents API             | `README.md` returned `200` with the installation token                                 |
+| Server git auth          | `git ls-remote` passed through temporary `GIT_ASKPASS` and the server-local App key    |
+| Verified master SHA      | `60cfeadbd972aa4b6a32c76d794cb42f0bc11568`                                             |
+| Persistent credential    | none; token is short-lived and not stored in the remote URL, git config, or shell args |
+
 ## Pre-Cutover Freeze
 
 Before any server mutation:
@@ -205,18 +215,34 @@ Preparation sequence:
 
 ```bash
 cd /home/ubuntu
-test ! -e qintopia-agent-os-monorepo || true
-git clone git@github-qintopia-agent-os:qintopia-agent-studio/qintopia-agent-os.git qintopia-agent-os-monorepo
+test -d qintopia-agent-os-monorepo
 cd /home/ubuntu/qintopia-agent-os-monorepo
 git checkout master
-git fetch origin
+git remote set-url origin https://github.com/qintopia-agent-studio/qintopia-agent-os.git
+GITHUB_APP_ID=4214034 \
+GITHUB_APP_INSTALLATION_ID=144332887 \
+GITHUB_APP_PRIVATE_KEY_PATH=/etc/qintopia/github-app/qintopia-agent-os-deployer.pem \
+deploy/sidecar/scripts/github-app-git.sh -- fetch origin
 git checkout <approved-target-sha>
 git status --short --branch
 git rev-parse HEAD
 ```
 
-If the checkout already exists, use `git fetch` and
-`git checkout <approved-target-sha>`. Do not edit files in place.
+If the checkout already exists, use `git fetch` and `git checkout <approved-target-sha>`
+through `github-app-git.sh`. Keep `origin` as the plain HTTPS repository URL without
+embedded credentials:
+
+```bash
+git remote set-url origin https://github.com/qintopia-agent-studio/qintopia-agent-os.git
+```
+
+Do not store the installation token in `.git/config`, shell history, or a credential
+helper cache.
+
+This sequence assumes the current server checkout already exists. For a brand-new host,
+bootstrap the first checkout with a separately reviewed copy of
+`deploy/sidecar/scripts/github-app-git.sh` or a dedicated bootstrap runbook; do not
+reintroduce a long-lived bot credential just to perform the first clone.
 
 ## Sidecar Artifact Fetch And Preflight
 

@@ -73,6 +73,8 @@ become versioned.
   `pnpm deploy:postgres:schema:preflight` as a read-only M9 database schema gate.
 - Added M9-D active service cutover evidence for the three owner-approved sidecar
   services now running from the monorepo checkout and verified CI artifact.
+- Added `deploy/sidecar/scripts/github-app-git.sh` for GitHub App based private repo
+  fetches without storing installation tokens in git remotes or config.
 
 ### Changed
 
@@ -138,3 +140,5 @@ become versioned.
   production remains pinned to the approved artifact SHA until a later approved repoint.
 - Hardened the M9 systemd renderer and deploy preflight so all rendered sidecar service
   units include `QINTOPIA_SIDECAR_MIGRATIONS_DIR`.
+- Documented the GitHub App `Contents: read` path as the replacement direction for the
+  server bot SSH alias.

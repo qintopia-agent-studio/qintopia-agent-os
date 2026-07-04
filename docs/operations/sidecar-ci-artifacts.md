@@ -101,6 +101,11 @@ It does not require Node.js, pnpm, Rust, Docker, or direct source edits on the s
 The GitHub App private key remains outside git and should be readable only by the
 deployment operator or service account.
 
+The same GitHub App can also read repository contents after the App installation has
+`Contents: read`. Use `deploy/sidecar/scripts/github-app-git.sh` for server-side
+`git fetch`, `git ls-remote`, or future clone operations. Keep the remote URL as plain
+HTTPS and let the wrapper provide a short-lived token through `GIT_ASKPASS`.
+
 ## Verification
 
 The fetch script automatically runs:

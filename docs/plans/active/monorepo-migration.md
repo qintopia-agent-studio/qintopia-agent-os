@@ -384,6 +384,14 @@ and future programming agents.
     Postgres schema preflight, and fixture smokes passed after the cutover
   - kept operations timers, real external send/workbench adapters, and
     WorkTool/Xiaoqin/OpenClaw cleanup disabled or deferred
+- Started M9-E GitHub App repository fetch migration:
+  - confirmed the App installation now has `Actions: read`, `Contents: read`, and
+    `Metadata: read`
+  - verified Contents API access to the private repository
+  - verified server-side `git ls-remote` against the private repository with a temporary
+    `GIT_ASKPASS` helper and the server-local GitHub App key
+  - added `deploy/sidecar/scripts/github-app-git.sh` so future server `git fetch`
+    operations do not depend on the bot SSH alias or stored tokens
 
 ## Update Rule
 
@@ -408,13 +416,15 @@ Remaining follow-up after the active service cutover:
 Recommended order:
 
 1. Commit and push the repository-side M9-D evidence and renderer guard fix.
-2. Monitor the three repointed services and check recent journals before enabling any
+2. Switch the server monorepo checkout `origin` to plain HTTPS and verify future fetches
+   through `deploy/sidecar/scripts/github-app-git.sh`.
+3. Monitor the three repointed services and check recent journals before enabling any
    additional workers or timers.
-3. Do not repoint production to a newer commit just because docs changed; use a new
+4. Do not repoint production to a newer commit just because docs changed; use a new
    approved target SHA and artifact only when there is a production code change.
-4. Do not enable real external send or real workbench adapter paths until production
+5. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-5. During the final cleanup window, archive or remove WorkTool/Xiaoqin/OpenClaw
+6. During the final cleanup window, archive or remove WorkTool/Xiaoqin/OpenClaw
    directories, legacy units, and nginx references only after owner approval.
-6. Add deploy smoke and rollback notes before any production wiring changes for
+7. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.

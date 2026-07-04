@@ -34,6 +34,27 @@ pnpm deploy:systemd:check
 The renderer is non-mutating. It writes review files to `dist/` by default and refuses
 to write directly into `/etc/systemd/system`.
 
+## GitHub App Git Access
+
+Validate the GitHub App git wrapper without credentials:
+
+```bash
+pnpm deploy:github-app-git:check
+```
+
+Run git commands against the private repository with a short-lived installation token:
+
+```bash
+GITHUB_APP_ID=4214034 \
+GITHUB_APP_INSTALLATION_ID=144332887 \
+GITHUB_APP_PRIVATE_KEY_PATH=/etc/qintopia/github-app/qintopia-agent-os-deployer.pem \
+deploy/sidecar/scripts/github-app-git.sh -- \
+  ls-remote https://github.com/qintopia-agent-studio/qintopia-agent-os.git refs/heads/master
+```
+
+The wrapper uses a temporary `GIT_ASKPASS` helper and never writes the token into the
+remote URL, git config, or command arguments.
+
 ## Artifact Build
 
 Build the sidecar CI artifact layout locally:
