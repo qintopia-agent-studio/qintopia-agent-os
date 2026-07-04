@@ -108,4 +108,4 @@ become versioned.
 - Updated M9 runbook to deploy a CI-built sidecar artifact instead of requiring Node.js,
   pnpm, or Rust builds on the production server.
 - Pinned sidecar CI checks and artifact builds to Rust 1.75.0 to match the sidecar
-  `rust-version`.
+  `rust-version`, with `rustfmt` installed for the sidecar format gate.

@@ -123,6 +123,7 @@ for (const phrase of [
   "qintopia-message-sidecar-linux-x86_64-gnu",
   "actions/setup-node@v4",
   "dtolnay/rust-toolchain@1.75.0",
+  "components: rustfmt",
 ]) {
   if (!ciWorkflow.includes(phrase)) {
     addError(`.github/workflows/ci.yml: must include ${phrase}`);

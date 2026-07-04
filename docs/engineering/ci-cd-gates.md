@@ -52,7 +52,7 @@ belongs to a reviewed runbook using an approved commit SHA.
 ## GitHub Actions
 
 The GitHub Actions CI workflow runs on pull requests and pushes to `master`. It installs
-Node.js, pnpm, Python, and Rust 1.75.0, then runs `pnpm check`.
+Node.js, pnpm, Python, Rust 1.75.0, and the `rustfmt` component, then runs `pnpm check`.
 
 After `pnpm check` passes, the `sidecar-artifact` job builds and uploads the
 `qintopia-message-sidecar-linux-x86_64-gnu` workflow artifact. The artifact contains the

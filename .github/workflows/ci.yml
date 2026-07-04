@@ -36,6 +36,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.75.0
+        with:
+          components: rustfmt
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
