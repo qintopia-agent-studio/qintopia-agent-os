@@ -119,11 +119,18 @@ const ciWorkflow = exists(".github/workflows/ci.yml")
   : "";
 for (const phrase of [
   "sidecar-artifact",
-  "actions/upload-artifact@v4",
+  'NODE_VERSION: "24"',
+  "pnpm/action-setup@v6",
+  "actions/checkout@v7",
+  "actions/setup-node@v6",
+  "actions/setup-python@v6",
+  "actions/cache@v6",
+  "actions/upload-artifact@v7",
   "qintopia-message-sidecar-linux-x86_64-gnu",
-  "actions/setup-node@v4",
   "dtolnay/rust-toolchain@1.75.0",
   "components: rustfmt",
+  "runtime/sidecar/target",
+  "runtime/sidecar/Cargo.lock",
 ]) {
   if (!ciWorkflow.includes(phrase)) {
     addError(`.github/workflows/ci.yml: must include ${phrase}`);

@@ -6,6 +6,11 @@ on:
     branches:
       - master
 
+env:
+  NODE_VERSION: "24"
+  RUST_TOOLCHAIN: "1.75.0"
+  PNPM_VERSION: "10.29.2"
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -16,21 +21,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: 10.29.2
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -38,6 +43,19 @@ jobs:
         uses: dtolnay/rust-toolchain@1.75.0
         with:
           components: rustfmt
+
+      - name: Cache sidecar cargo build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            runtime/sidecar/target
+          key:
+            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-${{
+            hashFiles('runtime/sidecar/Cargo.lock', '.github/workflows/ci.yml') }}
+          restore-keys: |
+            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -55,21 +73,34 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.75.0
+
+      - name: Cache sidecar cargo build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            runtime/sidecar/target
+          key:
+            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-${{
+            hashFiles('runtime/sidecar/Cargo.lock', '.github/workflows/ci.yml') }}
+          restore-keys: |
+            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-
 
       - name: Build sidecar artifact
         run: node tools/deploy/build-sidecar-artifact.mjs
 
       - name: Upload sidecar artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qintopia-message-sidecar-linux-x86_64-gnu
           path: dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu

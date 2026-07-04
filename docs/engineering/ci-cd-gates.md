@@ -51,8 +51,9 @@ belongs to a reviewed runbook using an approved commit SHA.
 
 ## GitHub Actions
 
-The GitHub Actions CI workflow runs on pull requests and pushes to `master`. It installs
-Node.js, pnpm, Python, Rust 1.75.0, and the `rustfmt` component, then runs `pnpm check`.
+The GitHub Actions CI workflow runs on pull requests and pushes to `master`. It uses
+Node.js 24 actions, installs Node.js 24, pnpm, Python, Rust 1.75.0, and the `rustfmt`
+component, then runs `pnpm check`.
 
 After `pnpm check` passes, the `sidecar-artifact` job builds and uploads the
 `qintopia-message-sidecar-linux-x86_64-gnu` workflow artifact. The artifact contains the
@@ -60,6 +61,11 @@ release binary, `artifact-manifest.json`, and `SHA256SUMS` for M9 server verific
 The server should download and verify this artifact for an approved commit SHA, then set
 the executable bit after checksum verification, instead of rebuilding the sidecar on the
 server.
+
+Both CI jobs cache the sidecar Cargo registry, git index, and `runtime/sidecar/target`
+using a key derived from the runner OS, Rust version, sidecar lockfile, and CI workflow.
+The artifact job runs after `pnpm check`, so a warm cache avoids rebuilding the same
+Rust dependency graph twice.
 
 Required production-adjacent PR evidence:
 

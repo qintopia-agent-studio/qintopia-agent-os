@@ -109,3 +109,5 @@ become versioned.
   pnpm, or Rust builds on the production server.
 - Pinned sidecar CI checks and artifact builds to Rust 1.75.0 to match the sidecar
   `rust-version`, with `rustfmt` installed for the sidecar format gate.
+- Upgraded GitHub Actions workflow actions to Node.js 24-compatible major versions and
+  added Cargo caching for sidecar checks and artifact builds.
