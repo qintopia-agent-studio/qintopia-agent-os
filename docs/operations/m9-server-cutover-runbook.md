@@ -1,8 +1,10 @@
 # M9 Server Cutover Runbook
 
 M9 moves production deployment from scattered server checkouts and ad hoc updates to
-this monorepo. This document is the execution contract for the final migration window.
-It is not permission to mutate the server before the owner approves a cutover.
+this monorepo. The approved M9-D active service cutover was executed on 2026-07-04 for
+the three sidecar services listed below. This document now serves as the evidence record
+for that cutover and the reusable runbook for future approved repoints or cleanup
+windows.
 
 ## Scope
 
@@ -25,31 +27,30 @@ M9 does not cover:
 
 ## Required Inputs
 
-Fill these before the migration window:
+M9-D executed with these inputs:
 
 | Field                  | Value                                                        |
 | ---------------------- | ------------------------------------------------------------ |
 | Owner approver         | PatrickLiveCool                                              |
-| Migration operator     | TBD                                                          |
+| Migration operator     | Codex with owner-provided approval window                    |
 | Reviewers              | detroxryo, noraincode, PatrickLiveCool, qiaopengjun5162      |
 | Monorepo remote        | `git@github.com:qintopia-agent-studio/qintopia-agent-os.git` |
 | Target branch          | master                                                       |
-| Target commit SHA      | TBD                                                          |
+| Target commit SHA      | `c70378408c53de5f4166e8b9bde45b15a97cabb0`                   |
 | Previous sidecar SHA   | `b16c247a19ec751c08de75ae2d312f35b765f317`                   |
-| Server start time      | TBD                                                          |
-| Rollback decision time | TBD                                                          |
+| Server start time      | 2026-07-04                                                   |
+| Rollback decision time | not used; post-cutover checks passed                         |
 | Rollback owner         | PatrickLiveCool                                              |
 
-The target SHA must pass:
+Future repoints must use a new approved target SHA that passes:
 
 ```bash
 pnpm check
 pnpm deploy:preflight
 ```
 
-The latest verified candidate before M9.3 was
-`416fa9b0ffc8219eaf47c5189c9f56547912342c`. After M9.3 merges, use the next green
-`master` SHA from CI as the final target for the approved window.
+The M9-D target SHA was `c70378408c53de5f4166e8b9bde45b15a97cabb0`, with workflow run
+`28700602736` passing both `check` and `sidecar-artifact`.
 
 M9.1 also requires a successful CI workflow run for the target SHA, including both
 `check` and `sidecar-artifact`. The server must deploy the CI-built artifact after
@@ -61,7 +62,7 @@ approved target artifact before it is older than the current build plus one roll
 build, or preserve the verified server copy under
 `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>`.
 
-## Preflight Dry Run
+## Preflight And Cutover Evidence
 
 2026-07-03 read-only preflight results:
 
@@ -81,14 +82,15 @@ build, or preserve the verified server copy under
 | Current sidecar       | active, enabled, running from `/home/ubuntu/qintopia-msg-sidecar`                  |
 | Current sidecar SHA   | `b16c247a19ec751c08de75ae2d312f35b765f317` on `codex/huabaosi-localization-shadow` |
 
-Blocking items before cutover:
+M9-A through M9-C blocking items before cutover:
 
-1. Confirm the approved target SHA has a successful CI workflow run with the
+1. Confirmed the approved target SHA had a successful CI workflow run with the
    `sidecar-artifact` artifact uploaded.
-2. Provide GitHub App credentials for private repository artifact download:
-   `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and a server-local private key path.
-3. Reconfirm whether the Huabaosi shadow branch should remain review-pool before the
-   active service is repointed.
+2. Installed GitHub App credentials for private repository artifact download:
+   `GITHUB_APP_ID=4214034`, `GITHUB_APP_INSTALLATION_ID=144332887`, and a server-local
+   private key path at `/etc/qintopia/github-app/qintopia-agent-os-deployer.pem`.
+3. Kept the Huabaosi shadow branch in review-pool; M9-D did not approve it as product
+   direction.
 
 2026-07-04 M9-A and M9-B results:
 
@@ -135,6 +137,26 @@ integration. `operations-readiness-check --profile production` currently reports
 allowlist/config entries for group targets, reviewers, confirmers, owners, and
 attachment hosts. Keep external send and workbench adapter paths disabled until those
 values are configured and reviewed.
+
+2026-07-04 M9-D cut over the approved active service family:
+
+| Check                   | Result                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Target SHA              | `c70378408c53de5f4166e8b9bde45b15a97cabb0`                                                                  |
+| CI workflow             | `28700602736` passed for `check` and `sidecar-artifact`                                                     |
+| GitHub App download     | passed with installation `144332887` and server-local private key                                           |
+| Server checkout         | `/home/ubuntu/qintopia-agent-os-monorepo` detached at the target SHA                                        |
+| Server artifact         | `/home/ubuntu/qintopia-agent-os-artifacts/c70378408c53de5f4166e8b9bde45b15a97cabb0`                         |
+| Updated systemd units   | `qintopia-message-sidecar`, `qintopia-message-embedding-worker`, `qintopia-message-identity-worker`         |
+| Backup path             | `/home/ubuntu/qintopia-agent-os-backups/m9-systemd-20260704T084453Z`                                        |
+| Post-cutover checks     | checksum, sidecar check, embedding check-only, identity check-only, schema preflight, fixture smokes passed |
+| Still disabled/deferred | operations timers, real external send/workbench adapters, WorkTool/Xiaoqin/OpenClaw cleanup                 |
+
+The first sidecar restart exposed a missing `QINTOPIA_SIDECAR_MIGRATIONS_DIR` in the
+rendered unit. The unit was patched to
+`/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations`, restarted, and
+verified active. Keep this environment line in all future rendered sidecar service
+units.
 
 ## Pre-Cutover Freeze
 
@@ -259,6 +281,7 @@ Expected service shape:
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
 ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar <subcommand>
 EnvironmentFile=/etc/qintopia/message-sidecar.env
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations
 ```
 
 For exact sidecar command details, use `deploy/sidecar/docs/systemd-cutover-plan.md` and

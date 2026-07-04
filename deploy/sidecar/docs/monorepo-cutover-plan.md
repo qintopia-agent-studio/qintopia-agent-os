@@ -37,6 +37,10 @@ Systemd units should point to the monorepo checkout only after the target commit
 passed local CI, CI artifact upload, server-side manifest/checksum verification, smoke,
 and rollback checks.
 
+M9-D completed this cutover for the approved active service family on 2026-07-04 at
+`c70378408c53de5f4166e8b9bde45b15a97cabb0`. Future use of this plan should be treated as
+a new repoint or cleanup window, not as permission to enable additional services.
+
 ## Cutover Preconditions
 
 - Owner approves the cutover window and target commit SHA.
@@ -116,6 +120,7 @@ and rollback checks.
 
    ```text
    WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
+   Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations
    ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar run
    ```
 

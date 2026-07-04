@@ -66,6 +66,7 @@ Every target service must use:
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
 EnvironmentFile=/etc/qintopia/message-sidecar.env
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations
 ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar <subcommand>
 ```
 

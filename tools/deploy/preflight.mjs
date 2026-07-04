@@ -154,6 +154,24 @@ if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
   }
 }
 
+if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
+  const systemdRenderScript = readText(
+    "deploy/sidecar/scripts/render-systemd-units.sh"
+  );
+  for (const requiredFragment of [
+    'MIGRATIONS_DIR="${QINTOPIA_SIDECAR_MIGRATIONS_DIR:-${MONOREPO_DIR}/runtime/postgres/migrations}"',
+    "--migrations-dir",
+    "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}",
+    'grep -F "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}"',
+  ]) {
+    if (!systemdRenderScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/render-systemd-units.sh: must keep migrations env in rendered systemd units (${requiredFragment})`
+      );
+    }
+  }
+}
+
 const m9Runbook = exists("docs/operations/m9-server-cutover-runbook.md")
   ? readText("docs/operations/m9-server-cutover-runbook.md")
   : "";
@@ -171,6 +189,8 @@ if (m9Runbook) {
     "GITHUB_APP_INSTALLATION_ID",
     "GITHUB_APP_PRIVATE_KEY_PATH",
     "Actions: read",
+    "QINTOPIA_SIDECAR_MIGRATIONS_DIR",
+    "M9-D cut over the approved active service family",
   ]) {
     if (!m9Runbook.includes(requiredFragment)) {
       addError(

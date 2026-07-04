@@ -71,6 +71,8 @@ become versioned.
   monorepo-native unit files.
 - Added `deploy/sidecar/scripts/postgres-schema-preflight.sh` and
   `pnpm deploy:postgres:schema:preflight` as a read-only M9 database schema gate.
+- Added M9-D active service cutover evidence for the three owner-approved sidecar
+  services now running from the monorepo checkout and verified CI artifact.
 
 ### Changed
 
@@ -129,6 +131,10 @@ become versioned.
   Postgres schema preflight path.
 - Changed the M9 artifact download path to prefer GitHub App installation tokens, with
   `GITHUB_TOKEN` kept only as a fallback for emergency or one-off downloads.
-- Updated M9 migration state after production database migrations passed: M9 is now
-  database-ready and waiting on an owner-approved systemd cutover window, while real
-  external adapter enablement remains blocked on reviewed allowlists/config.
+- Updated M9 migration state after production database migrations passed; the database
+  gate cleared before the active systemd service family was repointed, while real
+  external adapter enablement remained blocked on reviewed allowlists/config.
+- Updated the M9 migration state after the active systemd service family cutover passed;
+  production remains pinned to the approved artifact SHA until a later approved repoint.
+- Hardened the M9 systemd renderer and deploy preflight so all rendered sidecar service
+  units include `QINTOPIA_SIDECAR_MIGRATIONS_DIR`.

@@ -61,19 +61,19 @@ and future programming agents.
 
 ## Migration Phases
 
-| Phase                       | Status   | Exit criteria                                                                                                      |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| M0 repository bootstrap     | Complete | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                   |
-| M1 inventory                | Complete | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove` |
-| M2 registry contract        | Complete | registry schemas and package manifest templates exist and validate                                                 |
-| M3 docs migration           | Complete | stable architecture, operations, product, and reports moved or linked without stale state in root docs             |
-| M4 first skill adoption     | Complete | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                 |
-| M5 runtime sidecar adoption | Complete | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                               |
-| M5.5 anti-drift guardrails  | Complete | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction        |
-| M6 agents adoption          | Complete | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
-| M7 WorkTool decommission    | Complete | WorkTool references classified and either deprecated or final-migration cleanup items                              |
-| M8 CI/CD deployment gate    | Complete | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
-| M9 server cutover           | DB ready | artifact dry-run passed; Postgres migrations/preflight passed; systemd cutover waits for owner-approved window     |
+| Phase                       | Status                          | Exit criteria                                                                                                                                                                       |
+| --------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 repository bootstrap     | Complete                        | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                                                    |
+| M1 inventory                | Complete                        | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                                                  |
+| M2 registry contract        | Complete                        | registry schemas and package manifest templates exist and validate                                                                                                                  |
+| M3 docs migration           | Complete                        | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                                              |
+| M4 first skill adoption     | Complete                        | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                                                  |
+| M5 runtime sidecar adoption | Complete                        | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                                                |
+| M5.5 anti-drift guardrails  | Complete                        | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                                                         |
+| M6 agents adoption          | Complete                        | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                                                  |
+| M7 WorkTool decommission    | Complete                        | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                               |
+| M8 CI/CD deployment gate    | Complete                        | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                              |
+| M9 server cutover           | Active service cutover complete | GitHub App artifact download, DB preflight/migrations, and approved active systemd service family cutover passed; timers, external adapters, and deprecated cleanup remain deferred |
 
 ## Progress Log
 
@@ -363,6 +363,27 @@ and future programming agents.
   - confirmed external adapter production readiness is still intentionally blocked by
     missing allowlist/config entries for group targets, reviewers, confirmers, owners,
     and attachment hosts
+- Completed M9-D active service cutover:
+  - used GitHub App credentials with App ID `4214034` and installation `144332887`
+    through the server-local key at
+    `/etc/qintopia/github-app/qintopia-agent-os-deployer.pem`
+  - checked out `/home/ubuntu/qintopia-agent-os-monorepo` at
+    `c70378408c53de5f4166e8b9bde45b15a97cabb0`
+  - downloaded and verified the CI artifact from workflow run `28700602736`
+  - stored the artifact under
+    `/home/ubuntu/qintopia-agent-os-artifacts/c70378408c53de5f4166e8b9bde45b15a97cabb0`
+  - backed up previous systemd units to
+    `/home/ubuntu/qintopia-agent-os-backups/m9-systemd-20260704T084453Z`
+  - copied and restarted only the owner-approved active services:
+    `qintopia-message-sidecar.service`, `qintopia-message-embedding-worker.service`, and
+    `qintopia-message-identity-worker.service`
+  - fixed the first restart failure by adding
+    `QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations`
+    to rendered service units
+  - verified checksum, sidecar check, embedding check-only, identity check-only,
+    Postgres schema preflight, and fixture smokes passed after the cutover
+  - kept operations timers, real external send/workbench adapters, and
+    WorkTool/Xiaoqin/OpenClaw cleanup disabled or deferred
 
 ## Update Rule
 
@@ -374,31 +395,26 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Non-complete phases after M5 closure:
+Remaining follow-up after the active service cutover:
 
-- M9 server cutover: database is ready; production service repoint is pending an
-  owner-approved systemd window.
+- M9 monitoring and evidence: the approved active sidecar service family is repointed to
+  the monorepo artifact, and production remains on
+  `c70378408c53de5f4166e8b9bde45b15a97cabb0` until a later approved repoint.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
+- Deprecated runtime cleanup: WorkTool, Xiaoqin WorkTool, OpenClaw, and related nginx
+  references remain deferred until the final cleanup window.
 
 Recommended order:
 
-1. Create and install the Qintopia Agent OS deployer GitHub App, then place its private
-   key on the server outside git.
-2. Re-run read-only server drift checks immediately before the systemd window.
-3. Fill the final target commit SHA and migration window in
-   `docs/operations/m9-server-cutover-runbook.md`.
-4. Dry-run `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <target-sha>` on the
-   server with GitHub App credentials.
-5. Re-run `deploy/sidecar/scripts/postgres-schema-preflight.sh` against production and
-   require it to pass.
-6. Render and review target systemd units with
-   `QINTOPIA_M9_TARGET_SHA=<target-sha> deploy/sidecar/scripts/render-systemd-units.sh`.
-7. During M9, copy only owner-approved units, restart only approved active services, and
-   keep operations timers disabled unless explicitly approved.
-8. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
-   only after owner approval.
-9. Do not enable real external send or real workbench adapter paths until production
+1. Commit and push the repository-side M9-D evidence and renderer guard fix.
+2. Monitor the three repointed services and check recent journals before enabling any
+   additional workers or timers.
+3. Do not repoint production to a newer commit just because docs changed; use a new
+   approved target SHA and artifact only when there is a production code change.
+4. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-10. Add deploy smoke and rollback notes before any production wiring changes for
-    `skills/qiwe`.
+5. During the final cleanup window, archive or remove WorkTool/Xiaoqin/OpenClaw
+   directories, legacy units, and nginx references only after owner approval.
+6. Add deploy smoke and rollback notes before any production wiring changes for
+   `skills/qiwe`.

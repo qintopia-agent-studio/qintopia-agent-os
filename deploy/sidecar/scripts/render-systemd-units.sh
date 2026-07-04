@@ -7,6 +7,7 @@ ARTIFACT_ROOT="${QINTOPIA_ARTIFACT_ROOT:-/home/ubuntu/qintopia-agent-os-artifact
 ARTIFACT_DIR="${QINTOPIA_ARTIFACT_DIR:-}"
 ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
 IDENTITY_ENV_FILE="${QINTOPIA_QIWE_ENV_FILE:-/home/ubuntu/.hermes/profiles/erhua/.env}"
+MIGRATIONS_DIR="${QINTOPIA_SIDECAR_MIGRATIONS_DIR:-${MONOREPO_DIR}/runtime/postgres/migrations}"
 OUTPUT_DIR="${QINTOPIA_SYSTEMD_OUTPUT_DIR:-}"
 CHECK_ONLY=0
 OUTPUT_DIR_EXPLICIT=0
@@ -27,6 +28,7 @@ Options:
   --env-file <path>         Server sidecar environment file.
   --identity-env-file <path>
                             Optional QiWe identity environment file.
+  --migrations-dir <path>   Sidecar migrations directory passed to services.
   --output-dir <path>       Local render output directory.
   --check                   Render to a temporary directory and validate output.
   -h, --help                Show this help.
@@ -62,6 +64,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --identity-env-file)
       IDENTITY_ENV_FILE="${2:-}"
+      shift 2
+      ;;
+    --migrations-dir)
+      MIGRATIONS_DIR="${2:-}"
       shift 2
       ;;
     --output-dir)
@@ -147,6 +153,7 @@ WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 ${extra_env_file}
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
 ExecStart=${BIN} ${command}
 Restart=always
 RestartSec=${restart_sec}
@@ -176,6 +183,7 @@ Group=ubuntu
 WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
 ExecStart=${BIN} ${command}
 NoNewPrivileges=true
 PrivateTmp=true
@@ -215,6 +223,7 @@ Artifact directory: ${ARTIFACT_DIR}
 Runtime binary: ${BIN}
 Environment file: ${ENV_FILE}
 Optional identity environment file: ${IDENTITY_ENV_FILE}
+Migrations directory: ${MIGRATIONS_DIR}
 
 This output is a review artifact. It is not an installer.
 
@@ -370,6 +379,7 @@ validate_output() {
 
   for file in "$OUTPUT_DIR"/*.service; do
     grep -F "WorkingDirectory=${MONOREPO_DIR}" "$file" >/dev/null
+    grep -F "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}" "$file" >/dev/null
     grep -F "ExecStart=${BIN}" "$file" >/dev/null
   done
 
