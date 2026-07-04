@@ -52,6 +52,11 @@ M9.1 also requires a successful CI workflow run for the target SHA, including bo
 verifying `artifact-manifest.json` and `SHA256SUMS`; it should not rebuild the sidecar
 with local Node.js, pnpm, or Rust tooling during the migration window.
 
+GitHub retains only the latest two sidecar CI artifacts. Download and verify the
+approved target artifact before it is older than the current build plus one rollback
+build, or preserve the verified server copy under
+`/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>`.
+
 ## Preflight Dry Run
 
 2026-07-03 read-only preflight results:

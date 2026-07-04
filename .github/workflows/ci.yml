@@ -60,6 +60,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
 
     permissions:
+      actions: write
       contents: read
 
     steps:
@@ -84,3 +85,10 @@ jobs:
           path: dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu
           retention-days: 14
           if-no-files-found: error
+
+      - name: Prune old sidecar artifacts
+        run: >-
+          node tools/deploy/prune-github-artifacts.mjs --artifact-name
+          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

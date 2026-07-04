@@ -298,6 +298,9 @@ and future programming agents.
     noise under the pinned Rust 1.75.0 toolchain
   - kept pull-request CI focused on `pnpm check`; release artifact upload remains a
     `master` push output only
+  - pruned existing GitHub sidecar artifacts down to the latest two builds and added
+    `pnpm artifact:prune:sidecar` so future `master` artifact uploads keep only the
+    current build plus one rollback build
 
 ## Update Rule
 

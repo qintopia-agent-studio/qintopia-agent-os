@@ -115,3 +115,5 @@ become versioned.
   runs for the approved commit SHA.
 - Removed broad Cargo target caching and deferred Rust dependency caching until it can
   run cleanly with the pinned Rust 1.75.0 toolchain.
+- Added sidecar CI artifact pruning so GitHub keeps only the latest two
+  `qintopia-message-sidecar-linux-x86_64-gnu` artifacts.

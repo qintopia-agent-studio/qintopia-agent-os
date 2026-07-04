@@ -67,6 +67,11 @@ M9 server verification. The server should download and verify this artifact for 
 approved commit SHA, then set the executable bit after checksum verification, instead of
 rebuilding the sidecar on the server.
 
+After upload, the artifact job prunes older GitHub Actions artifacts with the same
+artifact name and keeps only the latest two: the current build and the previous build
+for rollback. The artifact job has `actions: write` only for this cleanup step; the
+repository check job remains read-only.
+
 Rust dependency caching is intentionally not enabled yet. The sidecar is pinned to Rust
 1.75.0 for server compatibility, and the first Rust-specific cache trial produced
 post-step metadata cleanup noise against newer registry crates. Keep CI clean first;

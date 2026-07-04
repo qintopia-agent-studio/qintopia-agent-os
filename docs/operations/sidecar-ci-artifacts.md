@@ -45,6 +45,20 @@ This means the approved commit has passed:
 - sidecar Rust tests
 - no-credential sidecar smoke checks
 
+## Artifact Retention
+
+GitHub Actions keeps at most two non-expired artifacts with this exact name:
+
+- the current `master` build
+- the previous `master` build for rollback
+
+The `sidecar-artifact` job uploads the new artifact first, then runs
+`pnpm artifact:prune:sidecar` with `actions: write` permission to delete older same-name
+artifacts. This limits repository artifact storage without changing the server rollback
+model: once an artifact has been downloaded and verified on the server, the server copy
+under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` remains separate
+from GitHub artifact retention.
+
 ## Server Download
 
 For the private repository, downloading GitHub Actions artifacts requires GitHub API

@@ -38,3 +38,18 @@ by git.
 The CI artifact job uses Rust 1.75.0 to match `runtime/sidecar/Cargo.toml`
 `rust-version`. Server deployment downloads the uploaded artifact and does not require
 Node.js, pnpm, Rust, or Docker on the production host.
+
+## Artifact Retention
+
+Prune old GitHub Actions sidecar artifacts:
+
+```bash
+GITHUB_TOKEN="replace-with-actions-write-token" \
+GITHUB_REPOSITORY="qintopia-agent-studio/qintopia-agent-os" \
+pnpm artifact:prune:sidecar
+```
+
+The command keeps the latest two artifacts named
+`qintopia-message-sidecar-linux-x86_64-gnu`: the current deployment candidate and one
+rollback candidate. Older same-name artifacts are deleted through the GitHub Actions
+Artifacts API.
