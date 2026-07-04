@@ -69,6 +69,8 @@ become versioned.
   artifact-only smoke workflow.
 - Added M9.3 sidecar systemd cutover plan and a non-mutating renderer for review-only
   monorepo-native unit files.
+- Added `deploy/sidecar/scripts/postgres-schema-preflight.sh` and
+  `pnpm deploy:postgres:schema:preflight` as a read-only M9 database schema gate.
 
 ### Changed
 
@@ -121,3 +123,10 @@ become versioned.
   `qintopia-message-sidecar-linux-x86_64-gnu` artifacts.
 - Wired `pnpm deploy:systemd:check` into repository validation so M9 unit rendering
   stays artifact-based and does not drift back to server-local builds.
+- Hardened `deploy/sidecar/scripts/fetch-ci-artifact.sh` so GitHub API credentials are
+  passed through a temporary curl config file instead of process arguments.
+- Extended deploy preflight to guard artifact credential handling and require the M9
+  Postgres schema preflight path.
+- Updated M9 migration state after production database migrations passed: M9 is now
+  database-ready and waiting on an owner-approved systemd cutover window, while real
+  external adapter enablement remains blocked on reviewed allowlists/config.

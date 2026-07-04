@@ -19,6 +19,7 @@ const requiredScripts = [
   "policy:check",
   "secrets:check",
   "deploy:preflight:ci",
+  "deploy:postgres:schema:preflight",
   "deploy:systemd:check",
   "artifact:sidecar",
   "artifact:prune:sidecar",
@@ -34,6 +35,9 @@ const requiredDocs = [
   "deploy/sidecar/docs/monorepo-cutover-plan.md",
   "deploy/sidecar/docs/systemd-cutover-plan.md",
   "docs/operations/sidecar-ci-artifacts.md",
+  "docs/operations/m9-server-cutover-runbook.md",
+  "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
 ];
 
@@ -88,6 +92,64 @@ for (const docPath of requiredDocs) {
   if (!exists(docPath)) {
     addError(`${docPath}: required deploy gate document is missing`);
   }
+}
+
+if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
+  const artifactFetchScript = readText("deploy/sidecar/scripts/fetch-ci-artifact.sh");
+  for (const unsafeFragment of [
+    '-H "Authorization: Bearer',
+    "-H 'Authorization: Bearer",
+    '--header "Authorization: Bearer',
+    "--header 'Authorization: Bearer",
+  ]) {
+    if (artifactFetchScript.includes(unsafeFragment)) {
+      addError(
+        "deploy/sidecar/scripts/fetch-ci-artifact.sh: GitHub token must not be passed through curl argv headers"
+      );
+    }
+  }
+  if (!artifactFetchScript.includes("curl_config=")) {
+    addError(
+      "deploy/sidecar/scripts/fetch-ci-artifact.sh: expected a curl config file for GitHub API headers"
+    );
+  }
+}
+
+if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
+  const schemaPreflightScript = readText(
+    "deploy/sidecar/scripts/postgres-schema-preflight.sh"
+  );
+  for (const requiredFragment of [
+    "qintopia_agent_os.work_item_events",
+    "qintopia_agent_os.capabilities",
+    "2026-06-30.007",
+    "2026-07-02.001",
+    "PGHOST",
+    "PGDATABASE",
+  ]) {
+    if (!schemaPreflightScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/postgres-schema-preflight.sh: must check ${requiredFragment}`
+      );
+    }
+  }
+  if (schemaPreflightScript.includes('psql "$database_url"')) {
+    addError(
+      "deploy/sidecar/scripts/postgres-schema-preflight.sh: database URL must not be passed through psql argv"
+    );
+  }
+}
+
+const m9Runbook = exists("docs/operations/m9-server-cutover-runbook.md")
+  ? readText("docs/operations/m9-server-cutover-runbook.md")
+  : "";
+if (
+  m9Runbook &&
+  !m9Runbook.includes("deploy/sidecar/scripts/postgres-schema-preflight.sh")
+) {
+  addError(
+    "docs/operations/m9-server-cutover-runbook.md: must include Postgres schema preflight"
+  );
 }
 
 const serverPolicy = exists("docs/engineering/server-change-policy.md")

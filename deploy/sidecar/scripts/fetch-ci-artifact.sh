@@ -73,20 +73,33 @@ require_command jq
 require_command unzip
 require_command sha256sum
 
-api_headers=(
-  -H "Accept: application/vnd.github+json"
-  -H "Authorization: Bearer ${GITHUB_TOKEN}"
-  -H "X-GitHub-Api-Version: 2022-11-28"
-)
-
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
+chmod 700 "$tmp_dir"
+
+curl_config="${tmp_dir}/github-curl.conf"
+{
+  printf '%s\n' 'connect-timeout = 20'
+  printf '%s\n' 'max-time = 240'
+  printf '%s\n' 'retry = 2'
+  printf '%s\n' 'retry-delay = 2'
+  printf '%s\n' 'fail'
+  printf '%s\n' 'silent'
+  printf '%s\n' 'show-error'
+  printf '%s\n' 'location'
+  printf '%s\n' 'http1.1'
+  printf '%s\n' 'header = "Accept: application/vnd.github+json"'
+  printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN"
+  printf '%s\n' 'header = "X-GitHub-Api-Version: 2022-11-28"'
+} >"$curl_config"
+chmod 600 "$curl_config"
+unset GITHUB_TOKEN
 
 runs_json="${tmp_dir}/runs.json"
-curl -fsSL "${api_headers[@]}" \
+curl --config "$curl_config" \
   "https://api.github.com/repos/${repo}/actions/workflows/${workflow}/runs?head_sha=${sha}&status=success&per_page=20" \
   -o "$runs_json"
 
@@ -100,7 +113,7 @@ if [[ -z "$run_id" ]]; then
 fi
 
 artifacts_json="${tmp_dir}/artifacts.json"
-curl -fsSL "${api_headers[@]}" \
+curl --config "$curl_config" \
   "https://api.github.com/repos/${repo}/actions/runs/${run_id}/artifacts?per_page=100" \
   -o "$artifacts_json"
 
@@ -117,7 +130,7 @@ fi
 
 mkdir -p "$output_dir"
 zip_path="${tmp_dir}/${artifact_name}.zip"
-curl -fsSL "${api_headers[@]}" -L "$download_url" -o "$zip_path"
+curl --config "$curl_config" "$download_url" -o "$zip_path"
 unzip -o -q "$zip_path" -d "$output_dir"
 
 (

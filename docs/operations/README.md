@@ -27,6 +27,8 @@ canonical architecture, engineering, package, or deployment docs.
 - `pnpm agents:check`: validates active Agent package templates and dry-run
   expectations.
 - `pnpm artifact:sidecar`: builds the sidecar release artifact layout locally.
+- `pnpm deploy:postgres:schema:preflight`: runs the read-only Postgres schema gate for
+  M9 after production env is loaded.
 - `pnpm deploy:systemd:check`: validates the M9.3 sidecar systemd unit renderer without
   touching `/etc/systemd/system`.
 - `pnpm deploy:preflight`: validates non-mutating deployment gates before any server

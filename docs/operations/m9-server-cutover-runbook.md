@@ -90,6 +90,52 @@ Blocking items before cutover:
 3. Reconfirm whether the Huabaosi shadow branch should remain review-pool before the
    active service is repointed.
 
+2026-07-04 M9-A and M9-B results:
+
+| Check                  | Result                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| Target SHA             | `1a5351d2d20ae58f0718b24876e4487f8af1d935`                                                   |
+| CI workflow            | `28693411837` passed for the target SHA                                                      |
+| Server target checkout | `/home/ubuntu/qintopia-agent-os-monorepo` exists and is detached at the target SHA           |
+| Server artifact copy   | `/home/ubuntu/qintopia-agent-os-artifacts/1a5351d2d20ae58f0718b24876e4487f8af1d935` verified |
+| Artifact checksum      | `sha256sum -c SHA256SUMS` passed                                                             |
+| Artifact binary        | `qintopia-message-sidecar`, `linux-x86_64-gnu`, about 25M                                    |
+| Sidecar check          | passed                                                                                       |
+| Embedding check-only   | passed                                                                                       |
+| Identity check-only    | passed when run with the same profile env file that the current systemd unit loads           |
+| Operations fixture     | passed without production database env                                                       |
+| Xiaoman fixture        | passed                                                                                       |
+| Current service wiring | unchanged; active services still point to `/home/ubuntu/qintopia-msg-sidecar/target/release` |
+
+M9-B found one database blocker:
+
+- production Postgres is missing the operations control-plane migration
+  `202606300007_operations_control_plane.sql`
+- production Postgres is missing the follow-up human actor guard migration
+  `202607020001_operations_human_actor_guards.sql`
+
+2026-07-04 M9-C resolved the database blocker:
+
+| Check                          | Result                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| Migration source               | `/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations`                         |
+| Migration binary               | verified sidecar artifact at `1a5351d2d20ae58f0718b24876e4487f8af1d935`                       |
+| Migration result               | missing AgentOS operations migrations applied                                                 |
+| Postgres schema preflight      | passed                                                                                        |
+| Operations capability seed     | passed with `capability_count=4`                                                              |
+| Worker check-only and dry-runs | passed for embedding, identity, member profile, graph, event signal, archive, digest, and ops |
+| Current service wiring         | unchanged; active services still point to `/home/ubuntu/qintopia-msg-sidecar/target/release`  |
+
+Do not repoint systemd until the final target SHA is approved, the server checkout is
+updated to that SHA, and `deploy/sidecar/scripts/postgres-schema-preflight.sh` passes
+again immediately before the service window.
+
+Production external adapters are still not ready for real sends or real workbench
+integration. `operations-readiness-check --profile production` currently reports missing
+allowlist/config entries for group targets, reviewers, confirmers, owners, and
+attachment hosts. Keep external send and workbench adapter paths disabled until those
+values are configured and reviewed.
+
 ## Pre-Cutover Freeze
 
 Before any server mutation:
@@ -166,6 +212,7 @@ Run binary checks without changing systemd:
 ```bash
 set -a
 . /etc/qintopia/message-sidecar.env
+. /home/ubuntu/.hermes/profiles/erhua/.env
 set +a
 ARTIFACT_DIR=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
@@ -175,6 +222,21 @@ export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
 deploy/sidecar/scripts/operations-control-plane-smoke.sh
 deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
 ```
+
+Run the read-only Postgres schema gate before any service repoint:
+
+```bash
+deploy/sidecar/scripts/postgres-schema-preflight.sh
+```
+
+If it reports missing migrations, stop and run the database migration step only after
+owner approval. The schema gate does not apply migrations and does not read business
+rows.
+
+`operations-control-plane-smoke.sh` is a fixture smoke and should run without production
+database env. Use it to validate command behavior, then validate the production database
+separately with `postgres-schema-preflight.sh`, DB-backed capability checks, and worker
+check-only or dry-run commands.
 
 Guarded apply smokes are database-write checks. Run them only when the owner explicitly
 approves test audit rows during the window.
@@ -254,6 +316,7 @@ ARTIFACT_DIR=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 cd "$ARTIFACT_DIR" && sha256sum -c SHA256SUMS
 export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
 "${ARTIFACT_DIR}/qintopia-message-sidecar" check
+deploy/sidecar/scripts/postgres-schema-preflight.sh
 deploy/sidecar/scripts/operations-control-plane-smoke.sh
 deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
 systemctl is-active qintopia-message-sidecar.service

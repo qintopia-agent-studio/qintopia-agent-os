@@ -73,6 +73,11 @@ deploy/sidecar/scripts/fetch-ci-artifact.sh \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
+The script writes GitHub API headers to a temporary curl config file and unsets
+`GITHUB_TOKEN` before invoking curl. Do not change it back to
+`curl -H "Authorization: Bearer ..."` because that exposes the token through process
+arguments on the server.
+
 The script requires only:
 
 - `curl`
@@ -101,9 +106,21 @@ Before systemd is repointed, also run:
 ARTIFACT_DIR=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 export QINTOPIA_SIDECAR_BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
 "${ARTIFACT_DIR}/qintopia-message-sidecar" check
+deploy/sidecar/scripts/postgres-schema-preflight.sh
 deploy/sidecar/scripts/operations-control-plane-smoke.sh
 deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
 ```
+
+`postgres-schema-preflight.sh` is read-only. It verifies the expected schemas, tables,
+schema_change_log versions, functions, and seeded AgentOS operations capabilities. If it
+fails, stop before systemd changes and apply the missing migrations only after owner
+approval. Load the database URL from environment files; do not pass it as a command-line
+argument.
+
+`operations-control-plane-smoke.sh` is a fixture smoke. Run it without the production
+database environment so it validates command behavior and guardrails, not live data. For
+production DB confidence, use `postgres-schema-preflight.sh`, DB-backed capability
+listing, and worker check-only or dry-run commands.
 
 Production environment files remain outside git and are loaded only during approved M9
 verification or service start.

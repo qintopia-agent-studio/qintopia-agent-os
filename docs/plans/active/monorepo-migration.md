@@ -1,6 +1,6 @@
 # Qintopia Agent OS Monorepo Migration Plan
 
-Owner: TBD Updated: 2026-07-03
+Owner: TBD Updated: 2026-07-04
 
 ## Goal
 
@@ -73,7 +73,7 @@ and future programming agents.
 | M6 agents adoption          | Complete | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing |
 | M7 WorkTool decommission    | Complete | WorkTool references classified and either deprecated or final-migration cleanup items                              |
 | M8 CI/CD deployment gate    | Complete | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI             |
-| M9 server cutover           | Prepared | runbook exists; server deploy still waits for owner-approved window                                                |
+| M9 server cutover           | DB ready | artifact dry-run passed; Postgres migrations/preflight passed; systemd cutover waits for owner-approved window     |
 
 ## Progress Log
 
@@ -312,6 +312,52 @@ and future programming agents.
   - kept copying unit files, daemon reloads, service restarts, and legacy runtime
     cleanup blocked until the owner-approved M9 window
 
+### 2026-07-04
+
+- Ran M9-A read-only server drift check:
+  - server target checkout was initially missing
+  - current sidecar service family remains active from
+    `/home/ubuntu/qintopia-msg-sidecar`
+  - active sidecar service family still points to the old release binary path
+  - WorkTool, Xiaoqin WorkTool, and OpenClaw units remain inactive/disabled
+  - current nginx config still references legacy port `18557`
+  - root filesystem remains about 50% used with about 29G available
+- Ran M9-B artifact dry-run without mutating systemd or restarting services:
+  - created `/home/ubuntu/qintopia-agent-os-monorepo`
+  - checked out `1a5351d2d20ae58f0718b24876e4487f8af1d935`
+  - downloaded and verified the sidecar CI artifact from workflow run `28693411837`
+  - stored the verified artifact under
+    `/home/ubuntu/qintopia-agent-os-artifacts/1a5351d2d20ae58f0718b24876e4487f8af1d935`
+  - confirmed `sha256sum -c SHA256SUMS`, `sidecar check`, embedding worker check-only,
+    identity worker check-only with profile env, operations fixture smoke, and Xiaoman
+    fixture smoke pass
+- Found and fixed an M9 artifact download security issue:
+  - the previous fetch script passed `Authorization: Bearer ...` through curl argv
+  - updated `deploy/sidecar/scripts/fetch-ci-artifact.sh` to use a temporary curl config
+    file and unset `GITHUB_TOKEN` before curl runs
+  - added deploy preflight checks to prevent this regression
+- Added `deploy/sidecar/scripts/postgres-schema-preflight.sh` and
+  `pnpm deploy:postgres:schema:preflight`:
+  - the script is read-only and checks required schemas, tables, functions,
+    `schema_change_log` versions, and seeded operations capabilities
+  - production initially failed the gate because
+    `202606300007_operations_control_plane.sql` and
+    `202607020001_operations_human_actor_guards.sql` had not been applied
+- Ran M9-C production database migration without changing systemd:
+  - applied the missing AgentOS operations migrations from
+    `/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations`
+  - verified `deploy/sidecar/scripts/postgres-schema-preflight.sh` passes against
+    production
+  - verified the DB-backed operations capability seed reports `capability_count=4`
+  - verified sidecar check, embedding and identity check-only, and worker dry-run paths
+    for member profile, graph projection, event signal, raw archive, daily digest, daily
+    digest publisher, workflow sync, workbench event, and group-message send
+  - kept active systemd service wiring unchanged; current production services still run
+    from `/home/ubuntu/qintopia-msg-sidecar/target/release`
+  - confirmed external adapter production readiness is still intentionally blocked by
+    missing allowlist/config entries for group targets, reviewers, confirmers, owners,
+    and attachment hosts
+
 ## Update Rule
 
 Every migration PR must update:
@@ -324,20 +370,28 @@ Every migration PR must update:
 
 Non-complete phases after M5 closure:
 
-- M9 server cutover: Prepared and requires owner-approved deployment window.
+- M9 server cutover: database is ready; production service repoint is pending an
+  owner-approved systemd window.
+- External adapter enablement: still blocked on reviewed allowlists/config for real
+  group sends and real workbench integration.
 
 Recommended order:
 
-1. Re-run read-only server drift checks immediately before the migration window.
-2. Fill the final target commit SHA and migration window in
+1. Rotate or refresh the GitHub token used during the first M9-B manual attempt.
+2. Re-run read-only server drift checks immediately before the systemd window.
+3. Fill the final target commit SHA and migration window in
    `docs/operations/m9-server-cutover-runbook.md`.
-3. Dry-run `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <target-sha>` on the
+4. Dry-run `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <target-sha>` on the
    server with a short-lived GitHub token.
-4. Render and review target systemd units with
+5. Re-run `deploy/sidecar/scripts/postgres-schema-preflight.sh` against production and
+   require it to pass.
+6. Render and review target systemd units with
    `QINTOPIA_M9_TARGET_SHA=<target-sha> deploy/sidecar/scripts/render-systemd-units.sh`.
-5. During M9, copy only owner-approved units, restart only approved active services, and
+7. During M9, copy only owner-approved units, restart only approved active services, and
    keep operations timers disabled unless explicitly approved.
-6. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
+8. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
    only after owner approval.
-7. Add deploy smoke and rollback notes before any production wiring changes for
-   `skills/qiwe`.
+9. Do not enable real external send or real workbench adapter paths until production
+   allowlists/config are reviewed and set.
+10. Add deploy smoke and rollback notes before any production wiring changes for
+    `skills/qiwe`.
