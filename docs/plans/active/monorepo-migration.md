@@ -288,6 +288,15 @@ and future programming agents.
     artifact instead of rebuilding with local Node.js, pnpm, or Rust tooling
   - confirmed the server has `curl`, `jq`, `unzip`, `sha256sum`, and `tar`, and has
     about 29G available on `/`
+- Hardened M9.1 CI artifact path:
+  - moved GitHub Actions workflow jobs to Node.js 24-compatible action majors
+  - changed sidecar artifact upload to run in parallel with `pnpm check` on `master`
+    pushes, while requiring deployment downloads to come from a successful workflow run
+    for the approved commit SHA
+  - replaced the broad hand-written Cargo target cache with the Rust-specific
+    `Swatinem/rust-cache@v2` dependency cache
+  - kept pull-request CI focused on `pnpm check`; release artifact upload remains a
+    `master` push output only
 
 ## Update Rule
 

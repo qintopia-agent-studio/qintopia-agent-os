@@ -109,8 +109,9 @@ const manifest = {
     },
   ],
   validation: {
-    required_before_upload: ["pnpm check"],
+    required_workflow_jobs: ["check", "sidecar-artifact"],
     server_verification: [
+      "download only from a successful CI workflow run for the approved commit SHA",
       "sha256sum -c SHA256SUMS",
       "./qintopia-message-sidecar check",
     ],

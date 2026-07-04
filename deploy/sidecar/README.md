@@ -40,7 +40,8 @@ the owner confirms whether Huabaosi shadow work belongs in the roadmap.
 Before any cutover from this monorepo, the deploy package needs:
 
 - exact target branch and commit SHA
-- successful `sidecar-artifact` CI artifact for the target SHA
+- successful CI workflow run for the target SHA, with the `sidecar-artifact` artifact
+  uploaded
 - server-side manifest and `SHA256SUMS` verification of the downloaded artifact
 - dry-run or prepare output
 - package tests and smokes

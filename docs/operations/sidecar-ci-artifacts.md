@@ -27,8 +27,13 @@ Linux x86_64, Ubuntu glibc
 
 ## CI Requirements
 
-The artifact job must run only after `pnpm check` succeeds. This means the artifact has
-already passed:
+The `sidecar-artifact` job runs on `master` pushes. It runs in parallel with the `check`
+job to keep CI wall-clock time low. The deployment gate is the successful workflow run
+for the approved commit SHA: `fetch-ci-artifact.sh` queries only successful workflow
+runs, so the paired `check` job must have passed for the same commit before the artifact
+can be downloaded by the runbook.
+
+This means the approved commit has passed:
 
 - formatting and Markdown linting
 - registry and manifest validation

@@ -156,4 +156,5 @@ unzip -o -q "$zip_path" -d "$output_dir"
 
 echo "Downloaded ${artifact_name}"
 echo "Run id: ${run_id}"
+echo "Run URL: https://github.com/${repo}/actions/runs/${run_id}"
 echo "Output: ${output_dir}"

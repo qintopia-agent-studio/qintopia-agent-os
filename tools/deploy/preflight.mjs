@@ -124,13 +124,15 @@ for (const phrase of [
   "actions/checkout@v7",
   "actions/setup-node@v6",
   "actions/setup-python@v6",
-  "actions/cache@v6",
+  "Swatinem/rust-cache@v2",
   "actions/upload-artifact@v7",
+  "concurrency:",
+  "cancel-in-progress: true",
+  "github.event_name == 'push' && github.ref == 'refs/heads/master'",
+  "workspaces: runtime/sidecar -> target",
   "qintopia-message-sidecar-linux-x86_64-gnu",
   "dtolnay/rust-toolchain@1.75.0",
   "components: rustfmt",
-  "runtime/sidecar/target",
-  "runtime/sidecar/Cargo.lock",
 ]) {
   if (!ciWorkflow.includes(phrase)) {
     addError(`.github/workflows/ci.yml: must include ${phrase}`);

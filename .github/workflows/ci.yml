@@ -6,6 +6,10 @@ on:
     branches:
       - master
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: "24"
   RUST_TOOLCHAIN: "1.75.0"
@@ -44,18 +48,11 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Cache sidecar cargo build
-        uses: actions/cache@v6
+      - name: Cache sidecar cargo dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            runtime/sidecar/target
-          key:
-            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-${{
-            hashFiles('runtime/sidecar/Cargo.lock', '.github/workflows/ci.yml') }}
-          restore-keys: |
-            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-
+          workspaces: runtime/sidecar -> target
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -66,7 +63,7 @@ jobs:
   sidecar-artifact:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
 
     permissions:
       contents: read
@@ -83,18 +80,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.75.0
 
-      - name: Cache sidecar cargo build
-        uses: actions/cache@v6
+      - name: Cache sidecar cargo dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            runtime/sidecar/target
-          key:
-            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-${{
-            hashFiles('runtime/sidecar/Cargo.lock', '.github/workflows/ci.yml') }}
-          restore-keys: |
-            sidecar-cargo-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-
+          workspaces: runtime/sidecar -> target
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Build sidecar artifact
         run: node tools/deploy/build-sidecar-artifact.mjs

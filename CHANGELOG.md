@@ -111,3 +111,8 @@ become versioned.
   `rust-version`, with `rustfmt` installed for the sidecar format gate.
 - Upgraded GitHub Actions workflow actions to Node.js 24-compatible major versions and
   added Cargo caching for sidecar checks and artifact builds.
+- Optimized CI wall-clock time by running the `sidecar-artifact` upload in parallel with
+  `pnpm check` on `master` pushes, while keeping deployment gated to successful workflow
+  runs for the approved commit SHA.
+- Replaced the broad hand-written Cargo target cache with the Rust-specific
+  `Swatinem/rust-cache@v2` dependency cache.

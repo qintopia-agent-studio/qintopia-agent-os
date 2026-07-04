@@ -45,8 +45,9 @@ and rollback checks.
   - kept in review-pool
   - discarded
 - `pnpm check` passes locally on the exact target commit.
-- `sidecar-artifact` CI passes and uploads `qintopia-message-sidecar-linux-x86_64-gnu`
-  for the exact target commit.
+- The CI workflow passes for the exact target commit, including both `check` and
+  `sidecar-artifact`; the artifact job uploads
+  `qintopia-message-sidecar-linux-x86_64-gnu`.
 - `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <approved-target-sha>` verifies
   `artifact-manifest.json` and `SHA256SUMS` on the server.
 - `deploy/sidecar/scripts/operations-control-plane-smoke.sh` passes on the server.

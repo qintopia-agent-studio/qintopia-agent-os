@@ -47,10 +47,10 @@ pnpm check
 pnpm deploy:preflight
 ```
 
-M9.1 also requires a successful `sidecar-artifact` CI job for the target SHA. The server
-must deploy the CI-built artifact after verifying `artifact-manifest.json` and
-`SHA256SUMS`; it should not rebuild the sidecar with local Node.js, pnpm, or Rust
-tooling during the migration window.
+M9.1 also requires a successful CI workflow run for the target SHA, including both
+`check` and `sidecar-artifact`. The server must deploy the CI-built artifact after
+verifying `artifact-manifest.json` and `SHA256SUMS`; it should not rebuild the sidecar
+with local Node.js, pnpm, or Rust tooling during the migration window.
 
 ## Preflight Dry Run
 
@@ -74,7 +74,8 @@ tooling during the migration window.
 
 Blocking items before cutover:
 
-1. Confirm the approved target SHA has a successful `sidecar-artifact` CI artifact.
+1. Confirm the approved target SHA has a successful CI workflow run with the
+   `sidecar-artifact` artifact uploaded.
 2. Provide a short-lived GitHub token or GitHub CLI session for private repository
    artifact download during the migration window.
 3. Reconfirm whether the Huabaosi shadow branch should remain review-pool before the
