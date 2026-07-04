@@ -301,6 +301,16 @@ and future programming agents.
   - pruned existing GitHub sidecar artifacts down to the latest two builds and added
     `pnpm artifact:prune:sidecar` so future `master` artifact uploads keep only the
     current build plus one rollback build
+- Completed M9.2/M9.3 repository-side cutover preparation without server mutation:
+  - recorded the latest verified pre-M9.3 candidate SHA and previous production sidecar
+    SHA in the M9 runbook
+  - added `deploy/sidecar/docs/systemd-cutover-plan.md` for the monorepo-native sidecar
+    systemd target shape, apply sequence, and rollback sequence
+  - added `deploy/sidecar/scripts/render-systemd-units.sh` to render review-only target
+    unit files for an approved artifact SHA
+  - added `pnpm deploy:systemd:check` and wired it into `pnpm check`
+  - kept copying unit files, daemon reloads, service restarts, and legacy runtime
+    cleanup blocked until the owner-approved M9 window
 
 ## Update Rule
 
@@ -318,14 +328,16 @@ Non-complete phases after M5 closure:
 
 Recommended order:
 
-1. Reconcile local sidecar `main@eda2652` with the server Huabaosi shadow branch as a
-   review-pool input, not an approved roadmap item.
-2. Validate `sidecar-artifact` on GitHub Actions for the approved target SHA.
+1. Re-run read-only server drift checks immediately before the migration window.
+2. Fill the final target commit SHA and migration window in
+   `docs/operations/m9-server-cutover-runbook.md`.
 3. Dry-run `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <target-sha>` on the
    server with a short-lived GitHub token.
-4. Fill the target commit SHA and migration window in
-   `docs/operations/m9-server-cutover-runbook.md`.
-5. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
+4. Render and review target systemd units with
+   `QINTOPIA_M9_TARGET_SHA=<target-sha> deploy/sidecar/scripts/render-systemd-units.sh`.
+5. During M9, copy only owner-approved units, restart only approved active services, and
+   keep operations timers disabled unless explicitly approved.
+6. During M9, archive or remove WorkTool/Xiaoqin/OpenClaw directories and legacy units
    only after owner approval.
-6. Add deploy smoke and rollback notes before any production wiring changes for
+7. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe`.

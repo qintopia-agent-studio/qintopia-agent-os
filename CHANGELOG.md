@@ -67,6 +67,8 @@ become versioned.
 - Recorded server bot SSH access for the Agent OS monorepo remote.
 - Added M9.1 sidecar CI artifact build, manifest, checksum, upload, server fetch, and
   artifact-only smoke workflow.
+- Added M9.3 sidecar systemd cutover plan and a non-mutating renderer for review-only
+  monorepo-native unit files.
 
 ### Changed
 
@@ -117,3 +119,5 @@ become versioned.
   run cleanly with the pinned Rust 1.75.0 toolchain.
 - Added sidecar CI artifact pruning so GitHub keeps only the latest two
   `qintopia-message-sidecar-linux-x86_64-gnu` artifacts.
+- Wired `pnpm deploy:systemd:check` into repository validation so M9 unit rendering
+  stays artifact-based and does not drift back to server-local builds.

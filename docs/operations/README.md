@@ -19,12 +19,16 @@ canonical architecture, engineering, package, or deployment docs.
 - [m9-server-cutover-runbook.md](m9-server-cutover-runbook.md): final migration runbook
   for monorepo checkout, sidecar service cutover, deprecated runtime cleanup,
   acceptance, and rollback.
+- [../deploy/sidecar/docs/systemd-cutover-plan.md](../../deploy/sidecar/docs/systemd-cutover-plan.md):
+  M9.3 monorepo-native sidecar systemd target shape and rollback sequence.
 
 ## Checks
 
 - `pnpm agents:check`: validates active Agent package templates and dry-run
   expectations.
 - `pnpm artifact:sidecar`: builds the sidecar release artifact layout locally.
+- `pnpm deploy:systemd:check`: validates the M9.3 sidecar systemd unit renderer without
+  touching `/etc/systemd/system`.
 - `pnpm deploy:preflight`: validates non-mutating deployment gates before any server
   cutover.
 

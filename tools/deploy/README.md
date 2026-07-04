@@ -23,6 +23,17 @@ Local mode additionally requires:
 - repository checks include registry, manifest, policy, secret, tests, smoke, and deploy
   preflight gates
 
+## Systemd Cutover Preview
+
+Validate that the M9 sidecar systemd renderer can produce monorepo-native units:
+
+```bash
+pnpm deploy:systemd:check
+```
+
+The renderer is non-mutating. It writes review files to `dist/` by default and refuses
+to write directly into `/etc/systemd/system`.
+
 ## Artifact Build
 
 Build the sidecar CI artifact layout locally:

@@ -5,7 +5,8 @@ This plan describes how to move production sidecar deployment from the standalon
 runbook.
 
 For the full M9 migration window, rollback, deprecated runtime cleanup, and acceptance
-contract, use `../../../docs/operations/m9-server-cutover-runbook.md`.
+contract, use `../../../docs/operations/m9-server-cutover-runbook.md`. For the
+monorepo-native systemd unit target, use `systemd-cutover-plan.md`.
 
 ## Current Production Model
 
@@ -99,8 +100,15 @@ and rollback checks.
    deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
    ```
 
-5. Install or update systemd units to point to the CI-built artifact and monorepo
-   working directory.
+5. Render and review the monorepo-native systemd unit files:
+
+   ```bash
+   QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
+   deploy/sidecar/scripts/render-systemd-units.sh
+   ```
+
+6. Install or update only owner-approved systemd units to point to the CI-built artifact
+   and monorepo working directory.
 
    The service should use:
 
@@ -111,7 +119,7 @@ and rollback checks.
 
    Worker units should use the same binary and explicit subcommands.
 
-6. Restart and verify:
+7. Restart and verify:
 
    ```bash
    sudo systemctl daemon-reload
@@ -120,7 +128,7 @@ and rollback checks.
    journalctl -u qintopia-message-sidecar.service -n 100 --no-pager
    ```
 
-7. Run post-cutover smoke:
+8. Run post-cutover smoke:
 
    ```bash
    set -a

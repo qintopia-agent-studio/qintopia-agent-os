@@ -19,6 +19,7 @@ const requiredScripts = [
   "policy:check",
   "secrets:check",
   "deploy:preflight:ci",
+  "deploy:systemd:check",
   "artifact:sidecar",
   "artifact:prune:sidecar",
   "test:qiwe",
@@ -31,7 +32,9 @@ const requiredDocs = [
   "docs/engineering/server-change-policy.md",
   "docs/engineering/ci-cd-gates.md",
   "deploy/sidecar/docs/monorepo-cutover-plan.md",
+  "deploy/sidecar/docs/systemd-cutover-plan.md",
   "docs/operations/sidecar-ci-artifacts.md",
+  "deploy/sidecar/scripts/render-systemd-units.sh",
 ];
 
 const requiredCheckFragments = [
@@ -42,6 +45,7 @@ const requiredCheckFragments = [
   "pnpm policy:check",
   "pnpm secrets:check",
   "pnpm deploy:preflight:ci",
+  "pnpm deploy:systemd:check",
   "pnpm test:qiwe",
   "pnpm test:sidecar",
   "pnpm smoke:sidecar",

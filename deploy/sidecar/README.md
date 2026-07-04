@@ -28,6 +28,21 @@ the server and do not use `scp` overwrites as a normal release path.
 The sidecar-specific cutover plan is `docs/monorepo-cutover-plan.md`. The global M9
 execution contract is `../../docs/operations/m9-server-cutover-runbook.md`.
 
+The monorepo-native systemd target shape is documented in
+`docs/systemd-cutover-plan.md`. Render and validate the unit review files without
+touching the server:
+
+```bash
+pnpm deploy:systemd:check
+```
+
+To produce review files under `dist/` for a candidate SHA:
+
+```bash
+QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
+deploy/sidecar/scripts/render-systemd-units.sh
+```
+
 ## Current Server Caveat
 
 The server checkout observed on 2026-07-03 is
@@ -43,7 +58,7 @@ Before any cutover from this monorepo, the deploy package needs:
 - successful CI workflow run for the target SHA, with the `sidecar-artifact` artifact
   uploaded
 - server-side manifest and `SHA256SUMS` verification of the downloaded artifact
-- dry-run or prepare output
+- rendered systemd unit review output
 - package tests and smokes
 - service health checks
 - rollback command and owner record

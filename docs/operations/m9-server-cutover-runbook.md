@@ -35,7 +35,7 @@ Fill these before the migration window:
 | Monorepo remote        | `git@github.com:qintopia-agent-studio/qintopia-agent-os.git` |
 | Target branch          | master                                                       |
 | Target commit SHA      | TBD                                                          |
-| Previous sidecar SHA   | TBD                                                          |
+| Previous sidecar SHA   | `b16c247a19ec751c08de75ae2d312f35b765f317`                   |
 | Server start time      | TBD                                                          |
 | Rollback decision time | TBD                                                          |
 | Rollback owner         | PatrickLiveCool                                              |
@@ -46,6 +46,10 @@ The target SHA must pass:
 pnpm check
 pnpm deploy:preflight
 ```
+
+The latest verified candidate before M9.3 was
+`416fa9b0ffc8219eaf47c5189c9f56547912342c`. After M9.3 merges, use the next green
+`master` SHA from CI as the final target for the approved window.
 
 M9.1 also requires a successful CI workflow run for the target SHA, including both
 `check` and `sidecar-artifact`. The server must deploy the CI-built artifact after
@@ -188,10 +192,16 @@ ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopi
 EnvironmentFile=/etc/qintopia/message-sidecar.env
 ```
 
-For exact sidecar command details, use `deploy/sidecar/docs/monorepo-cutover-plan.md`
-and the adopted `deploy/sidecar/scripts/server-deploy.sh` as reference material. The
-script is a legacy snapshot until it is made monorepo-native, so review its environment
-defaults before using it.
+For exact sidecar command details, use `deploy/sidecar/docs/systemd-cutover-plan.md` and
+render the target unit review files before copying anything into `/etc/systemd/system`:
+
+```bash
+QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
+deploy/sidecar/scripts/render-systemd-units.sh
+```
+
+`deploy/sidecar/scripts/server-deploy.sh` remains a legacy snapshot. Do not use it as
+the M9 artifact-based installer without converting and reviewing it first.
 
 Minimum service checks after restart:
 
