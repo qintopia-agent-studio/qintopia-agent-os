@@ -47,6 +47,9 @@ The check validates:
   `QINTOPIA_SIDECAR_BIN`
 - M9-F docs mention rollback, archive deferral, and the external-send boundary
 
+`deploy:m9f:check` is temporary migration scaffolding. When M9 is fully complete, delete
+it or move the durable assertions into stable deploy checks.
+
 ## Target Worker Shape
 
 Render target units for review:

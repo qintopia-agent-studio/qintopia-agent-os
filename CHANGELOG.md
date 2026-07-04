@@ -157,3 +157,5 @@ become versioned.
   release/current server plan.
 - Updated the Hermes `mcp-context` wrapper so its default resolution path uses verified
   artifacts or release/current instead of the legacy standalone checkout.
+- Documented `pnpm deploy:m9f:check` as temporary M9 scaffolding that must be removed or
+  folded into stable deploy checks after M9 completes.

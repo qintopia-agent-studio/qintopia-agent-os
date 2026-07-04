@@ -416,6 +416,8 @@ and future programming agents.
     to `/home/ubuntu/qintopia-msg-sidecar`
   - kept the actual server worker repoint and Hermes profile config change blocked on a
     later approved migration window
+  - marked `pnpm deploy:m9f:check` as temporary migration scaffolding to remove or fold
+    into stable deploy checks after M9 is complete
 
 ## Update Rule
 

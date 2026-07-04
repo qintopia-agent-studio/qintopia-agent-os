@@ -46,6 +46,9 @@ The check is non-mutating. It verifies the six already-active legacy worker unit
 away from `/home/ubuntu/qintopia-msg-sidecar`, and that the Hermes `mcp-context` wrapper
 can run from a verified artifact, `release/current`, or explicit `QINTOPIA_SIDECAR_BIN`.
 
+`deploy:m9f:check` is a migration-phase harness. After M9 is complete, remove this
+script or fold its stable assertions into `deploy:preflight` and `deploy:systemd:check`.
+
 ## GitHub App Git Access
 
 Validate the GitHub App git wrapper without credentials:
