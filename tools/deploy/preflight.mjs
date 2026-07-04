@@ -22,6 +22,7 @@ const requiredScripts = [
   "deploy:github-app-git:check",
   "deploy:postgres:schema:preflight",
   "deploy:systemd:check",
+  "deploy:m9f:check",
   "artifact:sidecar",
   "artifact:prune:sidecar",
   "test:qiwe",
@@ -35,12 +36,15 @@ const requiredDocs = [
   "docs/engineering/ci-cd-gates.md",
   "deploy/sidecar/docs/monorepo-cutover-plan.md",
   "deploy/sidecar/docs/systemd-cutover-plan.md",
+  "deploy/sidecar/docs/m9f-legacy-reference-removal.md",
   "docs/operations/sidecar-ci-artifacts.md",
   "docs/operations/m9-server-cutover-runbook.md",
   "deploy/sidecar/scripts/github-app-git.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
+  "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+  "tools/deploy/check-m9f-readiness.mjs",
 ];
 
 const requiredCheckFragments = [
@@ -53,6 +57,7 @@ const requiredCheckFragments = [
   "pnpm deploy:preflight:ci",
   "pnpm deploy:github-app-git:check",
   "pnpm deploy:systemd:check",
+  "pnpm deploy:m9f:check",
   "pnpm test:qiwe",
   "pnpm test:sidecar",
   "pnpm smoke:sidecar",
@@ -202,6 +207,29 @@ if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
         `deploy/sidecar/scripts/render-systemd-units.sh: must keep migrations env in rendered systemd units (${requiredFragment})`
       );
     }
+  }
+}
+
+if (exists("deploy/sidecar/scripts/hermes/qintopia-context-mcp")) {
+  const mcpContextWrapper = readText(
+    "deploy/sidecar/scripts/hermes/qintopia-context-mcp"
+  );
+  for (const requiredFragment of [
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_SIDECAR_BIN",
+    "/home/ubuntu/qintopia-agent-os-artifacts",
+    "/home/ubuntu/qintopia-agent-os-releases/current",
+  ]) {
+    if (!mcpContextWrapper.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/hermes/qintopia-context-mcp: must support M9-F artifact/release path (${requiredFragment})`
+      );
+    }
+  }
+  if (mcpContextWrapper.includes("/home/ubuntu/qintopia-msg-sidecar")) {
+    addError(
+      "deploy/sidecar/scripts/hermes/qintopia-context-mcp: must not default to the legacy standalone checkout"
+    );
   }
 }
 

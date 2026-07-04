@@ -45,6 +45,13 @@ touching the server:
 pnpm deploy:systemd:check
 ```
 
+M9-F legacy-reference removal is documented in `docs/m9f-legacy-reference-removal.md`.
+Validate its repository-side readiness checks without touching the server:
+
+```bash
+pnpm deploy:m9f:check
+```
+
 To produce review files under `dist/` for a candidate SHA:
 
 ```bash

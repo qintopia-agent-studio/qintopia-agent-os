@@ -347,6 +347,21 @@ Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-target-sha>
 For M9-F, repoint the remaining already-active legacy workers first. Do not enable the
 operations timers or external adapter paths during the same window.
 
+M9-F exact worker scope:
+
+| Unit                                               | Command                             |
+| -------------------------------------------------- | ----------------------------------- |
+| `qintopia-agentos-member-profile-worker.service`   | `run-member-profile-worker`         |
+| `qintopia-agentos-graph-projection-worker.service` | `run-graph-projection-worker`       |
+| `qintopia-agentos-raw-archive-worker.service`      | `run-raw-archive-worker`            |
+| `qintopia-agentos-event-signal-worker.service`     | `run-event-signal-worker`           |
+| `qintopia-agentos-daily-digest-worker.service`     | `agentos-daily-digest-worker`       |
+| `qintopia-agentos-daily-digest-publisher.service`  | `run-daily-digest-publisher-worker` |
+
+Use `deploy/sidecar/docs/m9f-legacy-reference-removal.md` for the M9-F read-only
+preflight, Hermes `mcp-context` wrapper migration, apply sequence, rollback, and cleanup
+deferral.
+
 For exact sidecar command details, use `deploy/sidecar/docs/systemd-cutover-plan.md` and
 render the target unit review files before copying anything into `/etc/systemd/system`:
 

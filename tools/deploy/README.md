@@ -34,6 +34,18 @@ pnpm deploy:systemd:check
 The renderer is non-mutating. It writes review files to `dist/` by default and refuses
 to write directly into `/etc/systemd/system`.
 
+## M9-F Readiness
+
+Validate the repository-side M9-F legacy-reference removal package:
+
+```bash
+pnpm deploy:m9f:check
+```
+
+The check is non-mutating. It verifies the six already-active legacy worker units render
+away from `/home/ubuntu/qintopia-msg-sidecar`, and that the Hermes `mcp-context` wrapper
+can run from a verified artifact, `release/current`, or explicit `QINTOPIA_SIDECAR_BIN`.
+
 ## GitHub App Git Access
 
 Validate the GitHub App git wrapper without credentials:

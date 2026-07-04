@@ -100,6 +100,16 @@ runtime references are removed and an owner-approved archive window is active.
 | `/home/ubuntu/.hermes/profiles/xiaoqin`       | deprecated Xiaoqin WorkTool profile                  | archive or delete after service/config recheck                  |
 | `/opt/qiwe-openclaw-adapter`                  | deprecated OpenClaw adapter                          | cleanup with disabled unit and nginx route reconciliation       |
 
+M9-F must remove these active service references before
+`/home/ubuntu/qintopia-msg-sidecar` becomes eligible for archive:
+
+- `qintopia-agentos-member-profile-worker.service`
+- `qintopia-agentos-graph-projection-worker.service`
+- `qintopia-agentos-raw-archive-worker.service`
+- `qintopia-agentos-event-signal-worker.service`
+- `qintopia-agentos-daily-digest-worker.service`
+- `qintopia-agentos-daily-digest-publisher.service`
+
 ## Hermes Runtime Boundary
 
 Hermes itself is not rebuilt by the Agent OS CI pipeline. Hermes remains the runtime

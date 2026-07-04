@@ -78,6 +78,8 @@ become versioned.
 - Added `docs/operations/server-directory-plan.md` to define the target server
   filesystem, release/current model, Hermes runtime boundary, and legacy cleanup
   candidates.
+- Added `deploy/sidecar/docs/m9f-legacy-reference-removal.md` and
+  `pnpm deploy:m9f:check` for repository-side M9-F readiness validation.
 
 ### Changed
 
@@ -153,3 +155,5 @@ become versioned.
 - Reframed the adopted standalone sidecar deployment docs as historical rollback
   evidence and pointed deploy contributors to the current M9 runbook plus M10
   release/current server plan.
+- Updated the Hermes `mcp-context` wrapper so its default resolution path uses verified
+  artifacts or release/current instead of the legacy standalone checkout.

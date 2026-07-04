@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="${QINTOPIA_SIDECAR_REPO_DIR:-/home/ubuntu/qintopia-msg-sidecar}"
+MONOREPO_DIR="${QINTOPIA_AGENT_OS_MONOREPO_DIR:-/home/ubuntu/qintopia-agent-os-monorepo}"
+ARTIFACT_ROOT="${QINTOPIA_ARTIFACT_ROOT:-/home/ubuntu/qintopia-agent-os-artifacts}"
+RELEASE_CURRENT="${QINTOPIA_AGENT_OS_RELEASE_CURRENT:-/home/ubuntu/qintopia-agent-os-releases/current}"
 ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
-BIN="${QINTOPIA_SIDECAR_BIN:-${REPO_DIR}/target/release/qintopia-message-sidecar}"
 
 if [[ ! -r "$ENV_FILE" ]]; then
   printf 'missing readable env file: %s\n' "$ENV_FILE" >&2
@@ -14,5 +15,24 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
+
+if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
+  BIN="$QINTOPIA_SIDECAR_BIN"
+elif [[ -x "${RELEASE_CURRENT}/sidecar/qintopia-message-sidecar" ]]; then
+  BIN="${RELEASE_CURRENT}/sidecar/qintopia-message-sidecar"
+elif [[ -n "${QINTOPIA_DEPLOYED_COMMIT_SHA:-}" ]]; then
+  BIN="${ARTIFACT_ROOT}/${QINTOPIA_DEPLOYED_COMMIT_SHA}/qintopia-message-sidecar"
+elif [[ -x "${ARTIFACT_ROOT}/current/qintopia-message-sidecar" ]]; then
+  BIN="${ARTIFACT_ROOT}/current/qintopia-message-sidecar"
+else
+  printf 'missing sidecar binary for mcp-context; set QINTOPIA_SIDECAR_BIN or QINTOPIA_DEPLOYED_COMMIT_SHA\n' >&2
+  printf 'checked monorepo=%s artifact_root=%s release_current=%s\n' "$MONOREPO_DIR" "$ARTIFACT_ROOT" "$RELEASE_CURRENT" >&2
+  exit 2
+fi
+
+if [[ ! -x "$BIN" ]]; then
+  printf 'sidecar binary is not executable: %s\n' "$BIN" >&2
+  exit 2
+fi
 
 exec "$BIN" mcp-context

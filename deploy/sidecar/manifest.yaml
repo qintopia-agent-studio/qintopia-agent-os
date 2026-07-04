@@ -19,6 +19,7 @@ validation:
     - pnpm check
     - pnpm deploy:preflight
     - pnpm deploy:systemd:check
+    - pnpm deploy:m9f:check
     - pnpm artifact:sidecar
     - cargo test --manifest-path runtime/sidecar/Cargo.toml
     - pnpm smoke:sidecar

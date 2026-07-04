@@ -409,6 +409,13 @@ and future programming agents.
     `/home/ubuntu/qintopia-hermes-runtime`, `/home/ubuntu/qintopia-migration`,
     `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and OpenClaw as archive or cleanup
     candidates after runtime references are removed
+- Started M9-F repository-side preparation without server mutation:
+  - added `deploy/sidecar/docs/m9f-legacy-reference-removal.md`
+  - added `tools/deploy/check-m9f-readiness.mjs` and `pnpm deploy:m9f:check`
+  - updated the Hermes `mcp-context` wrapper so its default path no longer points back
+    to `/home/ubuntu/qintopia-msg-sidecar`
+  - kept the actual server worker repoint and Hermes profile config change blocked on a
+    later approved migration window
 
 ## Update Rule
 

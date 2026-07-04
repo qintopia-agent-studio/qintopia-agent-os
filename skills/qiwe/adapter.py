@@ -121,6 +121,7 @@ DEFAULT_CONTACT_GUARD_PAGE_LIMIT = 100
 DEFAULT_CONTACT_GUARD_MAX_PAGES = 20
 DEFAULT_IDENTITY_CACHE_TTL_SECONDS = 86_400
 DEFAULT_RECENT_MESSAGE_REF_TTL_SECONDS = 600
+DEFAULT_ANSWER_CONTEXT_MCP_COMMAND = "/home/ubuntu/qintopia-agent-os-monorepo/deploy/sidecar/scripts/hermes/qintopia-context-mcp"
 QIWE_NORMAL_FRIEND_CONTACT_TYPE = 2057
 MENTION_SPACES = "\u00a0\u2005\u200b"
 MENTION_BOUNDARY_PUNCT = ":：,，、。.!！?？~～…"
@@ -288,7 +289,7 @@ class QiWeConfig:
     nats_message_subject: str = "qintopia.qiwe.message"
     nats_capture_timeout_seconds: float = 0.5
     answer_context_prepare_enabled: bool = True
-    answer_context_mcp_command: str = "/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp"
+    answer_context_mcp_command: str = DEFAULT_ANSWER_CONTEXT_MCP_COMMAND
     answer_context_prepare_timeout_seconds: float = 1.2
 
 
@@ -1663,7 +1664,7 @@ class QiWeAdapter(BasePlatformAdapter):
                 True,
             ),
             answer_context_mcp_command=os.getenv("QIWE_ANSWER_CONTEXT_MCP_COMMAND")
-            or extra.get("answer_context_mcp_command", "/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp"),
+            or extra.get("answer_context_mcp_command", DEFAULT_ANSWER_CONTEXT_MCP_COMMAND),
             answer_context_prepare_timeout_seconds=float(
                 os.getenv("QIWE_ANSWER_CONTEXT_PREPARE_TIMEOUT_SECONDS")
                 or extra.get("answer_context_prepare_timeout_seconds")
