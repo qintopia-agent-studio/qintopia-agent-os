@@ -83,6 +83,11 @@ file, and keeps token material out of process arguments. Do not change it back t
 `curl -H "Authorization: Bearer ..."` because that exposes credentials through process
 arguments on the server.
 
+GitHub API metadata requests use a shorter timeout. The artifact zip download uses a
+separate longer timeout and retry profile because GitHub artifact downloads can be slow
+or interrupted on the production server network. Override `GITHUB_DOWNLOAD_MAX_TIME`
+only for the download phase when needed.
+
 The script requires only:
 
 - `curl`

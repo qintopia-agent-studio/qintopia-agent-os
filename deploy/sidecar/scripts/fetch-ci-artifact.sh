@@ -21,6 +21,8 @@ Optional environment:
   GITHUB_WORKFLOW    Defaults to ci.yml.
   ARTIFACT_NAME      Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
   ARTIFACT_TARGET    Defaults to linux-x86_64-gnu.
+  GITHUB_API_MAX_TIME       Defaults to 240 seconds.
+  GITHUB_DOWNLOAD_MAX_TIME  Defaults to 900 seconds.
 USAGE
 }
 
@@ -60,6 +62,8 @@ workflow="${GITHUB_WORKFLOW:-ci.yml}"
 artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
 artifact_target="${ARTIFACT_TARGET:-linux-x86_64-gnu}"
 output_dir="${output_dir:-/tmp/qintopia-agent-os-artifacts/${sha}}"
+github_api_max_time="${GITHUB_API_MAX_TIME:-240}"
+github_download_max_time="${GITHUB_DOWNLOAD_MAX_TIME:-900}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -171,7 +175,7 @@ github_api_token="$(get_github_token)"
 curl_config="${tmp_dir}/github-curl.conf"
 {
   printf '%s\n' 'connect-timeout = 20'
-  printf '%s\n' 'max-time = 240'
+  printf 'max-time = %s\n' "$github_api_max_time"
   printf '%s\n' 'retry = 2'
   printf '%s\n' 'retry-delay = 2'
   printf '%s\n' 'fail'
@@ -184,6 +188,25 @@ curl_config="${tmp_dir}/github-curl.conf"
   printf '%s\n' 'header = "X-GitHub-Api-Version: 2022-11-28"'
 } >"$curl_config"
 chmod 600 "$curl_config"
+
+download_curl_config="${tmp_dir}/github-download-curl.conf"
+{
+  printf '%s\n' 'connect-timeout = 20'
+  printf 'max-time = %s\n' "$github_download_max_time"
+  printf '%s\n' 'retry = 5'
+  printf '%s\n' 'retry-delay = 5'
+  printf '%s\n' 'retry-all-errors'
+  printf '%s\n' 'fail'
+  printf '%s\n' 'silent'
+  printf '%s\n' 'show-error'
+  printf '%s\n' 'location'
+  printf '%s\n' 'http1.1'
+  printf '%s\n' 'continue-at = -'
+  printf '%s\n' 'header = "Accept: application/vnd.github+json"'
+  printf 'header = "Authorization: Bearer %s"\n' "$github_api_token"
+  printf '%s\n' 'header = "X-GitHub-Api-Version: 2022-11-28"'
+} >"$download_curl_config"
+chmod 600 "$download_curl_config"
 unset GITHUB_TOKEN
 unset github_api_token
 
@@ -219,7 +242,7 @@ fi
 
 mkdir -p "$output_dir"
 zip_path="${tmp_dir}/${artifact_name}.zip"
-curl --config "$curl_config" "$download_url" -o "$zip_path"
+curl --config "$download_curl_config" "$download_url" -o "$zip_path"
 unzip -o -q "$zip_path" -d "$output_dir"
 
 (
