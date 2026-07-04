@@ -62,20 +62,25 @@ from GitHub artifact retention.
 ## Server Download
 
 For the private repository, downloading GitHub Actions artifacts requires GitHub API
-read access. Use a short-lived token or GitHub CLI session managed outside git.
+read access. Use the Qintopia Agent OS deployer GitHub App as the default credential
+path. A short-lived `GITHUB_TOKEN` or GitHub CLI session is only a fallback for
+emergency or one-off migration work.
 
-Server-side fetch command:
+Server-side fetch command with GitHub App credentials:
 
 ```bash
-export GITHUB_TOKEN="<short-lived-token>"
+export GITHUB_APP_ID="<github-app-id>"
+export GITHUB_APP_INSTALLATION_ID="<installation-id>"
+export GITHUB_APP_PRIVATE_KEY_PATH="/etc/qintopia/github-app/qintopia-agent-os-deployer.pem"
 deploy/sidecar/scripts/fetch-ci-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
-The script writes GitHub API headers to a temporary curl config file and unsets
-`GITHUB_TOKEN` before invoking curl. Do not change it back to
-`curl -H "Authorization: Bearer ..."` because that exposes the token through process
+The script generates a GitHub App JWT from the server-local private key, exchanges it
+for a one-hour installation token, writes GitHub API headers to a temporary curl config
+file, and keeps token material out of process arguments. Do not change it back to
+`curl -H "Authorization: Bearer ..."` because that exposes credentials through process
 arguments on the server.
 
 The script requires only:
@@ -84,8 +89,12 @@ The script requires only:
 - `jq`
 - `unzip`
 - `sha256sum`
+- `python3`
+- `openssl`
 
 It does not require Node.js, pnpm, Rust, Docker, or direct source edits on the server.
+The GitHub App private key remains outside git and should be readable only by the
+deployment operator or service account.
 
 ## Verification
 

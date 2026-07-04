@@ -127,6 +127,8 @@ become versioned.
   passed through a temporary curl config file instead of process arguments.
 - Extended deploy preflight to guard artifact credential handling and require the M9
   Postgres schema preflight path.
+- Changed the M9 artifact download path to prefer GitHub App installation tokens, with
+  `GITHUB_TOKEN` kept only as a fallback for emergency or one-off downloads.
 - Updated M9 migration state after production database migrations passed: M9 is now
   database-ready and waiting on an owner-approved systemd cutover window, while real
   external adapter enablement remains blocked on reviewed allowlists/config.

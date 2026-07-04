@@ -113,6 +113,20 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
       "deploy/sidecar/scripts/fetch-ci-artifact.sh: expected a curl config file for GitHub API headers"
     );
   }
+  for (const requiredFragment of [
+    "GITHUB_APP_ID",
+    "GITHUB_APP_INSTALLATION_ID",
+    "GITHUB_APP_PRIVATE_KEY_PATH",
+    "/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens",
+    "openssl",
+    "jwt_path",
+  ]) {
+    if (!artifactFetchScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-ci-artifact.sh: must support GitHub App credential path (${requiredFragment})`
+      );
+    }
+  }
 }
 
 if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
@@ -150,6 +164,39 @@ if (
   addError(
     "docs/operations/m9-server-cutover-runbook.md: must include Postgres schema preflight"
   );
+}
+if (m9Runbook) {
+  for (const requiredFragment of [
+    "GITHUB_APP_ID",
+    "GITHUB_APP_INSTALLATION_ID",
+    "GITHUB_APP_PRIVATE_KEY_PATH",
+    "Actions: read",
+  ]) {
+    if (!m9Runbook.includes(requiredFragment)) {
+      addError(
+        `docs/operations/m9-server-cutover-runbook.md: must document GitHub App artifact download (${requiredFragment})`
+      );
+    }
+  }
+}
+
+const artifactDoc = exists("docs/operations/sidecar-ci-artifacts.md")
+  ? readText("docs/operations/sidecar-ci-artifacts.md")
+  : "";
+if (artifactDoc) {
+  for (const requiredFragment of [
+    "GitHub App",
+    "GITHUB_APP_ID",
+    "GITHUB_APP_INSTALLATION_ID",
+    "GITHUB_APP_PRIVATE_KEY_PATH",
+    "one-hour installation token",
+  ]) {
+    if (!artifactDoc.includes(requiredFragment)) {
+      addError(
+        `docs/operations/sidecar-ci-artifacts.md: must document GitHub App artifact download (${requiredFragment})`
+      );
+    }
+  }
 }
 
 const serverPolicy = exists("docs/engineering/server-change-policy.md")

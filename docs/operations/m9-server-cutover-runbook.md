@@ -76,7 +76,7 @@ build, or preserve the verified server copy under
 | Server Node.js        | missing from `PATH`; not required for artifact-based M9.1                          |
 | Server pnpm           | missing from `PATH`; not required for artifact-based M9.1                          |
 | Server Rust           | `cargo 1.96.1`, `rustc 1.96.1` observed; not required for artifact deploy          |
-| Server artifact tools | `curl`, `jq`, `unzip`, `sha256sum`, and `tar` available                            |
+| Server artifact tools | `curl`, `jq`, `unzip`, `sha256sum`, `python3`, `openssl`, and `tar` available      |
 | Server disk           | `/` at about 50% used, about 29G available after cleanup                           |
 | Current sidecar       | active, enabled, running from `/home/ubuntu/qintopia-msg-sidecar`                  |
 | Current sidecar SHA   | `b16c247a19ec751c08de75ae2d312f35b765f317` on `codex/huabaosi-localization-shadow` |
@@ -85,8 +85,8 @@ Blocking items before cutover:
 
 1. Confirm the approved target SHA has a successful CI workflow run with the
    `sidecar-artifact` artifact uploaded.
-2. Provide a short-lived GitHub token or GitHub CLI session for private repository
-   artifact download during the migration window.
+2. Provide GitHub App credentials for private repository artifact download:
+   `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and a server-local private key path.
 3. Reconfirm whether the Huabaosi shadow branch should remain review-pool before the
    active service is repointed.
 
@@ -201,11 +201,18 @@ If the checkout already exists, use `git fetch` and
 Fetch the CI-built artifact for the approved commit SHA:
 
 ```bash
-export GITHUB_TOKEN="<short-lived-token>"
+export GITHUB_APP_ID="<github-app-id>"
+export GITHUB_APP_INSTALLATION_ID="<installation-id>"
+export GITHUB_APP_PRIVATE_KEY_PATH="/etc/qintopia/github-app/qintopia-agent-os-deployer.pem"
 deploy/sidecar/scripts/fetch-ci-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
+
+The GitHub App must be installed only on `qintopia-agent-studio/qintopia-agent-os` with
+`Actions: read` and `Metadata: read`. `GITHUB_TOKEN` remains a fallback for emergency
+artifact downloads, but the normal M9 path should use the GitHub App so releases do not
+depend on hand-created personal tokens.
 
 Run binary checks without changing systemd:
 

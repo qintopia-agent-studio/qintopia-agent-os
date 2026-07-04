@@ -81,7 +81,9 @@ and rollback checks.
 3. Fetch the CI-built sidecar artifact for the approved commit SHA:
 
    ```bash
-   export GITHUB_TOKEN="<short-lived-token>"
+   export GITHUB_APP_ID="<github-app-id>"
+   export GITHUB_APP_INSTALLATION_ID="<installation-id>"
+   export GITHUB_APP_PRIVATE_KEY_PATH="/etc/qintopia/github-app/qintopia-agent-os-deployer.pem"
    deploy/sidecar/scripts/fetch-ci-artifact.sh \
      --sha <approved-target-sha> \
      --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>

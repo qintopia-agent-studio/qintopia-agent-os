@@ -336,6 +336,12 @@ and future programming agents.
   - updated `deploy/sidecar/scripts/fetch-ci-artifact.sh` to use a temporary curl config
     file and unset `GITHUB_TOKEN` before curl runs
   - added deploy preflight checks to prevent this regression
+- Upgraded the M9 artifact download credential path:
+  - `deploy/sidecar/scripts/fetch-ci-artifact.sh` now prefers a GitHub App installation
+    token generated from server-local app credentials
+  - `GITHUB_TOKEN` remains a fallback for one-off or emergency artifact downloads
+  - the normal release path no longer requires creating a personal access token for each
+    deployment
 - Added `deploy/sidecar/scripts/postgres-schema-preflight.sh` and
   `pnpm deploy:postgres:schema:preflight`:
   - the script is read-only and checks required schemas, tables, functions,
@@ -377,12 +383,13 @@ Non-complete phases after M5 closure:
 
 Recommended order:
 
-1. Rotate or refresh the GitHub token used during the first M9-B manual attempt.
+1. Create and install the Qintopia Agent OS deployer GitHub App, then place its private
+   key on the server outside git.
 2. Re-run read-only server drift checks immediately before the systemd window.
 3. Fill the final target commit SHA and migration window in
    `docs/operations/m9-server-cutover-runbook.md`.
 4. Dry-run `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <target-sha>` on the
-   server with a short-lived GitHub token.
+   server with GitHub App credentials.
 5. Re-run `deploy/sidecar/scripts/postgres-schema-preflight.sh` against production and
    require it to pass.
 6. Render and review target systemd units with
