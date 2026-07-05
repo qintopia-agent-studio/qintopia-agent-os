@@ -238,6 +238,10 @@ become versioned.
 - Added `qintopia-collab-mcp` to the deploy bundle payload so the next M10-B release can
   repoint Huabaosi, Silaoshi, and Xiaoman from the server-local `.hermes/scripts`
   command to a release-managed command path.
+- Completed the M10-B production repoint for Huabaosi, Silaoshi, and Xiaoman
+  `qintopia-collab-mcp`, moving all three MCP processes to
+  `qintopia-agent-os-releases/current` with profile config backups and old-script Python
+  process references cleared.
 
 ### Fixed
 

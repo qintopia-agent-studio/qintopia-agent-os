@@ -736,6 +736,29 @@ and future programming agents.
   - added the command to the deploy bundle payload for the next release assembly
   - did not repoint Huabaosi, Silaoshi, or Xiaoman yet; production still uses the
     server-local `.hermes/scripts` command until the M10-B release window
+- Completed M10-B production repoint:
+  - CI passed for `f1b5f4e44066bcf4aa6621738c4c15c2a107df2a`
+  - published an opt-in deploy bundle for `f1b5f4e44066bcf4aa6621738c4c15c2a107df2a`
+    without rebuilding the sidecar runtime artifact
+  - verified the deploy bundle from COS on the server, including `SHA256SUMS`,
+    `artifact-manifest.json`, and `payload/mcp/qintopia-collab/bin/qintopia-collab-mcp`
+  - assembled immutable release directory
+    `/home/ubuntu/qintopia-agent-os-releases/f1b5f4e44066bcf4aa6621738c4c15c2a107df2a`
+    using the previous sidecar runtime from `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`
+    plus the new deploy bundle payload
+  - set `/home/ubuntu/qintopia-agent-os-releases/previous` to
+    `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6` and `current` to
+    `f1b5f4e44066bcf4aa6621738c4c15c2a107df2a`
+  - backed up Huabaosi, Silaoshi, and Xiaoman profile configs under
+    `/home/ubuntu/qintopia-agent-os-backups/m10b-collab-mcp-20260705T134401Z`
+  - repointed only the `qintopia-collab` MCP command path for Huabaosi, Silaoshi, and
+    Xiaoman, restarting one Hermes profile at a time
+  - verified all three profiles are active, all nine system sidecar/worker services are
+    active, profile config old-path references are `0`, new-path references are `3`, old
+    collab MCP Python processes are `0`, and release/current collab MCP Python processes
+    are `3`
+  - did not delete or archive `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`;
+    cleanup remains M11/M12 gated
 
 ## Update Rule
 
@@ -747,18 +770,16 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Remaining follow-up after the M9-F release/current runtime cutover:
+Remaining follow-up after the M10-B collab MCP release/current cutover:
 
 - Server deploy checkout remains a transition diagnostic checkout at `9424450`; do not
   use `git fetch` as the routine release path.
-- COS artifact distribution, opt-in artifact publication, server-side COS download
-  verification, immutable release candidate assembly, Hermes MCP context repoint, and
-  all nine sidecar/worker service release/current cutovers have passed for
-  `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`.
-- `/home/ubuntu/qintopia-agent-os-releases/previous` is still not an effective rollback
-  symlink because the prior production state used transition artifact paths instead of a
-  release directory. The next release window should establish a real `previous` target
-  before switching `current`.
+- Current release:
+  `/home/ubuntu/qintopia-agent-os-releases/f1b5f4e44066bcf4aa6621738c4c15c2a107df2a`.
+- Previous release:
+  `/home/ubuntu/qintopia-agent-os-releases/13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`.
+- M9-F and M10-B are release/current-managed. The remaining M10 work is profile/plugin
+  migration, not sidecar runtime cutover.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
 - Deprecated runtime cleanup: WorkTool, Xiaoqin WorkTool, OpenClaw, and related nginx
@@ -769,45 +790,31 @@ Remaining follow-up after the M9-F release/current runtime cutover:
 
 Recommended order:
 
-1. Download and verify the approved runtime sidecar artifact and deploy bundle from COS
-   in a staging directory.
-2. Assemble an immutable release directory:
-   `/home/ubuntu/qintopia-agent-os-releases/<release-sha>`. The release should include:
-   - `sidecar/qintopia-message-sidecar` from the runtime artifact
-   - `runtime/postgres/migrations/` from the deploy bundle payload
-   - reviewed `deploy/`, `docs/`, and wrapper files from the deploy bundle payload
-   - a release manifest recording the runtime SHA and deploy bundle SHA
-3. Validate the release directory without changing `current`, then update a real
-   `/home/ubuntu/qintopia-agent-os-releases/previous` symlink to the old release target
-   before atomically switching `/home/ubuntu/qintopia-agent-os-releases/current` to the
-   new release.
-4. Extend release packaging after runtime cutover:
+1. M10-C: compare and package active `qintopia-tools` copies for Erhua, Xiaoman, and
+   Wenyuange. Keep Xiaoqin out of active migration scope.
+2. Extend release packaging for profile/plugin payloads as needed:
    - `sidecar-runtime` release payload
    - `hermes-profile-bundle-<agent>` payloads for reviewed non-secret profile files
    - `skill-bundle-<skill>` payloads for Hermes plugins such as `skills/qiwe`
    - broader `qintopia-agent-os-releases/<sha>` contents beyond M9-F sidecar/operator
      files
-5. M10-B: package and release-manage `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`
-   for Huabaosi, Silaoshi, and Xiaoman.
-6. M10-C: compare and package active `qintopia-tools` copies for Erhua, Xiaoman, and
-   Wenyuange. Keep Xiaoqin out of active migration scope.
-7. M10-D: reconcile Erhua `qiwe-platform` server state before migrating it through
+3. M10-D: reconcile Erhua `qiwe-platform` server state before migrating it through
    `skills/qiwe`.
-8. M10-E: review Huabaosi `qintopia-base-read` after collab MCP migration.
-9. M10-F: plan reviewed `config.yaml` and `SOUL.md` profile templates/symlinks without
+4. M10-E: review Huabaosi `qintopia-base-read` after collab MCP migration.
+5. M10-F: plan reviewed `config.yaml` and `SOUL.md` profile templates/symlinks without
    replacing whole profile directories.
-10. M11: mark legacy paths as `archive-ready` only after no process, unit/timer, Hermes
-    config, nginx route, cron job, or rollback dependency references them.
-11. Keep server-side GitHub access out of routine runtime releases. Use it only for
-    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
-12. Do not repoint production to a newer commit just because docs changed; use a new
-    approved target SHA and artifact only when there is a production runtime change.
-13. Do not enable real external send or real workbench adapter paths until production
-    allowlists/config are reviewed and set.
-14. After no process, unit, timer, cron, MCP command, or nginx route references legacy
+6. M11: mark legacy paths as `archive-ready` only after no process, unit/timer, Hermes
+   config, nginx route, cron job, or rollback dependency references them.
+7. Keep server-side GitHub access out of routine runtime releases. Use it only for
+   deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
+8. Do not repoint production to a newer commit just because docs changed; use a new
+   approved target SHA and artifact only when there is a production runtime change.
+9. Do not enable real external send or real workbench adapter paths until production
+   allowlists/config are reviewed and set.
+10. After no process, unit, timer, cron, MCP command, or nginx route references legacy
     paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
     `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
     `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin,
     and OpenClaw paths only with owner approval.
-15. Add deploy smoke and rollback notes before any production wiring changes for
+11. Add deploy smoke and rollback notes before any production wiring changes for
     `skills/qiwe` or Erhua profile bundles.

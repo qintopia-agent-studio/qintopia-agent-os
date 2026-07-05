@@ -15,9 +15,9 @@ git.
   `/home/ubuntu/qintopia-agent-os-releases/current`. M9-F runtime cutover is complete.
 - `Context MCP`: Erhua and Wenyuange use the release wrapper under
   `qintopia-agent-os-releases/current`. M9-F MCP cutover is complete.
-- `Collab MCP`: Huabaosi, Silaoshi, and Xiaoman still run
-  `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`. This is the next M10 migration
-  candidate.
+- `Collab MCP`: Huabaosi, Silaoshi, and Xiaoman now run the release-managed
+  `qintopia-collab-mcp` command under `qintopia-agent-os-releases/current`. M10-B is
+  complete.
 - `Profile plugins`: active plugins are still directories under
   `/home/ubuntu/.hermes/profiles/*/plugins/*`. Migrate them as reviewed skill/profile
   bundles; do not copy a live profile root.
@@ -41,9 +41,8 @@ git.
   - service: `hermes-gateway-xiaoman.service`
   - root: `/home/ubuntu/.hermes/profiles/xiaoman`
   - plugins: `qintopia-tools`
-  - MCP: `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`
-  - M10 action: migrate collab MCP wrapper and shared `qintopia-tools`; keep
-    external-send controls closed.
+  - MCP: release-managed `qintopia-collab`
+  - M10 action: migrate shared `qintopia-tools`; keep external-send controls closed.
 - Wenyuange
   - service: `hermes-gateway-wenyuange.service`
   - root: `/home/ubuntu/.hermes/profiles/wenyuange`
@@ -55,14 +54,15 @@ git.
   - service: `hermes-gateway-huabaosi.service`
   - root: `/home/ubuntu/.hermes/profiles/huabaosi`
   - plugins: `qintopia-tools`, `qintopia-base-read`
-  - MCP: `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`
-  - M10 action: migrate collab MCP wrapper, then review `qintopia-base-read` separately.
+  - MCP: release-managed `qintopia-collab`
+  - M10 action: migrate shared `qintopia-tools`, then review `qintopia-base-read`
+    separately.
 - Silaoshi
   - service: `hermes-gateway-silaoshi.service`
   - root: `/home/ubuntu/.hermes/profiles/silaoshi`
   - plugins: none in observed plugin directory
-  - MCP: `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`
-  - M10 action: migrate collab MCP wrapper; script/workflow migration remains separate.
+  - MCP: release-managed `qintopia-collab`
+  - M10 action: script/workflow migration remains separate.
 - Guanerye
   - service: `hermes-gateway-guanerye.service`
   - root: `/home/ubuntu/.hermes/profiles/guanerye`
@@ -86,9 +86,9 @@ git.
   - source: `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`
   - observed size: 24K
   - consumers: Huabaosi, Silaoshi, Xiaoman
-  - target: `mcp/qintopia-collab` or `mcp/context-server` extension
+  - target: `mcp/qintopia-collab`
   - risk: medium
-  - next step: M10-B package and release-managed wrapper migration
+  - status: M10-B complete; production command path is release-managed
 - Shared Qintopia tools
   - source: `/home/ubuntu/.hermes/profiles/*/plugins/qintopia-tools`
   - observed size: 308K-1.2M per profile
@@ -144,9 +144,9 @@ git.
 ## Migration Order
 
 1. M10-B: package and release-manage `qintopia-collab-mcp`.
-   - Affected profiles: Huabaosi, Silaoshi, Xiaoman.
-   - Validation: restart one profile at a time; confirm profile active, MCP child
-     process path, and no old script process remains.
+   - Status: complete.
+   - Validation: Huabaosi, Silaoshi, and Xiaoman are active, config references point to
+     release/current, and old-script Python process references are `0`.
 2. M10-C: compare and package shared `qintopia-tools`.
    - Affected profiles: Erhua, Xiaoman, Wenyuange first.
    - Validation: per-profile plugin load check and targeted Hermes smoke; do not include
