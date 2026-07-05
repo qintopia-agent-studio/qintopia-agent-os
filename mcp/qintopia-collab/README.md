@@ -1,10 +1,22 @@
 # MCP: Qintopia Collab
 
 `mcp/qintopia-collab` is the M10-B package boundary for the Hermes `qintopia-collab-mcp`
-command that is still launched from:
+command that was imported from:
 
 ```text
 /home/ubuntu/.hermes/scripts/qintopia-collab-mcp
+```
+
+The adopted source is now:
+
+```text
+mcp/qintopia-collab/bin/qintopia-collab-mcp
+```
+
+Imported SHA256:
+
+```text
+3240bebd6288e9a1b9abe2b42fd2408e41d0a88f36ba510ccccca41a6b5bcb83
 ```
 
 ## Current Consumers
@@ -29,16 +41,15 @@ not contain:
 
 ## Migration Plan
 
-1. Read the current server script and classify dependencies.
-2. Extract the non-secret implementation or wrapper into this package.
-3. Include the package in the release/deploy bundle.
-4. Assemble a new immutable release directory from COS artifacts.
-5. Repoint one Hermes profile at a time:
+1. Include the package in the release/deploy bundle.
+2. Publish and verify a deploy bundle artifact for the approved commit.
+3. Assemble a new immutable release directory from COS artifacts.
+4. Repoint one Hermes profile at a time:
    - back up `config.yaml`
    - change only the MCP command path
    - restart the affected profile
    - verify profile active state and MCP child process path
-6. Stop before M12 cleanup. Cleanup requires a separate readiness audit.
+5. Stop before M12 cleanup. Cleanup requires a separate readiness audit.
 
 ## Validation
 

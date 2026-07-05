@@ -1,0 +1,564 @@
+#!/usr/bin/env python3
+"""Qintopia collaboration MCP server.
+
+A small stdio JSON-RPC MCP server for structured agent collaboration events.
+It records protocol facts, receipts, and confirmation requests; it does not
+send natural-language messages between agents.
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sqlite3
+import sys
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+PROTOCOL_VERSION = "2025-06-18"
+SERVER_NAME = "qintopia-collab-mcp"
+SERVER_VERSION = "0.1.0"
+DEFAULT_DB = "/home/ubuntu/.hermes/collab.db"
+ALLOWED_CALLERS = {"xiaoman", "huabaosi", "silaoshi", "erhua", "wenyuange"}
+ALLOWED_DIRECT_CALLS = {
+    "xiaoman": {"huabaosi"},
+}
+HERMES_AGENT_ROOT = Path("/home/ubuntu/.hermes/hermes-agent")
+HERMES_PYTHON = HERMES_AGENT_ROOT / "venv/bin/python"
+HERMES_MAIN_MODULE = "hermes_cli.main"
+ALLOWED_EVENT_TYPES = {
+    "task.created",
+    "task.claimed",
+    "task.completed",
+    "task.blocked",
+    "task.receipt",
+    "confirmation.requested",
+    "confirmation.resolved",
+    "handoff.requested",
+    "handoff.accepted",
+    "note.recorded",
+}
+
+
+def db_path() -> Path:
+    return Path(os.environ.get("QINTOPIA_COLLAB_DB", DEFAULT_DB))
+
+
+def now_ts() -> int:
+    return int(time.time())
+
+
+def connect() -> sqlite3.Connection:
+    path = db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    ensure_schema(conn)
+    return conn
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS collab_events (
+          event_id TEXT PRIMARY KEY,
+          idempotency_key TEXT UNIQUE,
+          event_type TEXT NOT NULL,
+          caller TEXT NOT NULL,
+          source_agent TEXT NOT NULL,
+          target_agent TEXT,
+          task_id TEXT,
+          status TEXT NOT NULL DEFAULT 'open',
+          summary TEXT NOT NULL DEFAULT '',
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_collab_events_task_id ON collab_events(task_id);
+        CREATE INDEX IF NOT EXISTS idx_collab_events_target_status ON collab_events(target_agent, status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_collab_events_type_created ON collab_events(event_type, created_at);
+
+        CREATE TABLE IF NOT EXISTS collab_receipts (
+          receipt_id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL,
+          caller TEXT NOT NULL,
+          agent TEXT NOT NULL,
+          receipt_type TEXT NOT NULL,
+          note TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL,
+          UNIQUE(event_id, agent, receipt_type),
+          FOREIGN KEY(event_id) REFERENCES collab_events(event_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_collab_receipts_event_id ON collab_receipts(event_id);
+        """
+    )
+    conn.commit()
+
+
+def tool_definitions() -> list[dict[str, Any]]:
+    common_caller = {
+        "type": "string",
+        "description": "Calling Hermes profile, e.g. xiaoman, huabaosi, silaoshi.",
+    }
+    return [
+        {
+            "name": "qintopia_collab_emit_event",
+            "description": "Record a structured collaboration event between Qintopia agents. This is not agent-to-agent chat.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "caller": common_caller,
+                    "event_type": {"type": "string", "enum": sorted(ALLOWED_EVENT_TYPES)},
+                    "source_agent": {"type": "string"},
+                    "target_agent": {"type": "string"},
+                    "task_id": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "payload": {"type": "object"},
+                    "idempotency_key": {"type": "string"},
+                },
+                "required": ["caller", "event_type", "source_agent", "summary"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "qintopia_collab_get_events",
+            "description": "List structured collaboration events visible to an agent, optionally filtered by target, task, status, or type.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "caller": common_caller,
+                    "agent": {"type": "string"},
+                    "target_agent": {"type": "string"},
+                    "task_id": {"type": "string"},
+                    "event_type": {"type": "string"},
+                    "status": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                "required": ["caller"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "qintopia_collab_add_receipt",
+            "description": "Add an idempotent receipt to a collaboration event, such as seen, accepted, done, blocked, or escalated.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "caller": common_caller,
+                    "event_id": {"type": "string"},
+                    "agent": {"type": "string"},
+                    "receipt_type": {
+                        "type": "string",
+                        "enum": ["seen", "accepted", "done", "blocked", "escalated", "rejected"],
+                    },
+                    "note": {"type": "string"},
+                },
+                "required": ["caller", "event_id", "agent", "receipt_type"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "qintopia_collab_request_confirmation",
+            "description": "Create a human-confirmation object for decisions that should not be guessed by agents.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "caller": common_caller,
+                    "source_agent": {"type": "string"},
+                    "target_agent": {"type": "string"},
+                    "task_id": {"type": "string"},
+                    "question": {"type": "string"},
+                    "options": {"type": "array", "items": {"type": "string"}},
+                    "urgency": {"type": "string", "enum": ["low", "normal", "high"]},
+                    "idempotency_key": {"type": "string"},
+                },
+                "required": ["caller", "source_agent", "question"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "qintopia_collab_call_agent",
+            "description": "Synchronously call a whitelisted Qintopia capability agent through Hermes oneshot mode and return its result. Prefer this for capability calls that do not need Kanban tracking.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "caller": common_caller,
+                    "source_agent": {"type": "string"},
+                    "target_agent": {"type": "string", "enum": ["huabaosi"]},
+                    "capability": {
+                        "type": "string",
+                        "enum": ["poster_brief_review", "visual_material_gap_check", "lightweight_design_proposal", "poster_production_request"],
+                    },
+                    "request": {"type": "string"},
+                    "payload": {"type": "object"},
+                    "timeout_seconds": {"type": "integer", "minimum": 10, "maximum": 900},
+                    "idempotency_key": {"type": "string"},
+                },
+                "required": ["caller", "source_agent", "target_agent", "capability", "request"],
+                "additionalProperties": False,
+            },
+        },
+    ]
+
+
+def require_allowed(caller: str) -> None:
+    if caller not in ALLOWED_CALLERS:
+        raise ValueError(f"caller not allowed: {caller}")
+
+
+def clean_text(value: Any, max_len: int = 2000) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()[:max_len]
+
+
+def event_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    data = dict(row)
+    try:
+        data["payload"] = json.loads(data.pop("payload_json") or "{}")
+    except Exception:
+        data["payload"] = {}
+    return data
+
+
+def emit_event(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]:
+    caller = clean_text(args.get("caller"), 80)
+    require_allowed(caller)
+    event_type = clean_text(args.get("event_type"), 80)
+    if event_type not in ALLOWED_EVENT_TYPES:
+        raise ValueError(f"event_type not allowed: {event_type}")
+    source_agent = clean_text(args.get("source_agent"), 80)
+    target_agent = clean_text(args.get("target_agent"), 80)
+    task_id = clean_text(args.get("task_id"), 160)
+    summary = clean_text(args.get("summary"), 2000)
+    payload = args.get("payload") or {}
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+    idem = clean_text(args.get("idempotency_key"), 240)
+    event_id = "ce_" + uuid.uuid4().hex[:16]
+    ts = now_ts()
+    payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    if idem:
+        existing = conn.execute("SELECT * FROM collab_events WHERE idempotency_key = ?", (idem,)).fetchone()
+        if existing:
+            return {"success": True, "deduped": True, "event": event_to_dict(existing)}
+
+    conn.execute(
+        """
+        INSERT INTO collab_events(event_id, idempotency_key, event_type, caller, source_agent, target_agent, task_id, status, summary, payload_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+        """,
+        (event_id, idem or None, event_type, caller, source_agent, target_agent or None, task_id or None, summary, payload_json, ts, ts),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM collab_events WHERE event_id = ?", (event_id,)).fetchone()
+    return {"success": True, "deduped": False, "event": event_to_dict(row)}
+
+
+def get_events(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]:
+    caller = clean_text(args.get("caller"), 80)
+    require_allowed(caller)
+    clauses = []
+    params: list[Any] = []
+    for key in ("target_agent", "task_id", "event_type", "status"):
+        value = clean_text(args.get(key), 160)
+        if value:
+            clauses.append(f"{key} = ?")
+            params.append(value)
+    agent = clean_text(args.get("agent"), 80)
+    if agent:
+        clauses.append("(source_agent = ? OR target_agent = ? OR caller = ?)")
+        params.extend([agent, agent, agent])
+    limit = int(args.get("limit") or 20)
+    limit = max(1, min(limit, 100))
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM collab_events{where} ORDER BY created_at DESC, event_id DESC LIMIT ?",
+        (*params, limit),
+    ).fetchall()
+    events = [event_to_dict(row) for row in rows]
+    if events:
+        ids = [event["event_id"] for event in events]
+        placeholders = ",".join("?" for _ in ids)
+        receipts = conn.execute(
+            f"SELECT * FROM collab_receipts WHERE event_id IN ({placeholders}) ORDER BY created_at ASC",
+            ids,
+        ).fetchall()
+        grouped: dict[str, list[dict[str, Any]]] = {event_id: [] for event_id in ids}
+        for receipt in receipts:
+            grouped[receipt["event_id"]].append(dict(receipt))
+        for event in events:
+            event["receipts"] = grouped.get(event["event_id"], [])
+    return {"success": True, "events": events, "count": len(events)}
+
+
+def add_receipt(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]:
+    caller = clean_text(args.get("caller"), 80)
+    require_allowed(caller)
+    event_id = clean_text(args.get("event_id"), 80)
+    agent = clean_text(args.get("agent"), 80)
+    receipt_type = clean_text(args.get("receipt_type"), 80)
+    note = clean_text(args.get("note"), 1000)
+    if not conn.execute("SELECT 1 FROM collab_events WHERE event_id = ?", (event_id,)).fetchone():
+        raise ValueError(f"event not found: {event_id}")
+    receipt_id = "cr_" + uuid.uuid4().hex[:16]
+    ts = now_ts()
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO collab_receipts(receipt_id, event_id, caller, agent, receipt_type, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (receipt_id, event_id, caller, agent, receipt_type, note, ts),
+    )
+    if receipt_type in {"done", "blocked", "escalated", "rejected"}:
+        conn.execute("UPDATE collab_events SET status = ?, updated_at = ? WHERE event_id = ?", (receipt_type, ts, event_id))
+    elif receipt_type == "accepted":
+        conn.execute("UPDATE collab_events SET status = 'accepted', updated_at = ? WHERE event_id = ? AND status = 'open'", (ts, event_id))
+    conn.commit()
+    receipts = [dict(row) for row in conn.execute("SELECT * FROM collab_receipts WHERE event_id = ? ORDER BY created_at ASC", (event_id,)).fetchall()]
+    event = event_to_dict(conn.execute("SELECT * FROM collab_events WHERE event_id = ?", (event_id,)).fetchone())
+    event["receipts"] = receipts
+    return {"success": True, "event": event}
+
+
+def request_confirmation(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]:
+    caller = clean_text(args.get("caller"), 80)
+    require_allowed(caller)
+    payload = {
+        "question": clean_text(args.get("question"), 2000),
+        "options": [clean_text(item, 200) for item in (args.get("options") or []) if clean_text(item, 200)],
+        "urgency": clean_text(args.get("urgency") or "normal", 20),
+        "requires_human": True,
+    }
+    return emit_event(
+        conn,
+        {
+            "caller": caller,
+            "event_type": "confirmation.requested",
+            "source_agent": clean_text(args.get("source_agent"), 80),
+            "target_agent": clean_text(args.get("target_agent"), 80) or "human",
+            "task_id": clean_text(args.get("task_id"), 160),
+            "summary": payload["question"],
+            "payload": payload,
+            "idempotency_key": clean_text(args.get("idempotency_key"), 240),
+        },
+    )
+
+
+def call_agent(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]:
+    caller = clean_text(args.get("caller"), 80)
+    require_allowed(caller)
+    source_agent = clean_text(args.get("source_agent"), 80) or caller
+    target_agent = clean_text(args.get("target_agent"), 80)
+    allowed_targets = ALLOWED_DIRECT_CALLS.get(caller, set())
+    if target_agent not in allowed_targets:
+        raise ValueError(f"direct call not allowed: {caller} -> {target_agent}")
+    capability = clean_text(args.get("capability"), 80)
+    request_text = clean_text(args.get("request"), 12000)
+    payload = args.get("payload") or {}
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+    timeout = int(args.get("timeout_seconds") or 120)
+    timeout = max(10, min(timeout, 900))
+    idem = clean_text(args.get("idempotency_key"), 240)
+
+    if idem:
+        existing = conn.execute("SELECT * FROM collab_events WHERE idempotency_key = ?", (idem,)).fetchone()
+        if existing:
+            event = event_to_dict(existing)
+            return {"success": True, "deduped": True, "event": event, "response": event.get("payload", {}).get("response", "")}
+
+    production_note = ""
+    if capability == "poster_production_request":
+        production_note = """
+本次是受控的正式生产请求，不是缺口检查。
+你必须加载并遵守 `visual-poster-production` 与 `poster-production-handoff`：
+- 如果结构化上下文里有 `activity_record_id` 或 `record_id`，必须先调用 `qintopia_xiaoman_activity_record_get` 读取小满活动日记本真实记录，再判断活动事实、素材附件、授权缺口；不能只依赖小满转述。
+- 如果结构化上下文里有 `poster_record_id`、`design_record_id` 或已有画报司 record_id，必须调用 `qintopia_huabaosi_design_record_get` 回读生产台账，再判断任务状态、源素材、成品图和阻塞原因。
+- 先读清楚真实素材/附件和 brief；不能伪造素材、事实、授权或已生成图片。
+- 硬约束：正式/待审核海报必须真实使用 `gpt-image-2` / Image2 生成或编辑；纯本地 PIL/Canvas/SVG/HTML 截图/确定性排版不能算成品图。
+- 能真实调用 Image2 生成/编辑图片时，产出朋友圈版和/或小红书版，并校验文件存在；回复里必须说明 Image2 调用方式、模式和输出路径。
+- 本地中文排版只能作为 Image2 后处理；如果没有 Image2 参与，只能返回“低保真草稿/blocked”，不得上传 `成品图`，不得标记 `待审核` 或 `已完成`。
+- 生成或编辑图片后，必须写入「画报司 | 设计产出库」/海报生产任务表；只有真实 Image2 产物才能上传到 `成品图` 附件字段。
+- 如果暂时不能真实使用 Image2 生成图片或不能写入生产台账，要明确返回 blocked 原因、缺什么、下一步最小修复动作；不要声称已完成。
+- 不要对外发布；只把产物/记录/阻塞原因返回给小满。
+"""
+
+    prompt = f"""你是被小满直接调用的能力 Agent：阿靓 · 画报司。
+
+这不是 Kanban 任务，也不是对外发布指令。请只完成本次能力调用，并返回结构化、可读的中文结果。
+{production_note}
+
+事实源自查要求：
+- 如果结构化上下文里给了小满活动日记本 `record_id` / `activity_record_id`，请优先调用 `qintopia_xiaoman_activity_record_get` 读取真实活动记录，再回答“你读到的活动事实”。
+- 如果结构化上下文里给了画报司设计产出库 `poster_record_id` / `design_record_id`，请调用 `qintopia_huabaosi_design_record_get` 回读真实生产记录，再回答生产状态。
+- 只有工具返回成功，才能说“我读到了”；如果工具不可用或读取失败，要把失败原因说清楚，不能伪造已读结果。
+
+调用来源：{source_agent}
+能力类型：{capability}
+
+小满请求：
+{request_text}
+
+结构化上下文 JSON：
+{json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)}
+
+请按以下格式回复：
+1. 你读到的活动事实
+2. 你判断能做什么 / 不能做什么
+3. 还缺什么
+4. 给小满的下一步建议
+5. 如果是正式生产请求：生产台账记录 ID、任务编号、成品图路径/附件状态，或明确 blocked 原因
+
+不要创建 Kanban 任务；不要声称已经对外发布；不要伪造图片已经生成。"""
+
+    cmd = [
+        str(HERMES_PYTHON),
+        "-m",
+        HERMES_MAIN_MODULE,
+        "--profile",
+        target_agent,
+        "-z",
+        prompt,
+    ]
+    env = os.environ.copy()
+    env.setdefault("HERMES_YOLO_MODE", "1")
+    env.setdefault("HERMES_ACCEPT_HOOKS", "1")
+    started = now_ts()
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd="/tmp",
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+        response = clean_text(completed.stdout, 12000)
+        stderr = clean_text(completed.stderr, 4000)
+        ok = completed.returncode == 0 and bool(response)
+        error_note = "" if ok else (stderr or f"agent exited with code {completed.returncode}")
+    except subprocess.TimeoutExpired as exc:
+        response = clean_text(getattr(exc, "stdout", "") or "", 12000)
+        stderr = clean_text(getattr(exc, "stderr", "") or "", 4000)
+        ok = False
+        error_note = f"agent call timed out after {timeout}s"
+
+    event_type = "task.completed" if ok else "task.blocked"
+    event = emit_event(
+        conn,
+        {
+            "caller": caller,
+            "event_type": event_type,
+            "source_agent": source_agent,
+            "target_agent": target_agent,
+            "summary": f"direct capability call {source_agent}->{target_agent}: {capability}",
+            "payload": {
+                "mode": "direct_agent_call",
+                "capability": capability,
+                "request": request_text,
+                "input": payload,
+                "response": response,
+                "stderr": stderr,
+                "ok": ok,
+                "error": error_note,
+                "started_at": started,
+                "finished_at": now_ts(),
+            },
+            "idempotency_key": idem,
+        },
+    )["event"]
+    add_receipt(
+        conn,
+        {
+            "caller": caller,
+            "event_id": event["event_id"],
+            "agent": target_agent,
+            "receipt_type": "done" if ok else "blocked",
+            "note": response[:1000] if ok else error_note,
+        },
+    )
+    return {
+        "success": ok,
+        "event": event,
+        "target_agent": target_agent,
+        "capability": capability,
+        "response": response,
+        "error": error_note,
+    }
+
+
+def call_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    with connect() as conn:
+        if name == "qintopia_collab_emit_event":
+            return emit_event(conn, args)
+        if name == "qintopia_collab_get_events":
+            return get_events(conn, args)
+        if name == "qintopia_collab_add_receipt":
+            return add_receipt(conn, args)
+        if name == "qintopia_collab_request_confirmation":
+            return request_confirmation(conn, args)
+        if name == "qintopia_collab_call_agent":
+            return call_agent(conn, args)
+    raise ValueError(f"Unknown tool: {name}")
+
+
+def rpc_result(message_id: Any, result: Any) -> str:
+    return json.dumps({"jsonrpc": "2.0", "id": message_id, "result": result}, ensure_ascii=False)
+
+
+def rpc_error(message_id: Any, code: int, message: str) -> str:
+    return json.dumps({"jsonrpc": "2.0", "id": message_id, "error": {"code": code, "message": message}}, ensure_ascii=False)
+
+
+def handle(line: str) -> str | None:
+    try:
+        message = json.loads(line)
+    except Exception as exc:
+        return rpc_error(None, -32700, f"Parse error: {exc}")
+    message_id = message.get("id")
+    if message_id is None:
+        return None
+    method = message.get("method")
+    try:
+        if method == "initialize":
+            return rpc_result(
+                message_id,
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+                },
+            )
+        if method == "tools/list":
+            return rpc_result(message_id, {"tools": tool_definitions()})
+        if method == "tools/call":
+            params = message.get("params") or {}
+            name = params.get("name") or ""
+            args = params.get("arguments") or {}
+            result = call_tool(name, args)
+            text = json.dumps(result, ensure_ascii=False, indent=2)
+            return rpc_result(message_id, {"content": [{"type": "text", "text": text}], "isError": False})
+        return rpc_error(message_id, -32601, f"Method not found: {method}")
+    except Exception as exc:
+        return rpc_error(message_id, -32000, str(exc))
+
+
+def main() -> int:
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        response = handle(line)
+        if response is not None:
+            print(response, flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

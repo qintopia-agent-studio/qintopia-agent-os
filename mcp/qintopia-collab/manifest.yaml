@@ -8,8 +8,8 @@ description:
   Release-managed wrapper and package boundary for the Hermes qintopia-collab MCP used
   by selected profiles.
 source:
-  path: /home/ubuntu/.hermes/scripts/qintopia-collab-mcp
-  reference: server-runtime-2026-07-05
+  path: mcp/qintopia-collab/bin/qintopia-collab-mcp
+  reference: sha256:3240bebd6288e9a1b9abe2b42fd2408e41d0a88f36ba510ccccca41a6b5bcb83
   disposition: adopt
 production_boundary:
   external_sends: false
@@ -29,7 +29,7 @@ tags:
   - hermes
   - collab
 next_actions:
-  - Extract the non-secret server script into this package and add a release-managed
-    wrapper.
   - Repoint Huabaosi, Silaoshi, and Xiaoman one profile at a time with backup and
     process-path validation.
+  - Replace the direct server script path with the release bundle path after deploy
+    bundle publication.

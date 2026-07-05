@@ -61,20 +61,20 @@ and future programming agents.
 
 ## Migration Phases
 
-| Phase                       | Status                   | Exit criteria                                                                                                                                                                                                |
-| --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| M0 repository bootstrap     | Complete                 | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                                                                             |
-| M1 inventory                | Complete                 | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                                                                           |
-| M2 registry contract        | Complete                 | registry schemas and package manifest templates exist and validate                                                                                                                                           |
-| M3 docs migration           | Complete                 | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                                                                       |
-| M4 first skill adoption     | Complete                 | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                                                                           |
-| M5 runtime sidecar adoption | Complete                 | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                                                                         |
-| M5.5 anti-drift guardrails  | Complete                 | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                                                                                  |
-| M6 agents adoption          | Complete                 | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                                                                           |
-| M7 WorkTool decommission    | Complete                 | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                                                        |
-| M8 CI/CD deployment gate    | Complete                 | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                                                       |
-| M9 server cutover           | Partial cutover complete | CI artifact build, DB preflight/migrations, and three approved sidecar services cut over; legacy worker and MCP references still need M9-F; COS distribution is being introduced for future artifact fetches |
-| M10 release model           | Planned                  | versioned release directories and `current`/`previous` symlinks replace direct artifact paths and server-local profile/plugin copies                                                                         |
+| Phase                       | Status      | Exit criteria                                                                                                                                                                     |
+| --------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 repository bootstrap     | Complete    | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                                                  |
+| M1 inventory                | Complete    | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                                                |
+| M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                                                                                |
+| M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                                            |
+| M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                                                |
+| M5 runtime sidecar adoption | Complete    | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                                              |
+| M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                                                       |
+| M6 agents adoption          | Complete    | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                                                |
+| M7 WorkTool decommission    | Complete    | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                             |
+| M8 CI/CD deployment gate    | Complete    | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                            |
+| M9 server cutover           | Complete    | all nine sidecar/worker services and the context MCP path run from `qintopia-agent-os-releases/current`; external adapter enablement remains a separate allowlist/config decision |
+| M10 release model           | In progress | versioned release directories and `current`/`previous` symlinks replace direct artifact paths and server-local profile/plugin copies                                              |
 
 ## Progress Log
 
@@ -727,6 +727,15 @@ and future programming agents.
   - documented the profile-by-profile migration sequence for Huabaosi, Silaoshi, and
     Xiaoman
   - did not yet copy server implementation code or repoint production Hermes profiles
+- Continued M10-B by importing the reviewed server command into the monorepo:
+  - copied `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp` into
+    `mcp/qintopia-collab/bin/qintopia-collab-mcp`
+  - recorded source SHA256
+    `3240bebd6288e9a1b9abe2b42fd2408e41d0a88f36ba510ccccca41a6b5bcb83`
+  - added `pnpm mcp:collab:check` and wired it into `pnpm check:light`
+  - added the command to the deploy bundle payload for the next release assembly
+  - did not repoint Huabaosi, Silaoshi, or Xiaoman yet; production still uses the
+    server-local `.hermes/scripts` command until the M10-B release window
 
 ## Update Rule
 

@@ -232,6 +232,12 @@ become versioned.
   `qintopia-base-read`, and M11/M12 cleanup gates.
 - Added the adopting `mcp/qintopia-collab` package boundary and registry entry for the
   next Hermes collab MCP migration step.
+- Imported the reviewed `qintopia-collab-mcp` command into
+  `mcp/qintopia-collab/bin/qintopia-collab-mcp` with source SHA256 evidence and a
+  package-local Python compile check.
+- Added `qintopia-collab-mcp` to the deploy bundle payload so the next M10-B release can
+  repoint Huabaosi, Silaoshi, and Xiaoman from the server-local `.hermes/scripts`
+  command to a release-managed command path.
 
 ### Fixed
 
