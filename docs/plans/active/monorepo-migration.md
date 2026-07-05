@@ -651,6 +651,33 @@ and future programming agents.
   - confirmed the rendered diff for the six workers changes only the old
     `/home/ubuntu/qintopia-msg-sidecar` paths to release/current paths and adds
     `QINTOPIA_DEPLOYED_COMMIT_SHA` plus `QINTOPIA_SIDECAR_MIGRATIONS_DIR`
+- Completed the M9-F worker repoint mutation window for the six already-active AgentOS
+  workers:
+  - backed up current unit files and systemd views to
+    `/home/ubuntu/qintopia-agent-os-backups/m9f-systemd-20260705T122149Z`
+  - switched `/home/ubuntu/qintopia-agent-os-releases/current` to
+    `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`
+  - installed only these six rendered worker units:
+    `qintopia-agentos-member-profile-worker.service`,
+    `qintopia-agentos-graph-projection-worker.service`,
+    `qintopia-agentos-raw-archive-worker.service`,
+    `qintopia-agentos-event-signal-worker.service`,
+    `qintopia-agentos-daily-digest-worker.service`, and
+    `qintopia-agentos-daily-digest-publisher.service`
+  - ran `systemctl daemon-reload` and restarted the six workers one by one
+  - verified all six are active/enabled, have zero restarts after the cutover, and their
+    `/proc/<pid>/exe` paths resolve to
+    `/home/ubuntu/qintopia-agent-os-releases/13a3957369ad80ea8b6e93d4c67c6ef120ecffd6/sidecar/qintopia-message-sidecar`
+  - verified the six unit files no longer reference `/home/ubuntu/qintopia-msg-sidecar`
+    and now use `WorkingDirectory`, `ExecStart`, and migrations from
+    `/home/ubuntu/qintopia-agent-os-releases/current`
+  - confirmed the operations timers remain inactive/not installed and no real external
+    send or workbench adapter path was enabled
+  - ran the release binary `check` with production env; NATS JetStream and Postgres
+    checks passed
+  - did not change Hermes MCP config, did not archive/delete legacy directories, and did
+    not repoint the three previously migrated `qintopia-message-*` services during this
+    window
 
 ## Update Rule
 
@@ -662,25 +689,20 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Remaining follow-up after the active service cutover:
+Remaining follow-up after the M9-F worker cutover:
 
-- M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
-  the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
-  still reference `/home/ubuntu/qintopia-msg-sidecar`.
-- M9-F execution blocker: the server deploy checkout is still at `9424450` and its
-  `qintopia-context-mcp` wrapper still defaults to the old checkout. Do not update it
-  with `git fetch` for M9-F. Use the CI-built deploy bundle from COS for wrapper,
-  renderer, runbook, and migration files.
-- COS artifact distribution: the accelerated upload path, CI-side COS pruning, and
-  server-side read-only download verification have passed for artifact
-  `0782f6d0f3f46d1285444f9a21f1669791be1d5e`; use this path for the next M9-F
-  preparation.
-- M10 release/current model: replace direct
-  `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
-  directories and stable `current`/`previous` symlinks.
-- M9 monitoring and evidence: production remains on
-  `c70378408c53de5f4166e8b9bde45b15a97cabb0` for the three repointed services until a
-  later approved repoint.
+- Hermes MCP context commands still need a separate owner-approved repoint away from
+  `/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp` and into the
+  release-managed wrapper.
+- The three previously migrated `qintopia-message-*` services still run from direct
+  `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` paths. Move them to
+  `/home/ubuntu/qintopia-agent-os-releases/current` in a later approved release/current
+  cleanup window.
+- Server deploy checkout remains a transition diagnostic checkout at `9424450`; do not
+  use `git fetch` as the routine release path.
+- COS artifact distribution, opt-in artifact publication, server-side COS download
+  verification, immutable release candidate assembly, and six-worker release/current
+  cutover have passed for `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
 - Deprecated runtime cleanup: WorkTool, Xiaoqin WorkTool, OpenClaw, and related nginx
@@ -700,15 +722,11 @@ Recommended order:
    `/home/ubuntu/qintopia-agent-os-releases/previous` to the old `current` target and
    atomically switch `/home/ubuntu/qintopia-agent-os-releases/current` to the new
    release.
-4. Complete M9-F by repointing remaining active
-   `qintopia-agentos-member-profile-worker`, `qintopia-agentos-graph-projection-worker`,
-   `qintopia-agentos-raw-archive-worker`, `qintopia-agentos-event-signal-worker`,
-   `qintopia-agentos-daily-digest-worker`, and `qintopia-agentos-daily-digest-publisher`
-   services away from `/home/ubuntu/qintopia-msg-sidecar` and onto
-   `/home/ubuntu/qintopia-agent-os-releases/current`.
-5. Move Hermes `mcp-context` command references away from
+4. Move Hermes `mcp-context` command references away from
    `/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp` and into a
    reviewed release-managed command path.
+5. Move the three already migrated `qintopia-message-*` services from direct artifact
+   directories onto `/home/ubuntu/qintopia-agent-os-releases/current`.
 6. Extend release packaging after worker/MCP cutover:
    - `sidecar-runtime` release payload
    - `hermes-profile-bundle-<agent>` payloads for reviewed non-secret profile files

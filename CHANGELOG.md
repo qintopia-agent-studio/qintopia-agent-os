@@ -220,6 +220,9 @@ become versioned.
 - Published and server-validated the first opt-in `Artifacts` release candidate for
   `13a3957`, assembled it under `qintopia-agent-os-releases/<sha>`, and corrected the
   M9-F render instructions so worker units point through `release/current` for rollback.
+- Completed the M9-F worker cutover for the six already-active `qintopia-agentos-*`
+  workers, moving them from `/home/ubuntu/qintopia-msg-sidecar` to
+  `qintopia-agent-os-releases/current` with rollback backups and post-cutover checks.
 
 ### Fixed
 

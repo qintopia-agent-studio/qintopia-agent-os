@@ -193,6 +193,24 @@ M9 is therefore not finished as a full server cleanup. It is safe only to say th
 approved service family cutover passed. Complete M9-F before removing
 `/home/ubuntu/qintopia-msg-sidecar`.
 
+2026-07-05 M9-F cut over the six already-active AgentOS worker services:
+
+| Check                 | Result                                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| Target release SHA    | `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`                                                            |
+| Artifacts workflow    | `28740196040` passed for `sidecar-artifact` and `deploy-bundle-artifact`                              |
+| Release directory     | `/home/ubuntu/qintopia-agent-os-releases/13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`                    |
+| Current symlink       | `/home/ubuntu/qintopia-agent-os-releases/current -> 13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`         |
+| Backup path           | `/home/ubuntu/qintopia-agent-os-backups/m9f-systemd-20260705T122149Z`                                 |
+| Updated systemd units | the six `qintopia-agentos-*` worker services listed in the M9-F exact worker scope                    |
+| Post-cutover checks   | six workers active/enabled, zero restarts after cutover, executable paths resolve through the SHA dir |
+| Binary check          | release binary `check` passed NATS JetStream and Postgres checks                                      |
+| Still deferred        | Hermes MCP command repoint, legacy directory cleanup, operations timers, real external send paths     |
+
+The six worker unit files no longer reference `/home/ubuntu/qintopia-msg-sidecar`. They
+point to `/home/ubuntu/qintopia-agent-os-releases/current` for `WorkingDirectory`,
+`ExecStart`, and `QINTOPIA_SIDECAR_MIGRATIONS_DIR`.
+
 ## Pre-Cutover Freeze
 
 Before any server mutation:
