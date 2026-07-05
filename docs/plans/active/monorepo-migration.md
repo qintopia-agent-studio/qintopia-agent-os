@@ -595,6 +595,21 @@ and future programming agents.
   - M9-F can validate reviewed operator files from COS even when runtime artifact
     publishing is being debugged separately
   - the runtime artifact SHA and deploy bundle SHA remain separate approvals
+- Completed M9-F deploy bundle read-only validation:
+  - reran CI for `55d9f4e9b0e5d1feed254f370e6eb17cc9408750` after the COS upload CAM
+    policy was corrected
+  - confirmed `check`, `sidecar-artifact`, and `deploy-bundle-artifact` all passed
+  - confirmed GitHub Actions uploaded and pruned both COS artifact families
+  - downloaded the `55d9f4e` deploy bundle from COS on the server into `/tmp`
+  - verified `SHA256SUMS`, deploy bundle manifest, and wrapper absence of
+    `/home/ubuntu/qintopia-msg-sidecar`
+  - rendered the six M9-F worker unit files to `/tmp` with runtime artifact
+    `0782f6d0f3f46d1285444f9a21f1669791be1d5e` and deploy bundle payload `55d9f4e`
+  - confirmed the rendered six M9-F units use the runtime artifact for `ExecStart`, the
+    deploy bundle payload for `WorkingDirectory`, and the deploy bundle migrations
+    directory for `QINTOPIA_SIDECAR_MIGRATIONS_DIR`
+  - confirmed the six live M9-F target services remain active and still point to
+    `/home/ubuntu/qintopia-msg-sidecar`; no production mutation was made
 
 ## Update Rule
 
@@ -632,14 +647,15 @@ Remaining follow-up after the active service cutover:
 
 Recommended order:
 
-1. Wait for CI to publish the deploy bundle for the approved deploy-bundle SHA, then
-   download and verify it from COS on the server in `/tmp`.
-2. Download and verify the approved runtime sidecar artifact from COS in the production
+1. Download and verify the approved runtime sidecar artifact from COS in the production
    artifact cache if it is not already present.
-3. Render M9-F worker units from the deploy bundle payload with:
+2. Render M9-F worker units from the deploy bundle payload with:
    - `WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload`
    - `ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<runtime-sha>/qintopia-message-sidecar`
    - `QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload/runtime/postgres/migrations`
+3. Promote the verified deploy bundle from `/tmp` into the production deploy bundle
+   cache before mutation:
+   `/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>`.
 4. Complete M9-F by repointing remaining active
    `qintopia-agentos-member-profile-worker`, `qintopia-agentos-graph-projection-worker`,
    `qintopia-agentos-raw-archive-worker`, `qintopia-agentos-event-signal-worker`,

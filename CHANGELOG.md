@@ -210,6 +210,8 @@ become versioned.
 - Split the deploy bundle into its own `deploy-bundle-artifact` CI job so M9-F operator
   files can be published and verified independently from the Rust sidecar runtime
   artifact job.
+- Recorded successful M9-F deploy bundle COS publication and server-side read-only
+  validation for the approved `55d9f4e` deploy bundle.
 
 ### Fixed
 
