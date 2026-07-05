@@ -2,9 +2,11 @@
 
 M9 moves production deployment from scattered server checkouts and ad hoc updates to
 this monorepo. The approved M9-D active service cutover was executed on 2026-07-04 for
-the three sidecar services listed below. The server is currently in a transitional
-state: some services run from verified CI artifacts, while legacy workers and Hermes MCP
-commands still reference the old `/home/ubuntu/qintopia-msg-sidecar` checkout.
+the three sidecar services listed below. M9-F then moved the remaining sidecar worker
+runtime and Hermes `qintopia-context` MCP command onto the release/current model. The
+server is still transitional for profile/plugin bundles and directory cleanup, but the
+active sidecar runtime no longer depends on the old `/home/ubuntu/qintopia-msg-sidecar`
+checkout.
 
 This document is the evidence record for the cutover and the reusable runbook for future
 approved repoints or cleanup windows. The target direction is described in
@@ -189,9 +191,8 @@ units.
 | Server checkout             | `/home/ubuntu/qintopia-agent-os-monorepo` is a transition checkout and may lag behind `master`                                         | do not use git fetch as the release path      |
 | Directory cleanup           | old checkouts, WorkTool, Xiaoqin, OpenClaw, migration, and worklog guard directories still exist                                       | archive only after no references remain       |
 
-M9 is therefore not finished as a full server cleanup. It is safe only to say the first
-approved service family cutover passed. Complete M9-F before removing
-`/home/ubuntu/qintopia-msg-sidecar`.
+M9-D was not enough to remove `/home/ubuntu/qintopia-msg-sidecar`; M9-F was required to
+move the remaining worker and MCP references first.
 
 2026-07-05 M9-F cut over the six already-active AgentOS worker services:
 
@@ -210,6 +211,24 @@ approved service family cutover passed. Complete M9-F before removing
 The six worker unit files no longer reference `/home/ubuntu/qintopia-msg-sidecar`. They
 point to `/home/ubuntu/qintopia-agent-os-releases/current` for `WorkingDirectory`,
 `ExecStart`, and `QINTOPIA_SIDECAR_MIGRATIONS_DIR`.
+
+2026-07-05 later in M9-F completed the remaining release/current runtime repoint:
+
+| Check                   | Result                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| Hermes MCP backup       | `/home/ubuntu/qintopia-agent-os-backups/m9f-hermes-mcp-20260705T123637Z`                                |
+| Message systemd backup  | `/home/ubuntu/qintopia-agent-os-backups/m9f-message-systemd-20260705T123732Z`                           |
+| Updated Hermes profiles | Erhua and Wenyuange `qintopia-context` commands now use the release-managed wrapper                     |
+| Updated message units   | `qintopia-message-sidecar`, `qintopia-message-embedding-worker`, and `qintopia-message-identity-worker` |
+| Active runtime shape    | all nine sidecar/worker services use `/home/ubuntu/qintopia-agent-os-releases/current`                  |
+| Runtime SHA             | `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`                                                              |
+| Process reference check | old sidecar checkout processes `0`; transition artifact processes `0`; release/current processes `13`   |
+| Binary checks           | production `check`, embedding `--check-only`, and identity `--check-only --batch-size 5` passed         |
+| Still deferred          | real `previous` symlink, profile/plugin bundles, legacy directory archive, external send/workbench      |
+
+The old sidecar checkout is now eligible for the later archive-readiness audit, but it
+must not be deleted until process, unit, timer, cron, MCP, nginx, rollback, and evidence
+paths are checked again in that cleanup window.
 
 ## Pre-Cutover Freeze
 

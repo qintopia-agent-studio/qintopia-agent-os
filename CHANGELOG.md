@@ -223,6 +223,10 @@ become versioned.
 - Completed the M9-F worker cutover for the six already-active `qintopia-agentos-*`
   workers, moving them from `/home/ubuntu/qintopia-msg-sidecar` to
   `qintopia-agent-os-releases/current` with rollback backups and post-cutover checks.
+- Completed the remaining M9-F runtime repoint by moving Hermes `qintopia-context` MCP
+  and the three `qintopia-message-*` services onto `qintopia-agent-os-releases/current`;
+  active process and unit references to the old sidecar checkout/artifact paths are now
+  clear.
 
 ### Fixed
 
