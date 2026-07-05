@@ -776,6 +776,13 @@ and future programming agents.
     entry, and `pnpm skills:qintopia-tools:check`
   - did not repoint production profile plugin directories; server migration requires a
     later release packaging and rollback plan
+- Continued M10-C release packaging:
+  - added `skills/qintopia-tools` manifest, README, source snapshot, and active variants
+    to the deploy bundle payload
+  - extended deploy preflight so future bundle builds cannot silently omit the
+    `qintopia-tools` package
+  - kept production profile plugin directories unchanged until a verified release bundle
+    is published and validated
 
 ## Update Rule
 

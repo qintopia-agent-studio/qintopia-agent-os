@@ -371,6 +371,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",
+    "skills/qintopia-tools/variants",
+    "skills/qintopia-tools/manifest.yaml",
     "artifact-manifest.json",
     "SHA256SUMS",
     'run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"])',

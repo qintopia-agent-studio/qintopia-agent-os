@@ -245,6 +245,8 @@ become versioned.
 - Imported M10-C `qintopia-tools` active profile variants for Erhua, Xiaoman, and
   Wenyuange under `skills/qintopia-tools/variants/*`, with a package manifest, source
   snapshot notes, and a no-cache syntax validation check.
+- Added `skills/qintopia-tools` to the deploy bundle payload so a future M10-C release
+  can assemble release-managed Hermes plugin variants before any profile repoint.
 
 ### Fixed
 

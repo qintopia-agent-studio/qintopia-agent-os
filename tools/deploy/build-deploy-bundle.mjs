@@ -25,8 +25,11 @@ const sourceFiles = [
   "deploy/sidecar/docs/systemd-cutover-plan.md",
   "docs/operations/m9-server-cutover-runbook.md",
   "docs/operations/release-current-model.md",
+  "skills/qintopia-tools/manifest.yaml",
+  "skills/qintopia-tools/README.md",
+  "skills/qintopia-tools/docs/source-snapshot.md",
 ];
-const sourceDirs = ["runtime/postgres/migrations"];
+const sourceDirs = ["runtime/postgres/migrations", "skills/qintopia-tools/variants"];
 
 const run = (command, args, options = {}) =>
   (
@@ -156,6 +159,7 @@ const manifest = {
       "verify payload wrapper does not reference /home/ubuntu/qintopia-msg-sidecar",
       "render systemd units from payload/render-systemd-units.sh for the approved runtime artifact SHA",
       "use payload/runtime/postgres/migrations as QINTOPIA_SIDECAR_MIGRATIONS_DIR",
+      "verify skills/qintopia-tools variants are present before any profile plugin repoint",
     ],
   },
 };

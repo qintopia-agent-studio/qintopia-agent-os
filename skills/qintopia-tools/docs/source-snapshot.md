@@ -44,3 +44,16 @@ The repository gate intentionally uses syntax, structure, registry, and secret/r
 state checks until these historical variant tests are made hermetic.
 
 Production profiles were not repointed during this snapshot adoption.
+
+## Release Packaging
+
+M10-C release packaging adds this package to `qintopia-agent-os-deploy-bundle`:
+
+- `skills/qintopia-tools/manifest.yaml`
+- `skills/qintopia-tools/README.md`
+- `skills/qintopia-tools/docs/source-snapshot.md`
+- `skills/qintopia-tools/variants/*`
+
+The deploy bundle is only a release input. A production profile plugin repoint still
+requires a separate release assembly, backup, one-profile-at-a-time restart, plugin
+import/tool-registration validation, and rollback note.
