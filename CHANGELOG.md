@@ -242,6 +242,9 @@ become versioned.
   `qintopia-collab-mcp`, moving all three MCP processes to
   `qintopia-agent-os-releases/current` with profile config backups and old-script Python
   process references cleared.
+- Imported M10-C `qintopia-tools` active profile variants for Erhua, Xiaoman, and
+  Wenyuange under `skills/qintopia-tools/variants/*`, with a package manifest, source
+  snapshot notes, and a no-cache syntax validation check.
 
 ### Fixed
 

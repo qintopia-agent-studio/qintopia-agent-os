@@ -6,3 +6,9 @@ entries:
     manifest: skills/qiwe/manifest.yaml
     status: adopting
     notes: M4A metadata adoption only; source still lives in ../qiwei-hermes-plugin.
+  - id: skills/qintopia-tools
+    path: skills/qintopia-tools
+    manifest: skills/qintopia-tools/manifest.yaml
+    status: adopting
+    notes:
+      M10-C imports active server profile variants; production repoint is still pending.

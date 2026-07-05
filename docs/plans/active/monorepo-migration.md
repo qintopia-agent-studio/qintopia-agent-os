@@ -759,6 +759,23 @@ and future programming agents.
     are `3`
   - did not delete or archive `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`;
     cleanup remains M11/M12 gated
+- Started M10-C by adopting active `qintopia-tools` profile variants:
+  - performed read-only server inventory for Erhua, Xiaoman, Wenyuange, Huabaosi, and
+    Xiaoqin plugin paths
+  - confirmed Erhua, Xiaoman, and Wenyuange have profile-local `qintopia-tools` copies;
+    Huabaosi has no observed `qintopia-tools` directory; Xiaoqin is deprecated and
+    excluded from active migration
+  - confirmed all active copies are server-local directories with no git metadata
+  - imported Erhua, Xiaoman, and Wenyuange variants under
+    `skills/qintopia-tools/variants/*`, excluding pycache, pyc files, `.env`, secrets,
+    and runtime state
+  - preserved Xiaoman server-local backup files under
+    `skills/qintopia-tools/docs/server-backups/xiaoman/` as audit evidence, not runtime
+    package files
+  - added `skills/qintopia-tools/manifest.yaml`, README, source snapshot notes, registry
+    entry, and `pnpm skills:qintopia-tools:check`
+  - did not repoint production profile plugin directories; server migration requires a
+    later release packaging and rollback plan
 
 ## Update Rule
 

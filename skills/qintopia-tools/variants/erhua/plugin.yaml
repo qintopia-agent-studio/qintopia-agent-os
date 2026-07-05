@@ -1,0 +1,132 @@
+name: qintopia-tools
+label: Qintopia Tools
+kind: standalone
+version: 0.1.0
+description: >
+  Hermes-native Qintopia knowledge, GIS, controlled complaint workflow, and Xiaoqin
+  sales/customer workflow tools backed by WenYuanGe knowledge snapshot indexes and
+  Qintopia Agent OS guardrails.
+author: Qintopia
+provides_tools:
+  - qintopia_kb_search
+  - qintopia_gis_location_lookup
+  - qintopia_weather_lookup
+  - qintopia_wenyuange_lookup
+  - qintopia_dify_dataset_list
+  - qintopia_dify_dataset_get
+  - qintopia_dify_knowledge_retrieve
+  - qintopia_dify_document_list
+  - qintopia_dify_document_get
+  - qintopia_dify_indexing_status_get
+  - qintopia_dify_segment_list
+  - qintopia_dify_segment_get
+  - qintopia_message_store_search
+  - qintopia_complaint_intake_create
+  - qintopia_complaint_intake_update
+  - qintopia_complaint_followup_send
+  - qintopia_external_product_kb_search
+  - qintopia_public_case_search
+  - qintopia_customer_context_lookup
+  - qintopia_lead_capture
+  - qintopia_proposal_outline_generate
+  - qintopia_demo_script_generate
+  - qintopia_external_disclosure_filter
+  - qintopia_conversation_summary
+  - qintopia_daily_digest_publish
+optional_env:
+  - name: QINTOPIA_KB_INDEX_DIR
+    description: "Path to Qintopia knowledge indexes"
+    prompt: "Qintopia KB index directory"
+    password: false
+  - name: QINTOPIA_DIFY_KB_BASE_URL
+    description: "Dify Knowledge API base URL, ending in /v1"
+    prompt: "Dify Knowledge API base URL"
+    password: false
+  - name: QINTOPIA_DIFY_KB_API_KEY
+    description: "Dify Knowledge Service API key"
+    prompt: "Dify Knowledge Service API key"
+    password: true
+  - name: QINTOPIA_DIFY_ALLOWED_DATASET_IDS
+    description: "Optional comma-separated Dify dataset id allowlist"
+    prompt: "Allowed Dify dataset ids"
+    password: false
+  - name: QINTOPIA_DIFY_LOOKUP_DATASET_ID
+    description: "Optional Dify dataset id for qintopia_wenyuange_lookup"
+    prompt: "Dify lookup dataset id"
+    password: false
+  - name: QINTOPIA_PROFILE_ID
+    description: "Active Qintopia profile id for profile-scoped tool registration"
+    prompt: "Qintopia profile id"
+    password: false
+  - name: QINTOPIA_DIFY_RAW_TOOLS_ENABLE
+    description: "Set to 1 only for wenyuange to expose raw qintopia_dify_* read tools"
+    prompt: "Enable raw Dify read tools"
+    password: false
+  - name: QINTOPIA_MESSAGE_STORE_ENABLE
+    description:
+      "Set to 1 only for wenyuange to expose read-only Postgres message store search"
+    prompt: "Enable Qintopia message store search"
+    password: false
+  - name: QINTOPIA_MESSAGE_STORE_DATABASE_URL
+    description: "Postgres URL for qintopia_messages read-only search"
+    prompt: "Qintopia message store database URL"
+    password: true
+  - name: QINTOPIA_MESSAGE_STORE_EMBEDDING_URL
+    description:
+      "OpenAI-compatible or simple HTTP embedding endpoint for message-store query
+      vectors"
+    prompt: "Qintopia message store embedding URL"
+    password: false
+  - name: QINTOPIA_MESSAGE_STORE_EMBEDDING_MODEL
+    description: "Embedding model used to create query vectors"
+    prompt: "Qintopia message store embedding model"
+    password: false
+  - name: QINTOPIA_MESSAGE_STORE_EMBEDDING_DB_MODEL
+    description: "Embedding model name stored in qintopia_messages.message_embeddings"
+    prompt: "Qintopia message store embedding DB model"
+    password: false
+  - name: QINTOPIA_MESSAGE_STORE_EMBEDDING_API_KEY
+    description: "Optional API key for the message-store embedding endpoint"
+    prompt: "Qintopia message store embedding API key"
+    password: true
+  - name: QINTOPIA_DAILY_DIGEST_PUBLISH_ENABLE
+    description:
+      "Set to 1 only for xiaoman to expose the narrow daily digest publisher command
+      wrapper"
+    prompt: "Enable daily digest publish tool"
+    password: false
+  - name: QINTOPIA_DAILY_DIGEST_PUBLISHER_BIN
+    description: "Path to the Agent OS worker binary that provides daily-digest-publish"
+    prompt: "Daily digest publisher binary"
+    password: false
+  - name: HEFENG_API_HOST
+    description: "QWeather API host for hefeng-qweather-mcp"
+    prompt: "QWeather API host"
+    password: false
+  - name: HEFENG_PROJECT_ID
+    description: "QWeather JWT project id"
+    prompt: "QWeather project id"
+    password: false
+  - name: HEFENG_KEY_ID
+    description: "QWeather JWT credential id"
+    prompt: "QWeather key id"
+    password: false
+  - name: HEFENG_PRIVATE_KEY_PATH
+    description: "Path to QWeather Ed25519 private key"
+    prompt: "QWeather private key path"
+    password: false
+  - name: QINTOPIA_WEATHER_LOCATION
+    description:
+      "Fixed Qintopia weather lon,lat coordinates; defaults to 108.5876,33.9996"
+    prompt: "Qintopia weather coordinates"
+    password: false
+  - name: QINTOPIA_WEATHER_QWEATHER_CITY
+    description:
+      "QWeather city name used only for city-based warning and air-quality APIs;
+      defaults to 鄠邑区"
+    prompt: "QWeather city for weather warnings and air quality"
+    password: false
+  - name: QINTOPIA_WEATHER_MCP_TIMEOUT_SECONDS
+    description: "Timeout guard for QWeather MCP package calls"
+    prompt: "QWeather timeout seconds"
+    password: false

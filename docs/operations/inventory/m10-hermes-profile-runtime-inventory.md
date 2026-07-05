@@ -53,10 +53,9 @@ git.
 - Huabaosi
   - service: `hermes-gateway-huabaosi.service`
   - root: `/home/ubuntu/.hermes/profiles/huabaosi`
-  - plugins: `qintopia-tools`, `qintopia-base-read`
+  - plugins: `qintopia-base-read`
   - MCP: release-managed `qintopia-collab`
-  - M10 action: migrate shared `qintopia-tools`, then review `qintopia-base-read`
-    separately.
+  - M10 action: review `qintopia-base-read` separately.
 - Silaoshi
   - service: `hermes-gateway-silaoshi.service`
   - root: `/home/ubuntu/.hermes/profiles/silaoshi`
@@ -91,11 +90,14 @@ git.
   - status: M10-B complete; production command path is release-managed
 - Shared Qintopia tools
   - source: `/home/ubuntu/.hermes/profiles/*/plugins/qintopia-tools`
-  - observed size: 308K-1.2M per profile
-  - consumers: Erhua, Xiaoman, Wenyuange, Xiaoqin
+  - observed size: 716K-1.2M per active profile
+  - consumers: Erhua, Xiaoman, Wenyuange
   - target: `skills/qintopia-tools`
   - risk: medium
-  - next step: compare profile-local copies; extract common package and per-profile diff
+  - status: M10-C source adoption in progress; active profile variants are imported
+    under `skills/qintopia-tools/variants/*`
+  - next step: decide shared package plus profile overlay model before production
+    repoint
 - QiWe platform plugin
   - source: `/home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform`
   - observed size: 7.7M
@@ -149,8 +151,10 @@ git.
      release/current, and old-script Python process references are `0`.
 2. M10-C: compare and package shared `qintopia-tools`.
    - Affected profiles: Erhua, Xiaoman, Wenyuange first.
-   - Validation: per-profile plugin load check and targeted Hermes smoke; do not include
-     Xiaoqin in active scope.
+   - Current state: active variants imported into `skills/qintopia-tools/variants/*`;
+     production profiles are not repointed yet.
+   - Validation: per-profile plugin load check and targeted Hermes smoke before any
+     server repoint; do not include Xiaoqin in active scope.
 3. M10-D: reconcile and package Erhua `qiwe-platform`.
    - Affected profile: Erhua.
    - Validation: QiWe plugin tests, local health endpoint if still applicable, Hermes

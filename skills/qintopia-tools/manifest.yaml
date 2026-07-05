@@ -1,0 +1,40 @@
+id: skills/qintopia-tools
+type: skill
+name: Qintopia Tools
+owner: PatrickLiveCool
+status: adopting
+risk_level: medium
+description:
+  Profile-scoped Hermes tools for Qintopia knowledge lookup, GIS lookup, weather,
+  WenYuanGe/Dify read wrappers, message-store search, complaint intake, Xiaoman activity
+  helpers, and controlled business wrappers.
+source:
+  path: /home/ubuntu/.hermes/profiles/*/plugins/qintopia-tools
+  reference: server-runtime-2026-07-05
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm skills:qintopia-tools:check
+    - pnpm check:light
+dependencies:
+  - agents/erhua
+  - agents/xiaoman
+  - agents/wenyuange
+  - runtime/hermes
+  - mcp/context-server
+tags:
+  - hermes-plugin
+  - qintopia
+  - knowledge
+  - profile-variant
+next_actions:
+  - Reconcile the Erhua, Xiaoman, and Wenyuange variants into a shared package plus
+    explicit profile overlays.
+  - Keep Xiaoqin out of active migration scope.
+  - Add release packaging and rollback notes before replacing profile-local plugin
+    directories on the server.

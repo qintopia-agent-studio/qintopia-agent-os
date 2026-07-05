@@ -1,0 +1,1469 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+
+def load_plugin():
+    plugin_path = Path(__file__).resolve().parents[1] / "__init__.py"
+    spec = importlib.util.spec_from_file_location("qintopia_tools_plugin", plugin_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_fixture(index_dir: Path) -> None:
+    index_dir.mkdir(parents=True, exist_ok=True)
+    body = """# 秦托邦 GIS 位置信息
+
+| 名称 | 经度 | 纬度 | 门头图片 |
+|------|------|------|----------|
+| 秦托邦社区 | 108.572935 | 34.023305 | ![社区](https://example.test/community.jpg) |
+| 秦托邦1栋 | 108.572849 | 34.024317 | ![1栋](https://example.test/1.jpg) |
+| 秦托邦2栋 | 108.572225 | 34.023833 | ![2栋](https://example.test/2.jpg) |
+"""
+    record = {
+        "source_id": "gis123",
+        "title": "秦托邦 GIS 位置信息",
+        "path": "gis-locations.md",
+        "information_class": "Public",
+        "updated_at": "2026-06-01T14:41:20+00:00",
+        "body": body,
+    }
+    product_record = {
+        "source_id": "product123",
+        "title": "公开 Agent OS 产品介绍 FAQ",
+        "path": "agent-os-public-faq.md",
+        "information_class": "Public",
+        "updated_at": "2026-06-07T00:00:00+00:00",
+        "body": (
+            "Qintopia Agent OS 是面向组织协作场景的 Agent 工作系统。"
+            "系统可以支持需求收集、知识检索、方案草拟、演示准备、任务流转和人工审批。"
+        ),
+    }
+    (index_dir / "public.jsonl").write_text(
+        json.dumps(record, ensure_ascii=False) + "\n" + json.dumps(product_record, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (index_dir / "internal.jsonl").write_text("", encoding="utf-8")
+    (index_dir / "member-scoped.jsonl").write_text("", encoding="utf-8")
+
+
+class QintopiaToolsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.index_dir = Path(self.tmpdir.name)
+        write_fixture(self.index_dir)
+        self.old_index = os.environ.get("QINTOPIA_KB_INDEX_DIR")
+        os.environ["QINTOPIA_KB_INDEX_DIR"] = str(self.index_dir)
+        self.old_dify_env = {
+            name: os.environ.get(name)
+            for name in [
+                "QINTOPIA_DIFY_KB_BASE_URL",
+                "QINTOPIA_DIFY_KB_API_KEY",
+                "QINTOPIA_DIFY_ALLOWED_DATASET_IDS",
+                "QINTOPIA_DIFY_LOOKUP_DATASET_ID",
+                "QINTOPIA_PROFILE_ID",
+                "QINTOPIA_DIFY_RAW_TOOLS_ENABLE",
+                "QINTOPIA_MESSAGE_STORE_ENABLE",
+                "QINTOPIA_MESSAGE_STORE_DATABASE_URL",
+                "QINTOPIA_MESSAGE_STORE_EMBEDDING_URL",
+                "QINTOPIA_MESSAGE_STORE_EMBEDDING_API_KEY",
+                "QINTOPIA_MESSAGE_STORE_EMBEDDING_MODEL",
+                "QINTOPIA_MESSAGE_STORE_EMBEDDING_DB_MODEL",
+                "QINTOPIA_SIDECAR_DATABASE_URL",
+                "QINTOPIA_DAILY_DIGEST_PUBLISH_ENABLE",
+                "QINTOPIA_DAILY_DIGEST_PUBLISHER_BIN",
+                "QINTOPIA_WEATHER_LOCATION",
+                "QINTOPIA_WEATHER_LOCATION_NAME",
+                "QINTOPIA_WEATHER_QWEATHER_CITY",
+                "QINTOPIA_WEATHER_MCP_TIMEOUT_SECONDS",
+            ]
+        }
+        os.environ["QINTOPIA_DIFY_KB_BASE_URL"] = "http://dify.example.test/v1"
+        os.environ["QINTOPIA_DIFY_KB_API_KEY"] = "test-knowledge-key"
+        os.environ["QINTOPIA_DIFY_ALLOWED_DATASET_IDS"] = "ds_allowed"
+        os.environ.pop("QINTOPIA_DIFY_LOOKUP_DATASET_ID", None)
+        os.environ.pop("QINTOPIA_PROFILE_ID", None)
+        os.environ.pop("QINTOPIA_DIFY_RAW_TOOLS_ENABLE", None)
+        os.environ.pop("QINTOPIA_MESSAGE_STORE_ENABLE", None)
+        os.environ.pop("QINTOPIA_MESSAGE_STORE_DATABASE_URL", None)
+        os.environ.pop("QINTOPIA_MESSAGE_STORE_EMBEDDING_URL", None)
+        os.environ.pop("QINTOPIA_MESSAGE_STORE_EMBEDDING_API_KEY", None)
+        os.environ.pop("QINTOPIA_MESSAGE_STORE_EMBEDDING_MODEL", None)
+        os.environ.pop("QINTOPIA_MESSAGE_STORE_EMBEDDING_DB_MODEL", None)
+        os.environ.pop("QINTOPIA_SIDECAR_DATABASE_URL", None)
+        os.environ.pop("QINTOPIA_DAILY_DIGEST_PUBLISH_ENABLE", None)
+        os.environ.pop("QINTOPIA_DAILY_DIGEST_PUBLISHER_BIN", None)
+        os.environ.pop("QINTOPIA_WEATHER_LOCATION", None)
+        os.environ.pop("QINTOPIA_WEATHER_LOCATION_NAME", None)
+        os.environ.pop("QINTOPIA_WEATHER_QWEATHER_CITY", None)
+        os.environ.pop("QINTOPIA_WEATHER_MCP_TIMEOUT_SECONDS", None)
+        self.module = load_plugin()
+
+    def tearDown(self) -> None:
+        if self.old_index is None:
+            os.environ.pop("QINTOPIA_KB_INDEX_DIR", None)
+        else:
+            os.environ["QINTOPIA_KB_INDEX_DIR"] = self.old_index
+        for name, value in self.old_dify_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        self.tmpdir.cleanup()
+
+    def test_gis_lookup_1_building(self):
+        payload = json.loads(self.module.handle_qintopia_gis_location_lookup({"query": "1 栋"}))
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["matched"])
+        self.assertEqual(payload["location"]["name"], "秦托邦1栋")
+        self.assertEqual(payload["location"]["longitude"], 108.572849)
+        self.assertEqual(payload["location"]["latitude"], 34.024317)
+        self.assertTrue(payload["location"]["amap_url"].startswith("https://uri.amap.com/marker?"))
+        self.assertEqual(payload["scope_used"], ["Public"])
+
+    def test_kb_search_defaults_public_only(self):
+        payload = json.loads(self.module.handle_qintopia_kb_search({"query": "秦托邦1栋"}))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["scope_used"], ["Public"])
+        self.assertIn("Member-scoped", payload["not_accessed"])
+        self.assertEqual(payload["results"][0]["path"], "gis-locations.md")
+
+    def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
+        payload = json.loads(
+            self.module.handle_qintopia_external_product_kb_search(
+                {"query": "Agent OS 可以做什么", "purpose": "回答外部客户"}
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["scope_used"], ["Public"])
+        self.assertGreaterEqual(payload["result_count"], 1)
+        self.assertEqual(payload["results"][0]["path"], "agent-os-public-faq.md")
+        self.assertIn("Internal", payload["not_accessed"])
+        self.assertTrue(payload["approved_public_baselines"])
+
+    def test_xiaoqin_public_case_search_does_not_invent_cases(self):
+        payload = json.loads(self.module.handle_qintopia_public_case_search({"query": "客户案例"}))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["result_count"], 0)
+        self.assertFalse(payload["approved_public_cases_available"])
+        self.assertTrue(payload["needs_human_review"])
+        self.assertIn("没有检索到已批准公开的客户案例", payload["safe_customer_message"])
+        self.assertNotIn("Human Owner", payload["safe_customer_message"])
+
+    def test_xiaoqin_customer_context_lookup_is_current_channel_only(self):
+        payload = json.loads(
+            self.module.handle_qintopia_customer_context_lookup(
+                {
+                    "customer_display_name": "某客户",
+                    "source_channel": "worktool_external_contact",
+                    "source_conversation_id": "conv_1",
+                    "customer_provided_context": "想了解 AI 客服试点。",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["mode"], "current_channel_context_only")
+        self.assertFalse(payload["stored_context_found"])
+        self.assertIn("CRM", payload["not_accessed"])
+
+    def test_dify_dataset_list_filters_configured_allowlist(self):
+        os.environ["QINTOPIA_DIFY_ALLOWED_DATASET_IDS"] = "ds_allowed"
+
+        def fake_request(method, path, *, params=None, body=None):
+            self.assertEqual(method, "GET")
+            self.assertEqual(path, "/datasets")
+            self.assertEqual(params["page"], 1)
+            return {
+                "success": True,
+                "status": 200,
+                "data": {
+                    "data": [
+                        {"id": "ds_allowed", "name": "Allowed"},
+                        {"id": "ds_other", "name": "Other"},
+                    ],
+                    "total": 2,
+                },
+            }
+
+        self.module._dify_request = fake_request
+        payload = json.loads(self.module.handle_qintopia_dify_dataset_list({"limit": 50}))
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["read_only"])
+        self.assertTrue(payload["filtered_to_allowed_datasets"])
+        self.assertEqual(payload["data"]["data"], [{"id": "ds_allowed", "name": "Allowed"}])
+        self.assertTrue(payload["data"]["filtered_by_allowlist"])
+
+    def test_dify_retrieve_uses_fixed_read_only_endpoint(self):
+        os.environ["QINTOPIA_DIFY_ALLOWED_DATASET_IDS"] = "ds_allowed"
+        captured = {}
+
+        def fake_request(method, path, *, params=None, body=None):
+            captured.update({"method": method, "path": path, "params": params, "body": body})
+            return {
+                "success": True,
+                "status": 200,
+                "data": {"records": [{"segment": {"content": "秦托邦知识片段"}, "score": 0.91}]},
+            }
+
+        self.module._dify_request = fake_request
+        payload = json.loads(
+            self.module.handle_qintopia_dify_knowledge_retrieve(
+                {
+                    "dataset_id": "ds_allowed",
+                    "query": "秦托邦是什么",
+                    "top_k": 5,
+                    "score_threshold_enabled": False,
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["path"], "/datasets/ds_allowed/retrieve")
+        self.assertIsNone(captured["params"])
+        self.assertEqual(captured["body"]["query"], "秦托邦是什么")
+        self.assertEqual(captured["body"]["retrieval_model"]["search_method"], "semantic_search")
+        self.assertEqual(captured["body"]["retrieval_model"]["top_k"], 5)
+        self.assertFalse(captured["body"]["retrieval_model"]["score_threshold_enabled"])
+        self.assertFalse(captured["body"]["retrieval_model"]["reranking_enable"])
+        self.assertTrue(payload["read_only"])
+        self.assertNotIn("test-knowledge-key", json.dumps(payload, ensure_ascii=False))
+
+    def test_dify_read_tools_block_unallowed_dataset_before_network(self):
+        os.environ["QINTOPIA_DIFY_ALLOWED_DATASET_IDS"] = "ds_allowed"
+
+        def fail_request(*args, **kwargs):
+            raise AssertionError("network should not be called for denied dataset")
+
+        self.module._dify_request = fail_request
+        payload = json.loads(
+            self.module.handle_qintopia_dify_document_list(
+                {"dataset_id": "ds_denied", "page": 1, "limit": 10}
+            )
+        )
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["dataset_id"], "ds_denied")
+        self.assertIn("allowlist", payload["error"])
+
+    def test_wenyuange_lookup_returns_safe_basis_without_raw_long_chunk(self):
+        long_content = "秦托邦有共享办公区、活动空间和来访须知。" * 30
+
+        def fake_retrieve(args, **kwargs):
+            return json.dumps(
+                {
+                    "success": True,
+                    "data": {
+                        "records": [
+                            {
+                                "score": 0.82,
+                                "segment": {
+                                    "id": "seg_1",
+                                    "document_id": "doc_1",
+                                    "content": long_content,
+                                    "document": {"name": "公开 FAQ.md"},
+                                },
+                            }
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
+        payload = json.loads(
+            self.module.handle_qintopia_wenyuange_lookup(
+                {
+                    "query": "来访前要知道什么",
+                    "caller_profile": "erhua",
+                    "audience": "member_reply",
+                    "purpose": "回答社区成员问题",
+                    "top_k": 3,
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["can_answer"])
+        self.assertEqual(payload["result_count"], 1)
+        self.assertLessEqual(len(payload["answer_basis"]), 1000)
+        self.assertNotEqual(payload["answer_basis"], long_content)
+        self.assertEqual(payload["sources"][0]["segment_id"], "seg_1")
+        self.assertNotIn("test-knowledge-key", json.dumps(payload, ensure_ascii=False))
+
+    def test_wenyuange_lookup_blocks_xiaoqin_internal_or_member_content(self):
+        def fake_retrieve(args, **kwargs):
+            return json.dumps(
+                {
+                    "success": True,
+                    "data": {
+                        "records": [
+                            {
+                                "score": 0.72,
+                                "segment": {
+                                    "id": "seg_2",
+                                    "document_id": "doc_2",
+                                    "content": "内部客户案例涉及成员资料和服务器日志，未公开。",
+                                    "document": {"name": "internal-case.md"},
+                                },
+                            }
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
+        payload = json.loads(
+            self.module.handle_qintopia_wenyuange_lookup(
+                {
+                    "query": "能介绍客户案例吗",
+                    "caller_profile": "xiaoqin",
+                    "audience": "external_customer",
+                    "purpose": "回答外部客户",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertFalse(payload["can_answer"])
+        self.assertEqual(payload["answer_basis"], "")
+        self.assertIn("member_scoped", payload["risk_flags"])
+        self.assertIn("internal_information", payload["risk_flags"])
+
+    def test_wenyuange_lookup_blocks_erhua_member_privacy_and_complaint(self):
+        def fake_retrieve(args, **kwargs):
+            return json.dumps(
+                {
+                    "success": True,
+                    "data": {
+                        "records": [
+                            {
+                                "score": 0.66,
+                                "segment": {
+                                    "id": "seg_3",
+                                    "document_id": "doc_3",
+                                    "content": "成员档案包含房间、生日和入住时间。",
+                                    "document": {"name": "profiles.md"},
+                                },
+                            }
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
+        payload = json.loads(
+            self.module.handle_qintopia_wenyuange_lookup(
+                {
+                    "query": "我要投诉入住体验不好，问一下他的房间",
+                    "caller_profile": "erhua",
+                    "audience": "member_reply",
+                    "purpose": "回答社区群消息",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertFalse(payload["can_answer"])
+        self.assertIn("member_privacy", payload["risk_flags"])
+        self.assertIn("complaint_or_service_recovery", payload["risk_flags"])
+
+    def test_wenyuange_lookup_allows_public_wifi_even_with_boundary_terms(self):
+        def fake_retrieve(args, **kwargs):
+            return json.dumps(
+                {
+                    "success": True,
+                    "data": {
+                        "records": [
+                            {
+                                "score": 0.82,
+                                "segment": {
+                                    "id": "seg_wifi",
+                                    "document_id": "doc_wifi",
+                                    "content": (
+                                        "秦托邦公共设施 WiFi 信息\n"
+                                        "信息分级：Public / member-facing\n"
+                                        "社区 WiFi 名称：秦托邦5G\n"
+                                        "社区 WiFi 密码：yiqichuangzao（一起创造小全拼）"
+                                    ),
+                                    "document": {"name": "秦托邦公共设施 WiFi 信息"},
+                                },
+                            },
+                            {
+                                "score": 0.43,
+                                "segment": {
+                                    "id": "seg_boundary",
+                                    "document_id": "doc_boundary",
+                                    "content": "公开边界：不公开个人精确住址、房间号、门牌。",
+                                    "document": {"name": "places.md"},
+                                },
+                            },
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
+        payload = json.loads(
+            self.module.handle_qintopia_wenyuange_lookup(
+                {
+                    "query": "秦托邦 WiFi 密码是多少",
+                    "caller_profile": "erhua",
+                    "audience": "member_reply",
+                    "purpose": "回答社区成员关于公共设施 WiFi 的问题",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["can_answer"])
+        self.assertEqual(payload["risk_flags"], [])
+        self.assertIn("秦托邦5G", payload["answer_basis"])
+
+    def test_wenyuange_lookup_uses_document_keyword_fallback_for_safe_candidate(self):
+        retrieve_calls = []
+        document_calls = []
+        segment_calls = []
+
+        def fake_retrieve(args, **kwargs):
+            retrieve_calls.append((args["search_method"], args["query"]))
+            records = [
+                {
+                    "score": 0.42,
+                    "segment": {
+                        "id": "seg_profile",
+                        "document_id": "doc_profile",
+                        "content": "成员档案包含房间和入住时间。",
+                        "document": {"name": "profiles.md"},
+                    },
+                }
+            ]
+            return json.dumps({"success": True, "data": {"records": records}}, ensure_ascii=False)
+
+        def fake_document_list(args, **kwargs):
+            document_calls.append(args.get("keyword"))
+            if str(args.get("keyword")).lower() == "wifi":
+                return json.dumps(
+                    {
+                        "success": True,
+                        "data": {"data": [{"id": "doc_wifi", "name": "秦托邦公共设施 WiFi 信息"}]},
+                    },
+                    ensure_ascii=False,
+                )
+            return json.dumps({"success": True, "data": {"data": []}}, ensure_ascii=False)
+
+        def fake_segment_list(args, **kwargs):
+            segment_calls.append((args.get("document_id"), args.get("keyword")))
+            return json.dumps(
+                {
+                    "success": True,
+                    "data": {
+                        "data": [
+                            {
+                                "id": "seg_wifi",
+                                "content": (
+                                    "秦托邦公共设施 WiFi 信息\n"
+                                    "信息分级：Public / member-facing\n"
+                                    "社区 WiFi 名称：秦托邦5G\n"
+                                    "社区 WiFi 密码：yiqichuangzao（一起创造小全拼）"
+                                ),
+                            }
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
+        self.module.handle_qintopia_dify_document_list = fake_document_list
+        self.module.handle_qintopia_dify_segment_list = fake_segment_list
+        payload = json.loads(
+            self.module.handle_qintopia_wenyuange_lookup(
+                {
+                    "query": "秦托邦 WiFi 密码是多少",
+                    "caller_profile": "erhua",
+                    "audience": "member_reply",
+                    "purpose": "回答社区成员关于公共设施 WiFi 的问题",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["can_answer"])
+        self.assertIn(("semantic_search", "秦托邦 WiFi 密码是多少"), retrieve_calls)
+        self.assertIn("wifi", [str(item).lower() for item in document_calls])
+        self.assertIn(("doc_wifi", "wifi"), segment_calls)
+        self.assertEqual(payload["risk_flags"], [])
+        self.assertEqual(payload["blocked_result_count"], 1)
+        self.assertIn("秦托邦5G", payload["answer_basis"])
+        self.assertTrue(any(item["search_method"] == "document_keyword" for item in payload["retrieval_trace"]))
+
+    def test_wenyuange_lookup_filters_member_sources_before_answering(self):
+        def fake_retrieve(args, **kwargs):
+            return json.dumps(
+                {
+                    "success": True,
+                    "data": {
+                        "records": [
+                            {
+                                "score": 0.91,
+                                "segment": {
+                                    "id": "seg_profile",
+                                    "document_id": "doc_profile",
+                                    "content": "普通群聊参与者。",
+                                    "document": {"name": "groups / test / profiles / user.md"},
+                                },
+                            },
+                            {
+                                "score": 0.7,
+                                "segment": {
+                                    "id": "seg_public",
+                                    "document_id": "doc_public",
+                                    "content": "公共设施说明：社区网络名称为 QinTopia-Guest。",
+                                    "document": {"name": "groups / test / wiki / public-facilities.md"},
+                                },
+                            },
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
+        self.module.handle_qintopia_dify_document_list = lambda args, **kwargs: json.dumps(
+            {"success": True, "data": {"data": []}},
+            ensure_ascii=False,
+        )
+        payload = json.loads(
+            self.module.handle_qintopia_wenyuange_lookup(
+                {
+                    "query": "社区网络名称是什么",
+                    "caller_profile": "erhua",
+                    "audience": "member_reply",
+                    "purpose": "回答社区成员关于公共设施的问题",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["can_answer"])
+        self.assertIn("QinTopia-Guest", payload["answer_basis"])
+        self.assertNotIn("profiles", json.dumps(payload["sources"], ensure_ascii=False))
+        self.assertEqual(payload["blocked_result_count"], 1)
+
+    def test_wenyuange_lookup_prefers_authoritative_public_source_over_digest(self):
+        def fake_retrieve(args, **kwargs):
+            return json.dumps(
+                {
+                    "success": True,
+                    "data": {
+                        "records": [
+                            {
+                                "score": 0.95,
+                                "segment": {
+                                    "id": "seg_digest",
+                                    "document_id": "doc_digest",
+                                    "content": "日更摘要：有人问过 WiFi 密码，但没有查稳。",
+                                    "document": {"name": "DifyRadio-qintuobang-2026-06-09.md"},
+                                },
+                            },
+                            {
+                                "score": 0.3,
+                                "segment": {
+                                    "id": "seg_wifi",
+                                    "document_id": "doc_wifi",
+                                    "content": (
+                                        "信息分级：Public / member-facing\n"
+                                        "公共设施说明：社区 WiFi 名称为 QinTopia-Guest。"
+                                    ),
+                                    "document": {"name": "wiki / public / 秦托邦公共设施.md"},
+                                },
+                            },
+                            {
+                                "score": 0.8,
+                                "segment": {
+                                    "id": "seg_stub",
+                                    "document_id": "doc_stub",
+                                    "content": "status: stub\nrisk: internal\n待补全。",
+                                    "document": {"name": "wiki / topics / 社区日常.md"},
+                                },
+                            },
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
+        self.module.handle_qintopia_dify_document_list = lambda args, **kwargs: json.dumps(
+            {"success": True, "data": {"data": []}},
+            ensure_ascii=False,
+        )
+        payload = json.loads(
+            self.module.handle_qintopia_wenyuange_lookup(
+                {
+                    "query": "社区 WiFi 名称是什么",
+                    "caller_profile": "erhua",
+                    "audience": "member_reply",
+                    "purpose": "回答社区成员关于公共设施的问题",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["can_answer"])
+        self.assertIn("QinTopia-Guest", payload["answer_basis"])
+        self.assertNotIn("没有查稳", payload["answer_basis"])
+        self.assertEqual(payload["sources"][0]["document_id"], "doc_wifi")
+        self.assertEqual(len(payload["sources"]), 1)
+        self.assertEqual(payload["blocked_result_count"], 2)
+
+    def test_message_store_search_requires_wenyuange_caller(self):
+        payload = json.loads(
+            self.module.handle_qintopia_message_store_search(
+                {"query": "端午节", "caller": "erhua", "purpose": "回答群聊问题"}
+            )
+        )
+
+        self.assertFalse(payload["success"])
+        self.assertIn("wenyuange", payload["error"])
+
+    def test_message_store_search_returns_structured_messages(self):
+        class FakeTime:
+            def __init__(self, value):
+                self.value = value
+
+            def isoformat(self):
+                return self.value
+
+        row = {
+            "id": "5b2c2e8e-3d9c-45a4-b9c1-4fe8a7c12222",
+            "platform": "qiwe",
+            "message_id": "msg_1",
+            "chat_id": "room_1",
+            "chat_type": "group",
+            "sender_id": "user_1",
+            "sender_name": "小秦",
+            "message_kind": "text",
+            "text": "今天大家在讨论端午节活动。",
+            "is_mention_bot": False,
+            "should_trigger": False,
+            "trigger_reason": None,
+            "sent_at": FakeTime("2026-06-19T10:00:00+08:00"),
+            "received_at": FakeTime("2026-06-19T10:00:01+08:00"),
+            "created_at": FakeTime("2026-06-19T10:00:02+08:00"),
+        }
+        self.module._run_message_store_search = lambda args: {
+            "success": True,
+            "skill": "qintopia_message_store_search",
+            "source": "postgres_qintopia_messages",
+            "read_only": True,
+            "query": args.get("query", ""),
+            "filters": {"chat_type": args.get("chat_type", "")},
+            "result_count": 1,
+            "messages": [self.module._message_store_row(row)],
+        }
+        os.environ["QINTOPIA_MESSAGE_STORE_DATABASE_URL"] = "postgres://example"
+        payload = json.loads(
+            self.module.handle_qintopia_message_store_search(
+                {
+                    "query": "端午节",
+                    "chat_type": "group",
+                    "caller": "wenyuange",
+                    "purpose": "回答群聊近期讨论问题",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["result_count"], 1)
+        self.assertEqual(payload["messages"][0]["message_id"], "msg_1")
+        self.assertEqual(payload["messages"][0]["text"], "今天大家在讨论端午节活动。")
+
+    def test_message_store_query_terms_expand_chinese_phrases(self):
+        terms = self.module._message_store_query_terms("今天端午节大家都聊了什么")
+
+        self.assertIn("端午节", terms)
+        self.assertIn("端午", terms)
+        self.assertNotIn("今天", terms)
+        self.assertNotIn("大家", terms)
+
+    def test_parse_embedding_payload_supports_openai_compatible_response(self):
+        embedding = self.module._parse_embedding_payload(
+            {"data": [{"embedding": ["0.1", 0.2, 3]}]}
+        )
+
+        self.assertEqual(embedding, [0.1, 0.2, 3.0])
+        self.assertEqual(self.module._embedding_to_pgvector(embedding), "[0.1,0.2,3]")
+
+    def test_message_store_search_hybrid_merges_semantic_keyword_and_recent(self):
+        async def fake_search(args):
+            class FakeTime:
+                def __init__(self, value):
+                    self.value = value
+
+                def isoformat(self):
+                    return self.value
+
+            class FakeRow(dict):
+                pass
+
+            semantic_row = FakeRow(
+                {
+                    "id": "5b2c2e8e-3d9c-45a4-b9c1-4fe8a7c13333",
+                    "platform": "qiwe",
+                    "message_id": "msg_semantic",
+                    "chat_id": "room_1",
+                    "chat_type": "group",
+                    "sender_id": "user_1",
+                    "sender_name": "小秦",
+                    "message_kind": "text",
+                    "text": "下午有香囊手工活动。",
+                    "is_mention_bot": False,
+                    "should_trigger": False,
+                    "trigger_reason": None,
+                    "sent_at": FakeTime("2026-06-19T14:00:00+08:00"),
+                    "received_at": FakeTime("2026-06-19T14:00:01+08:00"),
+                    "created_at": FakeTime("2026-06-19T14:00:02+08:00"),
+                    "semantic_distance": 0.12,
+                }
+            )
+            keyword_row = FakeRow(
+                {
+                    "id": "5b2c2e8e-3d9c-45a4-b9c1-4fe8a7c14444",
+                    "platform": "qiwe",
+                    "message_id": "msg_keyword",
+                    "chat_id": "room_1",
+                    "chat_type": "group",
+                    "sender_id": "user_2",
+                    "sender_name": "希希",
+                    "message_kind": "text",
+                    "text": "端午香囊活动接龙。",
+                    "is_mention_bot": False,
+                    "should_trigger": False,
+                    "trigger_reason": None,
+                    "sent_at": FakeTime("2026-06-19T13:00:00+08:00"),
+                    "received_at": FakeTime("2026-06-19T13:00:01+08:00"),
+                    "created_at": FakeTime("2026-06-19T13:00:02+08:00"),
+                }
+            )
+            recent_row = FakeRow(
+                {
+                    "id": "5b2c2e8e-3d9c-45a4-b9c1-4fe8a7c15555",
+                    "platform": "qiwe",
+                    "message_id": "msg_recent",
+                    "chat_id": "room_1",
+                    "chat_type": "group",
+                    "sender_id": "user_3",
+                    "sender_name": "知行",
+                    "message_kind": "text",
+                    "text": "收到。",
+                    "is_mention_bot": False,
+                    "should_trigger": False,
+                    "trigger_reason": None,
+                    "sent_at": FakeTime("2026-06-19T15:00:00+08:00"),
+                    "received_at": FakeTime("2026-06-19T15:00:01+08:00"),
+                    "created_at": FakeTime("2026-06-19T15:00:02+08:00"),
+                }
+            )
+            query_terms = self.module._message_store_query_terms(args["query"])
+            messages = []
+            for method, row in [
+                ("semantic", semantic_row),
+                ("keyword", keyword_row),
+                ("recent", recent_row),
+            ]:
+                item = self.module._message_store_row(row)
+                item["retrieval_methods"] = [method]
+                item["retrieval_score"] = {"semantic": 1088.0, "keyword": 510.0, "recent": 0.0}[method]
+                if method == "semantic":
+                    item["semantic_distance"] = row["semantic_distance"]
+                if method == "keyword":
+                    item["matched_terms"] = [term for term in query_terms if term in row["text"]]
+                messages.append(item)
+            return {
+                "success": True,
+                "skill": "qintopia_message_store_search",
+                "source": "postgres_qintopia_messages",
+                "read_only": True,
+                "query": args["query"],
+                "query_terms": query_terms,
+                "search_mode": "hybrid",
+                "retrieval_trace": [
+                    {"search_method": "semantic", "success": True, "result_count": 1},
+                    {"search_method": "keyword", "success": True, "result_count": 1},
+                    {"search_method": "recent", "success": True, "result_count": 1},
+                ],
+                "filters": {"chat_type": args.get("chat_type", "")},
+                "result_count": len(messages),
+                "messages": sorted(messages, key=lambda item: item["retrieval_score"], reverse=True),
+            }
+
+        self.module._message_store_search_async = fake_search
+        os.environ["QINTOPIA_MESSAGE_STORE_DATABASE_URL"] = "postgres://example"
+        payload = json.loads(
+            self.module.handle_qintopia_message_store_search(
+                {
+                    "query": "今天端午节大家聊什么",
+                    "chat_type": "group",
+                    "search_mode": "hybrid",
+                    "caller": "wenyuange",
+                    "purpose": "回答群聊近期讨论问题",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["search_mode"], "hybrid")
+        self.assertIn("端午", payload["query_terms"])
+        self.assertEqual(payload["messages"][0]["message_id"], "msg_semantic")
+        self.assertEqual(payload["messages"][0]["retrieval_methods"], ["semantic"])
+        self.assertEqual(payload["messages"][1]["matched_terms"][0], "端午")
+        self.assertEqual(
+            [item["search_method"] for item in payload["retrieval_trace"]],
+            ["semantic", "keyword", "recent"],
+        )
+
+    def test_message_store_search_semantic_queries_pgvector_embeddings(self):
+        import asyncio
+        import sys
+        import types
+
+        class FakeTime:
+            def __init__(self, value):
+                self.value = value
+
+            def isoformat(self):
+                return self.value
+
+        class FakeConnection:
+            def __init__(self):
+                self.sql = []
+                self.params = []
+
+            async def execute(self, sql):
+                self.sql.append(sql)
+
+            async def fetch(self, sql, *values):
+                self.sql.append(sql)
+                self.params.append(values)
+                return [
+                    {
+                        "id": "5b2c2e8e-3d9c-45a4-b9c1-4fe8a7c16666",
+                        "platform": "qiwe",
+                        "message_id": "msg_vector",
+                        "chat_id": "room_1",
+                        "chat_type": "group",
+                        "sender_id": "user_1",
+                        "sender_name": "小秦",
+                        "message_kind": "text",
+                        "text": "端午香囊活动接龙。",
+                        "is_mention_bot": False,
+                        "should_trigger": False,
+                        "trigger_reason": None,
+                        "sent_at": FakeTime("2026-06-19T14:00:00+08:00"),
+                        "received_at": FakeTime("2026-06-19T14:00:01+08:00"),
+                        "created_at": FakeTime("2026-06-19T14:00:02+08:00"),
+                        "semantic_distance": 0.08,
+                    }
+                ]
+
+            async def close(self):
+                pass
+
+        fake_conn = FakeConnection()
+
+        async def fake_connect(_):
+            return fake_conn
+
+        fake_asyncpg = types.SimpleNamespace(connect=fake_connect)
+        old_asyncpg = sys.modules.get("asyncpg")
+        sys.modules["asyncpg"] = fake_asyncpg
+        self.module._message_store_query_embedding = lambda query: (
+            [0.1, 0.2, 0.3],
+            {
+                "search_method": "query_embedding",
+                "configured": True,
+                "model": "test-embedding",
+                "success": True,
+                "dimension": 3,
+            },
+        )
+        os.environ["QINTOPIA_MESSAGE_STORE_DATABASE_URL"] = "postgres://example"
+        os.environ["QINTOPIA_MESSAGE_STORE_EMBEDDING_DB_MODEL"] = "test-embedding"
+        try:
+            payload = asyncio.run(
+                self.module._message_store_search_async(
+                    {
+                        "query": "端午节",
+                        "chat_type": "group",
+                        "search_mode": "semantic",
+                        "limit": 5,
+                    }
+                )
+            )
+        finally:
+            if old_asyncpg is None:
+                sys.modules.pop("asyncpg", None)
+            else:
+                sys.modules["asyncpg"] = old_asyncpg
+
+        sql = "\n".join(fake_conn.sql)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["messages"][0]["message_id"], "msg_vector")
+        self.assertEqual(payload["messages"][0]["retrieval_methods"], ["semantic"])
+        self.assertIn("qintopia_messages.message_embeddings", sql)
+        self.assertIn("<=>", sql)
+        self.assertIn("SET search_path TO qintopia_messages, public", sql)
+        self.assertIn("[0.1,0.2,0.3]", fake_conn.params[0])
+        self.assertIn("test-embedding", fake_conn.params[0])
+
+    def test_xiaoqin_lead_capture_creates_controlled_sales_task(self):
+        self.module._kanban_create_sales_task = lambda title, body, task_type, priority, key: ("t_sales", "created")
+
+        payload = json.loads(
+            self.module.handle_qintopia_lead_capture(
+                {
+                    "task_type": "demo_request",
+                    "customer_display_name": "某客户",
+                    "source_channel": "worktool_external_contact",
+                    "source_conversation_id": "conv_1",
+                    "source_message_id": "msg_1",
+                    "customer_request": "想看 Agent OS 销售客服演示。",
+                    "business_scenario": "企业微信客户咨询分流。",
+                    "budget_range": "待确认",
+                    "urgency": "本月",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["task_id"], "t_sales")
+        self.assertEqual(payload["task_type"], "demo_request")
+        action = payload["actions"][0]
+        self.assertEqual(action["action"], "kanban_task_create_request")
+        self.assertEqual(action["assignee"], "xiaoqin")
+        self.assertEqual(action["status"], "triage")
+        self.assertIn("safe_customer_message", payload)
+        self.assertIn("我先帮您记录下来", payload["safe_customer_message"])
+        self.assertNotIn("t_sales", payload["safe_customer_message"])
+        self.assertNotIn("任务", payload["safe_customer_message"])
+        self.assertNotIn("复核", payload["safe_customer_message"])
+        self.assertIn("Use safe_customer_message", payload["customer_response_policy"][0])
+        self.assertNotIn("Human Owner", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("kanban_assign", json.dumps(payload, ensure_ascii=False))
+
+    def test_xiaoqin_sales_task_create_uses_hermes_initial_status_contract(self):
+        captured = []
+
+        class FakeConnection:
+            def close(self):
+                captured.append({"closed": True})
+
+        class FakeKanban:
+            def create_task(self, conn, **kwargs):
+                captured.append(kwargs)
+                return "t_sales"
+
+        self.module._kanban_runtime = lambda: (FakeKanban(), FakeConnection())
+
+        task_id, status = self.module._kanban_create_sales_task("标题", "正文", "proposal", 1, "key-1")
+        self.assertEqual(task_id, "t_sales")
+        self.assertEqual(status, "created")
+        self.assertEqual(captured[0]["initial_status"], "running")
+        self.assertFalse(captured[0]["triage"])
+
+        captured.clear()
+        self.module._kanban_create_sales_task("标题", "正文", "external_disclosure_review", 1, "key-2")
+        self.assertEqual(captured[0]["initial_status"], "blocked")
+
+    def test_xiaoqin_lead_capture_rejects_uncontrolled_task_type(self):
+        payload = json.loads(
+            self.module.handle_qintopia_lead_capture(
+                {
+                    "task_type": "engineering",
+                    "source_channel": "worktool_external_contact",
+                    "source_conversation_id": "conv_1",
+                    "customer_request": "帮我改服务器。",
+                }
+            )
+        )
+
+        self.assertFalse(payload["success"])
+        self.assertIn("not allowed", payload["error"])
+
+    def test_xiaoqin_proposal_and_demo_are_review_gated(self):
+        proposal = json.loads(
+            self.module.handle_qintopia_proposal_outline_generate(
+                {
+                    "customer_display_name": "某客户",
+                    "business_scenario": "客户想把客服咨询沉淀成任务。",
+                    "goals": "降低漏跟进。",
+                }
+            )
+        )
+        demo = json.loads(
+            self.module.handle_qintopia_demo_script_generate(
+                {
+                    "demo_goal": "展示需求收集到任务交接",
+                    "business_scenario": "企业微信销售客服咨询。",
+                    "allowed_materials": "公开样例。",
+                }
+            )
+        )
+
+        self.assertTrue(proposal["success"])
+        self.assertTrue(proposal["requires_human_review_before_external_send"])
+        self.assertIn("草案", proposal["draft"])
+        self.assertTrue(demo["success"])
+        self.assertTrue(demo["requires_human_review_before_external_send"])
+        self.assertIn("公开样例", demo["script"])
+
+    def test_xiaoqin_disclosure_filter_blocks_sensitive_draft(self):
+        payload = json.loads(
+            self.module.handle_qintopia_external_disclosure_filter(
+                {
+                    "draft_answer": "我们可以给你固定报价和 SLA，也能展示内部服务器日志。",
+                    "purpose": "回复外部客户",
+                    "recipient": "客户",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["approval_required"])
+        self.assertIn("commercial_commitment", payload["matched_risk_categories"])
+        self.assertIn("internal_information", payload["matched_risk_categories"])
+        self.assertNotIn("服务器日志", payload["public_safe_draft"])
+
+    def test_xiaoqin_conversation_summary_suggests_disclosure_review_on_risk(self):
+        payload = json.loads(
+            self.module.handle_qintopia_conversation_summary(
+                {
+                    "conversation_text": "客户想看内部客户案例和报价合同。",
+                    "customer_display_name": "某客户",
+                    "source_channel": "worktool_external_contact",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["suggested_task_type"], "external_disclosure_review")
+        self.assertIn("需要团队负责人决策", payload["summary"])
+        self.assertNotIn("Human Owner", payload["summary"])
+
+    def test_complaint_intake_create_is_controlled(self):
+        self.module._kanban_create_complaint = lambda title, body, priority, key: ("t_test", "created")
+
+        payload = json.loads(
+            self.module.handle_qintopia_complaint_intake_create(
+                {
+                    "source_channel": "qiwe_group_internal",
+                    "source_conversation_id": "conv_1",
+                    "source_message_id": "msg_1",
+                    "requester_display_name": "小秦",
+                    "requester_channel_user_id": "user_1",
+                    "original_message": "我要投诉入住体验，晚上太吵了。",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["task_id"], "t_test")
+        self.assertEqual(payload["task_type"], "complaint_intake")
+        self.assertEqual(payload["owner_profile"], "default")
+        self.assertEqual(payload["tenant"], "qintopia")
+        kanban_action = payload["actions"][0]
+        self.assertEqual(kanban_action["action"], "kanban_task_create_request")
+        self.assertEqual(kanban_action["task_type"], "complaint_intake")
+        self.assertEqual(kanban_action["assignee"], "default")
+        self.assertEqual(kanban_action["status"], "triage")
+        self.assertNotIn("silaoshi", json.dumps(payload, ensure_ascii=False))
+        private_action = payload["actions"][1]
+        self.assertEqual(private_action["tool"], "qiwe_send_direct_message")
+        self.assertEqual(private_action["recipient_user_id"], "user_1")
+        self.assertEqual(private_action["conversation_scope"], "private")
+        self.assertEqual(private_action["purpose"], "complaint_intake_detail_collection")
+        self.assertEqual(private_action["idempotency_key"], f'{kanban_action["idempotency_key"]}:direct:intake')
+        self.assertIn("为了避免在群里公开你的细节", private_action["message"])
+
+    def test_complaint_intake_create_uses_qiwe_session_sender_id(self):
+        old_user_id = os.environ.get("HERMES_SESSION_USER_ID")
+        captured = {}
+
+        def fake_create(title, body, priority, key):
+            captured["body"] = body
+            captured["key"] = key
+            return "t_test", "created"
+
+        self.module._kanban_create_complaint = fake_create
+        os.environ["HERMES_SESSION_USER_ID"] = "7881303308049798"
+        try:
+            payload = json.loads(
+                self.module.handle_qintopia_complaint_intake_create(
+                    {
+                        "source_channel": "qiwe_group_internal",
+                        "source_conversation_id": "room_1",
+                        "source_message_id": "msg_1",
+                        "requester_display_name": "弦默",
+                        "original_message": "我要投诉，房间门锁有问题。",
+                    }
+                )
+            )
+        finally:
+            if old_user_id is None:
+                os.environ.pop("HERMES_SESSION_USER_ID", None)
+            else:
+                os.environ["HERMES_SESSION_USER_ID"] = old_user_id
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["requester_channel_user_id_resolved"])
+        self.assertIn("7881303308049798", captured["body"])
+        self.assertIn("不要再创建或派发“二花私聊补充受理”子任务", captured["body"])
+        private_action = payload["actions"][1]
+        self.assertEqual(private_action["recipient_user_id"], "7881303308049798")
+        self.assertEqual(private_action["purpose"], "complaint_intake_detail_collection")
+        self.assertEqual(private_action["idempotency_key"], f"{captured['key']}:direct:intake")
+
+    def test_complaint_intake_update_appends_comment_only(self):
+        self.module._kanban_add_complaint_comment = lambda task_id, body: (12, "comment_added")
+
+        payload = json.loads(
+            self.module.handle_qintopia_complaint_intake_update(
+                {
+                    "task_id": "t_test",
+                    "requester_display_name": "小秦",
+                    "details": "昨晚 11 点后 2 栋走廊持续很吵。",
+                    "location_or_area": "2 栋走廊",
+                    "expected_resolution": "希望有人回复处理方式。",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["task_id"], "t_test")
+        self.assertEqual(payload["comment_id"], 12)
+        action = payload["actions"][0]
+        self.assertEqual(action["action"], "kanban_comment_add_request")
+        self.assertTrue(action["does_not_assign_executor"])
+        self.assertNotIn("kanban_assign", json.dumps(payload, ensure_ascii=False))
+
+    def test_complaint_followup_requires_approved_resolution_and_private_user(self):
+        missing = json.loads(
+            self.module.handle_qintopia_complaint_followup_send(
+                {
+                    "task_id": "t_test",
+                    "requester_channel_user_id": "user_1",
+                    "approved_resolution": "",
+                }
+            )
+        )
+        self.assertFalse(missing["success"])
+
+        self.module._kanban_add_complaint_comment = lambda task_id, body: (13, "comment_added")
+        payload = json.loads(
+            self.module.handle_qintopia_complaint_followup_send(
+                {
+                    "task_id": "t_test",
+                    "requester_channel_user_id": "user_1",
+                    "requester_display_name": "小秦",
+                    "approved_resolution": "已安排工作人员检查并完成走廊夜间提醒。",
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        action = payload["actions"][0]
+        self.assertEqual(action["tool"], "qiwe_send_direct_message")
+        self.assertEqual(action["recipient_user_id"], "user_1")
+        self.assertEqual(action["conversation_scope"], "private")
+        self.assertEqual(action["purpose"], "complaint_resolution_followup")
+        self.assertIn("idempotency_key", action)
+        self.assertTrue(action["requires_approved_resolution"])
+        self.assertIn("已安排工作人员检查", action["message"])
+
+    def test_daily_digest_publish_is_disabled_by_default(self):
+        os.environ["QINTOPIA_PROFILE_ID"] = "xiaoman"
+
+        payload = json.loads(
+            self.module.handle_qintopia_daily_digest_publish(
+                {
+                    "digest_id": "00000000-0000-0000-0000-000000000001",
+                    "actor_agent": "xiaoman",
+                }
+            )
+        )
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["skill"], "qintopia_daily_digest_publish")
+        self.assertIn("QINTOPIA_DAILY_DIGEST_PUBLISH_ENABLE", payload["error"])
+
+    def test_daily_digest_publish_returns_narrow_worker_command_when_enabled(self):
+        os.environ["QINTOPIA_PROFILE_ID"] = "xiaoman"
+        os.environ["QINTOPIA_DAILY_DIGEST_PUBLISH_ENABLE"] = "1"
+        os.environ["QINTOPIA_DAILY_DIGEST_PUBLISHER_BIN"] = "/opt/qintopia-agentos-worker"
+
+        payload = json.loads(
+            self.module.handle_qintopia_daily_digest_publish(
+                {
+                    "digest_id": "00000000-0000-0000-0000-000000000001",
+                    "actor_agent": "xiaoman",
+                    "dry_run": True,
+                }
+            )
+        )
+
+        self.assertTrue(payload["success"])
+        action = payload["action"]
+        self.assertEqual(action["tool"], "agentos_worker_command")
+        self.assertEqual(action["command"][0], "/opt/qintopia-agentos-worker")
+        self.assertIn("daily-digest-publish", action["command"])
+        self.assertIn("--digest-id", action["command"])
+        self.assertIn("--dry-run", action["command"])
+        self.assertNotIn("markdown", payload)
+
+    def test_weather_lookup_uses_qweather_allowlisted_tools(self):
+        calls = []
+
+        def fake_call(tool_name, arguments):
+            calls.append((tool_name, arguments))
+            if tool_name == "get_weather_now":
+                return {
+                    "success": True,
+                    "tool": tool_name,
+                    "data": {
+                        "now": {
+                            "obsTime": "2026-06-28T08:00+08:00",
+                            "text": "多云",
+                            "temp": "26",
+                            "feelsLike": "27",
+                            "humidity": "70",
+                            "windDir": "东风",
+                            "windScale": "2",
+                            "windSpeed": "8",
+                            "precip": "0.0",
+                        }
+                    },
+                }
+            if tool_name == "get_hourly_weather":
+                return {
+                    "success": True,
+                    "tool": tool_name,
+                    "data": {
+                        "hourly": [
+                            {"fxTime": "2026-06-28T09:00+08:00", "text": "多云", "pop": "20", "precip": "0.0"},
+                            {"fxTime": "2026-06-28T10:00+08:00", "text": "雷阵雨", "pop": "75", "precip": "1.2"},
+                            {"fxTime": "2026-06-28T11:00+08:00", "text": "小雨", "pop": "60", "precip": "0.5"},
+                            {"fxTime": "2026-06-28T12:00+08:00", "text": "阴", "pop": "20", "precip": "0.0"},
+                        ]
+                    },
+                }
+            if tool_name == "get_minutely_5m":
+                return {
+                    "success": True,
+                    "tool": tool_name,
+                    "data": {
+                        "minutely": [
+                            {"fxTime": "2026-06-28T08:05+08:00", "precip": "0.0"},
+                            {"fxTime": "2026-06-28T08:10+08:00", "precip": "0.1"},
+                            {"fxTime": "2026-06-28T08:15+08:00", "precip": "0.2"},
+                            {"fxTime": "2026-06-28T08:20+08:00", "precip": "0.0"},
+                        ]
+                    },
+                }
+            if tool_name == "get_warning":
+                return {
+                    "success": True,
+                    "tool": tool_name,
+                    "data": {
+                        "warning": [
+                            {
+                                "title": "西安市气象台发布雷雨大风黄色预警",
+                                "typeName": "雷雨大风",
+                                "level": "Yellow",
+                                "status": "active",
+                                "startTime": "2026-06-28T08:00+08:00",
+                            }
+                        ]
+                    },
+                }
+            if tool_name == "get_air_quality":
+                return {
+                    "success": True,
+                    "tool": tool_name,
+                    "data": {"now": {"pubTime": "2026-06-28T08:00+08:00", "aqi": "45", "category": "优", "primary": "NA"}},
+                }
+            return {"success": False, "tool": tool_name, "error": "unexpected"}
+
+        self.module._qweather_mcp_call = fake_call
+        payload = json.loads(self.module.handle_qintopia_weather_lookup({"intent": "umbrella", "hours": 24}))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["source"], "qweather_mcp")
+        self.assertEqual(payload["current"]["text"], "多云")
+        self.assertEqual(payload["warnings"][0]["type"], "雷雨大风")
+        self.assertEqual(payload["air_quality"]["category"], "优")
+        self.assertEqual(payload["umbrella_windows"], [{"start": "2026-06-28T08:10+08:00", "end": "2026-06-28T08:15+08:00"}])
+        self.assertEqual(payload["thunderstorm_windows"], [{"start": "2026-06-28T10:00+08:00", "end": "2026-06-28T10:00+08:00"}])
+        self.assertEqual(
+            sorted(name for name, _args in calls),
+            ["get_air_quality", "get_hourly_weather", "get_minutely_5m", "get_warning", "get_weather_now"],
+        )
+        call_args = {name: args for name, args in calls}
+        self.assertEqual(call_args["get_weather_now"]["location"], "108.5876,33.9996")
+        self.assertEqual(call_args["get_hourly_weather"]["location"], "108.5876,33.9996")
+        self.assertEqual(call_args["get_minutely_5m"]["location"], "108.5876,33.9996")
+        self.assertEqual(call_args["get_warning"]["city"], "鄠邑区")
+        self.assertEqual(call_args["get_air_quality"]["city"], "鄠邑区")
+
+    def test_weather_lookup_parses_new_qweather_air_quality_shape(self):
+        data = {
+            "indexes": [
+                {
+                    "code": "cn-mee",
+                    "aqi": 67,
+                    "aqiDisplay": "67",
+                    "category": "良",
+                    "primaryPollutant": {"code": "pm10", "name": "PM 10"},
+                    "health": {"advice": {"generalPopulation": "一般人群可正常活动。"}},
+                }
+            ],
+            "stations": [{"id": "P510416", "name": "西苑北路977号"}],
+        }
+
+        air_quality = self.module._qweather_air_quality(data)
+
+        self.assertEqual(air_quality["aqi"], "67")
+        self.assertEqual(air_quality["category"], "良")
+        self.assertEqual(air_quality["primary"], "PM 10")
+        self.assertEqual(air_quality["health_advice"], "一般人群可正常活动。")
+        self.assertNotIn("stations", air_quality)
+
+    def test_weather_lookup_forbids_paid_qweather_capabilities(self):
+        allowed = self.module.QWEATHER_ALLOWED_MCP_TOOLS
+        forbidden_names = [
+            "get_tropical_cyclone",
+            "get_typhoon_track",
+            "get_ocean_tide",
+            "get_marine_weather",
+            "get_solar_radiation",
+            "search_poi",
+            "get_air_quality_stations",
+        ]
+
+        for name in forbidden_names:
+            self.assertNotIn(name, allowed)
+        self.assertEqual(
+            self.module._qweather_forbidden_tool_names(forbidden_names),
+            sorted(forbidden_names),
+        )
+
+    def test_weather_lookup_falls_back_to_open_meteo_as_limited_trend(self):
+        self.module._qweather_call_bundle = lambda location: {
+            "current": {"success": False, "error": "missing qweather credentials"},
+            "hourly": {"success": False, "error": "missing qweather credentials"},
+            "minutely": {"success": False, "error": "missing qweather credentials"},
+            "warnings": {"success": False, "error": "missing qweather credentials"},
+            "air_quality": {"success": False, "error": "missing qweather credentials"},
+        }
+        self.module._open_meteo_fallback = lambda: {
+            "success": True,
+            "skill": "qintopia_weather_lookup",
+            "source": "open_meteo_fallback",
+            "provider": "Open-Meteo",
+            "umbrella_windows": [{"start": "2026-06-28T10:00", "end": "2026-06-28T11:00"}],
+            "thunderstorm_windows": [],
+            "warnings": [],
+            "air_quality": None,
+            "limitations": [
+                "Open-Meteo fallback only; no QWeather official warnings",
+                "no minute-level precipitation conclusion",
+                "no air-quality result",
+                "no typhoon, ocean, or solar-radiation data",
+            ],
+        }
+
+        payload = json.loads(self.module.handle_qintopia_weather_lookup({"intent": "thunderstorm"}))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["source"], "open_meteo_fallback")
+        self.assertEqual(payload["warnings"], [])
+        self.assertIsNone(payload["air_quality"])
+        self.assertIn("no minute-level precipitation conclusion", payload["limitations"])
+        self.assertIn("qweather_errors", payload)
+
+    def test_register_exposes_frontline_tools_without_raw_dify_by_default(self):
+        class FakeCtx:
+            def __init__(self) -> None:
+                self.names = []
+
+            def register_tool(self, **kwargs) -> None:
+                self.names.append(kwargs["name"])
+
+        os.environ["QINTOPIA_PROFILE_ID"] = "xiaoqin"
+        os.environ.pop("QINTOPIA_DIFY_RAW_TOOLS_ENABLE", None)
+        ctx = FakeCtx()
+        self.module.register(ctx)
+
+        self.assertIn("qintopia_wenyuange_lookup", ctx.names)
+        self.assertIn("qintopia_weather_lookup", ctx.names)
+        self.assertIn("qintopia_complaint_intake_create", ctx.names)
+        self.assertIn("qintopia_complaint_intake_update", ctx.names)
+        self.assertIn("qintopia_complaint_followup_send", ctx.names)
+        self.assertIn("qintopia_external_product_kb_search", ctx.names)
+        self.assertIn("qintopia_public_case_search", ctx.names)
+        self.assertIn("qintopia_customer_context_lookup", ctx.names)
+        self.assertIn("qintopia_lead_capture", ctx.names)
+        self.assertIn("qintopia_proposal_outline_generate", ctx.names)
+        self.assertIn("qintopia_demo_script_generate", ctx.names)
+        self.assertIn("qintopia_external_disclosure_filter", ctx.names)
+        self.assertIn("qintopia_conversation_summary", ctx.names)
+        self.assertIn("qintopia_daily_digest_publish", ctx.names)
+        self.assertNotIn("qintopia_dify_dataset_list", ctx.names)
+        self.assertNotIn("qintopia_dify_knowledge_retrieve", ctx.names)
+        self.assertNotIn("qintopia_message_store_search", ctx.names)
+
+    def test_register_exposes_raw_dify_only_for_wenyuange_opt_in(self):
+        class FakeCtx:
+            def __init__(self) -> None:
+                self.names = []
+
+            def register_tool(self, **kwargs) -> None:
+                self.names.append(kwargs["name"])
+
+        os.environ["QINTOPIA_PROFILE_ID"] = "wenyuange"
+        os.environ["QINTOPIA_DIFY_RAW_TOOLS_ENABLE"] = "1"
+        os.environ["QINTOPIA_MESSAGE_STORE_ENABLE"] = "1"
+        ctx = FakeCtx()
+        self.module.register(ctx)
+
+        self.assertIn("qintopia_wenyuange_lookup", ctx.names)
+        self.assertIn("qintopia_dify_dataset_list", ctx.names)
+        self.assertIn("qintopia_dify_dataset_get", ctx.names)
+        self.assertIn("qintopia_dify_knowledge_retrieve", ctx.names)
+        self.assertIn("qintopia_dify_document_list", ctx.names)
+        self.assertIn("qintopia_dify_document_get", ctx.names)
+        self.assertIn("qintopia_dify_indexing_status_get", ctx.names)
+        self.assertIn("qintopia_dify_segment_list", ctx.names)
+        self.assertIn("qintopia_dify_segment_get", ctx.names)
+        self.assertIn("qintopia_message_store_search", ctx.names)
+
+
+if __name__ == "__main__":
+    unittest.main()
