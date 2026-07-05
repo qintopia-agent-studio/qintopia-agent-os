@@ -118,6 +118,10 @@ Bucket-scoped probe actions:
 }
 ```
 
+COS prune uses `coscli ls` to discover sidecar manifest objects, so CI upload/prune also
+needs bucket list permission under the artifact prefix. Recursive delete uses
+`DeleteObject` and `DeleteMultipleObjects`.
+
 Object-scoped upload actions:
 
 ```json
@@ -132,7 +136,9 @@ Object-scoped upload actions:
     "name/cos:CompleteMultipartUpload",
     "name/cos:AbortMultipartUpload",
     "name/cos:ListMultipartUploads",
-    "name/cos:ListParts"
+    "name/cos:ListParts",
+    "name/cos:DeleteObject",
+    "name/cos:DeleteMultipleObjects"
   ],
   "resource": [
     "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*"
@@ -254,10 +260,10 @@ sanitized COSCLI output without printing credentials.
 The script passes `TENCENT_COS_ENDPOINT` into `coscli config add -e` when the variable
 is set. Leave it empty unless the bucket-side endpoint feature has already been enabled.
 
-The COS prune script lists `artifact-manifest.json` objects under
-`qintopia-agent-os/sidecar/`, sorts sidecar SHA directories by manifest update time, and
-deletes older directories with COSCLI recursive delete. Use `--dry-run` before changing
-retention behavior.
+The COS prune script lists objects under `qintopia-agent-os/sidecar/`, filters
+`artifact-manifest.json` paths locally, sorts sidecar SHA directories by manifest update
+time, and deletes older directories with COSCLI recursive delete. Use `--dry-run` before
+changing retention behavior.
 
 GitHub artifact upload compresses the sidecar artifact to about 9 MB, while the raw
 release binary is about 25 MB. COS distribution therefore uses the compressed sidecar

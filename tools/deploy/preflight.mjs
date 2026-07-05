@@ -306,6 +306,8 @@ if (exists("deploy/sidecar/scripts/prune-cos-artifacts.sh")) {
     "artifact-manifest",
     "cos://${bucket_alias}/${sidecar_prefix}/",
     'run_coscli_capture "delete COS artifact',
+    "HeadBucket and GetBucket permissions",
+    "DeleteMultipleObjects",
     "-r",
     "-f",
     "--dry-run",
@@ -315,6 +317,11 @@ if (exists("deploy/sidecar/scripts/prune-cos-artifacts.sh")) {
         `deploy/sidecar/scripts/prune-cos-artifacts.sh: must support bounded COS artifact retention (${requiredFragment})`
       );
     }
+  }
+  if (cosPruneScript.includes("--include")) {
+    addError(
+      "deploy/sidecar/scripts/prune-cos-artifacts.sh: must not depend on COSCLI --include filtering for retention discovery"
+    );
   }
 }
 

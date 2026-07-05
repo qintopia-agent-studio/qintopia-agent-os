@@ -194,6 +194,12 @@ PY
     echo "Bucket alias: ${bucket_alias}" >&2
     echo "Artifact prefix: ${sidecar_prefix}/" >&2
     echo "Credentials were not printed. Check CI COS list/delete permissions." >&2
+    if [[ "$command_name" == "ls" ]]; then
+      echo "COSCLI ls requires HeadBucket and GetBucket permissions on the bucket/prefix." >&2
+    fi
+    if [[ "$command_name" == "rm" ]]; then
+      echo "COSCLI rm requires HeadBucket, HeadObject, GetBucket, DeleteObject, and DeleteMultipleObjects permissions on the bucket/prefix." >&2
+    fi
     print_sanitized_coscli_output "$output_path"
     exit "$status"
   fi
@@ -233,13 +239,11 @@ fi
 run_coscli_capture "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   "${bucket_config_args[@]}" >/dev/null
 
-manifest_pattern=".*/${artifact_name}/artifact-manifest\\.json$"
 list_output="$(
   run_coscli_capture "list sidecar artifact manifests" ls \
     "cos://${bucket_alias}/${sidecar_prefix}/" \
     -r \
     --limit -1 \
-    --include "$manifest_pattern" \
     -c "$config_path" \
     --disable-log
 )"
