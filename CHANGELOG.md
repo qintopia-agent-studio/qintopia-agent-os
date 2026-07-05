@@ -270,6 +270,9 @@ become versioned.
   moved `current` to that release, migrated the required Base identifiers into Huabaosi
   runtime env, and changed the profile plugin directory to a release/current symlink
   with service, tool registration, sidecar, and cache-free package checks.
+- Completed M10-F profile template planning by documenting the future profile bundle
+  shape, keeping `SOUL.md` and `config.yaml` out of the current deploy bundle, and
+  adding a profile-bundle check that blocks live runtime state from agent templates.
 
 ### Fixed
 

@@ -18,6 +18,8 @@ canonical architecture, engineering, package, or deployment docs.
   transition directories, legacy cleanup candidates, and Hermes runtime boundary.
 - [release-current-model.md](release-current-model.md): target release directory,
   `current`/`previous` symlink, promotion, rollback, and Hermes mount model.
+- [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
+  M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
 - [sidecar-ci-artifacts.md](sidecar-ci-artifacts.md): M9.1 sidecar artifact contract, CI

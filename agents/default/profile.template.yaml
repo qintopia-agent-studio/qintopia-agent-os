@@ -51,3 +51,4 @@ excluded_runtime_state:
   - logs
   - state databases
   - generated worklogs
+  - state.db

@@ -68,3 +68,4 @@ excluded_runtime_state:
   - sessions
   - logs
   - state databases
+  - state.db

@@ -204,9 +204,14 @@ git.
      env presence, import/tool registration smoke, sidecar check, and active service
      checks passed.
 5. M10-F: profile template/symlink planning for reviewed `config.yaml` and `SOUL.md`.
+   - Status: complete.
+   - Current state: profile bundle direction is documented in
+     `docs/operations/profile-bundles/m10f-profile-template-plan.md`.
    - Do not replace whole profile directories.
    - Keep `.env`, sessions, logs, cache, state DBs, auth, and runtime-generated memory
      under `.hermes`.
+   - Validation: `pnpm agents:profile-bundles:check`, `pnpm agents:check`, and
+     `pnpm check:light` passed.
 
 ## Cleanup Gate Before M12
 

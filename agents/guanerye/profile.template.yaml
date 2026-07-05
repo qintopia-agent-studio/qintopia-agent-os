@@ -60,3 +60,4 @@ excluded_runtime_state:
   - logs
   - lsp
   - state databases
+  - state.db

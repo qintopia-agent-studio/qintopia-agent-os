@@ -16,6 +16,7 @@ const requiredScripts = [
   "lint:md",
   "registry:check",
   "agents:check",
+  "agents:profile-bundles:check",
   "skills:feishu-base:check",
   "policy:check",
   "secrets:check",
@@ -57,6 +58,8 @@ const requiredDocs = [
   "tools/deploy/check-m9f-readiness.mjs",
   "tools/deploy/build-deploy-bundle.mjs",
   "tools/skills/check-feishu-base.mjs",
+  "tools/agents/check-profile-bundles.mjs",
+  "docs/operations/profile-bundles/m10f-profile-template-plan.md",
 ];
 
 const requiredCheckFragments = ["pnpm check:light", "pnpm check:runtime"];
@@ -67,6 +70,7 @@ const requiredLightCheckFragments = [
   "pnpm registry:check",
   "pnpm skills:feishu-base:check",
   "pnpm agents:check",
+  "pnpm agents:profile-bundles:check",
   "pnpm policy:check",
   "pnpm secrets:check",
   "pnpm deploy:preflight:ci",

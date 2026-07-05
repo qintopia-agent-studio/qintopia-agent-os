@@ -57,3 +57,4 @@ excluded_runtime_state:
   - caches
   - logs
   - state databases
+  - state.db

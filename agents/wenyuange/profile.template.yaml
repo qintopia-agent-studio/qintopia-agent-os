@@ -45,6 +45,7 @@ runtime_mounts:
     - qintopia-tools
 
 excluded_runtime_state:
+  - .env
   - auth files
   - memories
   - sessions
@@ -52,3 +53,4 @@ excluded_runtime_state:
   - caches
   - logs
   - state databases
+  - state.db
