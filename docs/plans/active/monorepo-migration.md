@@ -522,6 +522,42 @@ and future programming agents.
     `c70378408c53de5f4166e8b9bde45b15a97cabb0`
   - did not update server checkout, systemd units, symlinks, Hermes profile config, or
     running service targets
+- Prepared M9-F decision materials without server mutation:
+  - pushed the COS-first documentation and validation commits to `origin/master`
+  - confirmed GitHub Actions run `28736441689` started for
+    `021b42f786037659339f412ff83f69064637617f`; at the time of this note, both `check`
+    and `sidecar-artifact` were still in progress, so this docs-only commit is not a
+    production runtime candidate yet
+  - re-ran M9-F read-only server preflight and confirmed these six workers are still
+    active/enabled from `/home/ubuntu/qintopia-msg-sidecar`:
+    `qintopia-agentos-member-profile-worker.service`,
+    `qintopia-agentos-graph-projection-worker.service`,
+    `qintopia-agentos-raw-archive-worker.service`,
+    `qintopia-agentos-event-signal-worker.service`,
+    `qintopia-agentos-daily-digest-worker.service`, and
+    `qintopia-agentos-daily-digest-publisher.service`
+  - confirmed live `mcp-context` processes still run from
+    `/home/ubuntu/qintopia-msg-sidecar/target/release/qintopia-message-sidecar`
+  - confirmed Hermes `erhua` and `wenyuange` profile configs still reference
+    `/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp`
+  - selected `0782f6d0f3f46d1285444f9a21f1669791be1d5e` as the M9-F artifact candidate
+    because its CI passed and its COS artifact already passed server-side read-only
+    validation
+  - verified that `0782f6d0f3f46d1285444f9a21f1669791be1d5e` contains the M9-F
+    `qintopia-context-mcp` wrapper and systemd renderer needed for the target shape
+  - rendered M9-F target unit previews locally for the six workers and diffed them
+    against current server units; the expected diff changes each worker
+    `WorkingDirectory` from `/home/ubuntu/qintopia-msg-sidecar` to
+    `/home/ubuntu/qintopia-agent-os-monorepo`, changes `ExecStart` to
+    `/home/ubuntu/qintopia-agent-os-artifacts/0782f6d0f3f46d1285444f9a21f1669791be1d5e/qintopia-message-sidecar`,
+    and adds `QINTOPIA_DEPLOYED_COMMIT_SHA` plus `QINTOPIA_SIDECAR_MIGRATIONS_DIR`
+  - blocked direct M9-F execution because the live server deploy checkout remains at
+    `94244504440a4f8fdb2eec07fd37b54db97fe368`, where
+    `deploy/sidecar/scripts/hermes/qintopia-context-mcp` still defaults to the old
+    `/home/ubuntu/qintopia-msg-sidecar` checkout
+  - next required decision before the M9-F execution window: perform a separately
+    approved deploy-runner upgrade, or use a reviewed release-managed wrapper path, so
+    Hermes MCP does not repoint back to the legacy checkout
 
 ## Update Rule
 
@@ -538,6 +574,9 @@ Remaining follow-up after the active service cutover:
 - M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
+- M9-F execution blocker: the server deploy checkout is still at `9424450` and its
+  `qintopia-context-mcp` wrapper still defaults to the old checkout. Resolve the deploy
+  runner/wrapper path before mutating worker units or Hermes profile config.
 - COS artifact distribution: the accelerated upload path, CI-side COS pruning, and
   server-side read-only download verification have passed for artifact
   `0782f6d0f3f46d1285444f9a21f1669791be1d5e`; use this path for the next M9-F

@@ -194,6 +194,8 @@ become versioned.
   COS `403` on bucket-root `HEAD` before object download.
 - Recorded the successful server-side read-only COS artifact validation for
   `0782f6d0f3f46d1285444f9a21f1669791be1d5e` after the server CAM policy was corrected.
+- Recorded M9-F preflight and unit diff findings, including the deploy-runner wrapper
+  blocker that must be resolved before worker or Hermes MCP repointing.
 
 ### Fixed
 
