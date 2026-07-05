@@ -468,6 +468,11 @@ and future programming agents.
   - added optional `TENCENT_COS_ENDPOINT` support for COSCLI `config add -e` so the next
     direct GitHub Actions to COS attempt can use Tencent COS Global Acceleration after
     the bucket-side setting is enabled
+  - verified COS Global Acceleration for the GitHub-hosted runner path: CI run
+    `28732022713` attempt 2 uploaded the compressed sidecar bundle and metadata to COS
+    for commit `b44e9688f17953c0ae74952c55466794865801d2` in about 14 seconds
+  - added CI-side COS artifact pruning so COS keeps the latest two sidecar SHA
+    directories, matching the GitHub Actions artifact retention policy
 
 ## Update Rule
 
@@ -484,12 +489,9 @@ Remaining follow-up after the active service cutover:
 - M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
-- COS artifact distribution: default CI should stay green with GitHub Actions artifact
-  upload while COS upload remains disabled. Before using `fetch-cos-artifact.sh` for the
-  next M9-F artifact preparation, either enable COS Global Acceleration and set
-  `TENCENT_COS_ENDPOINT=cos.accelerate.myqcloud.com` plus
-  `TENCENT_COS_UPLOAD_ENABLED=true`, or move the COS upload responsibility to a
-  Tencent-cloud-side uploader.
+- COS artifact distribution: use the accelerated COS upload path and CI-side COS
+  pruning, then run a server-side read-only download verification with
+  `fetch-cos-artifact.sh` before using COS artifacts for the next M9-F preparation.
 - M10 release/current model: replace direct
   `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
   directories and stable `current`/`previous` symlinks.

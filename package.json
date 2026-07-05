@@ -15,7 +15,7 @@
     "deploy:preflight": "node tools/deploy/preflight.mjs",
     "deploy:preflight:ci": "node tools/deploy/preflight.mjs --ci",
     "deploy:github-app-git:check": "bash -n deploy/sidecar/scripts/github-app-git.sh && deploy/sidecar/scripts/github-app-git.sh --help >/dev/null",
-    "deploy:cos:check": "bash -n deploy/sidecar/scripts/install-coscli.sh && bash -n deploy/sidecar/scripts/upload-cos-artifact.sh && bash -n deploy/sidecar/scripts/fetch-cos-artifact.sh && bash deploy/sidecar/scripts/install-coscli.sh --help >/dev/null && bash deploy/sidecar/scripts/upload-cos-artifact.sh --help >/dev/null && bash deploy/sidecar/scripts/fetch-cos-artifact.sh --help >/dev/null",
+    "deploy:cos:check": "bash -n deploy/sidecar/scripts/install-coscli.sh && bash -n deploy/sidecar/scripts/upload-cos-artifact.sh && bash -n deploy/sidecar/scripts/fetch-cos-artifact.sh && bash -n deploy/sidecar/scripts/prune-cos-artifacts.sh && bash deploy/sidecar/scripts/install-coscli.sh --help >/dev/null && bash deploy/sidecar/scripts/upload-cos-artifact.sh --help >/dev/null && bash deploy/sidecar/scripts/fetch-cos-artifact.sh --help >/dev/null && bash deploy/sidecar/scripts/prune-cos-artifacts.sh --help >/dev/null",
     "deploy:postgres:schema:preflight": "deploy/sidecar/scripts/postgres-schema-preflight.sh",
     "deploy:systemd:check": "deploy/sidecar/scripts/render-systemd-units.sh --check",
     "deploy:m9f:check": "node tools/deploy/check-m9f-readiness.mjs",

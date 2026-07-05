@@ -3,7 +3,7 @@
 Qintopia Agent OS uses Tencent Cloud COS as the target production artifact distribution
 layer. GitHub Actions builds the artifact from an approved `master` commit and always
 publishes the GitHub Actions artifact for audit and fallback. COS upload is explicit
-opt-in until the GitHub-hosted runner to Tencent COS network path is verified.
+opt-in and uses Tencent COS Global Acceleration for the GitHub-hosted runner path.
 
 After COS upload is enabled and verified, the Tencent Cloud server downloads from COS
 before systemd or Hermes repoints. This avoids depending on GitHub artifact download
@@ -75,10 +75,10 @@ directly instead of depending on that action.
 
 ## Network Path Decision
 
-Direct GitHub-hosted runner upload to the Shanghai bucket is currently treated as
-unverified. The CI evidence showed that authentication and small object writes worked,
-but binary/bundle transfer was too slow to finish within bounded release transport
-timeouts:
+Direct GitHub-hosted runner upload to the Shanghai bucket without acceleration was too
+slow to rely on during release windows. The CI evidence showed that authentication and
+small object writes worked, but binary/bundle transfer was too slow to finish within
+bounded release transport timeouts:
 
 | CI run        | Payload                                      | Result                                            |
 | ------------- | -------------------------------------------- | ------------------------------------------------- |
@@ -89,20 +89,19 @@ timeouts:
 This is network-path evidence, not an authentication failure. Do not keep increasing
 timeouts as the primary fix.
 
-The next direct GitHub Actions to COS attempt should use Tencent COS Global
-Acceleration:
+The direct GitHub Actions to COS path uses Tencent COS Global Acceleration:
 
 1. Enable Global Acceleration on bucket `qintopia-agent-os-artifacts-1305166808`.
 2. Set repository variable `TENCENT_COS_ENDPOINT=cos.accelerate.myqcloud.com`.
 3. Set repository variable `TENCENT_COS_UPLOAD_ENABLED=true`.
-4. Rerun the `sidecar-artifact` job and inspect transfer speed before allowing a server
-   cutover to depend on COS.
+4. Inspect the `sidecar-artifact` COS upload and prune logs before allowing a server
+   cutover to depend on a new artifact SHA.
 
 Tencent documents the global acceleration domain format as
 `<BucketName-APPID>.cos.accelerate.myqcloud.com`; COSCLI `config add` stores the bucket
 name separately and accepts the endpoint through `-e/--endpoint`.
 
-If the accelerated path is still slow, use a Tencent-cloud-side uploader instead of
+If the accelerated path becomes slow again, use a Tencent-cloud-side uploader instead of
 making GitHub-hosted runners the release transport bottleneck. In that model GitHub
 Actions remains the builder/audit source, and a Tencent-side job or server-side approved
 fetch pushes the verified artifact into COS.
@@ -179,6 +178,12 @@ The `sidecar-artifact` job uploads to COS only when `TENCENT_COS_UPLOAD_ENABLED=
 and both upload secrets are present. If upload is disabled, CI still builds and uploads
 the GitHub Actions artifact.
 
+After a successful COS upload, CI prunes old COS artifact directories and keeps only the
+latest two sidecar artifact SHA directories for
+`qintopia-message-sidecar-linux-x86_64-gnu`. The prune step uses
+`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2`, so COS retention matches the
+GitHub Actions artifact retention policy.
+
 ## Server Configuration
 
 Preferred server environment file:
@@ -248,6 +253,11 @@ sanitized COSCLI output without printing credentials.
 
 The script passes `TENCENT_COS_ENDPOINT` into `coscli config add -e` when the variable
 is set. Leave it empty unless the bucket-side endpoint feature has already been enabled.
+
+The COS prune script lists `artifact-manifest.json` objects under
+`qintopia-agent-os/sidecar/`, sorts sidecar SHA directories by manifest update time, and
+deletes older directories with COSCLI recursive delete. Use `--dry-run` before changing
+retention behavior.
 
 GitHub artifact upload compresses the sidecar artifact to about 9 MB, while the raw
 release binary is about 25 MB. COS distribution therefore uses the compressed sidecar

@@ -120,6 +120,21 @@ jobs:
           TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
 
+      - name: Prune old sidecar artifacts from Tencent COS
+        if: >-
+          ${{ env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID !=
+          '' && env.TENCENT_COS_SECRET_KEY != '' }}
+        run: >-
+          deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-name
+          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
       - name: Report Tencent COS upload disabled
         if: ${{ env.TENCENT_COS_UPLOAD_ENABLED != 'true' }}
         run: >-

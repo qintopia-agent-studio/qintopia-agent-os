@@ -44,6 +44,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/install-coscli.sh",
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+  "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
@@ -175,6 +176,7 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
 for (const cosScriptPath of [
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+  "deploy/sidecar/scripts/prune-cos-artifacts.sh",
 ]) {
   if (exists(cosScriptPath)) {
     const script = readText(cosScriptPath);
@@ -213,7 +215,10 @@ for (const cosScriptPath of [
         `${cosScriptPath}: must tune COSCLI uploads for small release artifacts with multipart concurrency`
       );
     }
-    if (!script.includes("TENCENT_COS_ARTIFACT_PAYLOAD")) {
+    if (
+      cosScriptPath !== "deploy/sidecar/scripts/prune-cos-artifacts.sh" &&
+      !script.includes("TENCENT_COS_ARTIFACT_PAYLOAD")
+    ) {
       addError(`${cosScriptPath}: must support explicit COS artifact payload mode`);
     }
     for (const endpointFragment of [
@@ -266,6 +271,25 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     if (!cosFetchScript.includes(requiredFragment)) {
       addError(
         `deploy/sidecar/scripts/fetch-cos-artifact.sh: must verify COS artifact downloads (${requiredFragment})`
+      );
+    }
+  }
+}
+
+if (exists("deploy/sidecar/scripts/prune-cos-artifacts.sh")) {
+  const cosPruneScript = readText("deploy/sidecar/scripts/prune-cos-artifacts.sh");
+  for (const requiredFragment of [
+    "QINTOPIA_COS_ARTIFACT_KEEP_COUNT",
+    "artifact-manifest",
+    "cos://${bucket_alias}/${sidecar_prefix}/",
+    'run_coscli_capture "delete COS artifact',
+    "-r",
+    "-f",
+    "--dry-run",
+  ]) {
+    if (!cosPruneScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/prune-cos-artifacts.sh: must support bounded COS artifact retention (${requiredFragment})`
       );
     }
   }
@@ -396,6 +420,7 @@ if (artifactDoc) {
     "COS Distribution",
     "TENCENT_COS_BUCKET",
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    "deploy/sidecar/scripts/prune-cos-artifacts.sh",
     "GitHub Artifact Fallback",
     "fetch-ci-artifact.sh",
   ]) {
@@ -448,6 +473,7 @@ for (const phrase of [
   "actions/setup-python@v6",
   "actions/upload-artifact@v7",
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
+  "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "qintopia-agent-os-artifacts-1305166808",
   "ap-shanghai",
   "TENCENT_COS_UPLOAD_ENABLED",

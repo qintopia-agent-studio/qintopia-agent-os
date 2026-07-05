@@ -183,6 +183,8 @@ become versioned.
 - Added optional `TENCENT_COS_ENDPOINT` support for COSCLI bucket configuration so a
   future direct GitHub Actions upload can use COS Global Acceleration after the bucket
   setting is enabled.
+- Added CI-side Tencent COS artifact pruning so COS keeps the latest two sidecar
+  artifact SHA directories, matching the GitHub Actions artifact retention policy.
 
 ### Fixed
 

@@ -72,8 +72,8 @@ source.
 
 GitHub Actions remains the source build environment and always publishes the GitHub
 Actions artifact for audit and fallback. Tencent COS is the target production
-distribution layer, but CI upload to COS is explicit opt-in until the GitHub-hosted
-runner to Tencent COS network path is verified.
+distribution layer. CI upload to COS is enabled only through explicit repository
+variables and uses COS Global Acceleration for the GitHub-hosted runner path.
 
 Object layout:
 
@@ -125,8 +125,16 @@ the artifact directory.
 
 Direct upload from GitHub-hosted runners to the Shanghai COS bucket has been too slow in
 CI even after multipart tuning and compressed payloads. Treat this as a network path
-issue, not an auth issue. Before enabling COS upload, enable COS Global Acceleration on
-the bucket or choose a Tencent-cloud-side uploader.
+issue, not an auth issue. COS Global Acceleration is required for direct GitHub Actions
+to COS upload. The verified accelerated upload for commit
+`b44e9688f17953c0ae74952c55466794865801d2` completed the COS upload step in about 14
+seconds.
+
+After each successful COS upload, the workflow runs
+`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2`. COS keeps only the latest two
+sidecar artifact SHA directories for `qintopia-message-sidecar-linux-x86_64-gnu`,
+matching the GitHub Actions artifact retention policy. This retention is implemented in
+CI because bucket lifecycle rules are time-based and cannot express "latest two builds".
 
 Optional GitHub repository variables can override the workflow defaults:
 
