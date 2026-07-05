@@ -215,6 +215,8 @@ become versioned.
 - Corrected the M9-F execution plan so deploy bundles are release assembly inputs and
   production services move to `qintopia-agent-os-releases/current` instead of a
   deploy-bundle cache path.
+- Split artifact publication into an opt-in `Artifacts` workflow and changed CI so
+  docs-only changes run only the light gate instead of Rust/runtime builds.
 
 ### Fixed
 

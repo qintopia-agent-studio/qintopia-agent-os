@@ -14,17 +14,72 @@ env:
   NODE_VERSION: "24"
   RUST_TOOLCHAIN: "1.75.0"
   PNPM_VERSION: "10.29.2"
-  TENCENT_COS_BUCKET:
-    ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
-  TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
-  TENCENT_COS_PREFIX: ${{ vars.TENCENT_COS_PREFIX || 'qintopia-agent-os' }}
-  TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
-  TENCENT_COS_UPLOAD_ENABLED: ${{ vars.TENCENT_COS_UPLOAD_ENABLED || 'false' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    outputs:
+      full-check: ${{ steps.detect.outputs.full-check }}
+      changed-files: ${{ steps.detect.outputs.changed-files }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+          fi
+
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            mapfile -t changed < <(git show --name-only --pretty='' "$head_sha" | sed '/^$/d' | sort -u)
+          else
+            git fetch --no-tags --depth=1 origin "$base_sha" || true
+            mapfile -t changed < <(git diff --name-only "$base_sha" "$head_sha" | sort -u)
+          fi
+
+          full_check=false
+          for file in "${changed[@]}"; do
+            case "$file" in
+              *.md|docs/**|deploy/sidecar/docs/**)
+                ;;
+              *)
+                full_check=true
+                ;;
+            esac
+          done
+
+          {
+            echo "changed-files<<EOF"
+            printf '%s\n' "${changed[@]}"
+            echo "EOF"
+            echo "full-check=${full_check}"
+          } >> "$GITHUB_OUTPUT"
+
+          printf 'full-check=%s\n' "$full_check"
+          printf 'changed files:\n'
+          printf '  %s\n' "${changed[@]}"
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: changes
 
     permissions:
       contents: read
@@ -44,191 +99,30 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Light check
+        run: pnpm check:light
+
       - name: Setup Python
+        if: ${{ needs.changes.outputs.full-check == 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Setup Rust
+        if: ${{ needs.changes.outputs.full-check == 'true' }}
         uses: dtolnay/rust-toolchain@1.75.0
         with:
           components: rustfmt
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Runtime check
+        if: ${{ needs.changes.outputs.full-check == 'true' }}
+        run: pnpm check:runtime
 
-      - name: Check
-        run: pnpm check
-
-  sidecar-artifact:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-
-    permissions:
-      actions: write
-      contents: read
-
-    env:
-      TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
-      TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.75.0
-
-      - name: Build sidecar artifact
-        run: node tools/deploy/build-sidecar-artifact.mjs
-
-      - name: Upload sidecar artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: qintopia-message-sidecar-linux-x86_64-gnu
-          path: dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu
-          retention-days: 14
-          if-no-files-found: error
-
-      - name: Validate Tencent COS upload configuration
-        if: >-
-          ${{ env.TENCENT_COS_UPLOAD_ENABLED == 'true' && (env.TENCENT_COS_SECRET_ID ==
-          '' || env.TENCENT_COS_SECRET_KEY == '') }}
-        run: >-
-          echo "Tencent COS upload is enabled, but TENCENT_COS_SECRET_ID or
-          TENCENT_COS_SECRET_KEY is missing." >&2; exit 2
-
-      - name: Upload sidecar artifact to Tencent COS
-        if: >-
-          ${{ env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID !=
-          '' && env.TENCENT_COS_SECRET_KEY != '' }}
-        run: >-
-          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-dir
-          dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu --sha
-          "$GITHUB_SHA"
-        env:
-          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
-          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
-          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
-          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
-          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
-          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
-
-      - name: Prune old sidecar artifacts from Tencent COS
-        if: >-
-          ${{ env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID !=
-          '' && env.TENCENT_COS_SECRET_KEY != '' }}
-        run: >-
-          deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-name
-          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
-        env:
-          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
-          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
-          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
-          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
-          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
-          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
-
-      - name: Report Tencent COS upload disabled
-        if: ${{ env.TENCENT_COS_UPLOAD_ENABLED != 'true' }}
-        run: >-
-          echo "Tencent COS upload is disabled. GitHub Actions artifact upload remains
-          available; enable COS only after the bucket endpoint path is ready."
-
-      - name: Prune old sidecar artifacts
-        run: >-
-          node tools/deploy/prune-github-artifacts.mjs --artifact-name
-          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-  deploy-bundle-artifact:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-
-    permissions:
-      actions: write
-      contents: read
-
-    env:
-      TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
-      TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Build deploy bundle
-        run: node tools/deploy/build-deploy-bundle.mjs
-
-      - name: Upload deploy bundle
-        uses: actions/upload-artifact@v7
-        with:
-          name: qintopia-agent-os-deploy-bundle
-          path: dist/deploy-bundles/qintopia-agent-os-deploy-bundle
-          retention-days: 14
-          if-no-files-found: error
-
-      - name: Validate Tencent COS upload configuration
-        if: >-
-          ${{ env.TENCENT_COS_UPLOAD_ENABLED == 'true' && (env.TENCENT_COS_SECRET_ID ==
-          '' || env.TENCENT_COS_SECRET_KEY == '') }}
-        run: >-
-          echo "Tencent COS upload is enabled, but TENCENT_COS_SECRET_ID or
-          TENCENT_COS_SECRET_KEY is missing." >&2; exit 2
-
-      - name: Upload deploy bundle to Tencent COS
-        if: >-
-          ${{ env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID !=
-          '' && env.TENCENT_COS_SECRET_KEY != '' }}
-        run: >-
-          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-type deploy-bundle
-          --artifact-dir dist/deploy-bundles/qintopia-agent-os-deploy-bundle --sha
-          "$GITHUB_SHA"
-        env:
-          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
-          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
-          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
-          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
-          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
-          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
-
-      - name: Prune old deploy bundles from Tencent COS
-        if: >-
-          ${{ env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID !=
-          '' && env.TENCENT_COS_SECRET_KEY != '' }}
-        run: >-
-          deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-type deploy-bundle
-          --artifact-name qintopia-agent-os-deploy-bundle --keep 2
-        env:
-          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
-          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
-          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
-          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
-          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
-          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
-
-      - name: Report Tencent COS upload disabled
-        if: ${{ env.TENCENT_COS_UPLOAD_ENABLED != 'true' }}
-        run: >-
-          echo "Tencent COS upload is disabled. GitHub Actions deploy bundle artifact
-          remains available; enable COS only after the bucket endpoint path is ready."
-
-      - name: Prune old deploy bundles
-        run: >-
-          node tools/deploy/prune-github-artifacts.mjs --artifact-name
-          qintopia-agent-os-deploy-bundle --keep 2
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: Report docs-only check
+        if: ${{ needs.changes.outputs.full-check != 'true' }}
+        run: |
+          echo "Docs-only or Markdown-only change detected."
+          echo "Skipped Python/Rust runtime checks and artifact builds."

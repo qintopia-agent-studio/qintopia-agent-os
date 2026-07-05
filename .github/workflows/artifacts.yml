@@ -1,0 +1,280 @@
+name: Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_sidecar:
+        description: Build and publish the sidecar runtime artifact.
+        required: true
+        default: true
+        type: boolean
+      build_deploy_bundle:
+        description: Build and publish the deploy bundle artifact.
+        required: true
+        default: true
+        type: boolean
+      upload_cos:
+        description: Upload artifacts to Tencent COS after GitHub artifact upload.
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  RUST_TOOLCHAIN: "1.75.0"
+  PNPM_VERSION: "10.29.2"
+  TENCENT_COS_BUCKET:
+    ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
+  TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
+  TENCENT_COS_PREFIX: ${{ vars.TENCENT_COS_PREFIX || 'qintopia-agent-os' }}
+  TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
+  TENCENT_COS_UPLOAD_ENABLED: ${{ vars.TENCENT_COS_UPLOAD_ENABLED || 'false' }}
+
+jobs:
+  publish-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      build-sidecar: ${{ steps.plan.outputs.build-sidecar }}
+      build-deploy-bundle: ${{ steps.plan.outputs.build-deploy-bundle }}
+      upload-cos: ${{ steps.plan.outputs.upload-cos }}
+
+    steps:
+      - name: Decide artifact publication
+        id: plan
+        shell: bash
+        env:
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message || '' }}
+        run: |
+          set -euo pipefail
+
+          publish=false
+          build_sidecar=false
+          build_deploy_bundle=false
+          upload_cos=false
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            publish=true
+            build_sidecar="${{ inputs.build_sidecar }}"
+            build_deploy_bundle="${{ inputs.build_deploy_bundle }}"
+            upload_cos="${{ inputs.upload_cos }}"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/master" ]]; then
+            if [[ "$HEAD_COMMIT_MESSAGE" == *"[publish-artifacts]"* ]]; then
+              publish=true
+              build_sidecar=true
+              build_deploy_bundle=true
+              upload_cos=true
+            fi
+          fi
+
+          {
+            echo "publish=${publish}"
+            echo "build-sidecar=${build_sidecar}"
+            echo "build-deploy-bundle=${build_deploy_bundle}"
+            echo "upload-cos=${upload_cos}"
+          } >> "$GITHUB_OUTPUT"
+
+          printf 'publish=%s\n' "$publish"
+          printf 'build-sidecar=%s\n' "$build_sidecar"
+          printf 'build-deploy-bundle=%s\n' "$build_deploy_bundle"
+          printf 'upload-cos=%s\n' "$upload_cos"
+
+  no-artifact-publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: publish-plan
+    if: ${{ needs.publish-plan.outputs.publish != 'true' }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Skip artifact publication
+        run: >-
+          echo "Artifact publication is opt-in. Use workflow_dispatch or include
+          [publish-artifacts] in the commit message."
+
+  sidecar-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: publish-plan
+    if: >-
+      ${{ needs.publish-plan.outputs.publish == 'true' &&
+      needs.publish-plan.outputs.build-sidecar == 'true' }}
+
+    permissions:
+      actions: write
+      contents: read
+
+    env:
+      TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+      TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.75.0
+
+      - name: Build sidecar artifact
+        run: node tools/deploy/build-sidecar-artifact.mjs
+
+      - name: Upload sidecar artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-message-sidecar-linux-x86_64-gnu
+          path: dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Validate Tencent COS upload configuration
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && (env.TENCENT_COS_SECRET_ID == ''
+          || env.TENCENT_COS_SECRET_KEY == '') }}
+        run: >-
+          echo "Tencent COS upload is enabled, but TENCENT_COS_SECRET_ID or
+          TENCENT_COS_SECRET_KEY is missing." >&2; exit 2
+
+      - name: Upload sidecar artifact to Tencent COS
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID != '' &&
+          env.TENCENT_COS_SECRET_KEY != '' }}
+        run: >-
+          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-dir
+          dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu --sha
+          "$GITHUB_SHA"
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Prune old sidecar artifacts from Tencent COS
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID != '' &&
+          env.TENCENT_COS_SECRET_KEY != '' }}
+        run: >-
+          deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-name
+          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Prune old sidecar artifacts
+        run: >-
+          node tools/deploy/prune-github-artifacts.mjs --artifact-name
+          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  deploy-bundle-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: publish-plan
+    if: >-
+      ${{ needs.publish-plan.outputs.publish == 'true' &&
+      needs.publish-plan.outputs.build-deploy-bundle == 'true' }}
+
+    permissions:
+      actions: write
+      contents: read
+
+    env:
+      TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+      TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build deploy bundle
+        run: node tools/deploy/build-deploy-bundle.mjs
+
+      - name: Upload deploy bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-agent-os-deploy-bundle
+          path: dist/deploy-bundles/qintopia-agent-os-deploy-bundle
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Validate Tencent COS upload configuration
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && (env.TENCENT_COS_SECRET_ID == ''
+          || env.TENCENT_COS_SECRET_KEY == '') }}
+        run: >-
+          echo "Tencent COS upload is enabled, but TENCENT_COS_SECRET_ID or
+          TENCENT_COS_SECRET_KEY is missing." >&2; exit 2
+
+      - name: Upload deploy bundle to Tencent COS
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID != '' &&
+          env.TENCENT_COS_SECRET_KEY != '' }}
+        run: >-
+          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-type deploy-bundle
+          --artifact-dir dist/deploy-bundles/qintopia-agent-os-deploy-bundle --sha
+          "$GITHUB_SHA"
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Prune old deploy bundles from Tencent COS
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID != '' &&
+          env.TENCENT_COS_SECRET_KEY != '' }}
+        run: >-
+          deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-type deploy-bundle
+          --artifact-name qintopia-agent-os-deploy-bundle --keep 2
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Prune old deploy bundles
+        run: >-
+          node tools/deploy/prune-github-artifacts.mjs --artifact-name
+          qintopia-agent-os-deploy-bundle --keep 2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

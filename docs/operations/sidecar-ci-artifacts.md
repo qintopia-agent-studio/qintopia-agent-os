@@ -54,6 +54,12 @@ GitHub Actions keeps at most two non-expired artifacts with this exact name:
 - the current `master` build
 - the previous `master` build for rollback
 
+The `Artifacts` workflow publishes release artifacts. It is opt-in:
+
+- run it manually through `workflow_dispatch`, or
+- include `[publish-artifacts]` in the `master` commit message when an automatic
+  publication is intentional.
+
 The `sidecar-artifact` job uploads the new artifact first, then runs
 `pnpm artifact:prune:sidecar` with `actions: write` permission to delete older same-name
 artifacts. This limits repository artifact storage without changing the server rollback
@@ -61,7 +67,7 @@ model: once an artifact has been downloaded and verified on the server, the serv
 under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` remains separate
 from GitHub artifact retention.
 
-The same workflow also builds `qintopia-agent-os-deploy-bundle`, which contains reviewed
+The workflow can also build `qintopia-agent-os-deploy-bundle`, which contains reviewed
 operator files for M9-F: the Hermes MCP wrapper, systemd renderer, and deployment
 runbooks. GitHub Actions and COS both keep the latest two deploy bundle artifacts,
 matching the sidecar runtime artifact retention policy.

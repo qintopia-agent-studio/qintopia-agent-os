@@ -619,6 +619,12 @@ and future programming agents.
     runtime artifact and deploy bundle payload
   - worker units should point to `/home/ubuntu/qintopia-agent-os-releases/current`
     instead of directly to artifact or deploy-bundle cache paths
+- Optimized CI workflow shape:
+  - repository CI now always runs the light gate but skips Python/Rust runtime checks
+    for docs-only and Markdown-only changes
+  - artifact publication moved to a separate `Artifacts` workflow
+  - artifact publication is opt-in through `workflow_dispatch` or an explicit
+    `[publish-artifacts]` commit marker
 
 ## Update Rule
 

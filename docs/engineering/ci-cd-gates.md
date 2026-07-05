@@ -6,13 +6,19 @@ edits and single-file `scp` overwrites are not normal release paths.
 
 ## Required Local Check
 
-Run the full repository gate before opening or merging a PR:
+Run the full repository gate before opening or merging runtime or deployment changes:
 
 ```bash
 pnpm check
 ```
 
-The check currently includes:
+For docs-only work, run the light gate:
+
+```bash
+pnpm check:light
+```
+
+The light gate includes:
 
 - formatting and Markdown linting
 - registry and manifest validation
@@ -20,6 +26,9 @@ The check currently includes:
 - anti-drift policy checks
 - secret and runtime-state scanning
 - CI-safe deployment preflight
+
+The runtime gate adds:
+
 - QiWe package tests
 - sidecar Rust tests
 - no-credential sidecar smoke checks
@@ -49,28 +58,46 @@ scripts, and CI gate coverage.
 This command does not deploy and does not connect to the server. Actual deployment
 belongs to a reviewed runbook using an approved commit SHA.
 
-## GitHub Actions
+## GitHub Actions CI
 
 The GitHub Actions CI workflow runs on pull requests and pushes to `master`. It uses
-Node.js 24 actions, installs Node.js 24, pnpm, Python, Rust 1.75.0, and the `rustfmt`
-component, then runs `pnpm check`.
+Node.js 24 actions and always runs `pnpm check:light`.
 
-On `master` pushes, the workflow also builds and uploads the
-`qintopia-message-sidecar-linux-x86_64-gnu` artifact. The `check` and `sidecar-artifact`
-jobs run in parallel so wall-clock CI time is bounded by the slower job instead of the
-sum of both jobs. Deployment must still use only an artifact from a successful workflow
-run for the approved commit SHA, which means the paired `check` job has passed for the
-same commit.
+The CI workflow starts with a `changes` job. Markdown and docs-only changes skip
+Python/Rust runtime checks while still completing the required `check` job. Runtime,
+deployment script, package, workflow, or configuration changes run `pnpm check:runtime`
+after the light gate.
+
+Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
+leave branch protection checks pending. Keep the workflow running and skip only the
+heavy steps inside the workflow.
+
+## Artifact Publication
+
+Artifact publication is opt-in and lives in the `Artifacts` workflow. Use
+`workflow_dispatch` to choose:
+
+- `build_sidecar`
+- `build_deploy_bundle`
+- `upload_cos`
+
+As an explicit automation shortcut, a push to `master` whose head commit message
+contains `[publish-artifacts]` publishes both artifact families and uploads to COS.
+Normal docs, planning, and repository maintenance commits do not build or upload
+artifacts.
+
+Deployment must still use only an artifact from a successful workflow run for the
+approved commit SHA, and the paired CI `check` job must have passed for the same commit.
 
 The artifact contains the release binary, `artifact-manifest.json`, and `SHA256SUMS` for
 M9 server verification. The server should download and verify this artifact for an
 approved commit SHA, then set the executable bit after checksum verification, instead of
 rebuilding the sidecar on the server.
 
-After upload, the artifact job prunes older GitHub Actions artifacts with the same
-artifact name and keeps only the latest two: the current build and the previous build
-for rollback. The artifact job has `actions: write` only for this cleanup step; the
-repository check job remains read-only.
+After upload, artifact jobs prune older GitHub Actions artifacts with the same artifact
+name and keep only the latest two: the current build and the previous build for
+rollback. COS artifact pruning follows the same latest-two policy. Artifact jobs have
+`actions: write` only for cleanup; repository CI remains read-only.
 
 Rust dependency caching is intentionally not enabled yet. The sidecar is pinned to Rust
 1.75.0 for server compatibility, and the first Rust-specific cache trial produced

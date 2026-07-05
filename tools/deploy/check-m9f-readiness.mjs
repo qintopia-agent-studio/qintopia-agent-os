@@ -47,8 +47,11 @@ const packageJson = JSON.parse(readText("package.json"));
 if (!packageJson.scripts?.["deploy:m9f:check"]) {
   addError("package.json: missing deploy:m9f:check script");
 }
-if (!packageJson.scripts?.check?.includes("pnpm deploy:m9f:check")) {
-  addError("package.json: check script must include pnpm deploy:m9f:check");
+if (!packageJson.scripts?.["check:light"]?.includes("pnpm deploy:m9f:check")) {
+  addError("package.json: check:light script must include pnpm deploy:m9f:check");
+}
+if (!packageJson.scripts?.check?.includes("pnpm check:light")) {
+  addError("package.json: check script must include pnpm check:light");
 }
 
 const wrapperPath = "deploy/sidecar/scripts/hermes/qintopia-context-mcp";
@@ -79,10 +82,12 @@ try {
     [
       "--target-sha",
       "m9f-check",
+      "--artifact-dir",
+      "/home/ubuntu/qintopia-agent-os-releases/current/sidecar",
       "--monorepo-dir",
-      "/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload",
+      "/home/ubuntu/qintopia-agent-os-releases/current",
       "--migrations-dir",
-      "/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload/runtime/postgres/migrations",
+      "/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations",
       "--output-dir",
       renderedDir,
     ],
@@ -100,10 +105,10 @@ try {
     }
     const unit = fs.readFileSync(unitPath, "utf8");
     for (const requiredFragment of [
-      "WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload",
-      "ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/m9f-check/qintopia-message-sidecar",
+      "WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current",
+      "ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar",
       command,
-      "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload/runtime/postgres/migrations",
+      "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations",
       "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check",
     ]) {
       if (!unit.includes(requiredFragment)) {
@@ -133,7 +138,7 @@ const m9fDoc = exists("deploy/sidecar/docs/m9f-legacy-reference-removal.md")
   ? readText("deploy/sidecar/docs/m9f-legacy-reference-removal.md")
   : "";
 for (const requiredFragment of [
-  "/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+  "/home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/hermes/qintopia-context-mcp",
   "deploy-bundle",
   "QINTOPIA_DEPLOYED_COMMIT_SHA",
   "Do not enable operations timers",

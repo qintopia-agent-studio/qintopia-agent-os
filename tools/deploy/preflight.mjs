@@ -31,6 +31,8 @@ const requiredScripts = [
   "test:qiwe",
   "test:sidecar",
   "smoke:sidecar",
+  "check:light",
+  "check:runtime",
   "check",
 ];
 
@@ -55,7 +57,9 @@ const requiredDocs = [
   "tools/deploy/build-deploy-bundle.mjs",
 ];
 
-const requiredCheckFragments = [
+const requiredCheckFragments = ["pnpm check:light", "pnpm check:runtime"];
+
+const requiredLightCheckFragments = [
   "pnpm format:check",
   "pnpm lint:md",
   "pnpm registry:check",
@@ -67,7 +71,12 @@ const requiredCheckFragments = [
   "pnpm deploy:cos:check",
   "pnpm deploy:systemd:check",
   "pnpm deploy:m9f:check",
+];
+
+const requiredRuntimeCheckFragments = [
   "pnpm test:qiwe",
+  "pnpm fmt:sidecar",
+  "pnpm check:sidecar",
   "pnpm test:sidecar",
   "pnpm smoke:sidecar",
 ];
@@ -111,6 +120,18 @@ for (const scriptName of requiredScripts) {
 for (const fragment of requiredCheckFragments) {
   if (!scripts.check?.includes(fragment)) {
     addError(`package.json: check script must include '${fragment}'`);
+  }
+}
+
+for (const fragment of requiredLightCheckFragments) {
+  if (!scripts["check:light"]?.includes(fragment)) {
+    addError(`package.json: check:light script must include '${fragment}'`);
+  }
+}
+
+for (const fragment of requiredRuntimeCheckFragments) {
+  if (!scripts["check:runtime"]?.includes(fragment)) {
+    addError(`package.json: check:runtime script must include '${fragment}'`);
   }
 }
 
@@ -517,13 +538,37 @@ const ciWorkflow = exists(".github/workflows/ci.yml")
   ? readText(".github/workflows/ci.yml")
   : "";
 for (const phrase of [
-  "sidecar-artifact",
-  "deploy-bundle-artifact",
+  "changes:",
+  "full-check",
+  "pnpm check:light",
+  "pnpm check:runtime",
+  "Docs-only or Markdown-only change detected.",
   'NODE_VERSION: "24"',
   "pnpm/action-setup@v6",
   "actions/checkout@v7",
   "actions/setup-node@v6",
   "actions/setup-python@v6",
+  "concurrency:",
+  "cancel-in-progress: true",
+  "dtolnay/rust-toolchain@1.75.0",
+  "components: rustfmt",
+]) {
+  if (!ciWorkflow.includes(phrase)) {
+    addError(`.github/workflows/ci.yml: must include ${phrase}`);
+  }
+}
+
+const artifactsWorkflow = exists(".github/workflows/artifacts.yml")
+  ? readText(".github/workflows/artifacts.yml")
+  : "";
+for (const phrase of [
+  "workflow_dispatch:",
+  "build_sidecar:",
+  "build_deploy_bundle:",
+  "upload_cos:",
+  "[publish-artifacts]",
+  "sidecar-artifact",
+  "deploy-bundle-artifact",
   "actions/upload-artifact@v7",
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
@@ -536,18 +581,13 @@ for (const phrase of [
   "env.TENCENT_COS_REGION",
   "secrets.TENCENT_COS_SECRET_ID",
   "actions: write",
-  "concurrency:",
-  "cancel-in-progress: true",
-  "github.event_name == 'push' && github.ref == 'refs/heads/master'",
   "node tools/deploy/prune-github-artifacts.mjs",
   "retention-days: 14",
   "qintopia-message-sidecar-linux-x86_64-gnu",
-  "qintopia-agent-os-deploy-bundle",
   "dtolnay/rust-toolchain@1.75.0",
-  "components: rustfmt",
 ]) {
-  if (!ciWorkflow.includes(phrase)) {
-    addError(`.github/workflows/ci.yml: must include ${phrase}`);
+  if (!artifactsWorkflow.includes(phrase)) {
+    addError(`.github/workflows/artifacts.yml: must include ${phrase}`);
   }
 }
 
@@ -558,6 +598,19 @@ if (ciWorkflow) {
       if (String(step?.if ?? "").includes("secrets.")) {
         addError(
           `.github/workflows/ci.yml: jobs.${jobName}.steps[${stepIndex}].if must use env instead of secrets`
+        );
+      }
+    }
+  }
+}
+
+if (artifactsWorkflow) {
+  const artifactsWorkflowYaml = readYaml(".github/workflows/artifacts.yml");
+  for (const [jobName, job] of Object.entries(artifactsWorkflowYaml.jobs ?? {})) {
+    for (const [stepIndex, step] of (job?.steps ?? []).entries()) {
+      if (String(step?.if ?? "").includes("secrets.")) {
+        addError(
+          `.github/workflows/artifacts.yml: jobs.${jobName}.steps[${stepIndex}].if must use env instead of secrets`
         );
       }
     }
