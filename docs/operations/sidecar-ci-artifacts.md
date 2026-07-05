@@ -95,9 +95,9 @@ GitHub repository secrets are present:
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`
 
-The upload CAM key should be scoped to the artifact prefix. Because COSCLI `cp` can
-probe object metadata and use multipart upload, the policy must cover object write,
-object head/options checks, and multipart upload operations for
+The upload CAM key should be scoped narrowly but must still cover how COSCLI works:
+`config add`/`cp` can require `HeadBucket` and `GetBucket` at bucket scope, while object
+write, object head/options checks, and multipart upload operations should be limited to
 `qintopia-agent-os/sidecar/*`.
 
 Optional GitHub repository variables can override the workflow defaults:

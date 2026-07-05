@@ -48,11 +48,46 @@ Use separate identities for CI upload and server download.
 Do not use root account keys. Do not put COS keys in git, systemd unit files, shell
 history, or chat logs.
 
-GitHub Actions upload uses COSCLI `cp`, which may probe bucket/object state and may use
-multipart upload depending on file size and COSCLI behavior. The upload CAM policy
-should therefore allow the artifact prefix to perform object writes, object head/options
-checks, and multipart upload actions such as initiating, uploading parts, completing,
-aborting, and listing parts. Keep the resource scope limited to:
+GitHub Actions upload uses COSCLI `config add` and `cp`. COSCLI may probe bucket/object
+state and may use multipart upload depending on file size and COSCLI behavior. The
+upload CAM policy should therefore allow bucket probe/list actions at the bucket scope
+and object write/multipart actions at the artifact prefix scope.
+
+Bucket-scoped probe actions:
+
+```json
+{
+  "effect": "allow",
+  "action": ["name/cos:HeadBucket", "name/cos:GetBucket"],
+  "resource": [
+    "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/*"
+  ]
+}
+```
+
+Object-scoped upload actions:
+
+```json
+{
+  "effect": "allow",
+  "action": [
+    "name/cos:HeadObject",
+    "name/cos:OptionsObject",
+    "name/cos:PutObject",
+    "name/cos:InitiateMultipartUpload",
+    "name/cos:UploadPart",
+    "name/cos:CompleteMultipartUpload",
+    "name/cos:AbortMultipartUpload",
+    "name/cos:ListMultipartUploads",
+    "name/cos:ListParts"
+  ],
+  "resource": [
+    "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*"
+  ]
+}
+```
+
+Keep write scope limited to:
 
 ```text
 qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*

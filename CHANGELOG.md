@@ -182,3 +182,5 @@ become versioned.
 - Hardened COS artifact upload and fetch scripts so SecretKey values are used only while
   writing temporary COSCLI config, transfer commands no longer pass credentials through
   `cp` arguments, and COSCLI failures include non-secret diagnostics.
+- Added sanitized COSCLI failure output so CI can distinguish bucket configuration,
+  permission, and object upload errors without printing COS credentials.

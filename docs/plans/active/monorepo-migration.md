@@ -435,6 +435,9 @@ and future programming agents.
   - hardened COS upload/download scripts so transfer commands use temporary COSCLI
     config files instead of passing SecretKey values through `cp` arguments, and emit
     non-secret diagnostics when COSCLI fails
+  - confirmed the latest CI failure is at COSCLI bucket configuration before file
+    upload; the next likely fix is completing the CI upload CAM policy for bucket
+    probe/list plus prefix-scoped object and multipart upload permissions
 
 ## Update Rule
 

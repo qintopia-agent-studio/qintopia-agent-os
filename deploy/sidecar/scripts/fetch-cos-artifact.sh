@@ -86,6 +86,32 @@ log() {
   printf '%s\n' "$*" >&2
 }
 
+print_sanitized_coscli_output() {
+  python3 - "$1" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8", errors="replace") as fh:
+    output = fh.read()
+
+for name in (
+    "TENCENT_COS_SECRET_ID",
+    "TENCENT_COS_SECRET_KEY",
+    "TENCENT_COS_SESSION_TOKEN",
+):
+    value = os.environ.get(name, "")
+    if value:
+        output = output.replace(value, "***")
+
+if output.strip():
+    sys.stderr.write("COSCLI output:\n")
+    sys.stderr.write(output)
+    if not output.endswith("\n"):
+        sys.stderr.write("\n")
+PY
+}
+
 auth_mode="${TENCENT_COS_AUTH_MODE:-SecretKey}"
 if [[ "$auth_mode" == "CvmRole" ]]; then
   require_env TENCENT_COS_CVM_ROLE_NAME
@@ -129,7 +155,8 @@ run_coscli() {
   shift
 
   set +e
-  "$coscli_path" "$@"
+  local output_path="${tmp_dir}/coscli-output.log"
+  "$coscli_path" "$@" >"$output_path" 2>&1
   local status=$?
   set -e
 
@@ -138,6 +165,7 @@ run_coscli() {
     echo "Source bucket alias: ${bucket_alias}" >&2
     echo "Source object prefix: ${remote_base}/" >&2
     echo "Credentials were not printed. Check server COS auth and object read permissions." >&2
+    print_sanitized_coscli_output "$output_path"
     exit "$status"
   fi
 }
@@ -150,8 +178,7 @@ if [[ "$auth_mode" == "CvmRole" ]]; then
     --cvm_role_name "$TENCENT_COS_CVM_ROLE_NAME" \
     -c "$config_path" \
     --init-skip \
-    --disable-log \
-    >/dev/null
+    --disable-log
 else
   config_auth_args+=(-i "$TENCENT_COS_SECRET_ID" -k "$TENCENT_COS_SECRET_KEY")
   if [[ -n "${TENCENT_COS_SESSION_TOKEN:-}" ]]; then
@@ -164,8 +191,7 @@ run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   -r "$TENCENT_COS_REGION" \
   -a "$bucket_alias" \
   -c "$config_path" \
-  "${config_auth_args[@]}" \
-  >/dev/null
+  "${config_auth_args[@]}"
 
 mkdir -p "$output_dir"
 for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do

@@ -84,6 +84,32 @@ log() {
   printf '%s\n' "$*" >&2
 }
 
+print_sanitized_coscli_output() {
+  python3 - "$1" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8", errors="replace") as fh:
+    output = fh.read()
+
+for name in (
+    "TENCENT_COS_SECRET_ID",
+    "TENCENT_COS_SECRET_KEY",
+    "TENCENT_COS_SESSION_TOKEN",
+):
+    value = os.environ.get(name, "")
+    if value:
+        output = output.replace(value, "***")
+
+if output.strip():
+    sys.stderr.write("COSCLI output:\n")
+    sys.stderr.write(output)
+    if not output.endswith("\n"):
+        sys.stderr.write("\n")
+PY
+}
+
 for file_path in "$manifest_path" "$checksum_path" "$binary_path"; do
   if [[ ! -f "$file_path" ]]; then
     echo "artifact file not found: $file_path" >&2
@@ -138,7 +164,8 @@ run_coscli() {
   shift
 
   set +e
-  "$coscli_path" "$@"
+  local output_path="${tmp_dir}/coscli-output.log"
+  "$coscli_path" "$@" >"$output_path" 2>&1
   local status=$?
   set -e
 
@@ -148,6 +175,7 @@ run_coscli() {
     echo "Destination object prefix: ${remote_base}/" >&2
     echo "Credentials were not printed. Check CI COS SecretId/SecretKey and CAM upload permissions." >&2
     echo "COSCLI upload commonly requires bucket probe, object write, and multipart upload permissions for this prefix." >&2
+    print_sanitized_coscli_output "$output_path"
     exit "$status"
   fi
 }
@@ -170,8 +198,7 @@ run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   -c "$config_path" \
   --init-skip \
   --disable-log \
-  "${auth_args[@]}" \
-  >/dev/null
+  "${auth_args[@]}"
 
 for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
   log "Uploading ${file_name} to cos://${bucket_alias}/${remote_base}/${file_name}"
