@@ -113,6 +113,31 @@ release/current path.
 
 Do not point Hermes MCP config back to the old standalone checkout.
 
+## Deploy Runner And Wrapper Boundary
+
+M9-F has two separate concerns:
+
+1. Runtime release: worker binaries must come from the COS-verified artifact or the
+   future `release/current` directory.
+2. Deploy runner and wrapper files: scripts, renderers, and Hermes command wrappers must
+   come from a reviewed deploy runner path.
+
+Do not mix these concerns. A server-side git checkout may be used only to upgrade the
+deploy runner or wrapper after owner approval. It must not become the normal way to
+release sidecar runtime code.
+
+Before the M9-F execution window, choose one wrapper path:
+
+| Option                               | Use when                                                                                     | Notes                                                                                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Upgrade deploy runner checkout       | The existing `/home/ubuntu/qintopia-agent-os-monorepo` checkout is kept as the deploy runner | Record the before and after deploy-runner SHA separately from the runtime artifact SHA.        |
+| Release-managed wrapper              | M10 `release/current` is assembled before Hermes MCP repoint                                 | Preferred long-term shape. Hermes points to a wrapper inside the immutable release directory.  |
+| Dedicated reviewed wrapper directory | The team wants to avoid changing the deploy checkout during M9-F                             | Copy only reviewed wrapper files into a versioned operator path with backup and checksum note. |
+
+The current blocker is concrete: the live server deploy checkout was verified at
+`94244504440a4f8fdb2eec07fd37b54db97fe368`, whose `qintopia-context-mcp` wrapper still
+defaults to `/home/ubuntu/qintopia-msg-sidecar`. Do not repoint Hermes to that wrapper.
+
 ## Read-Only Preflight
 
 Before a server mutation window:
@@ -151,6 +176,27 @@ Record the output in the follow-up migration evidence.
    it.
 10. Re-run read-only reference checks and confirm no active process or active unit still
     references the old checkout.
+
+## Execution Window Checklist
+
+Enter the M9-F mutation window only when all of these are true:
+
+- The owner has approved the wrapper installation path.
+- The runtime artifact SHA and wrapper/deploy-runner SHA are recorded separately.
+- The target artifact has passed CI and server-side COS download/checksum validation.
+- The six current worker unit files have been backed up.
+- The affected Hermes MCP config files have been backed up.
+- The rendered worker unit diff contains only the approved worker repoints.
+- The wrapper path does not contain `/home/ubuntu/qintopia-msg-sidecar`.
+- Rollback commands and previous unit/config paths are visible in the operator shell.
+
+Exit the window only after:
+
+- All six previously active workers are active again.
+- Affected Hermes profile processes are healthy if MCP config changed.
+- No active process or active unit references `/home/ubuntu/qintopia-msg-sidecar`.
+- No operations timers, external-send paths, or real workbench adapters were enabled.
+- Evidence is recorded back into the migration plan and changelog.
 
 ## Rollback
 

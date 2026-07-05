@@ -558,6 +558,28 @@ and future programming agents.
   - next required decision before the M9-F execution window: perform a separately
     approved deploy-runner upgrade, or use a reviewed release-managed wrapper path, so
     Hermes MCP does not repoint back to the legacy checkout
+- Clarified the M9-F deploy runner boundary:
+  - runtime release remains COS artifact first; server git is not the normal release
+    path
+  - deploy runner and wrapper files are a separate approved change from the runtime
+    artifact SHA
+  - the accepted options are deploy-runner checkout upgrade, release-managed wrapper, or
+    a dedicated reviewed wrapper directory with backup and checksum evidence
+- Ran a server `/tmp` read-only wrapper preflight without changing checkout, systemd,
+  symlinks, Hermes profile config, or services:
+  - copied the current `deploy/sidecar/scripts/hermes/qintopia-context-mcp` to
+    `/tmp/qintopia-m9f-wrapper-preflight/qintopia-context-mcp`
+  - confirmed wrapper SHA256:
+    `4fab76af29320a513cd30395970c926f45e75178f67d2c8dfc4d9a7e709479d6`
+  - confirmed the wrapper contains zero `/home/ubuntu/qintopia-msg-sidecar` references
+  - confirmed the COS-readonly artifact binary exists at
+    `/tmp/qintopia-agent-os-cos-readonly/0782f6d0f3f46d1285444f9a21f1669791be1d5e/qintopia-message-sidecar`
+  - ran the wrapper with `QINTOPIA_SIDECAR_BIN` pointing at that `/tmp` artifact and
+    `/etc/qintopia/message-sidecar.env`; it exited `0` with no stderr, proving the
+    reviewed wrapper can resolve the verified artifact without falling back to the old
+    checkout
+  - M9-F is still not approved for mutation; this preflight only clears the wrapper
+    resolution risk
 
 ## Update Rule
 
@@ -576,7 +598,9 @@ Remaining follow-up after the active service cutover:
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
 - M9-F execution blocker: the server deploy checkout is still at `9424450` and its
   `qintopia-context-mcp` wrapper still defaults to the old checkout. Resolve the deploy
-  runner/wrapper path before mutating worker units or Hermes profile config.
+  runner/wrapper path before mutating worker units or Hermes profile config. The
+  reviewed wrapper has passed `/tmp` resolution preflight against the COS-readonly
+  artifact, but the live server path still needs an owner-approved installation choice.
 - COS artifact distribution: the accelerated upload path, CI-side COS pruning, and
   server-side read-only download verification have passed for artifact
   `0782f6d0f3f46d1285444f9a21f1669791be1d5e`; use this path for the next M9-F
@@ -594,29 +618,34 @@ Remaining follow-up after the active service cutover:
 
 Recommended order:
 
-1. Complete M9-F by repointing remaining active
+1. Choose and approve the M9-F wrapper installation path:
+   - upgrade `/home/ubuntu/qintopia-agent-os-monorepo` as the deploy runner and record
+     its before/after SHA separately from the runtime artifact SHA
+   - or use a release-managed wrapper path if M10 release/current is assembled first
+   - or install a dedicated reviewed wrapper directory with backup and checksum evidence
+2. Complete M9-F by repointing remaining active
    `qintopia-agentos-member-profile-worker`, `qintopia-agentos-graph-projection-worker`,
    `qintopia-agentos-raw-archive-worker`, `qintopia-agentos-event-signal-worker`,
    `qintopia-agentos-daily-digest-worker`, and `qintopia-agentos-daily-digest-publisher`
    services away from `/home/ubuntu/qintopia-msg-sidecar`.
-2. Move Hermes `mcp-context` command references away from
+3. Move Hermes `mcp-context` command references away from
    `/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp` and into a
    reviewed monorepo/release-managed command path.
-3. Design M10 release packaging:
+4. Design M10 release packaging:
    - `sidecar-runtime` release payload
    - `hermes-profile-bundle-<agent>` payloads for reviewed non-secret profile files
    - `skill-bundle-<skill>` payloads for Hermes plugins such as `skills/qiwe`
    - `qintopia-agent-os-releases/<sha>` with `current` and `previous` symlinks
-4. Keep server-side GitHub access out of routine runtime releases. Use it only for
+5. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
-5. Do not repoint production to a newer commit just because docs changed; use a new
+6. Do not repoint production to a newer commit just because docs changed; use a new
    approved target SHA and artifact only when there is a production runtime change.
-6. Do not enable real external send or real workbench adapter paths until production
+7. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-7. After no process, unit, timer, cron, MCP command, or nginx route references legacy
+8. After no process, unit, timer, cron, MCP command, or nginx route references legacy
    paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
    `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
    `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and
    OpenClaw paths only with owner approval.
-8. Add deploy smoke and rollback notes before any production wiring changes for
+9. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe` or Erhua profile bundles.

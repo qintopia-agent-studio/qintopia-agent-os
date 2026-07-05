@@ -88,6 +88,8 @@ become versioned.
 - Added `docs/operations/release-current-model.md` for the M10 immutable release
   directory, `current`/`previous` symlink, rollback, and Hermes mount model.
 - Added the server read-only COS CAM policy required for Lighthouse artifact downloads.
+- Added the M9-F deploy runner and wrapper boundary to separate runtime artifact
+  releases from reviewed operator script upgrades.
 
 ### Changed
 
@@ -196,6 +198,9 @@ become versioned.
   `0782f6d0f3f46d1285444f9a21f1669791be1d5e` after the server CAM policy was corrected.
 - Recorded M9-F preflight and unit diff findings, including the deploy-runner wrapper
   blocker that must be resolved before worker or Hermes MCP repointing.
+- Recorded the server `/tmp` wrapper preflight proving the reviewed Hermes MCP wrapper
+  can resolve the COS-readonly artifact without falling back to
+  `/home/ubuntu/qintopia-msg-sidecar`.
 
 ### Fixed
 
