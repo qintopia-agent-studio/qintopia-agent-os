@@ -28,8 +28,29 @@ const sourceFiles = [
   "skills/qintopia-tools/manifest.yaml",
   "skills/qintopia-tools/README.md",
   "skills/qintopia-tools/docs/source-snapshot.md",
+  "skills/qiwe/manifest.yaml",
+  "skills/qiwe/README.md",
+  "skills/qiwe/__init__.py",
+  "skills/qiwe/adapter.py",
+  "skills/qiwe/nats_capture.py",
+  "skills/qiwe/passive_pipeline.py",
+  "skills/qiwe/plugin.yaml",
+  "skills/qiwe/qiwe_events.py",
 ];
-const sourceDirs = ["runtime/postgres/migrations", "skills/qintopia-tools/variants"];
+const sourceDirs = [
+  "runtime/postgres/migrations",
+  "skills/qintopia-tools/variants",
+  "skills/qiwe/docs",
+  "skills/qiwe/scripts",
+  "skills/qiwe/solitaire",
+  "skills/qiwe/tests",
+];
+const sourceDirExcludes = [
+  /(^|\/)__pycache__(\/|$)/,
+  /\.pyc$/,
+  /(^|\/)\.DS_Store$/,
+  /\.bak/,
+];
 
 const run = (command, args, options = {}) =>
   (
@@ -94,10 +115,14 @@ const collectDirectoryFiles = (relativeDir) => {
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const absolutePath = path.join(dir, entry.name);
+      const relativePath = path.relative(repoRoot, absolutePath);
+      if (sourceDirExcludes.some((pattern) => pattern.test(relativePath))) {
+        continue;
+      }
       if (entry.isDirectory()) {
         walk(absolutePath);
       } else if (entry.isFile()) {
-        discovered.push(path.relative(repoRoot, absolutePath));
+        discovered.push(relativePath);
       }
     }
   };
@@ -160,6 +185,7 @@ const manifest = {
       "render systemd units from payload/render-systemd-units.sh for the approved runtime artifact SHA",
       "use payload/runtime/postgres/migrations as QINTOPIA_SIDECAR_MIGRATIONS_DIR",
       "verify skills/qintopia-tools variants are present before any profile plugin repoint",
+      "verify skills/qiwe is present before any Erhua qiwe-platform plugin repoint",
     ],
   },
 };

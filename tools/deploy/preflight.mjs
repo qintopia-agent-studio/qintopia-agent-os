@@ -373,6 +373,9 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "runtime/postgres/migrations",
     "skills/qintopia-tools/variants",
     "skills/qintopia-tools/manifest.yaml",
+    "skills/qiwe/adapter.py",
+    "skills/qiwe/plugin.yaml",
+    "skills/qiwe/solitaire",
     "artifact-manifest.json",
     "SHA256SUMS",
     'run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"])',
@@ -382,6 +385,29 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
         `tools/deploy/build-deploy-bundle.mjs: must build the deploy bundle (${requiredFragment})`
       );
     }
+  }
+}
+
+if (exists("skills/qiwe/adapter.py")) {
+  const qiweAdapter = readText("skills/qiwe/adapter.py");
+  for (const forbiddenFragment of [
+    "/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp",
+    "/home/ubuntu/qintopia-agent-os-monorepo/deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+  ]) {
+    if (qiweAdapter.includes(forbiddenFragment)) {
+      addError(
+        `skills/qiwe/adapter.py: default context MCP command must not point to deprecated or diagnostic checkout path (${forbiddenFragment})`
+      );
+    }
+  }
+  if (
+    !qiweAdapter.includes(
+      "/home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/hermes/qintopia-context-mcp"
+    )
+  ) {
+    addError(
+      "skills/qiwe/adapter.py: default context MCP command must point through release/current"
+    );
   }
 }
 
