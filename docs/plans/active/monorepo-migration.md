@@ -74,7 +74,7 @@ and future programming agents.
 | M7 WorkTool decommission    | Complete    | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                             |
 | M8 CI/CD deployment gate    | Complete    | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                            |
 | M9 server cutover           | Complete    | all nine sidecar/worker services and the context MCP path run from `qintopia-agent-os-releases/current`; external adapter enablement remains a separate allowlist/config decision |
-| M10 release model           | In progress | versioned release directories and `current`/`previous` symlinks now cover sidecar runtime, context MCP, collab MCP, and the shared `qintopia-tools` profile variants              |
+| M10 release model           | In progress | versioned release directories and `current`/`previous` symlinks now cover sidecar runtime, context MCP, collab MCP, shared `qintopia-tools`, and Erhua `qiwe-platform`            |
 
 ## Progress Log
 
@@ -810,6 +810,42 @@ and future programming agents.
     against NATS and Postgres, and all nine Qintopia system services are active
   - did not delete or archive the old profile-local plugin copies; cleanup remains
     M11/M12 gated
+- Completed M10-D production repoint:
+  - reconciled Erhua `qiwe-platform` before release packaging; server tracked source is
+    `main@6f69794` with only the historical untracked backup
+    `adapter.py.bak.home-group-send-20260607-1050`, which remains server-side audit
+    evidence and was not packaged
+  - changed `skills/qiwe/adapter.py` so the fallback context MCP command points through
+    `/home/ubuntu/qintopia-agent-os-releases/current` instead of the deprecated
+    `qintopia-msg-sidecar` checkout or the diagnostic server git checkout
+  - added `skills/qiwe` to the deploy bundle payload and extended deploy preflight to
+    require the package and reject deprecated QiWe context MCP fallback paths
+  - CI passed for `99681909149fde4f16daa3af941a750d1f239860`
+  - published an opt-in deploy bundle for `99681909149fde4f16daa3af941a750d1f239860`
+    without rebuilding the sidecar runtime artifact
+  - verified the deploy bundle from COS on the server, including `SHA256SUMS`,
+    `artifact-manifest.json`, `qintopia-agent-os-deploy-bundle.tar.gz`, and the
+    `skills/qiwe` payload
+  - assembled immutable release directory
+    `/home/ubuntu/qintopia-agent-os-releases/99681909149fde4f16daa3af941a750d1f239860`
+    by preserving the existing sidecar runtime from
+    `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6` and overlaying the new deploy bundle
+    payload
+  - set `/home/ubuntu/qintopia-agent-os-releases/previous` to
+    `e7227734f6e84493f7709290d615297daf8d1165` and `current` to
+    `99681909149fde4f16daa3af941a750d1f239860`
+  - backed up the old Erhua profile-local `qiwe-platform` plugin checkout under
+    `/home/ubuntu/qintopia-agent-os-backups/m10d-qiwe-platform-20260705T144000Z`
+  - repointed `.hermes/profiles/erhua/plugins/qiwe-platform` to
+    `/home/ubuntu/qintopia-agent-os-releases/current/skills/qiwe`
+  - verified Erhua, Xiaoman, Wenyuange, Huabaosi, and Silaoshi profile services are
+    active, all nine Qintopia system services are active, the release sidecar `check`
+    passes against NATS and Postgres, there are no running process refs to
+    `qintopia-msg-sidecar`, the old profile-local QiWe plugin path, or the diagnostic
+    monorepo checkout, and the release-managed QiWe plugin contains no `pycache`, `pyc`,
+    or backup files
+  - did not delete or archive the old QiWe plugin checkout; cleanup remains M11/M12
+    gated
 
 ## Update Rule
 
@@ -821,17 +857,17 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Remaining follow-up after the M10-C `qintopia-tools` release/current cutover:
+Remaining follow-up after the M10-D `qiwe-platform` release/current cutover:
 
 - Server deploy checkout remains a transition diagnostic checkout at `9424450`; do not
   use `git fetch` as the routine release path.
 - Current release:
-  `/home/ubuntu/qintopia-agent-os-releases/e7227734f6e84493f7709290d615297daf8d1165`.
+  `/home/ubuntu/qintopia-agent-os-releases/99681909149fde4f16daa3af941a750d1f239860`.
 - Previous release:
-  `/home/ubuntu/qintopia-agent-os-releases/f1b5f4e44066bcf4aa6621738c4c15c2a107df2a`.
-- M9-F, M10-B, and M10-C are release/current-managed. The remaining M10 work is Erhua
-  `qiwe-platform`, Huabaosi `qintopia-base-read`, and reviewed profile template
-  migration, not sidecar runtime cutover.
+  `/home/ubuntu/qintopia-agent-os-releases/e7227734f6e84493f7709290d615297daf8d1165`.
+- M9-F, M10-B, M10-C, and M10-D are release/current-managed. The remaining M10 work is
+  Huabaosi `qintopia-base-read` and reviewed profile template migration, not sidecar
+  runtime cutover.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
 - Deprecated runtime cleanup: WorkTool, Xiaoqin WorkTool, OpenClaw, and related nginx
@@ -842,23 +878,21 @@ Remaining follow-up after the M10-C `qintopia-tools` release/current cutover:
 
 Recommended order:
 
-1. M10-D: reconcile Erhua `qiwe-platform` server state before migrating it through
-   `skills/qiwe`.
-2. M10-E: review Huabaosi `qintopia-base-read` after collab MCP migration.
-3. M10-F: plan reviewed `config.yaml` and `SOUL.md` profile templates/symlinks without
+1. M10-E: review Huabaosi `qintopia-base-read` after collab MCP and QiWe migration.
+2. M10-F: plan reviewed `config.yaml` and `SOUL.md` profile templates/symlinks without
    replacing whole profile directories.
-4. M11: mark legacy paths as `archive-ready` only after no process, unit/timer, Hermes
+3. M11: mark legacy paths as `archive-ready` only after no process, unit/timer, Hermes
    config, nginx route, cron job, or rollback dependency references them.
-5. Keep server-side GitHub access out of routine runtime releases. Use it only for
+4. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
-6. Do not repoint production to a newer commit just because docs changed; use a new
+5. Do not repoint production to a newer commit just because docs changed; use a new
    approved target SHA and artifact only when there is a production runtime change.
-7. Do not enable real external send or real workbench adapter paths until production
+6. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-8. After no process, unit, timer, cron, MCP command, or nginx route references legacy
+7. After no process, unit, timer, cron, MCP command, or nginx route references legacy
    paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
    `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
    `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and
    OpenClaw paths only with owner approval.
-9. Add deploy smoke and rollback notes before any production wiring changes for
-   `skills/qiwe` or Erhua profile bundles.
+8. Add deploy smoke and rollback notes before any production wiring changes for Huabaosi
+   Base or profile template bundles.

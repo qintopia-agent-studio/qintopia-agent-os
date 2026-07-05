@@ -253,6 +253,13 @@ become versioned.
   `/home/ubuntu/qintopia-agent-os-releases/e7227734f6e84493f7709290d615297daf8d1165`,
   moved `current` to that release, and changed the three profile plugin directories to
   release/current symlinks with per-profile import smoke and service checks.
+- Added `skills/qiwe` to the deploy bundle payload, guarded QiWe context MCP fallback
+  paths in deploy preflight, and completed the M10-D production repoint for Erhua
+  `qiwe-platform`: published and server-verified the deploy bundle for `9968190`,
+  assembled immutable release
+  `/home/ubuntu/qintopia-agent-os-releases/99681909149fde4f16daa3af941a750d1f239860`,
+  moved `current` to that release, and changed Erhua `qiwe-platform` to a
+  release/current symlink with service and sidecar checks.
 
 ### Fixed
 

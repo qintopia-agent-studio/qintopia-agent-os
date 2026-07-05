@@ -111,7 +111,14 @@ git.
   - consumers: Erhua
   - target: `skills/qiwe`
   - risk: high
-  - next step: M10-D reconcile server dirty git state before symlink/release migration
+  - status: M10-D complete; Erhua profile plugin directory now symlinks to
+    `qintopia-agent-os-releases/current/skills/qiwe`
+  - validation: Erhua gateway is active after restart; release sidecar `check` passed;
+    all nine Qintopia system services are active; no running process references the old
+    QiWe profile checkout, `qintopia-msg-sidecar`, or the diagnostic monorepo checkout
+  - backup: `/home/ubuntu/qintopia-agent-os-backups/m10d-qiwe-platform-20260705T144000Z`
+  - next step: keep old profile-local checkout for M11 archive-ready evidence; do not
+    clean it in M10
 - Huabaosi Base read plugin
   - source: `/home/ubuntu/.hermes/profiles/huabaosi/plugins/qintopia-base-read`
   - observed size: 64K
@@ -139,8 +146,8 @@ git.
 - `/home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform`
   - state: `main...origin/main`, untracked backup
     `adapter.py.bak.home-group-send-20260607-1050`, HEAD `6f69794`
-  - migration impact: reconcile before production migration; do not overwrite with local
-    package blindly.
+  - migration impact: M10-D complete; old checkout is backed up and retained for M11
+    archive-ready evidence, not active runtime.
 - `/home/ubuntu/.hermes/hermes-agent`
   - state: dirty, ahead/behind upstream, several modified Hermes core and backup files
   - migration impact: review-pool only; Hermes core is not part of the Agent OS release
@@ -168,8 +175,13 @@ git.
      excluded from active migration scope.
 3. M10-D: reconcile and package Erhua `qiwe-platform`.
    - Affected profile: Erhua.
-   - Validation: QiWe plugin tests, local health endpoint if still applicable, Hermes
-     profile active check, no external-send behavior change.
+   - Status: complete.
+   - Current state: Erhua `qiwe-platform` is release-managed under
+     `qintopia-agent-os-releases/current/skills/qiwe`; the profile plugin directory is a
+     symlink to that package.
+   - Validation: QiWe plugin tests passed locally, deploy bundle was verified from COS,
+     Erhua profile active check passed after restart, sidecar `check` passed, and no
+     external-send allowlist/config was broadened.
 4. M10-E: review Huabaosi `qintopia-base-read`.
    - Affected profile: Huabaosi.
    - Validation: read-only Base access smoke; no approval of unreviewed Huabaosi
