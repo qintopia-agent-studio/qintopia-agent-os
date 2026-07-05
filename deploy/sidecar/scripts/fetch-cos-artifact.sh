@@ -123,6 +123,53 @@ if output.strip():
 PY
 }
 
+print_sanitized_coscli_details() {
+  python3 - "${PWD}/coscli_output" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+if not root.exists():
+    raise SystemExit(0)
+
+secrets = [
+    os.environ.get(name, "")
+    for name in (
+        "TENCENT_COS_SECRET_ID",
+        "TENCENT_COS_SECRET_KEY",
+        "TENCENT_COS_SESSION_TOKEN",
+    )
+]
+secrets = [value for value in secrets if value]
+
+files = [path for path in root.rglob("*") if path.is_file()]
+files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+if not files:
+    raise SystemExit(0)
+
+sys.stderr.write("COSCLI detail files:\n")
+for path in files[:8]:
+    relative = path.relative_to(root)
+    sys.stderr.write(f"--- coscli_output/{relative} ---\n")
+    try:
+        output = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        sys.stderr.write(f"failed to read detail file: {exc}\n")
+        continue
+
+    for value in secrets:
+        output = output.replace(value, "***")
+
+    max_chars = 12000
+    if len(output) > max_chars:
+        output = output[:max_chars] + "\n... truncated ...\n"
+    sys.stderr.write(output)
+    if output and not output.endswith("\n"):
+        sys.stderr.write("\n")
+PY
+}
+
 auth_mode="${TENCENT_COS_AUTH_MODE:-SecretKey}"
 if [[ "$auth_mode" == "CvmRole" ]]; then
   require_env TENCENT_COS_CVM_ROLE_NAME
@@ -246,6 +293,7 @@ PY
     echo "Source object prefix: ${remote_base}/" >&2
     echo "Credentials were not printed. Check server COS auth and object read permissions." >&2
     print_sanitized_coscli_output "$output_path"
+    print_sanitized_coscli_details
     exit "$status"
   fi
 }

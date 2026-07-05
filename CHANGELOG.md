@@ -224,6 +224,8 @@ become versioned.
   permission, and object upload errors without printing COS credentials.
 - Added sanitized COSCLI detail-file output for failed uploads so deploy-bundle COS
   failures expose the underlying object-level error without printing credentials.
+- Added sanitized COSCLI detail-file output for failed downloads so server-side COS read
+  failures can be diagnosed without printing read-only credentials.
 - Fixed COSCLI temporary config initialization so upload and fetch scripts create the
   config file before calling `config add` or `config set`.
 - Corrected COSCLI authentication setup to use `config set --mode SecretKey` for
