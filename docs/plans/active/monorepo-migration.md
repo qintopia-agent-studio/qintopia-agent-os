@@ -460,6 +460,14 @@ and future programming agents.
   - documented why the repository uses COSCLI directly instead of
     `TencentCloud/cos-action@v1`: the official action still targets `node12`, while this
     workflow stays on Node.js 24-compatible action runtimes
+  - confirmed compressed bundle upload from GitHub-hosted runners to the Shanghai COS
+    bucket is still unusably slow: CI run `28731484765` uploaded only about 479 KB of an
+    8.47 MB bundle after 300 seconds
+  - changed COS upload to explicit opt-in with `TENCENT_COS_UPLOAD_ENABLED=true`; CI now
+    still builds and retains the GitHub Actions artifact when COS upload is disabled
+  - added optional `TENCENT_COS_ENDPOINT` support for COSCLI `config add -e` so the next
+    direct GitHub Actions to COS attempt can use Tencent COS Global Acceleration after
+    the bucket-side setting is enabled
 
 ## Update Rule
 
@@ -476,10 +484,12 @@ Remaining follow-up after the active service cutover:
 - M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
-- COS artifact distribution: verify the next `master` build with bounded COSCLI
-  execution and compressed bundle payload. If the bundle upload still times out, inspect
-  COSCLI output and COS bucket state for acceleration-domain or runner-network behavior
-  before using `fetch-cos-artifact.sh` for the next M9-F artifact preparation.
+- COS artifact distribution: default CI should stay green with GitHub Actions artifact
+  upload while COS upload remains disabled. Before using `fetch-cos-artifact.sh` for the
+  next M9-F artifact preparation, either enable COS Global Acceleration and set
+  `TENCENT_COS_ENDPOINT=cos.accelerate.myqcloud.com` plus
+  `TENCENT_COS_UPLOAD_ENABLED=true`, or move the COS upload responsibility to a
+  Tencent-cloud-side uploader.
 - M10 release/current model: replace direct
   `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
   directories and stable `current`/`previous` symlinks.

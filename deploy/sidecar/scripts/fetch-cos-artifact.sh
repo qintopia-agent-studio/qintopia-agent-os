@@ -24,6 +24,7 @@ Authentication environment, choose one:
 Optional environment:
   TENCENT_COS_PREFIX         Object prefix. Defaults to qintopia-agent-os.
   TENCENT_COS_BUCKET_ALIAS   COSCLI bucket alias. Defaults to qintopia-agent-os-artifacts.
+  TENCENT_COS_ENDPOINT       Optional COS endpoint, for example cos.accelerate.myqcloud.com.
   TENCENT_COS_SESSION_TOKEN  Temporary key token.
   ARTIFACT_NAME              Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
   ARTIFACT_TARGET            Defaults to linux-x86_64-gnu.
@@ -248,13 +249,20 @@ else
     "${secret_key_auth_args[@]}"
 fi
 
-run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
-  -b "$TENCENT_COS_BUCKET" \
-  -r "$TENCENT_COS_REGION" \
-  -a "$bucket_alias" \
-  -c "$config_path" \
-  --init-skip \
+bucket_config_args=(
+  -b "$TENCENT_COS_BUCKET"
+  -r "$TENCENT_COS_REGION"
+  -a "$bucket_alias"
+  -c "$config_path"
+  --init-skip
   --disable-log
+)
+if [[ -n "${TENCENT_COS_ENDPOINT:-}" ]]; then
+  bucket_config_args+=(-e "$TENCENT_COS_ENDPOINT")
+fi
+
+run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
+  "${bucket_config_args[@]}"
 
 mkdir -p "$output_dir"
 for file_name in "${payload_files[@]}"; do

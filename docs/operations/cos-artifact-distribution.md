@@ -1,11 +1,13 @@
 # COS Artifact Distribution
 
-Qintopia Agent OS uses Tencent Cloud COS as the production artifact distribution layer.
-GitHub Actions builds the artifact from an approved `master` commit, uploads it to COS,
-and the Tencent Cloud server downloads from COS before systemd or Hermes repoints.
+Qintopia Agent OS uses Tencent Cloud COS as the target production artifact distribution
+layer. GitHub Actions builds the artifact from an approved `master` commit and always
+publishes the GitHub Actions artifact for audit and fallback. COS upload is explicit
+opt-in until the GitHub-hosted runner to Tencent COS network path is verified.
 
-This avoids depending on GitHub artifact download endpoints from the Tencent Cloud
-server during migration windows.
+After COS upload is enabled and verified, the Tencent Cloud server downloads from COS
+before systemd or Hermes repoints. This avoids depending on GitHub artifact download
+endpoints from the Tencent Cloud server during migration windows.
 
 ## Bucket Setup
 
@@ -71,6 +73,40 @@ TencentCloud also publishes `TencentCloud/cos-action`, but the current
 GitHub Actions on Node.js 24-compatible action runtimes, so the CI path calls COSCLI
 directly instead of depending on that action.
 
+## Network Path Decision
+
+Direct GitHub-hosted runner upload to the Shanghai bucket is currently treated as
+unverified. The CI evidence showed that authentication and small object writes worked,
+but binary/bundle transfer was too slow to finish within bounded release transport
+timeouts:
+
+| CI run        | Payload                                      | Result                                            |
+| ------------- | -------------------------------------------- | ------------------------------------------------- |
+| `28730023511` | raw `qintopia-message-sidecar` binary        | timed out after uploading about 15.9% of 24.8 MB  |
+| `28731038907` | raw binary with multipart tuning             | timed out after uploading about 4.8 MB of 24.8 MB |
+| `28731484765` | compressed `qintopia-message-sidecar.tar.gz` | timed out after uploading about 479 KB of 8.47 MB |
+
+This is network-path evidence, not an authentication failure. Do not keep increasing
+timeouts as the primary fix.
+
+The next direct GitHub Actions to COS attempt should use Tencent COS Global
+Acceleration:
+
+1. Enable Global Acceleration on bucket `qintopia-agent-os-artifacts-1305166808`.
+2. Set repository variable `TENCENT_COS_ENDPOINT=cos.accelerate.myqcloud.com`.
+3. Set repository variable `TENCENT_COS_UPLOAD_ENABLED=true`.
+4. Rerun the `sidecar-artifact` job and inspect transfer speed before allowing a server
+   cutover to depend on COS.
+
+Tencent documents the global acceleration domain format as
+`<BucketName-APPID>.cos.accelerate.myqcloud.com`; COSCLI `config add` stores the bucket
+name separately and accepts the endpoint through `-e/--endpoint`.
+
+If the accelerated path is still slow, use a Tencent-cloud-side uploader instead of
+making GitHub-hosted runners the release transport bottleneck. In that model GitHub
+Actions remains the builder/audit source, and a Tencent-side job or server-side approved
+fetch pushes the verified artifact into COS.
+
 Bucket-scoped probe actions:
 
 ```json
@@ -131,14 +167,17 @@ Add these repository secrets:
 
 Optional repository variables can override the workflow defaults:
 
-| Name                 | Default                                  |
-| -------------------- | ---------------------------------------- |
-| `TENCENT_COS_BUCKET` | `qintopia-agent-os-artifacts-1305166808` |
-| `TENCENT_COS_REGION` | `ap-shanghai`                            |
-| `TENCENT_COS_PREFIX` | `qintopia-agent-os`                      |
+| Name                         | Default                                  | Notes                                                                       |
+| ---------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
+| `TENCENT_COS_BUCKET`         | `qintopia-agent-os-artifacts-1305166808` | non-secret bucket name                                                      |
+| `TENCENT_COS_REGION`         | `ap-shanghai`                            | non-secret bucket region                                                    |
+| `TENCENT_COS_PREFIX`         | `qintopia-agent-os`                      | object prefix                                                               |
+| `TENCENT_COS_ENDPOINT`       | empty                                    | use `cos.accelerate.myqcloud.com` only after bucket acceleration is enabled |
+| `TENCENT_COS_UPLOAD_ENABLED` | `false`                                  | must be exactly `true` to upload to COS                                     |
 
-The `sidecar-artifact` job uploads to COS only when the upload SecretId and SecretKey
-are present.
+The `sidecar-artifact` job uploads to COS only when `TENCENT_COS_UPLOAD_ENABLED=true`
+and both upload secrets are present. If upload is disabled, CI still builds and uploads
+the GitHub Actions artifact.
 
 ## Server Configuration
 
@@ -207,6 +246,9 @@ waiting for the whole job timeout:
 If a transfer times out, the script prints the bucket alias, object prefix, and
 sanitized COSCLI output without printing credentials.
 
+The script passes `TENCENT_COS_ENDPOINT` into `coscli config add -e` when the variable
+is set. Leave it empty unless the bucket-side endpoint feature has already been enabled.
+
 GitHub artifact upload compresses the sidecar artifact to about 9 MB, while the raw
 release binary is about 25 MB. COS distribution therefore uses the compressed sidecar
 bundle as the default transport payload. The upload script also uses a smaller part size
@@ -237,7 +279,7 @@ The download script verifies:
 
 Only after this should systemd or Hermes references be repointed.
 
-## Remaining Owner Inputs
+## Current Owner Inputs
 
 Received non-secret COS values:
 
@@ -245,10 +287,8 @@ Received non-secret COS values:
 - COS region: `ap-shanghai`
 - object prefix: use default `qintopia-agent-os`
 
-Still needed before the first COS-backed server fetch:
-
-- whether the CVM will use CVM Role or SecretKey fallback for reads
-- CVM Role name, if using CVM Role
+Server-side read credentials are stored outside git in `/etc/qintopia/cos-artifacts.env`
+on the Tencent Cloud Lighthouse server.
 
 Provide these secrets only through GitHub repository Secrets or server-local files:
 
@@ -256,6 +296,7 @@ Provide these secrets only through GitHub repository Secrets or server-local fil
 - CI upload `TENCENT_COS_SECRET_KEY`
 - server read-only SecretId/SecretKey, only if not using CVM Role
 
-After the GitHub secrets are configured, push a commit to `master` and confirm the
-`sidecar-artifact` job uploaded to COS. Then run the server download command and verify
-the artifact before continuing M9-F.
+Before turning on CI upload, decide whether to enable COS Global Acceleration for this
+bucket. If enabled, set `TENCENT_COS_ENDPOINT` and `TENCENT_COS_UPLOAD_ENABLED=true`,
+push a commit to `master`, and confirm the `sidecar-artifact` job uploaded to COS. Then
+run the server download command and verify the artifact before continuing M9-F.

@@ -177,6 +177,12 @@ become versioned.
 - Documented the official COSCLI command path for COS artifact distribution and the
   reason `TencentCloud/cos-action@v1` is not used in the Node.js 24 GitHub Actions
   workflow.
+- Changed Tencent COS upload to explicit opt-in with `TENCENT_COS_UPLOAD_ENABLED=true`
+  so `master` CI still produces the GitHub Actions artifact while the GitHub-hosted
+  runner to COS network path remains unverified.
+- Added optional `TENCENT_COS_ENDPOINT` support for COSCLI bucket configuration so a
+  future direct GitHub Actions upload can use COS Global Acceleration after the bucket
+  setting is enabled.
 
 ### Fixed
 

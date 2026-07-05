@@ -216,6 +216,16 @@ for (const cosScriptPath of [
     if (!script.includes("TENCENT_COS_ARTIFACT_PAYLOAD")) {
       addError(`${cosScriptPath}: must support explicit COS artifact payload mode`);
     }
+    for (const endpointFragment of [
+      "TENCENT_COS_ENDPOINT",
+      'bucket_config_args+=(-e "$TENCENT_COS_ENDPOINT")',
+    ]) {
+      if (!script.includes(endpointFragment)) {
+        addError(
+          `${cosScriptPath}: must support optional Tencent COS endpoint configuration (${endpointFragment})`
+        );
+      }
+    }
     const cpCommands = script.matchAll(
       /\b(?:run_coscli\s+"[^"]+"\s+)?cp\s+[\s\S]*?(?=\n(?:done|echo|mkdir|test|\(|[a-zA-Z0-9_]+\(|if\b|for\b)|$)/g
     );
@@ -440,6 +450,8 @@ for (const phrase of [
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
   "qintopia-agent-os-artifacts-1305166808",
   "ap-shanghai",
+  "TENCENT_COS_UPLOAD_ENABLED",
+  "TENCENT_COS_ENDPOINT",
   "env.TENCENT_COS_BUCKET",
   "env.TENCENT_COS_REGION",
   "secrets.TENCENT_COS_SECRET_ID",

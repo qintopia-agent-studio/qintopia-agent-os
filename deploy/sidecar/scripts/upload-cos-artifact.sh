@@ -17,6 +17,7 @@ Required environment:
 Optional environment:
   TENCENT_COS_PREFIX         Object prefix. Defaults to qintopia-agent-os.
   TENCENT_COS_BUCKET_ALIAS   COSCLI bucket alias. Defaults to qintopia-agent-os-artifacts.
+  TENCENT_COS_ENDPOINT       Optional COS endpoint, for example cos.accelerate.myqcloud.com.
   TENCENT_COS_SESSION_TOKEN  Temporary key token.
   COSCLI_PATH                Existing coscli binary path.
   COSCLI_CONFIG_TIMEOUT_SECONDS    Per config command timeout. Defaults to 60.
@@ -279,13 +280,20 @@ run_coscli "configure COS SecretKey auth" config set \
   --disable-log \
   "${config_auth_args[@]}"
 
-run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
-  -b "$TENCENT_COS_BUCKET" \
-  -r "$TENCENT_COS_REGION" \
-  -a "$bucket_alias" \
-  -c "$config_path" \
-  --init-skip \
+bucket_config_args=(
+  -b "$TENCENT_COS_BUCKET"
+  -r "$TENCENT_COS_REGION"
+  -a "$bucket_alias"
+  -c "$config_path"
+  --init-skip
   --disable-log
+)
+if [[ -n "${TENCENT_COS_ENDPOINT:-}" ]]; then
+  bucket_config_args+=(-e "$TENCENT_COS_ENDPOINT")
+fi
+
+run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
+  "${bucket_config_args[@]}"
 
 for file_name in "${payload_files[@]}"; do
   log "Uploading ${file_name} to cos://${bucket_alias}/${remote_base}/${file_name}"

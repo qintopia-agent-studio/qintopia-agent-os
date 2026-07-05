@@ -70,9 +70,10 @@ source.
 
 ## COS Distribution
 
-GitHub Actions remains the source build environment, but the production server should
-download artifacts from Tencent Cloud COS. This avoids making the Tencent Cloud server
-depend on unstable GitHub artifact download endpoints during a cutover window.
+GitHub Actions remains the source build environment and always publishes the GitHub
+Actions artifact for audit and fallback. Tencent COS is the target production
+distribution layer, but CI upload to COS is explicit opt-in until the GitHub-hosted
+runner to Tencent COS network path is verified.
 
 Object layout:
 
@@ -91,8 +92,8 @@ Configured COS destination:
 | Region  | `ap-shanghai`                            |
 | Prefix  | `qintopia-agent-os`                      |
 
-The `sidecar-artifact` workflow uploads the artifact directory to COS only when these
-GitHub repository secrets are present:
+The `sidecar-artifact` workflow uploads the artifact directory to COS only when
+`TENCENT_COS_UPLOAD_ENABLED=true` and these GitHub repository secrets are present:
 
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`
@@ -122,11 +123,19 @@ server fetch script extracts the bundle and then verifies the extracted binary w
 same `SHA256SUMS` file, so systemd and Hermes still see `qintopia-message-sidecar` in
 the artifact directory.
 
+Direct upload from GitHub-hosted runners to the Shanghai COS bucket has been too slow in
+CI even after multipart tuning and compressed payloads. Treat this as a network path
+issue, not an auth issue. Before enabling COS upload, enable COS Global Acceleration on
+the bucket or choose a Tencent-cloud-side uploader.
+
 Optional GitHub repository variables can override the workflow defaults:
 
 - `TENCENT_COS_BUCKET`, defaulting to `qintopia-agent-os-artifacts-1305166808`
 - `TENCENT_COS_REGION`, defaulting to `ap-shanghai`
 - `TENCENT_COS_PREFIX`, defaulting to `qintopia-agent-os`
+- `TENCENT_COS_ENDPOINT`, empty by default; use `cos.accelerate.myqcloud.com` only after
+  bucket Global Acceleration is enabled
+- `TENCENT_COS_UPLOAD_ENABLED`, defaulting to `false`
 
 Server-side fetch command for CVM Role mode:
 
