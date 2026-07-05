@@ -506,6 +506,22 @@ and future programming agents.
     root probe permission or an equivalent bucket-level allow statement
   - documented the required server read-only CAM policy in
     `docs/operations/cos-artifact-distribution.md`
+- Completed the server-side read-only COS fetch validation after the server read-only
+  CAM policy was corrected:
+  - downloaded `artifact-manifest.json`, `SHA256SUMS`, and
+    `qintopia-message-sidecar.tar.gz` from COS into
+    `/tmp/qintopia-agent-os-cos-readonly/0782f6d0f3f46d1285444f9a21f1669791be1d5e`
+  - extracted `qintopia-message-sidecar` and verified `sha256sum -c SHA256SUMS`
+  - confirmed manifest fields: `commit_sha=0782f6d0f3f46d1285444f9a21f1669791be1d5e`,
+    `artifact_name=qintopia-message-sidecar-linux-x86_64-gnu`, `target=linux-x86_64-gnu`
+  - ran the downloaded binary `check` with production env and confirmed NATS JetStream
+    plus Postgres checks passed
+  - confirmed the production `qintopia-message-sidecar`,
+    `qintopia-message-embedding-worker`, and `qintopia-message-identity-worker` services
+    remained active and still pointed to the approved production artifact
+    `c70378408c53de5f4166e8b9bde45b15a97cabb0`
+  - did not update server checkout, systemd units, symlinks, Hermes profile config, or
+    running service targets
 
 ## Update Rule
 
@@ -522,9 +538,10 @@ Remaining follow-up after the active service cutover:
 - M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
-- COS artifact distribution: use the accelerated COS upload path and CI-side COS
-  pruning, then run a server-side read-only download verification with
-  `fetch-cos-artifact.sh` before using COS artifacts for the next M9-F preparation.
+- COS artifact distribution: the accelerated upload path, CI-side COS pruning, and
+  server-side read-only download verification have passed for artifact
+  `0782f6d0f3f46d1285444f9a21f1669791be1d5e`; use this path for the next M9-F
+  preparation.
 - M10 release/current model: replace direct
   `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
   directories and stable `current`/`previous` symlinks.

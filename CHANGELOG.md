@@ -192,6 +192,8 @@ become versioned.
   release/current promotion instead of server-side `git fetch` or `git checkout`.
 - Recorded the read-only server COS validation blocker: the current server key receives
   COS `403` on bucket-root `HEAD` before object download.
+- Recorded the successful server-side read-only COS artifact validation for
+  `0782f6d0f3f46d1285444f9a21f1669791be1d5e` after the server CAM policy was corrected.
 
 ### Fixed
 
