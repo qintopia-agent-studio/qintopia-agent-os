@@ -141,6 +141,8 @@ become versioned.
   passed through a temporary curl config file instead of process arguments.
 - Extended deploy preflight to guard artifact credential handling and require the M9
   Postgres schema preflight path.
+- Extended deploy preflight to block COS SecretId/SecretKey values from being passed
+  through COSCLI transfer command arguments.
 - Changed the M9 artifact download path to prefer GitHub App installation tokens, with
   `GITHUB_TOKEN` kept only as a fallback for emergency or one-off downloads.
 - Updated M9 migration state after production database migrations passed; the database
@@ -170,8 +172,13 @@ become versioned.
 - Changed COS CI upload configuration so bucket, region, and prefix use explicit
   non-secret workflow defaults while only SecretId and SecretKey come from GitHub
   Secrets.
+- Clarified COS artifact distribution docs for Tencent Cloud Lighthouse servers and the
+  upload CAM permissions COSCLI may require for object writes and multipart upload.
 
 ### Fixed
 
 - Fixed COSCLI installer stdout so CI upload scripts receive only the installed binary
   path, not checksum verification text.
+- Hardened COS artifact upload and fetch scripts so SecretKey values are used only while
+  writing temporary COSCLI config, transfer commands no longer pass credentials through
+  `cp` arguments, and COSCLI failures include non-secret diagnostics.

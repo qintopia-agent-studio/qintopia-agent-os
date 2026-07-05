@@ -82,6 +82,10 @@ require_command sha256sum
 require_env TENCENT_COS_BUCKET
 require_env TENCENT_COS_REGION
 
+log() {
+  printf '%s\n' "$*" >&2
+}
+
 auth_mode="${TENCENT_COS_AUTH_MODE:-SecretKey}"
 if [[ "$auth_mode" == "CvmRole" ]]; then
   require_env TENCENT_COS_CVM_ROLE_NAME
@@ -120,10 +124,28 @@ if [[ ! -x "$coscli_path" ]]; then
   exit 2
 fi
 
+run_coscli() {
+  local label="$1"
+  shift
+
+  set +e
+  "$coscli_path" "$@"
+  local status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "COSCLI failed during: ${label}" >&2
+    echo "Source bucket alias: ${bucket_alias}" >&2
+    echo "Source object prefix: ${remote_base}/" >&2
+    echo "Credentials were not printed. Check server COS auth and object read permissions." >&2
+    exit "$status"
+  fi
+}
+
 config_path="${tmp_dir}/cos.yaml"
-auth_args=(--init-skip --disable-log)
+config_auth_args=(--init-skip --disable-log)
 if [[ "$auth_mode" == "CvmRole" ]]; then
-  "$coscli_path" config set \
+  run_coscli "configure COS CVM role auth" config set \
     --mode CvmRole \
     --cvm_role_name "$TENCENT_COS_CVM_ROLE_NAME" \
     -c "$config_path" \
@@ -131,28 +153,28 @@ if [[ "$auth_mode" == "CvmRole" ]]; then
     --disable-log \
     >/dev/null
 else
-  auth_args+=(-i "$TENCENT_COS_SECRET_ID" -k "$TENCENT_COS_SECRET_KEY")
+  config_auth_args+=(-i "$TENCENT_COS_SECRET_ID" -k "$TENCENT_COS_SECRET_KEY")
   if [[ -n "${TENCENT_COS_SESSION_TOKEN:-}" ]]; then
-    auth_args+=(--token "$TENCENT_COS_SESSION_TOKEN")
+    config_auth_args+=(--token "$TENCENT_COS_SESSION_TOKEN")
   fi
 fi
 
-"$coscli_path" config add \
+run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   -b "$TENCENT_COS_BUCKET" \
   -r "$TENCENT_COS_REGION" \
   -a "$bucket_alias" \
   -c "$config_path" \
-  "${auth_args[@]}" \
+  "${config_auth_args[@]}" \
   >/dev/null
 
 mkdir -p "$output_dir"
 for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
-  "$coscli_path" cp \
+  log "Downloading ${file_name} from cos://${bucket_alias}/${remote_base}/${file_name}"
+  run_coscli "download ${file_name}" cp \
     "cos://${bucket_alias}/${remote_base}/${file_name}" \
     "${output_dir}/${file_name}" \
     -c "$config_path" \
-    "${auth_args[@]}" \
-    --process-log=false
+    --disable-log
 done
 
 (

@@ -181,6 +181,29 @@ for (const cosScriptPath of [
     if (!script.includes("TENCENT_COS_BUCKET")) {
       addError(`${cosScriptPath}: must use explicit Tencent COS bucket configuration`);
     }
+    const cpCommands = script.matchAll(
+      /\b(?:run_coscli\s+"[^"]+"\s+)?cp\s+[\s\S]*?(?=\n(?:done|echo|mkdir|test|\(|[a-zA-Z0-9_]+\(|if\b|for\b)|$)/g
+    );
+    for (const [cpCommand] of cpCommands) {
+      if (cpCommand.includes('"$TENCENT_COS_SECRET_ID"')) {
+        addError(
+          `${cosScriptPath}: COS SecretId must not be passed through coscli cp arguments`
+        );
+      }
+      if (cpCommand.includes('"$TENCENT_COS_SECRET_KEY"')) {
+        addError(
+          `${cosScriptPath}: COS SecretKey must not be passed through coscli cp arguments`
+        );
+      }
+      if (
+        cpCommand.includes('"${config_auth_args[@]}"') ||
+        cpCommand.includes('"${auth_args[@]}"')
+      ) {
+        addError(
+          `${cosScriptPath}: COS transfer commands must use temporary config without auth argument arrays`
+        );
+      }
+    }
   }
 }
 

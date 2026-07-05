@@ -95,13 +95,18 @@ GitHub repository secrets are present:
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`
 
+The upload CAM key should be scoped to the artifact prefix. Because COSCLI `cp` can
+probe object metadata and use multipart upload, the policy must cover object write,
+object head/options checks, and multipart upload operations for
+`qintopia-agent-os/sidecar/*`.
+
 Optional GitHub repository variables can override the workflow defaults:
 
 - `TENCENT_COS_BUCKET`, defaulting to `qintopia-agent-os-artifacts-1305166808`
 - `TENCENT_COS_REGION`, defaulting to `ap-shanghai`
 - `TENCENT_COS_PREFIX`, defaulting to `qintopia-agent-os`
 
-Server-side fetch command:
+Server-side fetch command for CVM Role mode:
 
 ```bash
 export TENCENT_COS_BUCKET="qintopia-agent-os-artifacts-1305166808"
@@ -114,7 +119,19 @@ deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
-If CVM Role is not available, use a read-only COS SecretId/SecretKey on the server:
+For Tencent Cloud Lighthouse app servers, CVM Role is not available. Use a server-local
+read-only COS SecretId/SecretKey file instead:
+
+```bash
+set -a
+. /etc/qintopia/cos-artifacts.env
+set +a
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --sha <approved-target-sha> \
+  --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+```
+
+The environment file contains:
 
 ```bash
 export TENCENT_COS_SECRET_ID="<read-only-secret-id>"

@@ -429,6 +429,12 @@ and future programming agents.
     Tencent COS, while preserving manifest and checksum verification
   - recorded the COS bucket `qintopia-agent-os-artifacts-1305166808`, region
     `ap-shanghai`, and default prefix `qintopia-agent-os`
+  - verified the production host is Tencent Cloud Lighthouse, so the server read path
+    uses `/etc/qintopia/cos-artifacts.env` with a local read-only CAM SecretKey instead
+    of CVM Role
+  - hardened COS upload/download scripts so transfer commands use temporary COSCLI
+    config files instead of passing SecretKey values through `cp` arguments, and emit
+    non-secret diagnostics when COSCLI fails
 
 ## Update Rule
 
@@ -445,9 +451,9 @@ Remaining follow-up after the active service cutover:
 - M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
-- COS artifact distribution: configure CI upload secrets and server read credentials,
-  verify a `master` build uploads to the configured COS bucket, then use
-  `fetch-cos-artifact.sh` for the next M9-F artifact preparation.
+- COS artifact distribution: configure or correct CI upload CAM permissions, verify a
+  `master` build uploads to the configured COS bucket, then use `fetch-cos-artifact.sh`
+  for the next M9-F artifact preparation.
 - M10 release/current model: replace direct
   `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
   directories and stable `current`/`previous` symlinks.

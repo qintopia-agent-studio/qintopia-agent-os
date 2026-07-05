@@ -80,6 +80,10 @@ require_env TENCENT_COS_REGION
 require_env TENCENT_COS_SECRET_ID
 require_env TENCENT_COS_SECRET_KEY
 
+log() {
+  printf '%s\n' "$*" >&2
+}
+
 for file_path in "$manifest_path" "$checksum_path" "$binary_path"; do
   if [[ ! -f "$file_path" ]]; then
     echo "artifact file not found: $file_path" >&2
@@ -129,6 +133,25 @@ if [[ ! -x "$coscli_path" ]]; then
   exit 2
 fi
 
+run_coscli() {
+  local label="$1"
+  shift
+
+  set +e
+  "$coscli_path" "$@"
+  local status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "COSCLI failed during: ${label}" >&2
+    echo "Destination bucket alias: ${bucket_alias}" >&2
+    echo "Destination object prefix: ${remote_base}/" >&2
+    echo "Credentials were not printed. Check CI COS SecretId/SecretKey and CAM upload permissions." >&2
+    echo "COSCLI upload commonly requires bucket probe, object write, and multipart upload permissions for this prefix." >&2
+    exit "$status"
+  fi
+}
+
 config_path="${tmp_dir}/cos.yaml"
 bucket_alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
 prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
@@ -140,7 +163,7 @@ if [[ -n "${TENCENT_COS_SESSION_TOKEN:-}" ]]; then
   auth_args+=(--token "$TENCENT_COS_SESSION_TOKEN")
 fi
 
-"$coscli_path" config add \
+run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   -b "$TENCENT_COS_BUCKET" \
   -r "$TENCENT_COS_REGION" \
   -a "$bucket_alias" \
@@ -151,13 +174,12 @@ fi
   >/dev/null
 
 for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
-  "$coscli_path" cp \
+  log "Uploading ${file_name} to cos://${bucket_alias}/${remote_base}/${file_name}"
+  run_coscli "upload ${file_name}" cp \
     "${artifact_dir}/${file_name}" \
     "cos://${bucket_alias}/${remote_base}/${file_name}" \
     -c "$config_path" \
-    "${auth_args[@]}" \
-    --disable-log \
-    --process-log=false
+    --disable-log
 done
 
 echo "Uploaded sidecar artifact to cos://${bucket_alias}/${remote_base}/"

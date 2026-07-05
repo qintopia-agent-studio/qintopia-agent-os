@@ -38,14 +38,25 @@ qintopia-agent-os/
 
 Use separate identities for CI upload and server download.
 
-| Actor          | Preferred credential             | Permission scope                               |
-| -------------- | -------------------------------- | ---------------------------------------------- |
-| GitHub Actions | CAM SecretId/SecretKey in GitHub | write only under `qintopia-agent-os/sidecar/*` |
-| CVM server     | CVM Role                         | read only under `qintopia-agent-os/sidecar/*`  |
-| CVM fallback   | CAM SecretId/SecretKey           | read only under `qintopia-agent-os/sidecar/*`  |
+| Actor                  | Preferred credential             | Permission scope                               |
+| ---------------------- | -------------------------------- | ---------------------------------------------- |
+| GitHub Actions         | CAM SecretId/SecretKey in GitHub | write only under `qintopia-agent-os/sidecar/*` |
+| CVM server             | CVM Role                         | read only under `qintopia-agent-os/sidecar/*`  |
+| Lighthouse app server  | CAM SecretId/SecretKey           | read only under `qintopia-agent-os/sidecar/*`  |
+| emergency CVM fallback | CAM SecretId/SecretKey           | read only under `qintopia-agent-os/sidecar/*`  |
 
 Do not use root account keys. Do not put COS keys in git, systemd unit files, shell
 history, or chat logs.
+
+GitHub Actions upload uses COSCLI `cp`, which may probe bucket/object state and may use
+multipart upload depending on file size and COSCLI behavior. The upload CAM policy
+should therefore allow the artifact prefix to perform object writes, object head/options
+checks, and multipart upload actions such as initiating, uploading parts, completing,
+aborting, and listing parts. Keep the resource scope limited to:
+
+```text
+qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*
+```
 
 ## GitHub Configuration
 
@@ -84,7 +95,7 @@ Preferred server environment file:
 /etc/qintopia/cos-artifacts.env
 ```
 
-CVM Role mode:
+CVM Role mode, for CVM hosts:
 
 ```bash
 export TENCENT_COS_BUCKET="qintopia-agent-os-artifacts-1305166808"
@@ -94,7 +105,7 @@ export TENCENT_COS_AUTH_MODE="CvmRole"
 export TENCENT_COS_CVM_ROLE_NAME="<cvm-role-name>"
 ```
 
-SecretKey fallback:
+SecretKey mode, for Tencent Cloud Lighthouse app servers or CVM fallback:
 
 ```bash
 export TENCENT_COS_BUCKET="qintopia-agent-os-artifacts-1305166808"

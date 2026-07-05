@@ -271,7 +271,8 @@ reintroduce a long-lived bot credential just to perform the first clone.
 
 ## Sidecar Artifact Fetch And Preflight
 
-Fetch the CI-built artifact for the approved commit SHA from Tencent COS:
+Fetch the CI-built artifact for the approved commit SHA from Tencent COS. On CVM hosts,
+use CVM Role mode:
 
 ```bash
 export TENCENT_COS_BUCKET="qintopia-agent-os-artifacts-1305166808"
@@ -284,10 +285,21 @@ deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
-If CVM Role is unavailable, use a read-only COS SecretId/SecretKey on the server. GitHub
-artifact download through `fetch-ci-artifact.sh` remains an emergency fallback only; do
-not use `scp`, direct server edits, or long-lived bot credentials for production
-artifact distribution.
+For Tencent Cloud Lighthouse app servers, use the server-local read-only COS environment
+file instead:
+
+```bash
+set -a
+. /etc/qintopia/cos-artifacts.env
+set +a
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --sha <approved-target-sha> \
+  --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+```
+
+GitHub artifact download through `fetch-ci-artifact.sh` remains an emergency fallback
+only; do not use `scp`, direct server edits, or long-lived bot credentials for
+production artifact distribution.
 
 Run binary checks without changing systemd:
 
