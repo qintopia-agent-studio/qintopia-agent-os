@@ -68,7 +68,7 @@ curl -fsSL \
   "$download_url" \
   -o "$tmp_path"
 
-printf '%s  %s\n' "$expected_sha256" "$tmp_path" | sha256sum -c -
+printf '%s  %s\n' "$expected_sha256" "$tmp_path" | sha256sum -c - >/dev/null
 chmod 0755 "$tmp_path"
 mv "$tmp_path" "$output_path"
 

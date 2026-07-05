@@ -200,6 +200,15 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
   }
 }
 
+if (exists("deploy/sidecar/scripts/install-coscli.sh")) {
+  const cosInstallScript = readText("deploy/sidecar/scripts/install-coscli.sh");
+  if (!cosInstallScript.includes("sha256sum -c - >/dev/null")) {
+    addError(
+      "deploy/sidecar/scripts/install-coscli.sh: stdout must contain only the installed coscli path"
+    );
+  }
+}
+
 if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
   const schemaPreflightScript = readText(
     "deploy/sidecar/scripts/postgres-schema-preflight.sh"

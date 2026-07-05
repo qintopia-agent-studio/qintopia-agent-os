@@ -170,3 +170,8 @@ become versioned.
 - Changed COS CI upload configuration so bucket, region, and prefix use explicit
   non-secret workflow defaults while only SecretId and SecretKey come from GitHub
   Secrets.
+
+### Fixed
+
+- Fixed COSCLI installer stdout so CI upload scripts receive only the installed binary
+  path, not checksum verification text.
