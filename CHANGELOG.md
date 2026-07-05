@@ -174,6 +174,9 @@ become versioned.
   Secrets.
 - Clarified COS artifact distribution docs for Tencent Cloud Lighthouse servers and the
   upload CAM permissions COSCLI may require for object writes and multipart upload.
+- Documented the official COSCLI command path for COS artifact distribution and the
+  reason `TencentCloud/cos-action@v1` is not used in the Node.js 24 GitHub Actions
+  workflow.
 
 ### Fixed
 
@@ -188,3 +191,7 @@ become versioned.
   config file before calling `config add` or `config set`.
 - Corrected COSCLI authentication setup to use `config set --mode SecretKey` for
   temporary config auth and keep `cp` transfer commands credential-free.
+- Added command-level COSCLI timeouts so COS upload/download hangs fail with sanitized
+  diagnostics instead of waiting for the whole GitHub Actions job timeout.
+- Tuned COSCLI CI uploads with smaller multipart parts and explicit transfer threads so
+  sidecar release binaries do not rely on a slow single-stream upload path.

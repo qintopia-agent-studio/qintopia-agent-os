@@ -191,6 +191,28 @@ for (const cosScriptPath of [
         `${cosScriptPath}: must write authentication mode into the temporary COSCLI config with config set`
       );
     }
+    for (const timeoutFragment of [
+      "COSCLI_CONFIG_TIMEOUT_SECONDS",
+      "COSCLI_TRANSFER_TIMEOUT_SECONDS",
+      "COSCLI timed out after",
+    ]) {
+      if (!script.includes(timeoutFragment)) {
+        addError(
+          `${cosScriptPath}: must enforce bounded COSCLI execution (${timeoutFragment})`
+        );
+      }
+    }
+    if (
+      cosScriptPath === "deploy/sidecar/scripts/upload-cos-artifact.sh" &&
+      (!script.includes("COSCLI_PART_SIZE_MB") ||
+        !script.includes("COSCLI_THREAD_NUM") ||
+        !script.includes("--part-size") ||
+        !script.includes("--thread-num"))
+    ) {
+      addError(
+        `${cosScriptPath}: must tune COSCLI uploads for small release artifacts with multipart concurrency`
+      );
+    }
     const cpCommands = script.matchAll(
       /\b(?:run_coscli\s+"[^"]+"\s+)?cp\s+[\s\S]*?(?=\n(?:done|echo|mkdir|test|\(|[a-zA-Z0-9_]+\(|if\b|for\b)|$)/g
     );

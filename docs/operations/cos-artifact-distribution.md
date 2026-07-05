@@ -55,6 +55,22 @@ state and may use multipart upload depending on file size and COSCLI behavior. T
 upload CAM policy should therefore allow bucket probe/list actions at the bucket scope
 and object write/multipart actions at the artifact prefix scope.
 
+This follows Tencent Cloud's COSCLI command model:
+
+- COSCLI is Tencent Cloud's official COS command-line tool:
+  <https://www.tencentcloud.com/document/product/436/43249>
+- `config set` writes base auth fields such as `secret_id`, `secret_key`, `mode`, and
+  CVM role settings: <https://www.tencentcloud.com/document/product/436/43251>
+- `config add` records bucket name, region, and alias:
+  <https://www.tencentcloud.com/document/product/436/43251>
+- `cp` uploads and downloads files:
+  <https://www.tencentcloud.com/document/product/436/43256>
+
+TencentCloud also publishes `TencentCloud/cos-action`, but the current
+`TencentCloud/cos-action@v1` action metadata still uses `node12`. This repository keeps
+GitHub Actions on Node.js 24-compatible action runtimes, so the CI path calls COSCLI
+directly instead of depending on that action.
+
 Bucket-scoped probe actions:
 
 ```json
@@ -169,6 +185,25 @@ The upload script verifies `SHA256SUMS` before upload and writes only these file
 - `artifact-manifest.json`
 - `SHA256SUMS`
 - `qintopia-message-sidecar`
+
+COSCLI execution is bounded so the workflow fails with a useful diagnostic instead of
+waiting for the whole job timeout:
+
+| Environment variable              | Default | Applies to                 |
+| --------------------------------- | ------- | -------------------------- |
+| `COSCLI_CONFIG_TIMEOUT_SECONDS`   | `60`    | `config set`, `config add` |
+| `COSCLI_TRANSFER_TIMEOUT_SECONDS` | `300`   | `cp` upload/download       |
+| `COSCLI_PART_SIZE_MB`             | `4`     | upload multipart part size |
+| `COSCLI_THREAD_NUM`               | `8`     | upload transfer threads    |
+
+If a transfer times out, the script prints the bucket alias, object prefix, and
+sanitized COSCLI output without printing credentials.
+
+COSCLI's default part size is larger than the current sidecar binary, which can make a
+24 to 25 MB artifact upload as one slow stream from GitHub-hosted runners to Shanghai
+COS. The upload script uses a smaller part size and multiple transfer threads so the
+release binary can use COSCLI multipart concurrency without changing the artifact
+contract.
 
 ## Download Path
 

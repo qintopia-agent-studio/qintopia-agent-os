@@ -28,6 +28,8 @@ Optional environment:
   ARTIFACT_NAME              Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
   ARTIFACT_TARGET            Defaults to linux-x86_64-gnu.
   COSCLI_PATH                Existing coscli binary path.
+  COSCLI_CONFIG_TIMEOUT_SECONDS    Per config command timeout. Defaults to 60.
+  COSCLI_TRANSFER_TIMEOUT_SECONDS  Per download command timeout. Defaults to 300.
 USAGE
 }
 
@@ -153,15 +155,49 @@ fi
 run_coscli() {
   local label="$1"
   shift
+  local command_name="${1:-}"
+  local timeout_seconds="${COSCLI_CONFIG_TIMEOUT_SECONDS:-60}"
+  if [[ "$command_name" == "cp" ]]; then
+    timeout_seconds="${COSCLI_TRANSFER_TIMEOUT_SECONDS:-300}"
+  fi
+  if ! [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+    echo "invalid COSCLI timeout for ${label}: ${timeout_seconds}" >&2
+    exit 2
+  fi
 
   set +e
   local output_path="${tmp_dir}/coscli-output.log"
-  "$coscli_path" "$@" >"$output_path" 2>&1
+  python3 - "$output_path" "$timeout_seconds" "$coscli_path" "$@" <<'PY'
+import subprocess
+import sys
+
+output_path = sys.argv[1]
+timeout_seconds = int(sys.argv[2])
+command = sys.argv[3:]
+
+with open(output_path, "wb") as output:
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit(124)
+
+raise SystemExit(completed.returncode)
+PY
   local status=$?
   set -e
 
   if [[ "$status" -ne 0 ]]; then
-    echo "COSCLI failed during: ${label}" >&2
+    if [[ "$status" -eq 124 || "$status" -eq 137 ]]; then
+      echo "COSCLI timed out after ${timeout_seconds}s during: ${label}" >&2
+    else
+      echo "COSCLI failed during: ${label}" >&2
+    fi
     echo "Source bucket alias: ${bucket_alias}" >&2
     echo "Source object prefix: ${remote_base}/" >&2
     echo "Credentials were not printed. Check server COS auth and object read permissions." >&2

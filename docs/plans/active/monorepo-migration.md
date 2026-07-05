@@ -441,6 +441,20 @@ and future programming agents.
   - corrected the COSCLI model after verification: `config set` writes SecretKey auth
     into the temporary config, `config add` only records the bucket alias, and `cp` uses
     the temporary config without credential arguments
+  - checked the follow-up CI log for run `28730023511`: COS upload passed checksum
+    verification, uploaded `artifact-manifest.json` and `SHA256SUMS`, then hung while
+    uploading the `qintopia-message-sidecar` binary until the 20 minute job timeout
+    canceled the step
+  - added bounded COSCLI execution so config commands default to 60 seconds and transfer
+    commands default to 300 seconds, with sanitized diagnostics on timeout
+  - confirmed the timeout diagnostic shows the binary upload is slow rather than
+    unauthenticated: the 24.8 MB sidecar binary reached only about 15.9% after 300
+    seconds from the GitHub-hosted runner to the Shanghai bucket
+  - tuned CI COS uploads to use smaller 4 MB parts and 8 transfer threads so the current
+    sidecar binary can use COSCLI multipart concurrency instead of a slow single stream
+  - documented why the repository uses COSCLI directly instead of
+    `TencentCloud/cos-action@v1`: the official action still targets `node12`, while this
+    workflow stays on Node.js 24-compatible action runtimes
 
 ## Update Rule
 
@@ -457,9 +471,10 @@ Remaining follow-up after the active service cutover:
 - M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
-- COS artifact distribution: configure or correct CI upload CAM permissions, verify a
-  `master` build uploads to the configured COS bucket, then use `fetch-cos-artifact.sh`
-  for the next M9-F artifact preparation.
+- COS artifact distribution: verify the next `master` build with bounded COSCLI
+  execution. If the binary upload still times out, inspect COSCLI output and COS bucket
+  state for acceleration-domain or runner-network behavior before using
+  `fetch-cos-artifact.sh` for the next M9-F artifact preparation.
 - M10 release/current model: replace direct
   `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
   directories and stable `current`/`previous` symlinks.

@@ -19,6 +19,12 @@ Optional environment:
   TENCENT_COS_BUCKET_ALIAS   COSCLI bucket alias. Defaults to qintopia-agent-os-artifacts.
   TENCENT_COS_SESSION_TOKEN  Temporary key token.
   COSCLI_PATH                Existing coscli binary path.
+  COSCLI_CONFIG_TIMEOUT_SECONDS    Per config command timeout. Defaults to 60.
+  COSCLI_TRANSFER_TIMEOUT_SECONDS  Per upload command timeout. Defaults to 300.
+  COSCLI_PART_SIZE_MB              Per-part upload size. Defaults to 4.
+  COSCLI_THREAD_NUM                Concurrent transfer threads. Defaults to 8.
+  COSCLI_ERR_RETRY_NUM             Transfer error retry count. Defaults to 3.
+  COSCLI_ERR_RETRY_INTERVAL_SECONDS  Transfer retry interval. Defaults to 3.
 USAGE
 }
 
@@ -79,6 +85,17 @@ require_env TENCENT_COS_BUCKET
 require_env TENCENT_COS_REGION
 require_env TENCENT_COS_SECRET_ID
 require_env TENCENT_COS_SECRET_KEY
+
+positive_int_env() {
+  local name="$1"
+  local default_value="$2"
+  local value="${!name:-$default_value}"
+  if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "${name} must be a positive integer" >&2
+    exit 2
+  fi
+  printf '%s\n' "$value"
+}
 
 log() {
   printf '%s\n' "$*" >&2
@@ -162,15 +179,49 @@ fi
 run_coscli() {
   local label="$1"
   shift
+  local command_name="${1:-}"
+  local timeout_seconds="${COSCLI_CONFIG_TIMEOUT_SECONDS:-60}"
+  if [[ "$command_name" == "cp" ]]; then
+    timeout_seconds="${COSCLI_TRANSFER_TIMEOUT_SECONDS:-300}"
+  fi
+  if ! [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+    echo "invalid COSCLI timeout for ${label}: ${timeout_seconds}" >&2
+    exit 2
+  fi
 
   set +e
   local output_path="${tmp_dir}/coscli-output.log"
-  "$coscli_path" "$@" >"$output_path" 2>&1
+  python3 - "$output_path" "$timeout_seconds" "$coscli_path" "$@" <<'PY'
+import subprocess
+import sys
+
+output_path = sys.argv[1]
+timeout_seconds = int(sys.argv[2])
+command = sys.argv[3:]
+
+with open(output_path, "wb") as output:
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit(124)
+
+raise SystemExit(completed.returncode)
+PY
   local status=$?
   set -e
 
   if [[ "$status" -ne 0 ]]; then
-    echo "COSCLI failed during: ${label}" >&2
+    if [[ "$status" -eq 124 || "$status" -eq 137 ]]; then
+      echo "COSCLI timed out after ${timeout_seconds}s during: ${label}" >&2
+    else
+      echo "COSCLI failed during: ${label}" >&2
+    fi
     echo "Destination bucket alias: ${bucket_alias}" >&2
     echo "Destination object prefix: ${remote_base}/" >&2
     echo "Credentials were not printed. Check CI COS SecretId/SecretKey and CAM upload permissions." >&2
@@ -187,6 +238,12 @@ prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
 prefix="${prefix%/}"
 remote_base="${prefix}/sidecar/${sha}/${artifact_name}"
+transfer_args=(
+  --part-size "$(positive_int_env COSCLI_PART_SIZE_MB 4)"
+  --thread-num "$(positive_int_env COSCLI_THREAD_NUM 8)"
+  --err-retry-num "$(positive_int_env COSCLI_ERR_RETRY_NUM 3)"
+  --err-retry-interval "$(positive_int_env COSCLI_ERR_RETRY_INTERVAL_SECONDS 3)"
+)
 config_auth_args=(
   --mode SecretKey
   --secret_id "$TENCENT_COS_SECRET_ID"
@@ -216,7 +273,8 @@ for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
     "${artifact_dir}/${file_name}" \
     "cos://${bucket_alias}/${remote_base}/${file_name}" \
     -c "$config_path" \
-    --disable-log
+    --disable-log \
+    "${transfer_args[@]}"
 done
 
 echo "Uploaded sidecar artifact to cos://${bucket_alias}/${remote_base}/"

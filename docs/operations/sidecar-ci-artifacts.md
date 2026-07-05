@@ -101,6 +101,20 @@ can require `HeadBucket` and `GetBucket` at bucket scope. Object write, object
 head/options checks, and multipart upload operations should be limited to
 `qintopia-agent-os/sidecar/*`.
 
+The repository uses COSCLI directly rather than `TencentCloud/cos-action@v1` because the
+published action metadata still targets `node12`. Keeping COS upload in a shell script
+lets the CI workflow stay on Node.js 24-compatible actions while still using Tencent
+Cloud's official COSCLI.
+
+Each COSCLI call has a command-level timeout. Config commands default to 60 seconds;
+upload and download commands default to 300 seconds. A timeout is treated as a failed
+release transport check, not as a deployable artifact.
+
+For GitHub-hosted runner uploads, the script sets COSCLI upload concurrency explicitly:
+4 MB parts and 8 transfer threads by default. This keeps the current sidecar binary in
+multipart mode instead of relying on COSCLI's larger default part size and a slow
+single-stream upload to the Shanghai bucket.
+
 Optional GitHub repository variables can override the workflow defaults:
 
 - `TENCENT_COS_BUCKET`, defaulting to `qintopia-agent-os-artifacts-1305166808`
