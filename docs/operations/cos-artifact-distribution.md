@@ -71,8 +71,7 @@ Server read-only CAM policy:
       "effect": "allow",
       "action": ["name/cos:HeadBucket", "name/cos:GetBucket"],
       "resource": [
-        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/",
-        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/*"
+        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/"
       ]
     },
     {
