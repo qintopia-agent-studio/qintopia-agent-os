@@ -590,6 +590,11 @@ and future programming agents.
     artifacts and `deploy-bundle` operator artifacts
   - updated the M9-F target so worker units use the COS runtime artifact for `ExecStart`
     and the COS deploy bundle payload as `WorkingDirectory` and migration source
+- Split the CI deploy bundle build into an independent `deploy-bundle-artifact` job:
+  - the deploy bundle now builds without waiting for the Rust sidecar artifact job
+  - M9-F can validate reviewed operator files from COS even when runtime artifact
+    publishing is being debugged separately
+  - the runtime artifact SHA and deploy bundle SHA remain separate approvals
 
 ## Update Rule
 

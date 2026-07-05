@@ -165,7 +165,7 @@ Record the output in the follow-up migration evidence.
 ## Apply Sequence
 
 1. Confirm the runtime SHA has a successful `check` and `sidecar-artifact` workflow run.
-2. Confirm the deploy-bundle SHA has a successful `check` and `sidecar-artifact`
+2. Confirm the deploy-bundle SHA has a successful `check` and `deploy-bundle-artifact`
    workflow run.
 3. Confirm the runtime artifact is downloaded and verified on the server.
 4. Confirm the deploy bundle is downloaded and verified on the server.

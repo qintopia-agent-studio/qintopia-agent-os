@@ -207,6 +207,9 @@ become versioned.
   COS deploy bundle instead of server-side `git fetch`.
 - Extended COS upload, fetch, and prune scripts to support both `sidecar` and
   `deploy-bundle` artifact types with latest-two retention for each.
+- Split the deploy bundle into its own `deploy-bundle-artifact` CI job so M9-F operator
+  files can be published and verified independently from the Rust sidecar runtime
+  artifact job.
 
 ### Fixed
 

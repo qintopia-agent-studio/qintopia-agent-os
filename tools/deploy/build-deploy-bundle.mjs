@@ -146,7 +146,9 @@ const manifest = {
   },
   files,
   validation: {
-    required_workflow_jobs: ["check", "sidecar-artifact"],
+    required_workflow_jobs: ["check", "deploy-bundle-artifact"],
+    paired_runtime_artifact:
+      "M9-F must also name an approved sidecar runtime artifact SHA; deploy bundle does not contain the runtime binary.",
     server_verification: [
       "download only from Tencent COS or GitHub Actions artifact for the approved deploy bundle commit SHA",
       "sha256sum -c SHA256SUMS",

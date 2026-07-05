@@ -518,6 +518,7 @@ const ciWorkflow = exists(".github/workflows/ci.yml")
   : "";
 for (const phrase of [
   "sidecar-artifact",
+  "deploy-bundle-artifact",
   'NODE_VERSION: "24"',
   "pnpm/action-setup@v6",
   "actions/checkout@v7",
