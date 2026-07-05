@@ -247,6 +247,12 @@ become versioned.
   snapshot notes, and a no-cache syntax validation check.
 - Added `skills/qintopia-tools` to the deploy bundle payload so a future M10-C release
   can assemble release-managed Hermes plugin variants before any profile repoint.
+- Completed the M10-C production repoint for Wenyuange, Xiaoman, and Erhua
+  `qintopia-tools`: published and server-verified the deploy bundle for `e722773`,
+  assembled immutable release
+  `/home/ubuntu/qintopia-agent-os-releases/e7227734f6e84493f7709290d615297daf8d1165`,
+  moved `current` to that release, and changed the three profile plugin directories to
+  release/current symlinks with per-profile import smoke and service checks.
 
 ### Fixed
 

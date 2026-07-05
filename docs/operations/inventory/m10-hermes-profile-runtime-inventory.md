@@ -94,17 +94,24 @@ git.
   - consumers: Erhua, Xiaoman, Wenyuange
   - target: `skills/qintopia-tools`
   - risk: medium
-  - status: M10-C source adoption in progress; active profile variants are imported
-    under `skills/qintopia-tools/variants/*`
-  - next step: decide shared package plus profile overlay model before production
-    repoint
+  - status: M10-C complete; active profile variants are imported under
+    `skills/qintopia-tools/variants/*` and production profile plugin directories now
+    symlink to
+    `qintopia-agent-os-releases/current/skills/qintopia-tools/variants/<profile>`
+  - validation: Wenyuange, Xiaoman, and Erhua are active after restart; each profile
+    plugin import smoke passed; release sidecar `check` passed; all nine Qintopia system
+    services are active
+  - backup:
+    `/home/ubuntu/qintopia-agent-os-backups/m10c-qintopia-tools-20260705T142000Z`
+  - next step: keep old profile-local plugin copies for M11 archive-ready evidence; do
+    not clean them in M10
 - QiWe platform plugin
   - source: `/home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform`
   - observed size: 7.7M
   - consumers: Erhua
   - target: `skills/qiwe`
   - risk: high
-  - next step: M10-C reconcile server dirty git state before symlink/release migration
+  - next step: M10-D reconcile server dirty git state before symlink/release migration
 - Huabaosi Base read plugin
   - source: `/home/ubuntu/.hermes/profiles/huabaosi/plugins/qintopia-base-read`
   - observed size: 64K
@@ -151,10 +158,14 @@ git.
      release/current, and old-script Python process references are `0`.
 2. M10-C: compare and package shared `qintopia-tools`.
    - Affected profiles: Erhua, Xiaoman, Wenyuange first.
-   - Current state: active variants imported into `skills/qintopia-tools/variants/*`;
-     production profiles are not repointed yet.
-   - Validation: per-profile plugin load check and targeted Hermes smoke before any
-     server repoint; do not include Xiaoqin in active scope.
+   - Status: complete.
+   - Current state: active variants are release-managed under
+     `qintopia-agent-os-releases/current/skills/qintopia-tools/variants/*`; Wenyuange,
+     Xiaoman, and Erhua profile plugin directories symlink to their profile-specific
+     release/current variant.
+   - Validation: per-profile import smoke passed, profile gateways are active, sidecar
+     `check` passed, and all nine Qintopia system services are active; Xiaoqin remains
+     excluded from active migration scope.
 3. M10-D: reconcile and package Erhua `qiwe-platform`.
    - Affected profile: Erhua.
    - Validation: QiWe plugin tests, local health endpoint if still applicable, Hermes
