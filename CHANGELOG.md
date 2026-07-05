@@ -212,6 +212,9 @@ become versioned.
   artifact job.
 - Recorded successful M9-F deploy bundle COS publication and server-side read-only
   validation for the approved `55d9f4e` deploy bundle.
+- Corrected the M9-F execution plan so deploy bundles are release assembly inputs and
+  production services move to `qintopia-agent-os-releases/current` instead of a
+  deploy-bundle cache path.
 
 ### Fixed
 

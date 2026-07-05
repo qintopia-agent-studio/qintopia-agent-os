@@ -292,7 +292,7 @@ set +a
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --artifact-type deploy-bundle \
   --sha <approved-deploy-bundle-sha> \
-  --output-dir /home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>
+  --output-dir /tmp/qintopia-agent-os-deploy-bundle/<approved-deploy-bundle-sha>
 ```
 
 For Tencent Cloud Lighthouse app servers, use the server-local read-only COS environment
@@ -362,21 +362,14 @@ check-only or dry-run commands.
 Guarded apply smokes are database-write checks. Run them only when the owner explicitly
 approves test audit rows during the window.
 
-## Systemd Cutover
+## Release Assembly And Systemd Cutover
 
-The sidecar service family should point to the monorepo checkout only after preflight
-passes.
+The sidecar service family should point to the release/current directory only after
+preflight passes. Do not use `/home/ubuntu/qintopia-agent-os-deploy-bundles/<sha>` as a
+production `WorkingDirectory`; the deploy bundle is an input used to assemble the
+immutable release directory.
 
-Current transition service shape:
-
-```text
-WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>/payload
-ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar <subcommand>
-EnvironmentFile=/etc/qintopia/message-sidecar.env
-Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>/payload/runtime/postgres/migrations
-```
-
-Target release/current service shape:
+M9-F release/current service shape:
 
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
@@ -408,11 +401,12 @@ For exact sidecar command details, use `deploy/sidecar/docs/systemd-cutover-plan
 render the target unit review files before copying anything into `/etc/systemd/system`:
 
 ```bash
-DEPLOY_BUNDLE_DIR="/home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>/payload"
-"${DEPLOY_BUNDLE_DIR}/deploy/sidecar/scripts/render-systemd-units.sh" \
+RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/<approved-release-sha>"
+"${RELEASE_DIR}/deploy/sidecar/scripts/render-systemd-units.sh" \
   --target-sha "<approved-runtime-sha>" \
-  --monorepo-dir "${DEPLOY_BUNDLE_DIR}" \
-  --migrations-dir "${DEPLOY_BUNDLE_DIR}/runtime/postgres/migrations" \
+  --artifact-dir "${RELEASE_DIR}/sidecar" \
+  --monorepo-dir "/home/ubuntu/qintopia-agent-os-releases/current" \
+  --migrations-dir "/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations" \
   --output-dir "/tmp/qintopia-m9f-rendered-units"
 ```
 

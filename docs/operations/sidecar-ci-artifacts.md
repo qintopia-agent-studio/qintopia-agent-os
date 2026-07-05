@@ -191,7 +191,7 @@ set +a
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --artifact-type deploy-bundle \
   --sha <approved-deploy-bundle-sha> \
-  --output-dir /home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>
+  --output-dir /tmp/qintopia-agent-os-deploy-bundle/<approved-deploy-bundle-sha>
 ```
 
 The environment file contains:
@@ -202,6 +202,9 @@ export TENCENT_COS_SECRET_KEY="<read-only-secret-key>"
 ```
 
 It does not require Node.js, pnpm, Rust, Docker, or direct source edits on the server.
+After verification, assemble the runtime artifact and deploy bundle payload into
+`/home/ubuntu/qintopia-agent-os-releases/<approved-release-sha>` and repoint services to
+`/home/ubuntu/qintopia-agent-os-releases/current`.
 
 ## GitHub Artifact Fallback
 

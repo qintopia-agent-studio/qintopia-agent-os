@@ -49,13 +49,17 @@ can be kept for rollback evidence, but services should eventually point at
 
 ## Release Payloads
 
-The first payload is the sidecar runtime artifact:
+The first M9-F release assembles two verified COS inputs: the sidecar runtime artifact
+and the deploy bundle. The resulting release directory should contain:
 
 ```text
 sidecar/
   qintopia-message-sidecar
   SHA256SUMS
 runtime/postgres/migrations/
+deploy/
+docs/
+manifest.json
 ```
 
 Later payloads should follow the same release directory contract:

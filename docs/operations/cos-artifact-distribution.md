@@ -354,12 +354,17 @@ set +a
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --artifact-type deploy-bundle \
   --sha <approved-deploy-bundle-sha> \
-  --output-dir /home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>
+  --output-dir /tmp/qintopia-agent-os-deploy-bundle/<approved-deploy-bundle-sha>
 ```
 
 The deploy bundle contains the Hermes MCP wrapper, systemd renderer, and M9-F runbooks.
 It lets the server apply reviewed wrapper and unit templates without running server-side
 `git fetch` during the mutation window.
+
+The deploy bundle is not the production service directory. After verification, combine
+it with the runtime artifact into
+`/home/ubuntu/qintopia-agent-os-releases/<approved-release-sha>` and point services at
+`/home/ubuntu/qintopia-agent-os-releases/current`.
 
 For read-only acceptance, write to `/tmp` and stop after verification:
 

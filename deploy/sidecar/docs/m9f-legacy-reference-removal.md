@@ -53,8 +53,9 @@ it or move the durable assertions into stable deploy checks.
 
 ## Target Worker Shape
 
-The release payload must come from COS. The server may use the transition artifact path
-for M9-F, but the next iteration should move these workers to `release/current`.
+The release payload must come from COS. The runtime artifact and deploy bundle are
+inputs for assembling `/home/ubuntu/qintopia-agent-os-releases/<release-sha>`. M9-F
+should point workers at `release/current`, not at deploy-bundle cache directories.
 
 Render target units for review:
 
@@ -63,13 +64,13 @@ QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
 deploy/sidecar/scripts/render-systemd-units.sh
 ```
 
-Each M9-F transition worker unit should use:
+Each M9-F worker unit should use:
 
 ```text
-WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload
-ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar <subcommand>
+WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
+ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
 EnvironmentFile=/etc/qintopia/message-sidecar.env
-Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload/runtime/postgres/migrations
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-target-sha>
 ```
 
@@ -94,11 +95,11 @@ During M9-F, Hermes `mcp-context` should move away from:
 /home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp
 ```
 
-The M9 transition command path should come from the COS deploy bundle, not from a live
-server git checkout:
+The M9 transition command path should come from the assembled release directory, not
+from a live server git checkout:
 
 ```text
-/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp
+/home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/hermes/qintopia-context-mcp
 ```
 
 The wrapper resolves the sidecar binary in this order:
@@ -108,9 +109,8 @@ The wrapper resolves the sidecar binary in this order:
 3. `/home/ubuntu/qintopia-agent-os-artifacts/$QINTOPIA_DEPLOYED_COMMIT_SHA/qintopia-message-sidecar`
 4. `/home/ubuntu/qintopia-agent-os-artifacts/current/qintopia-message-sidecar`
 
-For the current M9 transition, provide either `QINTOPIA_DEPLOYED_COMMIT_SHA` or
-`QINTOPIA_SIDECAR_BIN` in the approved Hermes MCP environment. For M10, prefer the
-release/current path.
+For M9-F, prefer the release/current path. Provide `QINTOPIA_DEPLOYED_COMMIT_SHA` as
+evidence of the approved runtime SHA, but do not rely on it to resolve the old checkout.
 
 Do not point Hermes MCP config back to the old standalone checkout.
 
@@ -121,23 +121,24 @@ M9-F has two separate concerns:
 1. Runtime release: worker binaries must come from the COS-verified artifact or the
    future `release/current` directory.
 2. Deploy files: scripts, renderers, and Hermes command wrappers must come from a
-   reviewed deploy bundle.
+   reviewed deploy bundle and be assembled into the immutable release directory.
 
 Do not mix these concerns. Server-side git checkout may be used only for diagnostics or
 emergency bootstrap. It must not become the normal way to update wrapper, renderer, or
 runtime code.
 
-Before the M9-F execution window, download and verify two COS artifacts:
+Before the M9-F execution window, download and verify two COS artifacts, then assemble a
+release directory from them:
 
-| Artifact       | COS artifact type | Server path                                                         | Purpose                              |
-| -------------- | ----------------- | ------------------------------------------------------------------- | ------------------------------------ |
-| Runtime binary | `sidecar`         | `/home/ubuntu/qintopia-agent-os-artifacts/<runtime-sha>`            | Worker `ExecStart` target            |
-| Deploy files   | `deploy-bundle`   | `/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>` | Wrapper, renderer, and M9-F runbooks |
+| Input          | COS artifact type | Staging path                                               | Release destination                                              |
+| -------------- | ----------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| Runtime binary | `sidecar`         | `/tmp/qintopia-agent-os-artifacts/<runtime-sha>`           | `/home/ubuntu/qintopia-agent-os-releases/<release-sha>/sidecar/` |
+| Deploy files   | `deploy-bundle`   | `/tmp/qintopia-agent-os-deploy-bundle/<deploy-bundle-sha>` | `/home/ubuntu/qintopia-agent-os-releases/<release-sha>/`         |
 
 The current blocker is concrete: the live server deploy checkout was verified at
 `94244504440a4f8fdb2eec07fd37b54db97fe368`, whose `qintopia-context-mcp` wrapper still
 defaults to `/home/ubuntu/qintopia-msg-sidecar`. Do not repoint Hermes to that checkout.
-Use the verified deploy bundle wrapper instead.
+Use the verified release wrapper instead.
 
 ## Read-Only Preflight
 
@@ -169,16 +170,20 @@ Record the output in the follow-up migration evidence.
    workflow run.
 3. Confirm the runtime artifact is downloaded and verified on the server.
 4. Confirm the deploy bundle is downloaded and verified on the server.
-5. Back up the six current worker unit files and the Hermes MCP config file.
-6. Render M9-F units from the deploy bundle renderer and compare against current units.
-7. Copy only the six approved worker units into `/etc/systemd/system`.
-8. Run `sudo systemctl daemon-reload`.
-9. Restart the six workers one by one, checking status and logs after each restart.
-10. Repoint Hermes `mcp-context` command to the deploy bundle wrapper with an approved
-    `QINTOPIA_DEPLOYED_COMMIT_SHA` or `QINTOPIA_SIDECAR_BIN`.
-11. Restart only the affected Hermes profile process if the MCP command change requires
+5. Assemble `/home/ubuntu/qintopia-agent-os-releases/<release-sha>` from the verified
+   runtime artifact and deploy bundle payload.
+6. Validate the release directory without changing `current`.
+7. Back up the six current worker unit files and the Hermes MCP config file.
+8. Update `previous` to the old `current` target, then atomically switch `current` to
+   `<release-sha>`.
+9. Render M9-F units from the release renderer and compare against current units.
+10. Copy only the six approved worker units into `/etc/systemd/system`.
+11. Run `sudo systemctl daemon-reload`.
+12. Restart the six workers one by one, checking status and logs after each restart.
+13. Repoint Hermes `mcp-context` command to the release wrapper.
+14. Restart only the affected Hermes profile process if the MCP command change requires
     it.
-12. Re-run read-only reference checks and confirm no active process or active unit still
+15. Re-run read-only reference checks and confirm no active process or active unit still
     references the old checkout.
 
 ## Execution Window Checklist
@@ -192,7 +197,7 @@ Enter the M9-F mutation window only when all of these are true:
 - The six current worker unit files have been backed up.
 - The affected Hermes MCP config files have been backed up.
 - The rendered worker unit diff contains only the approved worker repoints.
-- The deploy bundle wrapper does not contain `/home/ubuntu/qintopia-msg-sidecar`.
+- The assembled release wrapper does not contain `/home/ubuntu/qintopia-msg-sidecar`.
 - Rollback commands and previous unit/config paths are visible in the operator shell.
 
 Exit the window only after:

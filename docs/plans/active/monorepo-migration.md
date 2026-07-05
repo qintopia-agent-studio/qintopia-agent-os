@@ -610,6 +610,15 @@ and future programming agents.
     directory for `QINTOPIA_SIDECAR_MIGRATIONS_DIR`
   - confirmed the six live M9-F target services remain active and still point to
     `/home/ubuntu/qintopia-msg-sidecar`; no production mutation was made
+- Corrected the M9-F execution plan to avoid introducing
+  `/home/ubuntu/qintopia-agent-os-deploy-bundles/<sha>` as a production runtime path:
+  - deploy bundles are release assembly inputs, not long-lived service
+    `WorkingDirectory` targets
+  - the next M9-F mutation should assemble an immutable
+    `/home/ubuntu/qintopia-agent-os-releases/<release-sha>` directory from the verified
+    runtime artifact and deploy bundle payload
+  - worker units should point to `/home/ubuntu/qintopia-agent-os-releases/current`
+    instead of directly to artifact or deploy-bundle cache paths
 
 ## Update Rule
 
@@ -647,28 +656,33 @@ Remaining follow-up after the active service cutover:
 
 Recommended order:
 
-1. Download and verify the approved runtime sidecar artifact from COS in the production
-   artifact cache if it is not already present.
-2. Render M9-F worker units from the deploy bundle payload with:
-   - `WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload`
-   - `ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<runtime-sha>/qintopia-message-sidecar`
-   - `QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload/runtime/postgres/migrations`
-3. Promote the verified deploy bundle from `/tmp` into the production deploy bundle
-   cache before mutation:
-   `/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>`.
+1. Download and verify the approved runtime sidecar artifact and deploy bundle from COS
+   in a staging directory.
+2. Assemble an immutable release directory:
+   `/home/ubuntu/qintopia-agent-os-releases/<release-sha>`. The release should include:
+   - `sidecar/qintopia-message-sidecar` from the runtime artifact
+   - `runtime/postgres/migrations/` from the deploy bundle payload
+   - reviewed `deploy/`, `docs/`, and wrapper files from the deploy bundle payload
+   - a release manifest recording the runtime SHA and deploy bundle SHA
+3. Validate the release directory without changing `current`, then update
+   `/home/ubuntu/qintopia-agent-os-releases/previous` to the old `current` target and
+   atomically switch `/home/ubuntu/qintopia-agent-os-releases/current` to the new
+   release.
 4. Complete M9-F by repointing remaining active
    `qintopia-agentos-member-profile-worker`, `qintopia-agentos-graph-projection-worker`,
    `qintopia-agentos-raw-archive-worker`, `qintopia-agentos-event-signal-worker`,
    `qintopia-agentos-daily-digest-worker`, and `qintopia-agentos-daily-digest-publisher`
-   services away from `/home/ubuntu/qintopia-msg-sidecar`.
+   services away from `/home/ubuntu/qintopia-msg-sidecar` and onto
+   `/home/ubuntu/qintopia-agent-os-releases/current`.
 5. Move Hermes `mcp-context` command references away from
    `/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp` and into a
-   reviewed deploy-bundle/release-managed command path.
-6. Design M10 release packaging:
+   reviewed release-managed command path.
+6. Extend release packaging after worker/MCP cutover:
    - `sidecar-runtime` release payload
    - `hermes-profile-bundle-<agent>` payloads for reviewed non-secret profile files
    - `skill-bundle-<skill>` payloads for Hermes plugins such as `skills/qiwe`
-   - `qintopia-agent-os-releases/<sha>` with `current` and `previous` symlinks
+   - broader `qintopia-agent-os-releases/<sha>` contents beyond M9-F sidecar/operator
+     files
 7. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
 8. Do not repoint production to a newer commit just because docs changed; use a new
