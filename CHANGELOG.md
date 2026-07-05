@@ -227,6 +227,11 @@ become versioned.
   and the three `qintopia-message-*` services onto `qintopia-agent-os-releases/current`;
   active process and unit references to the old sidecar checkout/artifact paths are now
   clear.
+- Added the M10-A Hermes profile runtime inventory, anchoring the next migration order
+  for collab MCP, shared `qintopia-tools`, Erhua `qiwe-platform`, Huabaosi
+  `qintopia-base-read`, and M11/M12 cleanup gates.
+- Added the adopting `mcp/qintopia-collab` package boundary and registry entry for the
+  next Hermes collab MCP migration step.
 
 ### Fixed
 

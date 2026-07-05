@@ -11,3 +11,8 @@ entries:
     manifest: mcp/message-store/manifest.yaml
     status: active
     notes: Controlled Postgres-backed message and discussion-evidence lookup.
+  - id: mcp/qintopia-collab
+    path: mcp/qintopia-collab
+    manifest: mcp/qintopia-collab/manifest.yaml
+    status: adopting
+    notes: Release-managed package boundary for Hermes qintopia-collab MCP migration.

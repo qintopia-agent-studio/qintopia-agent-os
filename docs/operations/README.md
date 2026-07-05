@@ -8,6 +8,8 @@ canonical architecture, engineering, package, or deployment docs.
 
 - [inventory/README.md](inventory/README.md): M1 migration inventory for local sources,
   server sources, runtime assets, profiles, and services.
+- [inventory/m10-hermes-profile-runtime-inventory.md](inventory/m10-hermes-profile-runtime-inventory.md):
+  post-M9-F Hermes profile/plugin/script inventory and M10/M11 migration gates.
 - [source-document-inventory.md](source-document-inventory.md): read-only inventory of
   server and local documents reviewed during the documentation organization pass.
 - [runtime-baseline.md](runtime-baseline.md): production runtime baseline and migration

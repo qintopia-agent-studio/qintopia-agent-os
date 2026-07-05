@@ -709,6 +709,24 @@ and future programming agents.
     services remained inactive/disabled
   - did not archive/delete legacy directories, did not enable external send paths, and
     did not enable real workbench adapter paths
+- Completed M10-A read-only Hermes profile runtime inventory:
+  - added `docs/operations/inventory/m10-hermes-profile-runtime-inventory.md`
+  - confirmed all nine sidecar/worker services and Erhua/Wenyuange `qintopia-context`
+    MCP are now release/current-managed
+  - identified the next active migration candidates as
+    `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`, shared `qintopia-tools`, Erhua
+    `qiwe-platform`, and Huabaosi `qintopia-base-read`
+  - classified Xiaoqin WorkTool, WorkTool gateway, and OpenClaw paths as M12
+    decommission candidates, not active Agent package migrations
+  - kept `.env`, sessions, logs, cache, auth files, runtime-generated memory, and whole
+    profile directories out of git
+- Started M10-B by adding the adopting `mcp/qintopia-collab` package boundary:
+  - added package manifest and README for the current
+    `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp` command
+  - registered the package in `registry/mcp.yaml`
+  - documented the profile-by-profile migration sequence for Huabaosi, Silaoshi, and
+    Xiaoman
+  - did not yet copy server implementation code or repoint production Hermes profiles
 
 ## Update Rule
 
@@ -760,16 +778,27 @@ Recommended order:
    - `skill-bundle-<skill>` payloads for Hermes plugins such as `skills/qiwe`
    - broader `qintopia-agent-os-releases/<sha>` contents beyond M9-F sidecar/operator
      files
-5. Keep server-side GitHub access out of routine runtime releases. Use it only for
-   deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
-6. Do not repoint production to a newer commit just because docs changed; use a new
-   approved target SHA and artifact only when there is a production runtime change.
-7. Do not enable real external send or real workbench adapter paths until production
-   allowlists/config are reviewed and set.
-8. After no process, unit, timer, cron, MCP command, or nginx route references legacy
-   paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
-   `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
-   `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and
-   OpenClaw paths only with owner approval.
-9. Add deploy smoke and rollback notes before any production wiring changes for
-   `skills/qiwe` or Erhua profile bundles.
+5. M10-B: package and release-manage `/home/ubuntu/.hermes/scripts/qintopia-collab-mcp`
+   for Huabaosi, Silaoshi, and Xiaoman.
+6. M10-C: compare and package active `qintopia-tools` copies for Erhua, Xiaoman, and
+   Wenyuange. Keep Xiaoqin out of active migration scope.
+7. M10-D: reconcile Erhua `qiwe-platform` server state before migrating it through
+   `skills/qiwe`.
+8. M10-E: review Huabaosi `qintopia-base-read` after collab MCP migration.
+9. M10-F: plan reviewed `config.yaml` and `SOUL.md` profile templates/symlinks without
+   replacing whole profile directories.
+10. M11: mark legacy paths as `archive-ready` only after no process, unit/timer, Hermes
+    config, nginx route, cron job, or rollback dependency references them.
+11. Keep server-side GitHub access out of routine runtime releases. Use it only for
+    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
+12. Do not repoint production to a newer commit just because docs changed; use a new
+    approved target SHA and artifact only when there is a production runtime change.
+13. Do not enable real external send or real workbench adapter paths until production
+    allowlists/config are reviewed and set.
+14. After no process, unit, timer, cron, MCP command, or nginx route references legacy
+    paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
+    `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
+    `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin,
+    and OpenClaw paths only with owner approval.
+15. Add deploy smoke and rollback notes before any production wiring changes for
+    `skills/qiwe` or Erhua profile bundles.

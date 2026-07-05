@@ -14,6 +14,8 @@ package candidates, risk, and next actions.
   source inventory.
 - [runtime-assets.yaml](runtime-assets.yaml): server profile assets, services, and
   runtime-only inputs.
+- [m10-hermes-profile-runtime-inventory.md](m10-hermes-profile-runtime-inventory.md):
+  post-M9-F Hermes profile, plugin, script, and cleanup-gate inventory for M10/M11.
 
 ## Dispositions
 

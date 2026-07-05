@@ -1,0 +1,35 @@
+id: mcp/qintopia-collab
+type: mcp
+name: Qintopia Collab MCP
+owner: PatrickLiveCool
+status: adopting
+risk_level: medium
+description:
+  Release-managed wrapper and package boundary for the Hermes qintopia-collab MCP used
+  by selected profiles.
+source:
+  path: /home/ubuntu/.hermes/scripts/qintopia-collab-mcp
+  reference: server-runtime-2026-07-05
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm check:light
+    - systemctl --user is-active hermes-gateway-huabaosi.service
+    - systemctl --user is-active hermes-gateway-silaoshi.service
+    - systemctl --user is-active hermes-gateway-xiaoman.service
+dependencies:
+  - runtime/hermes
+tags:
+  - mcp
+  - hermes
+  - collab
+next_actions:
+  - Extract the non-secret server script into this package and add a release-managed
+    wrapper.
+  - Repoint Huabaosi, Silaoshi, and Xiaoman one profile at a time with backup and
+    process-path validation.
