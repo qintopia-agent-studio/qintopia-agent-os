@@ -217,6 +217,9 @@ become versioned.
   deploy-bundle cache path.
 - Split artifact publication into an opt-in `Artifacts` workflow and changed CI so
   docs-only changes run only the light gate instead of Rust/runtime builds.
+- Published and server-validated the first opt-in `Artifacts` release candidate for
+  `13a3957`, assembled it under `qintopia-agent-os-releases/<sha>`, and corrected the
+  M9-F render instructions so worker units point through `release/current` for rollback.
 
 ### Fixed
 

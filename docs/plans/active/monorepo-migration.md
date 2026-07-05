@@ -625,6 +625,32 @@ and future programming agents.
   - artifact publication moved to a separate `Artifacts` workflow
   - artifact publication is opt-in through `workflow_dispatch` or an explicit
     `[publish-artifacts]` commit marker
+- Published and validated the first opt-in release/current candidate for
+  `13a3957369ad80ea8b6e93d4c67c6ef120ecffd6` without production repoint:
+  - manually triggered GitHub Actions `Artifacts` run `28740196040` with sidecar, deploy
+    bundle, and COS upload enabled
+  - confirmed `sidecar-artifact` passed in `5m51s`, `deploy-bundle-artifact` passed in
+    `37s`, and both COS artifact families ran latest-two pruning
+  - the server transitional checkout still lacks the current COS fetch script, so the
+    approved `fetch-cos-artifact.sh` and `install-coscli.sh` from the pushed commit were
+    copied only into `/tmp/qintopia-agent-os-bootstrap-13a3957`; the server checkout was
+    not updated with `git fetch`
+  - downloaded and verified the sidecar artifact into
+    `/tmp/qintopia-agent-os-cos-readonly/13a3957369ad80ea8b6e93d4c67c6ef120ecffd6` and
+    the deploy bundle into
+    `/tmp/qintopia-agent-os-deploy-bundle-readonly/13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`
+  - assembled the immutable release candidate
+    `/home/ubuntu/qintopia-agent-os-releases/13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`
+    with `production_repointed=false`; no `current` symlink exists yet and no service
+    was restarted
+  - rendered six M9-F worker unit previews into
+    `/tmp/qintopia-m9f-rendered-units-current-13a3957369ad80ea8b6e93d4c67c6ef120ecffd6`
+  - corrected the render command so `ExecStart`, `WorkingDirectory`, and
+    `QINTOPIA_SIDECAR_MIGRATIONS_DIR` all point through
+    `/home/ubuntu/qintopia-agent-os-releases/current`, preserving symlink rollback
+  - confirmed the rendered diff for the six workers changes only the old
+    `/home/ubuntu/qintopia-msg-sidecar` paths to release/current paths and adds
+    `QINTOPIA_DEPLOYED_COMMIT_SHA` plus `QINTOPIA_SIDECAR_MIGRATIONS_DIR`
 
 ## Update Rule
 

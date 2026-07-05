@@ -328,6 +328,12 @@ deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --output-dir /tmp/qintopia-agent-os-deploy-bundle-readonly/<approved-deploy-bundle-sha>
 ```
 
+If the transitional server checkout does not yet contain the current COS fetch scripts,
+do not run `git fetch` just to obtain them. Copy the approved `fetch-cos-artifact.sh`
+and `install-coscli.sh` scripts for the approved commit into a temporary `/tmp`
+bootstrap directory, run the read-only fetch from there, and record the script source
+SHA in the migration evidence.
+
 Run binary checks without changing systemd:
 
 ```bash
@@ -404,7 +410,7 @@ render the target unit review files before copying anything into `/etc/systemd/s
 RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/<approved-release-sha>"
 "${RELEASE_DIR}/deploy/sidecar/scripts/render-systemd-units.sh" \
   --target-sha "<approved-runtime-sha>" \
-  --artifact-dir "${RELEASE_DIR}/sidecar" \
+  --artifact-dir "/home/ubuntu/qintopia-agent-os-releases/current/sidecar" \
   --monorepo-dir "/home/ubuntu/qintopia-agent-os-releases/current" \
   --migrations-dir "/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations" \
   --output-dir "/tmp/qintopia-m9f-rendered-units"
