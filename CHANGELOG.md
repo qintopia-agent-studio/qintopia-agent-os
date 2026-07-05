@@ -184,3 +184,5 @@ become versioned.
   `cp` arguments, and COSCLI failures include non-secret diagnostics.
 - Added sanitized COSCLI failure output so CI can distinguish bucket configuration,
   permission, and object upload errors without printing COS credentials.
+- Fixed COSCLI temporary config initialization so upload and fetch scripts create the
+  config file before calling `config add` or `config set`.

@@ -171,6 +171,7 @@ run_coscli() {
 }
 
 config_path="${tmp_dir}/cos.yaml"
+touch "$config_path"
 config_auth_args=(--init-skip --disable-log)
 if [[ "$auth_mode" == "CvmRole" ]]; then
   run_coscli "configure COS CVM role auth" config set \

@@ -181,6 +181,7 @@ run_coscli() {
 }
 
 config_path="${tmp_dir}/cos.yaml"
+touch "$config_path"
 bucket_alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
 prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
