@@ -452,6 +452,11 @@ and future programming agents.
     seconds from the GitHub-hosted runner to the Shanghai bucket
   - tuned CI COS uploads to use smaller 4 MB parts and 8 transfer threads so the current
     sidecar binary can use COSCLI multipart concurrency instead of a slow single stream
+  - confirmed multipart tuning alone is not enough: the next CI run still timed out
+    after 300 seconds and uploaded only about 4.8 MB of the 24.8 MB raw binary
+  - changed COS artifact transport to upload `qintopia-message-sidecar.tar.gz` by
+    default, while keeping the extracted server artifact path and `SHA256SUMS`
+    verification unchanged
   - documented why the repository uses COSCLI directly instead of
     `TencentCloud/cos-action@v1`: the official action still targets `node12`, while this
     workflow stays on Node.js 24-compatible action runtimes
@@ -472,9 +477,9 @@ Remaining follow-up after the active service cutover:
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
 - COS artifact distribution: verify the next `master` build with bounded COSCLI
-  execution. If the binary upload still times out, inspect COSCLI output and COS bucket
-  state for acceleration-domain or runner-network behavior before using
-  `fetch-cos-artifact.sh` for the next M9-F artifact preparation.
+  execution and compressed bundle payload. If the bundle upload still times out, inspect
+  COSCLI output and COS bucket state for acceleration-domain or runner-network behavior
+  before using `fetch-cos-artifact.sh` for the next M9-F artifact preparation.
 - M10 release/current model: replace direct
   `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
   directories and stable `current`/`previous` symlinks.

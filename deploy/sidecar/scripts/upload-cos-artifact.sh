@@ -25,6 +25,7 @@ Optional environment:
   COSCLI_THREAD_NUM                Concurrent transfer threads. Defaults to 8.
   COSCLI_ERR_RETRY_NUM             Transfer error retry count. Defaults to 3.
   COSCLI_ERR_RETRY_INTERVAL_SECONDS  Transfer retry interval. Defaults to 3.
+  TENCENT_COS_ARTIFACT_PAYLOAD        Object payload mode: bundle or raw. Defaults to bundle.
 USAGE
 }
 
@@ -63,6 +64,7 @@ artifact_dir="${artifact_dir%/}"
 manifest_path="${artifact_dir}/artifact-manifest.json"
 checksum_path="${artifact_dir}/SHA256SUMS"
 binary_path="${artifact_dir}/qintopia-message-sidecar"
+bundle_path="${artifact_dir}/qintopia-message-sidecar.tar.gz"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -238,6 +240,24 @@ prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
 prefix="${prefix%/}"
 remote_base="${prefix}/sidecar/${sha}/${artifact_name}"
+payload_mode="${TENCENT_COS_ARTIFACT_PAYLOAD:-bundle}"
+payload_files=(artifact-manifest.json SHA256SUMS)
+case "$payload_mode" in
+  bundle)
+    if [[ ! -f "$bundle_path" ]]; then
+      echo "artifact bundle not found: $bundle_path" >&2
+      exit 1
+    fi
+    payload_files+=(qintopia-message-sidecar.tar.gz)
+    ;;
+  raw)
+    payload_files+=(qintopia-message-sidecar)
+    ;;
+  *)
+    echo "TENCENT_COS_ARTIFACT_PAYLOAD must be bundle or raw" >&2
+    exit 2
+    ;;
+esac
 transfer_args=(
   --part-size "$(positive_int_env COSCLI_PART_SIZE_MB 4)"
   --thread-num "$(positive_int_env COSCLI_THREAD_NUM 8)"
@@ -267,7 +287,7 @@ run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   --init-skip \
   --disable-log
 
-for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
+for file_name in "${payload_files[@]}"; do
   log "Uploading ${file_name} to cos://${bucket_alias}/${remote_base}/${file_name}"
   run_coscli "upload ${file_name}" cp \
     "${artifact_dir}/${file_name}" \

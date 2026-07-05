@@ -23,6 +23,8 @@ const binaryPath = path.join(
   binaryName
 );
 const stagedBinaryPath = path.join(artifactDir, binaryName);
+const bundleName = `${binaryName}.tar.gz`;
+const bundlePath = path.join(artifactDir, bundleName);
 const manifestPath = path.join(artifactDir, "artifact-manifest.json");
 const checksumPath = path.join(artifactDir, "SHA256SUMS");
 
@@ -76,8 +78,10 @@ fs.rmSync(artifactDir, { recursive: true, force: true });
 fs.mkdirSync(artifactDir, { recursive: true });
 fs.copyFileSync(binaryPath, stagedBinaryPath);
 fs.chmodSync(stagedBinaryPath, 0o755);
+run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName]);
 
 const binarySha256 = sha256File(stagedBinaryPath);
+const bundleSha256 = sha256File(bundlePath);
 const manifest = {
   schema_version: 1,
   artifact_name: artifactName,
@@ -106,6 +110,14 @@ const manifest = {
       sha256: binarySha256,
       size_bytes: fs.statSync(stagedBinaryPath).size,
       mode: "0755",
+    },
+    {
+      path: bundleName,
+      sha256: bundleSha256,
+      size_bytes: fs.statSync(bundlePath).size,
+      content: [binaryName],
+      compression: "gzip",
+      mode: "0644",
     },
   ],
   validation: {

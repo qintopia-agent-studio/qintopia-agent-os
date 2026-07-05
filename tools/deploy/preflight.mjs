@@ -213,6 +213,9 @@ for (const cosScriptPath of [
         `${cosScriptPath}: must tune COSCLI uploads for small release artifacts with multipart concurrency`
       );
     }
+    if (!script.includes("TENCENT_COS_ARTIFACT_PAYLOAD")) {
+      addError(`${cosScriptPath}: must support explicit COS artifact payload mode`);
+    }
     const cpCommands = script.matchAll(
       /\b(?:run_coscli\s+"[^"]+"\s+)?cp\s+[\s\S]*?(?=\n(?:done|echo|mkdir|test|\(|[a-zA-Z0-9_]+\(|if\b|for\b)|$)/g
     );
@@ -245,11 +248,29 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     "TENCENT_COS_AUTH_MODE=CvmRole",
     "artifact-manifest.json",
     "SHA256SUMS",
+    "qintopia-message-sidecar.tar.gz",
+    'tar -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir"',
+    "qintopia-message-sidecar",
     "sha256sum -c SHA256SUMS",
   ]) {
     if (!cosFetchScript.includes(requiredFragment)) {
       addError(
         `deploy/sidecar/scripts/fetch-cos-artifact.sh: must verify COS artifact downloads (${requiredFragment})`
+      );
+    }
+  }
+}
+
+if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
+  const buildArtifactScript = readText("tools/deploy/build-sidecar-artifact.mjs");
+  for (const requiredFragment of [
+    "const bundleName = `${binaryName}.tar.gz`",
+    'run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName])',
+    "bundleSha256",
+  ]) {
+    if (!buildArtifactScript.includes(requiredFragment)) {
+      addError(
+        `tools/deploy/build-sidecar-artifact.mjs: must include compressed sidecar bundle support (${requiredFragment})`
       );
     }
   }

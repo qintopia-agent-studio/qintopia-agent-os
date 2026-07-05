@@ -31,7 +31,7 @@ qintopia-agent-os/
       qintopia-message-sidecar-linux-x86_64-gnu/
         artifact-manifest.json
         SHA256SUMS
-        qintopia-message-sidecar
+        qintopia-message-sidecar.tar.gz
 ```
 
 ## Access Model
@@ -180,11 +180,19 @@ deploy/sidecar/scripts/upload-cos-artifact.sh \
   --sha "$GITHUB_SHA"
 ```
 
-The upload script verifies `SHA256SUMS` before upload and writes only these files:
+The upload script verifies `SHA256SUMS` before upload and writes these files by default:
 
 - `artifact-manifest.json`
 - `SHA256SUMS`
-- `qintopia-message-sidecar`
+- `qintopia-message-sidecar.tar.gz`
+
+`qintopia-message-sidecar.tar.gz` contains the release binary. The server fetch script
+extracts it and then verifies the extracted `qintopia-message-sidecar` with
+`SHA256SUMS`. This keeps the server runtime layout unchanged while reducing the object
+payload sent from GitHub-hosted runners to COS.
+
+Set `TENCENT_COS_ARTIFACT_PAYLOAD=raw` only for emergency debugging when you need to
+upload the raw binary object directly.
 
 COSCLI execution is bounded so the workflow fails with a useful diagnostic instead of
 waiting for the whole job timeout:
@@ -199,11 +207,11 @@ waiting for the whole job timeout:
 If a transfer times out, the script prints the bucket alias, object prefix, and
 sanitized COSCLI output without printing credentials.
 
-COSCLI's default part size is larger than the current sidecar binary, which can make a
-24 to 25 MB artifact upload as one slow stream from GitHub-hosted runners to Shanghai
-COS. The upload script uses a smaller part size and multiple transfer threads so the
-release binary can use COSCLI multipart concurrency without changing the artifact
-contract.
+GitHub artifact upload compresses the sidecar artifact to about 9 MB, while the raw
+release binary is about 25 MB. COS distribution therefore uses the compressed sidecar
+bundle as the default transport payload. The upload script also uses a smaller part size
+and multiple transfer threads so larger future bundles can use COSCLI multipart
+concurrency without changing the artifact contract.
 
 ## Download Path
 
@@ -223,6 +231,7 @@ The download script verifies:
 
 - requested commit SHA matches `artifact-manifest.json`
 - artifact name and target match the expected sidecar target
+- compressed bundle is extracted into `qintopia-message-sidecar`
 - manifest checksum matches `SHA256SUMS`
 - `sha256sum -c SHA256SUMS` passes
 

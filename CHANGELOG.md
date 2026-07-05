@@ -195,3 +195,5 @@ become versioned.
   diagnostics instead of waiting for the whole GitHub Actions job timeout.
 - Tuned COSCLI CI uploads with smaller multipart parts and explicit transfer threads so
   sidecar release binaries do not rely on a slow single-stream upload path.
+- Added a compressed `qintopia-message-sidecar.tar.gz` release bundle for COS transport;
+  server fetch still extracts and verifies the original binary with `SHA256SUMS`.

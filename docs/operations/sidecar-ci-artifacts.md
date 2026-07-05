@@ -15,6 +15,8 @@ qintopia-message-sidecar-linux-x86_64-gnu
 Each artifact contains:
 
 - `qintopia-message-sidecar`: release binary
+- `qintopia-message-sidecar.tar.gz`: compressed release binary bundle used for COS
+  transport
 - `artifact-manifest.json`: commit, branch, target, build time, runner, Rust toolchain,
   file size, and file checksum
 - `SHA256SUMS`: checksum file for server-side verification
@@ -78,7 +80,7 @@ Object layout:
 cos://qintopia-agent-os-artifacts/qintopia-agent-os/sidecar/<commit-sha>/qintopia-message-sidecar-linux-x86_64-gnu/
   artifact-manifest.json
   SHA256SUMS
-  qintopia-message-sidecar
+  qintopia-message-sidecar.tar.gz
 ```
 
 Configured COS destination:
@@ -114,6 +116,11 @@ For GitHub-hosted runner uploads, the script sets COSCLI upload concurrency expl
 4 MB parts and 8 transfer threads by default. This keeps the current sidecar binary in
 multipart mode instead of relying on COSCLI's larger default part size and a slow
 single-stream upload to the Shanghai bucket.
+
+The default COS payload is the compressed `qintopia-message-sidecar.tar.gz` bundle. The
+server fetch script extracts the bundle and then verifies the extracted binary with the
+same `SHA256SUMS` file, so systemd and Hermes still see `qintopia-message-sidecar` in
+the artifact directory.
 
 Optional GitHub repository variables can override the workflow defaults:
 

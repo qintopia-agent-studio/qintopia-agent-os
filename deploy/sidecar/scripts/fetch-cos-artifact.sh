@@ -30,6 +30,7 @@ Optional environment:
   COSCLI_PATH                Existing coscli binary path.
   COSCLI_CONFIG_TIMEOUT_SECONDS    Per config command timeout. Defaults to 60.
   COSCLI_TRANSFER_TIMEOUT_SECONDS  Per download command timeout. Defaults to 300.
+  TENCENT_COS_ARTIFACT_PAYLOAD     Object payload mode: bundle or raw. Defaults to bundle.
 USAGE
 }
 
@@ -80,6 +81,7 @@ require_env() {
 
 require_command python3
 require_command sha256sum
+require_command tar
 
 require_env TENCENT_COS_BUCKET
 require_env TENCENT_COS_REGION
@@ -130,6 +132,20 @@ prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
 prefix="${prefix%/}"
 remote_base="${prefix}/sidecar/${sha}/${artifact_name}"
+payload_mode="${TENCENT_COS_ARTIFACT_PAYLOAD:-bundle}"
+payload_files=(artifact-manifest.json SHA256SUMS)
+case "$payload_mode" in
+  bundle)
+    payload_files+=(qintopia-message-sidecar.tar.gz)
+    ;;
+  raw)
+    payload_files+=(qintopia-message-sidecar)
+    ;;
+  *)
+    echo "TENCENT_COS_ARTIFACT_PAYLOAD must be bundle or raw" >&2
+    exit 2
+    ;;
+esac
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -241,7 +257,7 @@ run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   --disable-log
 
 mkdir -p "$output_dir"
-for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
+for file_name in "${payload_files[@]}"; do
   log "Downloading ${file_name} from cos://${bucket_alias}/${remote_base}/${file_name}"
   run_coscli "download ${file_name}" cp \
     "cos://${bucket_alias}/${remote_base}/${file_name}" \
@@ -249,6 +265,11 @@ for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
     -c "$config_path" \
     --disable-log
 done
+
+if [[ "$payload_mode" == "bundle" ]]; then
+  tar -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir" \
+    qintopia-message-sidecar
+fi
 
 (
   cd "$output_dir"
