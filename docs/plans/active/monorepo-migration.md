@@ -75,6 +75,7 @@ and future programming agents.
 | M8 CI/CD deployment gate    | Complete | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                                                                                |
 | M9 server cutover           | Complete | all nine sidecar/worker services and the context MCP path run from `qintopia-agent-os-releases/current`; external adapter enablement remains a separate allowlist/config decision                                                     |
 | M10 release model           | Complete | versioned release directories and `current`/`previous` symlinks cover sidecar runtime, context MCP, collab MCP, shared `qintopia-tools`, Erhua `qiwe-platform`, Huabaosi `qintopia-base-read`, and reviewed profile-template planning |
+| M11 archive-ready marking   | Complete | legacy paths have read-only process, unit, cron, nginx, Hermes config, and rollback evidence; M12 cleanup remains blocked on owner-approved batches                                                                                   |
 
 ## Progress Log
 
@@ -906,6 +907,18 @@ and future programming agents.
     `agents/*/SOUL.md` or `agents/*/config.yaml`
   - validated `pnpm agents:profile-bundles:check`, `pnpm agents:check`, and
     `pnpm check:light`
+- Completed M11 archive-ready marking:
+  - added `docs/operations/archive-readiness/m11-legacy-path-readiness.md`
+  - marked `/home/ubuntu/qintopia-msg-sidecar`, `/home/ubuntu/qintopia-agent-os`,
+    `/home/ubuntu/qintopia-hermes-runtime`,
+    `/home/ubuntu/qintopia-message-sidecar-build`, `/home/ubuntu/qintopia-artifacts`,
+    `/home/ubuntu/qintopia-migration`, `/home/ubuntu/qintopia-worklog-guard-*`, and
+    `/home/ubuntu/worktool-gateway-old` as archive-ready candidates
+  - marked `/home/ubuntu/worktool-gateway`, `/home/ubuntu/.hermes/profiles/xiaoqin`, and
+    `/opt/qiwe-openclaw-adapter` as decommission-batch-required because disabled
+    unit/profile references still exist
+  - did not move, archive, delete, disable, or edit any legacy path; M12 remains a
+    separate owner-approved cleanup phase
 
 ## Update Rule
 
@@ -917,7 +930,7 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Remaining follow-up after M10 release-model completion:
+Remaining follow-up after M11 archive-ready marking:
 
 - Server deploy checkout remains a transition diagnostic checkout at `9424450`; do not
   use `git fetch` as the routine release path.
@@ -929,16 +942,16 @@ Remaining follow-up after M10 release-model completion:
   profile template/symlink plan and guardrails without production profile-file repoints.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
-- Deprecated runtime cleanup: WorkTool, Xiaoqin WorkTool, OpenClaw, and related nginx
-  references remain deferred until the final cleanup window.
+- Deprecated runtime cleanup: M11 has marked archive-ready candidates and
+  decommission-batch-required paths. Actual archive/delete work remains deferred until
+  M12 owner approval.
 - Hermes profile/plugin files under `.hermes/profiles/*` are still live runtime state.
   Future profile and skill migrations must use reviewed release bundles or symlinks, not
   wholesale copies of `.hermes`.
 
 Recommended order:
 
-1. M11: mark legacy paths as `archive-ready` only after no process, unit/timer, Hermes
-   config, nginx route, cron job, or rollback dependency references them.
+1. Stop before M12 and choose an owner-approved cleanup batch.
 2. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
 3. Do not repoint production to a newer commit just because docs changed; use a new

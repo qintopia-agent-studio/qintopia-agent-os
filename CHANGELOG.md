@@ -273,6 +273,9 @@ become versioned.
 - Completed M10-F profile template planning by documenting the future profile bundle
   shape, keeping `SOUL.md` and `config.yaml` out of the current deploy bundle, and
   adding a profile-bundle check that blocks live runtime state from agent templates.
+- Added the M11 legacy path archive-readiness record, marking low-risk legacy
+  directories as archive-ready while keeping WorkTool, Xiaoqin, and OpenClaw behind
+  decommission-batch gates.
 
 ### Fixed
 
