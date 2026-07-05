@@ -264,6 +264,12 @@ become versioned.
   preserving the runtime plugin name while removing hardcoded Feishu/Base credentials,
   adding package docs/tests/checks, and packaging it in the deploy bundle for the next
   release/current repoint.
+- Completed the M10-E production repoint for Huabaosi `qintopia-base-read`: published
+  and server-verified the deploy bundle for `16496c8`, assembled immutable release
+  `/home/ubuntu/qintopia-agent-os-releases/16496c8d4bfb13ed26d080727a4c812f9c2e0487`,
+  moved `current` to that release, migrated the required Base identifiers into Huabaosi
+  runtime env, and changed the profile plugin directory to a release/current symlink
+  with service, tool registration, sidecar, and cache-free package checks.
 
 ### Fixed
 

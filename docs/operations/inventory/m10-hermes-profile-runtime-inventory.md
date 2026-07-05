@@ -125,13 +125,17 @@ git.
   - consumers: Huabaosi
   - target: `skills/feishu-base`
   - risk: medium
-  - status: M10-E package adoption started; production still profile-local until a
-    verified release/current repoint is performed
-  - validation: package-local check, deploy bundle build, manifest membership, and
-    `pnpm check:light` passed locally
-  - next step: publish and verify an opt-in deploy bundle, confirm required runtime env
-    values are available to Huabaosi without committing secrets, then repoint only this
-    plugin directory
+  - status: M10-E complete; Huabaosi profile plugin directory now symlinks to
+    `qintopia-agent-os-releases/current/skills/feishu-base`
+  - validation: package-local check, deploy bundle build, manifest membership,
+    `pnpm check:light`, CI, server-side COS fetch verification, plugin import/tool
+    registration smoke, required runtime env presence, release sidecar `check`, active
+    Huabaosi service, all nine Qintopia system services, and five active Hermes profile
+    services
+  - backup:
+    `/home/ubuntu/qintopia-agent-os-backups/m10e-qintopia-base-read-20260705T151129Z`
+  - next step: keep old profile-local plugin backup and pre-change env for M11
+    archive-ready evidence; do not clean them in M10
 - Silaoshi temporary script
   - source: `/home/ubuntu/.hermes/profiles/silaoshi/tmp_query_brief.py`
   - observed size: small
@@ -190,14 +194,15 @@ git.
      external-send allowlist/config was broadened.
 4. M10-E: review Huabaosi `qintopia-base-read`.
    - Affected profile: Huabaosi.
-   - Status: package adoption in progress.
+   - Status: complete.
    - Current state: `skills/feishu-base` contains the sanitized `qintopia-base-read`
-     plugin source, manifest, docs, tests, registry entry, and deploy-bundle packaging.
+     plugin source, manifest, docs, tests, registry entry, and deploy-bundle packaging;
+     Huabaosi profile plugin path resolves to
+     `qintopia-agent-os-releases/current/skills/feishu-base`.
    - Validation: local package check, deploy bundle build, deploy bundle manifest
-     membership, and light repository gate passed.
-   - Remaining production validation: CI, opt-in artifact publication, server-side COS
-     fetch verification, Huabaosi runtime env availability, backup, symlink repoint,
-     restart, tool import/registration smoke, sidecar check, and active service checks.
+     membership, light repository gate, CI, COS artifact verification, required runtime
+     env presence, import/tool registration smoke, sidecar check, and active service
+     checks passed.
 5. M10-F: profile template/symlink planning for reviewed `config.yaml` and `SOUL.md`.
    - Do not replace whole profile directories.
    - Keep `.env`, sessions, logs, cache, state DBs, auth, and runtime-generated memory
