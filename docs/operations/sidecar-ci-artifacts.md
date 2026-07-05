@@ -66,47 +66,73 @@ stable `/home/ubuntu/qintopia-agent-os-releases/current` symlink. In that model,
 Actions artifacts are the transport, while the server release directory is the runtime
 source.
 
-## Server Download
+## COS Distribution
 
-For the private repository, downloading GitHub Actions artifacts requires GitHub API
-read access. Use the Qintopia Agent OS deployer GitHub App as the default credential
-path. A short-lived `GITHUB_TOKEN` or GitHub CLI session is only a fallback for
-emergency or one-off migration work.
+GitHub Actions remains the source build environment, but the production server should
+download artifacts from Tencent Cloud COS. This avoids making the Tencent Cloud server
+depend on unstable GitHub artifact download endpoints during a cutover window.
 
-Server-side fetch command with GitHub App credentials:
+Object layout:
+
+```text
+cos://qintopia-agent-os-artifacts/qintopia-agent-os/sidecar/<commit-sha>/qintopia-message-sidecar-linux-x86_64-gnu/
+  artifact-manifest.json
+  SHA256SUMS
+  qintopia-message-sidecar
+```
+
+Configured COS destination:
+
+| Setting | Value                                    |
+| ------- | ---------------------------------------- |
+| Bucket  | `qintopia-agent-os-artifacts-1305166808` |
+| Region  | `ap-shanghai`                            |
+| Prefix  | `qintopia-agent-os`                      |
+
+The `sidecar-artifact` workflow uploads the artifact directory to COS only when these
+GitHub repository secrets are present:
+
+- `TENCENT_COS_SECRET_ID`
+- `TENCENT_COS_SECRET_KEY`
+
+Optional GitHub repository variables can override the workflow defaults:
+
+- `TENCENT_COS_BUCKET`, defaulting to `qintopia-agent-os-artifacts-1305166808`
+- `TENCENT_COS_REGION`, defaulting to `ap-shanghai`
+- `TENCENT_COS_PREFIX`, defaulting to `qintopia-agent-os`
+
+Server-side fetch command:
 
 ```bash
-export GITHUB_APP_ID="<github-app-id>"
-export GITHUB_APP_INSTALLATION_ID="<installation-id>"
-export GITHUB_APP_PRIVATE_KEY_PATH="/etc/qintopia/github-app/qintopia-agent-os-deployer.pem"
-deploy/sidecar/scripts/fetch-ci-artifact.sh \
+export TENCENT_COS_BUCKET="qintopia-agent-os-artifacts-1305166808"
+export TENCENT_COS_REGION="ap-shanghai"
+export TENCENT_COS_PREFIX="qintopia-agent-os"
+export TENCENT_COS_AUTH_MODE="CvmRole"
+export TENCENT_COS_CVM_ROLE_NAME="<cvm-role-name>"
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
-The script generates a GitHub App JWT from the server-local private key, exchanges it
-for a one-hour installation token, writes GitHub API headers to a temporary curl config
-file, and keeps token material out of process arguments. Do not change it back to
-`curl -H "Authorization: Bearer ..."` because that exposes credentials through process
-arguments on the server.
+If CVM Role is not available, use a read-only COS SecretId/SecretKey on the server:
 
-GitHub API metadata requests use a shorter timeout. The artifact zip download uses a
-separate longer timeout and retry profile because GitHub artifact downloads can be slow
-or interrupted on the production server network. Override `GITHUB_DOWNLOAD_MAX_TIME`
-only for the download phase when needed.
-
-The script requires only:
-
-- `curl`
-- `jq`
-- `unzip`
-- `sha256sum`
-- `python3`
-- `openssl`
+```bash
+export TENCENT_COS_SECRET_ID="<read-only-secret-id>"
+export TENCENT_COS_SECRET_KEY="<read-only-secret-key>"
+```
 
 It does not require Node.js, pnpm, Rust, Docker, or direct source edits on the server.
-The GitHub App private key remains outside git and should be readable only by the
-deployment operator or service account.
+
+## GitHub Artifact Fallback
+
+GitHub Actions artifacts are still uploaded and pruned to the latest two builds for CI
+audit and emergency fallback. For the private repository, downloading GitHub Actions
+artifacts requires GitHub API read access through the Qintopia Agent OS deployer GitHub
+App or a short-lived `GITHUB_TOKEN`.
+
+Use `deploy/sidecar/scripts/fetch-ci-artifact.sh` only when COS is unavailable and the
+server can reliably reach GitHub artifact download endpoints. Do not replace the COS
+path with `scp`, direct server edits, or a long-lived bot credential.
 
 The same GitHub App can also read repository contents after the App installation has
 `Contents: read`. Use `deploy/sidecar/scripts/github-app-git.sh` for server-side
@@ -115,7 +141,7 @@ HTTPS and let the wrapper provide a short-lived token through `GIT_ASKPASS`.
 
 ## Verification
 
-The fetch script automatically runs:
+Both COS and GitHub fallback fetch scripts automatically run:
 
 ```bash
 sha256sum -c SHA256SUMS

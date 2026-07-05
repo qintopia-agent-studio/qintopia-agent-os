@@ -20,6 +20,7 @@ const requiredScripts = [
   "secrets:check",
   "deploy:preflight:ci",
   "deploy:github-app-git:check",
+  "deploy:cos:check",
   "deploy:postgres:schema:preflight",
   "deploy:systemd:check",
   "deploy:m9f:check",
@@ -40,6 +41,9 @@ const requiredDocs = [
   "docs/operations/sidecar-ci-artifacts.md",
   "docs/operations/m9-server-cutover-runbook.md",
   "deploy/sidecar/scripts/github-app-git.sh",
+  "deploy/sidecar/scripts/install-coscli.sh",
+  "deploy/sidecar/scripts/upload-cos-artifact.sh",
+  "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
@@ -56,6 +60,7 @@ const requiredCheckFragments = [
   "pnpm secrets:check",
   "pnpm deploy:preflight:ci",
   "pnpm deploy:github-app-git:check",
+  "pnpm deploy:cos:check",
   "pnpm deploy:systemd:check",
   "pnpm deploy:m9f:check",
   "pnpm test:qiwe",
@@ -167,6 +172,34 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
   }
 }
 
+for (const cosScriptPath of [
+  "deploy/sidecar/scripts/upload-cos-artifact.sh",
+  "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+]) {
+  if (exists(cosScriptPath)) {
+    const script = readText(cosScriptPath);
+    if (!script.includes("TENCENT_COS_BUCKET")) {
+      addError(`${cosScriptPath}: must use explicit Tencent COS bucket configuration`);
+    }
+  }
+}
+
+if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
+  const cosFetchScript = readText("deploy/sidecar/scripts/fetch-cos-artifact.sh");
+  for (const requiredFragment of [
+    "TENCENT_COS_AUTH_MODE=CvmRole",
+    "artifact-manifest.json",
+    "SHA256SUMS",
+    "sha256sum -c SHA256SUMS",
+  ]) {
+    if (!cosFetchScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-cos-artifact.sh: must verify COS artifact downloads (${requiredFragment})`
+      );
+    }
+  }
+}
+
 if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
   const schemaPreflightScript = readText(
     "deploy/sidecar/scripts/postgres-schema-preflight.sh"
@@ -246,16 +279,15 @@ if (
 }
 if (m9Runbook) {
   for (const requiredFragment of [
-    "GITHUB_APP_ID",
-    "GITHUB_APP_INSTALLATION_ID",
-    "GITHUB_APP_PRIVATE_KEY_PATH",
-    "Actions: read",
+    "Tencent COS",
+    "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    "TENCENT_COS_BUCKET",
     "QINTOPIA_SIDECAR_MIGRATIONS_DIR",
     "M9-D cut over the approved active service family",
   ]) {
     if (!m9Runbook.includes(requiredFragment)) {
       addError(
-        `docs/operations/m9-server-cutover-runbook.md: must document GitHub App artifact download (${requiredFragment})`
+        `docs/operations/m9-server-cutover-runbook.md: must document COS artifact download (${requiredFragment})`
       );
     }
   }
@@ -266,15 +298,15 @@ const artifactDoc = exists("docs/operations/sidecar-ci-artifacts.md")
   : "";
 if (artifactDoc) {
   for (const requiredFragment of [
-    "GitHub App",
-    "GITHUB_APP_ID",
-    "GITHUB_APP_INSTALLATION_ID",
-    "GITHUB_APP_PRIVATE_KEY_PATH",
-    "one-hour installation token",
+    "COS Distribution",
+    "TENCENT_COS_BUCKET",
+    "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    "GitHub Artifact Fallback",
+    "fetch-ci-artifact.sh",
   ]) {
     if (!artifactDoc.includes(requiredFragment)) {
       addError(
-        `docs/operations/sidecar-ci-artifacts.md: must document GitHub App artifact download (${requiredFragment})`
+        `docs/operations/sidecar-ci-artifacts.md: must document COS artifact distribution (${requiredFragment})`
       );
     }
   }
@@ -320,6 +352,12 @@ for (const phrase of [
   "actions/setup-node@v6",
   "actions/setup-python@v6",
   "actions/upload-artifact@v7",
+  "deploy/sidecar/scripts/upload-cos-artifact.sh",
+  "qintopia-agent-os-artifacts-1305166808",
+  "ap-shanghai",
+  "env.TENCENT_COS_BUCKET",
+  "env.TENCENT_COS_REGION",
+  "secrets.TENCENT_COS_SECRET_ID",
   "actions: write",
   "concurrency:",
   "cancel-in-progress: true",
@@ -332,6 +370,19 @@ for (const phrase of [
 ]) {
   if (!ciWorkflow.includes(phrase)) {
     addError(`.github/workflows/ci.yml: must include ${phrase}`);
+  }
+}
+
+if (ciWorkflow) {
+  const ciWorkflowYaml = readYaml(".github/workflows/ci.yml");
+  for (const [jobName, job] of Object.entries(ciWorkflowYaml.jobs ?? {})) {
+    for (const [stepIndex, step] of (job?.steps ?? []).entries()) {
+      if (String(step?.if ?? "").includes("secrets.")) {
+        addError(
+          `.github/workflows/ci.yml: jobs.${jobName}.steps[${stepIndex}].if must use env instead of secrets`
+        );
+      }
+    }
   }
 }
 

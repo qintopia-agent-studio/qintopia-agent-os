@@ -61,20 +61,20 @@ and future programming agents.
 
 ## Migration Phases
 
-| Phase                       | Status                   | Exit criteria                                                                                                                                         |
-| --------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M0 repository bootstrap     | Complete                 | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                      |
-| M1 inventory                | Complete                 | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                    |
-| M2 registry contract        | Complete                 | registry schemas and package manifest templates exist and validate                                                                                    |
-| M3 docs migration           | Complete                 | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                |
-| M4 first skill adoption     | Complete                 | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                    |
-| M5 runtime sidecar adoption | Complete                 | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                  |
-| M5.5 anti-drift guardrails  | Complete                 | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                           |
-| M6 agents adoption          | Complete                 | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                    |
-| M7 WorkTool decommission    | Complete                 | WorkTool references classified and either deprecated or final-migration cleanup items                                                                 |
-| M8 CI/CD deployment gate    | Complete                 | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                |
-| M9 server cutover           | Partial cutover complete | GitHub App artifact download, DB preflight/migrations, and three approved sidecar services cut over; legacy worker and MCP references still need M9-F |
-| M10 release model           | Planned                  | versioned release directories and `current`/`previous` symlinks replace direct artifact paths and server-local profile/plugin copies                  |
+| Phase                       | Status                   | Exit criteria                                                                                                                                                                                                |
+| --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M0 repository bootstrap     | Complete                 | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                                                                             |
+| M1 inventory                | Complete                 | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                                                                           |
+| M2 registry contract        | Complete                 | registry schemas and package manifest templates exist and validate                                                                                                                                           |
+| M3 docs migration           | Complete                 | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                                                                       |
+| M4 first skill adoption     | Complete                 | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                                                                           |
+| M5 runtime sidecar adoption | Complete                 | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                                                                         |
+| M5.5 anti-drift guardrails  | Complete                 | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                                                                                  |
+| M6 agents adoption          | Complete                 | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                                                                           |
+| M7 WorkTool decommission    | Complete                 | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                                                        |
+| M8 CI/CD deployment gate    | Complete                 | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                                                       |
+| M9 server cutover           | Partial cutover complete | CI artifact build, DB preflight/migrations, and three approved sidecar services cut over; legacy worker and MCP references still need M9-F; COS distribution is being introduced for future artifact fetches |
+| M10 release model           | Planned                  | versioned release directories and `current`/`previous` symlinks replace direct artifact paths and server-local profile/plugin copies                                                                         |
 
 ## Progress Log
 
@@ -418,6 +418,17 @@ and future programming agents.
     later approved migration window
   - marked `pnpm deploy:m9f:check` as temporary migration scaffolding to remove or fold
     into stable deploy checks after M9 is complete
+- Started COS-first artifact distribution work:
+  - kept existing GitHub Actions artifact upload for CI audit and emergency fallback
+  - added COS upload and download scripts for sidecar artifacts
+  - wired the `sidecar-artifact` workflow to upload to the Shanghai COS bucket when CI
+    upload secrets are configured
+  - added `docs/operations/cos-artifact-distribution.md` with bucket, credential, server
+    env, upload, and download runbook
+  - changed future server artifact fetch direction from GitHub artifact endpoints to
+    Tencent COS, while preserving manifest and checksum verification
+  - recorded the COS bucket `qintopia-agent-os-artifacts-1305166808`, region
+    `ap-shanghai`, and default prefix `qintopia-agent-os`
 
 ## Update Rule
 
@@ -434,6 +445,9 @@ Remaining follow-up after the active service cutover:
 - M9-F legacy reference removal: three `qintopia-message-*` services are repointed to
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
+- COS artifact distribution: configure CI upload secrets and server read credentials,
+  verify a `master` build uploads to the configured COS bucket, then use
+  `fetch-cos-artifact.sh` for the next M9-F artifact preparation.
 - M10 release/current model: replace direct
   `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` service paths with immutable release
   directories and stable `current`/`previous` symlinks.

@@ -80,6 +80,11 @@ become versioned.
   candidates.
 - Added `deploy/sidecar/docs/m9f-legacy-reference-removal.md` and
   `pnpm deploy:m9f:check` for repository-side M9-F readiness validation.
+- Added Tencent COS artifact distribution scripts, CI upload wiring, and
+  `docs/operations/cos-artifact-distribution.md` so production servers can download
+  verified sidecar artifacts from COS instead of GitHub artifact endpoints.
+- Recorded the configured COS artifact bucket `qintopia-agent-os-artifacts-1305166808`
+  in `ap-shanghai`; only COS upload/download credentials remain outside git.
 
 ### Changed
 
@@ -159,3 +164,9 @@ become versioned.
   artifacts or release/current instead of the legacy standalone checkout.
 - Documented `pnpm deploy:m9f:check` as temporary M9 scaffolding that must be removed or
   folded into stable deploy checks after M9 completes.
+- Changed the M9 artifact distribution direction to COS-first: GitHub Actions remains
+  the builder and audit artifact source, while Tencent COS becomes the default server
+  download path.
+- Changed COS CI upload configuration so bucket, region, and prefix use explicit
+  non-secret workflow defaults while only SecretId and SecretKey come from GitHub
+  Secrets.

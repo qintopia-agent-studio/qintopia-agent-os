@@ -18,6 +18,8 @@ canonical architecture, engineering, package, or deployment docs.
   capabilities, approval boundaries, and runtime-state exclusions.
 - [sidecar-ci-artifacts.md](sidecar-ci-artifacts.md): M9.1 sidecar artifact contract, CI
   build output, checksum verification, and server download requirements.
+- [cos-artifact-distribution.md](cos-artifact-distribution.md): Tencent COS bucket,
+  credential, upload, and server download runbook for production artifact delivery.
 - [m9-server-cutover-runbook.md](m9-server-cutover-runbook.md): final migration runbook
   for monorepo checkout, sidecar service cutover, deprecated runtime cleanup,
   acceptance, and rollback.

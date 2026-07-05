@@ -14,7 +14,9 @@ The server should be a deployment target, not a development workspace.
 The long-term deployment model is:
 
 - GitHub CI builds reviewed artifacts from an approved `master` commit SHA.
-- The server downloads and verifies artifacts with GitHub App credentials.
+- GitHub CI uploads reviewed artifacts to Tencent COS for server-side distribution.
+- The server downloads artifacts from COS and verifies manifest plus checksums before
+  repointing services.
 - Each approved release is stored under an immutable SHA directory.
 - Runtime services point at a stable `current` symlink.
 - Hermes live state remains under `.hermes`; only reviewed, versioned files are mounted
@@ -65,21 +67,23 @@ The long-term deployment model is:
   message-sidecar.env
   github-app/
     qintopia-agent-os-deployer.pem
+  cos-artifacts.env
 ```
 
 `qintopia-agent-os-artifacts/<sha>` is the current transition path for CI sidecar
-artifacts. It should either become a download cache or be replaced by
-`qintopia-agent-os-releases/<sha>` after the release/current model is implemented.
+artifacts after they are pulled from COS. It should either become a download cache or be
+replaced by `qintopia-agent-os-releases/<sha>` after the release/current model is
+implemented.
 
 ## Current Transitional Directories
 
-| Path                                       | Classification       | Current use                                                   | Target disposition                                            |
-| ------------------------------------------ | -------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
-| `/home/ubuntu/qintopia-agent-os-monorepo`  | current architecture | server checkout for runbooks, scripts, migrations, and docs   | keep as deploy checkout                                       |
-| `/home/ubuntu/qintopia-agent-os-artifacts` | transition artifact  | verified CI sidecar binaries by SHA                           | replace or fold into `qintopia-agent-os-releases`             |
-| `/home/ubuntu/qintopia-agent-os-backups`   | current architecture | systemd and rollback backups created during M9                | keep with retention policy                                    |
-| `/etc/qintopia`                            | current architecture | production env/config and GitHub App key material             | keep; never copy into git                                     |
-| `/home/ubuntu/.hermes`                     | Hermes live runtime  | Hermes core, profiles, logs, sessions, cache, skills, scripts | keep; move versioned files to release-managed links over time |
+| Path                                       | Classification       | Current use                                                    | Target disposition                                            |
+| ------------------------------------------ | -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------- |
+| `/home/ubuntu/qintopia-agent-os-monorepo`  | current architecture | server checkout for runbooks, scripts, migrations, and docs    | keep as deploy checkout                                       |
+| `/home/ubuntu/qintopia-agent-os-artifacts` | transition artifact  | verified CI sidecar binaries by SHA                            | replace or fold into `qintopia-agent-os-releases`             |
+| `/home/ubuntu/qintopia-agent-os-backups`   | current architecture | systemd and rollback backups created during M9                 | keep with retention policy                                    |
+| `/etc/qintopia`                            | current architecture | production env/config, COS config, and GitHub App key material | keep; never copy into git                                     |
+| `/home/ubuntu/.hermes`                     | Hermes live runtime  | Hermes core, profiles, logs, sessions, cache, skills, scripts  | keep; move versioned files to release-managed links over time |
 
 ## Legacy Or Mixed-State Directories
 

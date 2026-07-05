@@ -59,13 +59,14 @@ The M9-D target SHA was `c70378408c53de5f4166e8b9bde45b15a97cabb0`, with workflo
 
 M9.1 also requires a successful CI workflow run for the target SHA, including both
 `check` and `sidecar-artifact`. The server must deploy the CI-built artifact after
-verifying `artifact-manifest.json` and `SHA256SUMS`; it should not rebuild the sidecar
-with local Node.js, pnpm, or Rust tooling during the migration window.
+downloading it from Tencent COS and verifying `artifact-manifest.json` plus
+`SHA256SUMS`; it should not rebuild the sidecar with local Node.js, pnpm, or Rust
+tooling during the migration window.
 
-GitHub retains only the latest two sidecar CI artifacts. Download and verify the
-approved target artifact before it is older than the current build plus one rollback
-build, or preserve the verified server copy under
-`/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>`.
+GitHub retains only the latest two sidecar CI artifacts for audit and emergency
+fallback. COS is the default production distribution path. Preserve the verified server
+copy under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` once it is
+downloaded.
 
 `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is a transition path. The next release
 model should promote verified payloads into
@@ -270,21 +271,23 @@ reintroduce a long-lived bot credential just to perform the first clone.
 
 ## Sidecar Artifact Fetch And Preflight
 
-Fetch the CI-built artifact for the approved commit SHA:
+Fetch the CI-built artifact for the approved commit SHA from Tencent COS:
 
 ```bash
-export GITHUB_APP_ID="<github-app-id>"
-export GITHUB_APP_INSTALLATION_ID="<installation-id>"
-export GITHUB_APP_PRIVATE_KEY_PATH="/etc/qintopia/github-app/qintopia-agent-os-deployer.pem"
-deploy/sidecar/scripts/fetch-ci-artifact.sh \
+export TENCENT_COS_BUCKET="qintopia-agent-os-artifacts-1305166808"
+export TENCENT_COS_REGION="ap-shanghai"
+export TENCENT_COS_PREFIX="qintopia-agent-os"
+export TENCENT_COS_AUTH_MODE="CvmRole"
+export TENCENT_COS_CVM_ROLE_NAME="<cvm-role-name>"
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
-The GitHub App must be installed only on `qintopia-agent-studio/qintopia-agent-os` with
-`Actions: read` and `Metadata: read`. `GITHUB_TOKEN` remains a fallback for emergency
-artifact downloads, but the normal M9 path should use the GitHub App so releases do not
-depend on hand-created personal tokens.
+If CVM Role is unavailable, use a read-only COS SecretId/SecretKey on the server. GitHub
+artifact download through `fetch-ci-artifact.sh` remains an emergency fallback only; do
+not use `scp`, direct server edits, or long-lived bot credentials for production
+artifact distribution.
 
 Run binary checks without changing systemd:
 
