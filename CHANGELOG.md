@@ -222,6 +222,8 @@ become versioned.
   `cp` arguments, and COSCLI failures include non-secret diagnostics.
 - Added sanitized COSCLI failure output so CI can distinguish bucket configuration,
   permission, and object upload errors without printing COS credentials.
+- Added sanitized COSCLI detail-file output for failed uploads so deploy-bundle COS
+  failures expose the underlying object-level error without printing credentials.
 - Fixed COSCLI temporary config initialization so upload and fetch scripts create the
   config file before calling `config add` or `config set`.
 - Corrected COSCLI authentication setup to use `config set --mode SecretKey` for

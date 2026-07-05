@@ -137,6 +137,54 @@ if output.strip():
 PY
 }
 
+print_sanitized_coscli_details() {
+  python3 - "${PWD}/coscli_output" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+if not root.exists():
+    return_code = 0
+    raise SystemExit(return_code)
+
+secrets = [
+    os.environ.get(name, "")
+    for name in (
+        "TENCENT_COS_SECRET_ID",
+        "TENCENT_COS_SECRET_KEY",
+        "TENCENT_COS_SESSION_TOKEN",
+    )
+]
+secrets = [value for value in secrets if value]
+
+files = [path for path in root.rglob("*") if path.is_file()]
+files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+if not files:
+    raise SystemExit(0)
+
+sys.stderr.write("COSCLI detail files:\n")
+for path in files[:8]:
+    relative = path.relative_to(root)
+    sys.stderr.write(f"--- coscli_output/{relative} ---\n")
+    try:
+        output = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        sys.stderr.write(f"failed to read detail file: {exc}\n")
+        continue
+
+    for value in secrets:
+        output = output.replace(value, "***")
+
+    max_chars = 12000
+    if len(output) > max_chars:
+        output = output[:max_chars] + "\n... truncated ...\n"
+    sys.stderr.write(output)
+    if output and not output.endswith("\n"):
+        sys.stderr.write("\n")
+PY
+}
+
 for file_path in "$manifest_path" "$checksum_path"; do
   if [[ ! -f "$file_path" ]]; then
     echo "artifact file not found: $file_path" >&2
@@ -256,6 +304,7 @@ PY
     echo "Credentials were not printed. Check CI COS SecretId/SecretKey and CAM upload permissions." >&2
     echo "COSCLI upload commonly requires bucket probe, object write, and multipart upload permissions for this prefix." >&2
     print_sanitized_coscli_output "$output_path"
+    print_sanitized_coscli_details
     exit "$status"
   fi
 }
