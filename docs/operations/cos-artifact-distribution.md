@@ -34,18 +34,24 @@ qintopia-agent-os/
         artifact-manifest.json
         SHA256SUMS
         qintopia-message-sidecar.tar.gz
+  deploy-bundle/
+    <commit-sha>/
+      qintopia-agent-os-deploy-bundle/
+        artifact-manifest.json
+        SHA256SUMS
+        qintopia-agent-os-deploy-bundle.tar.gz
 ```
 
 ## Access Model
 
 Use separate identities for CI upload and server download.
 
-| Actor                  | Preferred credential             | Permission scope                               |
-| ---------------------- | -------------------------------- | ---------------------------------------------- |
-| GitHub Actions         | CAM SecretId/SecretKey in GitHub | write only under `qintopia-agent-os/sidecar/*` |
-| CVM server             | CVM Role                         | read only under `qintopia-agent-os/sidecar/*`  |
-| Lighthouse app server  | CAM SecretId/SecretKey           | read only under `qintopia-agent-os/sidecar/*`  |
-| emergency CVM fallback | CAM SecretId/SecretKey           | read only under `qintopia-agent-os/sidecar/*`  |
+| Actor                  | Preferred credential             | Permission scope                                               |
+| ---------------------- | -------------------------------- | -------------------------------------------------------------- |
+| GitHub Actions         | CAM SecretId/SecretKey in GitHub | write only under `qintopia-agent-os/{sidecar,deploy-bundle}/*` |
+| CVM server             | CVM Role                         | read only under `qintopia-agent-os/{sidecar,deploy-bundle}/*`  |
+| Lighthouse app server  | CAM SecretId/SecretKey           | read only under `qintopia-agent-os/{sidecar,deploy-bundle}/*`  |
+| emergency CVM fallback | CAM SecretId/SecretKey           | read only under `qintopia-agent-os/{sidecar,deploy-bundle}/*`  |
 
 Do not use root account keys. Do not put COS keys in git, systemd unit files, shell
 history, or chat logs.
@@ -78,7 +84,8 @@ Server read-only CAM policy:
       "effect": "allow",
       "action": ["name/cos:HeadObject", "name/cos:GetObject", "name/cos:OptionsObject"],
       "resource": [
-        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*"
+        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*",
+        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/deploy-bundle/*"
       ]
     }
   ]
@@ -179,7 +186,8 @@ Object-scoped upload actions:
     "name/cos:DeleteMultipleObjects"
   ],
   "resource": [
-    "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*"
+    "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*",
+    "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/deploy-bundle/*"
   ]
 }
 ```
@@ -188,6 +196,7 @@ Keep write scope limited to:
 
 ```text
 qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*
+qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/deploy-bundle/*
 ```
 
 ## GitHub Configuration
@@ -224,7 +233,8 @@ the GitHub Actions artifact.
 
 After a successful COS upload, CI prunes old COS artifact directories and keeps only the
 latest two sidecar artifact SHA directories for
-`qintopia-message-sidecar-linux-x86_64-gnu`. The prune step uses
+`qintopia-message-sidecar-linux-x86_64-gnu` and the latest two deploy bundle SHA
+directories for `qintopia-agent-os-deploy-bundle`. The prune steps use
 `deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2`, so COS retention matches the
 GitHub Actions artifact retention policy.
 
@@ -332,6 +342,24 @@ The download script verifies:
 - `sha256sum -c SHA256SUMS` passes
 
 Only after this should systemd or Hermes references be repointed.
+
+M9-F also uses a deploy bundle for reviewed operator files. Download it with
+`--artifact-type deploy-bundle`:
+
+```bash
+set -a
+. /etc/qintopia/cos-artifacts.env
+set +a
+
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --artifact-type deploy-bundle \
+  --sha <approved-deploy-bundle-sha> \
+  --output-dir /home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>
+```
+
+The deploy bundle contains the Hermes MCP wrapper, systemd renderer, and M9-F runbooks.
+It lets the server apply reviewed wrapper and unit templates without running server-side
+`git fetch` during the mutation window.
 
 For read-only acceptance, write to `/tmp` and stop after verification:
 

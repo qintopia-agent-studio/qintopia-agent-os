@@ -61,6 +61,11 @@ model: once an artifact has been downloaded and verified on the server, the serv
 under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` remains separate
 from GitHub artifact retention.
 
+The same workflow also builds `qintopia-agent-os-deploy-bundle`, which contains reviewed
+operator files for M9-F: the Hermes MCP wrapper, systemd renderer, and deployment
+runbooks. GitHub Actions and COS both keep the latest two deploy bundle artifacts,
+matching the sidecar runtime artifact retention policy.
+
 `qintopia-agent-os-artifacts/<sha>` is the current transition download cache. The target
 release model promotes verified payloads into immutable
 `/home/ubuntu/qintopia-agent-os-releases/<sha>` directories and runs services through a
@@ -82,6 +87,11 @@ cos://qintopia-agent-os-artifacts/qintopia-agent-os/sidecar/<commit-sha>/qintopi
   artifact-manifest.json
   SHA256SUMS
   qintopia-message-sidecar.tar.gz
+
+cos://qintopia-agent-os-artifacts/qintopia-agent-os/deploy-bundle/<commit-sha>/qintopia-agent-os-deploy-bundle/
+  artifact-manifest.json
+  SHA256SUMS
+  qintopia-agent-os-deploy-bundle.tar.gz
 ```
 
 Configured COS destination:
@@ -131,10 +141,12 @@ to COS upload. The verified accelerated upload for commit
 seconds.
 
 After each successful COS upload, the workflow runs
-`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2`. COS keeps only the latest two
-sidecar artifact SHA directories for `qintopia-message-sidecar-linux-x86_64-gnu`,
-matching the GitHub Actions artifact retention policy. This retention is implemented in
-CI because bucket lifecycle rules are time-based and cannot express "latest two builds".
+`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2` for both `sidecar` and
+`deploy-bundle`. COS keeps only the latest two sidecar artifact SHA directories for
+`qintopia-message-sidecar-linux-x86_64-gnu` and the latest two deploy bundle SHA
+directories for `qintopia-agent-os-deploy-bundle`, matching the GitHub Actions artifact
+retention policy. This retention is implemented in CI because bucket lifecycle rules are
+time-based and cannot express "latest two builds".
 
 Optional GitHub repository variables can override the workflow defaults:
 
@@ -168,6 +180,18 @@ set +a
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+```
+
+M9-F operator files should come from the deploy bundle, not a server-side git checkout:
+
+```bash
+set -a
+. /etc/qintopia/cos-artifacts.env
+set +a
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --artifact-type deploy-bundle \
+  --sha <approved-deploy-bundle-sha> \
+  --output-dir /home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>
 ```
 
 The environment file contains:

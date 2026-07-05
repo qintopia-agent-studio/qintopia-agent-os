@@ -4,9 +4,9 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  deploy/sidecar/scripts/fetch-cos-artifact.sh --sha <commit-sha> [--output-dir <dir>]
+  deploy/sidecar/scripts/fetch-cos-artifact.sh --sha <commit-sha> [--output-dir <dir>] [--artifact-type <type>]
 
-Downloads a sidecar artifact from Tencent Cloud COS and verifies SHA256SUMS.
+Downloads an Agent OS artifact from Tencent Cloud COS and verifies SHA256SUMS.
 
 Required environment:
   TENCENT_COS_BUCKET  Full bucket name, including APPID.
@@ -28,6 +28,7 @@ Optional environment:
   TENCENT_COS_SESSION_TOKEN  Temporary key token.
   ARTIFACT_NAME              Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
   ARTIFACT_TARGET            Defaults to linux-x86_64-gnu.
+  QINTOPIA_COS_ARTIFACT_TYPE Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
   COSCLI_PATH                Existing coscli binary path.
   COSCLI_CONFIG_TIMEOUT_SECONDS    Per config command timeout. Defaults to 60.
   COSCLI_TRANSFER_TIMEOUT_SECONDS  Per download command timeout. Defaults to 300.
@@ -37,6 +38,7 @@ USAGE
 
 sha=""
 output_dir=""
+artifact_type="${QINTOPIA_COS_ARTIFACT_TYPE:-sidecar}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,6 +48,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --output-dir)
       output_dir="${2:-}"
+      shift 2
+      ;;
+    --artifact-type)
+      artifact_type="${2:-}"
       shift 2
       ;;
     -h | --help)
@@ -125,21 +131,42 @@ else
   require_env TENCENT_COS_SECRET_KEY
 fi
 
-artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
-artifact_target="${ARTIFACT_TARGET:-linux-x86_64-gnu}"
-output_dir="${output_dir:-/tmp/qintopia-agent-os-artifacts/${sha}}"
+case "$artifact_type" in
+  sidecar)
+    artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
+    artifact_target="${ARTIFACT_TARGET:-linux-x86_64-gnu}"
+    output_dir="${output_dir:-/tmp/qintopia-agent-os-artifacts/${sha}}"
+    ;;
+  deploy-bundle)
+    artifact_name="${ARTIFACT_NAME:-qintopia-agent-os-deploy-bundle}"
+    artifact_target="${ARTIFACT_TARGET:-server-operator-files}"
+    output_dir="${output_dir:-/tmp/qintopia-agent-os-deploy-bundles/${sha}}"
+    ;;
+  *)
+    echo "--artifact-type must be sidecar or deploy-bundle" >&2
+    exit 2
+    ;;
+esac
 bucket_alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
 prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
 prefix="${prefix%/}"
-remote_base="${prefix}/sidecar/${sha}/${artifact_name}"
+remote_base="${prefix}/${artifact_type}/${sha}/${artifact_name}"
 payload_mode="${TENCENT_COS_ARTIFACT_PAYLOAD:-bundle}"
 payload_files=(artifact-manifest.json SHA256SUMS)
 case "$payload_mode" in
   bundle)
-    payload_files+=(qintopia-message-sidecar.tar.gz)
+    if [[ "$artifact_type" == "sidecar" ]]; then
+      payload_files+=(qintopia-message-sidecar.tar.gz)
+    else
+      payload_files+=(qintopia-agent-os-deploy-bundle.tar.gz)
+    fi
     ;;
   raw)
+    if [[ "$artifact_type" != "sidecar" ]]; then
+      echo "raw payload mode is supported only for sidecar artifacts" >&2
+      exit 2
+    fi
     payload_files+=(qintopia-message-sidecar)
     ;;
   *)
@@ -274,40 +301,35 @@ for file_name in "${payload_files[@]}"; do
     --disable-log
 done
 
-if [[ "$payload_mode" == "bundle" ]]; then
+if [[ "$payload_mode" == "bundle" && "$artifact_type" == "sidecar" ]]; then
   tar -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir" \
     qintopia-message-sidecar
+elif [[ "$payload_mode" == "bundle" && "$artifact_type" == "deploy-bundle" ]]; then
+  tar -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir" \
+    payload
 fi
 
 (
   cd "$output_dir"
   test -f artifact-manifest.json
   test -f SHA256SUMS
-  test -f qintopia-message-sidecar
-  python3 - "$sha" "$artifact_name" "$artifact_target" <<'PY'
+  if [[ "$artifact_type" == "sidecar" ]]; then
+    test -f qintopia-message-sidecar
+  else
+    test -f payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp
+    test -f payload/deploy/sidecar/scripts/render-systemd-units.sh
+  fi
+  python3 - "$sha" "$artifact_name" "$artifact_target" "$artifact_type" <<'PY'
 import json
 import sys
 
-expected_sha, expected_artifact, expected_target = sys.argv[1:4]
+expected_sha, expected_artifact, expected_target, artifact_type = sys.argv[1:5]
 with open("artifact-manifest.json", encoding="utf-8") as fh:
     manifest = json.load(fh)
 
 manifest_commit = manifest.get("commit_sha", "")
 manifest_artifact = manifest.get("artifact_name", "")
 manifest_target = manifest.get("target", "")
-manifest_binary_sha = ""
-for item in manifest.get("files", []):
-    if item.get("path") == "qintopia-message-sidecar":
-        manifest_binary_sha = item.get("sha256", "")
-        break
-
-checksum_binary_sha = ""
-with open("SHA256SUMS", encoding="utf-8") as fh:
-    for line in fh:
-        parts = line.split()
-        if len(parts) >= 2 and parts[1] == "qintopia-message-sidecar":
-            checksum_binary_sha = parts[0]
-            break
 
 if manifest_commit != expected_sha:
     raise SystemExit(
@@ -321,12 +343,37 @@ if manifest_target != expected_target:
     raise SystemExit(
         f"artifact manifest target mismatch: got {manifest_target}, expected {expected_target}"
     )
-if not manifest_binary_sha or manifest_binary_sha != checksum_binary_sha:
+
+if artifact_type == "sidecar":
+    required_path = "qintopia-message-sidecar"
+else:
+    required_path = "qintopia-agent-os-deploy-bundle.tar.gz"
+
+manifest_sha = ""
+for item in manifest.get("files", []):
+    if item.get("path") == required_path:
+        manifest_sha = item.get("sha256", "")
+        break
+
+checksum_sha = ""
+with open("SHA256SUMS", encoding="utf-8") as fh:
+    for line in fh:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == required_path:
+            checksum_sha = parts[0]
+            break
+
+if not manifest_sha or manifest_sha != checksum_sha:
     raise SystemExit("artifact manifest checksum does not match SHA256SUMS")
 PY
   sha256sum -c SHA256SUMS
-  chmod 0755 qintopia-message-sidecar
+  if [[ "$artifact_type" == "sidecar" ]]; then
+    chmod 0755 qintopia-message-sidecar
+  else
+    chmod 0755 payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp
+    chmod 0755 payload/deploy/sidecar/scripts/render-systemd-units.sh
+  fi
 )
 
-echo "Downloaded ${artifact_name} from COS"
+echo "Downloaded ${artifact_type} artifact ${artifact_name} from COS"
 echo "Output: ${output_dir}"

@@ -181,13 +181,13 @@ units.
 
 2026-07-04 read-only follow-up identified the remaining mixed-state references:
 
-| Area                        | Current state                                                                                                                                    | Required follow-up                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| New sidecar services        | `qintopia-message-sidecar`, `qintopia-message-embedding-worker`, and `qintopia-message-identity-worker` run from artifact `c703784...`           | keep monitored until next approved repoint |
-| Legacy AgentOS workers      | six `qintopia-agentos-*` workers still run from `/home/ubuntu/qintopia-msg-sidecar/target/release/qintopia-message-sidecar`                      | M9-F repoint to approved artifact/release  |
-| Hermes MCP context commands | live `mcp-context` processes still start from `/home/ubuntu/qintopia-msg-sidecar`                                                                | move to monorepo/release-managed command   |
-| Server checkout             | `/home/ubuntu/qintopia-agent-os-monorepo` is on the latest `master` checkout, but runtime artifact remains pinned to the approved production SHA | do not auto-promote docs-only commits      |
-| Directory cleanup           | old checkouts, WorkTool, Xiaoqin, OpenClaw, migration, and worklog guard directories still exist                                                 | archive only after no references remain    |
+| Area                        | Current state                                                                                                                          | Required follow-up                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| New sidecar services        | `qintopia-message-sidecar`, `qintopia-message-embedding-worker`, and `qintopia-message-identity-worker` run from artifact `c703784...` | keep monitored until next approved repoint    |
+| Legacy AgentOS workers      | six `qintopia-agentos-*` workers still run from `/home/ubuntu/qintopia-msg-sidecar/target/release/qintopia-message-sidecar`            | M9-F repoint to approved artifact/release     |
+| Hermes MCP context commands | live `mcp-context` processes still start from `/home/ubuntu/qintopia-msg-sidecar`                                                      | move to deploy-bundle/release-managed command |
+| Server checkout             | `/home/ubuntu/qintopia-agent-os-monorepo` is a transition checkout and may lag behind `master`                                         | do not use git fetch as the release path      |
+| Directory cleanup           | old checkouts, WorkTool, Xiaoqin, OpenClaw, migration, and worklog guard directories still exist                                       | archive only after no references remain       |
 
 M9 is therefore not finished as a full server cleanup. It is safe only to say the first
 approved service family cutover passed. Complete M9-F before removing
@@ -201,7 +201,8 @@ Before any server mutation:
    legacy WorkTool/OpenClaw paths remain frozen.
 2. Confirm no one is making `scp` source updates, hotfixes, or direct server commits.
 3. Confirm local `master` is clean and pushed to the approved remote.
-4. Confirm the server can fetch the approved monorepo remote.
+4. Confirm the runtime artifact and deploy bundle have successful CI for their approved
+   SHA values.
 5. Re-run read-only server inventory and compare with:
    - `docs/operations/inventory/server-sources.yaml`
    - `docs/operations/inventory/runtime-assets.yaml`
@@ -235,17 +236,20 @@ release source is the verified artifact from Tencent COS:
 
 ```text
 cos://qintopia-agent-os-artifacts/qintopia-agent-os/sidecar/<approved-target-sha>/
+cos://qintopia-agent-os-artifacts/qintopia-agent-os/deploy-bundle/<approved-deploy-bundle-sha>/
 ```
 
-The server checkout exists only as a transition deploy checkout for already-reviewed
-runbooks, templates, migrations, and helper scripts. It is not the normal release
-transport. Do not run `git fetch` or `git checkout` just to deploy a new sidecar
-artifact.
+The deploy bundle contains reviewed operator files such as the Hermes MCP wrapper,
+systemd renderer, and M9-F runbooks. It replaces the previous M9-F assumption that the
+server deploy checkout had to be updated before wrapper or unit changes.
+
+The server checkout exists only as a transition diagnostics/bootstrap checkout. It is
+not the normal release transport. Do not run `git fetch` or `git checkout` just to
+deploy a new runtime artifact, wrapper, renderer, or systemd template.
 
 Use GitHub App based git access only for these explicit cases:
 
 - bootstrapping a new deploy checkout on a new host
-- upgrading the deploy runner scripts or templates themselves
 - read-only repository reachability diagnostics
 - emergency fallback when the owner approves using the repo instead of COS
 
@@ -254,16 +258,6 @@ Keep `origin` as the plain HTTPS repository URL without embedded credentials:
 ```bash
 cd /home/ubuntu/qintopia-agent-os-monorepo
 git remote set-url origin https://github.com/qintopia-agent-studio/qintopia-agent-os.git
-```
-
-When a deploy runner upgrade is explicitly approved, use the GitHub App wrapper and
-record the before/after SHA separately from the runtime artifact SHA:
-
-```bash
-GITHUB_APP_ID=4214034 \
-GITHUB_APP_INSTALLATION_ID=144332887 \
-GITHUB_APP_PRIVATE_KEY_PATH=/etc/qintopia/github-app/qintopia-agent-os-deployer.pem \
-deploy/sidecar/scripts/github-app-git.sh -- fetch origin
 ```
 
 Do not store the installation token in `.git/config`, shell history, or a credential
@@ -289,6 +283,18 @@ deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
 
+Fetch the M9-F deploy bundle from COS:
+
+```bash
+set -a
+. /etc/qintopia/cos-artifacts.env
+set +a
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --artifact-type deploy-bundle \
+  --sha <approved-deploy-bundle-sha> \
+  --output-dir /home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>
+```
+
 For Tencent Cloud Lighthouse app servers, use the server-local read-only COS environment
 file instead:
 
@@ -305,8 +311,8 @@ GitHub artifact download through `fetch-ci-artifact.sh` remains an emergency fal
 only; do not use `scp`, direct server edits, or long-lived bot credentials for
 production artifact distribution.
 
-For read-only transport validation, download to `/tmp` instead of the production
-artifact directory and stop after manifest/checksum/binary checks:
+For read-only transport validation, download to `/tmp` instead of production artifact
+directories and stop after manifest/checksum checks:
 
 ```bash
 set -a
@@ -315,6 +321,11 @@ set +a
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /tmp/qintopia-agent-os-cos-readonly/<approved-target-sha>
+
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --artifact-type deploy-bundle \
+  --sha <approved-deploy-bundle-sha> \
+  --output-dir /tmp/qintopia-agent-os-deploy-bundle-readonly/<approved-deploy-bundle-sha>
 ```
 
 Run binary checks without changing systemd:
@@ -359,10 +370,10 @@ passes.
 Current transition service shape:
 
 ```text
-WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
+WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>/payload
 ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar <subcommand>
 EnvironmentFile=/etc/qintopia/message-sidecar.env
-Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>/payload/runtime/postgres/migrations
 ```
 
 Target release/current service shape:
@@ -397,8 +408,12 @@ For exact sidecar command details, use `deploy/sidecar/docs/systemd-cutover-plan
 render the target unit review files before copying anything into `/etc/systemd/system`:
 
 ```bash
-QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
-deploy/sidecar/scripts/render-systemd-units.sh
+DEPLOY_BUNDLE_DIR="/home/ubuntu/qintopia-agent-os-deploy-bundles/<approved-deploy-bundle-sha>/payload"
+"${DEPLOY_BUNDLE_DIR}/deploy/sidecar/scripts/render-systemd-units.sh" \
+  --target-sha "<approved-runtime-sha>" \
+  --monorepo-dir "${DEPLOY_BUNDLE_DIR}" \
+  --migrations-dir "${DEPLOY_BUNDLE_DIR}/runtime/postgres/migrations" \
+  --output-dir "/tmp/qintopia-m9f-rendered-units"
 ```
 
 `deploy/sidecar/scripts/server-deploy.sh` remains a legacy snapshot. Do not use it as

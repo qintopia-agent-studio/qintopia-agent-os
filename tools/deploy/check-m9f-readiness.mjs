@@ -72,36 +72,20 @@ if (!exists(wrapperPath)) {
   }
 }
 
-const qiweAdapterPath = "skills/qiwe/adapter.py";
-if (!exists(qiweAdapterPath)) {
-  addError(`${qiweAdapterPath}: missing QiWe adapter`);
-} else {
-  const qiweAdapter = readText(qiweAdapterPath);
-  if (
-    !qiweAdapter.includes(
-      "/home/ubuntu/qintopia-agent-os-monorepo/deploy/sidecar/scripts/hermes/qintopia-context-mcp"
-    )
-  ) {
-    addError(
-      `${qiweAdapterPath}: answer context MCP default must use monorepo wrapper`
-    );
-  }
-  if (
-    qiweAdapter.includes(
-      "/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp"
-    )
-  ) {
-    addError(
-      `${qiweAdapterPath}: answer context MCP default still uses legacy checkout`
-    );
-  }
-}
-
 const renderedDir = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-m9f-"));
 try {
   execFileSync(
     "deploy/sidecar/scripts/render-systemd-units.sh",
-    ["--target-sha", "m9f-check", "--output-dir", renderedDir],
+    [
+      "--target-sha",
+      "m9f-check",
+      "--monorepo-dir",
+      "/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload",
+      "--migrations-dir",
+      "/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload/runtime/postgres/migrations",
+      "--output-dir",
+      renderedDir,
+    ],
     {
       cwd: repoRoot,
       stdio: ["ignore", "pipe", "pipe"],
@@ -116,10 +100,10 @@ try {
     }
     const unit = fs.readFileSync(unitPath, "utf8");
     for (const requiredFragment of [
-      "WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo",
+      "WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload",
       "ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/m9f-check/qintopia-message-sidecar",
       command,
-      "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-monorepo/runtime/postgres/migrations",
+      "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/m9f-bundle-check/payload/runtime/postgres/migrations",
       "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check",
     ]) {
       if (!unit.includes(requiredFragment)) {
@@ -149,7 +133,8 @@ const m9fDoc = exists("deploy/sidecar/docs/m9f-legacy-reference-removal.md")
   ? readText("deploy/sidecar/docs/m9f-legacy-reference-removal.md")
   : "";
 for (const requiredFragment of [
-  "/home/ubuntu/qintopia-agent-os-monorepo/deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+  "/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+  "deploy-bundle",
   "QINTOPIA_DEPLOYED_COMMIT_SHA",
   "Do not enable operations timers",
   "Do not enable real external send",

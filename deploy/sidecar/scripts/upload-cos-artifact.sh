@@ -4,9 +4,9 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-dir <dir> [--sha <commit-sha>]
+  deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-dir <dir> [--sha <commit-sha>] [--artifact-type <type>]
 
-Uploads a sidecar artifact directory to Tencent Cloud COS.
+Uploads an Agent OS artifact directory to Tencent Cloud COS.
 
 Required environment:
   TENCENT_COS_BUCKET      Full bucket name, including APPID.
@@ -27,11 +27,13 @@ Optional environment:
   COSCLI_ERR_RETRY_NUM             Transfer error retry count. Defaults to 3.
   COSCLI_ERR_RETRY_INTERVAL_SECONDS  Transfer retry interval. Defaults to 3.
   TENCENT_COS_ARTIFACT_PAYLOAD        Object payload mode: bundle or raw. Defaults to bundle.
+  QINTOPIA_COS_ARTIFACT_TYPE          Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
 USAGE
 }
 
 artifact_dir=""
 sha=""
+artifact_type="${QINTOPIA_COS_ARTIFACT_TYPE:-sidecar}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --sha)
       sha="${2:-}"
+      shift 2
+      ;;
+    --artifact-type)
+      artifact_type="${2:-}"
       shift 2
       ;;
     -h | --help)
@@ -64,8 +70,9 @@ fi
 artifact_dir="${artifact_dir%/}"
 manifest_path="${artifact_dir}/artifact-manifest.json"
 checksum_path="${artifact_dir}/SHA256SUMS"
-binary_path="${artifact_dir}/qintopia-message-sidecar"
-bundle_path="${artifact_dir}/qintopia-message-sidecar.tar.gz"
+sidecar_binary_path="${artifact_dir}/qintopia-message-sidecar"
+sidecar_bundle_path="${artifact_dir}/qintopia-message-sidecar.tar.gz"
+deploy_bundle_path="${artifact_dir}/qintopia-agent-os-deploy-bundle.tar.gz"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -130,12 +137,31 @@ if output.strip():
 PY
 }
 
-for file_path in "$manifest_path" "$checksum_path" "$binary_path"; do
+for file_path in "$manifest_path" "$checksum_path"; do
   if [[ ! -f "$file_path" ]]; then
     echo "artifact file not found: $file_path" >&2
     exit 1
   fi
 done
+
+case "$artifact_type" in
+  sidecar)
+    if [[ ! -f "$sidecar_binary_path" ]]; then
+      echo "artifact file not found: $sidecar_binary_path" >&2
+      exit 1
+    fi
+    ;;
+  deploy-bundle)
+    if [[ ! -f "$deploy_bundle_path" ]]; then
+      echo "artifact file not found: $deploy_bundle_path" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "--artifact-type must be sidecar or deploy-bundle" >&2
+    exit 2
+    ;;
+esac
 
 artifact_name="$(basename "$artifact_dir")"
 if [[ -z "$sha" ]]; then
@@ -240,18 +266,26 @@ bucket_alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
 prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
 prefix="${prefix%/}"
-remote_base="${prefix}/sidecar/${sha}/${artifact_name}"
+remote_base="${prefix}/${artifact_type}/${sha}/${artifact_name}"
 payload_mode="${TENCENT_COS_ARTIFACT_PAYLOAD:-bundle}"
 payload_files=(artifact-manifest.json SHA256SUMS)
 case "$payload_mode" in
   bundle)
-    if [[ ! -f "$bundle_path" ]]; then
-      echo "artifact bundle not found: $bundle_path" >&2
-      exit 1
+    if [[ "$artifact_type" == "sidecar" ]]; then
+      if [[ ! -f "$sidecar_bundle_path" ]]; then
+        echo "artifact bundle not found: $sidecar_bundle_path" >&2
+        exit 1
+      fi
+      payload_files+=(qintopia-message-sidecar.tar.gz)
+    else
+      payload_files+=(qintopia-agent-os-deploy-bundle.tar.gz)
     fi
-    payload_files+=(qintopia-message-sidecar.tar.gz)
     ;;
   raw)
+    if [[ "$artifact_type" != "sidecar" ]]; then
+      echo "raw payload mode is supported only for sidecar artifacts" >&2
+      exit 2
+    fi
     payload_files+=(qintopia-message-sidecar)
     ;;
   *)
@@ -305,4 +339,4 @@ for file_name in "${payload_files[@]}"; do
     "${transfer_args[@]}"
 done
 
-echo "Uploaded sidecar artifact to cos://${bucket_alias}/${remote_base}/"
+echo "Uploaded ${artifact_type} artifact to cos://${bucket_alias}/${remote_base}/"

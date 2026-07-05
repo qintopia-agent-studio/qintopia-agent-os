@@ -25,7 +25,9 @@ const requiredScripts = [
   "deploy:systemd:check",
   "deploy:m9f:check",
   "artifact:sidecar",
+  "artifact:deploy-bundle",
   "artifact:prune:sidecar",
+  "artifact:prune:deploy-bundle",
   "test:qiwe",
   "test:sidecar",
   "smoke:sidecar",
@@ -50,6 +52,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
   "tools/deploy/check-m9f-readiness.mjs",
+  "tools/deploy/build-deploy-bundle.mjs",
 ];
 
 const requiredCheckFragments = [
@@ -304,8 +307,8 @@ if (exists("deploy/sidecar/scripts/prune-cos-artifacts.sh")) {
   for (const requiredFragment of [
     "QINTOPIA_COS_ARTIFACT_KEEP_COUNT",
     "artifact-manifest",
-    "cos://${bucket_alias}/${sidecar_prefix}/",
-    'run_coscli_capture "delete COS artifact',
+    "cos://${bucket_alias}/${artifact_prefix}/",
+    'run_coscli_capture "delete COS ${artifact_type} artifact',
     "HeadBucket and GetBucket permissions",
     "DeleteMultipleObjects",
     "-r",
@@ -335,6 +338,25 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     if (!buildArtifactScript.includes(requiredFragment)) {
       addError(
         `tools/deploy/build-sidecar-artifact.mjs: must include compressed sidecar bundle support (${requiredFragment})`
+      );
+    }
+  }
+}
+
+if (exists("tools/deploy/build-deploy-bundle.mjs")) {
+  const buildDeployBundleScript = readText("tools/deploy/build-deploy-bundle.mjs");
+  for (const requiredFragment of [
+    "qintopia-agent-os-deploy-bundle",
+    "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+    "deploy/sidecar/scripts/render-systemd-units.sh",
+    "runtime/postgres/migrations",
+    "artifact-manifest.json",
+    "SHA256SUMS",
+    'run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"])',
+  ]) {
+    if (!buildDeployBundleScript.includes(requiredFragment)) {
+      addError(
+        `tools/deploy/build-deploy-bundle.mjs: must build the deploy bundle (${requiredFragment})`
       );
     }
   }
@@ -504,6 +526,7 @@ for (const phrase of [
   "actions/upload-artifact@v7",
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
+  "qintopia-agent-os-deploy-bundle",
   "qintopia-agent-os-artifacts-1305166808",
   "ap-shanghai",
   "TENCENT_COS_UPLOAD_ENABLED",
@@ -518,6 +541,7 @@ for (const phrase of [
   "node tools/deploy/prune-github-artifacts.mjs",
   "retention-days: 14",
   "qintopia-message-sidecar-linux-x86_64-gnu",
+  "qintopia-agent-os-deploy-bundle",
   "dtolnay/rust-toolchain@1.75.0",
   "components: rustfmt",
 ]) {

@@ -580,6 +580,16 @@ and future programming agents.
     checkout
   - M9-F is still not approved for mutation; this preflight only clears the wrapper
     resolution risk
+- Corrected the M9-F plan after server GitHub git transport remained unreliable:
+  - confirmed GitHub API token issuance works from the server, while GitHub git
+    `ls-remote` can time out
+  - removed server `git fetch` as a prerequisite for M9-F
+  - added a CI-built `qintopia-agent-os-deploy-bundle` containing the Hermes MCP
+    wrapper, systemd renderer, M9-F runbooks, and Postgres migrations
+  - extended COS upload, download, and prune scripts to support both `sidecar` runtime
+    artifacts and `deploy-bundle` operator artifacts
+  - updated the M9-F target so worker units use the COS runtime artifact for `ExecStart`
+    and the COS deploy bundle payload as `WorkingDirectory` and migration source
 
 ## Update Rule
 
@@ -597,10 +607,9 @@ Remaining follow-up after the active service cutover:
   the monorepo artifact, but six `qintopia-agentos-*` workers and Hermes `mcp-context`
   still reference `/home/ubuntu/qintopia-msg-sidecar`.
 - M9-F execution blocker: the server deploy checkout is still at `9424450` and its
-  `qintopia-context-mcp` wrapper still defaults to the old checkout. Resolve the deploy
-  runner/wrapper path before mutating worker units or Hermes profile config. The
-  reviewed wrapper has passed `/tmp` resolution preflight against the COS-readonly
-  artifact, but the live server path still needs an owner-approved installation choice.
+  `qintopia-context-mcp` wrapper still defaults to the old checkout. Do not update it
+  with `git fetch` for M9-F. Use the CI-built deploy bundle from COS for wrapper,
+  renderer, runbook, and migration files.
 - COS artifact distribution: the accelerated upload path, CI-side COS pruning, and
   server-side read-only download verification have passed for artifact
   `0782f6d0f3f46d1285444f9a21f1669791be1d5e`; use this path for the next M9-F
@@ -618,34 +627,37 @@ Remaining follow-up after the active service cutover:
 
 Recommended order:
 
-1. Choose and approve the M9-F wrapper installation path:
-   - upgrade `/home/ubuntu/qintopia-agent-os-monorepo` as the deploy runner and record
-     its before/after SHA separately from the runtime artifact SHA
-   - or use a release-managed wrapper path if M10 release/current is assembled first
-   - or install a dedicated reviewed wrapper directory with backup and checksum evidence
-2. Complete M9-F by repointing remaining active
+1. Wait for CI to publish the deploy bundle for the approved deploy-bundle SHA, then
+   download and verify it from COS on the server in `/tmp`.
+2. Download and verify the approved runtime sidecar artifact from COS in the production
+   artifact cache if it is not already present.
+3. Render M9-F worker units from the deploy bundle payload with:
+   - `WorkingDirectory=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload`
+   - `ExecStart=/home/ubuntu/qintopia-agent-os-artifacts/<runtime-sha>/qintopia-message-sidecar`
+   - `QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-deploy-bundles/<deploy-bundle-sha>/payload/runtime/postgres/migrations`
+4. Complete M9-F by repointing remaining active
    `qintopia-agentos-member-profile-worker`, `qintopia-agentos-graph-projection-worker`,
    `qintopia-agentos-raw-archive-worker`, `qintopia-agentos-event-signal-worker`,
    `qintopia-agentos-daily-digest-worker`, and `qintopia-agentos-daily-digest-publisher`
    services away from `/home/ubuntu/qintopia-msg-sidecar`.
-3. Move Hermes `mcp-context` command references away from
+5. Move Hermes `mcp-context` command references away from
    `/home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp` and into a
-   reviewed monorepo/release-managed command path.
-4. Design M10 release packaging:
+   reviewed deploy-bundle/release-managed command path.
+6. Design M10 release packaging:
    - `sidecar-runtime` release payload
    - `hermes-profile-bundle-<agent>` payloads for reviewed non-secret profile files
    - `skill-bundle-<skill>` payloads for Hermes plugins such as `skills/qiwe`
    - `qintopia-agent-os-releases/<sha>` with `current` and `previous` symlinks
-5. Keep server-side GitHub access out of routine runtime releases. Use it only for
+7. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
-6. Do not repoint production to a newer commit just because docs changed; use a new
+8. Do not repoint production to a newer commit just because docs changed; use a new
    approved target SHA and artifact only when there is a production runtime change.
-7. Do not enable real external send or real workbench adapter paths until production
+9. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-8. After no process, unit, timer, cron, MCP command, or nginx route references legacy
-   paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
-   `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
-   `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and
-   OpenClaw paths only with owner approval.
-9. Add deploy smoke and rollback notes before any production wiring changes for
-   `skills/qiwe` or Erhua profile bundles.
+10. After no process, unit, timer, cron, MCP command, or nginx route references legacy
+    paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
+    `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
+    `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin,
+    and OpenClaw paths only with owner approval.
+11. Add deploy smoke and rollback notes before any production wiring changes for
+    `skills/qiwe` or Erhua profile bundles.

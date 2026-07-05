@@ -90,6 +90,8 @@ become versioned.
 - Added the server read-only COS CAM policy required for Lighthouse artifact downloads.
 - Added the M9-F deploy runner and wrapper boundary to separate runtime artifact
   releases from reviewed operator script upgrades.
+- Added `qintopia-agent-os-deploy-bundle`, a CI-built operator artifact containing the
+  M9-F Hermes MCP wrapper, systemd renderer, runbooks, and Postgres migrations.
 
 ### Changed
 
@@ -201,6 +203,10 @@ become versioned.
 - Recorded the server `/tmp` wrapper preflight proving the reviewed Hermes MCP wrapper
   can resolve the COS-readonly artifact without falling back to
   `/home/ubuntu/qintopia-msg-sidecar`.
+- Changed M9-F planning so wrapper, renderer, runbook, and migration files come from a
+  COS deploy bundle instead of server-side `git fetch`.
+- Extended COS upload, fetch, and prune scripts to support both `sidecar` and
+  `deploy-bundle` artifact types with latest-two retention for each.
 
 ### Fixed
 

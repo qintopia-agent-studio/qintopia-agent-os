@@ -4,9 +4,9 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  deploy/sidecar/scripts/prune-cos-artifacts.sh [--artifact-name <name>] [--keep <count>] [--dry-run]
+  deploy/sidecar/scripts/prune-cos-artifacts.sh [--artifact-name <name>] [--artifact-type <type>] [--keep <count>] [--dry-run]
 
-Prunes old sidecar artifact directories from Tencent Cloud COS.
+Prunes old Agent OS artifact directories from Tencent Cloud COS.
 
 Required environment:
   TENCENT_COS_BUCKET      Full bucket name, including APPID.
@@ -23,11 +23,13 @@ Optional environment:
   COSCLI_CONFIG_TIMEOUT_SECONDS     Per config command timeout. Defaults to 60.
   COSCLI_TRANSFER_TIMEOUT_SECONDS   Per list/delete command timeout. Defaults to 300.
   ARTIFACT_NAME                     Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
+  QINTOPIA_COS_ARTIFACT_TYPE        Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
   QINTOPIA_COS_ARTIFACT_KEEP_COUNT  Defaults to 2.
 USAGE
 }
 
-artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
+artifact_type="${QINTOPIA_COS_ARTIFACT_TYPE:-sidecar}"
+artifact_name="${ARTIFACT_NAME:-}"
 keep_count="${QINTOPIA_COS_ARTIFACT_KEEP_COUNT:-2}"
 dry_run=0
 
@@ -35,6 +37,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --artifact-name)
       artifact_name="${2:-}"
+      shift 2
+      ;;
+    --artifact-type)
+      artifact_type="${2:-}"
       shift 2
       ;;
     --keep)
@@ -56,6 +62,19 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$artifact_type" in
+  sidecar)
+    artifact_name="${artifact_name:-qintopia-message-sidecar-linux-x86_64-gnu}"
+    ;;
+  deploy-bundle)
+    artifact_name="${artifact_name:-qintopia-agent-os-deploy-bundle}"
+    ;;
+  *)
+    echo "--artifact-type must be sidecar or deploy-bundle" >&2
+    exit 2
+    ;;
+esac
 
 if [[ -z "$artifact_name" ]]; then
   echo "artifact name is required" >&2
@@ -143,7 +162,7 @@ bucket_alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
 prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
 prefix="${prefix%/}"
-sidecar_prefix="${prefix}/sidecar"
+artifact_prefix="${prefix}/${artifact_type}"
 
 run_coscli_capture() {
   local label="$1"
@@ -192,7 +211,7 @@ PY
       echo "COSCLI failed during: ${label}" >&2
     fi
     echo "Bucket alias: ${bucket_alias}" >&2
-    echo "Artifact prefix: ${sidecar_prefix}/" >&2
+    echo "Artifact prefix: ${artifact_prefix}/" >&2
     echo "Credentials were not printed. Check CI COS list/delete permissions." >&2
     if [[ "$command_name" == "ls" ]]; then
       echo "COSCLI ls requires HeadBucket and GetBucket permissions on the bucket/prefix." >&2
@@ -240,8 +259,8 @@ run_coscli_capture "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   "${bucket_config_args[@]}" >/dev/null
 
 list_output="$(
-  run_coscli_capture "list sidecar artifact manifests" ls \
-    "cos://${bucket_alias}/${sidecar_prefix}/" \
+  run_coscli_capture "list ${artifact_type} artifact manifests" ls \
+    "cos://${bucket_alias}/${artifact_prefix}/" \
     -r \
     --limit -1 \
     -c "$config_path" \
@@ -249,16 +268,17 @@ list_output="$(
 )"
 
 candidate_path="${tmp_dir}/candidates.tsv"
-LIST_OUTPUT="$list_output" python3 - "$prefix" "$artifact_name" >"$candidate_path" <<'PY'
+LIST_OUTPUT="$list_output" python3 - "$prefix" "$artifact_type" "$artifact_name" >"$candidate_path" <<'PY'
 import re
 import os
 import sys
 
-prefix, artifact_name = sys.argv[1:3]
+prefix, artifact_type, artifact_name = sys.argv[1:4]
 escaped_prefix = re.escape(prefix.strip("/"))
+escaped_type = re.escape(artifact_type.strip("/"))
 escaped_artifact = re.escape(artifact_name)
 key_re = re.compile(
-    rf"({escaped_prefix}/sidecar/([0-9a-f]{{40}})/{escaped_artifact}/artifact-manifest\.json)"
+    rf"({escaped_prefix}/{escaped_type}/([0-9a-f]{{40}})/{escaped_artifact}/artifact-manifest\.json)"
 )
 
 seen = {}
@@ -278,7 +298,7 @@ for sha, (last_modified, key) in seen.items():
 PY
 
 if [[ ! -s "$candidate_path" ]]; then
-  echo "Found 0 COS sidecar artifact versions under cos://${bucket_alias}/${sidecar_prefix}/; pruning 0."
+  echo "Found 0 COS ${artifact_type} artifact versions under cos://${bucket_alias}/${artifact_prefix}/; pruning 0."
   exit 0
 fi
 
@@ -287,7 +307,7 @@ total_count="${#sorted_candidates[@]}"
 keep_lines=("${sorted_candidates[@]:0:keep_count}")
 prune_lines=("${sorted_candidates[@]:keep_count}")
 
-echo "Found ${total_count} COS sidecar artifact versions for ${artifact_name}; keeping ${#keep_lines[@]}, pruning ${#prune_lines[@]}."
+echo "Found ${total_count} COS ${artifact_type} artifact versions for ${artifact_name}; keeping ${#keep_lines[@]}, pruning ${#prune_lines[@]}."
 
 for line in "${keep_lines[@]}"; do
   IFS=$'\t' read -r last_modified sha key <<<"$line"
@@ -296,7 +316,7 @@ done
 
 for line in "${prune_lines[@]}"; do
   IFS=$'\t' read -r last_modified sha key <<<"$line"
-  remote_dir="${sidecar_prefix}/${sha}/${artifact_name}/"
+  remote_dir="${artifact_prefix}/${sha}/${artifact_name}/"
   if [[ "$dry_run" -eq 1 ]]; then
     action_label="Would delete"
   else
@@ -304,7 +324,7 @@ for line in "${prune_lines[@]}"; do
   fi
   echo "${action_label} COS artifact sha=${sha} prefix=cos://${bucket_alias}/${remote_dir} last_modified=${last_modified:-unknown}"
   if [[ "$dry_run" -eq 0 ]]; then
-    run_coscli_capture "delete COS artifact ${sha}" rm \
+    run_coscli_capture "delete COS ${artifact_type} artifact ${sha}" rm \
       "cos://${bucket_alias}/${remote_dir}" \
       -r \
       -f \
