@@ -87,6 +87,15 @@ const git = (args) =>
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 
+const gitFileMode = (relativePath) => {
+  try {
+    const output = git(["ls-files", "-s", "--", relativePath]);
+    return output.split(/\s+/)[0] || "";
+  } catch {
+    return "";
+  }
+};
+
 const packageJson = JSON.parse(readText("package.json"));
 const scripts = packageJson.scripts ?? {};
 
@@ -105,6 +114,20 @@ for (const fragment of requiredCheckFragments) {
 for (const docPath of requiredDocs) {
   if (!exists(docPath)) {
     addError(`${docPath}: required deploy gate document is missing`);
+  }
+}
+
+for (const scriptPath of [
+  "deploy/sidecar/scripts/upload-cos-artifact.sh",
+  "deploy/sidecar/scripts/prune-cos-artifacts.sh",
+  "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+  "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/github-app-git.sh",
+  "deploy/sidecar/scripts/postgres-schema-preflight.sh",
+  "deploy/sidecar/scripts/render-systemd-units.sh",
+]) {
+  if (exists(scriptPath) && gitFileMode(scriptPath) !== "100755") {
+    addError(`${scriptPath}: must be committed with executable file mode 100755`);
   }
 }
 

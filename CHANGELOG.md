@@ -188,6 +188,8 @@ become versioned.
 
 ### Fixed
 
+- Fixed the Tencent COS prune script file mode and added a deploy preflight guard that
+  requires directly executed deployment shell scripts to be committed as executable.
 - Fixed COSCLI installer stdout so CI upload scripts receive only the installed binary
   path, not checksum verification text.
 - Hardened COS artifact upload and fetch scripts so SecretKey values are used only while
