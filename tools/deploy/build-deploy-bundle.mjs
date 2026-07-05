@@ -36,6 +36,10 @@ const sourceFiles = [
   "skills/qiwe/passive_pipeline.py",
   "skills/qiwe/plugin.yaml",
   "skills/qiwe/qiwe_events.py",
+  "skills/feishu-base/manifest.yaml",
+  "skills/feishu-base/README.md",
+  "skills/feishu-base/__init__.py",
+  "skills/feishu-base/plugin.yaml",
 ];
 const sourceDirs = [
   "runtime/postgres/migrations",
@@ -44,6 +48,8 @@ const sourceDirs = [
   "skills/qiwe/scripts",
   "skills/qiwe/solitaire",
   "skills/qiwe/tests",
+  "skills/feishu-base/docs",
+  "skills/feishu-base/tests",
 ];
 const sourceDirExcludes = [
   /(^|\/)__pycache__(\/|$)/,
@@ -186,6 +192,7 @@ const manifest = {
       "use payload/runtime/postgres/migrations as QINTOPIA_SIDECAR_MIGRATIONS_DIR",
       "verify skills/qintopia-tools variants are present before any profile plugin repoint",
       "verify skills/qiwe is present before any Erhua qiwe-platform plugin repoint",
+      "verify skills/feishu-base is present before any Huabaosi qintopia-base-read plugin repoint",
     ],
   },
 };

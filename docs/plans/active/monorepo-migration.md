@@ -846,6 +846,24 @@ and future programming agents.
     or backup files
   - did not delete or archive the old QiWe plugin checkout; cleanup remains M11/M12
     gated
+- Started M10-E by adopting Huabaosi `qintopia-base-read` into the monorepo:
+  - performed read-only server inventory for
+    `/home/ubuntu/.hermes/profiles/huabaosi/plugins/qintopia-base-read`
+  - confirmed Huabaosi is an active user service, the profile config enables
+    `qintopia-base-read`, and the server plugin exposes
+    `qintopia_xiaoman_activity_record_get` plus `qintopia_huabaosi_design_record_get`
+  - confirmed the server source had no git metadata and contained hardcoded Feishu/Base
+    credential fallback material; the adopted package replaces those values with runtime
+    environment requirements
+  - added `skills/feishu-base` with `plugin.yaml`, manifest, README, source snapshot,
+    focused unit tests, registry entry, and `pnpm skills:feishu-base:check`
+  - added `skills/feishu-base` to the deploy bundle payload and deploy preflight so a
+    future Huabaosi repoint cannot silently omit it or commit hardcoded Base identifiers
+  - verified `pnpm skills:feishu-base:check`, `pnpm artifact:deploy-bundle`, deploy
+    bundle manifest membership, and `pnpm check:light`
+  - did not repoint Huabaosi yet; production cutover still requires CI, opt-in artifact
+    publication, COS/server verification, secure runtime env availability, backup,
+    symlink repoint, restart, and post-cutover checks
 
 ## Update Rule
 
@@ -857,7 +875,7 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Remaining follow-up after the M10-D `qiwe-platform` release/current cutover:
+Remaining follow-up after the M10-E `qintopia-base-read` package adoption:
 
 - Server deploy checkout remains a transition diagnostic checkout at `9424450`; do not
   use `git fetch` as the routine release path.
@@ -865,8 +883,10 @@ Remaining follow-up after the M10-D `qiwe-platform` release/current cutover:
   `/home/ubuntu/qintopia-agent-os-releases/99681909149fde4f16daa3af941a750d1f239860`.
 - Previous release:
   `/home/ubuntu/qintopia-agent-os-releases/e7227734f6e84493f7709290d615297daf8d1165`.
-- M9-F, M10-B, M10-C, and M10-D are release/current-managed. The remaining M10 work is
-  Huabaosi `qintopia-base-read` and reviewed profile template migration, not sidecar
+- M9-F, M10-B, M10-C, and M10-D are release/current-managed. M10-E is adopted in the
+  repository and packaged for release; the remaining M10-E production work is
+  artifact/COS verification and Huabaosi plugin repoint after secure runtime env
+  availability is confirmed. M10-F is reviewed profile template migration, not sidecar
   runtime cutover.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
@@ -878,7 +898,8 @@ Remaining follow-up after the M10-D `qiwe-platform` release/current cutover:
 
 Recommended order:
 
-1. M10-E: review Huabaosi `qintopia-base-read` after collab MCP and QiWe migration.
+1. Finish M10-E production repoint for Huabaosi `qintopia-base-read` only after CI,
+   deploy-bundle artifact validation, and secure runtime env verification.
 2. M10-F: plan reviewed `config.yaml` and `SOUL.md` profile templates/symlinks without
    replacing whole profile directories.
 3. M11: mark legacy paths as `archive-ready` only after no process, unit/timer, Hermes

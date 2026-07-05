@@ -1,0 +1,37 @@
+id: skills/feishu-base
+type: skill
+name: Feishu Base Read Skill
+owner: PatrickLiveCool
+status: adopting
+risk_level: medium
+description:
+  Read-only Hermes tools for allowlisted Feishu Base records used by Huabaosi
+  collaboration. The package keeps the runtime plugin name `qintopia-base-read`.
+source:
+  path: /home/ubuntu/.hermes/profiles/huabaosi/plugins/qintopia-base-read
+  reference: server-runtime-2026-07-05
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm skills:feishu-base:check
+    - pnpm check:light
+dependencies:
+  - agents/huabaosi
+  - runtime/hermes
+tags:
+  - hermes-plugin
+  - feishu-base
+  - huabaosi
+  - read-only
+next_actions:
+  - Configure Huabaosi runtime with the required Feishu app and Base table environment
+    variables before production repoint.
+  - Repoint the Huabaosi profile plugin directory to the release/current package after
+    artifact validation.
+  - Keep the old profile-local plugin directory as M11 archive-ready evidence until M12
+    approval.

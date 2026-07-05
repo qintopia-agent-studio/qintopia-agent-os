@@ -172,7 +172,8 @@ profiles:
       secrets: true
     next_action:
       - separate approved Huabaosi profile behavior from unapproved Rust/shadow work
-      - inventory qintopia-base-read before adoption
+      - finish M10-E qintopia-base-read artifact verification and release/current
+        repoint
 
   - id: profile.xiaoqin
     source:

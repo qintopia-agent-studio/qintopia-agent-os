@@ -16,6 +16,7 @@ const requiredScripts = [
   "lint:md",
   "registry:check",
   "agents:check",
+  "skills:feishu-base:check",
   "policy:check",
   "secrets:check",
   "deploy:preflight:ci",
@@ -55,6 +56,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
   "tools/deploy/check-m9f-readiness.mjs",
   "tools/deploy/build-deploy-bundle.mjs",
+  "tools/skills/check-feishu-base.mjs",
 ];
 
 const requiredCheckFragments = ["pnpm check:light", "pnpm check:runtime"];
@@ -63,6 +65,7 @@ const requiredLightCheckFragments = [
   "pnpm format:check",
   "pnpm lint:md",
   "pnpm registry:check",
+  "pnpm skills:feishu-base:check",
   "pnpm agents:check",
   "pnpm policy:check",
   "pnpm secrets:check",
@@ -376,6 +379,9 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "skills/qiwe/adapter.py",
     "skills/qiwe/plugin.yaml",
     "skills/qiwe/solitaire",
+    "skills/feishu-base/__init__.py",
+    "skills/feishu-base/plugin.yaml",
+    "skills/feishu-base/docs",
     "artifact-manifest.json",
     "SHA256SUMS",
     'run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"])',
@@ -383,6 +389,40 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     if (!buildDeployBundleScript.includes(requiredFragment)) {
       addError(
         `tools/deploy/build-deploy-bundle.mjs: must build the deploy bundle (${requiredFragment})`
+      );
+    }
+  }
+}
+
+if (exists("skills/feishu-base/__init__.py")) {
+  const feishuBasePlugin = readText("skills/feishu-base/__init__.py");
+  for (const requiredFragment of [
+    "QINTOPIA_BASE_READ_XIAOMAN_ACTIVITY_BASE_TOKEN",
+    "QINTOPIA_BASE_READ_XIAOMAN_ACTIVITY_PLAN_TABLE_ID",
+    "QINTOPIA_BASE_READ_HUABAOSI_DESIGN_BASE_TOKEN",
+    "QINTOPIA_BASE_READ_HUABAOSI_POSTER_TABLE_ID",
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "required_env",
+    "qintopia_xiaoman_activity_record_get",
+    "qintopia_huabaosi_design_record_get",
+  ]) {
+    if (!feishuBasePlugin.includes(requiredFragment)) {
+      addError(
+        `skills/feishu-base/__init__.py: missing Huabaosi Base read guard (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenPattern of [
+    /\bcli_[A-Za-z0-9_-]{20,}/,
+    /\bbascn[A-Za-z0-9]+/,
+    /\btbl[A-Za-z0-9]+/,
+    /base_token"\s*:/,
+    /table_id"\s*:/,
+  ]) {
+    if (forbiddenPattern.test(feishuBasePlugin)) {
+      addError(
+        "skills/feishu-base/__init__.py: must not commit Feishu app ids, Base ids, or echo source identifiers"
       );
     }
   }

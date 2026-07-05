@@ -12,3 +12,8 @@ entries:
     status: adopting
     notes:
       M10-C imports active server profile variants; production repoint is still pending.
+  - id: skills/feishu-base
+    path: skills/feishu-base
+    manifest: skills/feishu-base/manifest.yaml
+    status: adopting
+    notes: M10-E imports Huabaosi qintopia-base-read as a read-only Feishu Base package.

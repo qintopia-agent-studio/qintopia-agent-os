@@ -123,9 +123,15 @@ git.
   - source: `/home/ubuntu/.hermes/profiles/huabaosi/plugins/qintopia-base-read`
   - observed size: 64K
   - consumers: Huabaosi
-  - target: `skills/feishu-base` or `mcp/base-read`
+  - target: `skills/feishu-base`
   - risk: medium
-  - next step: review after collab MCP migration
+  - status: M10-E package adoption started; production still profile-local until a
+    verified release/current repoint is performed
+  - validation: package-local check, deploy bundle build, manifest membership, and
+    `pnpm check:light` passed locally
+  - next step: publish and verify an opt-in deploy bundle, confirm required runtime env
+    values are available to Huabaosi without committing secrets, then repoint only this
+    plugin directory
 - Silaoshi temporary script
   - source: `/home/ubuntu/.hermes/profiles/silaoshi/tmp_query_brief.py`
   - observed size: small
@@ -184,8 +190,14 @@ git.
      external-send allowlist/config was broadened.
 4. M10-E: review Huabaosi `qintopia-base-read`.
    - Affected profile: Huabaosi.
-   - Validation: read-only Base access smoke; no approval of unreviewed Huabaosi
-     shadow/Rust work.
+   - Status: package adoption in progress.
+   - Current state: `skills/feishu-base` contains the sanitized `qintopia-base-read`
+     plugin source, manifest, docs, tests, registry entry, and deploy-bundle packaging.
+   - Validation: local package check, deploy bundle build, deploy bundle manifest
+     membership, and light repository gate passed.
+   - Remaining production validation: CI, opt-in artifact publication, server-side COS
+     fetch verification, Huabaosi runtime env availability, backup, symlink repoint,
+     restart, tool import/registration smoke, sidecar check, and active service checks.
 5. M10-F: profile template/symlink planning for reviewed `config.yaml` and `SOUL.md`.
    - Do not replace whole profile directories.
    - Keep `.env`, sessions, logs, cache, state DBs, auth, and runtime-generated memory

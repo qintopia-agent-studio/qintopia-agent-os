@@ -1,0 +1,11 @@
+name: qintopia-base-read
+label: Qintopia Base Read
+kind: standalone
+version: 0.1.0
+description: >
+  Narrow read-only Feishu Base tools for Huabaosi to verify Xiaoman activity facts and
+  Huabaosi design ledger records during controlled collaboration.
+author: Qintopia
+provides_tools:
+  - qintopia_xiaoman_activity_record_get
+  - qintopia_huabaosi_design_record_get

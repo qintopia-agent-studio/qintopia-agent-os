@@ -11,4 +11,5 @@ globs:
   - "**/*.md"
 ignores:
   - "node_modules"
+  - "dist"
   - "CHANGELOG.md"

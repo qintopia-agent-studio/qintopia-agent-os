@@ -260,9 +260,15 @@ become versioned.
   `/home/ubuntu/qintopia-agent-os-releases/99681909149fde4f16daa3af941a750d1f239860`,
   moved `current` to that release, and changed Erhua `qiwe-platform` to a
   release/current symlink with service and sidecar checks.
+- Adopted the M10-E Huabaosi `qintopia-base-read` plugin as `skills/feishu-base`,
+  preserving the runtime plugin name while removing hardcoded Feishu/Base credentials,
+  adding package docs/tests/checks, and packaging it in the deploy bundle for the next
+  release/current repoint.
 
 ### Fixed
 
+- Added `dist` to markdownlint ignores so local deploy-bundle verification artifacts do
+  not make `pnpm check:light` fail after `pnpm artifact:deploy-bundle`.
 - Fixed the Tencent COS prune script file mode and added a deploy preflight guard that
   requires directly executed deployment shell scripts to be committed as executable.
 - Fixed COSCLI installer stdout so CI upload scripts receive only the installed binary
