@@ -181,10 +181,19 @@ if [[ "$auth_mode" == "CvmRole" ]]; then
     --init-skip \
     --disable-log
 else
-  config_auth_args+=(-i "$TENCENT_COS_SECRET_ID" -k "$TENCENT_COS_SECRET_KEY")
+  secret_key_auth_args=(
+    --mode SecretKey
+    --secret_id "$TENCENT_COS_SECRET_ID"
+    --secret_key "$TENCENT_COS_SECRET_KEY"
+  )
   if [[ -n "${TENCENT_COS_SESSION_TOKEN:-}" ]]; then
-    config_auth_args+=(--token "$TENCENT_COS_SESSION_TOKEN")
+    secret_key_auth_args+=(--session_token "$TENCENT_COS_SESSION_TOKEN")
   fi
+  run_coscli "configure COS SecretKey auth" config set \
+    -c "$config_path" \
+    --init-skip \
+    --disable-log \
+    "${secret_key_auth_args[@]}"
 fi
 
 run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
@@ -192,7 +201,8 @@ run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   -r "$TENCENT_COS_REGION" \
   -a "$bucket_alias" \
   -c "$config_path" \
-  "${config_auth_args[@]}"
+  --init-skip \
+  --disable-log
 
 mkdir -p "$output_dir"
 for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do

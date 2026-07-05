@@ -186,3 +186,5 @@ become versioned.
   permission, and object upload errors without printing COS credentials.
 - Fixed COSCLI temporary config initialization so upload and fetch scripts create the
   config file before calling `config add` or `config set`.
+- Corrected COSCLI authentication setup to use `config set --mode SecretKey` for
+  temporary config auth and keep `cp` transfer commands credential-free.

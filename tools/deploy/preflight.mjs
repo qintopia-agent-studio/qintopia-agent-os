@@ -186,6 +186,11 @@ for (const cosScriptPath of [
         `${cosScriptPath}: must create the temporary COSCLI config file before config add/set`
       );
     }
+    if (!script.includes("config set")) {
+      addError(
+        `${cosScriptPath}: must write authentication mode into the temporary COSCLI config with config set`
+      );
+    }
     const cpCommands = script.matchAll(
       /\b(?:run_coscli\s+"[^"]+"\s+)?cp\s+[\s\S]*?(?=\n(?:done|echo|mkdir|test|\(|[a-zA-Z0-9_]+\(|if\b|for\b)|$)/g
     );

@@ -438,6 +438,9 @@ and future programming agents.
   - confirmed the latest CI failure is at COSCLI bucket configuration before file
     upload; the next likely fix is completing the CI upload CAM policy for bucket
     probe/list plus prefix-scoped object and multipart upload permissions
+  - corrected the COSCLI model after verification: `config set` writes SecretKey auth
+    into the temporary config, `config add` only records the bucket alias, and `cp` uses
+    the temporary config without credential arguments
 
 ## Update Rule
 

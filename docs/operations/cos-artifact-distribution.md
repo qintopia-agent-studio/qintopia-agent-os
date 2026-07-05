@@ -48,7 +48,9 @@ Use separate identities for CI upload and server download.
 Do not use root account keys. Do not put COS keys in git, systemd unit files, shell
 history, or chat logs.
 
-GitHub Actions upload uses COSCLI `config add` and `cp`. COSCLI may probe bucket/object
+GitHub Actions upload uses COSCLI `config set`, `config add`, and `cp`: `config set`
+writes SecretKey auth into a temporary config file, `config add` records the bucket
+alias, and `cp` uploads through that temporary config. COSCLI may probe bucket/object
 state and may use multipart upload depending on file size and COSCLI behavior. The
 upload CAM policy should therefore allow bucket probe/list actions at the bucket scope
 and object write/multipart actions at the artifact prefix scope.

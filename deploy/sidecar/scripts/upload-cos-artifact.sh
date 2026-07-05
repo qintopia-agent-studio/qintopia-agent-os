@@ -187,10 +187,20 @@ prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
 prefix="${prefix#/}"
 prefix="${prefix%/}"
 remote_base="${prefix}/sidecar/${sha}/${artifact_name}"
-auth_args=(-i "$TENCENT_COS_SECRET_ID" -k "$TENCENT_COS_SECRET_KEY")
+config_auth_args=(
+  --mode SecretKey
+  --secret_id "$TENCENT_COS_SECRET_ID"
+  --secret_key "$TENCENT_COS_SECRET_KEY"
+)
 if [[ -n "${TENCENT_COS_SESSION_TOKEN:-}" ]]; then
-  auth_args+=(--token "$TENCENT_COS_SESSION_TOKEN")
+  config_auth_args+=(--session_token "$TENCENT_COS_SESSION_TOKEN")
 fi
+
+run_coscli "configure COS SecretKey auth" config set \
+  -c "$config_path" \
+  --init-skip \
+  --disable-log \
+  "${config_auth_args[@]}"
 
 run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   -b "$TENCENT_COS_BUCKET" \
@@ -198,8 +208,7 @@ run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   -a "$bucket_alias" \
   -c "$config_path" \
   --init-skip \
-  --disable-log \
-  "${auth_args[@]}"
+  --disable-log
 
 for file_name in artifact-manifest.json SHA256SUMS qintopia-message-sidecar; do
   log "Uploading ${file_name} to cos://${bucket_alias}/${remote_base}/${file_name}"
