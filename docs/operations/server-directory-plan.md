@@ -152,6 +152,26 @@ For example, the target Erhua shape is:
   plugins/qiwe-platform -> /home/ubuntu/qintopia-agent-os-releases/current/skills/qiwe
 ```
 
+## Release Promotion Contract
+
+Routine release promotion should not require the server to pull repository code. The
+server receives reviewed payloads from COS, verifies them, assembles an immutable
+release directory, then repoints `current`.
+
+Minimum promotion sequence:
+
+1. Download the approved SHA artifact from COS into a staging or cache directory.
+2. Verify `artifact-manifest.json`, `SHA256SUMS`, and binary self-checks.
+3. Assemble `/home/ubuntu/qintopia-agent-os-releases/<approved-sha>`.
+4. Validate the release directory without changing `current`.
+5. Update `previous` to the old `current` target.
+6. Atomically switch `current` to `<approved-sha>`.
+7. Restart only the approved services or Hermes profile processes.
+8. Record checks, release SHA, previous SHA, and rollback command in git.
+
+Repository fetches on the server are reserved for deploy runner bootstrap or approved
+runner upgrades, not normal Agent OS runtime releases.
+
 ## Cleanup Rule
 
 Before removing any legacy directory:

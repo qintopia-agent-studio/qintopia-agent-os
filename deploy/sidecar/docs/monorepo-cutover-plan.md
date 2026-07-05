@@ -1,4 +1,4 @@
-# Sidecar Monorepo Cutover Plan
+# Sidecar Cutover Plan
 
 This plan describes how to move production sidecar deployment from the standalone
 `qintopia-msg-sidecar` checkout to this monorepo. It is a plan, not an approved deploy
@@ -24,7 +24,7 @@ item.
 
 ## M9 Transition Model
 
-- Server checkout: `/home/ubuntu/qintopia-agent-os-monorepo`
+- Deploy checkout: `/home/ubuntu/qintopia-agent-os-monorepo`
 - Git branch: `master`
 - Sidecar crate: `runtime/sidecar`
 - Migration source: `runtime/postgres/migrations`
@@ -33,9 +33,10 @@ item.
 - Runtime binary:
   `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar`
 
-Systemd units should point to the monorepo checkout only after the target commit has
-passed local CI, CI artifact upload, server-side manifest/checksum verification, smoke,
-and rollback checks.
+Systemd units should point to the verified artifact only after the target commit has
+passed CI, COS upload, server-side manifest/checksum verification, smoke, and rollback
+checks. The deploy checkout is a transition working directory and migration source; it
+is not the release transport.
 
 M9-D completed this cutover for the approved active service family on 2026-07-04 at
 `c70378408c53de5f4166e8b9bde45b15a97cabb0`. Future use of this plan should be treated as
@@ -70,7 +71,8 @@ mounts from the release directory.
 ## Cutover Preconditions
 
 - Owner approves the cutover window and target commit SHA.
-- Server checkout is clean before any git operation.
+- Existing deploy runner scripts are already approved, or a separate deploy runner
+  upgrade has been completed before the runtime repoint.
 - Huabaosi shadow branch has been explicitly classified as one of:
   - adopted into monorepo
   - kept in review-pool
@@ -79,7 +81,7 @@ mounts from the release directory.
 - The CI workflow passes for the exact target commit, including both `check` and
   `sidecar-artifact`; the artifact job uploads
   `qintopia-message-sidecar-linux-x86_64-gnu`.
-- `deploy/sidecar/scripts/fetch-ci-artifact.sh --sha <approved-target-sha>` verifies
+- `deploy/sidecar/scripts/fetch-cos-artifact.sh --sha <approved-target-sha>` verifies
   `artifact-manifest.json` and `SHA256SUMS` on the server.
 - `deploy/sidecar/scripts/operations-control-plane-smoke.sh` passes on the server.
 - Apply smokes that write Postgres are explicitly approved before they run.
@@ -97,29 +99,18 @@ mounts from the release directory.
    systemctl status qintopia-message-embedding-worker.service --no-pager
    ```
 
-2. Prepare monorepo checkout:
+2. Fetch the CI-built sidecar artifact for the approved commit SHA from COS:
 
    ```bash
-   cd /home/ubuntu
-   git clone <approved-monorepo-remote> qintopia-agent-os-monorepo
-   cd /home/ubuntu/qintopia-agent-os-monorepo
-   git checkout master
-   git rev-parse HEAD
-   git status --short --branch
-   ```
-
-3. Fetch the CI-built sidecar artifact for the approved commit SHA:
-
-   ```bash
-   export GITHUB_APP_ID="<github-app-id>"
-   export GITHUB_APP_INSTALLATION_ID="<installation-id>"
-   export GITHUB_APP_PRIVATE_KEY_PATH="/etc/qintopia/github-app/qintopia-agent-os-deployer.pem"
-   deploy/sidecar/scripts/fetch-ci-artifact.sh \
+   set -a
+   . /etc/qintopia/cos-artifacts.env
+   set +a
+   deploy/sidecar/scripts/fetch-cos-artifact.sh \
      --sha <approved-target-sha> \
      --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
    ```
 
-4. Validate without service cutover:
+3. Validate without service cutover:
 
    ```bash
    set -a
@@ -132,14 +123,14 @@ mounts from the release directory.
    deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
    ```
 
-5. Render and review the monorepo-native systemd unit files:
+4. Render and review the systemd unit files:
 
    ```bash
    QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
    deploy/sidecar/scripts/render-systemd-units.sh
    ```
 
-6. Install or update only owner-approved systemd units to point to the CI-built artifact
+5. Install or update only owner-approved systemd units to point to the CI-built artifact
    and monorepo working directory.
 
    The service should use:
@@ -152,7 +143,7 @@ mounts from the release directory.
 
    Worker units should use the same binary and explicit subcommands.
 
-7. Restart and verify:
+6. Restart and verify:
 
    ```bash
    sudo systemctl daemon-reload
@@ -161,7 +152,7 @@ mounts from the release directory.
    journalctl -u qintopia-message-sidecar.service -n 100 --no-pager
    ```
 
-8. Run post-cutover smoke:
+7. Run post-cutover smoke:
 
    ```bash
    set -a
@@ -197,6 +188,7 @@ change is allowed.
 
 - Do not edit files directly under either server checkout.
 - Do not use `scp` to overwrite individual source files.
+- Do not add `git fetch` or `git checkout` to the normal runtime release path.
 - Do not deploy from a dirty worktree.
 - Do not treat the Huabaosi shadow branch as approved by copying it into production.
 - Do not run guarded apply smokes unless the owner explicitly approves Postgres writes.

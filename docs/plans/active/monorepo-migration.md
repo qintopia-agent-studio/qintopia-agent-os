@@ -474,6 +474,39 @@ and future programming agents.
   - added CI-side COS artifact pruning so COS keeps the latest two sidecar SHA
     directories, matching the GitHub Actions artifact retention policy
 
+### 2026-07-05
+
+- Corrected the deployment direction after reviewing the M9 and COS docs:
+  - routine server releases must use COS artifacts, not server-side `git fetch` or
+    `git checkout`
+  - server GitHub access is reserved for deploy runner bootstrap, deploy runner
+    upgrades, diagnostics, or emergency fallback
+  - M9-F should validate COS artifact download before any worker or Hermes MCP repoint
+- Added `docs/operations/release-current-model.md` to make the M10 target explicit:
+  - immutable `/home/ubuntu/qintopia-agent-os-releases/<approved-sha>` directories
+  - stable `current` and `previous` symlinks
+  - sidecar, Hermes profile, skill, workflow, and MCP payload categories
+  - symlink-based rollback
+  - Hermes live-state exclusion boundary
+- Updated M9 runbook, M9-F docs, sidecar cutover docs, COS distribution docs, and server
+  directory plan so they no longer present server repository pulls as the normal runtime
+  release path.
+- Ran the first server-side read-only COS fetch validation for artifact
+  `0782f6d0f3f46d1285444f9a21f1669791be1d5e` without changing checkout, systemd,
+  symlinks, or services:
+  - copied the committed COS fetch scripts into `/tmp/qintopia-cos-fetch-runner`
+  - attempted download into
+    `/tmp/qintopia-agent-os-cos-readonly/0782f6d0f3f46d1285444f9a21f1669791be1d5e`
+  - confirmed server env values are present and COSCLI `v1.0.8` runs
+  - confirmed `qintopia-message-sidecar`, `qintopia-message-embedding-worker`, and
+    `qintopia-message-identity-worker` remained active
+  - COS returned `403` on
+    `HEAD https://qintopia-agent-os-artifacts-1305166808.cos.accelerate.myqcloud.com/`
+    before object download, so the current server read-only CAM key still lacks bucket
+    root probe permission or an equivalent bucket-level allow statement
+  - documented the required server read-only CAM policy in
+    `docs/operations/cos-artifact-distribution.md`
+
 ## Update Rule
 
 Every migration PR must update:
@@ -518,14 +551,16 @@ Recommended order:
    - `hermes-profile-bundle-<agent>` payloads for reviewed non-secret profile files
    - `skill-bundle-<skill>` payloads for Hermes plugins such as `skills/qiwe`
    - `qintopia-agent-os-releases/<sha>` with `current` and `previous` symlinks
-4. Do not repoint production to a newer commit just because docs changed; use a new
+4. Keep server-side GitHub access out of routine runtime releases. Use it only for
+   deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
+5. Do not repoint production to a newer commit just because docs changed; use a new
    approved target SHA and artifact only when there is a production runtime change.
-5. Do not enable real external send or real workbench adapter paths until production
+6. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-6. After no process, unit, timer, cron, MCP command, or nginx route references legacy
+7. After no process, unit, timer, cron, MCP command, or nginx route references legacy
    paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
    `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
    `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and
    OpenClaw paths only with owner approval.
-7. Add deploy smoke and rollback notes before any production wiring changes for
+8. Add deploy smoke and rollback notes before any production wiring changes for
    `skills/qiwe` or Erhua profile bundles.

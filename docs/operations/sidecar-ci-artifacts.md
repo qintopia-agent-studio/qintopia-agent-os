@@ -61,11 +61,11 @@ model: once an artifact has been downloaded and verified on the server, the serv
 under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` remains separate
 from GitHub artifact retention.
 
-`qintopia-agent-os-artifacts/<sha>` is the current transition path. The target release
-model should promote verified payloads into immutable
-`/home/ubuntu/qintopia-agent-os-releases/<sha>` directories and run services through a
+`qintopia-agent-os-artifacts/<sha>` is the current transition download cache. The target
+release model promotes verified payloads into immutable
+`/home/ubuntu/qintopia-agent-os-releases/<sha>` directories and runs services through a
 stable `/home/ubuntu/qintopia-agent-os-releases/current` symlink. In that model, GitHub
-Actions artifacts are the transport, while the server release directory is the runtime
+Actions and COS are the transport, while the server release directory is the runtime
 source.
 
 ## COS Distribution
@@ -232,6 +232,37 @@ listing, and worker check-only or dry-run commands.
 
 Production environment files remain outside git and are loaded only during approved M9
 verification or service start.
+
+## Release/Current Target
+
+M10 should turn the verified artifact into a release payload before any service restart:
+
+```text
+/home/ubuntu/qintopia-agent-os-releases/<approved-sha>/
+  manifest.json
+  sidecar/
+    qintopia-message-sidecar
+    SHA256SUMS
+  runtime/
+    postgres/
+      migrations/
+  agents/
+  skills/
+  workflows/
+  mcp/
+  deploy/
+/home/ubuntu/qintopia-agent-os-releases/current -> <approved-sha>
+/home/ubuntu/qintopia-agent-os-releases/previous -> <previous-approved-sha>
+```
+
+The switch sequence should be: download to a staging/cache path, verify manifest and
+checksums, assemble the immutable release directory, update `previous`, atomically
+switch `current`, then restart only approved services. Rollback switches `current` back
+to `previous` and restarts those same services.
+
+Hermes profile directories remain live runtime state. Do not replace whole profile
+directories from CI. Only reviewed non-secret files, plugins, scripts, policies, and MCP
+wrappers should be linked or mounted from `current`.
 
 ## Beyond Sidecar
 

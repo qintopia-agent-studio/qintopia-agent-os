@@ -9,12 +9,12 @@ Read-only verification on 2026-07-04 confirmed:
 
 | Area                                               | Current state                                           | M9-F target                                 |
 | -------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------- |
-| `qintopia-agentos-member-profile-worker.service`   | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | monorepo checkout plus verified artifact    |
-| `qintopia-agentos-graph-projection-worker.service` | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | monorepo checkout plus verified artifact    |
-| `qintopia-agentos-raw-archive-worker.service`      | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | monorepo checkout plus verified artifact    |
-| `qintopia-agentos-event-signal-worker.service`     | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | monorepo checkout plus verified artifact    |
-| `qintopia-agentos-daily-digest-worker.service`     | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | monorepo checkout plus verified artifact    |
-| `qintopia-agentos-daily-digest-publisher.service`  | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | monorepo checkout plus verified artifact    |
+| `qintopia-agentos-member-profile-worker.service`   | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | verified artifact, then release/current     |
+| `qintopia-agentos-graph-projection-worker.service` | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | verified artifact, then release/current     |
+| `qintopia-agentos-raw-archive-worker.service`      | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | verified artifact, then release/current     |
+| `qintopia-agentos-event-signal-worker.service`     | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | verified artifact, then release/current     |
+| `qintopia-agentos-daily-digest-worker.service`     | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | verified artifact, then release/current     |
+| `qintopia-agentos-daily-digest-publisher.service`  | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | verified artifact, then release/current     |
 | Hermes `mcp-context` command                       | old wrapper path is still the known live command source | monorepo wrapper or release-managed wrapper |
 
 ## Scope
@@ -30,6 +30,7 @@ M9-F must not:
 - remove or archive `/home/ubuntu/qintopia-msg-sidecar`
 - delete WorkTool, Xiaoqin, OpenClaw, nginx, or migration directories
 - edit Hermes profile runtime files without an owner-approved backup and diff
+- fetch or checkout repository code as part of the routine artifact repoint
 
 ## Repository Checks
 
@@ -52,6 +53,9 @@ it or move the durable assertions into stable deploy checks.
 
 ## Target Worker Shape
 
+The release payload must come from COS. The server may use the transition artifact path
+for M9-F, but the next iteration should move these workers to `release/current`.
+
 Render target units for review:
 
 ```bash
@@ -59,7 +63,7 @@ QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
 deploy/sidecar/scripts/render-systemd-units.sh
 ```
 
-Each M9-F worker unit should use:
+Each M9-F transition worker unit should use:
 
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo

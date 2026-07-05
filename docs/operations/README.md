@@ -14,6 +14,8 @@ canonical architecture, engineering, package, or deployment docs.
   implications.
 - [server-directory-plan.md](server-directory-plan.md): target server filesystem shape,
   transition directories, legacy cleanup candidates, and Hermes runtime boundary.
+- [release-current-model.md](release-current-model.md): target release directory,
+  `current`/`previous` symlink, promotion, rollback, and Hermes mount model.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
 - [sidecar-ci-artifacts.md](sidecar-ci-artifacts.md): M9.1 sidecar artifact contract, CI

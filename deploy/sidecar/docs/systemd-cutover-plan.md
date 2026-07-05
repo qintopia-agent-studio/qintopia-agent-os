@@ -1,13 +1,18 @@
 # M9.3 Sidecar Systemd Cutover Plan
 
-This document defines the monorepo-native systemd target shape for the M9 sidecar
-cutover. It is preparation material, not approval to mutate the server.
+This document defines the systemd target shape for the M9 sidecar cutover. It is
+preparation material, not approval to mutate the server.
 
 The M9 shape below is a transition model: units point directly at
 `qintopia-agent-os-artifacts/<sha>`. The target direction for M10 is immutable
 `qintopia-agent-os-releases/<sha>` directories plus stable `current` and `previous`
 symlinks. See `docs/operations/server-directory-plan.md` before adding new deploy
 automation.
+
+The routine release source is the verified COS artifact for an approved commit SHA. Do
+not make server-side `git fetch` or `git checkout` part of normal runtime repoints.
+Server git access is only for deploy runner bootstrap, deploy script/template upgrades,
+or explicit diagnostics.
 
 ## Goal
 
@@ -18,10 +23,9 @@ Move sidecar services away from the standalone checkout and server-local release
 /home/ubuntu/qintopia-msg-sidecar/target/release/qintopia-message-sidecar
 ```
 
-to a reviewed monorepo checkout plus a verified CI artifact:
+to reviewed release-managed paths plus a verified CI artifact:
 
 ```text
-/home/ubuntu/qintopia-agent-os-monorepo
 /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>/qintopia-message-sidecar
 ```
 
@@ -79,7 +83,8 @@ real external adapter paths.
 
 ## Unit Contract
 
-Every target service must use:
+M9 transition units use the deploy checkout only as the working directory and migration
+source. The executable comes from the verified artifact pulled from COS:
 
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
@@ -115,9 +120,9 @@ Target units must not:
 ## Apply Sequence During Approved Window
 
 1. Confirm the target SHA has a successful CI run with `check` and `sidecar-artifact`.
-2. Clone or update `/home/ubuntu/qintopia-agent-os-monorepo` to the approved SHA.
-3. Download and verify the CI artifact into
+2. Download and verify the COS artifact into
    `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>`.
+3. Run manifest, checksum, and binary checks from the downloaded artifact.
 4. Render target units and compare against current server units.
 5. Copy only owner-approved unit files into `/etc/systemd/system`.
 6. Run `sudo systemctl daemon-reload`.
@@ -125,6 +130,10 @@ Target units must not:
 8. Check service status and recent journal.
 9. Restart only previously active approved workers, one by one.
 10. Run post-cutover smokes.
+
+If the deploy checkout scripts themselves need to change, handle that as a separate
+deploy runner upgrade before this sequence. Do not hide checkout updates inside a
+runtime artifact repoint.
 
 ## Rollback Sequence
 

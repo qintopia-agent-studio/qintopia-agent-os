@@ -85,6 +85,9 @@ become versioned.
   verified sidecar artifacts from COS instead of GitHub artifact endpoints.
 - Recorded the configured COS artifact bucket `qintopia-agent-os-artifacts-1305166808`
   in `ap-shanghai`; only COS upload/download credentials remain outside git.
+- Added `docs/operations/release-current-model.md` for the M10 immutable release
+  directory, `current`/`previous` symlink, rollback, and Hermes mount model.
+- Added the server read-only COS CAM policy required for Lighthouse artifact downloads.
 
 ### Changed
 
@@ -185,6 +188,10 @@ become versioned.
   setting is enabled.
 - Added CI-side Tencent COS artifact pruning so COS keeps the latest two sidecar
   artifact SHA directories, matching the GitHub Actions artifact retention policy.
+- Corrected M9/M10 deployment docs so routine server releases use COS artifacts and
+  release/current promotion instead of server-side `git fetch` or `git checkout`.
+- Recorded the read-only server COS validation blocker: the current server key receives
+  COS `403` on bucket-root `HEAD` before object download.
 
 ### Fixed
 

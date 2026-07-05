@@ -228,46 +228,50 @@ sudo nginx -T | grep -nE '18557|8787' || true
 
 Do not print environment files, tokens, raw profile memory, or private chat logs.
 
-## Monorepo Checkout Preparation
+## Release Source Preparation
 
-The server target checkout is:
+For routine runtime releases, the server should not pull source code from GitHub. The
+release source is the verified artifact from Tencent COS:
 
 ```text
-/home/ubuntu/qintopia-agent-os-monorepo
+cos://qintopia-agent-os-artifacts/qintopia-agent-os/sidecar/<approved-target-sha>/
 ```
 
-Preparation sequence:
+The server checkout exists only as a transition deploy checkout for already-reviewed
+runbooks, templates, migrations, and helper scripts. It is not the normal release
+transport. Do not run `git fetch` or `git checkout` just to deploy a new sidecar
+artifact.
+
+Use GitHub App based git access only for these explicit cases:
+
+- bootstrapping a new deploy checkout on a new host
+- upgrading the deploy runner scripts or templates themselves
+- read-only repository reachability diagnostics
+- emergency fallback when the owner approves using the repo instead of COS
+
+Keep `origin` as the plain HTTPS repository URL without embedded credentials:
 
 ```bash
-cd /home/ubuntu
-test -d qintopia-agent-os-monorepo
 cd /home/ubuntu/qintopia-agent-os-monorepo
-git checkout master
 git remote set-url origin https://github.com/qintopia-agent-studio/qintopia-agent-os.git
+```
+
+When a deploy runner upgrade is explicitly approved, use the GitHub App wrapper and
+record the before/after SHA separately from the runtime artifact SHA:
+
+```bash
 GITHUB_APP_ID=4214034 \
 GITHUB_APP_INSTALLATION_ID=144332887 \
 GITHUB_APP_PRIVATE_KEY_PATH=/etc/qintopia/github-app/qintopia-agent-os-deployer.pem \
 deploy/sidecar/scripts/github-app-git.sh -- fetch origin
-git checkout <approved-target-sha>
-git status --short --branch
-git rev-parse HEAD
-```
-
-If the checkout already exists, use `git fetch` and `git checkout <approved-target-sha>`
-through `github-app-git.sh`. Keep `origin` as the plain HTTPS repository URL without
-embedded credentials:
-
-```bash
-git remote set-url origin https://github.com/qintopia-agent-studio/qintopia-agent-os.git
 ```
 
 Do not store the installation token in `.git/config`, shell history, or a credential
 helper cache.
 
-This sequence assumes the current server checkout already exists. For a brand-new host,
-bootstrap the first checkout with a separately reviewed copy of
-`deploy/sidecar/scripts/github-app-git.sh` or a dedicated bootstrap runbook; do not
-reintroduce a long-lived bot credential just to perform the first clone.
+For a brand-new host, bootstrap the first checkout with a separately reviewed copy of
+the deploy runner or a dedicated bootstrap runbook. Do not reintroduce a long-lived bot
+credential just to perform the first clone.
 
 ## Sidecar Artifact Fetch And Preflight
 
@@ -300,6 +304,18 @@ deploy/sidecar/scripts/fetch-cos-artifact.sh \
 GitHub artifact download through `fetch-ci-artifact.sh` remains an emergency fallback
 only; do not use `scp`, direct server edits, or long-lived bot credentials for
 production artifact distribution.
+
+For read-only transport validation, download to `/tmp` instead of the production
+artifact directory and stop after manifest/checksum/binary checks:
+
+```bash
+set -a
+. /etc/qintopia/cos-artifacts.env
+set +a
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --sha <approved-target-sha> \
+  --output-dir /tmp/qintopia-agent-os-cos-readonly/<approved-target-sha>
+```
 
 Run binary checks without changing systemd:
 

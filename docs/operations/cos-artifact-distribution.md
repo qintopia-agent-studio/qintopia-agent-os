@@ -50,6 +50,45 @@ Use separate identities for CI upload and server download.
 Do not use root account keys. Do not put COS keys in git, systemd unit files, shell
 history, or chat logs.
 
+For Tencent Cloud Lighthouse, the server read-only key must allow COSCLI's bucket probe
+before object reads. COSCLI downloads can issue `HEAD` against the bucket root before
+fetching an object, so prefix-only object permissions are not enough.
+
+Official Tencent Cloud references:
+
+- COS sync/download authorization requires `HeadBucket`, `GetBucket`, `HeadObject`, and
+  `GetObject`: <https://intl.cloud.tencent.com/document/product/436/43257>
+- CAM policy examples use `name/cos:HeadBucket` and `name/cos:GetBucket` on the bucket
+  root resource: <https://www.tencentcloud.com/document/product/436/30580>
+
+Server read-only CAM policy:
+
+```json
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": ["name/cos:HeadBucket", "name/cos:GetBucket"],
+      "resource": [
+        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/",
+        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/*"
+      ]
+    },
+    {
+      "effect": "allow",
+      "action": ["name/cos:HeadObject", "name/cos:GetObject", "name/cos:OptionsObject"],
+      "resource": [
+        "qcs::cos:ap-shanghai:uid/1305166808:qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/sidecar/*"
+      ]
+    }
+  ]
+}
+```
+
+Do not grant server-side write or delete permissions. CI upload/prune uses a separate
+CAM key with write/delete permissions.
+
 GitHub Actions upload uses COSCLI `config set`, `config add`, and `cp`: `config set`
 writes SecretKey auth into a temporary config file, `config add` records the bucket
 alias, and `cp` uploads through that temporary config. COSCLI may probe bucket/object
@@ -273,7 +312,7 @@ concurrency without changing the artifact contract.
 
 ## Download Path
 
-On the server:
+On the server, production downloads use COS and do not require server-side `git fetch`:
 
 ```bash
 set -a
@@ -295,6 +334,38 @@ The download script verifies:
 
 Only after this should systemd or Hermes references be repointed.
 
+For read-only acceptance, write to `/tmp` and stop after verification:
+
+```bash
+set -a
+. /etc/qintopia/cos-artifacts.env
+set +a
+
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --sha <approved-target-sha> \
+  --output-dir /tmp/qintopia-agent-os-cos-readonly/<approved-target-sha>
+
+/tmp/qintopia-agent-os-cos-readonly/<approved-target-sha>/qintopia-message-sidecar check
+```
+
+This confirms server-to-COS transport and artifact integrity without changing the deploy
+checkout, systemd units, Hermes profile config, symlinks, or running services.
+
+## Release Promotion Direction
+
+The current `qintopia-agent-os-artifacts/<sha>` path is a transition download cache. The
+target release path is:
+
+```text
+/home/ubuntu/qintopia-agent-os-releases/<approved-sha>
+/home/ubuntu/qintopia-agent-os-releases/current
+/home/ubuntu/qintopia-agent-os-releases/previous
+```
+
+The release promotion step should copy verified payloads from the COS download cache
+into an immutable release directory, then switch `current` only after all checks pass.
+Rollback switches `current` back to `previous`.
+
 ## Current Owner Inputs
 
 Received non-secret COS values:
@@ -312,7 +383,7 @@ Provide these secrets only through GitHub repository Secrets or server-local fil
 - CI upload `TENCENT_COS_SECRET_KEY`
 - server read-only SecretId/SecretKey, only if not using CVM Role
 
-Before turning on CI upload, decide whether to enable COS Global Acceleration for this
-bucket. If enabled, set `TENCENT_COS_ENDPOINT` and `TENCENT_COS_UPLOAD_ENABLED=true`,
-push a commit to `master`, and confirm the `sidecar-artifact` job uploaded to COS. Then
-run the server download command and verify the artifact before continuing M9-F.
+COS Global Acceleration is enabled for this bucket path. Keep
+`TENCENT_COS_ENDPOINT=cos.accelerate.myqcloud.com` and `TENCENT_COS_UPLOAD_ENABLED=true`
+in the repository configuration, then confirm each `sidecar-artifact` job uploads and
+prunes COS artifacts before using that SHA for an approved repoint.
