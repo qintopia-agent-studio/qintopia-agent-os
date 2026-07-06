@@ -301,6 +301,21 @@ become versioned.
   language/toolchain rules.
 - Added `pnpm collaboration:check` to enforce collaboration documentation, branch, and
   language/toolchain guardrails.
+- Added copy-pastable programming-agent prompts to the English and Chinese root READMEs.
+- Added Hermes profile bundle, release manifest, rollback, and smoke package contracts.
+- Added Erhua reviewed profile bundle input templates for future low-risk dry-runs.
+- Added capability package boundaries for Qintopia weather, knowledge retrieval, and
+  Postgres context while keeping `skills/qintopia-tools` as the compatibility package.
+- Added workflow package contracts for Erhua consultation, Xiaoman activity signal,
+  visual asset request, and Si Laoshi daily operations.
+- Added MCP adapter contracts for Feishu and Postgres.
+- Added runtime package contracts for Hermes, systemd, and nginx.
+- Added replay fixture directories for weather, operations, QiWe, and Xiaoman.
+- Added inventory and CI tool contracts plus package-level validation scripts for the
+  new package boundaries.
+- Added `docs/engineering/change-routing-index.md` so programming agents can localize
+  common feature, Agent, workflow, MCP, runtime, deploy, and database changes before
+  editing.
 
 ### Fixed
 

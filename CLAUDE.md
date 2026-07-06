@@ -14,13 +14,14 @@ Before editing:
 4. Read `docs/architecture/agent-os-overview.md`.
 5. Read `docs/plans/active/current-roadmap.md`.
 6. Read `docs/engineering/programming-agent-guardrails.md`.
-7. Read `docs/product/agent-os-prd.md` when product scope may change.
-8. Read `docs/agent-os/README.md` when Agent OS design may change.
-9. Read `docs/operations/runtime-baseline.md` when runtime behavior may change.
-10. Identify the target domain: `agents`, `skills`, `workflows`, `mcp`, `runtime`,
+7. Read `docs/engineering/change-routing-index.md`.
+8. Read `docs/product/agent-os-prd.md` when product scope may change.
+9. Read `docs/agent-os/README.md` when Agent OS design may change.
+10. Read `docs/operations/runtime-baseline.md` when runtime behavior may change.
+11. Identify the target domain: `agents`, `skills`, `workflows`, `mcp`, `runtime`,
     `deploy`, `docs`, `fixtures`, `tools`, or `deprecated`.
-11. Read the target package README or manifest if it exists.
-12. If the task needs historical migration evidence, read
+12. Read the target package README or manifest if it exists.
+13. If the task needs historical migration evidence, read
     `docs/plans/completed/monorepo-migration.md`.
 
 ## Core Boundaries

@@ -11,7 +11,8 @@ Before editing, an agent must read:
 2. `AGENTS.md` or `AGENTS.zh-CN.md`
 3. `docs/README.md` or `docs/README.zh-CN.md`
 4. `docs/plans/active/current-roadmap.md`
-5. the target package README or manifest
+5. `docs/engineering/change-routing-index.md`
+6. the target package README or manifest
 
 For runtime, server, deployment, Hermes profile, Feishu, QiWe, or database work, also
 read the relevant document under `docs/operations/` or `docs/engineering/`.

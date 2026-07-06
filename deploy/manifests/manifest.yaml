@@ -1,0 +1,32 @@
+id: deploy/manifests
+type: deploy
+name: Release Manifest Contract
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Contract for reviewed release manifests that connect commit SHAs, artifacts, profile
+  bundles, COS paths, smoke evidence, and rollback targets.
+source:
+  path: deploy/manifests
+  reference: monorepo-release-model
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm deploy:manifests:check
+    - pnpm check:light
+dependencies:
+  - deploy/sidecar
+  - runtime/hermes
+tags:
+  - deploy
+  - release-manifest
+  - rollback
+next_actions:
+  - Generate a manifest for the next reviewed production release.
+  - Keep secrets and live server env values out of release manifests.

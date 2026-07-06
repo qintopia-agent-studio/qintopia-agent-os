@@ -14,6 +14,7 @@
 - Migration policy: `docs/engineering/migration-policy.md`
 - Server change policy: `docs/engineering/server-change-policy.md`
 - Programming agent guardrails: `docs/engineering/programming-agent-guardrails.md`
+- Change routing index: `docs/engineering/change-routing-index.md`
 - Current roadmap: `docs/plans/active/current-roadmap.md`
 - Source document inventory: `docs/operations/source-document-inventory.md`
 - Registry indexes: `registry/`
@@ -149,11 +150,12 @@ Before a PR:
 4. `docs/architecture/agent-os-overview.md`
 5. `docs/plans/active/current-roadmap.md`
 6. `docs/engineering/programming-agent-guardrails.md`
-7. `docs/product/agent-os-prd.md` for product scope changes
-8. `docs/agent-os/README.md` for Agent OS design changes
-9. `docs/plans/completed/monorepo-migration.md` for historical migration evidence
-10. Target package README or manifest
-11. Relevant docs under `docs/engineering/` or `docs/operations/`
+7. `docs/engineering/change-routing-index.md`
+8. `docs/product/agent-os-prd.md` for product scope changes
+9. `docs/agent-os/README.md` for Agent OS design changes
+10. `docs/plans/completed/monorepo-migration.md` for historical migration evidence
+11. Target package README or manifest
+12. Relevant docs under `docs/engineering/` or `docs/operations/`
 
 Report what you read, what you plan to touch, validation commands, and production
 boundaries before making broad changes.

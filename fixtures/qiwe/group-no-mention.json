@@ -1,0 +1,12 @@
+{
+  "case": "group-no-mention",
+  "input": {
+    "conversation_type": "group",
+    "mentions": [],
+    "text": "fixture question without mention"
+  },
+  "expected": {
+    "eligible_for_erhua": false,
+    "requires_send_guard": false
+  }
+}

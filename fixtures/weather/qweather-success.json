@@ -1,0 +1,14 @@
+{
+  "case": "qweather-success",
+  "input": {
+    "profile": "erhua",
+    "location": "qintopia-fixed-location",
+    "capabilities_requested": ["current_weather", "air_quality"]
+  },
+  "expected": {
+    "provider": "qweather",
+    "allows_arbitrary_city": false,
+    "includes_air_quality": true,
+    "blocks": ["typhoon", "marine", "solar_radiation"]
+  }
+}

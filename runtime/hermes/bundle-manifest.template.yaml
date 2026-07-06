@@ -1,0 +1,25 @@
+profile_bundle_version: 1
+agent_id: example
+release_sha: "<commit-sha>"
+source:
+  agent_package: agents/example
+  profile_template: agents/example/profile.template.yaml
+  rendered_at: "<iso8601>"
+reviewed_inputs:
+  soul_template: agents/example/SOUL.md.template
+  config_template: agents/example/config.template.yaml
+  mcp_declarations: []
+  cron_declarations: []
+excluded_runtime_state:
+  - .env
+  - sessions
+  - logs
+  - cache
+  - auth
+  - memory
+  - state.db
+validation:
+  dry_run_commands:
+    - pnpm agents:profile-bundles:check
+rollback:
+  strategy: "repoint profile symlinks to previous release/current target"

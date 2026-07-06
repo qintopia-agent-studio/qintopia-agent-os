@@ -1,0 +1,12 @@
+{
+  "case": "private-message",
+  "input": {
+    "conversation_type": "private",
+    "mentions": [],
+    "text": "fixture private question"
+  },
+  "expected": {
+    "eligible_for_group_reply": false,
+    "requires_send_guard": true
+  }
+}

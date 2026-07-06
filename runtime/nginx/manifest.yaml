@@ -1,0 +1,29 @@
+id: runtime/nginx
+type: runtime
+name: nginx Ingress Templates
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Future webhook and API ingress route template boundary for Agent OS-owned routes.
+source:
+  path: docs/operations/runtime-baseline.md
+  reference: current-monorepo
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm runtime:nginx:check
+dependencies:
+  - deploy/sidecar
+tags:
+  - runtime
+  - nginx
+  - ingress
+next_actions:
+  - Add route templates only when a specific Agent OS ingress change is approved.
+  - Add dry-run config validation and endpoint smoke before production use.

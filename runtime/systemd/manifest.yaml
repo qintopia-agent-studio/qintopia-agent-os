@@ -1,0 +1,33 @@
+id: runtime/systemd
+type: runtime
+name: systemd Runtime Templates
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Monorepo-native systemd unit template boundary and dry-run render checks for Agent OS
+  services and workers.
+source:
+  path: deploy/sidecar/scripts/render-systemd-units.sh
+  reference: current-monorepo
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm runtime:systemd:check
+    - pnpm deploy:systemd:check
+dependencies:
+  - deploy/sidecar
+  - runtime/sidecar
+tags:
+  - runtime
+  - systemd
+  - release-current
+next_actions:
+  - Move stable unit templates here after M9/M10 deployment scripts stop carrying the
+    only renderer copy.
+  - Add fixture-based unit render expectations for every active service.

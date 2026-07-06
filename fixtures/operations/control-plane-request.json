@@ -1,0 +1,15 @@
+{
+  "case": "control-plane-request",
+  "input": {
+    "workflow": "workflows/activity-promotion",
+    "activity_id": "fixture-activity-001",
+    "request_kind": "visual_asset_request",
+    "owner": "fixture-owner",
+    "review_required": true
+  },
+  "expected": {
+    "database_writes": true,
+    "external_sends": false,
+    "requires_human_review": true
+  }
+}

@@ -11,3 +11,18 @@ entries:
     manifest: runtime/sidecar/manifest.yaml
     status: active
     notes: Message capture and worker runtime contract from qintopia-message-sidecar.
+  - id: runtime/hermes
+    path: runtime/hermes
+    manifest: runtime/hermes/manifest.yaml
+    status: draft
+    notes: Hermes profile bundle distribution boundary; live state remains outside git.
+  - id: runtime/systemd
+    path: runtime/systemd
+    manifest: runtime/systemd/manifest.yaml
+    status: draft
+    notes: Monorepo-native systemd template and dry-run render contract.
+  - id: runtime/nginx
+    path: runtime/nginx
+    manifest: runtime/nginx/manifest.yaml
+    status: draft
+    notes: Future Agent OS-owned webhook and API ingress template boundary.

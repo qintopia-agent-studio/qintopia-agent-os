@@ -18,25 +18,45 @@ and the local historical documents that still contain useful design evidence.
 6. Current roadmap: [plans/active/current-roadmap.md](plans/active/current-roadmap.md)
 7. Programming agent guardrails:
    [engineering/programming-agent-guardrails.md](engineering/programming-agent-guardrails.md)
-8. Collaboration and PR flow:
+8. Change routing index:
+   [engineering/change-routing-index.md](engineering/change-routing-index.md)
+9. Collaboration and PR flow:
    [engineering/collaboration-model.md](engineering/collaboration-model.md)
-9. Package contract: [engineering/package-contract.md](engineering/package-contract.md)
-10. Migration policy: [engineering/migration-policy.md](engineering/migration-policy.md)
-11. Anti-drift policy:
+10. Package contract: [engineering/package-contract.md](engineering/package-contract.md)
+11. Migration policy: [engineering/migration-policy.md](engineering/migration-policy.md)
+12. Anti-drift policy:
     [engineering/anti-drift-policy.md](engineering/anti-drift-policy.md)
-12. Server change policy:
+13. Server change policy:
     [engineering/server-change-policy.md](engineering/server-change-policy.md)
-13. Source document inventory:
+14. Source document inventory:
     [operations/source-document-inventory.md](operations/source-document-inventory.md)
-14. M1 source inventory:
+15. M1 source inventory:
     [operations/inventory/README.md](operations/inventory/README.md)
-15. M9 server cutover runbook:
+16. M9 server cutover runbook:
     [operations/m9-server-cutover-runbook.md](operations/m9-server-cutover-runbook.md)
-16. Server directory plan:
+17. Server directory plan:
     [operations/server-directory-plan.md](operations/server-directory-plan.md)
-17. Reports index: [reports/README.md](reports/README.md)
-18. Completed migration archive:
+18. Reports index: [reports/README.md](reports/README.md)
+19. Completed migration archive:
     [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
+
+## Package Entry Points
+
+- Profiles: [../agents/](../agents/)
+- Skills: [../skills/](../skills/)
+- Workflows: [../workflows/](../workflows/)
+- MCP adapters: [../mcp/](../mcp/)
+- Runtime contracts: [../runtime/](../runtime/)
+- Deploy contracts: [../deploy/](../deploy/)
+- Replay fixtures: [../fixtures/](../fixtures/)
+
+New collaborators should read the registry index for the target domain before editing:
+
+- [../registry/skills.yaml](../registry/skills.yaml)
+- [../registry/workflows.yaml](../registry/workflows.yaml)
+- [../registry/mcp.yaml](../registry/mcp.yaml)
+- [../registry/runtime.yaml](../registry/runtime.yaml)
+- [../registry/deploy.yaml](../registry/deploy.yaml)
 
 ## Directory Map
 

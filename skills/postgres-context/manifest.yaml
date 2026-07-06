@@ -1,0 +1,33 @@
+id: skills/postgres-context
+type: skill
+name: Postgres Context
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Postgres-backed context and trainer-memory capability boundary for safe profile
+  snapshots, reply context, audited writes, and idempotent records.
+source:
+  path: runtime/sidecar/src/context_tools.rs
+  reference: qintopia_context and erhua training note tools
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm skills:postgres-context:check
+    - pnpm test:sidecar
+dependencies:
+  - runtime/postgres
+  - mcp/context-server
+tags:
+  - skill
+  - postgres
+  - context
+  - trainer-memory
+next_actions:
+  - Separate read-only context tools from audited write-capable trainer-memory tools.
+  - Add fixtures for allowed trainer note write and blocked caller paths.

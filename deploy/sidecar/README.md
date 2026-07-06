@@ -10,14 +10,10 @@ service family.
 knowledge, systemd units, smokes, and rollback hints. It is not the monorepo-native
 production deployment entrypoint.
 
-M9-D cut over only the approved active sidecar service family to the monorepo checkout
-and verified CI artifact. M9-F must still repoint the remaining active
-`qintopia-agentos-*` workers and Hermes `mcp-context` command references away from
-`/home/ubuntu/qintopia-msg-sidecar`.
-
-The current M9 runtime shape is still a transition model. The next target is M10:
-immutable release directories under `/home/ubuntu/qintopia-agent-os-releases/<sha>` with
-stable `current` and `previous` symlinks.
+M9/M10 moved the approved sidecar service family, active `qintopia-agentos-*` workers,
+and Hermes `mcp-context` command references to immutable release directories under
+`/home/ubuntu/qintopia-agent-os-releases/<sha>` with stable `current` and `previous`
+symlinks.
 
 ## Current Source
 
@@ -45,11 +41,11 @@ touching the server:
 pnpm deploy:systemd:check
 ```
 
-M9-F legacy-reference removal is documented in `docs/m9f-legacy-reference-removal.md`.
-Validate its repository-side readiness checks without touching the server:
+Legacy-reference removal is documented in `docs/m9f-legacy-reference-removal.md`.
+Validate the stable release/current model checks without touching the server:
 
 ```bash
-pnpm deploy:m9f:check
+pnpm deploy:release-model:check
 ```
 
 To produce review files under `dist/` for a candidate SHA:
@@ -61,11 +57,8 @@ deploy/sidecar/scripts/render-systemd-units.sh
 
 ## Server Caveat
 
-The server is intentionally mixed until M9-F and M10 complete. Three
-`qintopia-message-*` services run from the approved monorepo artifact, while remaining
-legacy workers and Hermes MCP context commands still reference the old standalone
-checkout. Treat Huabaosi shadow/Rust material as review-pool until the owner explicitly
-approves it as product direction.
+Production is release/current based. Treat Huabaosi shadow/Rust material as review-pool
+until the owner explicitly approves it as product direction.
 
 ## Validation
 

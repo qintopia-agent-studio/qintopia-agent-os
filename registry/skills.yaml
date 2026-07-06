@@ -17,3 +17,24 @@ entries:
     manifest: skills/feishu-base/manifest.yaml
     status: adopting
     notes: M10-E imports Huabaosi qintopia-base-read as a read-only Feishu Base package.
+  - id: skills/qintopia-weather
+    path: skills/qintopia-weather
+    manifest: skills/qintopia-weather/manifest.yaml
+    status: draft
+    notes:
+      Capability boundary for Erhua weather lookup; implementation remains compatible in
+      qintopia-tools until extraction.
+  - id: skills/knowledge-retrieval
+    path: skills/knowledge-retrieval
+    manifest: skills/knowledge-retrieval/manifest.yaml
+    status: draft
+    notes:
+      Capability boundary for safe evidence retrieval and WenYuanGe/Dify filtered answer
+      basis.
+  - id: skills/postgres-context
+    path: skills/postgres-context
+    manifest: skills/postgres-context/manifest.yaml
+    status: draft
+    notes:
+      Capability boundary for Postgres-backed context lookup, training memory, audit,
+      and idempotent writes.

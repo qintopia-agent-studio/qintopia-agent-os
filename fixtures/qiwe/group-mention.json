@@ -1,0 +1,12 @@
+{
+  "case": "group-mention",
+  "input": {
+    "conversation_type": "group",
+    "mentions": ["erhua"],
+    "text": "@erhua fixture question"
+  },
+  "expected": {
+    "eligible_for_erhua": true,
+    "requires_send_guard": true
+  }
+}

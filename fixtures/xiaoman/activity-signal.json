@@ -1,0 +1,14 @@
+{
+  "case": "activity-signal",
+  "input": {
+    "workflow": "workflows/xiaoman-activity-signal",
+    "activity_id": "fixture-activity-001",
+    "signal_type": "activity_created",
+    "source": "fixture"
+  },
+  "expected": {
+    "idempotent_key_required": true,
+    "database_writes": true,
+    "external_sends": false
+  }
+}

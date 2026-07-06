@@ -1,0 +1,32 @@
+id: deploy/smoke
+type: deploy
+name: Cross-Domain Smoke Checks
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Common smoke-check boundary for release manifests, profile bundles, MCP commands, and
+  worker availability.
+source:
+  path: deploy/smoke
+  reference: monorepo-release-model
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm deploy:smoke:check
+    - pnpm check:light
+dependencies:
+  - deploy/manifests
+  - runtime/hermes
+  - runtime/sidecar
+tags:
+  - deploy
+  - smoke
+  - validation
+next_actions:
+  - Wrap existing sidecar smoke scripts under this package without changing behavior.

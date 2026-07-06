@@ -74,6 +74,43 @@ TypeScript or JavaScript, Python, Rust, shell, SQL, YAML, JSON, and Markdown. Do
 introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or another new
 stack without an owner-approved architecture decision.
 
+## Programming Agent Prompt
+
+When using Codex, Claude Code, or another programming agent on this repository, start
+the agent with this prompt:
+
+```text
+You are working in the Qintopia Agent OS monorepo.
+
+Before editing, read README.md, AGENTS.md, docs/README.md,
+docs/plans/active/current-roadmap.md, docs/engineering/programming-agent-guardrails.md,
+docs/engineering/change-routing-index.md, and the README or manifest for the target
+package.
+
+Rules:
+- Create a branch from master before changing files.
+- Do not work directly on master.
+- Document first for new features, behavior changes, migrations, runtime changes, or
+  production-adjacent work.
+- Organize code by Agent OS capability, not by programming language.
+- Use only the existing implementation families: TypeScript/JavaScript, Python, Rust,
+  shell, SQL, YAML, JSON, and Markdown.
+- Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
+  new toolchain without owner-approved architecture documentation.
+- Do not edit production servers directly.
+- Do not copy secrets, live .env files, Hermes live state, private logs, sessions, cache,
+  auth files, raw chat logs, or runtime databases into git.
+- Treat PR-Agent comments as advisory only; CI, CODEOWNERS, branch protection, and owner
+  review remain authoritative.
+
+For every change, report:
+1. files and packages touched;
+2. document or manifest updated before implementation;
+3. validation commands and results;
+4. whether production boundaries are touched;
+5. rollback or decommission notes when runtime behavior changes.
+```
+
 ## Documentation
 
 Start from [docs/README.md](docs/README.md) for architecture, engineering rules, source
@@ -83,6 +120,7 @@ For product and Agent OS implementation context, read:
 
 - [docs/plans/active/current-roadmap.md](docs/plans/active/current-roadmap.md)
 - [docs/engineering/programming-agent-guardrails.md](docs/engineering/programming-agent-guardrails.md)
+- [docs/engineering/change-routing-index.md](docs/engineering/change-routing-index.md)
 - [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
 - [docs/agent-os/README.md](docs/agent-os/README.md)
 - [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)

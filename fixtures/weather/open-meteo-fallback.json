@@ -1,0 +1,13 @@
+{
+  "case": "open-meteo-fallback",
+  "input": {
+    "profile": "erhua",
+    "location": "qintopia-fixed-location",
+    "qweather_available": false
+  },
+  "expected": {
+    "provider": "open-meteo",
+    "allows_arbitrary_city": false,
+    "safe_degraded_mode": true
+  }
+}

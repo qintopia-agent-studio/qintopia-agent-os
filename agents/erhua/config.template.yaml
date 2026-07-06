@@ -1,0 +1,31 @@
+profile_template_version: 1
+agent_id: erhua
+runtime: hermes
+status: draft
+
+plugins:
+  required:
+    - qiwe-platform
+    - qintopia-tools
+
+mcp:
+  required:
+    - qintopia-context
+
+toolsets:
+  allowed:
+    - qiwe
+    - qintopia
+
+excluded_runtime_state:
+  - .env
+  - sessions
+  - logs
+  - cache
+  - auth
+  - memory
+  - state.db
+
+notes:
+  - This template is a reviewed bundle input, not the live Hermes config.
+  - Secrets and server-local overrides must be provided by runtime environment only.

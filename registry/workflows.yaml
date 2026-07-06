@@ -6,3 +6,27 @@ entries:
     manifest: workflows/activity-promotion/workflow.yaml
     status: active
     notes: Multi-Agent operations control-plane workflow for activity promotion.
+  - id: workflows/erhua-consultation
+    path: workflows/erhua-consultation
+    manifest: workflows/erhua-consultation/workflow.yaml
+    status: draft
+    notes:
+      Erhua group consultation, missing-source escalation, complaint intake, and
+      handoff.
+  - id: workflows/xiaoman-activity-signal
+    path: workflows/xiaoman-activity-signal
+    manifest: workflows/xiaoman-activity-signal/workflow.yaml
+    status: draft
+    notes: Xiaoman activity signal intake and Agent OS activity state workflow.
+  - id: workflows/visual-asset-request
+    path: workflows/visual-asset-request
+    manifest: workflows/visual-asset-request/workflow.yaml
+    status: draft
+    notes:
+      Xiaoman-to-Huabaosi visual asset request, draft, review, and delivery workflow.
+  - id: workflows/silaoshi-daily-ops
+    path: workflows/silaoshi-daily-ops
+    manifest: workflows/silaoshi-daily-ops/workflow.yaml
+    status: draft
+    notes:
+      Si Laoshi daily operations, SOP follow-up, service tracking, and review workflow.

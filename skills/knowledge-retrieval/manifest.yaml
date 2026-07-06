@@ -1,0 +1,34 @@
+id: skills/knowledge-retrieval
+type: skill
+name: Knowledge Retrieval
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Public-safe evidence retrieval boundary for WenYuanGe, Dify Knowledge, approved source
+  metadata, and frontline safe reply guidance.
+source:
+  path: skills/qintopia-tools
+  reference: qintopia_wenyuange_lookup and qintopia_dify_* wrappers
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm skills:knowledge-retrieval:check
+    - pnpm skills:qintopia-tools:check
+dependencies:
+  - agents/wenyuange
+  - mcp/context-server
+tags:
+  - skill
+  - knowledge
+  - dify
+  - evidence
+next_actions:
+  - Split raw Dify tools from frontline-safe lookup tools.
+  - Add fixtures for public-safe answer basis, missing-source escalation, and disclosure
+    filtering.

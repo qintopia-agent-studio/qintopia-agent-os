@@ -1,0 +1,33 @@
+id: skills/qintopia-weather
+type: skill
+name: Qintopia Weather
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Standalone fixed-location Qintopia weather capability for current conditions, umbrella
+  windows, thunderstorm windows, official alert evidence, and air quality.
+source:
+  path: skills/qintopia-tools/variants/erhua/__init__.py
+  reference: qintopia_weather_lookup
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm skills:qintopia-weather:check
+    - pnpm skills:qintopia-tools:check
+dependencies:
+  - skills/qintopia-tools
+tags:
+  - skill
+  - weather
+  - qweather
+  - fixed-location
+next_actions:
+  - Extract the weather implementation from qintopia-tools after fixtures and tests are
+    stable.
+  - Keep the existing qintopia_weather_lookup interface compatible during migration.

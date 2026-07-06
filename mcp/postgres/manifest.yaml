@@ -1,0 +1,32 @@
+id: mcp/postgres
+type: mcp
+name: Postgres MCP Adapter Contract
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Postgres MCP adapter contract for schema allowlists, read/write boundaries, audit, and
+  idempotency requirements.
+source:
+  path: runtime/sidecar/src/context_tools.rs
+  reference: current-monorepo
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm mcp:adapters:check
+dependencies:
+  - runtime/postgres
+  - runtime/sidecar
+tags:
+  - mcp
+  - postgres
+  - context
+  - audit
+next_actions:
+  - Document schema allowlists for each exposed tool family.
+  - Add write-path fixtures covering audit and idempotency before enabling new writes.

@@ -32,6 +32,21 @@ control-plane workflow, not an autonomous publish path.
   dry-run and current apply smoke paths.
 - Must not use Hermes Kanban as the future orchestration backbone.
 
+## Production Boundary
+
+This workflow is already active as a control-plane package, but group-send execution and
+external publication remain outside the current approved boundary. Any change that
+enables real external sends needs owner review, allowlist evidence, smoke output, and
+rollback notes.
+
+## Acceptance Scenarios
+
+- Activity signal creates a governed work item without sending an external message.
+- Evidence lookup records source basis and risk notes.
+- Visual asset work records artifact evidence and review state.
+- Group-send readiness requires final human confirmation before any external send path
+  is considered.
+
 ## Validation
 
 Use the local no-credential smoke first:

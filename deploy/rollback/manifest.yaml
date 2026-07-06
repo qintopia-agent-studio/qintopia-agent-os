@@ -1,0 +1,32 @@
+id: deploy/rollback
+type: deploy
+name: Release Rollback Contract
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Standard rollback contract for release/current deployments and profile bundle
+  promotion.
+source:
+  path: deploy/rollback
+  reference: release-current-model
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm deploy:rollback:check
+    - pnpm check:light
+dependencies:
+  - deploy/manifests
+  - deploy/sidecar
+tags:
+  - deploy
+  - rollback
+  - release-current
+next_actions:
+  - Add a dry-run rollback command that validates target release directories without
+    changing symlinks.

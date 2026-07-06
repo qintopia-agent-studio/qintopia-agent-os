@@ -6,3 +6,21 @@ entries:
     manifest: deploy/sidecar/manifest.yaml
     status: active
     notes: Git-based rollout, smoke, and rollback contract for sidecar services.
+  - id: deploy/manifests
+    path: deploy/manifests
+    manifest: deploy/manifests/manifest.yaml
+    status: draft
+    notes:
+      Release manifest structure for commit, artifact, profile bundle, COS, and rollback
+      data.
+  - id: deploy/rollback
+    path: deploy/rollback
+    manifest: deploy/rollback/manifest.yaml
+    status: draft
+    notes:
+      Unified rollback runbook boundary for current/previous release symlink promotion.
+  - id: deploy/smoke
+    path: deploy/smoke
+    manifest: deploy/smoke/manifest.yaml
+    status: draft
+    notes: Cross-profile, MCP, worker, and package smoke check entrypoint.

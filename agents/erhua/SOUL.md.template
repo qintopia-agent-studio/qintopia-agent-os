@@ -1,0 +1,26 @@
+# 二花 Profile Bundle Template
+
+This is a reviewed distribution template placeholder for Erhua.
+
+Do not paste live `/home/ubuntu/.hermes/profiles/erhua/SOUL.md` content here. This file
+should be filled only through a reviewed profile-bundle PR after removing secrets,
+runtime state, private chat content, raw member profiles, and server-local overrides.
+
+## Required Sections
+
+- 说话方式
+- 群聊称呼规则
+- 回复风格示例
+- 可用能力
+- 必须先查知识的场景
+- 当前说话人和安全画像
+- 地点问题
+- 引用链接转发
+- 天气问题
+- 投诉和服务不满
+- 权限边界
+
+## Production Boundary
+
+This template is not active production behavior until rendered into a reviewed release
+bundle and promoted through the release/current runbook.
