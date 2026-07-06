@@ -120,13 +120,27 @@ fi
 
 if [[ -e "$release_dir" ]]; then
   echo "release already exists: ${release_dir}; verifying manifest"
-  python3 - "$release_dir/manifest.json" "$release_sha" <<'PY'
+  python3 - "$release_dir/manifest.json" "$staging_dir/manifest.json" <<'PY'
 import json
 import sys
-with open(sys.argv[1], encoding="utf-8") as fh:
+
+existing_path, requested_path = sys.argv[1:3]
+with open(existing_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
-if manifest.get("release_sha") != sys.argv[2]:
-    raise SystemExit("existing release manifest release_sha mismatch")
+with open(requested_path, encoding="utf-8") as fh:
+    requested = json.load(fh)
+
+keys = (
+    "release_sha",
+    "runtime_sha",
+    "deploy_bundle_sha",
+    "commit_sha",
+    "release_scope",
+    "restart_targets",
+)
+for key in keys:
+    if manifest.get(key) != requested.get(key):
+        raise SystemExit(f"existing release manifest {key} mismatch")
 PY
   rm -rf "$staging_dir"
 else

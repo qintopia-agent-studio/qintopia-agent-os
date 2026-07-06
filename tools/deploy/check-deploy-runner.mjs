@@ -232,6 +232,7 @@ for (const fragment of [
   "repository mismatch",
   "cos.prefix must be qintopia-agent-os",
   "cos.bucket does not match runner environment",
+  'previous_sha="${previous_target##*/}"',
   "promoted_current=true",
   "run_promotion\n  status=$?",
   'if [[ "$promoted_current" == "true"',
@@ -240,6 +241,31 @@ for (const fragment of [
 ]) {
   if (!runnerText.includes(fragment)) {
     addError(`deploy/runner/qintopia-agent-os-deploy-runner: missing ${fragment}`);
+  }
+}
+
+const promoteText = exists("deploy/runner/promote-release.sh")
+  ? readText("deploy/runner/promote-release.sh")
+  : "";
+for (const fragment of [
+  "existing release manifest",
+  "staging_dir/manifest.json",
+  '"runtime_sha"',
+  '"deploy_bundle_sha"',
+  '"commit_sha"',
+  '"release_scope"',
+  '"restart_targets"',
+]) {
+  if (!promoteText.includes(fragment)) {
+    addError(`deploy/runner/promote-release.sh: missing ${fragment}`);
+  }
+}
+for (const forbidden of [
+  'manifest.get("release_sha") != sys.argv[2]',
+  'python3 - "$release_dir/manifest.json" "$release_sha"',
+]) {
+  if (promoteText.includes(forbidden)) {
+    addError(`deploy/runner/promote-release.sh: forbidden fragment ${forbidden}`);
   }
 }
 

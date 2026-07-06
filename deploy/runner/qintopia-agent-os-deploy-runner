@@ -246,8 +246,9 @@ write_result() {
   local current_target=""
   previous_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
   current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  previous_sha="${previous_target##*/}"
   python3 - "$result_file" "$request_id" "$status" "$started_at" \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_target" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_sha" \
     "$current_target" "$restart_targets" "$error" "$rollback_attempted" \
     "$rollback_status" "$rollback_target" <<'PY'
 import json
