@@ -119,6 +119,8 @@ become versioned.
 
 ### Changed
 
+- Aligned the Erhua/Qintopia weather fixed-location default with the public `栗峪口村`
+  point while keeping QWeather as the primary coordinate/grid weather source.
 - Archived the completed monorepo migration execution log under
   `docs/plans/completed/monorepo-migration.md`; new work now starts from the current
   roadmap instead of editing historical migration status.

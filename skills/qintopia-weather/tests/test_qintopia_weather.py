@@ -145,6 +145,8 @@ class QintopiaWeatherTest(unittest.TestCase):
 
         self.assertTrue(payload["success"])
         self.assertEqual(payload["source"], "qweather_mcp")
+        self.assertEqual(payload["location"]["name"], "秦托邦·栗峪口")
+        self.assertEqual(payload["location"]["coordinates"], "108.5666545,34.0261288")
         self.assertEqual(payload["current"]["text"], "多云")
         self.assertEqual(payload["warnings"][0]["type"], "雷雨大风")
         self.assertEqual(payload["warning_status"], "present")
@@ -187,9 +189,13 @@ class QintopiaWeatherTest(unittest.TestCase):
             ],
         )
         call_args = {name: args for name, args in calls}
-        self.assertEqual(call_args["get_weather_now"]["location"], "108.5876,33.9996")
-        self.assertEqual(call_args["get_hourly_weather"]["location"], "108.5876,33.9996")
-        self.assertEqual(call_args["get_minutely_5m"]["location"], "108.5876,33.9996")
+        self.assertEqual(call_args["get_weather_now"]["location"], "108.5666545,34.0261288")
+        self.assertEqual(
+            call_args["get_hourly_weather"]["location"], "108.5666545,34.0261288"
+        )
+        self.assertEqual(
+            call_args["get_minutely_5m"]["location"], "108.5666545,34.0261288"
+        )
         self.assertEqual(call_args["get_air_quality"]["city"], "鄠邑区")
 
     def test_weather_lookup_renders_no_warning_as_official_none(self):

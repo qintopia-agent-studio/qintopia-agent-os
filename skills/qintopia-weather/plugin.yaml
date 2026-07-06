@@ -10,10 +10,10 @@ provides_tools:
   - qintopia_weather_lookup
 optional_env:
   - name: QINTOPIA_WEATHER_LOCATION
-    description: "Fixed Qintopia lon,lat coordinates; defaults to 108.5876,33.9996"
+    description: "Fixed Qintopia/Liyukou lon,lat; defaults to 108.5666545,34.0261288"
     password: false
   - name: QINTOPIA_WEATHER_LOCATION_NAME
-    description: "Member-facing fixed location name; defaults to 秦托邦"
+    description: "Member-facing fixed location name; defaults to 秦托邦·栗峪口"
     password: false
   - name: QINTOPIA_WEATHER_QWEATHER_CITY
     description: "QWeather city for alert and air-quality APIs; defaults to 鄠邑区"
