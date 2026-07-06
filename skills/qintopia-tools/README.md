@@ -25,6 +25,12 @@ repoint production profiles yet.
 Weather is already split out: Erhua's `qintopia_weather_lookup` registration delegates
 to `skills/qintopia-weather`. Change weather behavior there, not in this package.
 
+WenYuanGe/Dify knowledge retrieval is also split out: the Dify raw read tools and
+`qintopia_wenyuange_lookup` registration delegates to `skills/knowledge-retrieval`.
+Change filtered answer basis, Dify allowlist behavior, source ranking, and risk flags
+there. This package keeps the current Hermes registration shell and the still-unmigrated
+message-store, GIS, complaint, Xiaoman, and sales wrappers.
+
 ## Boundary
 
 Allowed in this package:
@@ -43,12 +49,14 @@ Not allowed:
 - raw private chat logs
 - Xiaoqin WorkTool runtime as an active package
 - new weather provider logic; use `skills/qintopia-weather` and `mcp/weather-provider`
+- new WenYuanGe/Dify retrieval behavior; use `skills/knowledge-retrieval`
 
 ## Validation
 
 ```bash
 pnpm skills:qintopia-tools:check
 pnpm skills:qintopia-weather:check
+pnpm skills:knowledge-retrieval:check
 ```
 
 The check compiles each active variant and blocks committed runtime cache files.
@@ -57,10 +65,20 @@ The check compiles each active variant and blocks committed runtime cache files.
 
 Before any server repoint:
 
-1. Decide whether the target shape is a single shared plugin with profile overlays or
-   separate release-managed profile variants.
-2. Add release packaging for the chosen shape.
-3. Back up each profile-local plugin directory.
-4. Repoint one profile at a time.
+1. Use the release/current layout as the source of truth. Do not copy one
+   `qintopia-tools` directory into `.hermes/profiles/*/plugins` by itself.
+2. Back up the current profile-local plugin directory.
+3. Repoint one profile at a time to the reviewed variant, for example:
+
+   ```text
+   /home/ubuntu/.hermes/profiles/erhua/plugins/qintopia-tools
+     -> /home/ubuntu/qintopia-agent-os-releases/current/skills/qintopia-tools/variants/erhua
+   ```
+
+4. Ensure the same release contains every delegated skill package:
+   `skills/qintopia-weather` for Erhua weather and `skills/knowledge-retrieval` for
+   Dify/WenYuanGe lookup. If Hermes loads from a profile-local copy, set
+   `QINTOPIA_AGENT_OS_SKILLS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/skills`
+   in the profile or service environment.
 5. Verify Hermes service active state, plugin import, tool registration, and rollback.
 6. Do not delete old profile-local directories until M11/M12 cleanup gates pass.

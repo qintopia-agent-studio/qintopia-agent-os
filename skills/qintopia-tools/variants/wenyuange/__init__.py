@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -59,6 +60,62 @@ PUBLIC_AGENT_OS_BASELINES = [
     "报价、合同、正式交付范围、排期、SLA 和客户案例细节需要团队负责人确认。",
 ]
 XIAOQIN_SAFE_FOLLOWUP_MESSAGE = "我先帮您记录下来，稍后由团队同事继续跟进确认。"
+_KNOWLEDGE_RETRIEVAL_PLUGIN = None
+
+
+def _skill_plugin_candidates(skill_name: str) -> list[Path]:
+    current = Path(__file__).resolve()
+    candidates: list[Path] = []
+
+    skills_dir = os.getenv("QINTOPIA_AGENT_OS_SKILLS_DIR")
+    if skills_dir:
+        candidates.append(Path(skills_dir) / skill_name / "__init__.py")
+
+    release_dir = os.getenv("QINTOPIA_AGENT_OS_RELEASE_DIR")
+    if release_dir:
+        candidates.append(Path(release_dir) / "skills" / skill_name / "__init__.py")
+
+    monorepo_dir = os.getenv("QINTOPIA_AGENT_OS_MONOREPO_DIR")
+    if monorepo_dir:
+        candidates.append(Path(monorepo_dir) / "skills" / skill_name / "__init__.py")
+
+    for parent in current.parents:
+        candidates.append(parent / "skills" / skill_name / "__init__.py")
+        if parent.name in {"skills", "plugins"}:
+            candidates.append(parent / skill_name / "__init__.py")
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key not in seen:
+            deduped.append(candidate)
+            seen.add(key)
+    return deduped
+
+
+def _load_skill_plugin(skill_name: str, module_name: str):
+    checked_paths = _skill_plugin_candidates(skill_name)
+    for plugin_path in checked_paths:
+        if not plugin_path.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, plugin_path)
+        if not spec or not spec.loader:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    checked = ", ".join(str(path) for path in checked_paths)
+    raise RuntimeError(f"Cannot load {skill_name} skill. Checked paths: {checked}")
+
+
+def _knowledge_retrieval_plugin():
+    global _KNOWLEDGE_RETRIEVAL_PLUGIN
+    if _KNOWLEDGE_RETRIEVAL_PLUGIN is not None:
+        return _KNOWLEDGE_RETRIEVAL_PLUGIN
+    _KNOWLEDGE_RETRIEVAL_PLUGIN = _load_skill_plugin("knowledge-retrieval", "knowledge_retrieval_plugin")
+    return _KNOWLEDGE_RETRIEVAL_PLUGIN
 
 
 QINTOPIA_KB_SEARCH_SCHEMA = {
@@ -141,195 +198,16 @@ QINTOPIA_GIS_LOCATION_LOOKUP_SCHEMA = {
 }
 
 
-QINTOPIA_DIFY_DATASET_LIST_SCHEMA = {
-    "description": (
-        "List Dify Knowledge datasets through the configured Knowledge Service API. "
-        "If QINTOPIA_DIFY_ALLOWED_DATASET_IDS is set, results are filtered to that allowlist."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "page": {"type": "integer", "minimum": 1, "description": "Page number."},
-            "limit": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": MAX_DIFY_LIMIT,
-                "description": "Maximum datasets to return.",
-            },
-            "keyword": {"type": "string", "description": "Optional dataset title keyword."},
-        },
-        "required": ["purpose"],
-        "additionalProperties": False,
-    },
-}
+QINTOPIA_DIFY_DATASET_LIST_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_DATASET_LIST_SCHEMA
+QINTOPIA_DIFY_DATASET_GET_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_DATASET_GET_SCHEMA
+QINTOPIA_DIFY_KNOWLEDGE_RETRIEVE_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_KNOWLEDGE_RETRIEVE_SCHEMA
+QINTOPIA_DIFY_DOCUMENT_LIST_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_DOCUMENT_LIST_SCHEMA
+QINTOPIA_DIFY_DOCUMENT_GET_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_DOCUMENT_GET_SCHEMA
+QINTOPIA_DIFY_INDEXING_STATUS_GET_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_INDEXING_STATUS_GET_SCHEMA
+QINTOPIA_DIFY_SEGMENT_LIST_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_SEGMENT_LIST_SCHEMA
+QINTOPIA_DIFY_SEGMENT_GET_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_DIFY_SEGMENT_GET_SCHEMA
+QINTOPIA_WENYUANGE_LOOKUP_SCHEMA = _knowledge_retrieval_plugin().QINTOPIA_WENYUANGE_LOOKUP_SCHEMA
 
-
-QINTOPIA_DIFY_DATASET_GET_SCHEMA = {
-    "description": "Get read-only metadata for one allowed Dify Knowledge dataset.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "dataset_id": {"type": "string", "description": "Dify dataset id."},
-        },
-        "required": ["dataset_id"],
-        "additionalProperties": False,
-    },
-}
-
-
-QINTOPIA_DIFY_KNOWLEDGE_RETRIEVE_SCHEMA = {
-    "description": (
-        "Retrieve matching chunks from one allowed Dify Knowledge dataset. "
-        "This is a read operation even though Dify exposes it as POST."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "dataset_id": {"type": "string", "description": "Dify dataset id."},
-            "query": {"type": "string", "description": "Natural language query."},
-            "top_k": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 10,
-                "description": "Maximum retrieved chunks. Defaults to 5.",
-            },
-            "search_method": {
-                "type": "string",
-                "enum": ["semantic_search", "full_text_search", "hybrid_search"],
-                "description": "Dify retrieval mode. Defaults to semantic_search.",
-            },
-            "score_threshold_enabled": {
-                "type": "boolean",
-                "description": "Whether Dify should apply a score threshold.",
-            },
-            "score_threshold": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1,
-                "description": "Score threshold when score_threshold_enabled is true.",
-            },
-            "reranking_enable": {
-                "type": "boolean",
-                "description": "Whether Dify should rerank results. Defaults to false.",
-            },
-        },
-        "required": ["dataset_id", "query"],
-        "additionalProperties": False,
-    },
-}
-
-
-QINTOPIA_DIFY_DOCUMENT_LIST_SCHEMA = {
-    "description": "List documents in one allowed Dify Knowledge dataset.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "dataset_id": {"type": "string", "description": "Dify dataset id."},
-            "page": {"type": "integer", "minimum": 1},
-            "limit": {"type": "integer", "minimum": 1, "maximum": MAX_DIFY_LIMIT},
-            "keyword": {"type": "string", "description": "Optional document keyword."},
-        },
-        "required": ["dataset_id"],
-        "additionalProperties": False,
-    },
-}
-
-
-QINTOPIA_DIFY_DOCUMENT_GET_SCHEMA = {
-    "description": "Get read-only metadata/details for one Dify Knowledge document.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "dataset_id": {"type": "string", "description": "Dify dataset id."},
-            "document_id": {"type": "string", "description": "Dify document id."},
-        },
-        "required": ["dataset_id", "document_id"],
-        "additionalProperties": False,
-    },
-}
-
-
-QINTOPIA_DIFY_INDEXING_STATUS_GET_SCHEMA = {
-    "description": "Get indexing status for a Dify document creation/update batch.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "dataset_id": {"type": "string", "description": "Dify dataset id."},
-            "batch": {"type": "string", "description": "Batch id returned by Dify document APIs."},
-        },
-        "required": ["dataset_id", "batch"],
-        "additionalProperties": False,
-    },
-}
-
-
-QINTOPIA_DIFY_SEGMENT_LIST_SCHEMA = {
-    "description": "List chunks/segments for one Dify Knowledge document.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "dataset_id": {"type": "string", "description": "Dify dataset id."},
-            "document_id": {"type": "string", "description": "Dify document id."},
-            "page": {"type": "integer", "minimum": 1},
-            "limit": {"type": "integer", "minimum": 1, "maximum": MAX_DIFY_LIMIT},
-            "keyword": {"type": "string", "description": "Optional segment keyword."},
-            "status": {"type": "string", "description": "Optional Dify segment status filter."},
-        },
-        "required": ["dataset_id", "document_id"],
-        "additionalProperties": False,
-    },
-}
-
-
-QINTOPIA_DIFY_SEGMENT_GET_SCHEMA = {
-    "description": "Get one chunk/segment from a Dify Knowledge document.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "dataset_id": {"type": "string", "description": "Dify dataset id."},
-            "document_id": {"type": "string", "description": "Dify document id."},
-            "segment_id": {"type": "string", "description": "Dify segment id."},
-        },
-        "required": ["dataset_id", "document_id", "segment_id"],
-        "additionalProperties": False,
-    },
-}
-
-
-QINTOPIA_WENYUANGE_LOOKUP_SCHEMA = {
-    "description": (
-        "Synchronously look up Dify-backed knowledge through WenYuanGe guardrails. "
-        "Frontline agents use this instead of raw qintopia_dify_* tools."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "User question or search query."},
-            "caller_profile": {
-                "type": "string",
-                "enum": ["erhua", "xiaoqin"],
-                "description": "Calling frontline profile.",
-            },
-            "audience": {
-                "type": "string",
-                "enum": ["member_reply", "external_customer"],
-                "description": "Audience for the filtered answer basis.",
-            },
-            "purpose": {
-                "type": "string",
-                "description": "Why the caller needs this knowledge.",
-            },
-            "top_k": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 5,
-                "description": "Maximum chunks to inspect. Defaults to 3.",
-            },
-        },
-        "required": ["query", "caller_profile", "audience", "purpose"],
-        "additionalProperties": False,
-    },
-}
 
 
 QINTOPIA_MESSAGE_STORE_SEARCH_SCHEMA = {
@@ -2137,289 +2015,40 @@ def _requested_classes(args: dict[str, Any]) -> tuple[list[str], list[str]]:
 
 
 def handle_qintopia_dify_dataset_list(args: dict[str, Any], **_: Any) -> str:
-    params = {
-        "page": _dify_page(args),
-        "limit": _dify_limit(args),
-        "keyword": _clean_text(args.get("keyword"), max_len=200),
-    }
-    response = _dify_request("GET", "/datasets", params=params)
-    if response.get("success"):
-        response = {**response, "data": _filter_dify_dataset_list(response.get("data"))}
-    return _dify_tool_payload(
-        "qintopia_dify_dataset_list",
-        "list_datasets",
-        response,
-        page=params["page"],
-        limit=params["limit"],
-        filtered_to_allowed_datasets=bool(_dify_allowed_dataset_ids()),
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_dataset_list(args)
 
 
 def handle_qintopia_dify_dataset_get(args: dict[str, Any], **_: Any) -> str:
-    dataset_id = _dify_dataset_id(args)
-    denied = _dify_dataset_denied(dataset_id)
-    if denied:
-        return _json(denied)
-    response = _dify_request("GET", f"/datasets/{quote(dataset_id, safe='')}")
-    return _dify_tool_payload(
-        "qintopia_dify_dataset_get",
-        "get_dataset",
-        response,
-        dataset_id=dataset_id,
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_dataset_get(args)
 
 
 def handle_qintopia_dify_knowledge_retrieve(args: dict[str, Any], **_: Any) -> str:
-    dataset_id = _dify_dataset_id(args)
-    denied = _dify_dataset_denied(dataset_id)
-    if denied:
-        return _json(denied)
-    query = _clean_text(args.get("query"), max_len=1000)
-    if not query:
-        return _json({"success": False, "error": "query is required"})
-    try:
-        top_k = min(max(int(args.get("top_k") or 5), 1), 10)
-    except (TypeError, ValueError):
-        top_k = 5
-    search_method = _clean_text(args.get("search_method"), max_len=80) or "semantic_search"
-    if search_method not in {"semantic_search", "full_text_search", "hybrid_search"}:
-        return _json({"success": False, "error": "search_method is not allowed"})
-    retrieval_model: dict[str, Any] = {
-        "search_method": search_method,
-        "top_k": top_k,
-        "score_threshold_enabled": bool(args.get("score_threshold_enabled", False)),
-        "reranking_enable": bool(args.get("reranking_enable", False)),
-    }
-    if retrieval_model["score_threshold_enabled"]:
-        try:
-            retrieval_model["score_threshold"] = min(max(float(args.get("score_threshold") or 0), 0), 1)
-        except (TypeError, ValueError):
-            retrieval_model["score_threshold"] = 0
-    response = _dify_request(
-        "POST",
-        f"/datasets/{quote(dataset_id, safe='')}/retrieve",
-        body={"query": query, "retrieval_model": retrieval_model},
-    )
-    return _dify_tool_payload(
-        "qintopia_dify_knowledge_retrieve",
-        "retrieve_chunks",
-        response,
-        dataset_id=dataset_id,
-        query=query,
-        retrieval_model=retrieval_model,
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_knowledge_retrieve(args)
 
 
 def handle_qintopia_dify_document_list(args: dict[str, Any], **_: Any) -> str:
-    dataset_id = _dify_dataset_id(args)
-    denied = _dify_dataset_denied(dataset_id)
-    if denied:
-        return _json(denied)
-    params = {
-        "page": _dify_page(args),
-        "limit": _dify_limit(args),
-        "keyword": _clean_text(args.get("keyword"), max_len=200),
-    }
-    response = _dify_request(
-        "GET",
-        f"/datasets/{quote(dataset_id, safe='')}/documents",
-        params=params,
-    )
-    return _dify_tool_payload(
-        "qintopia_dify_document_list",
-        "list_documents",
-        response,
-        dataset_id=dataset_id,
-        page=params["page"],
-        limit=params["limit"],
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_document_list(args)
 
 
 def handle_qintopia_dify_document_get(args: dict[str, Any], **_: Any) -> str:
-    dataset_id = _dify_dataset_id(args)
-    document_id = _dify_document_id(args)
-    denied = _dify_dataset_denied(dataset_id)
-    if denied:
-        return _json(denied)
-    if not document_id:
-        return _json({"success": False, "error": "document_id is required"})
-    response = _dify_request(
-        "GET",
-        f"/datasets/{quote(dataset_id, safe='')}/documents/{quote(document_id, safe='')}",
-    )
-    return _dify_tool_payload(
-        "qintopia_dify_document_get",
-        "get_document",
-        response,
-        dataset_id=dataset_id,
-        document_id=document_id,
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_document_get(args)
 
 
 def handle_qintopia_dify_indexing_status_get(args: dict[str, Any], **_: Any) -> str:
-    dataset_id = _dify_dataset_id(args)
-    batch = _clean_text(args.get("batch"), max_len=160)
-    denied = _dify_dataset_denied(dataset_id)
-    if denied:
-        return _json(denied)
-    if not batch:
-        return _json({"success": False, "error": "batch is required"})
-    response = _dify_request(
-        "GET",
-        f"/datasets/{quote(dataset_id, safe='')}/documents/{quote(batch, safe='')}/indexing-status",
-    )
-    return _dify_tool_payload(
-        "qintopia_dify_indexing_status_get",
-        "get_indexing_status",
-        response,
-        dataset_id=dataset_id,
-        batch=batch,
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_indexing_status_get(args)
 
 
 def handle_qintopia_dify_segment_list(args: dict[str, Any], **_: Any) -> str:
-    dataset_id = _dify_dataset_id(args)
-    document_id = _dify_document_id(args)
-    denied = _dify_dataset_denied(dataset_id)
-    if denied:
-        return _json(denied)
-    if not document_id:
-        return _json({"success": False, "error": "document_id is required"})
-    params = {
-        "page": _dify_page(args),
-        "limit": _dify_limit(args),
-        "keyword": _clean_text(args.get("keyword"), max_len=200),
-        "status": _clean_text(args.get("status"), max_len=80),
-    }
-    response = _dify_request(
-        "GET",
-        f"/datasets/{quote(dataset_id, safe='')}/documents/{quote(document_id, safe='')}/segments",
-        params=params,
-    )
-    return _dify_tool_payload(
-        "qintopia_dify_segment_list",
-        "list_segments",
-        response,
-        dataset_id=dataset_id,
-        document_id=document_id,
-        page=params["page"],
-        limit=params["limit"],
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_segment_list(args)
 
 
 def handle_qintopia_dify_segment_get(args: dict[str, Any], **_: Any) -> str:
-    dataset_id = _dify_dataset_id(args)
-    document_id = _dify_document_id(args)
-    segment_id = _dify_segment_id(args)
-    denied = _dify_dataset_denied(dataset_id)
-    if denied:
-        return _json(denied)
-    if not document_id:
-        return _json({"success": False, "error": "document_id is required"})
-    if not segment_id:
-        return _json({"success": False, "error": "segment_id is required"})
-    response = _dify_request(
-        "GET",
-        (
-            f"/datasets/{quote(dataset_id, safe='')}"
-            f"/documents/{quote(document_id, safe='')}"
-            f"/segments/{quote(segment_id, safe='')}"
-        ),
-    )
-    return _dify_tool_payload(
-        "qintopia_dify_segment_get",
-        "get_segment",
-        response,
-        dataset_id=dataset_id,
-        document_id=document_id,
-        segment_id=segment_id,
-    )
+    return _knowledge_retrieval_plugin().handle_qintopia_dify_segment_get(args)
 
 
 def handle_qintopia_wenyuange_lookup(args: dict[str, Any], **_: Any) -> str:
-    query = _clean_text(args.get("query"), max_len=1000)
-    caller_profile = _clean_text(args.get("caller_profile"), max_len=80)
-    audience = _clean_text(args.get("audience"), max_len=80)
-    purpose = _clean_text(args.get("purpose"), max_len=500)
-    if not query:
-        return _json({"success": False, "error": "query is required"})
-    if not purpose:
-        return _json({"success": False, "error": "purpose is required"})
-    if (caller_profile, audience) not in {
-        ("erhua", "member_reply"),
-        ("xiaoqin", "external_customer"),
-    }:
-        return _json(
-            {
-                "success": False,
-                "error": "caller_profile and audience combination is not allowed",
-                "allowed_combinations": [
-                    {"caller_profile": "erhua", "audience": "member_reply"},
-                    {"caller_profile": "xiaoqin", "audience": "external_customer"},
-                ],
-            }
-        )
+    return _knowledge_retrieval_plugin().handle_qintopia_wenyuange_lookup(args)
 
-    dataset_id = _dify_lookup_dataset_id()
-    if not dataset_id:
-        return _json(
-            {
-                "success": False,
-                "error": "exactly one Dify lookup dataset must be configured",
-                "required_env": [
-                    "QINTOPIA_DIFY_LOOKUP_DATASET_ID",
-                    "QINTOPIA_DIFY_ALLOWED_DATASET_IDS",
-                ],
-            }
-        )
-
-    try:
-        top_k = min(max(int(args.get("top_k") or 3), 1), 5)
-    except (TypeError, ValueError):
-        top_k = 3
-
-    records, retrieval_trace, retrieve_error = _dify_lookup_records(dataset_id, query, top_k)
-    if retrieve_error:
-        return _json(
-            {
-                "success": False,
-                "skill": "qintopia_wenyuange_lookup",
-                "caller_profile": caller_profile,
-                "audience": audience,
-                "error": retrieve_error.get("error") or "Dify lookup failed",
-                "status": retrieve_error.get("status"),
-                "can_answer": False,
-                "risk_flags": ["lookup_failed"],
-                "retrieval_trace": retrieval_trace,
-                "safe_reply_guidance": _lookup_safe_reply_guidance(False, caller_profile),
-            }
-        )
-
-    safe_records, blocked_flags = _filter_lookup_records(caller_profile, audience, query, purpose, records)
-    safe_records.sort(key=lambda record: _record_query_score(record, query), reverse=True)
-    if safe_records and _record_source_quality(safe_records[0]) >= 30:
-        safe_records = [safe_records[0]]
-    else:
-        safe_records = safe_records[:top_k]
-    can_answer = bool(safe_records)
-    risk_flags = [] if can_answer else blocked_flags
-    return _json(
-        {
-            "success": True,
-            "skill": "qintopia_wenyuange_lookup",
-            "caller_profile": caller_profile,
-            "audience": audience,
-            "can_answer": can_answer,
-            "answer_basis": _dify_lookup_answer_basis(safe_records) if can_answer else "",
-            "sources": _dify_lookup_sources(safe_records if can_answer else records),
-            "risk_flags": risk_flags,
-            "retrieval_trace": retrieval_trace,
-            "safe_reply_guidance": _lookup_safe_reply_guidance(can_answer, caller_profile),
-            "result_count": len(safe_records if can_answer else records),
-            "blocked_result_count": max(len(records) - len(safe_records), 0),
-            "read_only": True,
-        }
-    )
 
 
 def handle_qintopia_message_store_search(args: dict[str, Any], **_: Any) -> str:
@@ -3211,7 +2840,7 @@ def check_sales_requirements() -> bool:
 
 
 def check_dify_read_requirements() -> bool:
-    return bool(_dify_base_url() and _dify_api_key())
+    return _knowledge_retrieval_plugin().check_dify_read_requirements()
 
 
 def check_message_store_requirements() -> bool:

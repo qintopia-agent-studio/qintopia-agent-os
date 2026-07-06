@@ -6,9 +6,10 @@ The knowledge and GIS tools are read-only. The complaint tools are narrow write-
 wrappers for 二花's controlled complaint/service-recovery workflow; they are not a
 general Kanban intake surface. The 小秦 tools are controlled sales/customer wrappers for
 Public-safe product answers, lead capture, demo planning, proposal drafts, disclosure
-filtering, and conversation handoff. Dify Knowledge tools are read-only wrappers over
-Dify's Knowledge Service API and can be enabled for any profile that should use the
-shared `qintopia` toolset.
+filtering, and conversation handoff. Dify Knowledge tool registration stays in this
+Hermes plugin for stable tool names, but the active Dify and `qintopia_wenyuange_lookup`
+implementation lives in `skills/knowledge-retrieval`. Change Dify allowlists, filtered
+answer basis, source ranking, and risk flags there.
 
 ## Tools
 
@@ -149,12 +150,19 @@ Weather guardrails:
 ## Server Install
 
 Install per profile that needs Qintopia tools because Hermes discovers user plugins from
-the active `HERMES_HOME/plugins` directory:
+the active `HERMES_HOME/plugins` directory. Production should use the release/current
+layout, not an ad hoc `rsync` of only this plugin:
 
-```bash
-rsync -az --delete config/hermes/plugins/qintopia-tools/ \
-  ubuntu@122.51.77.220:/home/ubuntu/.hermes/profiles/erhua/plugins/qintopia-tools/
+```text
+/home/ubuntu/.hermes/profiles/erhua/plugins/qintopia-tools
+  -> /home/ubuntu/qintopia-agent-os-releases/current/skills/qintopia-tools/variants/erhua
 ```
+
+The same release must include delegated skill packages under
+`/home/ubuntu/qintopia-agent-os-releases/current/skills`. Erhua currently delegates
+weather to `skills/qintopia-weather` and Dify/WenYuanGe lookup to
+`skills/knowledge-retrieval`. If Hermes loads this plugin from a copied profile-local
+directory, set `QINTOPIA_AGENT_OS_SKILLS_DIR` to the release `skills` directory.
 
 Enable in the profile `config.yaml`:
 

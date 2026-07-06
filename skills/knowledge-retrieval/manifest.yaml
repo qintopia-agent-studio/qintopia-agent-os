@@ -2,13 +2,13 @@ id: skills/knowledge-retrieval
 type: skill
 name: Knowledge Retrieval
 owner: PatrickLiveCool
-status: draft
+status: adopting
 risk_level: medium
 description:
   Public-safe evidence retrieval boundary for WenYuanGe, Dify Knowledge, approved source
   metadata, and frontline safe reply guidance.
 source:
-  path: skills/qintopia-tools
+  path: skills/knowledge-retrieval/__init__.py
   reference: qintopia_wenyuange_lookup and qintopia_dify_* wrappers
   disposition: adopt
 production_boundary:
@@ -29,6 +29,8 @@ tags:
   - dify
   - evidence
 next_actions:
-  - Split raw Dify tools from frontline-safe lookup tools.
-  - Add fixtures for public-safe answer basis, missing-source escalation, and disclosure
+  - Move Postgres message-store search into a separate Postgres/context capability.
+  - Add sanitized fixture replay files for missing-source escalation and disclosure
     filtering.
+  - Remove dead Dify helper code from the qintopia-tools registration shell after the
+    next deploy-bundle verification.

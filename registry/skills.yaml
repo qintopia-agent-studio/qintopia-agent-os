@@ -27,10 +27,10 @@ entries:
   - id: skills/knowledge-retrieval
     path: skills/knowledge-retrieval
     manifest: skills/knowledge-retrieval/manifest.yaml
-    status: draft
+    status: adopting
     notes:
-      Capability boundary for safe evidence retrieval and WenYuanGe/Dify filtered answer
-      basis.
+      Active capability for safe evidence retrieval and WenYuanGe/Dify filtered answer
+      basis; qintopia-tools keeps stable Hermes registration.
   - id: skills/postgres-context
     path: skills/postgres-context
     manifest: skills/postgres-context/manifest.yaml
