@@ -1,17 +1,11 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { validatePrBody } from "./pr-body.mjs";
-
-const run = (command, args, options = {}) =>
-  execFileSync(command, args, {
-    encoding: "utf8",
-    stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
-  }).trim();
+import { run } from "./run-command.mjs";
 
 const argValue = (name) => {
   const index = process.argv.indexOf(name);

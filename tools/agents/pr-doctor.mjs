@@ -1,26 +1,9 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import process from "node:process";
 import { validatePrBody } from "./pr-body.mjs";
-
-const run = (command, args, options = {}) =>
-  execFileSync(command, args, {
-    encoding: "utf8",
-    stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
-  }).trim();
-
-const commandExists = (command) => {
-  try {
-    run("sh", ["-lc", `command -v ${JSON.stringify(command)}`], {
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return true;
-  } catch {
-    return false;
-  }
-};
+import { commandExists, run } from "./run-command.mjs";
 
 const errors = [];
 const warnings = [];

@@ -18,4 +18,5 @@ CI helpers must:
 pnpm tools:ci:check
 pnpm commitlint:check
 pnpm pr:check-body
+pnpm pr:tools:check
 ```

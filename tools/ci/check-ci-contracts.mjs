@@ -40,6 +40,7 @@ for (const scriptName of [
   "pr:doctor",
   "pr:bootstrap",
   "pr:create",
+  "pr:tools:check",
 ]) {
   if (!packageJson.scripts?.[scriptName]) {
     errors.push(`${packagePath}: missing ${scriptName}`);
@@ -55,6 +56,8 @@ for (const requiredPath of [
   "tools/agents/pr-doctor.mjs",
   "tools/agents/pr-bootstrap.mjs",
   "tools/agents/create-pr.mjs",
+  "tools/agents/run-command.mjs",
+  "tools/agents/check-pr-tools.mjs",
 ]) {
   if (!fs.existsSync(path.join(repoRoot, requiredPath))) {
     errors.push(`${requiredPath}: required CI or PR gate file is missing`);
@@ -127,6 +130,19 @@ if (ciWorkflow) {
     }
   } catch (error) {
     errors.push(`.github/workflows/ci.yml: workflow YAML must parse: ${error.message}`);
+  }
+}
+
+const agentToolFiles = [
+  "tools/agents/create-pr.mjs",
+  "tools/agents/pr-bootstrap.mjs",
+  "tools/agents/pr-doctor.mjs",
+  "tools/agents/run-command.mjs",
+];
+for (const toolFile of agentToolFiles) {
+  const source = readText(toolFile);
+  if (/execFileSync\([\s\S]*?\)\.trim\(\)/.test(source)) {
+    errors.push(`${toolFile}: execFileSync output must handle null before trim`);
   }
 }
 

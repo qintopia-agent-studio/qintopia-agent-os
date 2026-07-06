@@ -29,6 +29,7 @@ flow. Use the repository-owned `gh` workflow instead:
 
 ```bash
 pnpm pr:doctor
+pnpm pr:tools:check
 pnpm pr:create -- --body-file /path/to/completed-pr-body.md
 ```
 

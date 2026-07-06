@@ -36,6 +36,7 @@
     "pr:doctor": "node tools/agents/pr-doctor.mjs",
     "pr:bootstrap": "node tools/agents/pr-bootstrap.mjs",
     "pr:create": "node tools/agents/create-pr.mjs",
+    "pr:tools:check": "node tools/agents/check-pr-tools.mjs",
     "agents:check": "node tools/agents/check-agents.mjs",
     "agents:profile-bundles:check": "node tools/agents/check-profile-bundles.mjs",
     "collaboration:check": "node tools/policy/check-collaboration.mjs",
