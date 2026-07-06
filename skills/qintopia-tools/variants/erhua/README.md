@@ -258,6 +258,7 @@ gateway remains the dispatcher.
 ## Validation
 
 ```bash
-python3 config/hermes/plugins/qintopia-tools/tests/test_qintopia_tools.py
-python3 -m py_compile config/hermes/plugins/qintopia-tools/__init__.py
+pnpm skills:qintopia-tools:check
+pnpm skills:qintopia-weather:check
+pnpm mcp:adapters:check
 ```
