@@ -106,15 +106,23 @@ if (ciWorkflow) {
     if (!Array.isArray(checkSteps)) {
       errors.push(".github/workflows/ci.yml: jobs.check.steps must be a step list");
     } else {
-      const prBodyStep = checkSteps.find((step) => step?.name === "PR body check");
-      if (!prBodyStep) {
+      const lightCheckStep = checkSteps.find((step) => step?.name === "Light check");
+      if (!lightCheckStep) {
         errors.push(
-          ".github/workflows/ci.yml: PR body check must be in jobs.check.steps"
+          ".github/workflows/ci.yml: Light check must be in jobs.check.steps"
         );
-      } else if (prBodyStep.run !== "pnpm pr:check-body") {
-        errors.push(
-          ".github/workflows/ci.yml: PR body check must run pnpm pr:check-body"
-        );
+      } else {
+        const runScript = String(lightCheckStep.run ?? "");
+        if (!runScript.includes("pnpm pr:check-body")) {
+          errors.push(
+            ".github/workflows/ci.yml: Light check must run pnpm pr:check-body for PRs"
+          );
+        }
+        if (!runScript.includes("pnpm check:light")) {
+          errors.push(
+            ".github/workflows/ci.yml: Light check must run pnpm check:light"
+          );
+        }
       }
     }
   } catch (error) {

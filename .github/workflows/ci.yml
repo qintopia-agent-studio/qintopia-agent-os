@@ -104,12 +104,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: PR body check
-        if: ${{ github.event_name == 'pull_request' }}
-        run: pnpm pr:check-body
-
       - name: Light check
-        run: pnpm check:light
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            pnpm pr:check-body
+          fi
+          pnpm check:light
 
       - name: Setup Python
         if: ${{ needs.changes.outputs.full-check == 'true' }}
