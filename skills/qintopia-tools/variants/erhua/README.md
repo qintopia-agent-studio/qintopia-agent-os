@@ -124,10 +124,13 @@ Dify guardrails:
 
 Weather guardrails:
 
-- `qintopia_weather_lookup` is fixed to Qintopia coordinates `108.5876,33.9996` by
-  default. It is not a general city-weather, POI, or location search tool.
+- `qintopia_weather_lookup` is fixed to the `秦托邦·栗峪口` coordinates
+  `108.5666545,34.0261288` by default. It is not a general city-weather, POI, or
+  location search tool.
+- The weather result is QWeather coordinate/grid weather for the fixed point, not raw
+  measured data from a 栗峪口 weather station.
 - City-based QWeather warning and air-quality APIs use `QINTOPIA_WEATHER_QWEATHER_CITY`,
-  defaulting to `鄠邑区`; the member-facing location name remains `秦托邦`.
+  defaulting to `鄠邑区`; the member-facing location name defaults to `秦托邦·栗峪口`.
 - The delegated weather capability may call only allowlisted QWeather surfaces: current
   weather, hourly weather, minutely precipitation, official weather alert evidence, and
   air quality.
@@ -238,8 +241,8 @@ export HEFENG_API_HOST='...QWeather API host...'
 export HEFENG_PROJECT_ID='...QWeather project id...'
 export HEFENG_KEY_ID='...QWeather JWT credential id...'
 export HEFENG_PRIVATE_KEY_PATH=/home/ubuntu/.hermes/profiles/erhua/secrets/qweather-ed25519-private.pem
-export QINTOPIA_WEATHER_LOCATION=108.5876,33.9996
-export QINTOPIA_WEATHER_LOCATION_NAME=秦托邦
+export QINTOPIA_WEATHER_LOCATION=108.5666545,34.0261288
+export QINTOPIA_WEATHER_LOCATION_NAME=秦托邦·栗峪口
 export QINTOPIA_WEATHER_QWEATHER_CITY=鄠邑区
 ```
 

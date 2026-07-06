@@ -29,6 +29,17 @@ calls here.
 - Do not put QWeather credentials or private keys in git.
 - Do not claim official warnings when fallback data is used.
 
+## Fixed Location Policy
+
+Default lookups use QWeather coordinate/grid weather for the fixed `秦托邦·栗峪口` point
+`108.5666545,34.0261288`. This point is aligned to the public OpenStreetMap/Nominatim
+`栗峪口村` village node checked on 2026-07-06.
+
+This is not raw measured data from a 栗峪口 weather station. Until a stable public
+station id and API are confirmed, the primary source remains QWeather by fixed
+coordinates. QWeather city-based warning and air-quality calls still use `鄠邑区`
+through `QINTOPIA_WEATHER_QWEATHER_CITY`.
+
 ## Morning Broadcast Contract
 
 The 07:00 Erhua group weather broadcast must be a day forecast and outing hint, not a
