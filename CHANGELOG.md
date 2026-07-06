@@ -111,6 +111,8 @@ become versioned.
 - Archived the completed monorepo migration execution log under
   `docs/plans/completed/monorepo-migration.md`; new work now starts from the current
   roadmap instead of editing historical migration status.
+- Fixed pull request commit message validation so CI checks the PR head commit range and
+  skips generated merge commits instead of linting GitHub's synthetic PR merge commit.
 - Folded the temporary `deploy:m9f:check` harness into the stable
   `deploy:release-model:check` validation path.
 - Updated README, AGENTS, CLAUDE, CONTRIBUTING, docs indexes, and the PR template so

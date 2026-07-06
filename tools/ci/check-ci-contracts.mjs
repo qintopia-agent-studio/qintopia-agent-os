@@ -55,13 +55,22 @@ if (!packageJson.scripts?.["check:light"]?.includes("pnpm commitlint:check")) {
   errors.push("package.json: check:light must include pnpm commitlint:check");
 }
 
-const ciWorkflow = fs.existsSync(path.join(repoRoot, ".github/workflows/ci.yml"))
-  ? readText(".github/workflows/ci.yml")
+const commitMessageCheck = fs.existsSync(
+  path.join(repoRoot, "tools/ci/check-commit-messages.mjs")
+)
+  ? readText("tools/ci/check-commit-messages.mjs")
   : "";
-if (ciWorkflow && !ciWorkflow.includes("GITHUB_BASE_SHA")) {
-  errors.push(
-    ".github/workflows/ci.yml: must pass GITHUB_BASE_SHA to commit message checks"
-  );
+for (const requiredFragment of [
+  "GITHUB_EVENT_PATH",
+  "pull_request?.base?.sha",
+  "pull_request?.head?.sha",
+  "refs/pull/${prNumber}/head",
+  'git", ["cat-file", "-e"',
+  "--format=%H%x00%P%x00%s",
+]) {
+  if (commitMessageCheck && !commitMessageCheck.includes(requiredFragment)) {
+    errors.push(`tools/ci/check-commit-messages.mjs: must include ${requiredFragment}`);
+  }
 }
 
 if (errors.length > 0) {
