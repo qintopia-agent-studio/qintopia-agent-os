@@ -21,7 +21,7 @@ GitHub workflow_dispatch
   -> verify manifests and SHA256SUMS
   -> assemble /home/ubuntu/qintopia-agent-os-releases/<release-sha>
   -> switch previous/current symlinks
-  -> restart approved targets
+  -> restart approved system and Hermes user-service targets
   -> smoke
   -> write deploy result JSON to COS
   -> archive consumed request and delete the pending COS object
@@ -54,6 +54,10 @@ and endpoint can vary by environment; the production queue path cannot.
 Rollback is attempted only after `current` has been switched and the post-promotion
 smoke path fails. Artifact download, request validation, or staging failures must not
 move a healthy `current` symlink back to `previous`.
+
+Rollback result records must distinguish rollback success from rollback failure. A
+failed rollback is recorded as deployment `failed` with `rollback.status: failed`, not
+as `rolled_back`.
 
 ## Server Requirements
 

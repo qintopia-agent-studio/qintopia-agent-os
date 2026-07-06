@@ -20,6 +20,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 IFS=',' read -r -a targets <<<"$restart_targets"
+hermes_systemd_user="${QINTOPIA_HERMES_SYSTEMD_USER:-ubuntu}"
 
 system_services=(
   qintopia-message-sidecar.service
@@ -33,19 +34,52 @@ system_services=(
   qintopia-agentos-daily-digest-publisher.service
 )
 
-restart_system=false
-for target in "${targets[@]}"; do
-  if [[ "$target" == "qintopia-system-services" ]]; then
-    restart_system=true
-  fi
-done
-
-if [[ "$restart_system" == "true" ]]; then
+restart_system_services() {
   systemctl daemon-reload
   for service in "${system_services[@]}"; do
     systemctl restart "$service"
     systemctl is-active --quiet "$service"
   done
-fi
+}
+
+restart_hermes_service() {
+  local service="$1"
+  runuser -l "$hermes_systemd_user" -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart ${service}"
+  runuser -l "$hermes_systemd_user" -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active --quiet ${service}"
+}
+
+for target in "${targets[@]}"; do
+  case "$target" in
+    qintopia-system-services)
+      restart_system_services
+      ;;
+    hermes-erhua)
+      restart_hermes_service hermes-gateway-erhua.service
+      ;;
+    hermes-wenyuange)
+      restart_hermes_service hermes-gateway-wenyuange.service
+      ;;
+    hermes-xiaoman)
+      restart_hermes_service hermes-gateway-xiaoman.service
+      ;;
+    hermes-silaoshi)
+      restart_hermes_service hermes-gateway-silaoshi.service
+      ;;
+    hermes-huabaosi)
+      restart_hermes_service hermes-gateway-huabaosi.service
+      ;;
+    hermes-guanerye)
+      restart_hermes_service hermes-gateway-guanerye.service
+      ;;
+    "")
+      ;;
+    *)
+      echo "unsupported restart target: ${target}" >&2
+      exit 2
+      ;;
+  esac
+done
 
 echo "Smoke checks passed for restart targets: ${restart_targets}"

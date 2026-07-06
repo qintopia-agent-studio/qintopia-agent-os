@@ -190,13 +190,17 @@ started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 write_result() {
   local status="$1"
   local error="${2:-}"
+  local rollback_attempted="${3:-false}"
+  local rollback_status="${4:-not_needed}"
+  local rollback_target="${5:-}"
   local previous_target=""
   local current_target=""
   previous_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
   current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
   python3 - "$result_file" "$request_id" "$status" "$started_at" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_target" \
-    "$current_target" "$restart_targets" "$error" <<'PY'
+    "$current_target" "$restart_targets" "$error" "$rollback_attempted" \
+    "$rollback_status" "$rollback_target" <<'PY'
 import json
 import sys
 
@@ -211,7 +215,10 @@ import sys
     current_target,
     restart_targets,
     error,
-) = sys.argv[1:11]
+    rollback_attempted,
+    rollback_status,
+    rollback_target,
+) = sys.argv[1:14]
 
 result = {
     "schema_version": 1,
@@ -225,8 +232,13 @@ result = {
     "current_target": current_target,
     "restart_targets": [item for item in restart_targets.split(",") if item],
     "checks": [{"name": "deploy-runner", "status": "passed" if status.endswith("succeeded") else "failed"}],
-    "rollback": {"attempted": status == "rolled_back", "status": "not_needed"},
+    "rollback": {
+        "attempted": rollback_attempted == "true",
+        "status": rollback_status,
+    },
 }
+if rollback_target:
+    result["rollback"]["target"] = rollback_target
 if error:
     result["error"] = error
 with open(path, "w", encoding="utf-8") as fh:
@@ -266,8 +278,14 @@ run_promotion() {
   set -e
   if [[ "$status" -ne 0 ]]; then
     if [[ "$promoted_current" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
-      deploy/runner/rollback-release.sh --release-root "$RELEASE_ROOT" || true
-      write_result rolled_back "deployment failed and rollback was attempted"
+      rollback_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
+      if deploy/runner/rollback-release.sh --release-root "$RELEASE_ROOT"; then
+        write_result rolled_back "deployment failed and rollback succeeded" \
+          true succeeded "$rollback_target"
+      else
+        write_result failed "deployment failed and rollback failed" \
+          true failed "$rollback_target"
+      fi
     else
       write_result failed "deployment failed"
     fi

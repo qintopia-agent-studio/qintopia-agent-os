@@ -37,7 +37,7 @@ GitHub Deploy Production workflow_dispatch
   -> server verifies artifact-manifest.json and SHA256SUMS
   -> server assembles releases/<release-sha>
   -> server switches previous/current
-  -> server restarts approved targets
+  -> server restarts approved system services and Hermes user services
   -> server runs smoke
   -> server uploads deploy result JSON
   -> server archives the request and removes the pending COS object
@@ -79,9 +79,14 @@ The runner must not:
 - process expired requests;
 - repeatedly process the same pending COS object after it has been archived;
 - roll back before `current` has been switched;
+- report rollback success when `rollback-release.sh` failed;
 - deploy a SHA that was not requested explicitly;
 - edit files under `.hermes` directly;
 - run `git fetch`, `git checkout`, or local Rust builds for routine releases.
+
+Hermes restart targets map to ubuntu user-level systemd services such as
+`hermes-gateway-erhua.service`, not system-scope units. The smoke script must restart
+and verify each requested Hermes target, or fail the deployment.
 
 ## Request And Result Records
 

@@ -194,6 +194,8 @@ for (const fragment of [
   "promoted_current=true",
   "run_promotion\n  status=$?",
   'if [[ "$promoted_current" == "true"',
+  "rollback failed",
+  "rollback succeeded",
 ]) {
   if (!runnerText.includes(fragment)) {
     addError(`deploy/runner/qintopia-agent-os-deploy-runner: missing ${fragment}`);
@@ -227,6 +229,33 @@ for (const fragment of [
   if (!createRequestText.includes(fragment)) {
     addError(`tools/deploy/create-deploy-request.mjs: missing ${fragment}`);
   }
+}
+
+const smokeText = exists("deploy/runner/smoke-release.sh")
+  ? readText("deploy/runner/smoke-release.sh")
+  : "";
+for (const fragment of [
+  "restart_hermes_service",
+  "runuser -l",
+  "hermes-gateway-erhua.service",
+  "hermes-gateway-wenyuange.service",
+  "hermes-gateway-xiaoman.service",
+  "hermes-gateway-silaoshi.service",
+  "hermes-gateway-huabaosi.service",
+  "hermes-gateway-guanerye.service",
+  "unsupported restart target",
+]) {
+  if (!smokeText.includes(fragment)) {
+    addError(`deploy/runner/smoke-release.sh: missing ${fragment}`);
+  }
+}
+if (
+  smokeText.includes('echo "Smoke checks passed') &&
+  !smokeText.includes("restart_hermes_service")
+) {
+  addError(
+    "deploy/runner/smoke-release.sh: must not report Hermes smoke without restart checks"
+  );
 }
 
 const uploadRequestText = exists("deploy/runner/upload-deploy-request.sh")
