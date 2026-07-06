@@ -35,6 +35,10 @@ for (const scriptName of [
   "registry:check",
   "secrets:check",
   "commitlint:check",
+  "pr:check-body",
+  "pr:doctor",
+  "pr:bootstrap",
+  "pr:create",
 ]) {
   if (!packageJson.scripts?.[scriptName]) {
     errors.push(`${packagePath}: missing ${scriptName}`);
@@ -45,9 +49,14 @@ for (const requiredPath of [
   "commitlint.config.mjs",
   ".husky/commit-msg",
   "tools/ci/check-commit-messages.mjs",
+  "tools/ci/check-pr-body.mjs",
+  "tools/agents/pr-body.mjs",
+  "tools/agents/pr-doctor.mjs",
+  "tools/agents/pr-bootstrap.mjs",
+  "tools/agents/create-pr.mjs",
 ]) {
   if (!fs.existsSync(path.join(repoRoot, requiredPath))) {
-    errors.push(`${requiredPath}: required commit message gate file is missing`);
+    errors.push(`${requiredPath}: required CI or PR gate file is missing`);
   }
 }
 
@@ -83,6 +92,10 @@ if (ciWorkflow && !ciWorkflow.includes("fetch-depth: 0")) {
   errors.push(
     ".github/workflows/ci.yml: checkouts must keep enough history for commitlint"
   );
+}
+
+if (ciWorkflow && !ciWorkflow.includes("pnpm pr:check-body")) {
+  errors.push(".github/workflows/ci.yml: pull_request checks must validate PR body");
 }
 
 if (errors.length > 0) {

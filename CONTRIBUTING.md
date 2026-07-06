@@ -12,7 +12,8 @@
 7. Update `CHANGELOG.md` for repository-level changes.
 8. Commit with a Conventional Commits message.
 9. Update the current roadmap or a package doc when the future direction changes.
-10. Open a PR with validation results and production-boundary notes.
+10. Validate PR readiness with `pnpm pr:doctor`.
+11. Open a PR with `pnpm pr:create -- --body-file <completed-pr-body.md>`.
 
 Do not develop directly on `master`.
 
@@ -55,6 +56,31 @@ Do not invent custom types. Use the type that matches the primary change:
 
 Local commits are checked by the Husky `commit-msg` hook. CI runs
 `pnpm commitlint:check` against PR commits.
+
+## Pull Request Policy
+
+Do not use a prefilled GitHub compare URL as the normal PR creation path. Use the
+repository-owned CLI flow so Codex, Claude Code, and human contributors produce the same
+PR shape:
+
+```bash
+pnpm pr:doctor
+pnpm pr:create -- --body-file <completed-pr-body.md>
+```
+
+If GitHub CLI is missing, run:
+
+```bash
+pnpm pr:bootstrap
+```
+
+`pnpm pr:bootstrap -- --install` may install `gh` on supported environments.
+Authentication still requires `gh auth login`.
+
+Start the PR body from `.github/PULL_REQUEST_TEMPLATE.md`. Fill Summary, Planning,
+Domain, Validation, Production Boundary, Architecture / Tooling Boundary, and Changelog.
+Include production-boundary notes for every runtime, deploy, external integration, or
+database-adjacent change. CI rejects empty template bodies with `pnpm pr:check-body`.
 
 ## Changelog Policy
 
