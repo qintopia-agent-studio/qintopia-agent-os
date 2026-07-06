@@ -8,7 +8,9 @@ description:
   Historical WorkTool Android and gateway material kept only for decommission audit.
 source:
   path: ../worktool
-  reference: b95e746e0254894705bc63051937a3afbf4013c1
+  reference:
+    b95e746e0254894705bc63051937a3afbf4013c1; server archive
+    m12-worktool-xiaoqin-20260706T014342Z
   disposition: deprecated
 production_boundary:
   external_sends: true
@@ -24,6 +26,5 @@ tags:
   - worktool
   - audit-only
 next_actions:
-  - Re-check service, cron, process, port, and nginx references during final migration.
-  - Archive or remove server WorkTool directories and disabled units only after owner
-    approval.
+  - Keep the M12-C archive until owner approves permanent deletion.
+  - Do not restore WorkTool as a future Agent OS channel.

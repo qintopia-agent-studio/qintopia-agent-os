@@ -28,6 +28,9 @@ canonical architecture, engineering, package, or deployment docs.
 - [archive-readiness/m12-openclaw-decommission.md](archive-readiness/m12-openclaw-decommission.md):
   M12-B OpenClaw decommission archive, nginx route cleanup, validation, and rollback
   notes.
+- [archive-readiness/m12-worktool-xiaoqin-decommission.md](archive-readiness/m12-worktool-xiaoqin-decommission.md):
+  M12-C WorkTool and current WorkTool-bound Xiaoqin runtime archive, validation, and
+  rollback notes.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
 - [sidecar-ci-artifacts.md](sidecar-ci-artifacts.md): M9.1 sidecar artifact contract, CI

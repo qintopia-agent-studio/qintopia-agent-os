@@ -10,14 +10,14 @@ decommission evidence and audit notes.
 - Local reference observed on 2026-07-03: `b95e746e0254894705bc63051937a3afbf4013c1`
 - Local state observed on 2026-07-03: ahead of `origin/master` by 1 commit
 - Server source: `/home/ubuntu/worktool-gateway`
-- Server state observed on 2026-07-03: directory exists; ubuntu user
-  `worktool-gateway.service` is loaded, disabled, and inactive; nginx still has current
-  `18557` references that must be reconciled during final migration.
+- Server state observed on 2026-07-06: M12-C archived `/home/ubuntu/worktool-gateway`
+  and the disabled `worktool-gateway.service` user unit under
+  `/home/ubuntu/qintopia-agent-os-backups/m12-worktool-xiaoqin-20260706T014342Z`.
 
 ## Decision
 
-Do not build new Agent OS work on WorkTool. Keep only audit evidence needed to remove
-runtime references safely.
+Do not build new Agent OS work on WorkTool. Keep only audit evidence and the private
+server archive until the owner approves permanent deletion.
 
 ## Decommission Entry
 

@@ -1,8 +1,14 @@
 # WorkTool Decommission Plan
 
-This plan covers WorkTool and the current Xiaoqin WorkTool runtime cleanup. It does not
+This plan covered WorkTool and the current Xiaoqin WorkTool runtime cleanup. It does not
 approve server deletion by itself and does not decide whether Xiaoqin can return later
 through a non-WorkTool integration.
+
+M12-C archived the server runtime under:
+
+```text
+/home/ubuntu/qintopia-agent-os-backups/m12-worktool-xiaoqin-20260706T014342Z
+```
 
 ## Current Evidence
 
@@ -92,6 +98,11 @@ should happen during the M9 migration window or another owner-approved cleanup w
 This classification applies only to the WorkTool-based runtime. A future Xiaoqin Agent
 is allowed as a separate product/engineering decision if it uses a non-WorkTool channel
 and gets a reviewed Agent package contract.
+
+M12-C completed the WorkTool/Xiaoqin WorkTool runtime archive. Keep this plan as
+historical evidence and use
+`docs/operations/archive-readiness/m12-worktool-xiaoqin-decommission.md` for the final
+archive record and rollback commands.
 
 ## Cleanup Sequence
 

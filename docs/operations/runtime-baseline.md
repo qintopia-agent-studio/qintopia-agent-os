@@ -67,7 +67,7 @@ Rollback should switch `current` back to `previous` and restart the approved ser
 | `/home/ubuntu/qintopia-hermes-runtime`      | review for unique evidence, then archive or delete                                       |
 | `/home/ubuntu/qintopia-migration`           | archive evidence or delete after owner review                                            |
 | `/home/ubuntu/qintopia-worklog-guard-*`     | archive or delete after confirming no timer/process reference                            |
-| WorkTool gateway and WorkTool Hermes plugin | Registered under `deprecated/`; remove only after owner-approved cleanup                 |
+| WorkTool gateway and WorkTool Hermes plugin | Retired in M12-C; archive kept under `qintopia-agent-os-backups` for rollback/audit only |
 | OpenClaw QiWe adapter                       | Retired in M12-B; archive kept under `qintopia-agent-os-backups` for rollback/audit only |
 | Hermes Kanban                               | Do not build new workflows on it                                                         |
 | Server-local one-off copies                 | Inventory first; do not copy wholesale into git                                          |

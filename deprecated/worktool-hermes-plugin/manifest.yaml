@@ -7,7 +7,9 @@ risk_level: medium
 description: Historical Hermes plugin for WorkTool kept only for migration audit.
 source:
   path: ../worktool-hermes-plugin
-  reference: 04e95e1556cb820f5630a0f4781073cddf23c4f4
+  reference:
+    04e95e1556cb820f5630a0f4781073cddf23c4f4; server archive
+    m12-worktool-xiaoqin-20260706T014342Z
   disposition: deprecated
 production_boundary:
   external_sends: true
@@ -25,6 +27,6 @@ tags:
   - hermes-plugin
   - audit-only
 next_actions:
-  - Keep as audit-only reference unless owner approves full removal during final
-    migration.
-  - Do not use for new Agent OS channel work.
+  - Keep the M12-C archive until owner approves permanent deletion.
+  - Do not restore the WorkTool-bound Xiaoqin runtime as the future Xiaoqin
+    implementation.

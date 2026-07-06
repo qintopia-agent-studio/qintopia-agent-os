@@ -125,11 +125,11 @@ this document before doing any further cleanup.
 
 These paths are intentionally not archived in this batch:
 
-| Path                                    | Reason                                                        | Next action                                             |
-| --------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------- |
-| `/home/ubuntu/worktool-gateway`         | disabled unit references still exist                          | WorkTool decommission batch                             |
-| `/home/ubuntu/.hermes/profiles/xiaoqin` | current WorkTool-bound Xiaoqin runtime and disabled unit refs | WorkTool-bound Xiaoqin runtime decommission             |
-| `/opt/qiwe-openclaw-adapter`            | archived in M12-B OpenClaw batch                              | keep archive until retention deletion is owner-approved |
+| Path                                    | Reason                                   | Next action                                             |
+| --------------------------------------- | ---------------------------------------- | ------------------------------------------------------- |
+| `/home/ubuntu/worktool-gateway`         | archived in M12-C WorkTool/Xiaoqin batch | keep archive until retention deletion is owner-approved |
+| `/home/ubuntu/.hermes/profiles/xiaoqin` | archived in M12-C WorkTool/Xiaoqin batch | future Xiaoqin requires new non-WorkTool design         |
+| `/opt/qiwe-openclaw-adapter`            | archived in M12-B OpenClaw batch         | keep archive until retention deletion is owner-approved |
 
 Permanent deletion of this M12 archive is not approved. Keep it until the owner approves
 post-archive retention cleanup.

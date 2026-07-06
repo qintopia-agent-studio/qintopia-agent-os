@@ -47,11 +47,11 @@ delete now.
 These paths have disabled unit-file or profile references that should be handled as a
 single decommission batch before archival.
 
-| Path                                    | M11 mark                    | Blocking evidence                                                                                           |
-| --------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `/home/ubuntu/worktool-gateway`         | decommission-batch-required | Referenced by disabled user unit `worktool-gateway.service`                                                 |
-| `/home/ubuntu/.hermes/profiles/xiaoqin` | decommission-batch-required | Current WorkTool-bound Xiaoqin runtime; referenced by disabled Xiaoqin WorkTool user unit and profile files |
-| `/opt/qiwe-openclaw-adapter`            | archived in M12-B           | Owner confirmed OpenClaw is no longer used; archived with disabled units and nginx route cleanup            |
+| Path                                    | M11 mark          | Blocking evidence                                                                                  |
+| --------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------- |
+| `/home/ubuntu/worktool-gateway`         | archived in M12-C | Owner-approved WorkTool decommission archive completed                                             |
+| `/home/ubuntu/.hermes/profiles/xiaoqin` | archived in M12-C | Current WorkTool-bound Xiaoqin runtime archived; future Xiaoqin requires a new non-WorkTool design |
+| `/opt/qiwe-openclaw-adapter`            | archived in M12-B | Owner confirmed OpenClaw is no longer used; archived with disabled units and nginx route cleanup   |
 
 Related disabled OpenClaw units observed:
 

@@ -10,10 +10,12 @@ OS channel work.
 - Local reference observed on 2026-07-03: `04e95e1556cb820f5630a0f4781073cddf23c4f4`
 - Server plugin path observed on 2026-07-03:
   `/home/ubuntu/.hermes/profiles/xiaoqin/plugins/worktool-platform`
-- Server unit observed on 2026-07-03: `hermes-gateway-xiaoqin-worktool.service` is
-  loaded, disabled, and inactive.
+- Server state observed on 2026-07-06: M12-C archived the current WorkTool-bound Xiaoqin
+  profile and disabled `hermes-gateway-xiaoqin-worktool.service` user unit under
+  `/home/ubuntu/qintopia-agent-os-backups/m12-worktool-xiaoqin-20260706T014342Z`.
 
 ## Decision
 
 Keep this package as audit material only. New channel integrations should use active
-skills such as `skills/qiwe`, not WorkTool.
+skills such as `skills/qiwe`, not WorkTool. Future Xiaoqin work must use a new
+non-WorkTool Agent contract.

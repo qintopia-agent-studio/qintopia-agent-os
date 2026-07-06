@@ -280,6 +280,8 @@ become versioned.
   rollback command, and remaining WorkTool/Xiaoqin/OpenClaw decommission scope.
 - Added the M12-B OpenClaw decommission record with archive path, nginx route cleanup,
   validation evidence, and rollback notes.
+- Added the M12-C WorkTool and current Xiaoqin WorkTool runtime decommission record with
+  archive path, validation evidence, rollback notes, and future Xiaoqin boundary.
 
 ### Fixed
 
@@ -317,3 +319,5 @@ become versioned.
 - Retired the remaining server OpenClaw path by archiving residual adapter files,
   disabled units, env/state files, root user unit residue, and removing active nginx
   routes to legacy port `18557`.
+- Retired the remaining WorkTool and current WorkTool-bound Xiaoqin runtime by archiving
+  the server gateway directory, Xiaoqin runtime profile, and disabled user units.
