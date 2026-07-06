@@ -160,6 +160,23 @@ class OperationsIntakeTest(unittest.TestCase):
         self.assertTrue(case["needs_human_review"])
         self.assertIn("没有检索到已批准公开的客户案例", case["safe_customer_message"])
 
+    def test_public_kb_failures_do_not_become_empty_results(self):
+        product_unconfigured = json.loads(
+            self.module.handle_qintopia_external_product_kb_search(
+                {"query": "Agent OS 可以做什么"}
+            )
+        )
+        self.assertFalse(product_unconfigured["success"])
+        self.assertEqual(product_unconfigured["safe_answer_mode"], "kb_lookup_failed")
+        self.assertTrue(product_unconfigured["needs_human_review"])
+
+        self.module.configure_runtime(kb_search_handler=lambda args: "not json")
+        case_invalid_json = json.loads(self.module.handle_qintopia_public_case_search({"query": "客户案例"}))
+        self.assertFalse(case_invalid_json["success"])
+        self.assertEqual(case_invalid_json["safe_answer_mode"], "kb_lookup_failed")
+        self.assertTrue(case_invalid_json["needs_human_review"])
+        self.assertIn("公开案例检索暂时不可用", case_invalid_json["safe_customer_message"])
+
     def test_sales_drafts_and_disclosure_are_review_gated(self):
         self.module.configure_runtime(
             kanban_create_sales_task=lambda title, body, task_type, priority, key: (

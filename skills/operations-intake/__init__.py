@@ -99,7 +99,12 @@ def _kanban_create_sales_task(title: str, body: str, task_type: str, priority: i
 
 def _public_kb_search(args: dict[str, Any]) -> dict[str, Any]:
     if _KB_SEARCH_HANDLER is None:
-        return {"success": False, "results": [], "result_count": 0}
+        return {
+            "success": False,
+            "results": [],
+            "result_count": 0,
+            "error": "Public KB search is not configured",
+        }
     try:
         result = _KB_SEARCH_HANDLER(args)
         if isinstance(result, dict):
@@ -835,6 +840,23 @@ def handle_qintopia_external_product_kb_search(args: dict[str, Any], **_: Any) -
                 "purpose": args.get("purpose") or "external_product_answer",
             }
         )
+    if raw.get("success") is False:
+        return _json(
+            {
+                "success": False,
+                "skill": "qintopia_external_product_kb_search",
+                "query": query,
+                "scope_used": ["Public"],
+                "result_count": 0,
+                "results": [],
+                "error": raw.get("error") or "Public KB search failed",
+                "detail": raw.get("detail") or "",
+                "needs_human_review": True,
+                "safe_answer_mode": "kb_lookup_failed",
+                "safe_customer_message": "公开知识库检索暂时不可用，先不要直接对外确认产品事实或案例细节，请交给团队同事复核后再回复。",
+                "not_accessed": ["Internal", "Member-scoped", "Restricted", "Feishu live", "other customers"],
+            }
+        )
     results = raw.get("results", [])
     return _json(
         {
@@ -871,6 +893,24 @@ def handle_qintopia_public_case_search(args: dict[str, Any], **_: Any) -> str:
                 "limit": args.get("limit") or DEFAULT_KB_LIMIT,
                 "caller": "xiaoqin",
                 "purpose": "public_case_search",
+            }
+        )
+    if raw.get("success") is False:
+        return _json(
+            {
+                "success": False,
+                "skill": "qintopia_public_case_search",
+                "query": query,
+                "scope_used": ["Public"],
+                "result_count": 0,
+                "results": [],
+                "error": raw.get("error") or "Public KB search failed",
+                "detail": raw.get("detail") or "",
+                "approved_public_cases_available": False,
+                "needs_human_review": True,
+                "safe_answer_mode": "kb_lookup_failed",
+                "safe_customer_message": "公开案例检索暂时不可用，先不要对外确认是否有可公开案例，请交给团队同事复核后再回复。",
+                "not_accessed": ["Internal cases", "other customer data", "contracts", "private pilots"],
             }
         )
     approved = []
