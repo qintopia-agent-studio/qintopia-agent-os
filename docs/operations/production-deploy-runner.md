@@ -26,12 +26,14 @@ fields separately and must not infer one from another.
 ## Target Flow
 
 ```text
-GitHub Deploy Production workflow_dispatch
+GitHub Release published
+  -> validate release tag resolves to a commit on origin/master
+  -> build sidecar and deploy-bundle artifacts
   -> production environment approval
-  -> require workflow ref refs/heads/master
-  -> validate target SHA belongs to origin/master
+  -> upload sidecar and deploy-bundle artifacts to COS
   -> generate a signed deploy request from the reviewed master workflow code
   -> upload request to fixed COS pending queue
+  -> upload GitHub Release assets and audit artifacts
   -> server systemd timer polls COS
   -> server validates request schema, HMAC signature, TTL, repository, environment, SHA, scope, and target
   -> server downloads sidecar and deploy-bundle artifacts from COS
@@ -49,27 +51,49 @@ build Rust for routine releases.
 
 ## GitHub Controls
 
-The workflow is `.github/workflows/deploy-production.yml` and supports only
-`workflow_dispatch`.
+The workflow is `.github/workflows/deploy-production.yml`. Its primary trigger is
+`release.published`: publishing a normal GitHub Release is the production release
+entrypoint. The same workflow keeps `workflow_dispatch` only as an emergency or
+diagnostic path for explicitly named SHAs.
 
 Repository owners must configure the `production` environment with required reviewers.
-The workflow should use production environment secrets for COS upload:
+Publishing a Release starts the workflow, but the workflow must pause on the production
+environment approval gate before it can use COS credentials or write a deploy request.
+GitHub Release assets are also uploaded only after the production-gated deploy request
+job succeeds, so publishing downloadable assets does not bypass the approval boundary.
+The workflow should use production environment secrets for COS upload and request
+signing:
 
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`
 - `DEPLOY_REQUEST_SIGNING_KEY`
 - `DEPLOY_REQUEST_SIGNING_KEY_ID`
 
-The workflow must run from `refs/heads/master`. It validates the requested commit is on
-`origin/master`, then signs and uploads the deploy request from the reviewed workflow
-code on `master`. It must not check out an older target commit and execute that older
-copy of repository scripts with production secrets.
+For Release-triggered production deployment, the Release tag must point to the current
+`origin/master` HEAD. Pre-releases are rejected. The workflow checks out the reviewed
+`master` workflow code, builds artifacts for the release commit, uploads server-consumed
+artifacts to COS after approval, signs and uploads a deploy request, then attaches the
+same built assets to the GitHub Release for operator audit and download. It must not
+check out an older target commit and execute that older copy of repository scripts with
+production secrets.
+
+Manual `workflow_dispatch` remains allowed only from `refs/heads/master`; it validates
+the requested commit belongs to `origin/master`. Operators should prefer publishing a
+GitHub Release over using manual workflow inputs.
 
 Repository variables may keep non-secret COS defaults:
 
 - `TENCENT_COS_BUCKET`
 - `TENCENT_COS_REGION`
 - `TENCENT_COS_ENDPOINT`
+- `RELEASE_DEPLOY_SCOPE`
+- `RELEASE_DEPLOY_RESTART_TARGETS`
+- `RELEASE_DEPLOY_DRY_RUN`
+
+`RELEASE_DEPLOY_DRY_RUN` controls what happens after a Release is published. Keep it
+`true` until the deploy runner is installed and the first dry-run result is inspected.
+After that, setting it to `false` makes publishing a normal GitHub Release generate a
+real production deploy request.
 
 The deploy request prefix is not configurable. It is fixed to `qintopia-agent-os` so the
 GitHub workflow, JSON schema, server-side validator, and COS poller share one production
@@ -122,7 +146,8 @@ The request schema is `deploy/runner/deploy-request.schema.json`. The result sch
 
 ## First Server Installation
 
-After this repository change is merged and the deploy bundle is published:
+After this repository change is merged and a GitHub Release has published a deploy
+bundle:
 
 1. Download and verify the deploy bundle on the server through the existing COS path.
 2. Assemble a new immutable release containing `deploy/runner/`.

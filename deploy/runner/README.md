@@ -11,12 +11,14 @@ promotes a release, and writes a deploy result.
 ## Direction
 
 ```text
-GitHub workflow_dispatch
+GitHub Release published
+  -> validate release tag is on origin/master
+  -> build sidecar/deploy-bundle artifacts
   -> production environment approval
-  -> require workflow ref refs/heads/master
-  -> validate target SHA and release scope
+  -> upload sidecar/deploy-bundle artifacts to COS
   -> generate a signed request from the reviewed master workflow code
   -> upload deploy request JSON to fixed COS prefix qintopia-agent-os
+  -> upload GitHub Release assets for operator audit and download
   -> server deploy runner reads pending request
   -> validate request schema, signature, TTL, repository, environment, SHA, scope, and restart target
   -> download sidecar and deploy-bundle artifacts from COS
@@ -31,6 +33,17 @@ GitHub workflow_dispatch
 
 No GitHub Action should SSH to production. No routine release should run `git fetch`,
 build Rust, copy source with `scp`, or edit `.hermes` live state.
+
+`workflow_dispatch` remains available as an emergency or diagnostic path, but normal
+operators should publish a GitHub Release instead of manually running Actions.
+Publishing a non-prerelease GitHub Release is the production release entrypoint; the
+workflow still uses the GitHub `production` environment approval gate before it can
+write the signed deploy request or publish GitHub Release assets.
+
+Release tags must point to the current `master` HEAD. To deploy through the normal path:
+create or select a tag for the current `master`, draft the GitHub Release, then click
+Publish release. Do not publish a Release for an older commit as a shortcut; use
+rollback instead.
 
 ## Request Contract
 

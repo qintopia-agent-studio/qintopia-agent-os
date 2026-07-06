@@ -1,6 +1,9 @@
 name: Deploy Production
 
 on:
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -59,10 +62,123 @@ env:
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
 
 jobs:
-  request-deploy:
-    if: ${{ github.ref == 'refs/heads/master' }}
+  build-release-artifacts:
+    if: ${{ github.event_name == 'release' && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
+
+    permissions:
+      contents: read
+
+    outputs:
+      commit-sha: ${{ steps.release.outputs.commit-sha }}
+      release-tag: ${{ steps.release.outputs.release-tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name || '' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$RELEASE_TAG_NAME" ]]; then
+            echo "Release tag name is required." >&2
+            exit 2
+          fi
+          git fetch --no-tags origin master
+          git fetch --tags --force origin "refs/tags/${RELEASE_TAG_NAME}:refs/tags/${RELEASE_TAG_NAME}"
+          commit_sha="$(git rev-list -n 1 "${RELEASE_TAG_NAME}^{commit}")"
+          master_sha="$(git rev-parse origin/master)"
+          if [[ "$commit_sha" != "$master_sha" ]]; then
+            echo "Release tag must point to current origin/master HEAD." >&2
+            echo "release tag commit: $commit_sha" >&2
+            echo "origin/master HEAD: $master_sha" >&2
+            exit 2
+          fi
+          echo "commit-sha=${commit_sha}" >> "$GITHUB_OUTPUT"
+          echo "release-tag=${RELEASE_TAG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.75.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate deploy runner contracts
+        run: pnpm deploy:runner:check
+
+      - name: Build release sidecar artifact
+        run: node tools/deploy/build-sidecar-artifact.mjs
+        env:
+          GITHUB_SHA: ${{ steps.release.outputs.commit-sha }}
+
+      - name: Build release deploy bundle
+        run: node tools/deploy/build-deploy-bundle.mjs
+        env:
+          GITHUB_SHA: ${{ steps.release.outputs.commit-sha }}
+
+      - name: Prepare GitHub Release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release-assets
+          cp \
+            dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu/qintopia-message-sidecar.tar.gz \
+            dist/release-assets/qintopia-message-sidecar-linux-x86_64-gnu.tar.gz
+          cp \
+            dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu/artifact-manifest.json \
+            dist/release-assets/qintopia-message-sidecar-linux-x86_64-gnu.artifact-manifest.json
+          cp \
+            dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu/SHA256SUMS \
+            dist/release-assets/qintopia-message-sidecar-linux-x86_64-gnu.SHA256SUMS
+          cp \
+            dist/deploy-bundles/qintopia-agent-os-deploy-bundle/qintopia-agent-os-deploy-bundle.tar.gz \
+            dist/release-assets/qintopia-agent-os-deploy-bundle.tar.gz
+          cp \
+            dist/deploy-bundles/qintopia-agent-os-deploy-bundle/artifact-manifest.json \
+            dist/release-assets/qintopia-agent-os-deploy-bundle.artifact-manifest.json
+          cp \
+            dist/deploy-bundles/qintopia-agent-os-deploy-bundle/SHA256SUMS \
+            dist/release-assets/qintopia-agent-os-deploy-bundle.SHA256SUMS
+
+      - name: Upload release build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-agent-os-release-build
+          path: |
+            dist/release-assets
+            dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu
+            dist/deploy-bundles/qintopia-agent-os-deploy-bundle
+          retention-days: 14
+          if-no-files-found: error
+
+  request-deploy:
+    if:
+      ${{ always() && (github.ref == 'refs/heads/master' || (github.event_name ==
+      'release' && !github.event.release.prerelease &&
+      needs.build-release-artifacts.result == 'success')) }}
+    needs:
+      - build-release-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
     environment: production
 
     permissions:
@@ -72,30 +188,204 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: master
           fetch-depth: 0
 
-      - name: Validate workflow ref
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
-            echo "Deploy Production must be run from refs/heads/master." >&2
-            exit 2
-          fi
-
-      - name: Validate target commit belongs to master
+      - name: Resolve release or manual deploy inputs
+        id: resolve
         shell: bash
         env:
-          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
+          INPUT_COMMIT_SHA: ${{ github.event.inputs.commit_sha || '' }}
+          INPUT_RUNTIME_SHA: ${{ github.event.inputs.runtime_sha || '' }}
+          INPUT_DEPLOY_BUNDLE_SHA: ${{ github.event.inputs.deploy_bundle_sha || '' }}
+          INPUT_RELEASE_SHA: ${{ github.event.inputs.release_sha || '' }}
+          INPUT_RELEASE_SCOPE: ${{ github.event.inputs.release_scope || '' }}
+          INPUT_RESTART_TARGETS: ${{ github.event.inputs.restart_targets || '' }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run || '' }}
+          INPUT_ROLLBACK_ON_SMOKE_FAILURE:
+            ${{ github.event.inputs.rollback_on_smoke_failure || '' }}
+          INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name || '' }}
+          RELEASE_HTML_URL: ${{ github.event.release.html_url || '' }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || 'false' }}
+          RELEASE_DEPLOY_SCOPE: ${{ vars.RELEASE_DEPLOY_SCOPE || '' }}
+          RELEASE_DEPLOY_RESTART_TARGETS:
+            ${{ vars.RELEASE_DEPLOY_RESTART_TARGETS || 'qintopia-system-services' }}
+          RELEASE_DEPLOY_DRY_RUN: ${{ vars.RELEASE_DEPLOY_DRY_RUN || 'true' }}
         run: |
           set -euo pipefail
-          if [[ ! "$DEPLOY_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+
+          require_single_line() {
+            local name="$1"
+            local value="$2"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "${name} must be a single-line value." >&2
+              exit 2
+            fi
+          }
+
+          normalize_boolean() {
+            local name="$1"
+            local value="$2"
+            require_single_line "$name" "$value"
+            case "$value" in
+              true|false)
+                printf '%s' "$value"
+                ;;
+              *)
+                echo "${name} must be true or false." >&2
+                exit 2
+                ;;
+            esac
+          }
+
+          normalize_csv_allowlist() {
+            local name="$1"
+            local value="$2"
+            local allowed_csv="$3"
+            require_single_line "$name" "$value"
+
+            local -a allowed
+            local -a parts
+            local -a normalized
+            local item
+            local candidate
+            local matched
+            local duplicate
+            IFS=',' read -r -a allowed <<< "$allowed_csv"
+            IFS=',' read -r -a parts <<< "$value"
+
+            if [[ "${#parts[@]}" -eq 0 ]]; then
+              echo "${name} must not be empty." >&2
+              exit 2
+            fi
+
+            for item in "${parts[@]}"; do
+              item="$(printf '%s' "$item" | xargs)"
+              if [[ -z "$item" ]]; then
+                echo "${name} must not contain empty entries." >&2
+                exit 2
+              fi
+
+              matched=false
+              for candidate in "${allowed[@]}"; do
+                if [[ "$item" == "$candidate" ]]; then
+                  matched=true
+                  break
+                fi
+              done
+              if [[ "$matched" != "true" ]]; then
+                echo "${name} contains unsupported entry: ${item}" >&2
+                exit 2
+              fi
+
+              duplicate=false
+              for candidate in "${normalized[@]:-}"; do
+                if [[ "$item" == "$candidate" ]]; then
+                  duplicate=true
+                  break
+                fi
+              done
+              if [[ "$duplicate" == "true" ]]; then
+                echo "${name} contains duplicate entry: ${item}" >&2
+                exit 2
+              fi
+
+              normalized+=("$item")
+            done
+
+            local joined
+            joined="$(IFS=','; printf '%s' "${normalized[*]}")"
+            printf '%s' "$joined"
+          }
+
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
+              echo "Pre-releases must not trigger production deployment." >&2
+              exit 2
+            fi
+            if [[ -z "$RELEASE_TAG_NAME" ]]; then
+              echo "Release tag name is required." >&2
+              exit 2
+            fi
+            git fetch --no-tags origin master
+            git fetch --tags --force origin "refs/tags/${RELEASE_TAG_NAME}:refs/tags/${RELEASE_TAG_NAME}"
+            commit_sha="$(git rev-list -n 1 "${RELEASE_TAG_NAME}^{commit}")"
+            master_sha="$(git rev-parse origin/master)"
+            if [[ "$commit_sha" != "$master_sha" ]]; then
+              echo "Release tag must point to current origin/master HEAD." >&2
+              echo "release tag commit: $commit_sha" >&2
+              echo "origin/master HEAD: $master_sha" >&2
+              exit 2
+            fi
+            release_scope="${RELEASE_DEPLOY_SCOPE:-sidecar-runtime,deploy-bundle,hermes-plugins}"
+            restart_targets="$RELEASE_DEPLOY_RESTART_TARGETS"
+            dry_run="$RELEASE_DEPLOY_DRY_RUN"
+            rollback_on_smoke_failure="true"
+            notes="GitHub Release ${RELEASE_TAG_NAME}: ${RELEASE_HTML_URL}"
+            echo "release-tag=${RELEASE_TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "build-artifacts=true" >> "$GITHUB_OUTPUT"
+          else
+            if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+              echo "Deploy Production must be run from refs/heads/master." >&2
+              exit 2
+            fi
+            commit_sha="$INPUT_COMMIT_SHA"
+            release_scope="${INPUT_RELEASE_SCOPE:-deploy-bundle,hermes-plugins}"
+            restart_targets="${INPUT_RESTART_TARGETS:-qintopia-system-services}"
+            dry_run="${INPUT_DRY_RUN:-true}"
+            rollback_on_smoke_failure="${INPUT_ROLLBACK_ON_SMOKE_FAILURE:-true}"
+            notes="$INPUT_NOTES"
+            echo "release-tag=" >> "$GITHUB_OUTPUT"
+            echo "build-artifacts=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "commit_sha must be a lowercase 40-character git SHA." >&2
             exit 2
           fi
+
+          runtime_sha="${INPUT_RUNTIME_SHA:-$commit_sha}"
+          deploy_bundle_sha="${INPUT_DEPLOY_BUNDLE_SHA:-$commit_sha}"
+          release_sha="${INPUT_RELEASE_SHA:-$deploy_bundle_sha}"
+
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            runtime_sha="$commit_sha"
+            deploy_bundle_sha="$commit_sha"
+            release_sha="$commit_sha"
+          fi
+
+          release_scope="$(normalize_csv_allowlist \
+            "release_scope" \
+            "$release_scope" \
+            "sidecar-runtime,deploy-bundle,hermes-plugins")"
+          restart_targets="$(normalize_csv_allowlist \
+            "restart_targets" \
+            "$restart_targets" \
+            "qintopia-system-services,hermes-erhua,hermes-wenyuange,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-guanerye")"
+          dry_run="$(normalize_boolean "dry_run" "$dry_run")"
+          rollback_on_smoke_failure="$(normalize_boolean \
+            "rollback_on_smoke_failure" \
+            "$rollback_on_smoke_failure")"
+
           git fetch --no-tags origin master
-          git cat-file -e "${DEPLOY_COMMIT_SHA}^{commit}"
-          git merge-base --is-ancestor "$DEPLOY_COMMIT_SHA" origin/master
+          git cat-file -e "${commit_sha}^{commit}"
+          git merge-base --is-ancestor "$commit_sha" origin/master
+
+          notes_delimiter="deploy_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "commit-sha=${commit_sha}"
+            echo "runtime-sha=${runtime_sha}"
+            echo "deploy-bundle-sha=${deploy_bundle_sha}"
+            echo "release-sha=${release_sha}"
+            echo "release-scope=${release_scope}"
+            echo "restart-targets=${restart_targets}"
+            echo "dry-run=${dry_run}"
+            echo "rollback-on-smoke-failure=${rollback_on_smoke_failure}"
+            echo "notes<<${notes_delimiter}"
+            echo "$notes"
+            echo "${notes_delimiter}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -114,6 +404,13 @@ jobs:
       - name: Validate deploy runner contracts
         run: pnpm deploy:runner:check
 
+      - name: Download release build artifact
+        if: ${{ steps.resolve.outputs.build-artifacts == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: qintopia-agent-os-release-build
+          path: dist
+
       - name: Validate Tencent COS upload configuration
         shell: bash
         env:
@@ -127,21 +424,66 @@ jobs:
             exit 2
           fi
 
+      - name: Upload release sidecar artifact to Tencent COS
+        if: ${{ steps.resolve.outputs.build-artifacts == 'true' }}
+        run: >-
+          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-dir
+          dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu --sha "${{
+          steps.resolve.outputs.runtime-sha }}"
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Upload release deploy bundle to Tencent COS
+        if: ${{ steps.resolve.outputs.build-artifacts == 'true' }}
+        run: >-
+          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-type deploy-bundle
+          --artifact-dir dist/deploy-bundles/qintopia-agent-os-deploy-bundle --sha "${{
+          steps.resolve.outputs.deploy-bundle-sha }}"
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Prune old release artifacts from Tencent COS
+        if: ${{ steps.resolve.outputs.build-artifacts == 'true' }}
+        shell: bash
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          deploy/sidecar/scripts/prune-cos-artifacts.sh \
+            --artifact-name qintopia-message-sidecar-linux-x86_64-gnu \
+            --keep 2
+          deploy/sidecar/scripts/prune-cos-artifacts.sh \
+            --artifact-type deploy-bundle \
+            --artifact-name qintopia-agent-os-deploy-bundle \
+            --keep 2
+
       - name: Create deploy request
         run:
           node tools/deploy/create-deploy-request.mjs --output
           dist/deploy-requests/request.json
         env:
-          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
-          DEPLOY_RUNTIME_SHA: ${{ inputs.runtime_sha || inputs.commit_sha }}
-          DEPLOY_BUNDLE_SHA: ${{ inputs.deploy_bundle_sha || inputs.commit_sha }}
-          DEPLOY_RELEASE_SHA:
-            ${{ inputs.release_sha || inputs.deploy_bundle_sha || inputs.commit_sha }}
-          DEPLOY_RELEASE_SCOPE: ${{ inputs.release_scope }}
-          DEPLOY_RESTART_TARGETS: ${{ inputs.restart_targets }}
-          DEPLOY_DRY_RUN: ${{ inputs.dry_run }}
-          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: ${{ inputs.rollback_on_smoke_failure }}
-          DEPLOY_NOTES: ${{ inputs.notes }}
+          DEPLOY_COMMIT_SHA: ${{ steps.resolve.outputs.commit-sha }}
+          DEPLOY_RUNTIME_SHA: ${{ steps.resolve.outputs.runtime-sha }}
+          DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.deploy-bundle-sha }}
+          DEPLOY_RELEASE_SHA: ${{ steps.resolve.outputs.release-sha }}
+          DEPLOY_RELEASE_SCOPE: ${{ steps.resolve.outputs.release-scope }}
+          DEPLOY_RESTART_TARGETS: ${{ steps.resolve.outputs.restart-targets }}
+          DEPLOY_DRY_RUN: ${{ steps.resolve.outputs.dry-run }}
+          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE:
+            ${{ steps.resolve.outputs.rollback-on-smoke-failure }}
+          DEPLOY_NOTES: ${{ steps.resolve.outputs.notes }}
           GITHUB_ACTOR: ${{ github.actor }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
@@ -166,3 +508,30 @@ jobs:
           path: dist/deploy-requests/request.json
           retention-days: 30
           if-no-files-found: error
+
+  upload-github-release-assets:
+    if:
+      ${{ always() && github.event_name == 'release' && !github.event.release.prerelease
+      && needs.request-deploy.result == 'success' }}
+    needs: request-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download prepared release assets
+        uses: actions/download-artifact@v7
+        with:
+          name: qintopia-agent-os-release-build
+          path: dist
+
+      - name: Upload release assets to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" dist/release-assets/* --clobber
