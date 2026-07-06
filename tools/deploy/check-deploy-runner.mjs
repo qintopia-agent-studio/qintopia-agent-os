@@ -169,22 +169,6 @@ if (exists(".github/workflows/deploy-production.yml")) {
       ".github/workflows/deploy-production.yml: build-release-artifacts must keep contents permission read-only"
     );
   }
-  const uploadAssetsJob = workflow?.jobs?.["upload-github-release-assets"];
-  if (!uploadAssetsJob) {
-    addError(
-      ".github/workflows/deploy-production.yml: must isolate GitHub Release asset upload in upload-github-release-assets"
-    );
-  }
-  if (uploadAssetsJob?.permissions?.contents !== "write") {
-    addError(
-      ".github/workflows/deploy-production.yml: only upload-github-release-assets should need contents: write"
-    );
-  }
-  if (uploadAssetsJob?.needs !== "request-deploy") {
-    addError(
-      ".github/workflows/deploy-production.yml: upload-github-release-assets must run only after request-deploy"
-    );
-  }
   const requestDeployNeeds = Array.isArray(job?.needs) ? job.needs : [];
   for (const neededJob of ["build-release-artifacts"]) {
     if (!requestDeployNeeds.includes(neededJob)) {
@@ -196,12 +180,9 @@ if (exists(".github/workflows/deploy-production.yml")) {
   const uploadJobNames = Object.entries(workflow?.jobs || {})
     .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
     .map(([jobName]) => jobName);
-  if (
-    uploadJobNames.length !== 1 ||
-    uploadJobNames[0] !== "upload-github-release-assets"
-  ) {
+  if (uploadJobNames.length !== 0) {
     addError(
-      ".github/workflows/deploy-production.yml: upload-github-release-assets must be the only contents: write job"
+      ".github/workflows/deploy-production.yml: production deploy must not require contents: write"
     );
   }
   const workflowText = readText(".github/workflows/deploy-production.yml");
@@ -235,23 +216,29 @@ if (exists(".github/workflows/deploy-production.yml")) {
   }
   const requestDeployBlock =
     workflowText.split(/\n  request-deploy:/)[1]?.split(/\n  [a-zA-Z0-9_-]+:/)[0] || "";
-  const uploadAssetsBlock =
-    workflowText
-      .split(/\n  upload-github-release-assets:/)[1]
-      ?.split(/\n  [a-zA-Z0-9_-]+:/)[0] || "";
   if (requestDeployBlock.includes("gh release upload")) {
     addError(
       ".github/workflows/deploy-production.yml: request-deploy must not upload GitHub Release assets with production secrets in scope"
     );
   }
+  if (workflowText.includes("gh release upload")) {
+    addError(
+      ".github/workflows/deploy-production.yml: production deploy must not upload GitHub Release assets"
+    );
+  }
+  if (workflowText.includes("upload-github-release-assets")) {
+    addError(
+      ".github/workflows/deploy-production.yml: GitHub Release assets must not be part of the production deploy workflow"
+    );
+  }
+  if (workflowText.includes("dist/release-assets")) {
+    addError(
+      ".github/workflows/deploy-production.yml: production deploy artifacts must use COS, not dist/release-assets"
+    );
+  }
   if (!requestDeployBlock.includes("path: dist")) {
     addError(
       ".github/workflows/deploy-production.yml: request-deploy must download release build artifacts to dist"
-    );
-  }
-  if (!uploadAssetsBlock.includes("path: dist")) {
-    addError(
-      ".github/workflows/deploy-production.yml: upload-github-release-assets must download release build artifacts to dist"
     );
   }
   for (const fragment of [
@@ -269,13 +256,8 @@ if (exists(".github/workflows/deploy-production.yml")) {
     'restart_targets="$(normalize_csv_allowlist',
     'dry_run="$(normalize_boolean "dry_run" "$dry_run")',
     'rollback_on_smoke_failure="$(normalize_boolean',
-    "gh release upload",
     "build-release-artifacts:",
-    "upload-github-release-assets:",
-    "needs.request-deploy.result == 'success'",
-    "Download prepared release assets",
     "Download release build artifact",
-    "Prepare GitHub Release assets",
     "Build release sidecar artifact",
     "Build release deploy bundle",
     "Upload release sidecar artifact to Tencent COS",

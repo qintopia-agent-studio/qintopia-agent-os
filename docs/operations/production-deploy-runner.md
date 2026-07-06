@@ -33,7 +33,6 @@ GitHub Release published
   -> upload sidecar and deploy-bundle artifacts to COS
   -> generate a signed deploy request from the reviewed master workflow code
   -> upload request to fixed COS pending queue
-  -> upload GitHub Release assets and audit artifacts
   -> server systemd timer polls COS
   -> server validates request schema, HMAC signature, TTL, repository, environment, SHA, scope, and target
   -> server downloads sidecar and deploy-bundle artifacts from COS
@@ -56,13 +55,13 @@ The workflow is `.github/workflows/deploy-production.yml`. Its primary trigger i
 entrypoint. The same workflow keeps `workflow_dispatch` only as an emergency or
 diagnostic path for explicitly named SHAs.
 
-Repository owners must configure the `production` environment with required reviewers.
-Publishing a Release starts the workflow, but the workflow must pause on the production
-environment approval gate before it can use COS credentials or write a deploy request.
-GitHub Release assets are also uploaded only after the production-gated deploy request
-job succeeds, so publishing downloadable assets does not bypass the approval boundary.
-The workflow should use production environment secrets for COS upload and request
-signing:
+Publishing a normal GitHub Release is the owner-approved production approval event for
+this repository. The `production` environment scopes COS and request-signing secrets to
+the deploy job, but Qintopia does not currently require a second GitHub environment
+review gate after Release publication. If required reviewers are added later, treat that
+as an extra gate on top of the Release approval, not as a replacement for Release-based
+version control. The workflow should use production environment secrets for COS upload
+and request signing:
 
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`
@@ -72,10 +71,14 @@ signing:
 For Release-triggered production deployment, the Release tag must point to the current
 `origin/master` HEAD. Pre-releases are rejected. The workflow checks out the reviewed
 `master` workflow code, builds artifacts for the release commit, uploads server-consumed
-artifacts to COS after approval, signs and uploads a deploy request, then attaches the
-same built assets to the GitHub Release for operator audit and download. It must not
-check out an older target commit and execute that older copy of repository scripts with
-production secrets.
+artifacts to COS, then signs and uploads a deploy request. It must not check out an
+older target commit and execute that older copy of repository scripts with production
+secrets.
+
+GitHub Release assets are intentionally not uploaded by this production workflow. COS is
+the server-consumed artifact registry, and the GitHub Release page is only the operator
+version record. This keeps GitHub attachment failures from turning a successful COS
+upload and signed deploy request into a false production deploy failure.
 
 Manual `workflow_dispatch` remains allowed only from `refs/heads/master`; it validates
 the requested commit belongs to `origin/master`. Operators should prefer publishing a

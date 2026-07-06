@@ -18,7 +18,6 @@ GitHub Release published
   -> upload sidecar/deploy-bundle artifacts to COS
   -> generate a signed request from the reviewed master workflow code
   -> upload deploy request JSON to fixed COS prefix qintopia-agent-os
-  -> upload GitHub Release assets for operator audit and download
   -> server deploy runner reads pending request
   -> validate request schema, signature, TTL, repository, environment, SHA, scope, and restart target
   -> download sidecar and deploy-bundle artifacts from COS
@@ -38,7 +37,10 @@ build Rust, copy source with `scp`, or edit `.hermes` live state.
 operators should publish a GitHub Release instead of manually running Actions.
 Publishing a non-prerelease GitHub Release is the production release entrypoint; the
 workflow still uses the GitHub `production` environment approval gate before it can
-write the signed deploy request or publish GitHub Release assets.
+write the signed deploy request.
+
+GitHub Release assets are not part of the production deploy path. COS is the artifact
+registry consumed by the server; the Release page is the operator-facing version record.
 
 Release tags must point to the current `master` HEAD. To deploy through the normal path:
 create or select a tag for the current `master`, draft the GitHub Release, then click
