@@ -136,6 +136,76 @@ def _load_skill_plugin(skill_name: str, module_name: str):
 _OPERATIONS_INTAKE_PLUGIN = None
 
 
+
+_OPERATIONS_INTAKE_FALLBACK_SCHEMAS = {
+    "QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA": (
+        "qintopia_complaint_intake_create",
+        "Create a controlled complaint/service-recovery intake request.",
+    ),
+    "QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA": (
+        "qintopia_complaint_intake_update",
+        "Append details to an existing complaint/service-recovery intake request.",
+    ),
+    "QINTOPIA_COMPLAINT_FOLLOWUP_SEND_SCHEMA": (
+        "qintopia_complaint_followup_send",
+        "Prepare an approved private follow-up message for a complaint requester.",
+    ),
+    "QINTOPIA_EXTERNAL_PRODUCT_KB_SEARCH_SCHEMA": (
+        "qintopia_external_product_kb_search",
+        "Search approved public product knowledge for Xiaoqin-style handoff.",
+    ),
+    "QINTOPIA_PUBLIC_CASE_SEARCH_SCHEMA": (
+        "qintopia_public_case_search",
+        "Search approved public case/demo references.",
+    ),
+    "QINTOPIA_CUSTOMER_CONTEXT_LOOKUP_SCHEMA": (
+        "qintopia_customer_context_lookup",
+        "Return current-channel customer context only.",
+    ),
+    "QINTOPIA_LEAD_CAPTURE_SCHEMA": (
+        "qintopia_lead_capture",
+        "Create a controlled sales/customer handoff request.",
+    ),
+    "QINTOPIA_PROPOSAL_OUTLINE_GENERATE_SCHEMA": (
+        "qintopia_proposal_outline_generate",
+        "Generate a safe proposal outline draft that requires review.",
+    ),
+    "QINTOPIA_DEMO_SCRIPT_GENERATE_SCHEMA": (
+        "qintopia_demo_script_generate",
+        "Generate a low-risk demo script draft that requires review.",
+    ),
+    "QINTOPIA_EXTERNAL_DISCLOSURE_FILTER_SCHEMA": (
+        "qintopia_external_disclosure_filter",
+        "Filter a draft for external disclosure risk.",
+    ),
+    "QINTOPIA_CONVERSATION_SUMMARY_SCHEMA": (
+        "qintopia_conversation_summary",
+        "Summarize a customer conversation for safe handoff.",
+    ),
+}
+
+
+def _operations_intake_schema(schema_name: str) -> dict[str, Any]:
+    try:
+        return getattr(_operations_intake_plugin(), schema_name)
+    except Exception as exc:
+        tool_name, description = _OPERATIONS_INTAKE_FALLBACK_SCHEMAS[schema_name]
+        return {
+            "description": (
+                f"{description} Disabled until skills/operations-intake is bundled. "
+                f"Load error: {str(exc)[:300]}"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": True,
+            },
+            "x-qintopia-runtime-disabled": True,
+            "x-qintopia-tool-name": tool_name,
+        }
+
+
+
 def _operations_intake_plugin():
     global _OPERATIONS_INTAKE_PLUGIN
     if _OPERATIONS_INTAKE_PLUGIN is not None:
@@ -485,27 +555,27 @@ QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_SUMMARY_SCHEMA = {
 }
 
 
-QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA = _operations_intake_plugin().QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA
+QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA = _operations_intake_schema("QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA")
 
-QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA = _operations_intake_plugin().QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA
+QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA = _operations_intake_schema("QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA")
 
-QINTOPIA_COMPLAINT_FOLLOWUP_SEND_SCHEMA = _operations_intake_plugin().QINTOPIA_COMPLAINT_FOLLOWUP_SEND_SCHEMA
+QINTOPIA_COMPLAINT_FOLLOWUP_SEND_SCHEMA = _operations_intake_schema("QINTOPIA_COMPLAINT_FOLLOWUP_SEND_SCHEMA")
 
-QINTOPIA_EXTERNAL_PRODUCT_KB_SEARCH_SCHEMA = _operations_intake_plugin().QINTOPIA_EXTERNAL_PRODUCT_KB_SEARCH_SCHEMA
+QINTOPIA_EXTERNAL_PRODUCT_KB_SEARCH_SCHEMA = _operations_intake_schema("QINTOPIA_EXTERNAL_PRODUCT_KB_SEARCH_SCHEMA")
 
-QINTOPIA_PUBLIC_CASE_SEARCH_SCHEMA = _operations_intake_plugin().QINTOPIA_PUBLIC_CASE_SEARCH_SCHEMA
+QINTOPIA_PUBLIC_CASE_SEARCH_SCHEMA = _operations_intake_schema("QINTOPIA_PUBLIC_CASE_SEARCH_SCHEMA")
 
-QINTOPIA_CUSTOMER_CONTEXT_LOOKUP_SCHEMA = _operations_intake_plugin().QINTOPIA_CUSTOMER_CONTEXT_LOOKUP_SCHEMA
+QINTOPIA_CUSTOMER_CONTEXT_LOOKUP_SCHEMA = _operations_intake_schema("QINTOPIA_CUSTOMER_CONTEXT_LOOKUP_SCHEMA")
 
-QINTOPIA_LEAD_CAPTURE_SCHEMA = _operations_intake_plugin().QINTOPIA_LEAD_CAPTURE_SCHEMA
+QINTOPIA_LEAD_CAPTURE_SCHEMA = _operations_intake_schema("QINTOPIA_LEAD_CAPTURE_SCHEMA")
 
-QINTOPIA_PROPOSAL_OUTLINE_GENERATE_SCHEMA = _operations_intake_plugin().QINTOPIA_PROPOSAL_OUTLINE_GENERATE_SCHEMA
+QINTOPIA_PROPOSAL_OUTLINE_GENERATE_SCHEMA = _operations_intake_schema("QINTOPIA_PROPOSAL_OUTLINE_GENERATE_SCHEMA")
 
-QINTOPIA_DEMO_SCRIPT_GENERATE_SCHEMA = _operations_intake_plugin().QINTOPIA_DEMO_SCRIPT_GENERATE_SCHEMA
+QINTOPIA_DEMO_SCRIPT_GENERATE_SCHEMA = _operations_intake_schema("QINTOPIA_DEMO_SCRIPT_GENERATE_SCHEMA")
 
-QINTOPIA_EXTERNAL_DISCLOSURE_FILTER_SCHEMA = _operations_intake_plugin().QINTOPIA_EXTERNAL_DISCLOSURE_FILTER_SCHEMA
+QINTOPIA_EXTERNAL_DISCLOSURE_FILTER_SCHEMA = _operations_intake_schema("QINTOPIA_EXTERNAL_DISCLOSURE_FILTER_SCHEMA")
 
-QINTOPIA_CONVERSATION_SUMMARY_SCHEMA = _operations_intake_plugin().QINTOPIA_CONVERSATION_SUMMARY_SCHEMA
+QINTOPIA_CONVERSATION_SUMMARY_SCHEMA = _operations_intake_schema("QINTOPIA_CONVERSATION_SUMMARY_SCHEMA")
 
 def _json(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
@@ -2592,48 +2662,70 @@ def handle_qintopia_gis_location_lookup(args: dict[str, Any], **_: Any) -> str:
     )
 
 
+
+def _operations_intake_unavailable(skill_name: str, exc: Exception) -> str:
+    return _json(
+        {
+            "success": False,
+            "skill": skill_name,
+            "error": "operations-intake skill package unavailable",
+            "detail": _clean_text(exc, max_len=500),
+            "needs_human_review": True,
+            "safe_answer_mode": "runtime_package_missing",
+        }
+    )
+
+
+def _delegate_operations_intake(handler_name: str, skill_name: str, args: dict[str, Any]) -> str:
+    try:
+        handler = getattr(_configured_operations_intake_plugin(), handler_name)
+    except Exception as exc:
+        return _operations_intake_unavailable(skill_name, exc)
+    return handler(args)
+
+
 def handle_qintopia_complaint_intake_create(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_complaint_intake_create(args)
+    return _delegate_operations_intake("handle_qintopia_complaint_intake_create", "qintopia_complaint_intake_create", args)
 
 
 def handle_qintopia_complaint_intake_update(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_complaint_intake_update(args)
+    return _delegate_operations_intake("handle_qintopia_complaint_intake_update", "qintopia_complaint_intake_update", args)
 
 
 def handle_qintopia_complaint_followup_send(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_complaint_followup_send(args)
+    return _delegate_operations_intake("handle_qintopia_complaint_followup_send", "qintopia_complaint_followup_send", args)
 
 
 def handle_qintopia_external_product_kb_search(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_external_product_kb_search(args)
+    return _delegate_operations_intake("handle_qintopia_external_product_kb_search", "qintopia_external_product_kb_search", args)
 
 
 def handle_qintopia_public_case_search(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_public_case_search(args)
+    return _delegate_operations_intake("handle_qintopia_public_case_search", "qintopia_public_case_search", args)
 
 
 def handle_qintopia_customer_context_lookup(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_customer_context_lookup(args)
+    return _delegate_operations_intake("handle_qintopia_customer_context_lookup", "qintopia_customer_context_lookup", args)
 
 
 def handle_qintopia_lead_capture(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_lead_capture(args)
+    return _delegate_operations_intake("handle_qintopia_lead_capture", "qintopia_lead_capture", args)
 
 
 def handle_qintopia_proposal_outline_generate(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_proposal_outline_generate(args)
+    return _delegate_operations_intake("handle_qintopia_proposal_outline_generate", "qintopia_proposal_outline_generate", args)
 
 
 def handle_qintopia_demo_script_generate(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_demo_script_generate(args)
+    return _delegate_operations_intake("handle_qintopia_demo_script_generate", "qintopia_demo_script_generate", args)
 
 
 def handle_qintopia_external_disclosure_filter(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_external_disclosure_filter(args)
+    return _delegate_operations_intake("handle_qintopia_external_disclosure_filter", "qintopia_external_disclosure_filter", args)
 
 
 def handle_qintopia_conversation_summary(args: dict[str, Any], **_: Any) -> str:
-    return _configured_operations_intake_plugin().handle_qintopia_conversation_summary(args)
+    return _delegate_operations_intake("handle_qintopia_conversation_summary", "qintopia_conversation_summary", args)
 
 
 def check_requirements() -> bool:
@@ -2642,11 +2734,17 @@ def check_requirements() -> bool:
 
 
 def check_complaint_requirements() -> bool:
-    return _configured_operations_intake_plugin().check_complaint_requirements()
+    try:
+        return _configured_operations_intake_plugin().check_complaint_requirements()
+    except Exception:
+        return False
 
 
 def check_sales_requirements() -> bool:
-    return _configured_operations_intake_plugin().check_sales_requirements()
+    try:
+        return _configured_operations_intake_plugin().check_sales_requirements()
+    except Exception:
+        return False
 
 
 def check_dify_read_requirements() -> bool:
