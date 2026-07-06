@@ -1,0 +1,19 @@
+release_manifest_version: 1
+release_id: "<yyyy-mm-dd>-<short-sha>"
+commit_sha: "<git-commit-sha>"
+artifacts:
+  - name: qintopia-agent-os-deploy-bundle
+    sha256: "<sha256>"
+    cos_uri: "cos://qintopia-agent-os-artifacts-1305166808/qintopia-agent-os/deploy-bundle/<sha>/"
+profile_bundles: []
+services: []
+smoke:
+  commands:
+    - pnpm deploy:release-model:check
+rollback:
+  previous_release: "<previous-release-sha>"
+  strategy: "repoint current symlink to previous release and restart affected services"
+approval:
+  owner: PatrickLiveCool
+  approved_at: "<iso8601>"
+  pr: "<github-pr-url>"

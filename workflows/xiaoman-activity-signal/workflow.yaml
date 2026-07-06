@@ -1,0 +1,37 @@
+id: workflows/xiaoman-activity-signal
+type: workflow
+name: Xiaoman Activity Signal
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Xiaoman workflow for activity signal intake, activity state updates, and downstream
+  request triggering.
+source:
+  path: runtime/sidecar/src/xiaoman_activity.rs
+  reference: current-monorepo
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm workflows:check
+    - pnpm check:runtime
+dependencies:
+  - agents/xiaoman
+  - runtime/sidecar
+  - runtime/postgres
+  - workflows/activity-promotion
+tags:
+  - workflow
+  - xiaoman
+  - activity
+  - signal
+next_actions:
+  - Add fixture replay for activity signal creation, duplicate handling, and
+    review-needed states.
+  - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
+    truth.

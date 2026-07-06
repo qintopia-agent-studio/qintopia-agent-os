@@ -19,7 +19,7 @@ validation:
     - pnpm check
     - pnpm deploy:preflight
     - pnpm deploy:systemd:check
-    - pnpm deploy:m9f:check
+    - pnpm deploy:release-model:check
     - pnpm artifact:sidecar
     - cargo test --manifest-path runtime/sidecar/Cargo.toml
     - pnpm smoke:sidecar
@@ -33,7 +33,7 @@ tags:
   - smoke
   - rollback
 next_actions:
-  - During M9, use the rendered systemd review files as the target unit contract and
-    copy only owner-approved units into /etc/systemd/system.
-  - Use the CI-built sidecar artifact and verify artifact-manifest.json plus SHA256SUMS
-    before any approved production cutover.
+  - Keep rendered systemd review files, release/current symlink promotion, and rollback
+    notes aligned before service repoints.
+  - Use CI-built artifacts and verify artifact-manifest.json plus SHA256SUMS before any
+    approved production cutover.

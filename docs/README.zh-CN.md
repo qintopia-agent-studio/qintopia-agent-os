@@ -13,16 +13,35 @@ OS 的文档入口，用来串联当前 monorepo 结构、服务器上只读盘�
 4. 运行时基线：[operations/runtime-baseline.md](operations/runtime-baseline.md)
 5. 当前路线图：[plans/active/current-roadmap.md](plans/active/current-roadmap.md)
 6. 编程 Agent 护栏：[engineering/programming-agent-guardrails.md](engineering/programming-agent-guardrails.md)
-7. 协作和 PR 流程：[engineering/collaboration-model.md](engineering/collaboration-model.md)
-8. Package 契约：[engineering/package-contract.md](engineering/package-contract.md)
-9. 迁移规则：[engineering/migration-policy.md](engineering/migration-policy.md)
-10. 服务器变更规则：[engineering/server-change-policy.md](engineering/server-change-policy.md)
-11. 源文档盘点：[operations/source-document-inventory.md](operations/source-document-inventory.md)
-12. M1 来源盘点：[operations/inventory/README.md](operations/inventory/README.md)
-13. M9 服务器最终迁移 Runbook：[operations/m9-server-cutover-runbook.md](operations/m9-server-cutover-runbook.md)
-14. 服务器目录规划：[operations/server-directory-plan.md](operations/server-directory-plan.md)
-15. 报告索引：[reports/README.md](reports/README.md)
-16. 已完成迁移归档：[plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
+7. 改动路由索引：[engineering/change-routing-index.md](engineering/change-routing-index.md)
+8. 协作和 PR 流程：[engineering/collaboration-model.md](engineering/collaboration-model.md)
+9. Package 契约：[engineering/package-contract.md](engineering/package-contract.md)
+10. 迁移规则：[engineering/migration-policy.md](engineering/migration-policy.md)
+11. 服务器变更规则：[engineering/server-change-policy.md](engineering/server-change-policy.md)
+12. 源文档盘点：[operations/source-document-inventory.md](operations/source-document-inventory.md)
+13. M1 来源盘点：[operations/inventory/README.md](operations/inventory/README.md)
+14. M9 服务器最终迁移 Runbook：[operations/m9-server-cutover-runbook.md](operations/m9-server-cutover-runbook.md)
+15. 服务器目录规划：[operations/server-directory-plan.md](operations/server-directory-plan.md)
+16. 报告索引：[reports/README.md](reports/README.md)
+17. 已完成迁移归档：[plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
+
+## Package 入口
+
+- Profiles: [../agents/](../agents/)
+- Skills: [../skills/](../skills/)
+- Workflows: [../workflows/](../workflows/)
+- MCP adapters: [../mcp/](../mcp/)
+- Runtime contracts: [../runtime/](../runtime/)
+- Deploy contracts: [../deploy/](../deploy/)
+- Replay fixtures: [../fixtures/](../fixtures/)
+
+新协作者开始改动前，应先阅读目标 domain 的 registry：
+
+- [../registry/skills.yaml](../registry/skills.yaml)
+- [../registry/workflows.yaml](../registry/workflows.yaml)
+- [../registry/mcp.yaml](../registry/mcp.yaml)
+- [../registry/runtime.yaml](../registry/runtime.yaml)
+- [../registry/deploy.yaml](../registry/deploy.yaml)
 
 ## 目录地图
 

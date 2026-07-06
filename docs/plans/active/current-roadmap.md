@@ -40,6 +40,15 @@ unless correcting historical evidence.
      `runtime/`, or `deploy/` according to ownership.
    - Every new package needs documentation, manifest metadata, validation, and a
      production-boundary note before implementation is considered complete.
+   - Priority package boundaries now exist for weather, knowledge retrieval, Postgres
+     context, Erhua consultation, Xiaoman activity signal, visual asset request, Si
+     Laoshi daily operations, Feishu MCP, Postgres MCP, Hermes bundles, systemd, nginx,
+     release manifests, rollback, smoke, fixtures, inventory, and CI helpers.
+   - `skills/qintopia-tools` remains a compatibility package. Do not add unrelated new
+     capabilities there; create or extend a capability package instead.
+   - Package scaffolding is not production enablement. Runtime behavior still needs
+     package-level tests, replay fixtures, reviewed manifests, and owner approval before
+     any server repoint or external adapter change.
 
 4. Archive retention cleanup
    - Permanent deletion of M12 archives is not approved.

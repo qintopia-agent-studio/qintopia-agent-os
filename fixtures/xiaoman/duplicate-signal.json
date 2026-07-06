@@ -1,0 +1,13 @@
+{
+  "case": "duplicate-signal",
+  "input": {
+    "workflow": "workflows/xiaoman-activity-signal",
+    "activity_id": "fixture-activity-001",
+    "signal_type": "activity_created",
+    "repeat": true
+  },
+  "expected": {
+    "creates_duplicate_activity": false,
+    "updates_existing_state": true
+  }
+}

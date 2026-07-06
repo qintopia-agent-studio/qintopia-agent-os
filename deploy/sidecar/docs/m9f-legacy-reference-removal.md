@@ -3,6 +3,9 @@
 M9-F removes the remaining live references to the old standalone sidecar checkout. It is
 a repointing step, not a feature expansion and not a cleanup window.
 
+This document is now historical execution evidence and release/current reference
+material. Current repository validation uses `pnpm deploy:release-model:check`.
+
 ## Current Verified State
 
 Read-only verification on 2026-07-04 confirmed:
@@ -34,10 +37,10 @@ M9-F must not:
 
 ## Repository Checks
 
-Run the M9-F readiness check before selecting a target SHA:
+Run the stable release/current model check before selecting a target SHA:
 
 ```bash
-pnpm deploy:m9f:check
+pnpm deploy:release-model:check
 ```
 
 The check validates:
@@ -48,8 +51,7 @@ The check validates:
   `QINTOPIA_SIDECAR_BIN`
 - M9-F docs mention rollback, archive deferral, and the external-send boundary
 
-`deploy:m9f:check` is temporary migration scaffolding. When M9 is fully complete, delete
-it or move the durable assertions into stable deploy checks.
+The temporary M9-F check has been folded into the stable release/current deploy checks.
 
 ## Target Worker Shape
 

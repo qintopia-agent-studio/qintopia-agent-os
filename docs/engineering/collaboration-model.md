@@ -32,8 +32,9 @@ For Codex, Claude Code, or another programming agent:
 5. [architecture/agent-os-overview.md](../architecture/agent-os-overview.md)
 6. [../plans/active/current-roadmap.md](../plans/active/current-roadmap.md)
 7. [programming-agent-guardrails.md](programming-agent-guardrails.md)
-8. The target package README or manifest
-9. The completed migration archive when historical migration evidence is needed
+8. [change-routing-index.md](change-routing-index.md)
+9. The target package README or manifest
+10. The completed migration archive when historical migration evidence is needed
 
 Agents should report what they read, what they plan to touch, validation commands, and
 production boundaries before broad changes.

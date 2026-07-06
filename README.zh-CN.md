@@ -69,6 +69,36 @@ qintopia-agent-os-monorepo/
 - 不要引入 Java、Gradle、Maven、Kotlin、Go、Swift、C#、PHP、Ruby、Elixir 或其他新技术栈。
 - 需要新技术栈时，必须先有 owner 明确批准的架构决策。
 
+## 编程 Agent 指引 Prompt
+
+协作者使用 Codex、Claude Code 或其他编程 Agent 时，先把下面这段 prompt 发给 Agent：
+
+```text
+你正在 Qintopia Agent OS monorepo 中工作。
+
+编辑文件前，先阅读 README.md、AGENTS.md、docs/README.md、
+docs/plans/active/current-roadmap.md、docs/engineering/programming-agent-guardrails.md、
+docs/engineering/change-routing-index.md，以及目标 package 的 README 或 manifest。
+
+规则：
+- 修改文件前必须从 master 新建分支。
+- 不要直接在 master 上开发。
+- 新功能、行为变更、迁移、runtime 变更或生产相邻改动，必须先写文档。
+- 代码按 Agent OS capability 组织，不按编程语言组织。
+- 只能使用现有实现语言和工具链：TypeScript/JavaScript、Python、Rust、shell、SQL、YAML、JSON 和 Markdown。
+- 未经 owner 批准的架构文档，不要引入 Java、Gradle、Maven、Kotlin、Go、Swift、C#、PHP、Ruby、Elixir 或新工具链。
+- 不要直接编辑生产服务器。
+- 不要把 secret、live .env、Hermes live state、私有日志、session、cache、auth 文件、原始聊天记录或 runtime 数据库复制进 git。
+- PR-Agent 评论只是辅助审查；CI、CODEOWNERS、branch protection 和 owner review 才是合并依据。
+
+每次变更都要报告：
+1. 改动了哪些文件和 package；
+2. 实现前更新了哪些文档或 manifest；
+3. 运行了哪些验证命令，结果是什么；
+4. 是否触碰生产边界；
+5. runtime 行为变化时，说明 rollback 或 decommission 方式。
+```
+
 ## 文档
 
 架构、工程规则、源文档盘点、迁移规则和运维参考从
@@ -78,6 +108,7 @@ qintopia-agent-os-monorepo/
 
 - [docs/plans/active/current-roadmap.md](docs/plans/active/current-roadmap.md)
 - [docs/engineering/programming-agent-guardrails.md](docs/engineering/programming-agent-guardrails.md)
+- [docs/engineering/change-routing-index.md](docs/engineering/change-routing-index.md)
 - [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
 - [docs/agent-os/README.md](docs/agent-os/README.md)
 - [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)

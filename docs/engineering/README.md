@@ -10,6 +10,9 @@ reviewed, migrated, and deployed.
 - [programming-agent-guardrails.md](programming-agent-guardrails.md): concrete branch,
   documentation-first, language/toolchain, package, production-boundary, and
   stop-condition rules for Codex, Claude Code, and similar agents.
+- [change-routing-index.md](change-routing-index.md): fast localization index for
+  deciding where to start when changing an Agent, skill, workflow, MCP adapter, runtime
+  area, deploy path, fixture, or database schema.
 - [package-contract.md](package-contract.md): required package files, metadata fields,
   and placement rules.
 - [migration-policy.md](migration-policy.md): migration dispositions, required migration

@@ -1,0 +1,33 @@
+id: workflows/silaoshi-daily-ops
+type: workflow
+name: Silaoshi Daily Ops
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Si Laoshi daily operations workflow for SOP follow-up, activity review, service
+  tracking, and operating summaries.
+source:
+  path: agents/silaoshi
+  reference: current-monorepo
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm workflows:check
+dependencies:
+  - agents/silaoshi
+  - runtime/postgres
+  - mcp/context-server
+tags:
+  - workflow
+  - silaoshi
+  - daily-ops
+next_actions:
+  - Add fixtures for daily summary, missing evidence, follow-up task, and activity
+    review.
+  - Keep external adapter behavior disabled until allowlist review is complete.

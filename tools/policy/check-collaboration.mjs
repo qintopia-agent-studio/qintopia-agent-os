@@ -128,6 +128,7 @@ const requiredDocs = [
   "docs/plans/active/current-roadmap.md",
   "docs/plans/completed/monorepo-migration.md",
   "docs/engineering/programming-agent-guardrails.md",
+  "docs/engineering/change-routing-index.md",
   "docs/engineering/collaboration-model.md",
   "CONTRIBUTING.md",
   "AGENTS.md",
@@ -145,9 +146,28 @@ for (const requiredFragment of [
   "docs/plans/active/current-roadmap.md",
   "docs/plans/completed/monorepo-migration.md",
   "docs/engineering/programming-agent-guardrails.md",
+  "docs/engineering/change-routing-index.md",
 ]) {
   if (rootReadme && !rootReadme.includes(requiredFragment)) {
     addError(`README.md: must link ${requiredFragment}`);
+  }
+}
+
+const routingIndex = exists("docs/engineering/change-routing-index.md")
+  ? readText("docs/engineering/change-routing-index.md")
+  : "";
+for (const requiredFragment of [
+  "Change Erhua reply wording",
+  "Change scheduled jobs",
+  "Change WenYuanGe document lookup path",
+  "Change Postgres table structure",
+  "Directory Ownership",
+  "Agent Entry Points",
+]) {
+  if (routingIndex && !routingIndex.includes(requiredFragment)) {
+    addError(
+      `docs/engineering/change-routing-index.md: must mention ${requiredFragment}`
+    );
   }
 }
 
@@ -169,10 +189,29 @@ for (const requiredFragment of [
   "Document first",
   "Do not introduce Java",
   "docs/plans/active/current-roadmap.md",
+  "docs/engineering/change-routing-index.md",
 ]) {
   if (agentInstructions && !agentInstructions.includes(requiredFragment)) {
     addError(`AGENTS.md: must mention ${requiredFragment}`);
   }
+}
+
+const guardrails = exists("docs/engineering/programming-agent-guardrails.md")
+  ? readText("docs/engineering/programming-agent-guardrails.md")
+  : "";
+if (guardrails && !guardrails.includes("docs/engineering/change-routing-index.md")) {
+  addError(
+    "docs/engineering/programming-agent-guardrails.md: must link docs/engineering/change-routing-index.md"
+  );
+}
+
+const collaborationModel = exists("docs/engineering/collaboration-model.md")
+  ? readText("docs/engineering/collaboration-model.md")
+  : "";
+if (collaborationModel && !collaborationModel.includes("change-routing-index.md")) {
+  addError(
+    "docs/engineering/collaboration-model.md: must link change-routing-index.md"
+  );
 }
 
 const packageJson = exists("package.json") ? JSON.parse(readText("package.json")) : {};

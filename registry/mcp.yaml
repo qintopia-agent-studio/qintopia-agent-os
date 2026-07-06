@@ -16,3 +16,13 @@ entries:
     manifest: mcp/qintopia-collab/manifest.yaml
     status: adopting
     notes: Release-managed package boundary for Hermes qintopia-collab MCP migration.
+  - id: mcp/feishu
+    path: mcp/feishu
+    manifest: mcp/feishu/manifest.yaml
+    status: draft
+    notes: Feishu Base, Doc, approval, and workbench adapter contract.
+  - id: mcp/postgres
+    path: mcp/postgres
+    manifest: mcp/postgres/manifest.yaml
+    status: draft
+    notes: Postgres MCP adapter contract for schema allowlists, audit, and idempotency.

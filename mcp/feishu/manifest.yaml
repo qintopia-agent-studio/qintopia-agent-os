@@ -1,0 +1,30 @@
+id: mcp/feishu
+type: mcp
+name: Feishu MCP Adapter Contract
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Feishu Base, Doc, approval, and workbench adapter contract for Agent OS packages.
+source:
+  path: skills/feishu-base
+  reference: current-monorepo
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm mcp:adapters:check
+dependencies:
+  - skills/feishu-base
+tags:
+  - mcp
+  - feishu
+  - workbench
+next_actions:
+  - Split Feishu Base, Doc, and approval capabilities only after permission scopes and
+    write allowlists are documented.
+  - Add adapter tests with non-secret fixture responses before enabling new writes.

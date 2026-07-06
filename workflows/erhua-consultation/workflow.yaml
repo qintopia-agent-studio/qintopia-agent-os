@@ -1,0 +1,37 @@
+id: workflows/erhua-consultation
+type: workflow
+name: Erhua Consultation
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Controlled Erhua group consultation workflow for mention-triggered replies, evidence
+  gaps, complaint intake, and human handoff.
+source:
+  path: skills/qintopia-tools/variants/erhua
+  reference: current-monorepo
+  disposition: template
+production_boundary:
+  external_sends: true
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - pnpm workflows:check
+    - pnpm test:qiwe
+dependencies:
+  - agents/erhua
+  - skills/qintopia-tools
+  - skills/qintopia-weather
+  - skills/knowledge-retrieval
+  - skills/postgres-context
+  - skills/qiwe
+tags:
+  - workflow
+  - erhua
+  - consultation
+  - qiwe
+next_actions:
+  - Add replay fixtures for mention, missing evidence, complaint, and no-trigger cases.
+  - Wire the workflow to package-level tests before changing production reply behavior.
