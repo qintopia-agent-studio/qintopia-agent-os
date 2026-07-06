@@ -136,6 +136,8 @@ become versioned.
 - Aligned operations-intake and qintopia-tools external send production boundaries with
   their returned `qiwe_send_direct_message` action requests, and added a package check
   to block future boundary drift.
+- Sanitized qintopia-tools operations-intake missing-package fallback schemas and tool
+  responses so delegated package load failures do not expose local candidate paths.
 - Moved migration status out of root README and agent rule files; root docs now link to
   the migration plan instead of embedding transient state.
 - Linked the English and Chinese root READMEs and connected root collaboration files to

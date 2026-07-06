@@ -64,6 +64,11 @@ for (const variant of variants) {
       `${variant}: operations-intake schemas must not load the delegated package at module import time`
     );
   }
+  if (variantSource.includes("Load error: {str(exc)")) {
+    errors.push(
+      `${variant}: fallback schemas must not expose operations-intake load errors`
+    );
+  }
 
   try {
     execFileSync(
@@ -188,9 +193,18 @@ ctx = Ctx()
 module.register(ctx)
 assert "qintopia_wenyuange_lookup" in ctx.tools
 if "qintopia_complaint_intake_create" in ctx.tools:
+    schema_text = json.dumps(ctx.tools["qintopia_complaint_intake_create"]["schema"], ensure_ascii=False)
+    forbidden = ["${tempRoot}", "Checked paths", "Load error", "/skills/", "/plugins/", "QINTOPIA_AGENT_OS"]
+    for item in forbidden:
+        assert item not in schema_text, schema_text
     payload = json.loads(ctx.tools["qintopia_complaint_intake_create"]["handler"]({}))
     assert payload["success"] is False
     assert payload["safe_answer_mode"] == "runtime_package_missing"
+    assert payload["error"] == "operations-intake runtime package unavailable"
+    assert "detail" not in payload
+    payload_text = json.dumps(payload, ensure_ascii=False)
+    for item in forbidden:
+        assert item not in payload_text, payload_text
 `,
       ],
       {

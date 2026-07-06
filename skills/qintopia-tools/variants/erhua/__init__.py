@@ -86,6 +86,10 @@ _QINTOPIA_WEATHER_PLUGIN = None
 _KNOWLEDGE_RETRIEVAL_PLUGIN = None
 
 
+class _SkillPluginUnavailable(RuntimeError):
+    pass
+
+
 def _skill_plugin_candidates(skill_name: str) -> list[Path]:
     current = Path(__file__).resolve()
     candidates: list[Path] = []
@@ -129,8 +133,7 @@ def _load_skill_plugin(skill_name: str, module_name: str):
         spec.loader.exec_module(module)
         return module
 
-    checked = ", ".join(str(path) for path in checked_paths)
-    raise RuntimeError(f"Cannot load {skill_name} skill. Checked paths: {checked}")
+    raise _SkillPluginUnavailable(f"{skill_name} skill package unavailable")
 
 
 _OPERATIONS_INTAKE_PLUGIN = None
@@ -188,12 +191,12 @@ _OPERATIONS_INTAKE_FALLBACK_SCHEMAS = {
 def _operations_intake_schema(schema_name: str) -> dict[str, Any]:
     try:
         return getattr(_operations_intake_plugin(), schema_name)
-    except Exception as exc:
+    except Exception:
         tool_name, description = _OPERATIONS_INTAKE_FALLBACK_SCHEMAS[schema_name]
         return {
             "description": (
-                f"{description} Disabled until skills/operations-intake is bundled. "
-                f"Load error: {str(exc)[:300]}"
+                f"{description} Disabled until the operations-intake runtime package is "
+                "available."
             ),
             "parameters": {
                 "type": "object",
@@ -2663,13 +2666,12 @@ def handle_qintopia_gis_location_lookup(args: dict[str, Any], **_: Any) -> str:
 
 
 
-def _operations_intake_unavailable(skill_name: str, exc: Exception) -> str:
+def _operations_intake_unavailable(skill_name: str) -> str:
     return _json(
         {
             "success": False,
             "skill": skill_name,
-            "error": "operations-intake skill package unavailable",
-            "detail": _clean_text(exc, max_len=500),
+            "error": "operations-intake runtime package unavailable",
             "needs_human_review": True,
             "safe_answer_mode": "runtime_package_missing",
         }
@@ -2679,8 +2681,8 @@ def _operations_intake_unavailable(skill_name: str, exc: Exception) -> str:
 def _delegate_operations_intake(handler_name: str, skill_name: str, args: dict[str, Any]) -> str:
     try:
         handler = getattr(_configured_operations_intake_plugin(), handler_name)
-    except Exception as exc:
-        return _operations_intake_unavailable(skill_name, exc)
+    except Exception:
+        return _operations_intake_unavailable(skill_name)
     return handler(args)
 
 
