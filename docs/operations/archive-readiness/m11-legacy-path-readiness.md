@@ -51,7 +51,7 @@ single decommission batch before archival.
 | --------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `/home/ubuntu/worktool-gateway`         | decommission-batch-required | Referenced by disabled user unit `worktool-gateway.service`                                                 |
 | `/home/ubuntu/.hermes/profiles/xiaoqin` | decommission-batch-required | Current WorkTool-bound Xiaoqin runtime; referenced by disabled Xiaoqin WorkTool user unit and profile files |
-| `/opt/qiwe-openclaw-adapter`            | decommission-batch-required | Referenced by disabled system unit `qiwe-openclaw-adapter.service`                                          |
+| `/opt/qiwe-openclaw-adapter`            | archived in M12-B           | Owner confirmed OpenClaw is no longer used; archived with disabled units and nginx route cleanup            |
 
 Related disabled OpenClaw units observed:
 

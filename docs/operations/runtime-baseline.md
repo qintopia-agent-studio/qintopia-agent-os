@@ -60,17 +60,17 @@ Rollback should switch `current` back to `previous` and restart the approved ser
 
 ## Known Deprecated Or Legacy Areas
 
-| Area                                        | Direction                                                                                            |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `/home/ubuntu/qintopia-msg-sidecar`         | remove only after M9-F migrates legacy workers and Hermes MCP context                                |
-| `/home/ubuntu/qintopia-agent-os`            | review-pool only; do not use as source of truth                                                      |
-| `/home/ubuntu/qintopia-hermes-runtime`      | review for unique evidence, then archive or delete                                                   |
-| `/home/ubuntu/qintopia-migration`           | archive evidence or delete after owner review                                                        |
-| `/home/ubuntu/qintopia-worklog-guard-*`     | archive or delete after confirming no timer/process reference                                        |
-| WorkTool gateway and WorkTool Hermes plugin | Registered under `deprecated/`; remove only after owner-approved cleanup                             |
-| OpenClaw QiWe adapter                       | Registered under `deprecated/openclaw`; keep only as rollback/audit reference until owner retires it |
-| Hermes Kanban                               | Do not build new workflows on it                                                                     |
-| Server-local one-off copies                 | Inventory first; do not copy wholesale into git                                                      |
+| Area                                        | Direction                                                                                |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `/home/ubuntu/qintopia-msg-sidecar`         | remove only after M9-F migrates legacy workers and Hermes MCP context                    |
+| `/home/ubuntu/qintopia-agent-os`            | review-pool only; do not use as source of truth                                          |
+| `/home/ubuntu/qintopia-hermes-runtime`      | review for unique evidence, then archive or delete                                       |
+| `/home/ubuntu/qintopia-migration`           | archive evidence or delete after owner review                                            |
+| `/home/ubuntu/qintopia-worklog-guard-*`     | archive or delete after confirming no timer/process reference                            |
+| WorkTool gateway and WorkTool Hermes plugin | Registered under `deprecated/`; remove only after owner-approved cleanup                 |
+| OpenClaw QiWe adapter                       | Retired in M12-B; archive kept under `qintopia-agent-os-backups` for rollback/audit only |
+| Hermes Kanban                               | Do not build new workflows on it                                                         |
+| Server-local one-off copies                 | Inventory first; do not copy wholesale into git                                          |
 
 ## Server Handling Rules
 

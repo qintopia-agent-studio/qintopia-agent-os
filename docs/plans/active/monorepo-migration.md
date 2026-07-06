@@ -76,7 +76,7 @@ and future programming agents.
 | M9 server cutover           | Complete    | all nine sidecar/worker services and the context MCP path run from `qintopia-agent-os-releases/current`; external adapter enablement remains a separate allowlist/config decision                                                     |
 | M10 release model           | Complete    | versioned release directories and `current`/`previous` symlinks cover sidecar runtime, context MCP, collab MCP, shared `qintopia-tools`, Erhua `qiwe-platform`, Huabaosi `qintopia-base-read`, and reviewed profile-template planning |
 | M11 archive-ready marking   | Complete    | legacy paths have read-only process, unit, cron, nginx, Hermes config, and rollback evidence; M12 cleanup remains blocked on owner-approved batches                                                                                   |
-| M12 legacy cleanup          | In progress | first low-risk archive batch completed; WorkTool, Xiaoqin, and OpenClaw remain separate decommission batches                                                                                                                          |
+| M12 legacy cleanup          | In progress | low-risk legacy paths and OpenClaw are archived; WorkTool and the current WorkTool-bound Xiaoqin runtime remain as the final decommission batch                                                                                       |
 
 ## Progress Log
 
@@ -939,6 +939,25 @@ and future programming agents.
     active after archive
   - verified seven Hermes gateway user services were active after archive
   - verified `qintopia-message-sidecar check` passed against NATS JetStream and Postgres
+- Completed M12-B OpenClaw decommission after owner confirmed OpenClaw is no longer
+  used:
+  - added `docs/operations/archive-readiness/m12-openclaw-decommission.md`
+  - archived OpenClaw residual paths and files under
+    `/home/ubuntu/qintopia-agent-os-backups/m12-openclaw-20260706T013020Z`
+  - archived `/opt/qiwe-openclaw-adapter`, `/etc/qiwe-openclaw-adapter.env`,
+    `/var/lib/qiwe-openclaw-adapter`, `/tmp/openclaw`, disabled OpenClaw system units,
+    root user `openclaw-gateway` unit files, and the disabled old
+    `qintopia-embedding-worker.service`
+  - archived the accidentally enabled nginx backup config under `sites-enabled`
+  - removed active nginx routes to legacy port `18557` for `/wecom/agent` and
+    `/plugins/wecom/agent/*`
+  - verified nginx syntax and reloaded nginx
+  - verified no OpenClaw process, no listener on `18557` or `8787`, and no active nginx
+    references to those legacy routes
+  - verified current `/qiwe/webhook` still routes to `127.0.0.1:18661` and health
+    returns HTTP `200`
+  - verified all current Agent OS system services, Hermes user services, and
+    `qintopia-message-sidecar check` remained healthy
 
 ## Update Rule
 
@@ -950,7 +969,7 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Remaining follow-up after M12 low-risk archive:
+Remaining follow-up after M12-B OpenClaw cleanup:
 
 - Server deploy checkout remains a transition diagnostic checkout at `9424450`; do not
   use `git fetch` as the routine release path.
@@ -962,19 +981,18 @@ Remaining follow-up after M12 low-risk archive:
   profile template/symlink plan and guardrails without production profile-file repoints.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
-- Deprecated runtime cleanup: M12 archived the first low-risk batch only. WorkTool, the
-  current WorkTool-bound Xiaoqin runtime, and OpenClaw still require explicit
-  decommission batches before archive or deletion. Future Xiaoqin work must be designed
-  as a new non-WorkTool Agent package.
+- Deprecated runtime cleanup: M12 archived the low-risk batch and completed OpenClaw
+  cleanup. WorkTool and the current WorkTool-bound Xiaoqin runtime remain as the final
+  explicit decommission batch. Future Xiaoqin work must be designed as a new
+  non-WorkTool Agent package.
 - Hermes profile/plugin files under `.hermes/profiles/*` are still live runtime state.
   Future profile and skill migrations must use reviewed release bundles or symlinks, not
   wholesale copies of `.hermes`.
 
 Recommended order:
 
-1. Choose the next M12 decommission batch explicitly: WorkTool plus the current
-   WorkTool-bound Xiaoqin runtime first, or OpenClaw first. Do not mix them with
-   unrelated cleanup.
+1. Run the final M12 decommission batch for WorkTool plus the current WorkTool-bound
+   Xiaoqin runtime. Do not treat that as future Xiaoqin product design.
 2. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
 3. Do not repoint production to a newer commit just because docs changed; use a new

@@ -278,6 +278,8 @@ become versioned.
   decommission-batch gates.
 - Added the M12 low-risk legacy archive record with archive path, validation evidence,
   rollback command, and remaining WorkTool/Xiaoqin/OpenClaw decommission scope.
+- Added the M12-B OpenClaw decommission record with archive path, nginx route cleanup,
+  validation evidence, and rollback notes.
 
 ### Fixed
 
@@ -312,3 +314,6 @@ become versioned.
   batches.
 - Clarified that the current Xiaoqin WorkTool runtime is decommission scope, while
   future Xiaoqin work remains possible through a new non-WorkTool Agent integration.
+- Retired the remaining server OpenClaw path by archiving residual adapter files,
+  disabled units, env/state files, root user unit residue, and removing active nginx
+  routes to legacy port `18557`.

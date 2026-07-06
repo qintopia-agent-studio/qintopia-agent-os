@@ -4,10 +4,12 @@ name: OpenClaw QiWe Legacy Adapter
 owner: TBD
 status: deprecated
 risk_level: medium
-description: Legacy QiWe rollback adapter kept only for rollback or audit reference.
+description:
+  Legacy QiWe rollback adapter archived in M12-B and kept only for rollback or audit
+  reference.
 source:
   path: /opt/qiwe-openclaw-adapter
-  reference: server-runtime-state-2026-07-03
+  reference: m12-openclaw-archive-20260706T013020Z
   disposition: deprecated
 production_boundary:
   external_sends: true
@@ -24,6 +26,5 @@ tags:
   - qiwe
   - rollback-reference
 next_actions:
-  - Decide during final migration whether to disable and archive the root user
-    openclaw-gateway unit.
-  - Remove only after owner approval.
+  - Keep the M12-B archive until owner approves permanent deletion.
+  - Do not restore OpenClaw as a future Agent OS integration path.
