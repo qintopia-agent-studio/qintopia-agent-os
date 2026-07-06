@@ -13,6 +13,9 @@ reviewed, migrated, and deployed.
 - [change-routing-index.md](change-routing-index.md): fast localization index for
   deciding where to start when changing an Agent, skill, workflow, MCP adapter, runtime
   area, deploy path, fixture, or database schema.
+- [capability-extraction-playbook.md](capability-extraction-playbook.md): repeatable
+  pattern for moving implementation out of broad legacy packages into capability
+  packages without losing runtime packaging or validation.
 - [package-contract.md](package-contract.md): required package files, metadata fields,
   and placement rules.
 - [migration-policy.md](migration-policy.md): migration dispositions, required migration

@@ -10,9 +10,19 @@ const errors = [];
 
 const packages = {
   "skills/qintopia-weather": {
-    required: ["README.md", "manifest.yaml", "plugin.yaml"],
+    required: [
+      "README.md",
+      "manifest.yaml",
+      "plugin.yaml",
+      "__init__.py",
+      "tests/test_qintopia_weather.py",
+    ],
     fixtures: ["fixtures/weather"],
-    requiredReadme: ["fixed Qintopia location", "arbitrary city"],
+    requiredReadme: [
+      "fixed Qintopia location",
+      "arbitrary city",
+      "mcp/weather-provider",
+    ],
   },
   "skills/knowledge-retrieval": {
     required: ["README.md", "manifest.yaml"],

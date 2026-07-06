@@ -3,7 +3,8 @@
 Status: adopting profile variants
 
 `skills/qintopia-tools` is the monorepo home for the Hermes `qintopia-tools` plugin
-currently installed under active profile plugin directories.
+currently installed under active profile plugin directories. New capability
+implementation should not be added here when a dedicated capability package exists.
 
 ## Current Shape
 
@@ -20,6 +21,9 @@ variants:
 
 M10-C imports the three active variants as snapshots under `variants/`. It does not
 repoint production profiles yet.
+
+Weather is already split out: Erhua's `qintopia_weather_lookup` registration delegates
+to `skills/qintopia-weather`. Change weather behavior there, not in this package.
 
 ## Boundary
 
@@ -38,11 +42,13 @@ Not allowed:
 - generated runtime memory
 - raw private chat logs
 - Xiaoqin WorkTool runtime as an active package
+- new weather provider logic; use `skills/qintopia-weather` and `mcp/weather-provider`
 
 ## Validation
 
 ```bash
 pnpm skills:qintopia-tools:check
+pnpm skills:qintopia-weather:check
 ```
 
 The check compiles each active variant and blocks committed runtime cache files.
