@@ -558,14 +558,14 @@ needed for the rollback path and record why they were restored.
 
 ## Follow-Up Commit
 
-After M9, update git with:
+After a similar future cutover, update git with:
 
 - target SHA and operator record
 - validation commands and results
 - service state after cutover
 - cleanup archive paths if any
 - rollback status
-- changes to `docs/plans/active/monorepo-migration.md`
+- changes to the current roadmap, package docs, or operation record
 - `CHANGELOG.md`
 
 Do not leave migration state only in chat or server shell history.

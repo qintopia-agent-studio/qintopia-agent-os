@@ -15,25 +15,28 @@ and the local historical documents that still contain useful design evidence.
 4. Runtime baseline: [operations/runtime-baseline.md](operations/runtime-baseline.md)
 5. Agent capability matrix:
    [operations/agent-capability-matrix.md](operations/agent-capability-matrix.md)
-6. Collaboration and PR flow:
+6. Current roadmap: [plans/active/current-roadmap.md](plans/active/current-roadmap.md)
+7. Programming agent guardrails:
+   [engineering/programming-agent-guardrails.md](engineering/programming-agent-guardrails.md)
+8. Collaboration and PR flow:
    [engineering/collaboration-model.md](engineering/collaboration-model.md)
-7. Package contract: [engineering/package-contract.md](engineering/package-contract.md)
-8. Migration policy: [engineering/migration-policy.md](engineering/migration-policy.md)
-9. Anti-drift policy:
-   [engineering/anti-drift-policy.md](engineering/anti-drift-policy.md)
-10. Server change policy:
+9. Package contract: [engineering/package-contract.md](engineering/package-contract.md)
+10. Migration policy: [engineering/migration-policy.md](engineering/migration-policy.md)
+11. Anti-drift policy:
+    [engineering/anti-drift-policy.md](engineering/anti-drift-policy.md)
+12. Server change policy:
     [engineering/server-change-policy.md](engineering/server-change-policy.md)
-11. Source document inventory:
+13. Source document inventory:
     [operations/source-document-inventory.md](operations/source-document-inventory.md)
-12. M1 source inventory:
+14. M1 source inventory:
     [operations/inventory/README.md](operations/inventory/README.md)
-13. M9 server cutover runbook:
+15. M9 server cutover runbook:
     [operations/m9-server-cutover-runbook.md](operations/m9-server-cutover-runbook.md)
-14. Server directory plan:
+16. Server directory plan:
     [operations/server-directory-plan.md](operations/server-directory-plan.md)
-15. Reports index: [reports/README.md](reports/README.md)
-16. Active migration plan:
-    [plans/active/monorepo-migration.md](plans/active/monorepo-migration.md)
+17. Reports index: [reports/README.md](reports/README.md)
+18. Completed migration archive:
+    [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
 
 ## Directory Map
 
@@ -70,8 +73,10 @@ are not future product paths.
 ## Documentation Rules
 
 - Keep stable rules in root docs and `docs/engineering/`.
-- Keep changing migration status in
-  [plans/active/monorepo-migration.md](plans/active/monorepo-migration.md).
+- Keep current direction in
+  [plans/active/current-roadmap.md](plans/active/current-roadmap.md).
+- Keep historical migration evidence in
+  [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md).
 - Keep source inventories in [operations/](operations/).
 - Do not copy secrets, live runtime state, raw member profiles, or private chat logs
   into documentation.

@@ -17,6 +17,7 @@ const requiredScripts = [
   "registry:check",
   "agents:check",
   "agents:profile-bundles:check",
+  "collaboration:check",
   "skills:feishu-base:check",
   "policy:check",
   "secrets:check",
@@ -25,7 +26,7 @@ const requiredScripts = [
   "deploy:cos:check",
   "deploy:postgres:schema:preflight",
   "deploy:systemd:check",
-  "deploy:m9f:check",
+  "deploy:release-model:check",
   "artifact:sidecar",
   "artifact:deploy-bundle",
   "artifact:prune:sidecar",
@@ -40,6 +41,7 @@ const requiredScripts = [
 
 const requiredDocs = [
   "docs/engineering/server-change-policy.md",
+  "docs/engineering/programming-agent-guardrails.md",
   "docs/engineering/ci-cd-gates.md",
   "deploy/sidecar/docs/monorepo-cutover-plan.md",
   "deploy/sidecar/docs/systemd-cutover-plan.md",
@@ -55,7 +57,8 @@ const requiredDocs = [
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
-  "tools/deploy/check-m9f-readiness.mjs",
+  "tools/deploy/check-release-model.mjs",
+  "tools/policy/check-collaboration.mjs",
   "tools/deploy/build-deploy-bundle.mjs",
   "tools/skills/check-feishu-base.mjs",
   "tools/agents/check-profile-bundles.mjs",
@@ -71,13 +74,14 @@ const requiredLightCheckFragments = [
   "pnpm skills:feishu-base:check",
   "pnpm agents:check",
   "pnpm agents:profile-bundles:check",
+  "pnpm collaboration:check",
   "pnpm policy:check",
   "pnpm secrets:check",
   "pnpm deploy:preflight:ci",
   "pnpm deploy:github-app-git:check",
   "pnpm deploy:cos:check",
   "pnpm deploy:systemd:check",
-  "pnpm deploy:m9f:check",
+  "pnpm deploy:release-model:check",
 ];
 
 const requiredRuntimeCheckFragments = [

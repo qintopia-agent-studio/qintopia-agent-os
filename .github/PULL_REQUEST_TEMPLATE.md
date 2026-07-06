@@ -2,6 +2,16 @@
 
 ## Summary
 
+## Planning
+
+- [ ] Read `AGENTS.md`
+- [ ] Read `docs/plans/active/current-roadmap.md`
+- [ ] Read `docs/engineering/programming-agent-guardrails.md`
+- [ ] Documented the change before implementation
+- [ ] Documentation-first exception: typo, formatting, or mechanical change only
+
+Branch:
+
 ## Domain
 
 - [ ] agents
@@ -35,10 +45,12 @@ Commands run:
 
 Notes:
 
-## Migration Progress
+## Architecture / Tooling Boundary
 
-- [ ] Updated `docs/plans/active/monorepo-migration.md`
-- [ ] Not a migration change
+- [ ] Uses only approved language/tooling families
+- [ ] Does not introduce Java / Gradle / Maven / Kotlin / Go / other new stack
+- [ ] Does not add a top-level language bucket
+- [ ] Architecture exception approved by owner
 
 ## Changelog
 

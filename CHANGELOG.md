@@ -92,9 +92,21 @@ become versioned.
   releases from reviewed operator script upgrades.
 - Added `qintopia-agent-os-deploy-bundle`, a CI-built operator artifact containing the
   M9-F Hermes MCP wrapper, systemd renderer, runbooks, and Postgres migrations.
+- Added PR-Agent GitHub Actions wiring, repository-specific PR-Agent review rules, and
+  engineering documentation for AI-assisted PR review boundaries.
 
 ### Changed
 
+- Archived the completed monorepo migration execution log under
+  `docs/plans/completed/monorepo-migration.md`; new work now starts from the current
+  roadmap instead of editing historical migration status.
+- Folded the temporary `deploy:m9f:check` harness into the stable
+  `deploy:release-model:check` validation path.
+- Updated README, AGENTS, CLAUDE, CONTRIBUTING, docs indexes, and the PR template so
+  collaborators and their programming agents follow the same branch, documentation, and
+  production-boundary rules.
+- Documented that PR-Agent is advisory only and cannot replace CI, CODEOWNERS, branch
+  protection, or owner review.
 - Moved migration status out of root README and agent rule files; root docs now link to
   the migration plan instead of embedding transient state.
 - Linked the English and Chinese root READMEs and connected root collaboration files to
@@ -282,6 +294,13 @@ become versioned.
   validation evidence, and rollback notes.
 - Added the M12-C WorkTool and current Xiaoqin WorkTool runtime decommission record with
   archive path, validation evidence, rollback notes, and future Xiaoqin boundary.
+- Added the current roadmap at `docs/plans/active/current-roadmap.md` after completing
+  the monorepo migration and legacy cleanup.
+- Added programming-agent guardrails for Codex, Claude Code, and similar agents,
+  including branch, documentation-first, package placement, production-boundary, and
+  language/toolchain rules.
+- Added `pnpm collaboration:check` to enforce collaboration documentation, branch, and
+  language/toolchain guardrails.
 
 ### Fixed
 
@@ -308,6 +327,7 @@ become versioned.
   diagnostics instead of waiting for the whole GitHub Actions job timeout.
 - Tuned COSCLI CI uploads with smaller multipart parts and explicit transfer threads so
   sidecar release binaries do not rely on a slow single-stream upload path.
+
 - Added a compressed `qintopia-message-sidecar.tar.gz` release bundle for COS transport;
   server fetch still extracts and verifies the original binary with `SHA256SUMS`.
 - Archived the M11 low-risk legacy server paths into

@@ -56,17 +56,23 @@ qintopia-agent-os-monorepo/
 
 All changes go through git:
 
-1. Create a branch.
+1. Create a branch from `master`; do not develop directly on `master`.
 2. Read the relevant package README and manifest.
-3. Make a scoped change.
-4. Run package-level validation.
-5. Run repository-level checks when available.
-6. Open a PR with validation results and production-boundary notes.
-7. Deploy only an approved commit SHA.
+3. Document first for new features, behavior changes, migrations, or runtime changes.
+4. Make a scoped change.
+5. Run package-level validation.
+6. Run repository-level checks when available.
+7. Open a PR with validation results and production-boundary notes.
+8. Deploy only an approved commit SHA.
 
 The server is a deployment target, not an editing workspace. Do not edit docs, code,
 scripts, wrappers, workers, runbooks, or runtime templates directly on the server or
 inside `.hermes`.
+
+New implementation code must use the repository's existing language/tooling families:
+TypeScript or JavaScript, Python, Rust, shell, SQL, YAML, JSON, and Markdown. Do not
+introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or another new
+stack without an owner-approved architecture decision.
 
 ## Documentation
 
@@ -75,14 +81,19 @@ document inventory, migration policy, and operations references.
 
 For product and Agent OS implementation context, read:
 
+- [docs/plans/active/current-roadmap.md](docs/plans/active/current-roadmap.md)
+- [docs/engineering/programming-agent-guardrails.md](docs/engineering/programming-agent-guardrails.md)
 - [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
 - [docs/agent-os/README.md](docs/agent-os/README.md)
 - [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)
 
-## Migration
+## Migration Archive
 
-Migration status, source inventories, adoption order, and progress updates live in
-`docs/plans/active/monorepo-migration.md`.
+The monorepo migration and legacy cleanup are complete. Historical migration status,
+source inventories, adoption order, and progress updates live in
+[docs/plans/completed/monorepo-migration.md](docs/plans/completed/monorepo-migration.md).
+Use [docs/plans/active/current-roadmap.md](docs/plans/active/current-roadmap.md) for
+current work.
 
 ## Package Contract
 

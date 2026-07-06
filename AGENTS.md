@@ -13,6 +13,8 @@
 - Collaboration model: `docs/engineering/collaboration-model.md`
 - Migration policy: `docs/engineering/migration-policy.md`
 - Server change policy: `docs/engineering/server-change-policy.md`
+- Programming agent guardrails: `docs/engineering/programming-agent-guardrails.md`
+- Current roadmap: `docs/plans/active/current-roadmap.md`
 - Source document inventory: `docs/operations/source-document-inventory.md`
 - Registry indexes: `registry/`
 - Agent packages: `agents/`
@@ -41,6 +43,11 @@ Use `rg` and `rg --files` for search.
 - Rust, Python, TypeScript, shell, and SQL are implementation details inside a package.
 - Do not create top-level `python/`, `rust/`, `typescript/`, or similar language
   buckets.
+- Do not develop directly on `master`; create a feature branch first.
+- Document first for new features, behavior changes, migrations, runtime changes, or
+  production-adjacent work.
+- Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
+  new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
 - Do not copy secrets, live `.env` files, tokens, table ids, private chat logs, raw
   member profiles, or server-only runtime state into git.
@@ -140,11 +147,13 @@ Before a PR:
 2. `AGENTS.md`
 3. `docs/README.md`
 4. `docs/architecture/agent-os-overview.md`
-5. `docs/product/agent-os-prd.md` for product scope changes
-6. `docs/agent-os/README.md` for Agent OS design changes
-7. `docs/plans/active/monorepo-migration.md` for migration work
-8. Target package README or manifest
-9. Relevant docs under `docs/engineering/` or `docs/operations/`
+5. `docs/plans/active/current-roadmap.md`
+6. `docs/engineering/programming-agent-guardrails.md`
+7. `docs/product/agent-os-prd.md` for product scope changes
+8. `docs/agent-os/README.md` for Agent OS design changes
+9. `docs/plans/completed/monorepo-migration.md` for historical migration evidence
+10. Target package README or manifest
+11. Relevant docs under `docs/engineering/` or `docs/operations/`
 
 Report what you read, what you plan to touch, validation commands, and production
 boundaries before making broad changes.

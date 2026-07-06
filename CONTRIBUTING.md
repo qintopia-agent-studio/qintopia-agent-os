@@ -4,11 +4,19 @@
 
 1. Create a branch from `master`.
 2. Read `README.md`, `AGENTS.md`, and the target package README or manifest.
-3. Keep the change scoped to one package/domain when possible.
-4. Run local validation.
-5. Update `CHANGELOG.md` for repository-level changes.
-6. Update `docs/plans/active/monorepo-migration.md` when migration progress changes.
-7. Open a PR with validation results and production-boundary notes.
+3. Read `docs/plans/active/current-roadmap.md` and
+   `docs/engineering/programming-agent-guardrails.md`.
+4. Document first for new features, behavior changes, migrations, or runtime changes.
+5. Keep the change scoped to one package/domain when possible.
+6. Run local validation.
+7. Update `CHANGELOG.md` for repository-level changes.
+8. Update the current roadmap or a package doc when the future direction changes.
+9. Open a PR with validation results and production-boundary notes.
+
+Do not develop directly on `master`.
+
+Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a new
+language/toolchain stack without an explicit owner-approved architecture decision.
 
 ## Local Setup
 
@@ -35,8 +43,9 @@ When versioned packages are added, use Changesets for package release notes:
 pnpm changeset
 ```
 
-Do not use changelog entries as migration status. Migration progress belongs in
-`docs/plans/active/monorepo-migration.md`.
+Do not use changelog entries as active migration status. The completed monorepo
+migration record is archived at `docs/plans/completed/monorepo-migration.md`; current
+work belongs in `docs/plans/active/current-roadmap.md` or a package-specific plan.
 
 ## Production Boundary
 

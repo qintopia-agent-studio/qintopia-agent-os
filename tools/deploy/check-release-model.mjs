@@ -39,16 +39,20 @@ const addError = (message) => {
 
 for (const docPath of requiredDocs) {
   if (!exists(docPath)) {
-    addError(`${docPath}: required M9-F document is missing`);
+    addError(`${docPath}: required release/current model document is missing`);
   }
 }
 
 const packageJson = JSON.parse(readText("package.json"));
-if (!packageJson.scripts?.["deploy:m9f:check"]) {
-  addError("package.json: missing deploy:m9f:check script");
+if (!packageJson.scripts?.["deploy:release-model:check"]) {
+  addError("package.json: missing deploy:release-model:check script");
 }
-if (!packageJson.scripts?.["check:light"]?.includes("pnpm deploy:m9f:check")) {
-  addError("package.json: check:light script must include pnpm deploy:m9f:check");
+if (
+  !packageJson.scripts?.["check:light"]?.includes("pnpm deploy:release-model:check")
+) {
+  addError(
+    "package.json: check:light script must include pnpm deploy:release-model:check"
+  );
 }
 if (!packageJson.scripts?.check?.includes("pnpm check:light")) {
   addError("package.json: check script must include pnpm check:light");
@@ -154,11 +158,11 @@ for (const requiredFragment of [
 }
 
 if (errors.length > 0) {
-  console.error("M9-F readiness check failed:");
+  console.error("Release/current model check failed:");
   for (const error of errors) {
     console.error(`- ${error}`);
   }
   process.exit(1);
 }
 
-console.log("M9-F readiness check passed.");
+console.log("Release/current model check passed.");

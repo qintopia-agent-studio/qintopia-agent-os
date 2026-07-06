@@ -1,5 +1,9 @@
 # Qintopia Agent OS Monorepo Migration Plan
 
+Status: Completed and archived on 2026-07-06. Current and future work starts from
+[../active/current-roadmap.md](../active/current-roadmap.md). Keep this file as
+historical execution evidence; do not use it as the active roadmap.
+
 Owner: PatrickLiveCool Updated: 2026-07-04
 
 ## Goal

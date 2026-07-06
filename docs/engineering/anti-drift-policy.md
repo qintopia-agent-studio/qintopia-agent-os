@@ -13,6 +13,12 @@ pnpm policy:check
 
 The check currently enforces:
 
+- Collaborators and programming agents must keep branch, documentation-first, current
+  roadmap, completed migration archive, and language/toolchain boundaries visible in the
+  repository docs.
+- New Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, and other
+  unapproved toolchain files are rejected until an owner approves an architecture
+  decision.
 - WorkTool and current WorkTool-bound Xiaoqin inventory records cannot be marked as
   active `adopt` or `template` inputs.
 - Huabaosi shadow work must stay in `review-pool` until owner approval.
