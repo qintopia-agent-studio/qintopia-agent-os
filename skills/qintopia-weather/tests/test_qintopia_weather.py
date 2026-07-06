@@ -147,6 +147,15 @@ class QintopiaWeatherTest(unittest.TestCase):
         self.assertEqual(payload["source"], "qweather_mcp")
         self.assertEqual(payload["current"]["text"], "多云")
         self.assertEqual(payload["warnings"][0]["type"], "雷雨大风")
+        self.assertEqual(payload["warning_status"], "present")
+        self.assertEqual(payload["daily_forecast"]["warning_status"], "present")
+        self.assertIn("雷雨大风Yellow预警", payload["daily_forecast"]["warning_copy"])
+        self.assertTrue(payload["morning_broadcast"].startswith("秦托邦今日天气："))
+        self.assertIn("降水/带伞：", payload["morning_broadcast"])
+        self.assertIn("预警：雷雨大风Yellow预警", payload["morning_broadcast"])
+        self.assertIn("今早参考：多云26°C", payload["morning_broadcast"])
+        self.assertIn("湿度70%", payload["morning_broadcast"])
+        self.assertNotRegex(payload["morning_broadcast"].splitlines()[0], r"现在|此时")
         self.assertEqual(payload["air_quality"]["category"], "优")
         self.assertEqual(
             payload["umbrella_windows"],
@@ -182,6 +191,60 @@ class QintopiaWeatherTest(unittest.TestCase):
         self.assertEqual(call_args["get_hourly_weather"]["location"], "108.5876,33.9996")
         self.assertEqual(call_args["get_minutely_5m"]["location"], "108.5876,33.9996")
         self.assertEqual(call_args["get_air_quality"]["city"], "鄠邑区")
+
+    def test_weather_lookup_renders_no_warning_as_official_none(self):
+        self.module._qweather_call_bundle = lambda location: {
+            "current": {
+                "success": True,
+                "data": {
+                    "now": {
+                        "text": "晴",
+                        "temp": "26",
+                        "feelsLike": "27",
+                        "windDir": "东风",
+                        "windScale": "2",
+                    }
+                },
+            },
+            "hourly": {"success": True, "data": {"hourly": []}},
+            "minutely": {"success": True, "data": {"minutely": []}},
+            "air_quality": {
+                "success": True,
+                "data": {"now": {"aqi": "42", "category": "优"}},
+            },
+        }
+        self.module._qweather_weather_alert_current = lambda location: {
+            "success": True,
+            "source": "weatheralert_v1",
+            "data": {"alerts": []},
+        }
+
+        payload = json.loads(self.module.handle_qintopia_weather_lookup({"intent": "general"}))
+
+        self.assertEqual(payload["warning_status"], "none")
+        self.assertEqual(payload["daily_forecast"]["warning_status"], "none")
+        self.assertIn("截至早上播报时，官方暂无秦托邦天气预警", payload["morning_broadcast"])
+        self.assertIn("今早参考：晴26°C", payload["morning_broadcast"])
+
+    def test_weather_lookup_renders_missing_warning_data_as_unknown(self):
+        self.module._qweather_call_bundle = lambda location: {
+            "current": {"success": True, "data": {"now": {"text": "多云", "temp": "25"}}},
+            "hourly": {"success": True, "data": {"hourly": []}},
+            "minutely": {"success": True, "data": {"minutely": []}},
+            "air_quality": {"success": False, "error": "missing air quality"},
+        }
+        self.module._qweather_weather_alert_current = lambda location: {
+            "success": False,
+            "source": "weatheralert_v1",
+            "error": "timeout",
+        }
+
+        payload = json.loads(self.module.handle_qintopia_weather_lookup({"intent": "general"}))
+
+        self.assertEqual(payload["warning_status"], "unknown")
+        self.assertIn("weather_alert", payload["partial_errors"])
+        self.assertIn("官方预警数据暂未确认", payload["morning_broadcast"])
+        self.assertNotIn("官方暂无秦托邦天气预警", payload["morning_broadcast"])
 
     def test_weather_lookup_parses_new_qweather_air_quality_shape(self):
         data = {
@@ -265,6 +328,66 @@ class QintopiaWeatherTest(unittest.TestCase):
         self.assertIsNone(payload["air_quality"])
         self.assertIn("no minute-level precipitation conclusion", payload["limitations"])
         self.assertIn("qweather_errors", payload)
+
+    def test_open_meteo_fallback_includes_forecast_first_broadcast(self):
+        self.module._qweather_call_bundle = lambda location: {
+            "current": {"success": False, "error": "missing qweather credentials"},
+            "hourly": {"success": False, "error": "missing qweather credentials"},
+            "minutely": {"success": False, "error": "missing qweather credentials"},
+            "air_quality": {"success": False, "error": "missing qweather credentials"},
+        }
+        self.module._qweather_weather_alert_current = lambda location: {
+            "success": False,
+            "error": "missing qweather credentials",
+        }
+        self.module._open_meteo_fallback = lambda: {
+            "success": True,
+            "skill": "qintopia_weather_lookup",
+            "source": "open_meteo_fallback",
+            "provider": "Open-Meteo",
+            "current": {
+                "time": "2026-06-28T08:00",
+                "temp_c": 24,
+                "feels_like_c": 25,
+                "humidity_pct": 72,
+                "wind_speed_kmh": 8,
+            },
+            "umbrella_windows": [
+                {"start": "2026-06-28T10:00", "end": "2026-06-28T11:00"}
+            ],
+            "thunderstorm_windows": [],
+            "warnings": [],
+            "warning_status": "unknown",
+            "air_quality": None,
+            "daily_forecast": {
+                "warning_status": "unknown",
+                "warning_copy": "官方预警数据暂未确认",
+                "morning_reference": {
+                    "copy": "今早参考：24°C，体感25°C，湿度72%，风速8km/h"
+                },
+            },
+            "morning_reference": {
+                "copy": "今早参考：24°C，体感25°C，湿度72%，风速8km/h"
+            },
+            "morning_broadcast": (
+                "秦托邦今日天气：今天有降水窗口，雨具建议随身。\n"
+                "预警：官方预警数据暂未确认\n"
+                "今早参考：24°C，体感25°C，湿度72%，风速8km/h"
+            ),
+            "limitations": [
+                "Open-Meteo fallback only; no QWeather official warnings",
+                "no minute-level precipitation conclusion",
+                "no air-quality result",
+                "no typhoon, ocean, or solar-radiation data",
+            ],
+        }
+
+        payload = json.loads(self.module.handle_qintopia_weather_lookup({}))
+
+        self.assertEqual(payload["warning_status"], "unknown")
+        self.assertTrue(payload["morning_broadcast"].startswith("秦托邦今日天气："))
+        self.assertIn("官方预警数据暂未确认", payload["morning_broadcast"])
+        self.assertNotIn("官方暂无秦托邦天气预警", payload["morning_broadcast"])
 
     def test_weather_lookup_rejects_non_fixed_location(self):
         os.environ["QINTOPIA_WEATHER_LOCATION"] = "西安"

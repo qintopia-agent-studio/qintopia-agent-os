@@ -128,8 +128,12 @@ Weather guardrails:
   default. It is not a general city-weather, POI, or location search tool.
 - City-based QWeather warning and air-quality APIs use `QINTOPIA_WEATHER_QWEATHER_CITY`,
   defaulting to `鄠邑区`; the member-facing location name remains `秦托邦`.
-- The wrapper may call only `hefeng-qweather-mcp` tools: `get_weather_now`,
-  `get_hourly_weather`, `get_minutely_5m`, `get_warning`, and `get_air_quality`.
+- The delegated weather capability may call only allowlisted QWeather surfaces: current
+  weather, hourly weather, minutely precipitation, official weather alert evidence, and
+  air quality.
+- 07:00 morning weather broadcast copy must come from `skills/qintopia-weather`
+  `daily_forecast` / `morning_broadcast`; current conditions belong only under
+  `今早参考`.
 - Do not expose or wrap tropical cyclone/typhoon, ocean/marine/tide/current,
   solar-radiation, POI, historical weather, station-detail, astronomy, grid weather, or
   arbitrary-city tools for 二花.
