@@ -142,16 +142,75 @@ if (exists(".github/workflows/deploy-production.yml")) {
   if (!workflow?.on?.workflow_dispatch) {
     addError(".github/workflows/deploy-production.yml: must use workflow_dispatch");
   }
+  if (!workflow?.on?.release?.types?.includes("published")) {
+    addError(
+      ".github/workflows/deploy-production.yml: must deploy from published GitHub releases"
+    );
+  }
   const job = workflow?.jobs?.["request-deploy"];
   if (job?.environment !== "production") {
     addError(
       ".github/workflows/deploy-production.yml: request-deploy must use production environment"
     );
   }
-  const workflowText = readText(".github/workflows/deploy-production.yml");
-  if (job?.if !== "${{ github.ref == 'refs/heads/master' }}") {
+  if (job?.permissions?.contents !== "read") {
     addError(
-      ".github/workflows/deploy-production.yml: request-deploy must be gated to refs/heads/master"
+      ".github/workflows/deploy-production.yml: request-deploy must keep contents permission read-only"
+    );
+  }
+  const buildAssetsJob = workflow?.jobs?.["build-release-artifacts"];
+  if (!buildAssetsJob) {
+    addError(
+      ".github/workflows/deploy-production.yml: must build Release artifacts before production deployment"
+    );
+  }
+  if (buildAssetsJob?.permissions?.contents !== "read") {
+    addError(
+      ".github/workflows/deploy-production.yml: build-release-artifacts must keep contents permission read-only"
+    );
+  }
+  const uploadAssetsJob = workflow?.jobs?.["upload-github-release-assets"];
+  if (!uploadAssetsJob) {
+    addError(
+      ".github/workflows/deploy-production.yml: must isolate GitHub Release asset upload in upload-github-release-assets"
+    );
+  }
+  if (uploadAssetsJob?.permissions?.contents !== "write") {
+    addError(
+      ".github/workflows/deploy-production.yml: only upload-github-release-assets should need contents: write"
+    );
+  }
+  if (uploadAssetsJob?.needs !== "request-deploy") {
+    addError(
+      ".github/workflows/deploy-production.yml: upload-github-release-assets must run only after request-deploy"
+    );
+  }
+  const requestDeployNeeds = Array.isArray(job?.needs) ? job.needs : [];
+  for (const neededJob of ["build-release-artifacts"]) {
+    if (!requestDeployNeeds.includes(neededJob)) {
+      addError(
+        `.github/workflows/deploy-production.yml: request-deploy must depend on ${neededJob}`
+      );
+    }
+  }
+  const uploadJobNames = Object.entries(workflow?.jobs || {})
+    .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
+    .map(([jobName]) => jobName);
+  if (
+    uploadJobNames.length !== 1 ||
+    uploadJobNames[0] !== "upload-github-release-assets"
+  ) {
+    addError(
+      ".github/workflows/deploy-production.yml: upload-github-release-assets must be the only contents: write job"
+    );
+  }
+  const workflowText = readText(".github/workflows/deploy-production.yml");
+  if (
+    job?.if !==
+    "${{ always() && (github.ref == 'refs/heads/master' || (github.event_name == 'release' && !github.event.release.prerelease && needs.build-release-artifacts.result == 'success')) }}"
+  ) {
+    addError(
+      ".github/workflows/deploy-production.yml: request-deploy must require built Release artifacts before Release deploy requests"
     );
   }
   if (workflowText.includes("TENCENT_COS_PREFIX")) {
@@ -169,9 +228,60 @@ if (exists(".github/workflows/deploy-production.yml")) {
       ".github/workflows/deploy-production.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
     );
   }
+  if (workflowText.includes("notes<<NOTES")) {
+    addError(
+      ".github/workflows/deploy-production.yml: notes output must not use a fixed delimiter"
+    );
+  }
+  const requestDeployBlock =
+    workflowText.split(/\n  request-deploy:/)[1]?.split(/\n  [a-zA-Z0-9_-]+:/)[0] || "";
+  const uploadAssetsBlock =
+    workflowText
+      .split(/\n  upload-github-release-assets:/)[1]
+      ?.split(/\n  [a-zA-Z0-9_-]+:/)[0] || "";
+  if (requestDeployBlock.includes("gh release upload")) {
+    addError(
+      ".github/workflows/deploy-production.yml: request-deploy must not upload GitHub Release assets with production secrets in scope"
+    );
+  }
+  if (!requestDeployBlock.includes("path: dist")) {
+    addError(
+      ".github/workflows/deploy-production.yml: request-deploy must download release build artifacts to dist"
+    );
+  }
+  if (!uploadAssetsBlock.includes("path: dist")) {
+    addError(
+      ".github/workflows/deploy-production.yml: upload-github-release-assets must download release build artifacts to dist"
+    );
+  }
   for (const fragment of [
-    "Validate workflow ref",
+    "Resolve release or manual deploy inputs",
+    "ref: master",
+    "release:\n    types:\n      - published",
+    "require_single_line()",
+    "normalize_boolean()",
+    "normalize_csv_allowlist()",
+    'if [[ "$GITHUB_EVENT_NAME" == "release" ]]',
     "Deploy Production must be run from refs/heads/master",
+    "Pre-releases must not trigger production deployment.",
+    "Release tag must point to current origin/master HEAD.",
+    'release_scope="$(normalize_csv_allowlist',
+    'restart_targets="$(normalize_csv_allowlist',
+    'dry_run="$(normalize_boolean "dry_run" "$dry_run")',
+    'rollback_on_smoke_failure="$(normalize_boolean',
+    "gh release upload",
+    "build-release-artifacts:",
+    "upload-github-release-assets:",
+    "needs.request-deploy.result == 'success'",
+    "Download prepared release assets",
+    "Download release build artifact",
+    "Prepare GitHub Release assets",
+    "Build release sidecar artifact",
+    "Build release deploy bundle",
+    "Upload release sidecar artifact to Tencent COS",
+    "Upload release deploy bundle to Tencent COS",
+    'notes_delimiter="deploy_notes_$(uuidgen',
+    'echo "notes<<${notes_delimiter}"',
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
     "git merge-base --is-ancestor",
@@ -179,6 +289,7 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "DEPLOY_COMMIT_SHA",
     "DEPLOY_REQUEST_SIGNING_KEY",
     "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "RELEASE_DEPLOY_DRY_RUN: ${{ vars.RELEASE_DEPLOY_DRY_RUN || 'true' }}",
     "TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}",
     "TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}",
   ]) {
