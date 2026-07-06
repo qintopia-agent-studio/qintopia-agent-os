@@ -111,6 +111,8 @@ become versioned.
 - Added the active `skills/operations-intake` implementation and package-local tests for
   controlled complaint intake, sales handoff, proposal/demo drafts, disclosure
   filtering, and conversation summaries.
+- Added repository-owned PR creation helpers for programming agents, including
+  `pnpm pr:doctor`, `pnpm pr:bootstrap`, `pnpm pr:create`, and PR body validation.
 
 ### Changed
 
@@ -119,6 +121,10 @@ become versioned.
   roadmap instead of editing historical migration status.
 - Fixed pull request commit message validation so CI checks the PR head commit range and
   skips generated merge commits instead of linting GitHub's synthetic PR merge commit.
+- Fixed push-event commit message validation so shallow GitHub Actions checkouts do not
+  fall back to an invalid `HEAD~1..HEAD` range.
+- Enforced completed pull request bodies in CI so empty PR templates cannot pass review
+  checks.
 - Folded the temporary `deploy:m9f:check` harness into the stable
   `deploy:release-model:check` validation path.
 - Updated README, AGENTS, CLAUDE, CONTRIBUTING, docs indexes, and the PR template so

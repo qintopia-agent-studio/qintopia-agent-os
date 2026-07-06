@@ -64,7 +64,8 @@ All changes go through git:
 6. Run repository-level checks when available.
 7. Commit with a Conventional Commits message, for example `feat: add weather skill` or
    `fix: resolve qintopia-tools skill path`.
-8. Open a PR with validation results and production-boundary notes.
+8. Run `pnpm pr:doctor`, then open a PR with
+   `pnpm pr:create -- --body-file <completed-pr-body.md>`.
 9. Deploy only an approved commit SHA.
 
 The server is a deployment target, not an editing workspace. Do not edit docs, code,
@@ -101,6 +102,8 @@ Rules:
   new toolchain without owner-approved architecture documentation.
 - Do not edit production servers directly.
 - Commit messages must follow Conventional Commits with approved types only.
+- Create PRs with pnpm pr:doctor and pnpm pr:create; do not give humans a prefilled
+  GitHub compare URL as the normal flow.
 - Do not copy secrets, live .env files, Hermes live state, private logs, sessions, cache,
   auth files, raw chat logs, or runtime databases into git.
 - Treat PR-Agent comments as advisory only; CI, CODEOWNERS, branch protection, and owner

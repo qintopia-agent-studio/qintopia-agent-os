@@ -87,6 +87,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -103,7 +105,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Light check
-        run: pnpm check:light
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            pnpm pr:check-body
+          fi
+          pnpm check:light
 
       - name: Setup Python
         if: ${{ needs.changes.outputs.full-check == 'true' }}

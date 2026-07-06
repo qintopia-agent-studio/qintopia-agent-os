@@ -35,6 +35,9 @@
 - Format: `pnpm format`
 - Repository check: `pnpm check`
 - Markdown lint: `pnpm lint:md`
+- PR readiness: `pnpm pr:doctor`
+- PR body validation: `pnpm pr:check-body`
+- PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
 
 Use `rg` and `rg --files` for search.
 
@@ -49,6 +52,9 @@ Use `rg` and `rg --files` for search.
   production-adjacent work.
 - Use Conventional Commits for commit messages. Allowed types are `build`, `chore`,
   `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, and `test`.
+- Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
+  `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
+  missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
@@ -131,6 +137,7 @@ Before a PR:
 - Run package-level tests.
 - Run fixture replay when available.
 - Run registry/manifest checks when available.
+- Validate the completed PR body with `pnpm pr:check-body` or `pnpm pr:doctor`.
 - For runtime/deploy changes, include dry-run output and rollback notes.
 - For user-facing HTML reports, run HTML parse and browser overflow checks.
 - For production-adjacent changes, state whether the change touches external sends,

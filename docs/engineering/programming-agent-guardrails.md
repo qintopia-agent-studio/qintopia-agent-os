@@ -108,6 +108,26 @@ PR-Agent is an advisory reviewer only.
   follow the repository docs and update the docs only through a normal PR.
 - See `docs/engineering/pr-agent-review.md` for the workflow boundary.
 
+## PR Creation Rule
+
+Programming agents must create PRs through the repository-owned GitHub CLI flow, not by
+handing a human a prefilled GitHub compare URL.
+
+Use:
+
+```bash
+pnpm pr:doctor
+pnpm pr:create -- --body-file <completed-pr-body.md>
+```
+
+The body file must start from `.github/PULL_REQUEST_TEMPLATE.md` and fill every required
+section. CI runs `pnpm pr:check-body` on pull requests and rejects empty template
+bodies.
+
+If `gh` is missing, run `pnpm pr:bootstrap` to print supported installation commands. On
+supported environments, `pnpm pr:bootstrap -- --install` may install GitHub CLI.
+Authentication still requires `gh auth login`.
+
 ## Hermes Profile Rule
 
 Hermes profile live state is not source code.

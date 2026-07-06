@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import YAML from "yaml";
 
 const repoRoot = process.cwd();
 const readmePath = "tools/ci/README.md";
@@ -35,6 +36,11 @@ for (const scriptName of [
   "registry:check",
   "secrets:check",
   "commitlint:check",
+  "pr:check-body",
+  "pr:doctor",
+  "pr:bootstrap",
+  "pr:create",
+  "pr:tools:check",
 ]) {
   if (!packageJson.scripts?.[scriptName]) {
     errors.push(`${packagePath}: missing ${scriptName}`);
@@ -45,9 +51,16 @@ for (const requiredPath of [
   "commitlint.config.mjs",
   ".husky/commit-msg",
   "tools/ci/check-commit-messages.mjs",
+  "tools/ci/check-pr-body.mjs",
+  "tools/agents/pr-body.mjs",
+  "tools/agents/pr-doctor.mjs",
+  "tools/agents/pr-bootstrap.mjs",
+  "tools/agents/create-pr.mjs",
+  "tools/agents/run-command.mjs",
+  "tools/agents/check-pr-tools.mjs",
 ]) {
   if (!fs.existsSync(path.join(repoRoot, requiredPath))) {
-    errors.push(`${requiredPath}: required commit message gate file is missing`);
+    errors.push(`${requiredPath}: required CI or PR gate file is missing`);
   }
 }
 
@@ -64,12 +77,72 @@ for (const requiredFragment of [
   "GITHUB_EVENT_PATH",
   "pull_request?.base?.sha",
   "pull_request?.head?.sha",
+  'eventName === "push"',
+  "event.before",
+  "event.after",
   "refs/pull/${prNumber}/head",
   'git", ["cat-file", "-e"',
   "--format=%H%x00%P%x00%s",
 ]) {
   if (commitMessageCheck && !commitMessageCheck.includes(requiredFragment)) {
     errors.push(`tools/ci/check-commit-messages.mjs: must include ${requiredFragment}`);
+  }
+}
+
+const ciWorkflow = fs.existsSync(path.join(repoRoot, ".github/workflows/ci.yml"))
+  ? readText(".github/workflows/ci.yml")
+  : "";
+if (ciWorkflow && !ciWorkflow.includes("fetch-depth: 0")) {
+  errors.push(
+    ".github/workflows/ci.yml: checkouts must keep enough history for commitlint"
+  );
+}
+
+if (ciWorkflow && !ciWorkflow.includes("pnpm pr:check-body")) {
+  errors.push(".github/workflows/ci.yml: pull_request checks must validate PR body");
+}
+
+if (ciWorkflow) {
+  try {
+    const parsedWorkflow = YAML.parse(ciWorkflow);
+    const checkSteps = parsedWorkflow?.jobs?.check?.steps;
+    if (!Array.isArray(checkSteps)) {
+      errors.push(".github/workflows/ci.yml: jobs.check.steps must be a step list");
+    } else {
+      const lightCheckStep = checkSteps.find((step) => step?.name === "Light check");
+      if (!lightCheckStep) {
+        errors.push(
+          ".github/workflows/ci.yml: Light check must be in jobs.check.steps"
+        );
+      } else {
+        const runScript = String(lightCheckStep.run ?? "");
+        if (!runScript.includes("pnpm pr:check-body")) {
+          errors.push(
+            ".github/workflows/ci.yml: Light check must run pnpm pr:check-body for PRs"
+          );
+        }
+        if (!runScript.includes("pnpm check:light")) {
+          errors.push(
+            ".github/workflows/ci.yml: Light check must run pnpm check:light"
+          );
+        }
+      }
+    }
+  } catch (error) {
+    errors.push(`.github/workflows/ci.yml: workflow YAML must parse: ${error.message}`);
+  }
+}
+
+const agentToolFiles = [
+  "tools/agents/create-pr.mjs",
+  "tools/agents/pr-bootstrap.mjs",
+  "tools/agents/pr-doctor.mjs",
+  "tools/agents/run-command.mjs",
+];
+for (const toolFile of agentToolFiles) {
+  const source = readText(toolFile);
+  if (/execFileSync\([\s\S]*?\)\.trim\(\)/.test(source)) {
+    errors.push(`${toolFile}: execFileSync output must handle null before trim`);
   }
 }
 
