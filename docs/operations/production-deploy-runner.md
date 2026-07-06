@@ -28,11 +28,12 @@ fields separately and must not infer one from another.
 ```text
 GitHub Deploy Production workflow_dispatch
   -> production environment approval
+  -> require workflow ref refs/heads/master
   -> validate target SHA belongs to origin/master
-  -> generate deploy request JSON
+  -> generate a signed deploy request from the reviewed master workflow code
   -> upload request to fixed COS pending queue
   -> server systemd timer polls COS
-  -> server validates request schema, TTL, repository, environment, SHA, scope, and target
+  -> server validates request schema, HMAC signature, TTL, repository, environment, SHA, scope, and target
   -> server downloads sidecar and deploy-bundle artifacts from COS
   -> server verifies artifact-manifest.json and SHA256SUMS
   -> server assembles releases/<release-sha>
@@ -56,6 +57,13 @@ The workflow should use production environment secrets for COS upload:
 
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`
+- `DEPLOY_REQUEST_SIGNING_KEY`
+- `DEPLOY_REQUEST_SIGNING_KEY_ID`
+
+The workflow must run from `refs/heads/master`. It validates the requested commit is on
+`origin/master`, then signs and uploads the deploy request from the reviewed workflow
+code on `master`. It must not check out an older target commit and execute that older
+copy of repository scripts with production secrets.
 
 Repository variables may keep non-secret COS defaults:
 
@@ -67,6 +75,12 @@ The deploy request prefix is not configurable. It is fixed to `qintopia-agent-os
 GitHub workflow, JSON schema, server-side validator, and COS poller share one production
 queue contract.
 
+`DEPLOY_REQUEST_SIGNING_KEY` and `DEPLOY_REQUEST_SIGNING_KEY_ID` must also be present on
+the production server, normally in `/etc/qintopia/cos-artifacts.env`. COS write
+permission alone must not be enough to trigger deployment; the server rejects unsigned
+requests, requests signed with a different key, and requests signed for a different key
+id.
+
 ## Server Controls
 
 The runner is root-owned because it needs to read `/etc/qintopia/cos-artifacts.env` and
@@ -76,6 +90,7 @@ The runner must not:
 
 - accept arbitrary shell commands from the request;
 - trust COS request JSON without server-side validation;
+- trust COS request JSON without HMAC signature verification;
 - process expired requests;
 - repeatedly process the same pending COS object after it has been archived;
 - roll back before `current` has been switched;

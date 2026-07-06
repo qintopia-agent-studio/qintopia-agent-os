@@ -94,6 +94,13 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       result_key:
         "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json",
     },
+    signature: {
+      algorithm: "hmac-sha256",
+      issuer: "github-actions",
+      key_id: "production",
+      signed_at: "2026-07-06T00:00:00Z",
+      value: "a".repeat(64),
+    },
   };
   if (!validateRequest(sampleRequest)) {
     addError(
@@ -142,9 +149,19 @@ if (exists(".github/workflows/deploy-production.yml")) {
     );
   }
   const workflowText = readText(".github/workflows/deploy-production.yml");
+  if (job?.if !== "${{ github.ref == 'refs/heads/master' }}") {
+    addError(
+      ".github/workflows/deploy-production.yml: request-deploy must be gated to refs/heads/master"
+    );
+  }
   if (workflowText.includes("TENCENT_COS_PREFIX")) {
     addError(
       ".github/workflows/deploy-production.yml: deploy request prefix must be fixed to qintopia-agent-os"
+    );
+  }
+  if (workflowText.includes("secrets.") && workflowText.includes("== ''")) {
+    addError(
+      ".github/workflows/deploy-production.yml: secrets must be validated in shell env, not in if expressions"
     );
   }
   if (hasDangerousInputInterpolationInRun(workflowText)) {
@@ -153,15 +170,33 @@ if (exists(".github/workflows/deploy-production.yml")) {
     );
   }
   for (const fragment of [
+    "Validate workflow ref",
+    "Deploy Production must be run from refs/heads/master",
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
     "git merge-base --is-ancestor",
     "pnpm deploy:runner:check",
     "DEPLOY_COMMIT_SHA",
+    "DEPLOY_REQUEST_SIGNING_KEY",
+    "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}",
+    "TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}",
   ]) {
     if (!workflowText.includes(fragment)) {
       addError(`.github/workflows/deploy-production.yml: missing ${fragment}`);
     }
+  }
+  if (workflowText.includes("git checkout --detach")) {
+    addError(
+      ".github/workflows/deploy-production.yml: workflow must not execute scripts from an older target SHA"
+    );
+  }
+  if (
+    workflowText.includes("TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}")
+  ) {
+    addError(
+      ".github/workflows/deploy-production.yml: upload step must receive COS secrets directly from production secrets"
+    );
   }
 }
 
@@ -187,6 +222,12 @@ if (!runnerText.includes('if [[ "$dry_run" == "true" ]]')) {
 }
 for (const fragment of [
   "validate_request",
+  "hmac.new",
+  "signing_envelope",
+  "signature verification failed",
+  "DEPLOY_REQUEST_SIGNING_KEY is required",
+  "DEPLOY_REQUEST_SIGNING_KEY_ID",
+  "signature key_id mismatch",
   "request is expired",
   "repository mismatch",
   "cos.prefix must be qintopia-agent-os",
@@ -207,10 +248,17 @@ const pollerText = exists("deploy/runner/poll-deploy-requests.sh")
   : "";
 for (const fragment of [
   'prefix="qintopia-agent-os"',
+  "require_env DEPLOY_REQUEST_SIGNING_KEY",
+  "require_env DEPLOY_REQUEST_SIGNING_KEY_ID",
   "$NF ~ /\\.json$/",
   "request_stem",
   "request_id_pattern",
+  "actual_request_key",
+  "request_key == actual_request_key",
   "invalid-$(printf",
+  "deploy request key or identity is invalid",
+  "deploy request was already consumed",
+  "deploy result already exists for request",
   "archive_key=",
   "/failed",
   "deploy request failed before promotion result was written",
@@ -236,6 +284,11 @@ const createRequestText = exists("tools/deploy/create-deploy-request.mjs")
   : "";
 for (const fragment of [
   'const fixedCosPrefix = "qintopia-agent-os"',
+  "signRequest",
+  "signingEnvelope",
+  "canonicalJson",
+  "signature",
+  "DEPLOY_REQUEST_SIGNING_KEY_ID",
   "requireSha",
   "forbidCosPrefixOverride",
 ]) {

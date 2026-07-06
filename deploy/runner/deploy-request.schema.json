@@ -20,7 +20,8 @@
     "restart_targets",
     "rollback_on_smoke_failure",
     "dry_run",
-    "cos"
+    "cos",
+    "signature"
   ],
   "properties": {
     "schema_version": { "const": 1 },
@@ -79,6 +80,18 @@
           "type": "string",
           "pattern": "^qintopia-agent-os/deploy-results/production/.+\\.json$"
         }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "issuer", "key_id", "signed_at", "value"],
+      "properties": {
+        "algorithm": { "const": "hmac-sha256" },
+        "issuer": { "const": "github-actions" },
+        "key_id": { "type": "string", "minLength": 1 },
+        "signed_at": { "type": "string", "format": "date-time" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "github": {

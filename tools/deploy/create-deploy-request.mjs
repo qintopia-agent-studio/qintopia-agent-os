@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -37,6 +38,30 @@ const requireSha = (name, value) => {
   }
   return normalized;
 };
+
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const signingEnvelope = (request, signatureMetadata) => ({
+  request,
+  signature: signatureMetadata,
+});
+
+const signRequest = (request, signatureMetadata, signingKey) =>
+  crypto
+    .createHmac("sha256", signingKey)
+    .update(canonicalJson(signingEnvelope(request, signatureMetadata)))
+    .digest("hex");
 
 const forbidCosPrefixOverride = () => {
   const requestedPrefix = argValue(
@@ -115,6 +140,10 @@ const requestedBy = requireValue(
   argValue("--requested-by", process.env.GITHUB_ACTOR || os.userInfo().username)
 );
 const notes = argValue("--notes", process.env.DEPLOY_NOTES || "");
+const signingKey = requireValue(
+  "DEPLOY_REQUEST_SIGNING_KEY",
+  argValue("--signing-key", process.env.DEPLOY_REQUEST_SIGNING_KEY || "")
+);
 const createdAt = isoNow();
 const timestamp = createdAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 const requestId = `deploy-${timestamp}-${commitSha.slice(0, 12)}`;
@@ -158,6 +187,17 @@ const request = {
     sha: process.env.GITHUB_SHA || "",
   },
   notes,
+};
+
+const signatureMetadata = {
+  algorithm: "hmac-sha256",
+  issuer: "github-actions",
+  key_id: process.env.DEPLOY_REQUEST_SIGNING_KEY_ID || "production",
+  signed_at: isoNow(),
+};
+request.signature = {
+  ...signatureMetadata,
+  value: signRequest(request, signatureMetadata, signingKey),
 };
 
 if (!validate(request)) {

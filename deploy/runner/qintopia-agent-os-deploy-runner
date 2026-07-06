@@ -73,6 +73,8 @@ PY
 
 validate_request() {
   python3 - "$request_file" <<'PY'
+import hmac
+import hashlib
 import json
 import os
 import re
@@ -107,6 +109,19 @@ def parse_datetime(value, key):
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         fail(f"{key} must be an ISO date-time")
+
+def canonical_json(value):
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(
+            json.dumps(key, separators=(",", ":")) + ":" + canonical_json(value[key])
+            for key in sorted(value)
+        ) + "}"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+def signing_envelope(request, signature_metadata):
+    return {"request": request, "signature": signature_metadata}
 
 with open(path, encoding="utf-8") as fh:
     data = json.load(fh)
@@ -148,6 +163,40 @@ if set(restart_targets) - allowed_targets or len(set(restart_targets)) != len(re
 for key in ("rollback_on_smoke_failure", "dry_run"):
     if not isinstance(data.get(key), bool):
         fail(f"{key} must be boolean")
+
+signature = data.get("signature")
+if not isinstance(signature, dict):
+    fail("signature must be an object")
+if signature.get("algorithm") != "hmac-sha256":
+    fail("signature algorithm mismatch")
+if signature.get("issuer") != "github-actions":
+    fail("signature issuer mismatch")
+if not isinstance(signature.get("key_id"), str) or not signature["key_id"]:
+    fail("signature key_id must be a non-empty string")
+expected_key_id = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY_ID", "")
+if not expected_key_id:
+    fail("DEPLOY_REQUEST_SIGNING_KEY_ID is required")
+if signature.get("key_id") != expected_key_id:
+    fail("signature key_id mismatch")
+signature_signed_at = parse_datetime(require_string(signature, "signed_at"), "signature.signed_at")
+if signature_signed_at.tzinfo is None:
+    fail("signature.signed_at must include timezone")
+signature_value = require_string(signature, "value")
+if not re.fullmatch(r"^[0-9a-f]{64}$", signature_value):
+    fail("signature value format mismatch")
+signing_key = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY", "")
+if not signing_key:
+    fail("DEPLOY_REQUEST_SIGNING_KEY is required")
+unsigned = dict(data)
+signature_metadata = dict(unsigned.pop("signature", {}))
+signature_metadata.pop("value", None)
+expected_signature = hmac.new(
+    signing_key.encode("utf-8"),
+    canonical_json(signing_envelope(unsigned, signature_metadata)).encode("utf-8"),
+    hashlib.sha256,
+).hexdigest()
+if not hmac.compare_digest(signature_value, expected_signature):
+    fail("signature verification failed")
 
 cos = data.get("cos")
 if not isinstance(cos, dict):

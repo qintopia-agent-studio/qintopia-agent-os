@@ -60,6 +60,7 @@ env:
 
 jobs:
   request-deploy:
+    if: ${{ github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
@@ -67,15 +68,34 @@ jobs:
     permissions:
       contents: read
 
-    env:
-      TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
-      TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Validate workflow ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "Deploy Production must be run from refs/heads/master." >&2
+            exit 2
+          fi
+
+      - name: Validate target commit belongs to master
+        shell: bash
+        env:
+          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$DEPLOY_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "commit_sha must be a lowercase 40-character git SHA." >&2
+            exit 2
+          fi
+          git fetch --no-tags origin master
+          git cat-file -e "${DEPLOY_COMMIT_SHA}^{commit}"
+          git merge-base --is-ancestor "$DEPLOY_COMMIT_SHA" origin/master
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -94,25 +114,18 @@ jobs:
       - name: Validate deploy runner contracts
         run: pnpm deploy:runner:check
 
-      - name: Validate target commit belongs to master
+      - name: Validate Tencent COS upload configuration
         shell: bash
         env:
-          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
         run: |
           set -euo pipefail
-          if [[ ! "$DEPLOY_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "commit_sha must be a lowercase 40-character git SHA." >&2
+          if [[ -z "$TENCENT_COS_SECRET_ID" || -z "$TENCENT_COS_SECRET_KEY" || -z "$DEPLOY_REQUEST_SIGNING_KEY" ]]; then
+            echo "TENCENT_COS_SECRET_ID, TENCENT_COS_SECRET_KEY, and DEPLOY_REQUEST_SIGNING_KEY are required in the production environment." >&2
             exit 2
           fi
-          git fetch --no-tags origin master
-          git cat-file -e "${DEPLOY_COMMIT_SHA}^{commit}"
-          git merge-base --is-ancestor "$DEPLOY_COMMIT_SHA" origin/master
-
-      - name: Validate Tencent COS upload configuration
-        if: ${{ env.TENCENT_COS_SECRET_ID == '' || env.TENCENT_COS_SECRET_KEY == '' }}
-        run: >-
-          echo "TENCENT_COS_SECRET_ID and TENCENT_COS_SECRET_KEY are required in the
-          production environment." >&2; exit 2
 
       - name: Create deploy request
         run:
@@ -132,6 +145,8 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
 
       - name: Upload deploy request to Tencent COS
         run:
@@ -140,8 +155,8 @@ jobs:
         env:
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
-          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
-          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
 
       - name: Upload deploy request audit artifact

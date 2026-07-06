@@ -34,6 +34,8 @@ require_env() {
 
 require_env TENCENT_COS_BUCKET
 require_env TENCENT_COS_REGION
+require_env DEPLOY_REQUEST_SIGNING_KEY
+require_env DEPLOY_REQUEST_SIGNING_KEY_ID
 
 auth_mode="${TENCENT_COS_AUTH_MODE:-SecretKey}"
 if [[ "$auth_mode" == "CvmRole" ]]; then
@@ -119,29 +121,28 @@ request_file="${STATE_DIR}/requests/pending/${request_name}"
   -c "$config_path" \
   --disable-log
 
-set +e
-"$RUNNER" --request-file "$request_file"
-runner_status=$?
-set -e
-
 request_id="$request_stem"
 result_key="${prefix}/deploy-results/production/${request_id}.json"
-parsed_identity="$(python3 - "$request_file" "$request_stem" "$prefix" <<'PY'
+parsed_identity="$(python3 - "$request_file" "$request_stem" "$prefix" "$request_key" <<'PY'
 import json
 import re
 import sys
 
-request_file, request_stem, prefix = sys.argv[1:4]
+request_file, request_stem, prefix, actual_request_key = sys.argv[1:5]
 request_id_pattern = re.compile(r"^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$")
 try:
     with open(request_file, encoding="utf-8") as fh:
         data = json.load(fh)
     request_id = data.get("request_id", "")
+    request_key = data.get("cos", {}).get("request_key", "")
     result_key = data.get("cos", {}).get("result_key", "")
+    expected_request_key = f"{prefix}/deploy-requests/production/pending/{request_id}.json"
     expected_result_key = f"{prefix}/deploy-results/production/{request_id}.json"
     if (
         request_id == request_stem
         and request_id_pattern.fullmatch(request_id)
+        and request_key == actual_request_key
+        and request_key == expected_request_key
         and result_key == expected_result_key
     ):
         print(f"{request_id}\t{result_key}")
@@ -154,14 +155,38 @@ if [[ -n "$parsed_identity" ]]; then
   result_key="${parsed_identity#*$'\t'}"
 fi
 result_file="${STATE_DIR}/results/${request_id}.json"
+existing_result_key=""
+if [[ -n "$parsed_identity" ]]; then
+  existing_result_key="$("$coscli_path" ls "cos://${bucket_alias}/${prefix}/deploy-results/production/${request_id}.json" \
+    -c "$config_path" \
+    --disable-log 2>/dev/null | awk -v expected="${prefix}/deploy-results/production/${request_id}.json" '$NF == expected {print $NF; exit}' || true)"
+fi
+
+runner_status=0
+fallback_error="deploy request failed before promotion result was written"
+if [[ -z "$parsed_identity" ]]; then
+  runner_status=2
+  fallback_error="deploy request key or identity is invalid"
+elif [[ -e "${STATE_DIR}/requests/processed/${request_name}" || -e "${STATE_DIR}/requests/failed/${request_name}" ]]; then
+  runner_status=2
+  fallback_error="deploy request was already consumed"
+elif [[ -n "$existing_result_key" ]]; then
+  runner_status=2
+  fallback_error="deploy result already exists for request"
+else
+  set +e
+  "$RUNNER" --request-file "$request_file"
+  runner_status=$?
+  set -e
+fi
 
 if [[ "$runner_status" -ne 0 && ! -f "$result_file" ]]; then
-  python3 - "$result_file" "$request_id" <<'PY'
+  python3 - "$result_file" "$request_id" "$fallback_error" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
 
-path, request_id = sys.argv[1:3]
+path, request_id, error = sys.argv[1:4]
 now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 result = {
     "schema_version": 1,
@@ -176,7 +201,7 @@ result = {
     "restart_targets": [],
     "checks": [{"name": "deploy-request-validation", "status": "failed"}],
     "rollback": {"attempted": False, "status": "not_needed"},
-    "error": "deploy request failed before promotion result was written",
+    "error": error,
 }
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(result, fh, ensure_ascii=False, indent=2)

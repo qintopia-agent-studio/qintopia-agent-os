@@ -4,19 +4,21 @@
 Agent OS.
 
 The runner exists so collaborators can deploy an approved `master` SHA without direct
-server access. GitHub Actions creates a signed, schema-validated deploy request in COS.
-The server-side runner pulls that request, verifies artifacts, promotes a release, and
-writes a deploy result.
+server access. GitHub Actions creates an HMAC-signed, schema-validated deploy request in
+COS. The server-side runner pulls that request, verifies the signature and artifacts,
+promotes a release, and writes a deploy result.
 
 ## Direction
 
 ```text
 GitHub workflow_dispatch
   -> production environment approval
+  -> require workflow ref refs/heads/master
   -> validate target SHA and release scope
+  -> generate a signed request from the reviewed master workflow code
   -> upload deploy request JSON to fixed COS prefix qintopia-agent-os
   -> server deploy runner reads pending request
-  -> validate request schema, TTL, repository, environment, SHA, scope, and restart target
+  -> validate request schema, signature, TTL, repository, environment, SHA, scope, and restart target
   -> download sidecar and deploy-bundle artifacts from COS
   -> verify manifests and SHA256SUMS
   -> assemble /home/ubuntu/qintopia-agent-os-releases/<release-sha>
@@ -47,9 +49,15 @@ Important fields:
 - `restart_targets`: fixed restart groups. The runner must not accept arbitrary service
   names.
 - `dry_run`: validate and assemble without switching `current` or restarting services.
+- `signature`: HMAC-SHA256 signature over the unsigned request body. The GitHub
+  `production` environment and the server must share `DEPLOY_REQUEST_SIGNING_KEY` and
+  `DEPLOY_REQUEST_SIGNING_KEY_ID`.
 
 The COS request prefix is intentionally fixed to `qintopia-agent-os`. Bucket, region,
 and endpoint can vary by environment; the production queue path cannot.
+
+COS write access alone is not sufficient to trigger deployment. The server rejects
+unsigned requests and requests signed with the wrong key.
 
 Rollback is attempted only after `current` has been switched and the post-promotion
 smoke path fails. Artifact download, request validation, or staging failures must not
@@ -73,6 +81,14 @@ The COS env file was observed as `root:ubuntu 0600`, so the production runner sh
 as a root-owned system service and execute only the fixed runner scripts. If a dedicated
 runner user is introduced later, change the env file to a dedicated group-readable mode
 and document that separately.
+
+Required server environment:
+
+- `TENCENT_COS_BUCKET`
+- `TENCENT_COS_REGION`
+- `DEPLOY_REQUEST_SIGNING_KEY`
+- `DEPLOY_REQUEST_SIGNING_KEY_ID`
+- `TENCENT_COS_SECRET_ID` and `TENCENT_COS_SECRET_KEY`, or CVM role settings
 
 ## Manifest Normalization
 
