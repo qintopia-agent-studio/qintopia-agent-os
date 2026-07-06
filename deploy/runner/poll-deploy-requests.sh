@@ -102,7 +102,7 @@ pending_prefix="${prefix}/deploy-requests/production/pending/"
 
 request_key="$("$coscli_path" ls "cos://${bucket_alias}/${pending_prefix}" \
   -c "$config_path" \
-  --disable-log 2>/dev/null | awk '/\\.json$/ {print $NF}' | sort | head -n 1)"
+  --disable-log 2>/dev/null | awk '$NF ~ /\.json$/ {print $NF}' | sort | head -n 1)"
 
 if [[ -z "$request_key" ]]; then
   echo "No pending deploy request."
@@ -110,6 +110,10 @@ if [[ -z "$request_key" ]]; then
 fi
 
 request_name="$(basename "$request_key")"
+request_stem="${request_name%.json}"
+if [[ ! "$request_stem" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]]; then
+  request_stem="invalid-$(printf '%s' "$request_key" | sha256sum | awk '{print $1}' | cut -c1-16)"
+fi
 request_file="${STATE_DIR}/requests/pending/${request_name}"
 "$coscli_path" cp "cos://${bucket_alias}/${request_key}" "$request_file" \
   -c "$config_path" \
@@ -120,39 +124,34 @@ set +e
 runner_status=$?
 set -e
 
-request_id="${request_name%.json}"
+request_id="$request_stem"
 result_key="${prefix}/deploy-results/production/${request_id}.json"
-parsed_result_key="$(python3 - "$request_file" <<'PY'
+parsed_identity="$(python3 - "$request_file" "$request_stem" "$prefix" <<'PY'
 import json
+import re
 import sys
+
+request_file, request_stem, prefix = sys.argv[1:4]
+request_id_pattern = re.compile(r"^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$")
 try:
-    with open(sys.argv[1], encoding="utf-8") as fh:
+    with open(request_file, encoding="utf-8") as fh:
         data = json.load(fh)
-    value = data.get("cos", {}).get("result_key", "")
-    if value:
-        print(value)
+    request_id = data.get("request_id", "")
+    result_key = data.get("cos", {}).get("result_key", "")
+    expected_result_key = f"{prefix}/deploy-results/production/{request_id}.json"
+    if (
+        request_id == request_stem
+        and request_id_pattern.fullmatch(request_id)
+        and result_key == expected_result_key
+    ):
+        print(f"{request_id}\t{result_key}")
 except Exception:
     pass
 PY
 )"
-parsed_request_id="$(python3 - "$request_file" <<'PY'
-import json
-import sys
-try:
-    with open(sys.argv[1], encoding="utf-8") as fh:
-        data = json.load(fh)
-    value = data.get("request_id", "")
-    if value:
-        print(value)
-except Exception:
-    pass
-PY
-)"
-if [[ -n "$parsed_request_id" ]]; then
-  request_id="$parsed_request_id"
-fi
-if [[ -n "$parsed_result_key" ]]; then
-  result_key="$parsed_result_key"
+if [[ -n "$parsed_identity" ]]; then
+  request_id="${parsed_identity%%$'\t'*}"
+  result_key="${parsed_identity#*$'\t'}"
 fi
 result_file="${STATE_DIR}/results/${request_id}.json"
 

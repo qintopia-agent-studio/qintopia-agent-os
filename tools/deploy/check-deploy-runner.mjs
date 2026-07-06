@@ -207,6 +207,10 @@ const pollerText = exists("deploy/runner/poll-deploy-requests.sh")
   : "";
 for (const fragment of [
   'prefix="qintopia-agent-os"',
+  "$NF ~ /\\.json$/",
+  "request_stem",
+  "request_id_pattern",
+  "invalid-$(printf",
   "archive_key=",
   "/failed",
   "deploy request failed before promotion result was written",
@@ -215,6 +219,15 @@ for (const fragment of [
 ]) {
   if (!pollerText.includes(fragment)) {
     addError(`deploy/runner/poll-deploy-requests.sh: missing ${fragment}`);
+  }
+}
+for (const forbidden of [
+  "awk '/\\\\.json$/",
+  'request_id="$parsed_request_id"',
+  'result_key="$parsed_result_key"',
+]) {
+  if (pollerText.includes(forbidden)) {
+    addError(`deploy/runner/poll-deploy-requests.sh: forbidden fragment ${forbidden}`);
   }
 }
 
