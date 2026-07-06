@@ -166,461 +166,70 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertFalse(payload["stored_context_found"])
         self.assertIn("CRM", payload["not_accessed"])
 
-    def test_dify_dataset_list_filters_configured_allowlist(self):
-        os.environ["QINTOPIA_DIFY_ALLOWED_DATASET_IDS"] = "ds_allowed"
+    def test_dify_read_tools_delegate_to_knowledge_retrieval_package(self):
+        calls = []
 
-        def fake_request(method, path, *, params=None, body=None):
-            self.assertEqual(method, "GET")
-            self.assertEqual(path, "/datasets")
-            self.assertEqual(params["page"], 1)
-            return {
-                "success": True,
-                "status": 200,
-                "data": {
-                    "data": [
-                        {"id": "ds_allowed", "name": "Allowed"},
-                        {"id": "ds_other", "name": "Other"},
-                    ],
-                    "total": 2,
-                },
-            }
+        class FakeKnowledgeRetrieval:
+            QINTOPIA_DIFY_DATASET_LIST_SCHEMA = {"description": "dataset"}
+            QINTOPIA_DIFY_DATASET_GET_SCHEMA = {"description": "dataset get"}
+            QINTOPIA_DIFY_KNOWLEDGE_RETRIEVE_SCHEMA = {"description": "retrieve"}
+            QINTOPIA_DIFY_DOCUMENT_LIST_SCHEMA = {"description": "document list"}
+            QINTOPIA_DIFY_DOCUMENT_GET_SCHEMA = {"description": "document get"}
+            QINTOPIA_DIFY_INDEXING_STATUS_GET_SCHEMA = {"description": "indexing"}
+            QINTOPIA_DIFY_SEGMENT_LIST_SCHEMA = {"description": "segment list"}
+            QINTOPIA_DIFY_SEGMENT_GET_SCHEMA = {"description": "segment get"}
+            QINTOPIA_WENYUANGE_LOOKUP_SCHEMA = {"description": "lookup"}
 
-        self.module._dify_request = fake_request
-        payload = json.loads(self.module.handle_qintopia_dify_dataset_list({"limit": 50}))
+            def handle_qintopia_dify_dataset_list(self, args):
+                calls.append(("dataset_list", args))
+                return json.dumps({"success": True, "delegated": "dataset_list"})
 
-        self.assertTrue(payload["success"])
-        self.assertTrue(payload["read_only"])
-        self.assertTrue(payload["filtered_to_allowed_datasets"])
-        self.assertEqual(payload["data"]["data"], [{"id": "ds_allowed", "name": "Allowed"}])
-        self.assertTrue(payload["data"]["filtered_by_allowlist"])
+            def handle_qintopia_dify_knowledge_retrieve(self, args):
+                calls.append(("retrieve", args))
+                return json.dumps({"success": True, "delegated": "retrieve"})
 
-    def test_dify_retrieve_uses_fixed_read_only_endpoint(self):
-        os.environ["QINTOPIA_DIFY_ALLOWED_DATASET_IDS"] = "ds_allowed"
-        captured = {}
+            def check_dify_read_requirements(self):
+                return True
 
-        def fake_request(method, path, *, params=None, body=None):
-            captured.update({"method": method, "path": path, "params": params, "body": body})
-            return {
-                "success": True,
-                "status": 200,
-                "data": {"records": [{"segment": {"content": "秦托邦知识片段"}, "score": 0.91}]},
-            }
+        fake_plugin = FakeKnowledgeRetrieval()
+        self.module._KNOWLEDGE_RETRIEVAL_PLUGIN = fake_plugin
 
-        self.module._dify_request = fake_request
-        payload = json.loads(
+        list_payload = json.loads(self.module.handle_qintopia_dify_dataset_list({"limit": 50}))
+        retrieve_payload = json.loads(
             self.module.handle_qintopia_dify_knowledge_retrieve(
-                {
-                    "dataset_id": "ds_allowed",
-                    "query": "秦托邦是什么",
-                    "top_k": 5,
-                    "score_threshold_enabled": False,
-                }
+                {"dataset_id": "ds_allowed", "query": "秦托邦是什么"}
             )
         )
 
-        self.assertTrue(payload["success"])
-        self.assertEqual(captured["method"], "POST")
-        self.assertEqual(captured["path"], "/datasets/ds_allowed/retrieve")
-        self.assertIsNone(captured["params"])
-        self.assertEqual(captured["body"]["query"], "秦托邦是什么")
-        self.assertEqual(captured["body"]["retrieval_model"]["search_method"], "semantic_search")
-        self.assertEqual(captured["body"]["retrieval_model"]["top_k"], 5)
-        self.assertFalse(captured["body"]["retrieval_model"]["score_threshold_enabled"])
-        self.assertFalse(captured["body"]["retrieval_model"]["reranking_enable"])
-        self.assertTrue(payload["read_only"])
-        self.assertNotIn("test-knowledge-key", json.dumps(payload, ensure_ascii=False))
+        self.assertEqual(list_payload["delegated"], "dataset_list")
+        self.assertEqual(retrieve_payload["delegated"], "retrieve")
+        self.assertEqual(calls[0], ("dataset_list", {"limit": 50}))
+        self.assertEqual(calls[1], ("retrieve", {"dataset_id": "ds_allowed", "query": "秦托邦是什么"}))
+        self.assertTrue(self.module.check_dify_read_requirements())
 
-    def test_dify_read_tools_block_unallowed_dataset_before_network(self):
-        os.environ["QINTOPIA_DIFY_ALLOWED_DATASET_IDS"] = "ds_allowed"
+    def test_wenyuange_lookup_delegates_to_knowledge_retrieval_package(self):
+        calls = []
 
-        def fail_request(*args, **kwargs):
-            raise AssertionError("network should not be called for denied dataset")
+        class FakeKnowledgeRetrieval:
+            def handle_qintopia_wenyuange_lookup(self, args):
+                calls.append(args)
+                return json.dumps({"success": True, "skill": "qintopia_wenyuange_lookup", "delegated": True})
 
-        self.module._dify_request = fail_request
-        payload = json.loads(
-            self.module.handle_qintopia_dify_document_list(
-                {"dataset_id": "ds_denied", "page": 1, "limit": 10}
-            )
-        )
-
-        self.assertFalse(payload["success"])
-        self.assertEqual(payload["dataset_id"], "ds_denied")
-        self.assertIn("allowlist", payload["error"])
-
-    def test_wenyuange_lookup_returns_safe_basis_without_raw_long_chunk(self):
-        long_content = "秦托邦有共享办公区、活动空间和来访须知。" * 30
-
-        def fake_retrieve(args, **kwargs):
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": {
-                        "records": [
-                            {
-                                "score": 0.82,
-                                "segment": {
-                                    "id": "seg_1",
-                                    "document_id": "doc_1",
-                                    "content": long_content,
-                                    "document": {"name": "公开 FAQ.md"},
-                                },
-                            }
-                        ]
-                    },
-                },
-                ensure_ascii=False,
-            )
-
-        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
-        payload = json.loads(
-            self.module.handle_qintopia_wenyuange_lookup(
-                {
-                    "query": "来访前要知道什么",
-                    "caller_profile": "erhua",
-                    "audience": "member_reply",
-                    "purpose": "回答社区成员问题",
-                    "top_k": 3,
-                }
-            )
-        )
-
-        self.assertTrue(payload["success"])
-        self.assertTrue(payload["can_answer"])
-        self.assertEqual(payload["result_count"], 1)
-        self.assertLessEqual(len(payload["answer_basis"]), 1000)
-        self.assertNotEqual(payload["answer_basis"], long_content)
-        self.assertEqual(payload["sources"][0]["segment_id"], "seg_1")
-        self.assertNotIn("test-knowledge-key", json.dumps(payload, ensure_ascii=False))
-
-    def test_wenyuange_lookup_blocks_xiaoqin_internal_or_member_content(self):
-        def fake_retrieve(args, **kwargs):
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": {
-                        "records": [
-                            {
-                                "score": 0.72,
-                                "segment": {
-                                    "id": "seg_2",
-                                    "document_id": "doc_2",
-                                    "content": "内部客户案例涉及成员资料和服务器日志，未公开。",
-                                    "document": {"name": "internal-case.md"},
-                                },
-                            }
-                        ]
-                    },
-                },
-                ensure_ascii=False,
-            )
-
-        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
-        payload = json.loads(
-            self.module.handle_qintopia_wenyuange_lookup(
-                {
-                    "query": "能介绍客户案例吗",
-                    "caller_profile": "xiaoqin",
-                    "audience": "external_customer",
-                    "purpose": "回答外部客户",
-                }
-            )
-        )
-
-        self.assertTrue(payload["success"])
-        self.assertFalse(payload["can_answer"])
-        self.assertEqual(payload["answer_basis"], "")
-        self.assertIn("member_scoped", payload["risk_flags"])
-        self.assertIn("internal_information", payload["risk_flags"])
-
-    def test_wenyuange_lookup_blocks_erhua_member_privacy_and_complaint(self):
-        def fake_retrieve(args, **kwargs):
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": {
-                        "records": [
-                            {
-                                "score": 0.66,
-                                "segment": {
-                                    "id": "seg_3",
-                                    "document_id": "doc_3",
-                                    "content": "成员档案包含房间、生日和入住时间。",
-                                    "document": {"name": "profiles.md"},
-                                },
-                            }
-                        ]
-                    },
-                },
-                ensure_ascii=False,
-            )
-
-        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
-        payload = json.loads(
-            self.module.handle_qintopia_wenyuange_lookup(
-                {
-                    "query": "我要投诉入住体验不好，问一下他的房间",
-                    "caller_profile": "erhua",
-                    "audience": "member_reply",
-                    "purpose": "回答社区群消息",
-                }
-            )
-        )
-
-        self.assertTrue(payload["success"])
-        self.assertFalse(payload["can_answer"])
-        self.assertIn("member_privacy", payload["risk_flags"])
-        self.assertIn("complaint_or_service_recovery", payload["risk_flags"])
-
-    def test_wenyuange_lookup_allows_public_wifi_even_with_boundary_terms(self):
-        def fake_retrieve(args, **kwargs):
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": {
-                        "records": [
-                            {
-                                "score": 0.82,
-                                "segment": {
-                                    "id": "seg_wifi",
-                                    "document_id": "doc_wifi",
-                                    "content": (
-                                        "秦托邦公共设施 WiFi 信息\n"
-                                        "信息分级：Public / member-facing\n"
-                                        "社区 WiFi 名称：秦托邦5G\n"
-                                        "社区 WiFi 密码：yiqichuangzao（一起创造小全拼）"
-                                    ),
-                                    "document": {"name": "秦托邦公共设施 WiFi 信息"},
-                                },
-                            },
-                            {
-                                "score": 0.43,
-                                "segment": {
-                                    "id": "seg_boundary",
-                                    "document_id": "doc_boundary",
-                                    "content": "公开边界：不公开个人精确住址、房间号、门牌。",
-                                    "document": {"name": "places.md"},
-                                },
-                            },
-                        ]
-                    },
-                },
-                ensure_ascii=False,
-            )
-
-        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
-        payload = json.loads(
-            self.module.handle_qintopia_wenyuange_lookup(
-                {
-                    "query": "秦托邦 WiFi 密码是多少",
-                    "caller_profile": "erhua",
-                    "audience": "member_reply",
-                    "purpose": "回答社区成员关于公共设施 WiFi 的问题",
-                }
-            )
-        )
-
-        self.assertTrue(payload["success"])
-        self.assertTrue(payload["can_answer"])
-        self.assertEqual(payload["risk_flags"], [])
-        self.assertIn("秦托邦5G", payload["answer_basis"])
-
-    def test_wenyuange_lookup_uses_document_keyword_fallback_for_safe_candidate(self):
-        retrieve_calls = []
-        document_calls = []
-        segment_calls = []
-
-        def fake_retrieve(args, **kwargs):
-            retrieve_calls.append((args["search_method"], args["query"]))
-            records = [
-                {
-                    "score": 0.42,
-                    "segment": {
-                        "id": "seg_profile",
-                        "document_id": "doc_profile",
-                        "content": "成员档案包含房间和入住时间。",
-                        "document": {"name": "profiles.md"},
-                    },
-                }
-            ]
-            return json.dumps({"success": True, "data": {"records": records}}, ensure_ascii=False)
-
-        def fake_document_list(args, **kwargs):
-            document_calls.append(args.get("keyword"))
-            if str(args.get("keyword")).lower() == "wifi":
-                return json.dumps(
-                    {
-                        "success": True,
-                        "data": {"data": [{"id": "doc_wifi", "name": "秦托邦公共设施 WiFi 信息"}]},
-                    },
-                    ensure_ascii=False,
-                )
-            return json.dumps({"success": True, "data": {"data": []}}, ensure_ascii=False)
-
-        def fake_segment_list(args, **kwargs):
-            segment_calls.append((args.get("document_id"), args.get("keyword")))
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": {
-                        "data": [
-                            {
-                                "id": "seg_wifi",
-                                "content": (
-                                    "秦托邦公共设施 WiFi 信息\n"
-                                    "信息分级：Public / member-facing\n"
-                                    "社区 WiFi 名称：秦托邦5G\n"
-                                    "社区 WiFi 密码：yiqichuangzao（一起创造小全拼）"
-                                ),
-                            }
-                        ]
-                    },
-                },
-                ensure_ascii=False,
-            )
-
-        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
-        self.module.handle_qintopia_dify_document_list = fake_document_list
-        self.module.handle_qintopia_dify_segment_list = fake_segment_list
-        payload = json.loads(
-            self.module.handle_qintopia_wenyuange_lookup(
-                {
-                    "query": "秦托邦 WiFi 密码是多少",
-                    "caller_profile": "erhua",
-                    "audience": "member_reply",
-                    "purpose": "回答社区成员关于公共设施 WiFi 的问题",
-                }
-            )
-        )
-
-        self.assertTrue(payload["success"])
-        self.assertTrue(payload["can_answer"])
-        self.assertIn(("semantic_search", "秦托邦 WiFi 密码是多少"), retrieve_calls)
-        self.assertIn("wifi", [str(item).lower() for item in document_calls])
-        self.assertIn(("doc_wifi", "wifi"), segment_calls)
-        self.assertEqual(payload["risk_flags"], [])
-        self.assertEqual(payload["blocked_result_count"], 1)
-        self.assertIn("秦托邦5G", payload["answer_basis"])
-        self.assertTrue(any(item["search_method"] == "document_keyword" for item in payload["retrieval_trace"]))
-
-    def test_wenyuange_lookup_filters_member_sources_before_answering(self):
-        def fake_retrieve(args, **kwargs):
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": {
-                        "records": [
-                            {
-                                "score": 0.91,
-                                "segment": {
-                                    "id": "seg_profile",
-                                    "document_id": "doc_profile",
-                                    "content": "普通群聊参与者。",
-                                    "document": {"name": "groups / test / profiles / user.md"},
-                                },
-                            },
-                            {
-                                "score": 0.7,
-                                "segment": {
-                                    "id": "seg_public",
-                                    "document_id": "doc_public",
-                                    "content": "公共设施说明：社区网络名称为 QinTopia-Guest。",
-                                    "document": {"name": "groups / test / wiki / public-facilities.md"},
-                                },
-                            },
-                        ]
-                    },
-                },
-                ensure_ascii=False,
-            )
-
-        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
-        self.module.handle_qintopia_dify_document_list = lambda args, **kwargs: json.dumps(
-            {"success": True, "data": {"data": []}},
-            ensure_ascii=False,
-        )
-        payload = json.loads(
-            self.module.handle_qintopia_wenyuange_lookup(
-                {
-                    "query": "社区网络名称是什么",
-                    "caller_profile": "erhua",
-                    "audience": "member_reply",
-                    "purpose": "回答社区成员关于公共设施的问题",
-                }
-            )
-        )
-
-        self.assertTrue(payload["success"])
-        self.assertTrue(payload["can_answer"])
-        self.assertIn("QinTopia-Guest", payload["answer_basis"])
-        self.assertNotIn("profiles", json.dumps(payload["sources"], ensure_ascii=False))
-        self.assertEqual(payload["blocked_result_count"], 1)
-
-    def test_wenyuange_lookup_prefers_authoritative_public_source_over_digest(self):
-        def fake_retrieve(args, **kwargs):
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": {
-                        "records": [
-                            {
-                                "score": 0.95,
-                                "segment": {
-                                    "id": "seg_digest",
-                                    "document_id": "doc_digest",
-                                    "content": "日更摘要：有人问过 WiFi 密码，但没有查稳。",
-                                    "document": {"name": "DifyRadio-qintuobang-2026-06-09.md"},
-                                },
-                            },
-                            {
-                                "score": 0.3,
-                                "segment": {
-                                    "id": "seg_wifi",
-                                    "document_id": "doc_wifi",
-                                    "content": (
-                                        "信息分级：Public / member-facing\n"
-                                        "公共设施说明：社区 WiFi 名称为 QinTopia-Guest。"
-                                    ),
-                                    "document": {"name": "wiki / public / 秦托邦公共设施.md"},
-                                },
-                            },
-                            {
-                                "score": 0.8,
-                                "segment": {
-                                    "id": "seg_stub",
-                                    "document_id": "doc_stub",
-                                    "content": "status: stub\nrisk: internal\n待补全。",
-                                    "document": {"name": "wiki / topics / 社区日常.md"},
-                                },
-                            },
-                        ]
-                    },
-                },
-                ensure_ascii=False,
-            )
-
-        self.module.handle_qintopia_dify_knowledge_retrieve = fake_retrieve
-        self.module.handle_qintopia_dify_document_list = lambda args, **kwargs: json.dumps(
-            {"success": True, "data": {"data": []}},
-            ensure_ascii=False,
-        )
+        self.module._KNOWLEDGE_RETRIEVAL_PLUGIN = FakeKnowledgeRetrieval()
         payload = json.loads(
             self.module.handle_qintopia_wenyuange_lookup(
                 {
                     "query": "社区 WiFi 名称是什么",
                     "caller_profile": "erhua",
                     "audience": "member_reply",
-                    "purpose": "回答社区成员关于公共设施的问题",
+                    "purpose": "回答社区成员问题",
                 }
             )
         )
 
         self.assertTrue(payload["success"])
-        self.assertTrue(payload["can_answer"])
-        self.assertIn("QinTopia-Guest", payload["answer_basis"])
-        self.assertNotIn("没有查稳", payload["answer_basis"])
-        self.assertEqual(payload["sources"][0]["document_id"], "doc_wifi")
-        self.assertEqual(len(payload["sources"]), 1)
-        self.assertEqual(payload["blocked_result_count"], 2)
+        self.assertTrue(payload["delegated"])
+        self.assertEqual(calls[0]["query"], "社区 WiFi 名称是什么")
 
     def test_message_store_search_requires_wenyuange_caller(self):
         payload = json.loads(

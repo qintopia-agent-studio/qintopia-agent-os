@@ -6,9 +6,10 @@ The knowledge and GIS tools are read-only. The complaint tools are narrow write-
 wrappers for 二花's controlled complaint/service-recovery workflow; they are not a
 general Kanban intake surface. The 小秦 tools are controlled sales/customer wrappers for
 Public-safe product answers, lead capture, demo planning, proposal drafts, disclosure
-filtering, and conversation handoff. Dify Knowledge tools are read-only wrappers over
-Dify's Knowledge Service API and can be enabled for any profile that should use the
-shared `qintopia` toolset.
+filtering, and conversation handoff. Dify Knowledge tool registration stays in this
+Hermes plugin for stable tool names, but the active Dify and `qintopia_wenyuange_lookup`
+implementation lives in `skills/knowledge-retrieval`. Change Dify allowlists, filtered
+answer basis, source ranking, and risk flags there.
 
 ## Tools
 

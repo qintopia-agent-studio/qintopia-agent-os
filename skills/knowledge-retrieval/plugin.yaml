@@ -1,0 +1,29 @@
+id: qintopia-knowledge-retrieval
+package: skills/knowledge-retrieval
+runtime: hermes-python-plugin
+status: adopting
+tools:
+  - qintopia_wenyuange_lookup
+  - qintopia_dify_dataset_list
+  - qintopia_dify_dataset_get
+  - qintopia_dify_knowledge_retrieve
+  - qintopia_dify_document_list
+  - qintopia_dify_document_get
+  - qintopia_dify_indexing_status_get
+  - qintopia_dify_segment_list
+  - qintopia_dify_segment_get
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+registration:
+  stable_entrypoint: skills/qintopia-tools/variants/*/__init__.py
+  notes:
+    - qintopia-tools keeps the Hermes registration shell for stable tool names.
+    - Raw qintopia_dify_* tools must stay gated to Wenyuange opt-in.
+    - Frontline profiles use qintopia_wenyuange_lookup only.
+validation:
+  commands:
+    - pnpm skills:knowledge-retrieval:check
+    - pnpm skills:qintopia-tools:check

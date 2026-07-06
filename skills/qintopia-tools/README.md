@@ -25,6 +25,12 @@ repoint production profiles yet.
 Weather is already split out: Erhua's `qintopia_weather_lookup` registration delegates
 to `skills/qintopia-weather`. Change weather behavior there, not in this package.
 
+WenYuanGe/Dify knowledge retrieval is also split out: the Dify raw read tools and
+`qintopia_wenyuange_lookup` registration delegates to `skills/knowledge-retrieval`.
+Change filtered answer basis, Dify allowlist behavior, source ranking, and risk flags
+there. This package keeps the current Hermes registration shell and the still-unmigrated
+message-store, GIS, complaint, Xiaoman, and sales wrappers.
+
 ## Boundary
 
 Allowed in this package:
@@ -43,12 +49,14 @@ Not allowed:
 - raw private chat logs
 - Xiaoqin WorkTool runtime as an active package
 - new weather provider logic; use `skills/qintopia-weather` and `mcp/weather-provider`
+- new WenYuanGe/Dify retrieval behavior; use `skills/knowledge-retrieval`
 
 ## Validation
 
 ```bash
 pnpm skills:qintopia-tools:check
 pnpm skills:qintopia-weather:check
+pnpm skills:knowledge-retrieval:check
 ```
 
 The check compiles each active variant and blocks committed runtime cache files.

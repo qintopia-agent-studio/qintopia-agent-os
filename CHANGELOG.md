@@ -98,6 +98,8 @@ become versioned.
   fetch, timeout, normalization, and secret boundaries.
 - Added the active `skills/qintopia-weather` implementation and package-local tests for
   the `qintopia_weather_lookup` capability.
+- Added the active `skills/knowledge-retrieval` implementation and package-local tests
+  for WenYuanGe/Dify filtered answer basis and raw read wrappers.
 
 ### Changed
 
@@ -113,6 +115,8 @@ become versioned.
   protection, or owner review.
 - Split Erhua weather behavior out of `skills/qintopia-tools` so the Hermes plugin keeps
   only the registration shell and delegates to `skills/qintopia-weather`.
+- Split WenYuanGe/Dify retrieval behavior out of `skills/qintopia-tools` so the Hermes
+  plugin keeps stable tool registration and delegates to `skills/knowledge-retrieval`.
 - Moved migration status out of root README and agent rule files; root docs now link to
   the migration plan instead of embedding transient state.
 - Linked the English and Chinese root READMEs and connected root collaboration files to

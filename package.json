@@ -15,7 +15,8 @@
     "skills:packages:check": "node tools/skills/check-package-boundaries.mjs",
     "skills:qintopia-weather:test": "cd skills/qintopia-weather && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
     "skills:qintopia-weather:check": "node tools/skills/check-package-boundaries.mjs && pnpm skills:qintopia-weather:test",
-    "skills:knowledge-retrieval:check": "node tools/skills/check-package-boundaries.mjs",
+    "skills:knowledge-retrieval:test": "cd skills/knowledge-retrieval && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
+    "skills:knowledge-retrieval:check": "node tools/skills/check-package-boundaries.mjs && pnpm skills:knowledge-retrieval:test",
     "skills:postgres-context:check": "node tools/skills/check-package-boundaries.mjs",
     "workflows:check": "node tools/workflows/check-workflows.mjs",
     "mcp:adapters:check": "node tools/mcp/check-adapters.mjs",
@@ -50,7 +51,7 @@
     "check:sidecar": "cargo check --manifest-path runtime/sidecar/Cargo.toml",
     "test:sidecar": "cargo test --manifest-path runtime/sidecar/Cargo.toml",
     "smoke:sidecar": "deploy/sidecar/scripts/operations-control-plane-smoke.sh && deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh",
-    "check:light": "pnpm format:check && pnpm lint:md && pnpm registry:check && pnpm mcp:collab:check && pnpm mcp:adapters:check && pnpm skills:qintopia-tools:check && pnpm skills:feishu-base:check && pnpm skills:packages:check && pnpm workflows:check && pnpm runtime:contracts:check && pnpm deploy:contracts:check && pnpm tools:inventory:check && pnpm tools:ci:check && pnpm agents:check && pnpm agents:profile-bundles:check && pnpm collaboration:check && pnpm policy:check && pnpm secrets:check && pnpm deploy:preflight:ci && pnpm deploy:github-app-git:check && pnpm deploy:cos:check && pnpm deploy:systemd:check && pnpm deploy:release-model:check",
+    "check:light": "pnpm format:check && pnpm lint:md && pnpm registry:check && pnpm mcp:collab:check && pnpm mcp:adapters:check && pnpm skills:qintopia-tools:check && pnpm skills:qintopia-weather:check && pnpm skills:knowledge-retrieval:check && pnpm skills:feishu-base:check && pnpm skills:packages:check && pnpm workflows:check && pnpm runtime:contracts:check && pnpm deploy:contracts:check && pnpm tools:inventory:check && pnpm tools:ci:check && pnpm agents:check && pnpm agents:profile-bundles:check && pnpm collaboration:check && pnpm policy:check && pnpm secrets:check && pnpm deploy:preflight:ci && pnpm deploy:github-app-git:check && pnpm deploy:cos:check && pnpm deploy:systemd:check && pnpm deploy:release-model:check",
     "check:runtime": "pnpm test:qiwe && pnpm fmt:sidecar && pnpm check:sidecar && pnpm test:sidecar && pnpm smoke:sidecar",
     "check": "pnpm check:light && pnpm check:runtime"
   },

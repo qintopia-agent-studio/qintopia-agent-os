@@ -5,9 +5,10 @@ owner: PatrickLiveCool
 status: adopting
 risk_level: medium
 description:
-  Profile-scoped Hermes tools for Qintopia knowledge lookup, GIS lookup, WenYuanGe/Dify
-  read wrappers, message-store search, complaint intake, Xiaoman activity helpers,
-  controlled business wrappers, and the current weather registration shell.
+  Profile-scoped Hermes registration shell and remaining broad Qintopia tools for GIS
+  lookup, message-store search, complaint intake, Xiaoman activity helpers, and
+  controlled business wrappers. Weather and WenYuanGe/Dify retrieval behavior now live
+  in dedicated capability packages.
 source:
   path: /home/ubuntu/.hermes/profiles/*/plugins/qintopia-tools
   reference: server-runtime-2026-07-05
@@ -28,6 +29,7 @@ dependencies:
   - runtime/hermes
   - mcp/context-server
   - skills/qintopia-weather
+  - skills/knowledge-retrieval
 tags:
   - hermes-plugin
   - qintopia
@@ -38,6 +40,8 @@ next_actions:
     explicit profile overlays.
   - Keep weather behavior in skills/qintopia-weather; qintopia-tools should only expose
     the legacy Hermes registration shell for qintopia_weather_lookup.
+  - Keep WenYuanGe/Dify retrieval behavior in skills/knowledge-retrieval; qintopia-tools
+    should only expose stable Hermes tool registration for those tool names.
   - Keep Xiaoqin out of active migration scope.
   - Add release packaging and rollback notes before replacing profile-local plugin
     directories on the server.

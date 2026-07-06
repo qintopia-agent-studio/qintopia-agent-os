@@ -25,8 +25,19 @@ const packages = {
     ],
   },
   "skills/knowledge-retrieval": {
-    required: ["README.md", "manifest.yaml"],
-    requiredReadme: ["WenYuanGe", "Dify", "filtered"],
+    required: [
+      "README.md",
+      "manifest.yaml",
+      "plugin.yaml",
+      "__init__.py",
+      "tests/test_knowledge_retrieval.py",
+    ],
+    requiredReadme: [
+      "WenYuanGe",
+      "Dify",
+      "filtered answer basis",
+      "qintopia-tools registration shell",
+    ],
   },
   "skills/postgres-context": {
     required: ["README.md", "manifest.yaml"],
