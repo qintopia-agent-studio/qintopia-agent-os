@@ -1,0 +1,60 @@
+name: PR Agent
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - review_requested
+      - synchronize
+  issue_comment:
+    types:
+      - created
+      - edited
+  workflow_dispatch:
+
+concurrency:
+  group:
+    ${{ github.workflow }}-${{ github.event.pull_request.number ||
+    github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  pr-agent:
+    name: PR-Agent review assistant
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >
+      github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+      github.event.comment.author_association) &&
+        startsWith(github.event.comment.body, '/')
+      )
+
+    steps:
+      - name: Run PR-Agent
+        uses: the-pr-agent/pr-agent@8e4d32e5497defd43c023a404f73560c62728961
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_KEY: ${{ secrets.PR_AGENT_OPENAI_KEY }}
+          OPENAI.API_BASE: ${{ secrets.PR_AGENT_OPENAI_API_BASE }}
+          PR_AGENT_CONFIG_BRANCH: ${{ github.head_ref || github.ref_name }}
+          config.model: ${{ vars.PR_AGENT_MODEL }}
+          config.response_language: "zh-CN"
+          config.custom_model_max_tokens:
+            ${{ vars.PR_AGENT_CUSTOM_MODEL_MAX_TOKENS || '32000' }}
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "true"
+          github_action_config.auto_improve: "false"
+          github_action_config.pr_actions:
+            '["opened", "reopened", "ready_for_review", "review_requested",
+            "synchronize"]'

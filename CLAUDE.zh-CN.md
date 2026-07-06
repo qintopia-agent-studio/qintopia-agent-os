@@ -11,13 +11,15 @@
 2. 阅读 `AGENTS.md` / `AGENTS.zh-CN.md`。
 3. 阅读 `docs/README.md` / `docs/README.zh-CN.md`。
 4. 阅读 `docs/architecture/agent-os-overview.md`。
-5. 可能影响产品范围时阅读 `docs/product/agent-os-prd.md`。
-6. 可能影响 Agent OS 设计时阅读 `docs/agent-os/README.md`。
-7. 可能影响 runtime 行为时阅读 `docs/operations/runtime-baseline.md`。
-8. 判断目标 domain：`agents`、`skills`、`workflows`、`mcp`、`runtime`、
-   `deploy`、`docs`、`fixtures`、`tools` 或 `deprecated`。
-9. 如果目标 package 已有 README 或 manifest，先阅读它。
-10. 如果任务是迁移，先阅读 `docs/plans/active/monorepo-migration.md`。
+5. 阅读 `docs/plans/active/current-roadmap.md`。
+6. 阅读 `docs/engineering/programming-agent-guardrails.md`。
+7. 可能影响产品范围时阅读 `docs/product/agent-os-prd.md`。
+8. 可能影响 Agent OS 设计时阅读 `docs/agent-os/README.md`。
+9. 可能影响 runtime 行为时阅读 `docs/operations/runtime-baseline.md`。
+10. 判断目标 domain：`agents`、`skills`、`workflows`、`mcp`、`runtime`、
+    `deploy`、`docs`、`fixtures`、`tools` 或 `deprecated`。
+11. 如果目标 package 已有 README 或 manifest，先阅读它。
+12. 如果需要历史迁移证据，阅读 `docs/plans/completed/monorepo-migration.md`。
 
 ## 核心边界
 
@@ -26,6 +28,9 @@
 - 不要把服务器侧实验当成已批准架构。
 - 不要基于 WorkTool 或 Hermes Kanban 新建 workflow。
 - 不要按编程语言组织顶层目录。
+- 不要直接在 `master` 上开发；使用 feature branch。
+- 新功能、行为变更、迁移或 runtime 改动必须先写文档。
+- 不要引入 Java、Gradle、Maven、Kotlin、Go、Swift、C#、PHP、Ruby、Elixir 或新的工具链栈，除非 owner 明确批准架构方向。
 - 没有 package owner、manifest 和 validation path 时，不要添加宽泛抽象。
 
 ## 仓库形态

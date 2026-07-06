@@ -61,6 +61,22 @@ Do not create top-level language buckets such as `python/`, `rust/`, or `typescr
 Rust, Python, TypeScript, shell, and SQL belong inside the package that owns the
 capability.
 
+## Implementation Language Boundary
+
+Approved implementation families are currently:
+
+- TypeScript or JavaScript
+- Python
+- Rust
+- shell
+- SQL
+- YAML, JSON, and Markdown for configuration and docs
+
+Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or
+another language/toolchain stack without an owner-approved architecture decision. If a
+new language is approved later, update this document, the programming-agent guardrails,
+and the collaboration policy check in the same PR.
+
 ## Templates
 
 - `agents/_template/agent.yaml`

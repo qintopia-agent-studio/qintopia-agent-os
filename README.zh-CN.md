@@ -51,16 +51,23 @@ qintopia-agent-os-monorepo/
 
 所有变更都通过 git：
 
-1. 新建分支。
+1. 从 `master` 新建分支；不要直接在 `master` 上开发。
 2. 阅读相关 package README 和 manifest。
-3. 做小范围改动。
-4. 运行 package 级验证。
-5. 有仓库级检查时再运行仓库级检查。
-6. 提交 PR，并写明验证结果和生产边界。
-7. 只部署经过确认的 commit SHA。
+3. 新功能、行为变更、迁移或 runtime 改动必须先写文档或更新 manifest。
+4. 做小范围改动。
+5. 运行 package 级验证。
+6. 有仓库级检查时再运行仓库级检查。
+7. 提交 PR，并写明验证结果和生产边界。
+8. 只部署经过确认的 commit SHA。
 
 服务器是部署目标，不是编辑现场。不要直接在服务器或 `.hermes`
 运行目录里修改文档、代码、脚本、wrapper、worker、runbook 或 runtime template。
+
+新实现代码只能使用仓库已有语言和工具链：
+
+- TypeScript 或 JavaScript、Python、Rust、shell、SQL、YAML、JSON 和 Markdown。
+- 不要引入 Java、Gradle、Maven、Kotlin、Go、Swift、C#、PHP、Ruby、Elixir 或其他新技术栈。
+- 需要新技术栈时，必须先有 owner 明确批准的架构决策。
 
 ## 文档
 
@@ -69,14 +76,18 @@ qintopia-agent-os-monorepo/
 
 产品和 Agent OS 实现上下文优先读：
 
+- [docs/plans/active/current-roadmap.md](docs/plans/active/current-roadmap.md)
+- [docs/engineering/programming-agent-guardrails.md](docs/engineering/programming-agent-guardrails.md)
 - [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
 - [docs/agent-os/README.md](docs/agent-os/README.md)
 - [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)
 
-## 迁移
+## 迁移归档
 
-迁移状态、源目录 inventory、adoption 顺序和进度更新统一维护在
-`docs/plans/active/monorepo-migration.md`。
+monorepo 迁移和 legacy
+cleanup 已完成。历史迁移状态、源目录 inventory、adoption 顺序和进度更新统一归档在
+[docs/plans/completed/monorepo-migration.md](docs/plans/completed/monorepo-migration.md)。当前工作看
+[docs/plans/active/current-roadmap.md](docs/plans/active/current-roadmap.md)。
 
 ## Package 契约
 

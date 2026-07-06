@@ -12,13 +12,16 @@ Before editing:
 2. Read `AGENTS.md`.
 3. Read `docs/README.md`.
 4. Read `docs/architecture/agent-os-overview.md`.
-5. Read `docs/product/agent-os-prd.md` when product scope may change.
-6. Read `docs/agent-os/README.md` when Agent OS design may change.
-7. Read `docs/operations/runtime-baseline.md` when runtime behavior may change.
-8. Identify the target domain: `agents`, `skills`, `workflows`, `mcp`, `runtime`,
-   `deploy`, `docs`, `fixtures`, `tools`, or `deprecated`.
-9. Read the target package README or manifest if it exists.
-10. If the task is a migration, read `docs/plans/active/monorepo-migration.md`.
+5. Read `docs/plans/active/current-roadmap.md`.
+6. Read `docs/engineering/programming-agent-guardrails.md`.
+7. Read `docs/product/agent-os-prd.md` when product scope may change.
+8. Read `docs/agent-os/README.md` when Agent OS design may change.
+9. Read `docs/operations/runtime-baseline.md` when runtime behavior may change.
+10. Identify the target domain: `agents`, `skills`, `workflows`, `mcp`, `runtime`,
+    `deploy`, `docs`, `fixtures`, `tools`, or `deprecated`.
+11. Read the target package README or manifest if it exists.
+12. If the task needs historical migration evidence, read
+    `docs/plans/completed/monorepo-migration.md`.
 
 ## Core Boundaries
 
@@ -27,6 +30,11 @@ Before editing:
 - Do not treat server-side experiments as approved architecture.
 - Do not build new workflows on WorkTool or Hermes Kanban.
 - Do not organize new code by language at the top level.
+- Do not develop directly on `master`; use a feature branch.
+- Document first before implementing new features, behavior changes, migrations, or
+  runtime changes.
+- Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
+  new toolchain stack without owner-approved architecture direction.
 - Do not add broad abstractions without a package owner, manifest, and validation path.
 
 ## Repository Shape

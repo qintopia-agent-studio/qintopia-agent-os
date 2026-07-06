@@ -34,20 +34,18 @@ pnpm deploy:systemd:check
 The renderer is non-mutating. It writes review files to `dist/` by default and refuses
 to write directly into `/etc/systemd/system`.
 
-## M9-F Readiness
+## Release/Current Model
 
-Validate the repository-side M9-F legacy-reference removal package:
+Validate the stable release/current service and Hermes MCP wrapper model:
 
 ```bash
-pnpm deploy:m9f:check
+pnpm deploy:release-model:check
 ```
 
-The check is non-mutating. It verifies the six already-active legacy worker units render
-away from `/home/ubuntu/qintopia-msg-sidecar`, and that the Hermes `mcp-context` wrapper
-can run from a verified artifact, `release/current`, or explicit `QINTOPIA_SIDECAR_BIN`.
-
-`deploy:m9f:check` is a migration-phase harness. After M9 is complete, remove this
-script or fold its stable assertions into `deploy:preflight` and `deploy:systemd:check`.
+The check is non-mutating. It verifies the worker units render through
+`qintopia-agent-os-releases/current`, avoid `/home/ubuntu/qintopia-msg-sidecar`, and
+that the Hermes `mcp-context` wrapper can run from a verified artifact,
+`release/current`, or explicit `QINTOPIA_SIDECAR_BIN`.
 
 ## GitHub App Git Access
 

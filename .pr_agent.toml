@@ -1,0 +1,58 @@
+[config]
+git_provider = "github"
+use_repo_settings_file = true
+publish_output = true
+publish_output_progress = true
+response_language = "zh-CN"
+
+[github]
+publish_as_check_run = false
+ignore_bot_pr = true
+
+[pr_reviewer]
+require_tests_review = true
+require_security_review = true
+require_ticket_analysis_review = true
+require_estimate_effort_to_review = true
+persistent_comment = true
+num_max_findings = 5
+extra_instructions = """
+你是 Qintopia Agent OS capability/plugin monorepo 的辅助审查者。所有 review、
+summary、comment、建议都必须使用简体中文，除非引用代码、路径、命令、配置项或错误
+原文。
+
+重点检查：
+- PR 是否遵守已记录的分支、文档先行、包位置、语言/工具链、生产边界规则；
+- 改动是否应该放在 agents/、skills/、workflows/、mcp/、runtime/、deploy/、
+  registry/、docs/、fixtures/ 或 deprecated/ 下，而不是新增顶层语言目录；
+- 新行为是否先更新了相关 README、manifest、active plan、runbook 或工程文档；
+- PR 是否引入 Java、Gradle、Maven、Kotlin、Go、Swift、C#、PHP、Ruby、Elixir 或
+  其他未经 owner 批准的新语言/工具链；
+- 生产相邻改动是否明确说明外部消息发送、数据库写入、Hermes profile runtime 影响、
+  systemd/nginx/deploy 影响、Feishu/QiWe/Tencent COS/GitHub Actions 影响、secret
+  处理和回滚方式；
+- 是否把 live Hermes state、secret、原始聊天日志、session、cache、auth 文件或服务器
+  专属 runtime 数据复制进 git。
+
+不要批准、自动合并，也不要把你的审查当成 CODEOWNERS、CI、branch protection 或 owner
+review 的替代品。
+"""
+
+[pr_description]
+use_bullet_points = true
+publish_description_as_comment = true
+publish_description_as_comment_persistent = true
+enable_pr_diagram = false
+extra_instructions = """
+使用简体中文，用具体工程语言总结 PR。说明改动 domain、验证命令、生产边界；如果相关，
+补充回滚说明。避免营销式、形式主义或空泛表达。
+"""
+
+[pr_code_suggestions]
+focus_only_on_problems = true
+persistent_comment = true
+suggestions_score_threshold = 7
+extra_instructions = """
+只提出能降低具体风险或提升可维护性的建议，并且必须符合现有 Agent OS 架构。不要建议引入
+新框架或新语言。
+"""
