@@ -19,6 +19,12 @@ entries:
     status: draft
     notes:
       Unified rollback runbook boundary for current/previous release symlink promotion.
+  - id: deploy/runner
+    path: deploy/runner
+    manifest: deploy/runner/manifest.yaml
+    status: active
+    notes:
+      Production deploy request runner for COS pull-based release/current promotion.
   - id: deploy/smoke
     path: deploy/smoke
     manifest: deploy/smoke/manifest.yaml

@@ -11,6 +11,7 @@ const errors = [];
 const packages = {
   "deploy/manifests": ["release-manifest.template.yaml", "commit SHA", "artifact SHA"],
   "deploy/rollback": ["rollback", "current", "previous"],
+  "deploy/runner": ["deploy request", "release/current", "production environment"],
   "deploy/smoke": ["smoke", "profile", "MCP"],
 };
 

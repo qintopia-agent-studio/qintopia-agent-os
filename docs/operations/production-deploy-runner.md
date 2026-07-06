@@ -1,0 +1,114 @@
+# Production Deploy Runner
+
+This document records the intended production deploy automation after the server moved
+to `qintopia-agent-os-releases/current`.
+
+## Current Server Evidence
+
+Read-only verification on 2026-07-06 showed:
+
+- production sidecar and worker services run from
+  `/home/ubuntu/qintopia-agent-os-releases/current`;
+- Hermes plugin symlinks for Erhua, Xiaoman, WenYuanGe, and Huabaosi point into release
+  directories;
+- `/home/ubuntu/qintopia-agent-os-releases/current` points to
+  `16496c8d4bfb13ed26d080727a4c812f9c2e0487`;
+- `/home/ubuntu/qintopia-agent-os-releases/previous` points to
+  `99681909149fde4f16daa3af941a750d1f239860`;
+- `/etc/qintopia/cos-artifacts.env` exists but was not readable by the `ubuntu` user;
+- no deploy runner or timer existed yet.
+
+The server has enough disk space for immutable release assembly. The release history
+also contains manual assembly records where the directory name, `runtime_sha`, and
+`deploy_bundle_sha` are not always the same. New automated releases must record those
+fields separately and must not infer one from another.
+
+## Target Flow
+
+```text
+GitHub Deploy Production workflow_dispatch
+  -> production environment approval
+  -> validate target SHA belongs to origin/master
+  -> generate deploy request JSON
+  -> upload request to COS pending queue
+  -> server systemd timer polls COS
+  -> server downloads sidecar and deploy-bundle artifacts from COS
+  -> server verifies artifact-manifest.json and SHA256SUMS
+  -> server assembles releases/<release-sha>
+  -> server switches previous/current
+  -> server restarts approved targets
+  -> server runs smoke
+  -> server uploads deploy result JSON
+```
+
+GitHub Actions must not SSH to the server. The server must not pull repository source or
+build Rust for routine releases.
+
+## GitHub Controls
+
+The workflow is `.github/workflows/deploy-production.yml` and supports only
+`workflow_dispatch`.
+
+Repository owners must configure the `production` environment with required reviewers.
+The workflow should use production environment secrets for COS upload:
+
+- `TENCENT_COS_SECRET_ID`
+- `TENCENT_COS_SECRET_KEY`
+
+Repository variables may keep non-secret COS defaults:
+
+- `TENCENT_COS_BUCKET`
+- `TENCENT_COS_REGION`
+- `TENCENT_COS_PREFIX`
+- `TENCENT_COS_ENDPOINT`
+
+## Server Controls
+
+The runner is root-owned because it needs to read `/etc/qintopia/cos-artifacts.env` and
+restart system services. It must execute only the fixed scripts in `deploy/runner/`.
+
+The runner must not:
+
+- accept arbitrary shell commands from the request;
+- deploy a SHA that was not requested explicitly;
+- edit files under `.hermes` directly;
+- run `git fetch`, `git checkout`, or local Rust builds for routine releases.
+
+## Request And Result Records
+
+Deploy requests live under:
+
+```text
+qintopia-agent-os/deploy-requests/production/pending/<request-id>.json
+```
+
+Deploy results live under:
+
+```text
+qintopia-agent-os/deploy-results/production/<request-id>.json
+```
+
+The request schema is `deploy/runner/deploy-request.schema.json`. The result schema is
+`deploy/runner/deploy-result.schema.json`.
+
+## First Server Installation
+
+After this repository change is merged and the deploy bundle is published:
+
+1. Download and verify the deploy bundle on the server through the existing COS path.
+2. Assemble a new immutable release containing `deploy/runner/`.
+3. Install `deploy/runner/qintopia-agent-os-deploy-runner.service` and
+   `deploy/runner/qintopia-agent-os-deploy-runner.timer` as root-owned system units.
+4. Run `systemctl daemon-reload`.
+5. Run one dry-run request first.
+6. Enable the timer only after the dry-run result is uploaded and inspected.
+
+Do not enable production non-dry-run deployment until the dry-run proves request
+polling, artifact download, manifest validation, result upload, and smoke behavior.
+
+## Validation
+
+```bash
+pnpm deploy:runner:check
+pnpm check:light
+```

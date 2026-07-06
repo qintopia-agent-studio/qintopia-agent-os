@@ -113,6 +113,9 @@ become versioned.
   filtering, and conversation summaries.
 - Added repository-owned PR creation helpers for programming agents, including
   `pnpm pr:doctor`, `pnpm pr:bootstrap`, `pnpm pr:create`, and PR body validation.
+- Added the production deploy runner contract, manual GitHub deploy request workflow,
+  COS deploy request/result schemas, server pull-runner scripts, and
+  `pnpm deploy:runner:check`.
 
 ### Changed
 

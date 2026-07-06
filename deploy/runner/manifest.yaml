@@ -1,0 +1,32 @@
+id: deploy/runner
+type: deploy
+name: Production Deploy Runner
+status: active
+owner: PatrickLiveCool
+risk_level: high
+description:
+  Production deploy runner contract for COS deploy requests and release/current
+  promotion.
+source:
+  path: deploy/runner
+  disposition: adopt
+validation:
+  commands:
+    - pnpm deploy:runner:check
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: true
+dependencies:
+  - deploy/sidecar
+  - deploy/rollback
+  - deploy/smoke
+tags:
+  - release-current
+  - cos
+  - systemd
+next_actions:
+  - Install the runner service and timer only after a reviewed deploy bundle is
+    published.
+  - Run a production dry-run deploy request before enabling non-dry-run promotion.

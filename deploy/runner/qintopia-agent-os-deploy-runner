@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${QINTOPIA_DEPLOY_RUNNER_STATE_DIR:-/var/lib/qintopia-agent-os-deploy}"
+REQUEST_DIR="${STATE_DIR}/requests"
+RESULT_DIR="${STATE_DIR}/results"
+LOCK_FILE="${STATE_DIR}/deploy.lock"
+RELEASE_ROOT="${QINTOPIA_RELEASE_ROOT:-/home/ubuntu/qintopia-agent-os-releases}"
+ENV_FILE="${QINTOPIA_COS_ENV_FILE:-/etc/qintopia/cos-artifacts.env}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  qintopia-agent-os-deploy-runner --request-file <file> [--dry-run]
+
+Runs the fixed Qintopia Agent OS release promotion flow for a validated deploy request.
+This command is intended for a root-owned systemd service or timer. It does not execute
+arbitrary request commands.
+USAGE
+}
+
+request_file=""
+force_dry_run=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --request-file)
+      request_file="${2:-}"
+      shift 2
+      ;;
+    --dry-run)
+      force_dry_run=true
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$request_file" || ! -f "$request_file" ]]; then
+  echo "--request-file must point to an existing deploy request JSON" >&2
+  exit 2
+fi
+
+mkdir -p "$REQUEST_DIR" "$RESULT_DIR" "$RELEASE_ROOT" "$(dirname "$LOCK_FILE")"
+
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+
+json_get() {
+  python3 - "$request_file" "$1" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+value = data
+for part in sys.argv[2].split("."):
+    value = value[part]
+if isinstance(value, list):
+    print(",".join(value))
+else:
+    print(str(value).lower() if isinstance(value, bool) else value)
+PY
+}
+
+request_id="$(json_get request_id)"
+release_sha="$(json_get release_sha)"
+runtime_sha="$(json_get runtime_sha)"
+deploy_bundle_sha="$(json_get deploy_bundle_sha)"
+restart_targets="$(json_get restart_targets)"
+dry_run="$(json_get dry_run)"
+rollback_on_smoke_failure="$(json_get rollback_on_smoke_failure)"
+if [[ "$force_dry_run" == true ]]; then
+  dry_run=true
+fi
+
+result_file="${RESULT_DIR}/${request_id}.json"
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+write_result() {
+  local status="$1"
+  local error="${2:-}"
+  local previous_target=""
+  local current_target=""
+  previous_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
+  current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  python3 - "$result_file" "$request_id" "$status" "$started_at" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_target" \
+    "$current_target" "$restart_targets" "$error" <<'PY'
+import json
+import sys
+
+(
+    path,
+    request_id,
+    status,
+    started_at,
+    finished_at,
+    release_sha,
+    previous_sha,
+    current_target,
+    restart_targets,
+    error,
+) = sys.argv[1:11]
+
+result = {
+    "schema_version": 1,
+    "request_id": request_id,
+    "environment": "production",
+    "status": status,
+    "started_at": started_at,
+    "finished_at": finished_at,
+    "release_sha": release_sha,
+    "previous_sha": previous_sha,
+    "current_target": current_target,
+    "restart_targets": [item for item in restart_targets.split(",") if item],
+    "checks": [{"name": "deploy-runner", "status": "passed" if status.endswith("succeeded") else "failed"}],
+    "rollback": {"attempted": status == "rolled_back", "status": "not_needed"},
+}
+if error:
+    result["error"] = error
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(result, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
+
+run_promotion() {
+  promote_args=(
+    --request-file "$request_file"
+    --release-root "$RELEASE_ROOT"
+  )
+  if [[ "$dry_run" == "true" ]]; then
+    promote_args+=(--dry-run)
+  fi
+  deploy/runner/promote-release.sh \
+    "${promote_args[@]}"
+  if [[ "$dry_run" == "true" ]]; then
+    write_result dry_run_succeeded
+  else
+    deploy/runner/smoke-release.sh --restart-targets "$restart_targets"
+    write_result succeeded
+  fi
+}
+
+(
+  flock -n 9 || {
+    echo "another deploy is already running" >&2
+    exit 75
+  }
+  if ! run_promotion; then
+    status=$?
+    if [[ "$dry_run" != "true" && "$rollback_on_smoke_failure" == "true" ]]; then
+      deploy/runner/rollback-release.sh --release-root "$RELEASE_ROOT" || true
+      write_result rolled_back "deployment failed and rollback was attempted"
+    else
+      write_result failed "deployment failed"
+    fi
+    exit "$status"
+  fi
+) 9>"$LOCK_FILE"
+
+echo "Deploy result: ${result_file}"

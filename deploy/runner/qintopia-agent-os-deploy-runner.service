@@ -1,0 +1,17 @@
+[Unit]
+Description=Qintopia Agent OS Deploy Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
+Environment=QINTOPIA_COS_ENV_FILE=/etc/qintopia/cos-artifacts.env
+Environment=QINTOPIA_DEPLOY_RUNNER_STATE_DIR=/var/lib/qintopia-agent-os-deploy
+ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/deploy/runner/poll-deploy-requests.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/qintopia-agent-os-releases /var/lib/qintopia-agent-os-deploy /tmp
