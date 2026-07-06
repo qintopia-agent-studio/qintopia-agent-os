@@ -53,7 +53,8 @@ Every Agent package should declare:
 | Silaoshi  | Operations SOP, activity planning, service follow-up, review templates                    |
 | Guanerye  | Engineering automation and validation support                                             |
 
-Xiaoqin is not part of the current implementation scope.
+Xiaoqin is not part of the current implementation scope. A future Xiaoqin package must
+be designed as a new non-WorkTool Agent integration and reviewed before registration.
 
 ## Tool And Skill Contract
 

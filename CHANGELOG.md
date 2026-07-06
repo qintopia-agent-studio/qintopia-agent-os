@@ -310,3 +310,5 @@ become versioned.
   `/home/ubuntu/qintopia-agent-os-backups/m12-low-risk-20260706T011023Z` without
   permanent deletion, leaving WorkTool, Xiaoqin, and OpenClaw for separate decommission
   batches.
+- Clarified that the current Xiaoqin WorkTool runtime is decommission scope, while
+  future Xiaoqin work remains possible through a new non-WorkTool Agent integration.

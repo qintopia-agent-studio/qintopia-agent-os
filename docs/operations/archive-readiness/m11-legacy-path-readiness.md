@@ -47,11 +47,11 @@ delete now.
 These paths have disabled unit-file or profile references that should be handled as a
 single decommission batch before archival.
 
-| Path                                    | M11 mark                    | Blocking evidence                                                   |
-| --------------------------------------- | --------------------------- | ------------------------------------------------------------------- |
-| `/home/ubuntu/worktool-gateway`         | decommission-batch-required | Referenced by disabled user unit `worktool-gateway.service`         |
-| `/home/ubuntu/.hermes/profiles/xiaoqin` | decommission-batch-required | Referenced by disabled Xiaoqin WorkTool user unit and profile files |
-| `/opt/qiwe-openclaw-adapter`            | decommission-batch-required | Referenced by disabled system unit `qiwe-openclaw-adapter.service`  |
+| Path                                    | M11 mark                    | Blocking evidence                                                                                           |
+| --------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `/home/ubuntu/worktool-gateway`         | decommission-batch-required | Referenced by disabled user unit `worktool-gateway.service`                                                 |
+| `/home/ubuntu/.hermes/profiles/xiaoqin` | decommission-batch-required | Current WorkTool-bound Xiaoqin runtime; referenced by disabled Xiaoqin WorkTool user unit and profile files |
+| `/opt/qiwe-openclaw-adapter`            | decommission-batch-required | Referenced by disabled system unit `qiwe-openclaw-adapter.service`                                          |
 
 Related disabled OpenClaw units observed:
 
@@ -83,7 +83,7 @@ Huabaosi `qintopia-base-read` resolves to:
 Before M12 cleanup starts, choose an explicit batch:
 
 1. Low-risk archive-ready legacy directories.
-2. WorkTool/Xiaoqin disabled-unit decommission batch.
+2. WorkTool and current WorkTool-bound Xiaoqin disabled-unit decommission batch.
 3. OpenClaw disabled-unit and route decommission batch.
 
 Each M12 batch must record:

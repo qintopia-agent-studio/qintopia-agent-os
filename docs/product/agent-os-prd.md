@@ -42,7 +42,8 @@ high-risk decisions.
 
 ## Current Non-Goals
 
-- Xiaoqin implementation.
+- Xiaoqin implementation in the current phase. If Xiaoqin is re-enabled later, it must
+  use a new non-WorkTool channel and a reviewed Agent package contract.
 - WorkTool as a future Agent OS channel.
 - Hermes Kanban as the future orchestration backbone.
 - Automatic Xiaohongshu private-message reply.

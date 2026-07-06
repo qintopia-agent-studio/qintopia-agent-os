@@ -18,7 +18,9 @@ The initial product baseline comes from
 `../qintopia-agent-os/docs/product/qintopia-agent-os-prd.md`. During migration, inactive
 or unapproved scope was normalized:
 
-- Xiaoqin is not part of the current implementation scope.
+- Xiaoqin is not part of the current implementation scope. Future Xiaoqin work is not
+  blocked as a concept, but it must not use WorkTool and needs a new reviewed Agent
+  package contract.
 - WorkTool is not a future product channel.
 - Hermes Kanban is not a future orchestration backbone.
 - Automatic public publishing or high-risk external replies remain out of scope without

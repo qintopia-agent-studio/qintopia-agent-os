@@ -1,14 +1,16 @@
 # WorkTool Decommission Plan
 
-This plan covers WorkTool and Xiaoqin WorkTool runtime cleanup. It does not approve
-server deletion by itself.
+This plan covers WorkTool and the current Xiaoqin WorkTool runtime cleanup. It does not
+approve server deletion by itself and does not decide whether Xiaoqin can return later
+through a non-WorkTool integration.
 
 ## Current Evidence
 
 Read-only checks on 2026-07-03 initially found:
 
 - `/home/ubuntu/worktool-gateway` exists.
-- `/home/ubuntu/.hermes/profiles/xiaoqin` exists.
+- `/home/ubuntu/.hermes/profiles/xiaoqin` exists as the current WorkTool-bound runtime
+  profile.
 - `/home/ubuntu/.hermes/profiles/xiaoqin/plugins/worktool-platform` exists.
 - No matching `worktool`, `xiaoqin`, or `openclaw` systemd service or timer was found in
   the system or ubuntu user service list.
@@ -40,7 +42,8 @@ Local checks on 2026-07-03 found:
 
 - Owner approves WorkTool removal.
 - Server changes are deferred until the final migration/cutover window.
-- No active Agent package sources from WorkTool or Xiaoqin.
+- No active Agent package sources from WorkTool or the current WorkTool-bound Xiaoqin
+  runtime.
 - `pnpm policy:check` passes.
 - Server read-only check confirms no service, timer, cron, process, Hermes subscription,
   or profile route depends on WorkTool.
@@ -71,7 +74,8 @@ systemctl --user list-units --all --type=service --no-pager | grep -Ei 'worktool
 crontab -l 2>/dev/null | grep -Ei 'worktool|xiaoqin|openclaw' || true
 ```
 
-Also inspect Hermes profile subscriptions before removing Xiaoqin:
+Also inspect Hermes profile subscriptions before archiving the current WorkTool-bound
+Xiaoqin runtime:
 
 ```bash
 find /home/ubuntu/.hermes/profiles/xiaoqin -maxdepth 2 -type f | sort
@@ -81,9 +85,13 @@ Do not print or commit `.env` values.
 
 ## M7 Closure Decision
 
-M7 classifies WorkTool, Xiaoqin WorkTool runtime, and OpenClaw as deprecated/audit-only.
-It does not remove server files or units. Final server changes should happen during the
-M9 migration window or another owner-approved cleanup window.
+M7 classifies WorkTool, the current Xiaoqin WorkTool runtime, and OpenClaw as
+deprecated/audit-only. It does not remove server files or units. Final server changes
+should happen during the M9 migration window or another owner-approved cleanup window.
+
+This classification applies only to the WorkTool-based runtime. A future Xiaoqin Agent
+is allowed as a separate product/engineering decision if it uses a non-WorkTool channel
+and gets a reviewed Agent package contract.
 
 ## Cleanup Sequence
 
@@ -102,4 +110,5 @@ After approval, prefer archive-first cleanup:
 
 If removal breaks a live path, restore the archived directory, restart the previous
 service if one existed, and record the dependency that was missed. Do not rebuild
-WorkTool as a future Agent OS channel.
+WorkTool as a future Agent OS channel. Do not restore the archived WorkTool-bound
+Xiaoqin runtime as the future Xiaoqin implementation.

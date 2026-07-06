@@ -90,19 +90,19 @@ implemented.
 These paths came from the previous mixed deployment model. Do not delete them until all
 runtime references are removed and an owner-approved archive window is active.
 
-| Path                                          | Current status                           | Required migration before cleanup                         |
-| --------------------------------------------- | ---------------------------------------- | --------------------------------------------------------- |
-| `/home/ubuntu/qintopia-msg-sidecar`           | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/qintopia-agent-os`              | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/qintopia-hermes-runtime`        | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/qintopia-message-sidecar-build` | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/qintopia-artifacts`             | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/qintopia-migration`             | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/qintopia-worklog-guard-*`       | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/worktool-gateway`               | deprecated runtime; still separate batch | cleanup under WorkTool decommission plan                  |
-| `/home/ubuntu/worktool-gateway-old`           | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
-| `/home/ubuntu/.hermes/profiles/xiaoqin`       | deprecated profile; still separate batch | archive or delete after service/config recheck            |
-| `/opt/qiwe-openclaw-adapter`                  | deprecated adapter; still separate batch | cleanup with disabled unit and nginx route reconciliation |
+| Path                                          | Current status                                               | Required migration before cleanup                         |
+| --------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
+| `/home/ubuntu/qintopia-msg-sidecar`           | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-agent-os`              | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-hermes-runtime`        | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-message-sidecar-build` | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-artifacts`             | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-migration`             | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-worklog-guard-*`       | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/worktool-gateway`               | deprecated runtime; still separate batch                     | cleanup under WorkTool decommission plan                  |
+| `/home/ubuntu/worktool-gateway-old`           | archived in M12 low-risk batch                               | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/.hermes/profiles/xiaoqin`       | current WorkTool-bound Xiaoqin runtime; still separate batch | archive current runtime after service/config recheck      |
+| `/opt/qiwe-openclaw-adapter`                  | deprecated adapter; still separate batch                     | cleanup with disabled unit and nginx route reconciliation |
 
 M12 first low-risk archive path:
 

@@ -13,8 +13,8 @@ pnpm policy:check
 
 The check currently enforces:
 
-- WorkTool and Xiaoqin inventory records cannot be marked as active `adopt` or
-  `template` inputs.
+- WorkTool and current WorkTool-bound Xiaoqin inventory records cannot be marked as
+  active `adopt` or `template` inputs.
 - Huabaosi shadow work must stay in `review-pool` until owner approval.
 - `deploy/sidecar/scripts/server-deploy.sh` must stay marked as a legacy snapshot until
   M9 cutover replaces or converts it.
@@ -22,8 +22,8 @@ The check currently enforces:
   legacy snapshot.
 - Postgres migrations must reference matching data-design notes, except for the initial
   bootstrap migration that predates `schema_change_log`.
-- Active packages cannot source from WorkTool, Xiaoqin, or Huabaosi shadow material
-  without the correct disposition.
+- Active packages cannot source from WorkTool, current WorkTool-bound Xiaoqin runtime,
+  or Huabaosi shadow material without the correct disposition.
 - Agent packages cannot include live Hermes runtime state such as `.env`, auth files,
   memories, sessions, caches, logs, state databases, request dumps, or secrets.
 
@@ -34,6 +34,7 @@ Without executable checks, future contributors can accidentally:
 
 - copy server-side experiments into the approved roadmap
 - revive WorkTool as an active channel
+- treat the current WorkTool-bound Xiaoqin runtime as the future Xiaoqin design
 - treat a legacy deploy script as the current production deploy entrypoint
 - add migrations without design notes
 - bypass review-pool classification for high-risk runtime work

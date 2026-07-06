@@ -21,7 +21,8 @@ not a permission implementation.
   events.
 - Raw prompt handoff is not a system interface.
 - Profile packages may contain reviewed templates and contracts, not live runtime state.
-- `xiaoqin` is not an active Agent package.
+- `xiaoqin` is not an active Agent package in the current phase. Future Xiaoqin work
+  requires a new non-WorkTool Agent contract and owner-approved registry change.
 - Huabaosi shadow/Rust material remains review-pool until owner approval.
 - Every active Agent template must declare `dry_run_expectations`.
 

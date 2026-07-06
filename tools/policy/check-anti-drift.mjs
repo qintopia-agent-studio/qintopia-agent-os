@@ -96,7 +96,7 @@ for (const file of inventoryFiles) {
       activeDispositions.has(record.disposition)
     ) {
       addError(
-        `${file}: ${record.id} references WorkTool/Xiaoqin but is marked ${record.disposition}; use deprecated, remove, or review-pool`
+        `${file}: ${record.id} references WorkTool or current WorkTool-bound Xiaoqin runtime but is marked ${record.disposition}; use deprecated, remove, or review-pool until owner approves a new non-WorkTool Xiaoqin design`
       );
     }
 
@@ -211,7 +211,9 @@ for (const requiredAgentId of [
 }
 
 if (agentIds.has("agents/xiaoqin")) {
-  addError("registry/agents.yaml: xiaoqin must not be registered as an active Agent");
+  addError(
+    "registry/agents.yaml: xiaoqin must not be registered as an active Agent until owner approves a new non-WorkTool contract"
+  );
 }
 
 const forbiddenAgentRuntimePathParts = new Set([

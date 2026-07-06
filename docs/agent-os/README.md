@@ -15,5 +15,6 @@ define object language, Agent contracts, acceptance expectations, and package ma
 
 The initial baseline comes from stable local documents under
 `../qintopia-agent-os/docs/agent-os/`. Historical WorkTool, OpenClaw, Hermes Kanban, and
-Xiaoqin documents should be adopted only into `deprecated/` or a review pool unless an
-owner asks for a specific audit.
+WorkTool-bound Xiaoqin documents should be adopted only into `deprecated/` or a review
+pool unless an owner asks for a specific audit. This does not block a future Xiaoqin
+Agent designed without WorkTool.

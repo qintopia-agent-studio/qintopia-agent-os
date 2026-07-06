@@ -54,6 +54,10 @@ WorkTool is not a future Agent OS channel. During migration:
 4. Keep a decommission note when removal affects operator runbooks or deployment
    scripts.
 
+Xiaoqin may be re-enabled in a future phase, but not through WorkTool. The current
+server-side Xiaoqin WorkTool profile is cleanup/decommission scope, while any future
+Xiaoqin Agent must be designed as a new reviewed package with a non-WorkTool channel.
+
 ## Server Runtime Handling
 
 Server runtime files can be read for evidence and inventory. They must not be copied

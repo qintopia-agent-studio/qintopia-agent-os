@@ -194,8 +194,9 @@ profiles:
       runtime_profile: true
       secrets: true
     next_action:
-      - do not migrate as active Agent scope
-      - keep only audit or decommission notes
+      - do not migrate the current WorkTool-bound runtime as active Agent scope
+      - future Xiaoqin work must use a new non-WorkTool Agent contract
+      - keep only audit or decommission notes for the current runtime
       - archive or remove profile runtime state only during final migration with owner
         approval
 

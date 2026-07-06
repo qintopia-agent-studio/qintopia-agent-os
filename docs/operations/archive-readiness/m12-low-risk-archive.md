@@ -4,8 +4,8 @@ Updated: 2026-07-06
 
 M12 first batch archived the low-risk legacy directories that M11 had already marked as
 archive-ready. This batch moved files into a dated backup directory only. It did not
-delete files permanently and did not touch WorkTool, Xiaoqin, or OpenClaw decommission
-paths.
+delete files permanently and did not touch WorkTool, the current WorkTool-bound Xiaoqin
+runtime, or OpenClaw decommission paths.
 
 ## Scope
 
@@ -125,11 +125,11 @@ this document before doing any further cleanup.
 
 These paths are intentionally not archived in this batch:
 
-| Path                                    | Reason                                      | Next action                             |
-| --------------------------------------- | ------------------------------------------- | --------------------------------------- |
-| `/home/ubuntu/worktool-gateway`         | disabled unit references still exist        | WorkTool decommission batch             |
-| `/home/ubuntu/.hermes/profiles/xiaoqin` | deprecated profile and disabled unit refs   | Xiaoqin/WorkTool profile decommission   |
-| `/opt/qiwe-openclaw-adapter`            | disabled OpenClaw unit and route references | OpenClaw decommission and nginx recheck |
+| Path                                    | Reason                                                        | Next action                                 |
+| --------------------------------------- | ------------------------------------------------------------- | ------------------------------------------- |
+| `/home/ubuntu/worktool-gateway`         | disabled unit references still exist                          | WorkTool decommission batch                 |
+| `/home/ubuntu/.hermes/profiles/xiaoqin` | current WorkTool-bound Xiaoqin runtime and disabled unit refs | WorkTool-bound Xiaoqin runtime decommission |
+| `/opt/qiwe-openclaw-adapter`            | disabled OpenClaw unit and route references                   | OpenClaw decommission and nginx recheck     |
 
 Permanent deletion of this M12 archive is not approved. Keep it until the owner approves
 post-archive retention cleanup.

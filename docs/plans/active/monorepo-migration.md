@@ -174,8 +174,8 @@ and future programming agents.
   - added `tools/policy/check-anti-drift.mjs`
   - added `pnpm policy:check` and wired it into `pnpm check`
   - added `docs/engineering/anti-drift-policy.md`
-  - enforce WorkTool/Xiaoqin deprecation boundaries in inventory and active package
-    sources
+  - enforce WorkTool and current WorkTool-bound Xiaoqin deprecation boundaries in
+    inventory and active package sources
   - enforce Huabaosi shadow work as review-pool unless owner-approved
   - enforce sidecar deploy script as a legacy snapshot before M9 cutover
   - enforce Postgres migration and data-design note consistency
@@ -198,7 +198,8 @@ and future programming agents.
   - extended `pnpm policy:check` to require these deprecated package records
 - Started M6 active agents adoption:
   - confirmed server runtime profiles exist for `default`, `erhua`, `xiaoman`,
-    `wenyuange`, `silaoshi`, `guanerye`, `huabaosi`, and deprecated `xiaoqin`
+    `wenyuange`, `silaoshi`, `guanerye`, `huabaosi`, and the current WorkTool-bound
+    `xiaoqin` runtime
   - confirmed active Hermes user services for `default`, `erhua`, `xiaoman`,
     `wenyuange`, `silaoshi`, `guanerye`, and `huabaosi`
   - added agent package contracts for `agents/default`, `agents/erhua`,
@@ -206,7 +207,7 @@ and future programming agents.
     `agents/huabaosi`
   - kept `agents/huabaosi` as draft/review-pool for source disposition because Huabaosi
     shadow/Rust material remains unapproved
-  - did not register `xiaoqin` as an active Agent package
+  - did not register `xiaoqin` as an active Agent package in the current phase
   - registered the Agent packages in `registry/agents.yaml`
   - extended `pnpm policy:check` to require active Agent records and block
     `agents/xiaoqin`
@@ -226,7 +227,8 @@ and future programming agents.
     `profile.template.yaml`, `capabilities.md`, `runtime-notes.md`, and
     `docs/source-snapshot.md`
   - required `profile.template.yaml` to declare dry-run expectations
-  - kept `xiaoqin` out of active Agents and `huabaosi` in draft/review-pool
+  - kept `xiaoqin` out of active Agents in the current phase and `huabaosi` in
+    draft/review-pool
 - Completed M8 CI/CD deployment gate:
   - added `tools/security/check-secrets.mjs` and `pnpm secrets:check`
   - added `tools/deploy/preflight.mjs`, `pnpm deploy:preflight`, and
@@ -960,17 +962,19 @@ Remaining follow-up after M12 low-risk archive:
   profile template/symlink plan and guardrails without production profile-file repoints.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
-- Deprecated runtime cleanup: M12 archived the first low-risk batch only. WorkTool,
-  Xiaoqin, and OpenClaw still require explicit decommission batches before archive or
-  deletion.
+- Deprecated runtime cleanup: M12 archived the first low-risk batch only. WorkTool, the
+  current WorkTool-bound Xiaoqin runtime, and OpenClaw still require explicit
+  decommission batches before archive or deletion. Future Xiaoqin work must be designed
+  as a new non-WorkTool Agent package.
 - Hermes profile/plugin files under `.hermes/profiles/*` are still live runtime state.
   Future profile and skill migrations must use reviewed release bundles or symlinks, not
   wholesale copies of `.hermes`.
 
 Recommended order:
 
-1. Choose the next M12 decommission batch explicitly: WorkTool/Xiaoqin first or OpenClaw
-   first. Do not mix them with unrelated cleanup.
+1. Choose the next M12 decommission batch explicitly: WorkTool plus the current
+   WorkTool-bound Xiaoqin runtime first, or OpenClaw first. Do not mix them with
+   unrelated cleanup.
 2. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
 3. Do not repoint production to a newer commit just because docs changed; use a new

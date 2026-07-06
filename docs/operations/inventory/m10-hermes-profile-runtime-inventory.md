@@ -21,8 +21,9 @@ git.
 - `Profile plugins`: active plugins are still directories under
   `/home/ubuntu/.hermes/profiles/*/plugins/*`. Migrate them as reviewed skill/profile
   bundles; do not copy a live profile root.
-- `Deprecated profile`: Xiaoqin profile exists but its WorkTool gateway service is
-  inactive/disabled. Keep it for M12 decommission, not active migration.
+- `WorkTool-bound Xiaoqin runtime`: Xiaoqin profile exists but its WorkTool gateway
+  service is inactive/disabled. Keep the current runtime for M12 decommission, not
+  active migration. This does not block a future non-WorkTool Xiaoqin Agent.
 - `Deprecated OpenClaw`: OpenClaw and old embedding units are inactive/disabled, but
   unit files still reference legacy paths. Keep them for M12 decommission.
 - `Release rollback`: `/home/ubuntu/qintopia-agent-os-releases/previous` is not yet an
@@ -71,8 +72,9 @@ git.
 
 ## Deprecated Or Cleanup-Only Profiles
 
-- `Xiaoqin`: profile and `worktool-platform` plugin exist. Do not migrate as active
-  Agent scope; archive only in M12 after disabled-unit audit.
+- `Xiaoqin`: current profile and `worktool-platform` plugin exist. Do not migrate this
+  WorkTool-bound runtime as active Agent scope; archive only in M12 after disabled-unit
+  audit. Future Xiaoqin work requires a new non-WorkTool design.
 - `WorkTool gateway`: `worktool-gateway.service` is inactive/disabled. Decommission with
   WorkTool paths; do not fold it into active Agent OS packages.
 - `OpenClaw`: `qiwe-openclaw-adapter`, `openclaw-embedding-proxy`, `oclak-ep`, and old
