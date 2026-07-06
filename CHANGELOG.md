@@ -11,6 +11,8 @@ become versioned.
 ### Added
 
 - Initialized the Qintopia Agent OS capability/plugin monorepo on the `master` branch.
+- Added Conventional Commits enforcement with commitlint, a Husky `commit-msg` hook, and
+  CI commit message validation.
 - Added pnpm workspace configuration for Agent OS domains.
 - Added root documentation for human, Codex, and Claude Code collaborators.
 - Added Chinese counterparts for root collaboration docs.

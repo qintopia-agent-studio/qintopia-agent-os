@@ -25,6 +25,20 @@ Do not develop directly on `master`.
 - Keep each branch scoped to one package, domain, or documented plan.
 - CI may run on `master` after merge, but local feature work should not happen there.
 
+## Commit Message Rule
+
+Use Conventional Commits for every commit. Allowed types are:
+
+```text
+build chore ci docs feat fix perf refactor revert style test
+```
+
+Use `feat` for new capabilities, `fix` for bug fixes, `docs` for documentation-only
+changes, `ci` for CI/check gates, `test` for tests or fixtures, `refactor` for
+behavior-preserving code movement, `build` for dependency or artifact tooling, and
+`chore` for maintenance. Do not invent custom types. Commit messages are checked by the
+local `commit-msg` hook and by CI.
+
 ## Documentation-First Rule
 
 For new features, behavior changes, migrations, or runtime changes:

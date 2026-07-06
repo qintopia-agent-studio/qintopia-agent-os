@@ -21,6 +21,7 @@ if (!fs.existsSync(path.join(repoRoot, readmePath))) {
     "required checks",
     "production-adjacent",
     "secrets",
+    "commit message",
   ]) {
     if (!readme.includes(fragment)) {
       errors.push(`${readmePath}: must mention ${fragment}`);
@@ -29,10 +30,38 @@ if (!fs.existsSync(path.join(repoRoot, readmePath))) {
 }
 
 const packageJson = JSON.parse(readText(packagePath));
-for (const scriptName of ["check:light", "registry:check", "secrets:check"]) {
+for (const scriptName of [
+  "check:light",
+  "registry:check",
+  "secrets:check",
+  "commitlint:check",
+]) {
   if (!packageJson.scripts?.[scriptName]) {
     errors.push(`${packagePath}: missing ${scriptName}`);
   }
+}
+
+for (const requiredPath of [
+  "commitlint.config.mjs",
+  ".husky/commit-msg",
+  "tools/ci/check-commit-messages.mjs",
+]) {
+  if (!fs.existsSync(path.join(repoRoot, requiredPath))) {
+    errors.push(`${requiredPath}: required commit message gate file is missing`);
+  }
+}
+
+if (!packageJson.scripts?.["check:light"]?.includes("pnpm commitlint:check")) {
+  errors.push("package.json: check:light must include pnpm commitlint:check");
+}
+
+const ciWorkflow = fs.existsSync(path.join(repoRoot, ".github/workflows/ci.yml"))
+  ? readText(".github/workflows/ci.yml")
+  : "";
+if (ciWorkflow && !ciWorkflow.includes("GITHUB_BASE_SHA")) {
+  errors.push(
+    ".github/workflows/ci.yml: must pass GITHUB_BASE_SHA to commit message checks"
+  );
 }
 
 if (errors.length > 0) {
