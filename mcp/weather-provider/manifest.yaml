@@ -1,0 +1,33 @@
+id: mcp/weather-provider
+type: mcp
+name: Weather Provider MCP Adapter Contract
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Provider-level weather adapter contract for QWeather and Open-Meteo data fetch,
+  normalization, timeout handling, and secret boundaries.
+source:
+  path: skills/qintopia-weather/__init__.py
+  reference: qintopia_weather_lookup provider calls
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm mcp:adapters:check
+    - pnpm skills:qintopia-weather:check
+dependencies: []
+tags:
+  - mcp
+  - weather
+  - qweather
+  - open-meteo
+next_actions:
+  - Move provider-specific QWeather and Open-Meteo calls behind this adapter boundary
+    after the qintopia-weather skill extraction is stable.
+  - Keep Agent-facing fixed-location and forbidden-capability policy in
+    skills/qintopia-weather.

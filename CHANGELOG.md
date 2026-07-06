@@ -94,6 +94,10 @@ become versioned.
   M9-F Hermes MCP wrapper, systemd renderer, runbooks, and Postgres migrations.
 - Added PR-Agent GitHub Actions wiring, repository-specific PR-Agent review rules, and
   engineering documentation for AI-assisted PR review boundaries.
+- Added `mcp/weather-provider` as the provider-level contract for QWeather/Open-Meteo
+  fetch, timeout, normalization, and secret boundaries.
+- Added the active `skills/qintopia-weather` implementation and package-local tests for
+  the `qintopia_weather_lookup` capability.
 
 ### Changed
 
@@ -107,6 +111,8 @@ become versioned.
   production-boundary rules.
 - Documented that PR-Agent is advisory only and cannot replace CI, CODEOWNERS, branch
   protection, or owner review.
+- Split Erhua weather behavior out of `skills/qintopia-tools` so the Hermes plugin keeps
+  only the registration shell and delegates to `skills/qintopia-weather`.
 - Moved migration status out of root README and agent rule files; root docs now link to
   the migration plan instead of embedding transient state.
 - Linked the English and Chinese root READMEs and connected root collaboration files to

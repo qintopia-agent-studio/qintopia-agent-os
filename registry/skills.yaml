@@ -20,10 +20,10 @@ entries:
   - id: skills/qintopia-weather
     path: skills/qintopia-weather
     manifest: skills/qintopia-weather/manifest.yaml
-    status: draft
+    status: adopting
     notes:
-      Capability boundary for Erhua weather lookup; implementation remains compatible in
-      qintopia-tools until extraction.
+      Active fixed-location weather capability; qintopia-tools keeps only the current
+      Hermes registration shell.
   - id: skills/knowledge-retrieval
     path: skills/knowledge-retrieval
     manifest: skills/knowledge-retrieval/manifest.yaml

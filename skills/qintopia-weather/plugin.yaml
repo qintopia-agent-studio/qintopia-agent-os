@@ -3,8 +3,9 @@ label: Qintopia Weather
 kind: standalone
 version: 0.1.0
 description: >
-  Fixed-location Qintopia weather lookup capability. This package is the future
-  extraction target for qintopia_weather_lookup.
+  Fixed-location Qintopia weather lookup capability. This package owns the active
+  qintopia_weather_lookup implementation; qintopia-tools delegates to it while Hermes
+  still loads the legacy plugin registration shell.
 provides_tools:
   - qintopia_weather_lookup
 optional_env:

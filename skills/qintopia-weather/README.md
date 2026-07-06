@@ -1,12 +1,8 @@
 # Qintopia Weather Skill
 
-This package defines the standalone weather capability that should be extracted from the
-current `qintopia-tools` Hermes profile variants.
-
-The active implementation still lives inside
-`skills/qintopia-tools/variants/erhua/__init__.py` for compatibility. New weather
-behavior should be designed here first, then migrated behind the existing
-`qintopia_weather_lookup` interface.
+This package owns the Agent-facing `qintopia_weather_lookup` capability.
+`skills/qintopia-tools` keeps only the Hermes registration shell and delegates weather
+calls here.
 
 ## Capability
 
@@ -14,6 +10,15 @@ behavior should be designed here first, then migrated behind the existing
 - QWeather current, hourly, minutely, alert, and air-quality data
 - Open-Meteo fallback as limited trend-only evidence
 - member-safe output for Erhua and other approved profiles
+
+## Layering
+
+- `skills/qintopia-weather` owns Qintopia policy: fixed Qintopia location, member-safe
+  payload, forbidden capabilities, and fallback wording.
+- `mcp/weather-provider` owns the provider adapter contract: QWeather/Open-Meteo fetch,
+  timeout, normalization, error, and secret boundaries.
+- `skills/qintopia-tools/variants/erhua` owns only the current Hermes tool registration
+  shell while production still loads that plugin.
 
 ## Guardrails
 
@@ -28,5 +33,6 @@ behavior should be designed here first, then migrated behind the existing
 ```bash
 pnpm skills:qintopia-weather:check
 pnpm skills:qintopia-tools:check
+pnpm mcp:adapters:check
 pnpm check:light
 ```

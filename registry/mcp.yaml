@@ -26,3 +26,8 @@ entries:
     manifest: mcp/postgres/manifest.yaml
     status: draft
     notes: Postgres MCP adapter contract for schema allowlists, audit, and idempotency.
+  - id: mcp/weather-provider
+    path: mcp/weather-provider
+    manifest: mcp/weather-provider/manifest.yaml
+    status: draft
+    notes: Provider-level weather adapter contract used by weather skills.
