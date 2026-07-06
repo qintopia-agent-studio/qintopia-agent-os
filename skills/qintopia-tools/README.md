@@ -38,6 +38,12 @@ Hermes tool registration and runtime callback wiring only.
 
 ## Boundary
 
+`skills/qintopia-tools` is a Hermes registration shell for delegated capabilities. Some
+registered tools may return `qiwe_send_direct_message` action requests through
+`skills/operations-intake`; this package does not send messages directly. The actual
+send must stay behind the QiWe/channel adapter approval, recipient allowlist,
+idempotency, and audit gates.
+
 Allowed in this package:
 
 - reviewed plugin source

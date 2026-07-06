@@ -12,7 +12,7 @@ source:
   reference: qintopia_complaint_*, qintopia_lead_capture, proposal/demo/disclosure tools
   disposition: adopt
 production_boundary:
-  external_sends: false
+  external_sends: true
   database_writes: false
   runtime_profile: true
   secrets: false

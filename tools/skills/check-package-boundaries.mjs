@@ -80,6 +80,30 @@ const addError = (message) => {
   errors.push(message);
 };
 
+const walkPackageFiles = (packagePath, options = {}) => {
+  const files = [];
+  const excludedDirectories = new Set(options.excludedDirectories ?? []);
+  const stack = [packagePath];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const absolute = path.join(repoRoot, current);
+    if (!fs.existsSync(absolute)) {
+      continue;
+    }
+    for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+      const relative = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!excludedDirectories.has(path.relative(packagePath, relative))) {
+          stack.push(relative);
+        }
+      } else if (entry.isFile()) {
+        files.push(relative);
+      }
+    }
+  }
+  return files.sort();
+};
+
 const assertNoForbiddenFiles = (packagePath) => {
   const forbiddenNames = new Set([
     ".env",
@@ -105,6 +129,45 @@ const assertNoForbiddenFiles = (packagePath) => {
       if (entry.isDirectory()) {
         stack.push(relative);
       }
+    }
+  }
+};
+
+const assertExternalSendBoundary = (packagePath) => {
+  const manifestPath = path.join(packagePath, "manifest.yaml");
+  if (!exists(manifestPath)) {
+    return;
+  }
+
+  const manifest = YAML.parse(readText(manifestPath));
+  const currentSourceFiles = walkPackageFiles(packagePath, {
+    excludedDirectories: ["docs/server-backups"],
+  }).filter((file) =>
+    [".py", ".js", ".mjs", ".ts", ".yaml", ".yml"].includes(path.extname(file))
+  );
+  const externalSendActionFiles = currentSourceFiles.filter((file) =>
+    readText(file).includes("qiwe_send_direct_message")
+  );
+  if (
+    externalSendActionFiles.length > 0 &&
+    manifest.production_boundary?.external_sends !== true
+  ) {
+    addError(
+      `${manifestPath}: production_boundary.external_sends must be true because current package files reference qiwe_send_direct_message (${externalSendActionFiles.join(", ")})`
+    );
+  }
+
+  const pluginPath = path.join(packagePath, "plugin.yaml");
+  if (exists(pluginPath)) {
+    const plugin = YAML.parse(readText(pluginPath));
+    if (
+      plugin.production_boundary &&
+      plugin.production_boundary.external_sends !==
+        manifest.production_boundary?.external_sends
+    ) {
+      addError(
+        `${pluginPath}: production_boundary.external_sends must match ${manifestPath}`
+      );
     }
   }
 };
@@ -142,6 +205,7 @@ for (const [packagePath, config] of Object.entries(packages)) {
   }
 
   assertNoForbiddenFiles(packagePath);
+  assertExternalSendBoundary(packagePath);
 }
 
 if (errors.length > 0) {

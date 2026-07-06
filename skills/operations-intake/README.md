@@ -43,8 +43,11 @@ filtering, and conversation summary behavior here, not in the qintopia-tools var
 
 ## Runtime Boundary
 
-- The tools return structured action requests. They do not directly send external
-  messages.
+- This package may return `qiwe_send_direct_message` action requests for complaint
+  private detail collection and approved follow-up.
+- The package does not directly send external messages. The QiWe/channel adapter or
+  controlled executor must enforce approval state, recipient allowlist, purpose,
+  idempotency, and audit before any message is sent.
 - Hermes Kanban writes are optional. When Hermes Kanban is unavailable, handlers return
   `dry_run_no_hermes_kanban_runtime`.
 - No secrets, `.env`, runtime sessions, raw private chats, or live Hermes state belong
