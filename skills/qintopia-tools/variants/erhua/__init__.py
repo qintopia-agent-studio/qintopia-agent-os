@@ -303,6 +303,188 @@ QINTOPIA_MESSAGE_STORE_SEARCH_SCHEMA = {
 }
 
 
+QINTOPIA_DAILY_DIGEST_PUBLISH_SCHEMA = {
+    "description": (
+        "Publish one Xiaoman-owned daily community event radar digest through "
+        "the narrow Agent OS publisher boundary. This tool accepts only a "
+        "digest_id and never accepts arbitrary Markdown or generic Feishu URLs."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "digest_id": {
+                "type": "string",
+                "description": "qintopia_agent_os.daily_digests id to publish.",
+            },
+            "actor_agent": {
+                "type": "string",
+                "description": "Actor agent requesting publication. Must be xiaoman.",
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": "Preview the publisher command without applying.",
+            },
+        },
+        "required": ["digest_id"],
+        "additionalProperties": False,
+    },
+}
+
+
+_XIAOMAN_ACTIVITY_COMMON_PROPS = {
+    "actor_agent": {
+        "type": "string",
+        "description": "Actor agent requesting the operation. Must be xiaoman.",
+    },
+    "dry_run": {
+        "type": "boolean",
+        "description": "Preview the worker command. Write operations default to dry-run.",
+    },
+    "idempotency_key": {
+        "type": "string",
+        "description": "Optional caller-provided idempotency key for the Agent OS worker.",
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_RECORD_GET_SCHEMA = {
+    "description": (
+        "Get one approved Xiaoman activity plan/occurrence record through the "
+        "Agent OS activity worker boundary. This replaces raw lark-base reads "
+        "for Xiaoman turns once the worker is enabled."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "record_id": {"type": "string", "description": "Approved activity Base record id."},
+            "table_role": {
+                "type": "string",
+                "enum": XIAOMAN_ACTIVITY_TABLE_ROLES,
+                "description": "Whether the record belongs to the activity plan or occurrence table.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["record_id", "table_role"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA = {
+    "description": (
+        "List Xiaoman activity records for one local date through the Agent OS "
+        "activity worker boundary. The tool accepts a date, not arbitrary Base queries."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "date": {"type": "string", "description": "Local date in YYYY-MM-DD format."},
+            "table_role": {
+                "type": "string",
+                "enum": XIAOMAN_ACTIVITY_TABLE_ROLES,
+                "description": "Table role to list. Defaults to activity_plan when omitted.",
+            },
+            "timezone": {
+                "type": "string",
+                "description": "IANA timezone. Defaults to Asia/Shanghai.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["date"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA = {
+    "description": (
+        "Update Xiaoman-owned activity status fields through the Agent OS "
+        "activity worker boundary. It is not a generic Feishu/Base write tool."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "record_id": {"type": "string", "description": "Approved activity Base record id."},
+            "table_role": {"type": "string", "enum": XIAOMAN_ACTIVITY_TABLE_ROLES},
+            "status": {"type": "string", "description": "New Xiaoman-owned activity status."},
+            "status_note": {"type": "string", "description": "Short note explaining the status change."},
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["record_id", "table_role", "status"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA = {
+    "description": (
+        "Update Xiaoman-owned activity gap/supplement fields through the Agent OS "
+        "activity worker boundary. It cannot update arbitrary Base fields."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "record_id": {"type": "string", "description": "Approved activity Base record id."},
+            "table_role": {"type": "string", "enum": XIAOMAN_ACTIVITY_TABLE_ROLES},
+            "gap_summary": {"type": "string", "description": "Short summary of missing information or material gaps."},
+            "missing_fields": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional missing field names from the approved Xiaoman field set.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["record_id", "table_role", "gap_summary"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_HANDOFF_CREATE_SCHEMA = {
+    "description": (
+        "Create a controlled Xiaoman activity handoff request, such as a visual "
+        "asset request for Huabaosi. This is the collaboration wrapper path, "
+        "not a raw Kanban or prompt handoff."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source_record_id": {"type": "string", "description": "Source activity plan/occurrence record id."},
+            "handoff_type": {"type": "string", "enum": XIAOMAN_ACTIVITY_HANDOFF_TYPES},
+            "target_agent": {"type": "string", "enum": XIAOMAN_ACTIVITY_HANDOFF_TARGETS},
+            "brief_summary": {"type": "string", "description": "Safe, concise handoff brief."},
+            "purpose": {"type": "string", "description": "Why this handoff is needed."},
+            "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+            "source_event_signal_id": {"type": "string"},
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["source_record_id", "handoff_type", "target_agent", "brief_summary"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_SUMMARY_SCHEMA = {
+    "description": (
+        "Request a safe activity material summary through the Agent OS activity "
+        "worker boundary. It returns a worker command and does not expose raw "
+        "private chat, unrestricted files, or generic Feishu reads."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "record_id": {"type": "string", "description": "Approved activity Base record id."},
+            "table_role": {"type": "string", "enum": XIAOMAN_ACTIVITY_TABLE_ROLES},
+            "material_notes": {"type": "string", "description": "Optional safe notes about available materials."},
+            "source_event_signal_id": {"type": "string"},
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["record_id", "table_role"],
+        "additionalProperties": False,
+    },
+}
+
+
 QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA = _operations_intake_plugin().QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA
 
 QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA = _operations_intake_plugin().QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA

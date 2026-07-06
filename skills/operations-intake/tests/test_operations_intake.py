@@ -205,6 +205,22 @@ class OperationsIntakeTest(unittest.TestCase):
         self.assertIn("commercial_commitment", disclosure["matched_risk_categories"])
         self.assertNotIn("服务器日志", disclosure["public_safe_draft"])
 
+    def test_lead_capture_rejects_worktool_source_channel(self):
+        payload = json.loads(
+            self.module.handle_qintopia_lead_capture(
+                {
+                    "task_type": "sales_lead",
+                    "customer_display_name": "某客户",
+                    "source_channel": "worktool_external_contact",
+                    "source_conversation_id": "conv_1",
+                    "customer_request": "想了解 Agent OS。",
+                }
+            )
+        )
+
+        self.assertFalse(payload["success"])
+        self.assertIn("source_channel is not allowed", payload["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

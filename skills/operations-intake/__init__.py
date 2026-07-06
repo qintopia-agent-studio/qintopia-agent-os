@@ -22,6 +22,7 @@ SALES_TASK_TYPES = {
     "proposal": {"status": "todo", "label": "方案提案"},
     "external_disclosure_review": {"status": "review", "label": "对外披露复核"},
 }
+SALES_SOURCE_CHANNELS = ["wechat_external", "wecom_external", "feishu_external", "manual"]
 PUBLIC_AGENT_OS_BASELINES = [
     "Qintopia Agent OS 是面向组织协作场景的 Agent 工作系统。",
     "系统可以把客户需求、知识检索、方案草拟、演示准备、任务流转和交接沉淀到可追踪流程中。",
@@ -325,7 +326,7 @@ QINTOPIA_LEAD_CAPTURE_SCHEMA = {
             "customer_display_name": {"type": "string"},
             "source_channel": {
                 "type": "string",
-                "enum": ["wechat_external", "wecom_external", "feishu_external", "manual"],
+                "enum": SALES_SOURCE_CHANNELS,
             },
             "source_conversation_id": {"type": "string"},
             "source_message_id": {"type": "string"},
@@ -931,8 +932,8 @@ def handle_qintopia_lead_capture(args: dict[str, Any], **_: Any) -> str:
     source_channel = _clean_text(args.get("source_channel"), max_len=80)
     conversation_id = _clean_text(args.get("source_conversation_id"), max_len=160)
     customer_request = _body_text(args.get("customer_request"), max_len=2400)
-    if not source_channel:
-        return _json({"success": False, "error": "source_channel is required"})
+    if source_channel not in SALES_SOURCE_CHANNELS:
+        return _json({"success": False, "error": "source_channel is not allowed for Xiaoqin lead capture"})
     if not conversation_id:
         return _json({"success": False, "error": "source_conversation_id is required"})
     if not customer_request:
