@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import YAML from "yaml";
 
 const repoRoot = process.cwd();
 const readmePath = "tools/ci/README.md";
@@ -96,6 +97,29 @@ if (ciWorkflow && !ciWorkflow.includes("fetch-depth: 0")) {
 
 if (ciWorkflow && !ciWorkflow.includes("pnpm pr:check-body")) {
   errors.push(".github/workflows/ci.yml: pull_request checks must validate PR body");
+}
+
+if (ciWorkflow) {
+  try {
+    const parsedWorkflow = YAML.parse(ciWorkflow);
+    const checkSteps = parsedWorkflow?.jobs?.check?.steps;
+    if (!Array.isArray(checkSteps)) {
+      errors.push(".github/workflows/ci.yml: jobs.check.steps must be a step list");
+    } else {
+      const prBodyStep = checkSteps.find((step) => step?.name === "PR body check");
+      if (!prBodyStep) {
+        errors.push(
+          ".github/workflows/ci.yml: PR body check must be in jobs.check.steps"
+        );
+      } else if (prBodyStep.run !== "pnpm pr:check-body") {
+        errors.push(
+          ".github/workflows/ci.yml: PR body check must run pnpm pr:check-body"
+        );
+      }
+    }
+  } catch (error) {
+    errors.push(`.github/workflows/ci.yml: workflow YAML must parse: ${error.message}`);
+  }
 }
 
 if (errors.length > 0) {
