@@ -1,0 +1,36 @@
+id: skills/operations-intake
+type: skill
+name: Operations Intake
+owner: PatrickLiveCool
+status: adopting
+risk_level: medium
+description:
+  Controlled complaint intake, sales/customer handoff, proposal/demo draft, disclosure
+  filtering, and conversation summary capability for Agent OS workflows.
+source:
+  path: skills/operations-intake/__init__.py
+  reference: qintopia_complaint_*, qintopia_lead_capture, proposal/demo/disclosure tools
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: false
+validation:
+  commands:
+    - pnpm skills:operations-intake:check
+    - pnpm skills:qintopia-tools:check
+dependencies:
+  - workflows/erhua-consultation
+  - workflows/silaoshi-daily-ops
+tags:
+  - skill
+  - operations
+  - complaint
+  - sales
+  - disclosure
+next_actions:
+  - Keep qintopia-tools as the Hermes registration shell until profile bundle repoint is
+    reviewed.
+  - Move public product/case lookup onto a dedicated public-knowledge package when the
+    local JSONL snapshot search leaves qintopia-tools.

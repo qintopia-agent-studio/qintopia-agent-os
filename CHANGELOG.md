@@ -105,6 +105,9 @@ become versioned.
 - Added the adopting `skills/postgres-context` contract, sanitized fixtures, and
   validation gate for safe member context, Erhua answer context, and audited trainer
   memory writes.
+- Added the active `skills/operations-intake` implementation and package-local tests for
+  controlled complaint intake, sales handoff, proposal/demo drafts, disclosure
+  filtering, and conversation summaries.
 
 ### Changed
 
@@ -120,6 +123,9 @@ become versioned.
   production-boundary rules.
 - Documented that PR-Agent is advisory only and cannot replace CI, CODEOWNERS, branch
   protection, or owner review.
+- Changed `skills/qintopia-tools` variants to delegate operations intake handlers to the
+  dedicated `skills/operations-intake` capability while keeping stable Hermes tool
+  names.
 - Split Erhua weather behavior out of `skills/qintopia-tools` so the Hermes plugin keeps
   only the registration shell and delegates to `skills/qintopia-weather`.
 - Split WenYuanGe/Dify retrieval behavior out of `skills/qintopia-tools` so the Hermes

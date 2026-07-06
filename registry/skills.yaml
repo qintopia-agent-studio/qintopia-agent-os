@@ -38,3 +38,11 @@ entries:
     notes:
       Capability boundary for Postgres-backed context lookup, training memory, audit,
       and idempotent writes.
+  - id: skills/operations-intake
+    path: skills/operations-intake
+    manifest: skills/operations-intake/manifest.yaml
+    status: adopting
+    notes:
+      Active capability for controlled complaint intake, customer/sales handoff,
+      proposal/demo drafts, disclosure filtering, and conversation summaries;
+      qintopia-tools keeps stable Hermes registration.

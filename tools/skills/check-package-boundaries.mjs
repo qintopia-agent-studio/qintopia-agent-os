@@ -55,6 +55,21 @@ const packages = {
       "qintopia_erhua_training_note_submit",
     ],
   },
+  "skills/operations-intake": {
+    required: [
+      "README.md",
+      "manifest.yaml",
+      "plugin.yaml",
+      "__init__.py",
+      "tests/test_operations_intake.py",
+    ],
+    requiredReadme: [
+      "complaint intake",
+      "sales handoff",
+      "disclosure filtering",
+      "qintopia-tools",
+    ],
+  },
 };
 
 const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));

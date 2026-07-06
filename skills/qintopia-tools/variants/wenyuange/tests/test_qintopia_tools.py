@@ -160,7 +160,7 @@ class QintopiaToolsTest(unittest.TestCase):
             self.module.handle_qintopia_customer_context_lookup(
                 {
                     "customer_display_name": "某客户",
-                    "source_channel": "worktool_external_contact",
+                    "source_channel": "wechat_external",
                     "source_conversation_id": "conv_1",
                     "customer_provided_context": "想了解 AI 客服试点。",
                 }
@@ -557,7 +557,7 @@ class QintopiaToolsTest(unittest.TestCase):
                 {
                     "task_type": "demo_request",
                     "customer_display_name": "某客户",
-                    "source_channel": "worktool_external_contact",
+                    "source_channel": "wechat_external",
                     "source_conversation_id": "conv_1",
                     "source_message_id": "msg_1",
                     "customer_request": "想看 Agent OS 销售客服演示。",
@@ -613,7 +613,7 @@ class QintopiaToolsTest(unittest.TestCase):
             self.module.handle_qintopia_lead_capture(
                 {
                     "task_type": "engineering",
-                    "source_channel": "worktool_external_contact",
+                    "source_channel": "wechat_external",
                     "source_conversation_id": "conv_1",
                     "customer_request": "帮我改服务器。",
                 }
@@ -673,7 +673,7 @@ class QintopiaToolsTest(unittest.TestCase):
                 {
                     "conversation_text": "客户想看内部客户案例和报价合同。",
                     "customer_display_name": "某客户",
-                    "source_channel": "worktool_external_contact",
+                    "source_channel": "wechat_external",
                 }
             )
         )
