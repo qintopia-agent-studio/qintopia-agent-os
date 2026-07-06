@@ -14,7 +14,7 @@ source:
   reference: server-runtime-2026-07-05
   disposition: adopt
 production_boundary:
-  external_sends: false
+  external_sends: true
   database_writes: true
   runtime_profile: true
   secrets: true

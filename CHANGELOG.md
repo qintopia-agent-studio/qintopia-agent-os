@@ -105,6 +105,9 @@ become versioned.
 - Added the adopting `skills/postgres-context` contract, sanitized fixtures, and
   validation gate for safe member context, Erhua answer context, and audited trainer
   memory writes.
+- Added the active `skills/operations-intake` implementation and package-local tests for
+  controlled complaint intake, sales handoff, proposal/demo drafts, disclosure
+  filtering, and conversation summaries.
 
 ### Changed
 
@@ -120,6 +123,9 @@ become versioned.
   production-boundary rules.
 - Documented that PR-Agent is advisory only and cannot replace CI, CODEOWNERS, branch
   protection, or owner review.
+- Changed `skills/qintopia-tools` variants to delegate operations intake handlers to the
+  dedicated `skills/operations-intake` capability while keeping stable Hermes tool
+  names.
 - Split Erhua weather behavior out of `skills/qintopia-tools` so the Hermes plugin keeps
   only the registration shell and delegates to `skills/qintopia-weather`.
 - Split WenYuanGe/Dify retrieval behavior out of `skills/qintopia-tools` so the Hermes
@@ -127,6 +133,11 @@ become versioned.
 - Updated `qintopia-tools` dependency loading to resolve delegated skill packages from
   explicit Agent OS skills/release directories or release/current layouts instead of a
   single hard-coded relative path.
+- Aligned operations-intake and qintopia-tools external send production boundaries with
+  their returned `qiwe_send_direct_message` action requests, and added a package check
+  to block future boundary drift.
+- Sanitized qintopia-tools operations-intake missing-package fallback schemas and tool
+  responses so delegated package load failures do not expose local candidate paths.
 - Moved migration status out of root README and agent rule files; root docs now link to
   the migration plan instead of embedding transient state.
 - Linked the English and Chinese root READMEs and connected root collaboration files to

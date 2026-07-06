@@ -1,0 +1,33 @@
+id: qintopia-operations-intake
+package: skills/operations-intake
+runtime: hermes-python-plugin
+status: adopting
+tools:
+  - qintopia_complaint_intake_create
+  - qintopia_complaint_intake_update
+  - qintopia_complaint_followup_send
+  - qintopia_external_product_kb_search
+  - qintopia_public_case_search
+  - qintopia_customer_context_lookup
+  - qintopia_lead_capture
+  - qintopia_proposal_outline_generate
+  - qintopia_demo_script_generate
+  - qintopia_external_disclosure_filter
+  - qintopia_conversation_summary
+production_boundary:
+  external_sends: true
+  database_writes: false
+  runtime_profile: true
+  secrets: false
+registration:
+  stable_entrypoint: skills/qintopia-tools/variants/*/__init__.py
+  notes:
+    - qintopia-tools keeps the Hermes registration shell for stable tool names.
+    - This package may return qiwe_send_direct_message action requests.
+    - Channel adapters perform sends only after their own approval, idempotency, and
+      audit gates.
+    - Hermes Kanban writes are optional and dry-run when the runtime is unavailable.
+validation:
+  commands:
+    - pnpm skills:operations-intake:check
+    - pnpm skills:qintopia-tools:check

@@ -9,7 +9,10 @@ Public-safe product answers, lead capture, demo planning, proposal drafts, discl
 filtering, and conversation handoff. Dify Knowledge tool registration stays in this
 Hermes plugin for stable tool names, but the active Dify and `qintopia_wenyuange_lookup`
 implementation lives in `skills/knowledge-retrieval`. Change Dify allowlists, filtered
-answer basis, source ranking, and risk flags there.
+answer basis, source ranking, and risk flags there. Complaint intake, sales/customer
+handoff, proposal/demo draft, disclosure filtering, and conversation summary behavior
+lives in `skills/operations-intake`. Change those behaviors there; this plugin keeps
+stable Hermes tool registration.
 
 ## Tools
 

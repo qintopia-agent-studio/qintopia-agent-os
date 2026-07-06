@@ -29,9 +29,20 @@ WenYuanGe/Dify knowledge retrieval is also split out: the Dify raw read tools an
 `qintopia_wenyuange_lookup` registration delegates to `skills/knowledge-retrieval`.
 Change filtered answer basis, Dify allowlist behavior, source ranking, and risk flags
 there. This package keeps the current Hermes registration shell and the still-unmigrated
-message-store, GIS, complaint, Xiaoman, and sales wrappers.
+message-store, GIS, and Xiaoman wrappers.
+
+Operations intake is also split out: complaint intake, controlled sales/customer
+handoff, proposal/demo drafts, disclosure filtering, and conversation summaries delegate
+to `skills/operations-intake`. Change those behaviors there. This package keeps stable
+Hermes tool registration and runtime callback wiring only.
 
 ## Boundary
+
+`skills/qintopia-tools` is a Hermes registration shell for delegated capabilities. Some
+registered tools may return `qiwe_send_direct_message` action requests through
+`skills/operations-intake`; this package does not send messages directly. The actual
+send must stay behind the QiWe/channel adapter approval, recipient allowlist,
+idempotency, and audit gates.
 
 Allowed in this package:
 
@@ -50,6 +61,8 @@ Not allowed:
 - Xiaoqin WorkTool runtime as an active package
 - new weather provider logic; use `skills/qintopia-weather` and `mcp/weather-provider`
 - new WenYuanGe/Dify retrieval behavior; use `skills/knowledge-retrieval`
+- new complaint, sales handoff, proposal/demo, or disclosure behavior; use
+  `skills/operations-intake`
 
 ## Validation
 
@@ -57,6 +70,7 @@ Not allowed:
 pnpm skills:qintopia-tools:check
 pnpm skills:qintopia-weather:check
 pnpm skills:knowledge-retrieval:check
+pnpm skills:operations-intake:check
 ```
 
 The check compiles each active variant and blocks committed runtime cache files.
@@ -76,8 +90,9 @@ Before any server repoint:
    ```
 
 4. Ensure the same release contains every delegated skill package:
-   `skills/qintopia-weather` for Erhua weather and `skills/knowledge-retrieval` for
-   Dify/WenYuanGe lookup. If Hermes loads from a profile-local copy, set
+   `skills/qintopia-weather` for Erhua weather, `skills/knowledge-retrieval` for
+   Dify/WenYuanGe lookup, and `skills/operations-intake` for complaint/sales/disclosure
+   handoff. If Hermes loads from a profile-local copy, set
    `QINTOPIA_AGENT_OS_SKILLS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/skills`
    in the profile or service environment.
 5. Verify Hermes service active state, plugin import, tool registration, and rollback.
