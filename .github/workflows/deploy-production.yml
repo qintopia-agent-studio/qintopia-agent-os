@@ -1,0 +1,168 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Approved master commit SHA to deploy.
+        required: true
+        type: string
+      runtime_sha:
+        description: Sidecar runtime artifact SHA. Defaults to commit_sha when equal.
+        required: false
+        type: string
+      deploy_bundle_sha:
+        description: Deploy bundle artifact SHA. Defaults to commit_sha when equal.
+        required: false
+        type: string
+      release_sha:
+        description: Immutable release SHA. Defaults to deploy_bundle_sha.
+        required: false
+        type: string
+      release_scope:
+        description:
+          "Comma-separated scope: sidecar-runtime,deploy-bundle,hermes-plugins."
+        required: true
+        default: deploy-bundle,hermes-plugins
+        type: string
+      restart_targets:
+        description: Comma-separated fixed restart targets.
+        required: true
+        default: qintopia-system-services
+        type: string
+      dry_run:
+        description:
+          Validate and assemble only; do not switch current or restart services.
+        required: true
+        default: true
+        type: boolean
+      rollback_on_smoke_failure:
+        description: Roll back current if post-promotion smoke fails.
+        required: true
+        default: true
+        type: boolean
+      notes:
+        description: Operator notes for the deploy request.
+        required: false
+        type: string
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.29.2"
+  TENCENT_COS_BUCKET:
+    ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
+  TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
+  TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
+
+jobs:
+  request-deploy:
+    if: ${{ github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate workflow ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "Deploy Production must be run from refs/heads/master." >&2
+            exit 2
+          fi
+
+      - name: Validate target commit belongs to master
+        shell: bash
+        env:
+          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$DEPLOY_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "commit_sha must be a lowercase 40-character git SHA." >&2
+            exit 2
+          fi
+          git fetch --no-tags origin master
+          git cat-file -e "${DEPLOY_COMMIT_SHA}^{commit}"
+          git merge-base --is-ancestor "$DEPLOY_COMMIT_SHA" origin/master
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate deploy runner contracts
+        run: pnpm deploy:runner:check
+
+      - name: Validate Tencent COS upload configuration
+        shell: bash
+        env:
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TENCENT_COS_SECRET_ID" || -z "$TENCENT_COS_SECRET_KEY" || -z "$DEPLOY_REQUEST_SIGNING_KEY" ]]; then
+            echo "TENCENT_COS_SECRET_ID, TENCENT_COS_SECRET_KEY, and DEPLOY_REQUEST_SIGNING_KEY are required in the production environment." >&2
+            exit 2
+          fi
+
+      - name: Create deploy request
+        run:
+          node tools/deploy/create-deploy-request.mjs --output
+          dist/deploy-requests/request.json
+        env:
+          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
+          DEPLOY_RUNTIME_SHA: ${{ inputs.runtime_sha || inputs.commit_sha }}
+          DEPLOY_BUNDLE_SHA: ${{ inputs.deploy_bundle_sha || inputs.commit_sha }}
+          DEPLOY_RELEASE_SHA:
+            ${{ inputs.release_sha || inputs.deploy_bundle_sha || inputs.commit_sha }}
+          DEPLOY_RELEASE_SCOPE: ${{ inputs.release_scope }}
+          DEPLOY_RESTART_TARGETS: ${{ inputs.restart_targets }}
+          DEPLOY_DRY_RUN: ${{ inputs.dry_run }}
+          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: ${{ inputs.rollback_on_smoke_failure }}
+          DEPLOY_NOTES: ${{ inputs.notes }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
+
+      - name: Upload deploy request to Tencent COS
+        run:
+          deploy/runner/upload-deploy-request.sh --request-file
+          dist/deploy-requests/request.json
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Upload deploy request audit artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-agent-os-deploy-request
+          path: dist/deploy-requests/request.json
+          retention-days: 30
+          if-no-files-found: error

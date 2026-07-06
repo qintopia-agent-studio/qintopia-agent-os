@@ -18,6 +18,8 @@ canonical architecture, engineering, package, or deployment docs.
   transition directories, legacy cleanup candidates, and Hermes runtime boundary.
 - [release-current-model.md](release-current-model.md): target release directory,
   `current`/`previous` symlink, promotion, rollback, and Hermes mount model.
+- [production-deploy-runner.md](production-deploy-runner.md): manual GitHub production
+  deploy requests, COS pull runner, release promotion, and rollback model.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):
@@ -52,6 +54,8 @@ canonical architecture, engineering, package, or deployment docs.
   M9 after production env is loaded.
 - `pnpm deploy:systemd:check`: validates the M9.3 sidecar systemd unit renderer without
   touching `/etc/systemd/system`.
+- `pnpm deploy:runner:check`: validates the manual production deploy request workflow,
+  runner schemas, server pull-runner scripts, and deploy bundle packaging.
 - `pnpm deploy:preflight`: validates non-mutating deployment gates before any server
   cutover.
 

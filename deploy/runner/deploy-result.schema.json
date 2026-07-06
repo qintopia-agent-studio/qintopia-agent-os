@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qintopia-agent-os.local/schemas/deploy-result.schema.json",
+  "title": "Qintopia Agent OS Deploy Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "environment",
+    "status",
+    "started_at",
+    "finished_at",
+    "release_sha",
+    "previous_sha",
+    "current_target",
+    "restart_targets",
+    "checks",
+    "rollback"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "environment": { "enum": ["production"] },
+    "status": { "enum": ["succeeded", "failed", "rolled_back", "dry_run_succeeded"] },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "release_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "previous_sha": { "type": "string" },
+    "current_target": { "type": "string" },
+    "restart_targets": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "enum": ["passed", "failed", "skipped"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempted", "status"],
+      "properties": {
+        "attempted": { "type": "boolean" },
+        "status": { "enum": ["not_needed", "succeeded", "failed", "skipped"] },
+        "target": { "type": "string" }
+      }
+    },
+    "error": { "type": "string" }
+  }
+}

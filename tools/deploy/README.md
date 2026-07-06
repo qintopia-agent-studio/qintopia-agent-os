@@ -42,6 +42,16 @@ Validate the stable release/current service and Hermes MCP wrapper model:
 pnpm deploy:release-model:check
 ```
 
+Validate the production deploy request runner contracts:
+
+```bash
+pnpm deploy:runner:check
+```
+
+The deploy runner is the server-side pull model for manual production deployments:
+GitHub writes a schema-validated request to COS, and the server runner promotes reviewed
+artifacts into `release/current`.
+
 The check is non-mutating. It verifies the worker units render through
 `qintopia-agent-os-releases/current`, avoid `/home/ubuntu/qintopia-msg-sidecar`, and
 that the Hermes `mcp-context` wrapper can run from a verified artifact,
