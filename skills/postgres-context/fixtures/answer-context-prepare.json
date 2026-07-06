@@ -1,0 +1,29 @@
+{
+  "tool": "qintopia_answer_context_prepare",
+  "mode": "read_only",
+  "request": {
+    "caller_profile": "erhua",
+    "platform": "qiwe",
+    "chat_id": "room_example",
+    "sender_id": "user_example",
+    "message_text": "@二花 Cici 今天怎么不说话了",
+    "purpose": "prepare safe answer context before replying"
+  },
+  "expected_contract": {
+    "writes_audit": "qintopia_identity.member_context_audit",
+    "may_return": ["speaker", "mentioned_members", "training_guidance", "answer_rules"],
+    "answer_rules": [
+      "do_not_disclose_profile_source",
+      "do_not_claim_monitoring",
+      "ask_clarification_when_ambiguous",
+      "do_not_guess_member_state",
+      "do_not_expose_raw_history"
+    ],
+    "must_not_return": [
+      "raw_messages",
+      "hidden_profile_details",
+      "sensitive_facts",
+      "training_source"
+    ]
+  }
+}

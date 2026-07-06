@@ -8,10 +8,12 @@ CI helpers must:
 - treat docs-only changes differently from runtime/artifact builds where safe;
 - keep required checks explicit for skills, workflows, MCP, runtime, deploy, and agents;
 - fail closed when production-adjacent files change;
+- enforce Conventional Commits commit message types for local and CI validation;
 - never require secrets for pull request validation.
 
 ## Validation
 
 ```bash
 pnpm tools:ci:check
+pnpm commitlint:check
 ```

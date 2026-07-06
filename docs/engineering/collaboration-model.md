@@ -14,9 +14,11 @@ Claude Code. The collaboration model is intentionally git-first and CI-backed.
 6. Update package docs or manifests when the package contract changes.
 7. Run focused validation, then repository checks.
 8. Update `CHANGELOG.md` for repository-visible changes.
-9. Update the current roadmap or package docs when future direction changes.
-10. Open a PR with validation results and production-boundary notes.
-11. Deploy only reviewed commit SHAs through a documented runbook.
+9. Commit with a Conventional Commits message such as `feat: add weather skill` or
+   `fix: resolve qintopia-tools skill path`.
+10. Update the current roadmap or package docs when future direction changes.
+11. Open a PR with validation results and production-boundary notes.
+12. Deploy only reviewed commit SHAs through a documented runbook.
 
 Do not develop directly on `master`. CI runs on `master` after merge; feature work
 belongs on a branch.
@@ -51,6 +53,17 @@ Every PR should state whether it touches:
 - secrets or runtime configuration
 
 Docs-only PRs should still run `pnpm check`.
+
+## Commit Message Requirements
+
+Use Conventional Commits. Allowed commit types are:
+
+```text
+build chore ci docs feat fix perf refactor revert style test
+```
+
+Choose the type by the primary intent of the commit. Do not create project-specific or
+free-form types. The local `commit-msg` hook and CI both run commitlint.
 
 ## Language And Toolchain Boundary
 

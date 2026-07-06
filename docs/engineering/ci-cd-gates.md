@@ -21,6 +21,7 @@ pnpm check:light
 The light gate includes:
 
 - formatting and Markdown linting
+- Conventional Commits commit message validation
 - registry and manifest validation
 - active Agent package validation
 - anti-drift policy checks
@@ -71,6 +72,28 @@ after the light gate.
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the
 heavy steps inside the workflow.
+
+## Commit Message Gate
+
+Commits must follow Conventional Commits. Allowed types are:
+
+```text
+build chore ci docs feat fix perf refactor revert style test
+```
+
+Use the type that matches the primary change:
+
+- `feat`: new product, package, runtime, or workflow capability
+- `fix`: bug fix, broken validation, runtime path issue, or incorrect behavior
+- `docs`: documentation-only change
+- `ci`: GitHub Actions, CI scripts, or commit/check gates
+- `test`: tests or fixtures only
+- `refactor`: behavior-preserving code reshaping
+- `chore`: repository maintenance without product behavior change
+- `build`: dependency, packaging, or artifact build system change
+
+Do not invent ad hoc types. Local commits are checked by the Husky `commit-msg` hook,
+and CI runs `pnpm commitlint:check` against the PR commit range.
 
 ## Artifact Publication
 

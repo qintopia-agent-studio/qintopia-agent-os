@@ -57,8 +57,10 @@ qintopia-agent-os-monorepo/
 4. 做小范围改动。
 5. 运行 package 级验证。
 6. 有仓库级检查时再运行仓库级检查。
-7. 提交 PR，并写明验证结果和生产边界。
-8. 只部署经过确认的 commit SHA。
+7. 使用 Conventional Commits 格式提交，例如 `feat: add weather skill` 或
+   `fix: resolve qintopia-tools skill path`。
+8. 提交 PR，并写明验证结果和生产边界。
+9. 只部署经过确认的 commit SHA。
 
 服务器是部署目标，不是编辑现场。不要直接在服务器或 `.hermes`
 运行目录里修改文档、代码、脚本、wrapper、worker、runbook 或 runtime template。
@@ -88,6 +90,7 @@ docs/engineering/change-routing-index.md，以及目标 package 的 README 或 m
 - 只能使用现有实现语言和工具链：TypeScript/JavaScript、Python、Rust、shell、SQL、YAML、JSON 和 Markdown。
 - 未经 owner 批准的架构文档，不要引入 Java、Gradle、Maven、Kotlin、Go、Swift、C#、PHP、Ruby、Elixir 或新工具链。
 - 不要直接编辑生产服务器。
+- commit message 必须遵守 Conventional Commits，只能使用仓库批准的类型。
 - 不要把 secret、live .env、Hermes live state、私有日志、session、cache、auth 文件、原始聊天记录或 runtime 数据库复制进 git。
 - PR-Agent 评论只是辅助审查；CI、CODEOWNERS、branch protection 和 owner review 才是合并依据。
 

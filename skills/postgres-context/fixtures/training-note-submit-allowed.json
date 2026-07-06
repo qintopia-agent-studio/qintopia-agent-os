@@ -1,0 +1,34 @@
+{
+  "tool": "qintopia_erhua_training_note_submit",
+  "mode": "write",
+  "request": {
+    "caller_profile": "erhua",
+    "platform": "qiwe",
+    "chat_id": "room_example",
+    "source_conversation_type": "direct",
+    "trainer_user_id": "trainer_allowlisted_example",
+    "target_channel_user_id": "user_example",
+    "training_type": "member_preference",
+    "training_text": "这个成员喜欢直接一点的短回复。",
+    "purpose": "trainer confirmed member reply preference",
+    "source_platform_message_id": "msg_example"
+  },
+  "expected_contract": {
+    "requires_trainer_allowlist_env": "QINTOPIA_ERHUA_TRAINER_USER_IDS",
+    "writes": [
+      "qintopia_identity.erhua_training_notes",
+      "qintopia_identity.member_facts",
+      "qintopia_identity.member_profile_snapshots"
+    ],
+    "stores_audit_metadata": ["purpose", "source_conversation_type", "submitted_via"],
+    "returns": [
+      "training_id",
+      "status",
+      "risk_level",
+      "reason",
+      "safe_summary",
+      "applied"
+    ],
+    "must_not_return": ["raw_training_source", "hidden_profile_details", "raw_messages"]
+  }
+}

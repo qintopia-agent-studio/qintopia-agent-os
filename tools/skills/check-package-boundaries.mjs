@@ -40,8 +40,20 @@ const packages = {
     ],
   },
   "skills/postgres-context": {
-    required: ["README.md", "manifest.yaml"],
-    requiredReadme: ["read-only", "audit", "idempotency"],
+    required: [
+      "README.md",
+      "manifest.yaml",
+      "fixtures/member-context-lookup.json",
+      "fixtures/answer-context-prepare.json",
+      "fixtures/training-note-submit-allowed.json",
+      "fixtures/training-note-submit-blocked.json",
+    ],
+    requiredReadme: [
+      "read-only",
+      "audit",
+      "idempotency",
+      "qintopia_erhua_training_note_submit",
+    ],
   },
 };
 

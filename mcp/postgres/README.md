@@ -11,6 +11,18 @@ context, memory, event, and operations data access.
 - Keep secrets, connection strings, passwords, snapshots, and live database dumps
   outside git.
 
+## Related Capability Package
+
+Start Postgres-backed Agent context changes from `skills/postgres-context/README.md`.
+That package owns the Agent-facing contract for:
+
+- `qintopia_member_context_lookup`;
+- `qintopia_answer_context_prepare`;
+- `qintopia_erhua_training_note_submit`.
+
+This MCP package owns adapter and schema-access rules. It must not become unrestricted
+SQL access for Agents.
+
 ## Production Boundary
 
 - Postgres is the Agent OS fact source.
@@ -22,4 +34,5 @@ context, memory, event, and operations data access.
 
 ```bash
 pnpm mcp:adapters:check
+pnpm skills:postgres-context:check
 ```

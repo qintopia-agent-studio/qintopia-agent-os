@@ -10,8 +10,9 @@
 5. Keep the change scoped to one package/domain when possible.
 6. Run local validation.
 7. Update `CHANGELOG.md` for repository-level changes.
-8. Update the current roadmap or a package doc when the future direction changes.
-9. Open a PR with validation results and production-boundary notes.
+8. Commit with a Conventional Commits message.
+9. Update the current roadmap or a package doc when the future direction changes.
+10. Open a PR with validation results and production-boundary notes.
 
 Do not develop directly on `master`.
 
@@ -32,6 +33,28 @@ pnpm check
 
 Use package-specific checks in addition to repository-level checks when a package has
 its own toolchain.
+
+## Commit Message Policy
+
+Use Conventional Commits. Allowed types are:
+
+```text
+build chore ci docs feat fix perf refactor revert style test
+```
+
+Do not invent custom types. Use the type that matches the primary change:
+
+- `feat`: new product, package, runtime, or workflow capability
+- `fix`: bug fix, broken validation, runtime path issue, or incorrect behavior
+- `docs`: documentation-only change
+- `ci`: GitHub Actions, CI scripts, or commit/check gates
+- `test`: tests or fixtures only
+- `refactor`: behavior-preserving code reshaping
+- `chore`: repository maintenance without product behavior change
+- `build`: dependency, packaging, or artifact build system change
+
+Local commits are checked by the Husky `commit-msg` hook. CI runs
+`pnpm commitlint:check` against PR commits.
 
 ## Changelog Policy
 

@@ -11,6 +11,8 @@ become versioned.
 ### Added
 
 - Initialized the Qintopia Agent OS capability/plugin monorepo on the `master` branch.
+- Added Conventional Commits enforcement with commitlint, a Husky `commit-msg` hook, and
+  CI commit message validation.
 - Added pnpm workspace configuration for Agent OS domains.
 - Added root documentation for human, Codex, and Claude Code collaborators.
 - Added Chinese counterparts for root collaboration docs.
@@ -100,12 +102,17 @@ become versioned.
   the `qintopia_weather_lookup` capability.
 - Added the active `skills/knowledge-retrieval` implementation and package-local tests
   for WenYuanGe/Dify filtered answer basis and raw read wrappers.
+- Added the adopting `skills/postgres-context` contract, sanitized fixtures, and
+  validation gate for safe member context, Erhua answer context, and audited trainer
+  memory writes.
 
 ### Changed
 
 - Archived the completed monorepo migration execution log under
   `docs/plans/completed/monorepo-migration.md`; new work now starts from the current
   roadmap instead of editing historical migration status.
+- Fixed pull request commit message validation so CI checks the PR head commit range and
+  skips generated merge commits instead of linting GitHub's synthetic PR merge commit.
 - Folded the temporary `deploy:m9f:check` harness into the stable
   `deploy:release-model:check` validation path.
 - Updated README, AGENTS, CLAUDE, CONTRIBUTING, docs indexes, and the PR template so

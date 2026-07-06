@@ -2,7 +2,7 @@ id: skills/postgres-context
 type: skill
 name: Postgres Context
 owner: PatrickLiveCool
-status: draft
+status: adopting
 risk_level: high
 description:
   Postgres-backed context and trainer-memory capability boundary for safe profile
@@ -19,6 +19,7 @@ production_boundary:
 validation:
   commands:
     - pnpm skills:postgres-context:check
+    - pnpm mcp:adapters:check
     - pnpm test:sidecar
 dependencies:
   - runtime/postgres
@@ -29,5 +30,9 @@ tags:
   - context
   - trainer-memory
 next_actions:
-  - Separate read-only context tools from audited write-capable trainer-memory tools.
-  - Add fixtures for allowed trainer note write and blocked caller paths.
+  - Add a dedicated idempotency key and unique constraint for trainer-memory writes
+    before broadening write usage.
+  - Move message-store discussion evidence out of qintopia-tools into a dedicated
+    Postgres-backed evidence capability.
+  - Keep implementation in sidecar until profile bundle and MCP packaging can load
+    capability packages directly.

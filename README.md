@@ -62,8 +62,10 @@ All changes go through git:
 4. Make a scoped change.
 5. Run package-level validation.
 6. Run repository-level checks when available.
-7. Open a PR with validation results and production-boundary notes.
-8. Deploy only an approved commit SHA.
+7. Commit with a Conventional Commits message, for example `feat: add weather skill` or
+   `fix: resolve qintopia-tools skill path`.
+8. Open a PR with validation results and production-boundary notes.
+9. Deploy only an approved commit SHA.
 
 The server is a deployment target, not an editing workspace. Do not edit docs, code,
 scripts, wrappers, workers, runbooks, or runtime templates directly on the server or
@@ -98,6 +100,7 @@ Rules:
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new toolchain without owner-approved architecture documentation.
 - Do not edit production servers directly.
+- Commit messages must follow Conventional Commits with approved types only.
 - Do not copy secrets, live .env files, Hermes live state, private logs, sessions, cache,
   auth files, raw chat logs, or runtime databases into git.
 - Treat PR-Agent comments as advisory only; CI, CODEOWNERS, branch protection, and owner

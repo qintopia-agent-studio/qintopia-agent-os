@@ -1,23 +1,126 @@
 # Postgres Context Skill
 
-This package defines the future extraction boundary for Postgres-backed Agent context,
-safe profile snapshots, and audited training memory operations.
+This package owns the Agent-facing contract for Postgres-backed context. It is the
+starting point for changes to safe member context, Erhua answer context, and audited
+trainer-memory writes.
 
-The active implementation currently lives in `runtime/sidecar/src/context_tools.rs` and
-the context MCP package. New context behavior should be specified here before it becomes
-a shared tool capability.
+The active runtime implementation still lives in `runtime/sidecar/src/context_tools.rs`
+and is exposed through `mcp/context-server`. That is intentional for now: this
+capability touches Postgres reads, controlled Postgres writes, audit rows, and profile
+safety boundaries, so the sidecar remains the execution layer while this package owns
+the contract, fixtures, validation, and change routing.
 
 ## Capability
 
-- read-only safe member or context snapshots;
-- prepare Erhua reply context with source evidence;
+- return only safe member or context snapshots;
+- prepare Erhua reply context without exposing raw profile data;
 - write only audited Erhua trainer-memory notes through allowlisted trainer IDs;
-- record audit and idempotency fields for write-capable operations.
+- keep write-capable operations explicit, auditable, and revocable;
+- block unrestricted SQL, raw chat logs, live `.env` files, and Hermes live state.
+
+## Tool Contract
+
+| Tool                                  | Mode      | Owner surface                | Runtime implementation                 |
+| ------------------------------------- | --------- | ---------------------------- | -------------------------------------- |
+| `qintopia_member_context_lookup`      | read-only | safe member reply context    | `runtime/sidecar/src/context_tools.rs` |
+| `qintopia_answer_context_prepare`     | read-only | Erhua answer context package | `runtime/sidecar/src/context_tools.rs` |
+| `qintopia_erhua_training_note_submit` | write     | audited trainer memory       | `runtime/sidecar/src/context_tools.rs` |
+
+`qintopia_wenyuange_lookup`, GIS lookup, and external disclosure filtering currently
+share the same sidecar module but are not owned by this package. WenYuanGe/Dify evidence
+belongs to `skills/knowledge-retrieval`; provider or database adapter rules belong under
+`mcp/`.
+
+## Read Boundary
+
+Read tools may return:
+
+- `safe_summary`;
+- `communication_style`;
+- `safe_reply_hints`;
+- selected active training guidance;
+- source ids and audit-friendly metadata.
+
+Read tools must not return:
+
+- raw message text outside an approved evidence contract;
+- hidden profile details;
+- raw member facts or private notes;
+- pending, rejected, or revoked trainer notes;
+- profile source internals that would teach Erhua to claim surveillance.
+
+Every member-context read must write `qintopia_identity.member_context_audit`.
+
+## Write Boundary
+
+`qintopia_erhua_training_note_submit` is the only write-capable tool in this capability.
+It must:
+
+- require `caller_profile=erhua`;
+- require `trainer_user_id` to be in `QINTOPIA_ERHUA_TRAINER_USER_IDS`;
+- restrict `training_type` to `member_preference`, `member_fact`, `reply_example`, or
+  `persona_rule`;
+- sanitize summaries before returning or applying them;
+- reject sensitive or boundary-overriding training;
+- store audit metadata and applied artifact pointers;
+- keep notes revocable through `status='revoked'` and `revoked_at`.
+
+The current V1 table does not yet have a dedicated idempotency key. Until that is added,
+callers should pass `source_platform_message_id`, and future schema work must add an
+explicit idempotency constraint before broadening write usage.
+
+## Database Tables
+
+Primary tables:
+
+- `qintopia_identity.persons`
+- `qintopia_identity.channel_identities`
+- `qintopia_identity.member_profile_snapshots`
+- `qintopia_identity.member_context_audit`
+- `qintopia_identity.erhua_training_notes`
+- `qintopia_identity.erhua_persona_overlays`
+- `qintopia_identity.member_facts`
+
+Design docs:
+
+- `runtime/postgres/docs/data-design/2026-06-24-agent-os-data-layer-v2.md`
+- `runtime/postgres/docs/data-design/2026-06-26-profile-digest-archive-v1.md`
+- `runtime/postgres/docs/data-design/2026-06-29-erhua-training-memory.md`
+
+Migrations:
+
+- `runtime/postgres/migrations/202606240002_agent_os_data_layer.sql`
+- `runtime/postgres/migrations/202606260004_profile_digest_archive_v1.sql`
+- `runtime/postgres/migrations/202606290006_erhua_training_memory.sql`
+
+## Fixtures
+
+Fixtures under `fixtures/` are sanitized contract examples:
+
+- `fixtures/member-context-lookup.json`
+- `fixtures/answer-context-prepare.json`
+- `fixtures/training-note-submit-allowed.json`
+- `fixtures/training-note-submit-blocked.json`
+
+They are not production exports and must not contain private chat logs or live member
+profiles.
+
+## Production Boundary
+
+- External sends: none.
+- Database reads: yes, through sidecar/context MCP only.
+- Database writes: yes, only audited trainer-memory writes.
+- Hermes profile runtime: no direct mutation.
+- Secrets: runtime-only Postgres connection strings and trainer allowlists stay outside
+  git.
+
+Do not expose unrestricted SQL or generic Postgres MCP access to frontend Agents.
 
 ## Validation
 
 ```bash
 pnpm skills:postgres-context:check
+pnpm mcp:adapters:check
 pnpm test:sidecar
 pnpm check:light
 ```

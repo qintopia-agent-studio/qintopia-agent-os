@@ -44,6 +44,8 @@
 - 不要创建顶层 `python/`、`rust/`、`typescript/` 等语言桶。
 - 不要直接在 `master` 上开发；先创建 feature branch。
 - 新功能、行为变更、迁移、runtime 改动或生产相邻改动必须先写文档。
+- commit message 必须使用 Conventional Commits。允许的类型只有 `build`、`chore`、
+  `ci`、`docs`、`feat`、`fix`、`perf`、`refactor`、`revert`、`style` 和 `test`。
 - 不要引入 Java、Gradle、Maven、Kotlin、Go、Swift、C#、PHP、Ruby、Elixir 或新的语言/工具链栈，除非 owner 明确批准架构决策。
 - 不要直接热改生产服务器。
 - 不要把 secrets、live `.env`、tokens、table ids、私聊原文、成员画像原文、server-only

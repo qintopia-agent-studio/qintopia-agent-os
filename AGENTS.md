@@ -47,6 +47,8 @@ Use `rg` and `rg --files` for search.
 - Do not develop directly on `master`; create a feature branch first.
 - Document first for new features, behavior changes, migrations, runtime changes, or
   production-adjacent work.
+- Use Conventional Commits for commit messages. Allowed types are `build`, `chore`,
+  `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, and `test`.
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
