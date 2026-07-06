@@ -135,36 +135,11 @@ jobs:
         env:
           GITHUB_SHA: ${{ steps.release.outputs.commit-sha }}
 
-      - name: Prepare GitHub Release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist/release-assets
-          cp \
-            dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu/qintopia-message-sidecar.tar.gz \
-            dist/release-assets/qintopia-message-sidecar-linux-x86_64-gnu.tar.gz
-          cp \
-            dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu/artifact-manifest.json \
-            dist/release-assets/qintopia-message-sidecar-linux-x86_64-gnu.artifact-manifest.json
-          cp \
-            dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu/SHA256SUMS \
-            dist/release-assets/qintopia-message-sidecar-linux-x86_64-gnu.SHA256SUMS
-          cp \
-            dist/deploy-bundles/qintopia-agent-os-deploy-bundle/qintopia-agent-os-deploy-bundle.tar.gz \
-            dist/release-assets/qintopia-agent-os-deploy-bundle.tar.gz
-          cp \
-            dist/deploy-bundles/qintopia-agent-os-deploy-bundle/artifact-manifest.json \
-            dist/release-assets/qintopia-agent-os-deploy-bundle.artifact-manifest.json
-          cp \
-            dist/deploy-bundles/qintopia-agent-os-deploy-bundle/SHA256SUMS \
-            dist/release-assets/qintopia-agent-os-deploy-bundle.SHA256SUMS
-
       - name: Upload release build artifact
         uses: actions/upload-artifact@v7
         with:
           name: qintopia-agent-os-release-build
           path: |
-            dist/release-assets
             dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu
             dist/deploy-bundles/qintopia-agent-os-deploy-bundle
           retention-days: 14
@@ -508,30 +483,3 @@ jobs:
           path: dist/deploy-requests/request.json
           retention-days: 30
           if-no-files-found: error
-
-  upload-github-release-assets:
-    if:
-      ${{ always() && github.event_name == 'release' && !github.event.release.prerelease
-      && needs.request-deploy.result == 'success' }}
-    needs: request-deploy
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download prepared release assets
-        uses: actions/download-artifact@v7
-        with:
-          name: qintopia-agent-os-release-build
-          path: dist
-
-      - name: Upload release assets to GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          gh release upload "$RELEASE_TAG" dist/release-assets/* --clobber

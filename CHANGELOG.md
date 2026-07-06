@@ -117,8 +117,8 @@ become versioned.
   COS deploy request/result schemas, server pull-runner scripts, and
   `pnpm deploy:runner:check`.
 - Added GitHub Release-published production deployment as the primary release
-  entrypoint, including Release asset upload, COS artifact upload, and signed deploy
-  request creation behind the production environment approval gate.
+  entrypoint, including COS artifact upload and signed deploy request creation through
+  the production environment.
 
 ### Changed
 
