@@ -90,19 +90,25 @@ implemented.
 These paths came from the previous mixed deployment model. Do not delete them until all
 runtime references are removed and an owner-approved archive window is active.
 
-| Path                                          | Why it still matters                                 | Required migration before cleanup                               |
-| --------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
-| `/home/ubuntu/qintopia-msg-sidecar`           | still used by legacy AgentOS workers and MCP context | M9-F repoint workers and Hermes MCP command to approved release |
-| `/home/ubuntu/qintopia-agent-os`              | server-side Rust/docs exploration                    | archive or delete after owner review; do not use as source      |
-| `/home/ubuntu/qintopia-hermes-runtime`        | old Hermes runtime/template attempt, dirty git state | review for unique evidence, then archive or delete              |
-| `/home/ubuntu/qintopia-message-sidecar-build` | old build workspace                                  | archive or delete after confirming no service reference         |
-| `/home/ubuntu/qintopia-artifacts`             | old artifact/output directory                        | archive or delete after content review                          |
-| `/home/ubuntu/qintopia-migration`             | older migration evidence                             | archive evidence or delete after owner review                   |
-| `/home/ubuntu/qintopia-worklog-guard-*`       | historical worklog guard run directories             | archive or delete after confirming no timer/process reference   |
-| `/home/ubuntu/worktool-gateway`               | deprecated WorkTool runtime                          | cleanup under WorkTool decommission plan                        |
-| `/home/ubuntu/worktool-gateway-old`           | deprecated WorkTool backup                           | cleanup under WorkTool decommission plan                        |
-| `/home/ubuntu/.hermes/profiles/xiaoqin`       | deprecated Xiaoqin WorkTool profile                  | archive or delete after service/config recheck                  |
-| `/opt/qiwe-openclaw-adapter`                  | deprecated OpenClaw adapter                          | cleanup with disabled unit and nginx route reconciliation       |
+| Path                                          | Current status                           | Required migration before cleanup                         |
+| --------------------------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| `/home/ubuntu/qintopia-msg-sidecar`           | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-agent-os`              | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-hermes-runtime`        | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-message-sidecar-build` | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-artifacts`             | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-migration`             | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/qintopia-worklog-guard-*`       | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/worktool-gateway`               | deprecated runtime; still separate batch | cleanup under WorkTool decommission plan                  |
+| `/home/ubuntu/worktool-gateway-old`           | archived in M12 low-risk batch           | keep archive until retention deletion is owner-approved   |
+| `/home/ubuntu/.hermes/profiles/xiaoqin`       | deprecated profile; still separate batch | archive or delete after service/config recheck            |
+| `/opt/qiwe-openclaw-adapter`                  | deprecated adapter; still separate batch | cleanup with disabled unit and nginx route reconciliation |
+
+M12 first low-risk archive path:
+
+```text
+/home/ubuntu/qintopia-agent-os-backups/m12-low-risk-20260706T011023Z
+```
 
 M9-F must remove these active service references before
 `/home/ubuntu/qintopia-msg-sidecar` becomes eligible for archive:

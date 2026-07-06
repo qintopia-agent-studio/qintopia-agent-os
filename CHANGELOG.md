@@ -276,6 +276,8 @@ become versioned.
 - Added the M11 legacy path archive-readiness record, marking low-risk legacy
   directories as archive-ready while keeping WorkTool, Xiaoqin, and OpenClaw behind
   decommission-batch gates.
+- Added the M12 low-risk legacy archive record with archive path, validation evidence,
+  rollback command, and remaining WorkTool/Xiaoqin/OpenClaw decommission scope.
 
 ### Fixed
 
@@ -304,3 +306,7 @@ become versioned.
   sidecar release binaries do not rely on a slow single-stream upload path.
 - Added a compressed `qintopia-message-sidecar.tar.gz` release bundle for COS transport;
   server fetch still extracts and verifies the original binary with `SHA256SUMS`.
+- Archived the M11 low-risk legacy server paths into
+  `/home/ubuntu/qintopia-agent-os-backups/m12-low-risk-20260706T011023Z` without
+  permanent deletion, leaving WorkTool, Xiaoqin, and OpenClaw for separate decommission
+  batches.

@@ -22,6 +22,9 @@ canonical architecture, engineering, package, or deployment docs.
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):
   M11 read-only archive-ready and decommission-batch evidence for legacy paths.
+- [archive-readiness/m12-low-risk-archive.md](archive-readiness/m12-low-risk-archive.md):
+  M12 first low-risk legacy archive batch, validation evidence, rollback path, and
+  remaining decommission scope.
 - [agent-capability-matrix.md](agent-capability-matrix.md): active Agent package
   capabilities, approval boundaries, and runtime-state exclusions.
 - [sidecar-ci-artifacts.md](sidecar-ci-artifacts.md): M9.1 sidecar artifact contract, CI

@@ -61,21 +61,22 @@ and future programming agents.
 
 ## Migration Phases
 
-| Phase                       | Status   | Exit criteria                                                                                                                                                                                                                         |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M0 repository bootstrap     | Complete | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                                                                                                      |
-| M1 inventory                | Complete | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                                                                                                    |
-| M2 registry contract        | Complete | registry schemas and package manifest templates exist and validate                                                                                                                                                                    |
-| M3 docs migration           | Complete | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                                                                                                |
-| M4 first skill adoption     | Complete | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                                                                                                    |
-| M5 runtime sidecar adoption | Complete | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                                                                                                  |
-| M5.5 anti-drift guardrails  | Complete | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                                                                                                           |
-| M6 agents adoption          | Complete | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                                                                                                    |
-| M7 WorkTool decommission    | Complete | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                                                                                 |
-| M8 CI/CD deployment gate    | Complete | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                                                                                |
-| M9 server cutover           | Complete | all nine sidecar/worker services and the context MCP path run from `qintopia-agent-os-releases/current`; external adapter enablement remains a separate allowlist/config decision                                                     |
-| M10 release model           | Complete | versioned release directories and `current`/`previous` symlinks cover sidecar runtime, context MCP, collab MCP, shared `qintopia-tools`, Erhua `qiwe-platform`, Huabaosi `qintopia-base-read`, and reviewed profile-template planning |
-| M11 archive-ready marking   | Complete | legacy paths have read-only process, unit, cron, nginx, Hermes config, and rollback evidence; M12 cleanup remains blocked on owner-approved batches                                                                                   |
+| Phase                       | Status      | Exit criteria                                                                                                                                                                                                                         |
+| --------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 repository bootstrap     | Complete    | git initialized on `master`, pnpm workspace installed, root rules/docs/checks/changelog in place                                                                                                                                      |
+| M1 inventory                | Complete    | local repos and server runtime assets classified as `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`                                                                                                                    |
+| M2 registry contract        | Complete    | registry schemas and package manifest templates exist and validate                                                                                                                                                                    |
+| M3 docs migration           | Complete    | stable architecture, operations, product, and reports moved or linked without stale state in root docs                                                                                                                                |
+| M4 first skill adoption     | Complete    | `skills/qiwe` adopted with README, manifest, fixtures, tests, and source reference                                                                                                                                                    |
+| M5 runtime sidecar adoption | Complete    | sidecar split into runtime/mcp/workflows/deploy with tests preserved                                                                                                                                                                  |
+| M5.5 anti-drift guardrails  | Complete    | executable checks prevent deprecated, review-pool, and legacy deploy paths from becoming approved direction                                                                                                                           |
+| M6 agents adoption          | Complete    | active profile templates migrated into `agents/*` with runtime-only state excluded and `pnpm agents:check` passing                                                                                                                    |
+| M7 WorkTool decommission    | Complete    | WorkTool references classified and either deprecated or final-migration cleanup items                                                                                                                                                 |
+| M8 CI/CD deployment gate    | Complete    | registry check, manifest check, format, markdown lint, package tests, smoke, and secret scan run in CI                                                                                                                                |
+| M9 server cutover           | Complete    | all nine sidecar/worker services and the context MCP path run from `qintopia-agent-os-releases/current`; external adapter enablement remains a separate allowlist/config decision                                                     |
+| M10 release model           | Complete    | versioned release directories and `current`/`previous` symlinks cover sidecar runtime, context MCP, collab MCP, shared `qintopia-tools`, Erhua `qiwe-platform`, Huabaosi `qintopia-base-read`, and reviewed profile-template planning |
+| M11 archive-ready marking   | Complete    | legacy paths have read-only process, unit, cron, nginx, Hermes config, and rollback evidence; M12 cleanup remains blocked on owner-approved batches                                                                                   |
+| M12 legacy cleanup          | In progress | first low-risk archive batch completed; WorkTool, Xiaoqin, and OpenClaw remain separate decommission batches                                                                                                                          |
 
 ## Progress Log
 
@@ -919,6 +920,23 @@ and future programming agents.
     unit/profile references still exist
   - did not move, archive, delete, disable, or edit any legacy path; M12 remains a
     separate owner-approved cleanup phase
+- Started M12 legacy cleanup with the owner-approved low-risk archive batch:
+  - added `docs/operations/archive-readiness/m12-low-risk-archive.md`
+  - archived the M11 low-risk candidates under
+    `/home/ubuntu/qintopia-agent-os-backups/m12-low-risk-20260706T011023Z`
+  - moved `/home/ubuntu/qintopia-msg-sidecar`, `/home/ubuntu/qintopia-agent-os`,
+    `/home/ubuntu/qintopia-hermes-runtime`,
+    `/home/ubuntu/qintopia-message-sidecar-build`, `/home/ubuntu/qintopia-artifacts`,
+    `/home/ubuntu/qintopia-migration`, `/home/ubuntu/worktool-gateway-old`, and the
+    existing `/home/ubuntu/qintopia-worklog-guard-*` directories into that archive
+  - did not permanently delete any files
+  - kept `/home/ubuntu/worktool-gateway`, `/home/ubuntu/.hermes/profiles/xiaoqin`, and
+    `/opt/qiwe-openclaw-adapter` in place for separate decommission batches
+  - verified `current` and `previous` release symlinks were unchanged
+  - verified all nine `qintopia-message-*` and `qintopia-agentos-*` system services were
+    active after archive
+  - verified seven Hermes gateway user services were active after archive
+  - verified `qintopia-message-sidecar check` passed against NATS JetStream and Postgres
 
 ## Update Rule
 
@@ -930,7 +948,7 @@ Every migration PR must update:
 
 ## Immediate Next Actions
 
-Remaining follow-up after M11 archive-ready marking:
+Remaining follow-up after M12 low-risk archive:
 
 - Server deploy checkout remains a transition diagnostic checkout at `9424450`; do not
   use `git fetch` as the routine release path.
@@ -942,26 +960,25 @@ Remaining follow-up after M11 archive-ready marking:
   profile template/symlink plan and guardrails without production profile-file repoints.
 - External adapter enablement: still blocked on reviewed allowlists/config for real
   group sends and real workbench integration.
-- Deprecated runtime cleanup: M11 has marked archive-ready candidates and
-  decommission-batch-required paths. Actual archive/delete work remains deferred until
-  M12 owner approval.
+- Deprecated runtime cleanup: M12 archived the first low-risk batch only. WorkTool,
+  Xiaoqin, and OpenClaw still require explicit decommission batches before archive or
+  deletion.
 - Hermes profile/plugin files under `.hermes/profiles/*` are still live runtime state.
   Future profile and skill migrations must use reviewed release bundles or symlinks, not
   wholesale copies of `.hermes`.
 
 Recommended order:
 
-1. Stop before M12 and choose an owner-approved cleanup batch.
+1. Choose the next M12 decommission batch explicitly: WorkTool/Xiaoqin first or OpenClaw
+   first. Do not mix them with unrelated cleanup.
 2. Keep server-side GitHub access out of routine runtime releases. Use it only for
    deploy runner bootstrap, deploy runner upgrades, diagnostics, or emergency fallback.
 3. Do not repoint production to a newer commit just because docs changed; use a new
    approved target SHA and artifact only when there is a production runtime change.
 4. Do not enable real external send or real workbench adapter paths until production
    allowlists/config are reviewed and set.
-5. After no process, unit, timer, cron, MCP command, or nginx route references legacy
-   paths, archive and then clean up `/home/ubuntu/qintopia-msg-sidecar`,
-   `/home/ubuntu/qintopia-agent-os`, `/home/ubuntu/qintopia-hermes-runtime`,
-   `/home/ubuntu/qintopia-migration`, `qintopia-worklog-guard-*`, WorkTool, Xiaoqin, and
-   OpenClaw paths only with owner approval.
+5. For each remaining decommission batch, remove or disable references first, verify no
+   process, unit, timer, cron, MCP command, or nginx route references the path, then
+   archive first with owner approval. Permanent deletion remains a later approval step.
 6. Add deploy smoke and rollback notes before any production wiring changes for profile
    template bundles.
