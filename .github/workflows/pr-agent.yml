@@ -55,6 +55,7 @@ jobs:
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false"
+          pr_description.add_original_user_description: "false"
           github_action_config.pr_actions:
             '["opened", "reopened", "ready_for_review", "review_requested",
             "synchronize"]'

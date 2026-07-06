@@ -9,11 +9,10 @@
 4. Document first for new features, behavior changes, migrations, or runtime changes.
 5. Keep the change scoped to one package/domain when possible.
 6. Run local validation.
-7. Update `CHANGELOG.md` for repository-level changes.
-8. Commit with a Conventional Commits message.
-9. Update the current roadmap or a package doc when the future direction changes.
-10. Validate PR readiness with `pnpm pr:doctor`.
-11. Open a PR with `pnpm pr:create -- --body-file <completed-pr-body.md>`.
+7. Commit with a Conventional Commits message.
+8. Update the current roadmap or a package doc when the future direction changes.
+9. Validate PR readiness with `pnpm pr:doctor`.
+10. Open a PR with `pnpm pr:create -- --body-file <completed-pr-body.md>`.
 
 Do not develop directly on `master`.
 
@@ -82,9 +81,28 @@ Domain, Validation, Production Boundary, Architecture / Tooling Boundary, and Ch
 Include production-boundary notes for every runtime, deploy, external integration, or
 database-adjacent change. CI rejects empty template bodies with `pnpm pr:check-body`.
 
-## Changelog Policy
+## Changelog And Release Policy
 
-Use `CHANGELOG.md` for repository-level changes that collaborators need to know.
+Use Conventional Commits as the primary input for repository-level changelog entries.
+Release Please owns routine root `CHANGELOG.md` updates through a release PR.
+
+Do not edit root `CHANGELOG.md` in ordinary feature or fix PRs. If a changelog
+correction is required, make it in the Release Please PR or in a dedicated docs PR that
+explains why the generated entry was wrong.
+
+Release flow:
+
+1. Feature and fix PRs merge into `master`.
+2. Release Please opens or updates a release PR that updates `CHANGELOG.md` and the
+   release manifest.
+3. The owner reviews and merges the release PR when a version is ready.
+4. Release Please creates a draft GitHub Release.
+5. The owner manually publishes that draft Release.
+6. The existing `release.published` workflow builds artifacts, uploads them to COS, and
+   creates the production deploy request.
+
+The production deploy trigger remains manual Release publication. Merging a release PR
+prepares a version; it does not deploy production by itself.
 
 When versioned packages are added, use Changesets for package release notes:
 
