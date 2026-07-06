@@ -64,6 +64,9 @@ for (const requiredFragment of [
   "GITHUB_EVENT_PATH",
   "pull_request?.base?.sha",
   "pull_request?.head?.sha",
+  'eventName === "push"',
+  "event.before",
+  "event.after",
   "refs/pull/${prNumber}/head",
   'git", ["cat-file", "-e"',
   "--format=%H%x00%P%x00%s",
@@ -71,6 +74,15 @@ for (const requiredFragment of [
   if (commitMessageCheck && !commitMessageCheck.includes(requiredFragment)) {
     errors.push(`tools/ci/check-commit-messages.mjs: must include ${requiredFragment}`);
   }
+}
+
+const ciWorkflow = fs.existsSync(path.join(repoRoot, ".github/workflows/ci.yml"))
+  ? readText(".github/workflows/ci.yml")
+  : "";
+if (ciWorkflow && !ciWorkflow.includes("fetch-depth: 0")) {
+  errors.push(
+    ".github/workflows/ci.yml: checkouts must keep enough history for commitlint"
+  );
 }
 
 if (errors.length > 0) {

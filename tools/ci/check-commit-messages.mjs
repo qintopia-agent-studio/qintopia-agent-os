@@ -52,6 +52,11 @@ const fetchCommit = (sha, refspecs = []) => {
   }
 };
 
+const fetchRangeCommits = (fromSha, toSha, refspecs = []) => {
+  fetchCommit(fromSha, refspecs);
+  fetchCommit(toSha, refspecs);
+};
+
 const currentBranch = () => {
   try {
     return run("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -63,7 +68,12 @@ const currentBranch = () => {
 const localDefaultRange = () => {
   const branch = currentBranch();
   if (branch === "master") {
-    return "HEAD~1..HEAD";
+    try {
+      run("git", ["rev-parse", "--verify", "HEAD~1"]);
+      return "HEAD~1..HEAD";
+    } catch {
+      return "HEAD";
+    }
   }
 
   try {
@@ -85,8 +95,8 @@ const commitRange = (() => {
   if (process.argv[2]) {
     return process.argv[2];
   }
+  const event = pullRequestEvent();
   if (eventName === "pull_request") {
-    const event = pullRequestEvent();
     const prNumber = event.pull_request?.number;
     const prBaseRef = event.pull_request?.base?.ref;
     const prBaseSha = event.pull_request?.base?.sha;
@@ -98,7 +108,23 @@ const commitRange = (() => {
     }
     return "origin/master..HEAD";
   }
+  if (eventName === "push") {
+    const pushBeforeSha = event.before;
+    const pushAfterSha = event.after || headSha;
+    if (pushBeforeSha && pushAfterSha && !/^0+$/.test(pushBeforeSha)) {
+      fetchRangeCommits(pushBeforeSha, pushAfterSha, [
+        `refs/heads/${event.ref?.replace("refs/heads/", "") || "master"}`,
+      ]);
+      if (commitExists(pushBeforeSha) && commitExists(pushAfterSha)) {
+        return `${pushBeforeSha}..${pushAfterSha}`;
+      }
+    }
+    if (pushAfterSha && commitExists(pushAfterSha)) {
+      return pushAfterSha;
+    }
+  }
   if (baseSha && headSha && !/^0+$/.test(baseSha)) {
+    fetchRangeCommits(baseSha, headSha);
     return `${baseSha}..${headSha}`;
   }
   return localDefaultRange();
