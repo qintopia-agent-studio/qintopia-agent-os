@@ -100,6 +100,9 @@ become versioned.
   fetch, timeout, normalization, and secret boundaries.
 - Added the active `skills/qintopia-weather` implementation and package-local tests for
   the `qintopia_weather_lookup` capability.
+- Added forecast-first Erhua morning weather broadcast fields to
+  `skills/qintopia-weather` so day forecast and official warning status lead the 07:00
+  group copy.
 - Added the active `skills/knowledge-retrieval` implementation and package-local tests
   for WenYuanGe/Dify filtered answer basis and raw read wrappers.
 - Added the adopting `skills/postgres-context` contract, sanitized fixtures, and

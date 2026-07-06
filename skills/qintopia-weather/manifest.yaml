@@ -6,7 +6,8 @@ status: adopting
 risk_level: medium
 description:
   Standalone fixed-location Qintopia weather capability for current conditions, umbrella
-  windows, thunderstorm windows, official alert evidence, and air quality.
+  windows, thunderstorm windows, official alert evidence, air quality, and Erhua
+  forecast-first morning broadcast rendering.
 source:
   path: skills/qintopia-weather/__init__.py
   reference: qintopia_weather_lookup
@@ -28,6 +29,7 @@ tags:
   - weather
   - qweather
   - fixed-location
+  - morning-broadcast
 next_actions:
   - Move provider-specific QWeather and Open-Meteo calls behind mcp/weather-provider
     when the provider adapter is implemented.

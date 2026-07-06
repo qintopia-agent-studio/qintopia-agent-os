@@ -469,6 +469,179 @@ def _qweather_weather_alerts(data: Any) -> list[dict[str, str]]:
     return warnings[:5]
 
 
+def _weather_window_time_label(value: str) -> str:
+    text = _clean_text(value, max_len=40)
+    if not text:
+        return ""
+    match = re.search(r"T(\d{2}:\d{2})", text)
+    if match:
+        return match.group(1)
+    match = re.search(r"\b(\d{2}:\d{2})\b", text)
+    if match:
+        return match.group(1)
+    return text
+
+
+def _weather_window_copy(windows: list[dict[str, str]], empty: str) -> str:
+    if not windows:
+        return empty
+    parts = []
+    for window in windows[:3]:
+        start = _weather_window_time_label(window.get("start", ""))
+        end = _weather_window_time_label(window.get("end", ""))
+        reason = _clean_text(window.get("reason"), max_len=80)
+        if start and end and start != end:
+            label = f"{start}-{end}"
+        else:
+            label = start or end
+        if reason:
+            parts.append(f"{label} {reason}" if label else reason)
+        elif label:
+            parts.append(label)
+    if not parts:
+        return empty
+    return "；".join(parts)
+
+
+def _weather_warning_action(warning: dict[str, str]) -> str:
+    instruction = _clean_text(warning.get("instruction"), max_len=80)
+    if instruction:
+        return instruction
+    warning_type = _clean_text(warning.get("type") or warning.get("title"), max_len=80)
+    if re.search(r"雷|大风|暴雨|冰雹|强对流", warning_type):
+        return "减少空旷处停留，出门带伞，留意官方更新。"
+    if re.search(r"高温", warning_type):
+        return "户外活动注意补水和防晒。"
+    if re.search(r"寒潮|大雪|道路结冰|霜冻", warning_type):
+        return "注意保暖和路面湿滑。"
+    return "留意官方更新，出行把安全放前面。"
+
+
+def _weather_warning_summary(
+    warnings: list[dict[str, str]], warning_source: dict[str, Any]
+) -> dict[str, str]:
+    if warnings:
+        warning = warnings[0]
+        warning_type = _clean_text(
+            warning.get("type") or warning.get("title") or "天气", max_len=80
+        )
+        level = _clean_text(warning.get("level") or "未标注级别", max_len=40)
+        start_time = _clean_text(
+            warning.get("start_time") or "生效时间未标注", max_len=40
+        )
+        action = _weather_warning_action(warning)
+        return {
+            "status": "present",
+            "copy": f"{warning_type}{level}预警，{start_time}生效；{action}",
+            "action": action,
+        }
+    if warning_source.get("success"):
+        return {
+            "status": "none",
+            "copy": "截至早上播报时，官方暂无秦托邦天气预警",
+            "action": "正常关注天气变化就好。",
+        }
+    return {
+        "status": "unknown",
+        "copy": "官方预警数据暂未确认",
+        "action": "出门前再看一眼官方天气预警。",
+    }
+
+
+def _weather_morning_reference(current: Any, air_quality: Any) -> dict[str, Any]:
+    if not isinstance(current, dict):
+        current = {}
+    if not isinstance(air_quality, dict):
+        air_quality = {}
+    parts = []
+    text = _clean_text(current.get("text"), max_len=40)
+    temp = _clean_text(current.get("temp_c"), max_len=20)
+    feels_like = _clean_text(current.get("feels_like_c"), max_len=20)
+    humidity = _clean_text(current.get("humidity_pct"), max_len=20)
+    precip = _clean_text(current.get("precip_mm"), max_len=20)
+    wind_dir = _clean_text(current.get("wind_dir"), max_len=40)
+    wind_scale = _clean_text(current.get("wind_scale"), max_len=20)
+    wind_speed = _clean_text(current.get("wind_speed_kmh"), max_len=20)
+    aqi = _clean_text(air_quality.get("aqi"), max_len=20)
+    aqi_category = _clean_text(air_quality.get("category"), max_len=40)
+    if text or temp:
+        parts.append(f"{text or '天气'}{temp}°C" if temp else text)
+    if feels_like:
+        parts.append(f"体感{feels_like}°C")
+    if humidity:
+        parts.append(f"湿度{humidity}%")
+    if precip and precip not in {"0", "0.0", "0.00"}:
+        parts.append(f"降水{precip}mm")
+    if wind_dir or wind_scale:
+        wind = f"{wind_dir}{wind_scale}级" if wind_scale else wind_dir
+        parts.append(wind)
+    elif wind_speed:
+        parts.append(f"风速{wind_speed}km/h")
+    if aqi or aqi_category:
+        parts.append(f"AQI {aqi} {aqi_category}".strip())
+    copy = (
+        "今早参考：" + "，".join(parts)
+        if parts
+        else "今早参考：当前温度、风和空气质量暂未确认"
+    )
+    return {
+        "current": current or None,
+        "air_quality": air_quality or None,
+        "copy": copy,
+    }
+
+
+def _weather_daily_forecast(
+    *,
+    umbrella_windows: list[dict[str, str]],
+    thunderstorm_windows: list[dict[str, str]],
+    warnings: list[dict[str, str]],
+    warning_source: dict[str, Any],
+    current: Any,
+    air_quality: Any,
+) -> dict[str, Any]:
+    warning = _weather_warning_summary(warnings, warning_source)
+    rain_copy = _weather_window_copy(umbrella_windows, "今天白天降水信号不明显")
+    thunder_copy = _weather_window_copy(thunderstorm_windows, "今天暂未看到明确雷暴窗口")
+    tips = []
+    if thunderstorm_windows:
+        tips.append("雷阵雨窗口少在树下、空旷处停留。")
+    if umbrella_windows:
+        tips.append("雨具随身，路面湿滑时慢一点。")
+    if warning["status"] == "present":
+        tips.append(warning["action"])
+    elif warning["status"] == "unknown":
+        tips.append("出门前再看一眼官方预警更新。")
+    if not tips:
+        tips.append("正常出行，傍晚前后再留意一次天气变化。")
+    if thunderstorm_windows:
+        summary = "今天有雷阵雨风险，重点看时段和官方预警。"
+    elif umbrella_windows:
+        summary = "今天有降水窗口，雨具建议随身。"
+    else:
+        summary = "今天降水信号不明显，按正常出行准备。"
+    morning_reference = _weather_morning_reference(current, air_quality)
+    lines = [
+        f"秦托邦今日天气：{summary}",
+        f"降水/带伞：{rain_copy}",
+        f"雷电提醒：{thunder_copy}",
+        f"预警：{warning['copy']}",
+        f"出行提示：{tips[0]}",
+        morning_reference["copy"],
+    ]
+    return {
+        "summary": summary,
+        "umbrella": rain_copy,
+        "thunderstorm": thunder_copy,
+        "warning_status": warning["status"],
+        "warning_copy": warning["copy"],
+        "outing_tips": tips,
+        "morning_reference": morning_reference,
+        "broadcast_lines": lines,
+        "broadcast_text": "\n".join(lines),
+    }
+
+
 def _qweather_air_quality(data: Any) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
@@ -563,6 +736,16 @@ def _qweather_payload(args: dict[str, Any], bundle: dict[str, dict[str, Any]]) -
 
     weather_alert = bundle.get("weather_alert", {})
     warnings = _qweather_weather_alerts(weather_alert.get("data"))
+    current = _qweather_current(_qweather_data(bundle.get("current", {}), "now"))
+    air_quality = _qweather_air_quality(bundle.get("air_quality", {}).get("data"))
+    daily_forecast = _weather_daily_forecast(
+        umbrella_windows=umbrella_windows,
+        thunderstorm_windows=thunderstorm_windows,
+        warnings=warnings,
+        warning_source=weather_alert,
+        current=current,
+        air_quality=air_quality,
+    )
 
     payload = {
         "success": True,
@@ -575,12 +758,16 @@ def _qweather_payload(args: dict[str, Any], bundle: dict[str, dict[str, Any]]) -
             "coordinates": _qintopia_weather_location(),
             "fixed": True,
         },
-        "current": _qweather_current(_qweather_data(bundle.get("current", {}), "now")),
+        "current": current,
         "umbrella_windows": umbrella_windows,
         "thunderstorm_windows": thunderstorm_windows,
         "warnings": warnings,
+        "warning_status": daily_forecast["warning_status"],
         "warning_source": weather_alert.get("source") or "weatheralert_v1",
-        "air_quality": _qweather_air_quality(bundle.get("air_quality", {}).get("data")),
+        "air_quality": air_quality,
+        "daily_forecast": daily_forecast,
+        "morning_reference": daily_forecast["morning_reference"],
+        "morning_broadcast": daily_forecast["broadcast_text"],
         "limitations": limitations,
         "guardrails": {
             "allowed_mcp_tools": sorted(QWEATHER_ALLOWED_MCP_TOOLS),
@@ -656,6 +843,22 @@ def _open_meteo_fallback() -> dict[str, Any]:
         return probability >= 40 or amount >= 0.1
 
     current = data.get("current") if isinstance(data.get("current"), dict) else {}
+    current_payload = {
+        "time": _clean_text(current.get("time"), max_len=40),
+        "temp_c": current.get("temperature_2m"),
+        "feels_like_c": current.get("apparent_temperature"),
+        "humidity_pct": current.get("relative_humidity_2m"),
+        "wind_speed_kmh": current.get("wind_speed_10m"),
+    }
+    umbrella_windows = _time_windows(rows, rainy, "time")
+    daily_forecast = _weather_daily_forecast(
+        umbrella_windows=umbrella_windows,
+        thunderstorm_windows=[],
+        warnings=[],
+        warning_source={"success": False, "source": "open_meteo_fallback"},
+        current=current_payload,
+        air_quality=None,
+    )
     return {
         "success": True,
         "skill": QINTOPIA_WEATHER_TOOL,
@@ -667,17 +870,15 @@ def _open_meteo_fallback() -> dict[str, Any]:
             "coordinates": _qintopia_weather_location(),
             "fixed": True,
         },
-        "current": {
-            "time": _clean_text(current.get("time"), max_len=40),
-            "temp_c": current.get("temperature_2m"),
-            "feels_like_c": current.get("apparent_temperature"),
-            "humidity_pct": current.get("relative_humidity_2m"),
-            "wind_speed_kmh": current.get("wind_speed_10m"),
-        },
-        "umbrella_windows": _time_windows(rows, rainy, "time"),
+        "current": current_payload,
+        "umbrella_windows": umbrella_windows,
         "thunderstorm_windows": [],
         "warnings": [],
+        "warning_status": "unknown",
         "air_quality": None,
+        "daily_forecast": daily_forecast,
+        "morning_reference": daily_forecast["morning_reference"],
+        "morning_broadcast": daily_forecast["broadcast_text"],
         "limitations": [
             "Open-Meteo fallback only; no QWeather official warnings",
             "no minute-level precipitation conclusion",
