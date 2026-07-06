@@ -71,6 +71,108 @@ else:
 PY
 }
 
+validate_request() {
+  python3 - "$request_file" <<'PY'
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+path = sys.argv[1]
+allowed_scope = {"sidecar-runtime", "deploy-bundle", "hermes-plugins"}
+allowed_targets = {
+    "qintopia-system-services",
+    "hermes-erhua",
+    "hermes-wenyuange",
+    "hermes-xiaoman",
+    "hermes-silaoshi",
+    "hermes-huabaosi",
+    "hermes-guanerye",
+}
+sha = re.compile(r"^[0-9a-f]{40}$")
+request_id = re.compile(r"^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$")
+
+def fail(message):
+    raise SystemExit(f"invalid deploy request: {message}")
+
+def require_string(data, key):
+    value = data.get(key)
+    if not isinstance(value, str) or not value:
+        fail(f"{key} must be a non-empty string")
+    return value
+
+def parse_datetime(value, key):
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        fail(f"{key} must be an ISO date-time")
+
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+
+if data.get("schema_version") != 1:
+    fail("schema_version must be 1")
+if data.get("environment") != "production":
+    fail("environment must be production")
+if data.get("repository") != "qintopia-agent-studio/qintopia-agent-os":
+    fail("repository mismatch")
+if not request_id.fullmatch(require_string(data, "request_id")):
+    fail("request_id format mismatch")
+for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "release_sha"):
+    if not sha.fullmatch(require_string(data, key)):
+        fail(f"{key} must be a lowercase 40-character SHA")
+
+created_at = parse_datetime(require_string(data, "created_at"), "created_at")
+expires_at = parse_datetime(require_string(data, "expires_at"), "expires_at")
+now = datetime.now(timezone.utc)
+if created_at.tzinfo is None or expires_at.tzinfo is None:
+    fail("created_at and expires_at must include timezone")
+if expires_at <= now:
+    fail("request is expired")
+if expires_at <= created_at:
+    fail("expires_at must be after created_at")
+
+release_scope = data.get("release_scope")
+if not isinstance(release_scope, list) or not release_scope:
+    fail("release_scope must be a non-empty list")
+if set(release_scope) - allowed_scope or len(set(release_scope)) != len(release_scope):
+    fail("release_scope contains unsupported or duplicate entries")
+
+restart_targets = data.get("restart_targets")
+if not isinstance(restart_targets, list) or not restart_targets:
+    fail("restart_targets must be a non-empty list")
+if set(restart_targets) - allowed_targets or len(set(restart_targets)) != len(restart_targets):
+    fail("restart_targets contains unsupported or duplicate entries")
+
+for key in ("rollback_on_smoke_failure", "dry_run"):
+    if not isinstance(data.get(key), bool):
+        fail(f"{key} must be boolean")
+
+cos = data.get("cos")
+if not isinstance(cos, dict):
+    fail("cos must be an object")
+if cos.get("prefix") != "qintopia-agent-os":
+    fail("cos.prefix must be qintopia-agent-os")
+expected_request_key = f"qintopia-agent-os/deploy-requests/production/pending/{data['request_id']}.json"
+expected_result_key = f"qintopia-agent-os/deploy-results/production/{data['request_id']}.json"
+if cos.get("request_key") != expected_request_key:
+    fail("cos.request_key does not match request_id")
+if cos.get("result_key") != expected_result_key:
+    fail("cos.result_key does not match request_id")
+require_string(cos, "bucket")
+require_string(cos, "region")
+expected_bucket = os.environ.get("TENCENT_COS_BUCKET")
+expected_region = os.environ.get("TENCENT_COS_REGION")
+if expected_bucket and cos.get("bucket") != expected_bucket:
+    fail("cos.bucket does not match runner environment")
+if expected_region and cos.get("region") != expected_region:
+    fail("cos.region does not match runner environment")
+PY
+}
+
+validate_request
+
 request_id="$(json_get request_id)"
 release_sha="$(json_get release_sha)"
 runtime_sha="$(json_get runtime_sha)"
@@ -146,6 +248,7 @@ run_promotion() {
   if [[ "$dry_run" == "true" ]]; then
     write_result dry_run_succeeded
   else
+    promoted_current=true
     deploy/runner/smoke-release.sh --restart-targets "$restart_targets"
     write_result succeeded
   fi
@@ -156,9 +259,13 @@ run_promotion() {
     echo "another deploy is already running" >&2
     exit 75
   }
-  if ! run_promotion; then
-    status=$?
-    if [[ "$dry_run" != "true" && "$rollback_on_smoke_failure" == "true" ]]; then
+  promoted_current=false
+  set +e
+  run_promotion
+  status=$?
+  set -e
+  if [[ "$status" -ne 0 ]]; then
+    if [[ "$promoted_current" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
       deploy/runner/rollback-release.sh --release-root "$RELEASE_ROOT" || true
       write_result rolled_back "deployment failed and rollback was attempted"
     else

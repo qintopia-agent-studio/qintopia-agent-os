@@ -14,6 +14,30 @@ const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath)
 const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 const addError = (message) => errors.push(message);
+const hasDangerousInputInterpolationInRun = (workflowText) => {
+  const lines = workflowText.split("\n");
+  let inRun = false;
+  let runIndent = -1;
+  for (const line of lines) {
+    const indent = line.match(/^ */)?.[0].length ?? 0;
+    if (/^\s*run:\s*/.test(line)) {
+      inRun = true;
+      runIndent = indent;
+      const inlineValue = line.replace(/^\s*run:\s*/, "");
+      if (inlineValue.includes("${{ inputs.")) {
+        return true;
+      }
+      continue;
+    }
+    if (inRun && line.trim() && indent <= runIndent) {
+      inRun = false;
+    }
+    if (inRun && line.includes("${{ inputs.")) {
+      return true;
+    }
+  }
+  return false;
+};
 
 const requiredFiles = [
   ".github/workflows/deploy-production.yml",
@@ -118,11 +142,22 @@ if (exists(".github/workflows/deploy-production.yml")) {
     );
   }
   const workflowText = readText(".github/workflows/deploy-production.yml");
+  if (workflowText.includes("TENCENT_COS_PREFIX")) {
+    addError(
+      ".github/workflows/deploy-production.yml: deploy request prefix must be fixed to qintopia-agent-os"
+    );
+  }
+  if (hasDangerousInputInterpolationInRun(workflowText)) {
+    addError(
+      ".github/workflows/deploy-production.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
+    );
+  }
   for (const fragment of [
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
     "git merge-base --is-ancestor",
     "pnpm deploy:runner:check",
+    "DEPLOY_COMMIT_SHA",
   ]) {
     if (!workflowText.includes(fragment)) {
       addError(`.github/workflows/deploy-production.yml: missing ${fragment}`);
@@ -149,6 +184,49 @@ if (!runnerText.includes('if [[ "$dry_run" == "true" ]]')) {
   addError(
     "deploy/runner/qintopia-agent-os-deploy-runner: must explicitly guard dry-run promotion"
   );
+}
+for (const fragment of [
+  "validate_request",
+  "request is expired",
+  "repository mismatch",
+  "cos.prefix must be qintopia-agent-os",
+  "cos.bucket does not match runner environment",
+  "promoted_current=true",
+  "run_promotion\n  status=$?",
+  'if [[ "$promoted_current" == "true"',
+]) {
+  if (!runnerText.includes(fragment)) {
+    addError(`deploy/runner/qintopia-agent-os-deploy-runner: missing ${fragment}`);
+  }
+}
+
+const pollerText = exists("deploy/runner/poll-deploy-requests.sh")
+  ? readText("deploy/runner/poll-deploy-requests.sh")
+  : "";
+for (const fragment of [
+  'prefix="qintopia-agent-os"',
+  "archive_key=",
+  "/failed",
+  "deploy request failed before promotion result was written",
+  '"$coscli_path" rm "cos://${bucket_alias}/${request_key}"',
+  "failed to archive consumed request; leaving pending request in COS",
+]) {
+  if (!pollerText.includes(fragment)) {
+    addError(`deploy/runner/poll-deploy-requests.sh: missing ${fragment}`);
+  }
+}
+
+const createRequestText = exists("tools/deploy/create-deploy-request.mjs")
+  ? readText("tools/deploy/create-deploy-request.mjs")
+  : "";
+for (const fragment of [
+  'const fixedCosPrefix = "qintopia-agent-os"',
+  "requireSha",
+  "forbidCosPrefixOverride",
+]) {
+  if (!createRequestText.includes(fragment)) {
+    addError(`tools/deploy/create-deploy-request.mjs: missing ${fragment}`);
+  }
 }
 
 const uploadRequestText = exists("deploy/runner/upload-deploy-request.sh")

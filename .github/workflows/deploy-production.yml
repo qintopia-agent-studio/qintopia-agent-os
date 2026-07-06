@@ -56,7 +56,6 @@ env:
   TENCENT_COS_BUCKET:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
   TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
-  TENCENT_COS_PREFIX: ${{ vars.TENCENT_COS_PREFIX || 'qintopia-agent-os' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
 
 jobs:
@@ -97,11 +96,17 @@ jobs:
 
       - name: Validate target commit belongs to master
         shell: bash
+        env:
+          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
           set -euo pipefail
+          if [[ ! "$DEPLOY_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "commit_sha must be a lowercase 40-character git SHA." >&2
+            exit 2
+          fi
           git fetch --no-tags origin master
-          git cat-file -e "${{ inputs.commit_sha }}^{commit}"
-          git merge-base --is-ancestor "${{ inputs.commit_sha }}" origin/master
+          git cat-file -e "${DEPLOY_COMMIT_SHA}^{commit}"
+          git merge-base --is-ancestor "$DEPLOY_COMMIT_SHA" origin/master
 
       - name: Validate Tencent COS upload configuration
         if: ${{ env.TENCENT_COS_SECRET_ID == '' || env.TENCENT_COS_SECRET_KEY == '' }}
@@ -110,20 +115,23 @@ jobs:
           production environment." >&2; exit 2
 
       - name: Create deploy request
-        run: >-
-          node tools/deploy/create-deploy-request.mjs --commit-sha "${{
-          inputs.commit_sha }}" --runtime-sha "${{ inputs.runtime_sha ||
-          inputs.commit_sha }}" --deploy-bundle-sha "${{ inputs.deploy_bundle_sha ||
-          inputs.commit_sha }}" --release-sha "${{ inputs.release_sha ||
-          inputs.deploy_bundle_sha || inputs.commit_sha }}" --release-scope "${{
-          inputs.release_scope }}" --restart-targets "${{ inputs.restart_targets }}"
-          --dry-run "${{ inputs.dry_run }}" --rollback-on-smoke-failure "${{
-          inputs.rollback_on_smoke_failure }}" --requested-by "${{ github.actor }}"
-          --notes "${{ inputs.notes }}" --output dist/deploy-requests/request.json
+        run:
+          node tools/deploy/create-deploy-request.mjs --output
+          dist/deploy-requests/request.json
         env:
+          DEPLOY_COMMIT_SHA: ${{ inputs.commit_sha }}
+          DEPLOY_RUNTIME_SHA: ${{ inputs.runtime_sha || inputs.commit_sha }}
+          DEPLOY_BUNDLE_SHA: ${{ inputs.deploy_bundle_sha || inputs.commit_sha }}
+          DEPLOY_RELEASE_SHA:
+            ${{ inputs.release_sha || inputs.deploy_bundle_sha || inputs.commit_sha }}
+          DEPLOY_RELEASE_SCOPE: ${{ inputs.release_scope }}
+          DEPLOY_RESTART_TARGETS: ${{ inputs.restart_targets }}
+          DEPLOY_DRY_RUN: ${{ inputs.dry_run }}
+          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: ${{ inputs.rollback_on_smoke_failure }}
+          DEPLOY_NOTES: ${{ inputs.notes }}
+          GITHUB_ACTOR: ${{ github.actor }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
-          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
 
       - name: Upload deploy request to Tencent COS
         run:
@@ -134,7 +142,6 @@ jobs:
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
           TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
           TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
-          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
 
       - name: Upload deploy request audit artifact

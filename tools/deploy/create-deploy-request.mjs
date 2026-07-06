@@ -7,6 +7,8 @@ import process from "node:process";
 import Ajv2020 from "ajv/dist/2020.js";
 
 const repoRoot = process.cwd();
+const fixedCosPrefix = "qintopia-agent-os";
+const shaPattern = /^[0-9a-f]{40}$/;
 
 const argValue = (name, fallback = "") => {
   const index = process.argv.indexOf(name);
@@ -27,6 +29,29 @@ const requireValue = (name, value) => {
   return value;
 };
 
+const requireSha = (name, value) => {
+  const normalized = requireValue(name, value);
+  if (!shaPattern.test(normalized)) {
+    console.error(`${name} must be a lowercase 40-character git SHA`);
+    process.exit(2);
+  }
+  return normalized;
+};
+
+const forbidCosPrefixOverride = () => {
+  const requestedPrefix = argValue(
+    "--cos-prefix",
+    process.env.TENCENT_COS_PREFIX || ""
+  );
+  const normalized = requestedPrefix.replace(/^\/+/, "").replace(/\/+$/, "");
+  if (normalized && normalized !== fixedCosPrefix) {
+    console.error(
+      `COS deploy request prefix is fixed to ${fixedCosPrefix}; got ${normalized}`
+    );
+    process.exit(2);
+  }
+};
+
 const isoNow = () => new Date().toISOString();
 const expiresAt = (minutes) =>
   new Date(Date.now() + Number(minutes) * 60 * 1000).toISOString();
@@ -37,22 +62,22 @@ const ajv = new Ajv2020({ allErrors: true });
 ajv.addFormat("date-time", true);
 const validate = ajv.compile(schema);
 
-const commitSha = requireValue(
+const commitSha = requireSha(
   "--commit-sha",
   argValue(
     "--commit-sha",
     process.env.DEPLOY_COMMIT_SHA || process.env.GITHUB_SHA || ""
   )
 );
-const runtimeSha = requireValue(
+const runtimeSha = requireSha(
   "--runtime-sha",
   argValue("--runtime-sha", process.env.DEPLOY_RUNTIME_SHA || commitSha)
 );
-const deployBundleSha = requireValue(
+const deployBundleSha = requireSha(
   "--deploy-bundle-sha",
   argValue("--deploy-bundle-sha", process.env.DEPLOY_BUNDLE_SHA || commitSha)
 );
-const releaseSha = requireValue(
+const releaseSha = requireSha(
   "--release-sha",
   argValue("--release-sha", process.env.DEPLOY_RELEASE_SHA || deployBundleSha)
 );
@@ -73,12 +98,8 @@ const region = requireValue(
   "TENCENT_COS_REGION",
   argValue("--cos-region", process.env.TENCENT_COS_REGION || "")
 );
-const prefix = (
-  argValue("--cos-prefix", process.env.TENCENT_COS_PREFIX || "qintopia-agent-os") ||
-  "qintopia-agent-os"
-)
-  .replace(/^\/+/, "")
-  .replace(/\/+$/, "");
+forbidCosPrefixOverride();
+const prefix = fixedCosPrefix;
 const ttlMinutes = argValue(
   "--ttl-minutes",
   process.env.DEPLOY_REQUEST_TTL_MINUTES || "60"

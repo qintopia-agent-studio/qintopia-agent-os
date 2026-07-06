@@ -97,9 +97,7 @@ if [[ -n "${TENCENT_COS_ENDPOINT:-}" ]]; then
 fi
 "$coscli_path" config add "${bucket_config_args[@]}" >/dev/null
 
-prefix="${TENCENT_COS_PREFIX:-qintopia-agent-os}"
-prefix="${prefix#/}"
-prefix="${prefix%/}"
+prefix="qintopia-agent-os"
 pending_prefix="${prefix}/deploy-requests/production/pending/"
 
 request_key="$("$coscli_path" ls "cos://${bucket_alias}/${pending_prefix}" \
@@ -122,21 +120,70 @@ set +e
 runner_status=$?
 set -e
 
-result_key="$(python3 - "$request_file" <<'PY'
+request_id="${request_name%.json}"
+result_key="${prefix}/deploy-results/production/${request_id}.json"
+parsed_result_key="$(python3 - "$request_file" <<'PY'
 import json
 import sys
-with open(sys.argv[1], encoding="utf-8") as fh:
-    print(json.load(fh)["cos"]["result_key"])
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        data = json.load(fh)
+    value = data.get("cos", {}).get("result_key", "")
+    if value:
+        print(value)
+except Exception:
+    pass
 PY
 )"
-request_id="$(python3 - "$request_file" <<'PY'
+parsed_request_id="$(python3 - "$request_file" <<'PY'
 import json
 import sys
-with open(sys.argv[1], encoding="utf-8") as fh:
-    print(json.load(fh)["request_id"])
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        data = json.load(fh)
+    value = data.get("request_id", "")
+    if value:
+        print(value)
+except Exception:
+    pass
 PY
 )"
+if [[ -n "$parsed_request_id" ]]; then
+  request_id="$parsed_request_id"
+fi
+if [[ -n "$parsed_result_key" ]]; then
+  result_key="$parsed_result_key"
+fi
 result_file="${STATE_DIR}/results/${request_id}.json"
+
+if [[ "$runner_status" -ne 0 && ! -f "$result_file" ]]; then
+  python3 - "$result_file" "$request_id" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+path, request_id = sys.argv[1:3]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+result = {
+    "schema_version": 1,
+    "request_id": request_id,
+    "environment": "production",
+    "status": "failed",
+    "started_at": now,
+    "finished_at": now,
+    "release_sha": "0000000000000000000000000000000000000000",
+    "previous_sha": "",
+    "current_target": "",
+    "restart_targets": [],
+    "checks": [{"name": "deploy-request-validation", "status": "failed"}],
+    "rollback": {"attempted": False, "status": "not_needed"},
+    "error": "deploy request failed before promotion result was written",
+}
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(result, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+fi
 
 if [[ -f "$result_file" ]]; then
   "$coscli_path" cp "$result_file" "cos://${bucket_alias}/${result_key}" \
@@ -144,15 +191,24 @@ if [[ -f "$result_file" ]]; then
     --disable-log
 fi
 
-processed_key="${request_key/pending/processed}"
-"$coscli_path" cp "$request_file" "cos://${bucket_alias}/${processed_key}" \
-  -c "$config_path" \
-  --disable-log || true
-
 if [[ "$runner_status" -eq 0 ]]; then
-  mv "$request_file" "${STATE_DIR}/requests/processed/${request_name}"
+  archive_key="${request_key/pending/processed}"
+  archive_dir="${STATE_DIR}/requests/processed"
 else
-  mv "$request_file" "${STATE_DIR}/requests/failed/${request_name}"
+  archive_key="${request_key/pending/failed}"
+  archive_dir="${STATE_DIR}/requests/failed"
 fi
+
+if "$coscli_path" cp "$request_file" "cos://${bucket_alias}/${archive_key}" \
+  -c "$config_path" \
+  --disable-log; then
+  "$coscli_path" rm "cos://${bucket_alias}/${request_key}" \
+    -c "$config_path" \
+    --disable-log
+else
+  echo "failed to archive consumed request; leaving pending request in COS" >&2
+fi
+
+mv "$request_file" "${archive_dir}/${request_name}"
 
 exit "$runner_status"

@@ -14,8 +14,9 @@ writes a deploy result.
 GitHub workflow_dispatch
   -> production environment approval
   -> validate target SHA and release scope
-  -> upload deploy request JSON to COS
+  -> upload deploy request JSON to fixed COS prefix qintopia-agent-os
   -> server deploy runner reads pending request
+  -> validate request schema, TTL, repository, environment, SHA, scope, and restart target
   -> download sidecar and deploy-bundle artifacts from COS
   -> verify manifests and SHA256SUMS
   -> assemble /home/ubuntu/qintopia-agent-os-releases/<release-sha>
@@ -23,6 +24,7 @@ GitHub workflow_dispatch
   -> restart approved targets
   -> smoke
   -> write deploy result JSON to COS
+  -> archive consumed request and delete the pending COS object
 ```
 
 No GitHub Action should SSH to production. No routine release should run `git fetch`,
@@ -45,6 +47,13 @@ Important fields:
 - `restart_targets`: fixed restart groups. The runner must not accept arbitrary service
   names.
 - `dry_run`: validate and assemble without switching `current` or restarting services.
+
+The COS request prefix is intentionally fixed to `qintopia-agent-os`. Bucket, region,
+and endpoint can vary by environment; the production queue path cannot.
+
+Rollback is attempted only after `current` has been switched and the post-promotion
+smoke path fails. Artifact download, request validation, or staging failures must not
+move a healthy `current` symlink back to `previous`.
 
 ## Server Requirements
 

@@ -30,8 +30,9 @@ GitHub Deploy Production workflow_dispatch
   -> production environment approval
   -> validate target SHA belongs to origin/master
   -> generate deploy request JSON
-  -> upload request to COS pending queue
+  -> upload request to fixed COS pending queue
   -> server systemd timer polls COS
+  -> server validates request schema, TTL, repository, environment, SHA, scope, and target
   -> server downloads sidecar and deploy-bundle artifacts from COS
   -> server verifies artifact-manifest.json and SHA256SUMS
   -> server assembles releases/<release-sha>
@@ -39,6 +40,7 @@ GitHub Deploy Production workflow_dispatch
   -> server restarts approved targets
   -> server runs smoke
   -> server uploads deploy result JSON
+  -> server archives the request and removes the pending COS object
 ```
 
 GitHub Actions must not SSH to the server. The server must not pull repository source or
@@ -59,8 +61,11 @@ Repository variables may keep non-secret COS defaults:
 
 - `TENCENT_COS_BUCKET`
 - `TENCENT_COS_REGION`
-- `TENCENT_COS_PREFIX`
 - `TENCENT_COS_ENDPOINT`
+
+The deploy request prefix is not configurable. It is fixed to `qintopia-agent-os` so the
+GitHub workflow, JSON schema, server-side validator, and COS poller share one production
+queue contract.
 
 ## Server Controls
 
@@ -70,6 +75,10 @@ restart system services. It must execute only the fixed scripts in `deploy/runne
 The runner must not:
 
 - accept arbitrary shell commands from the request;
+- trust COS request JSON without server-side validation;
+- process expired requests;
+- repeatedly process the same pending COS object after it has been archived;
+- roll back before `current` has been switched;
 - deploy a SHA that was not requested explicitly;
 - edit files under `.hermes` directly;
 - run `git fetch`, `git checkout`, or local Rust builds for routine releases.
