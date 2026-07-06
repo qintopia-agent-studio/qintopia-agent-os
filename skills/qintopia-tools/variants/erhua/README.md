@@ -150,12 +150,19 @@ Weather guardrails:
 ## Server Install
 
 Install per profile that needs Qintopia tools because Hermes discovers user plugins from
-the active `HERMES_HOME/plugins` directory:
+the active `HERMES_HOME/plugins` directory. Production should use the release/current
+layout, not an ad hoc `rsync` of only this plugin:
 
-```bash
-rsync -az --delete config/hermes/plugins/qintopia-tools/ \
-  ubuntu@122.51.77.220:/home/ubuntu/.hermes/profiles/erhua/plugins/qintopia-tools/
+```text
+/home/ubuntu/.hermes/profiles/erhua/plugins/qintopia-tools
+  -> /home/ubuntu/qintopia-agent-os-releases/current/skills/qintopia-tools/variants/erhua
 ```
+
+The same release must include delegated skill packages under
+`/home/ubuntu/qintopia-agent-os-releases/current/skills`. Erhua currently delegates
+weather to `skills/qintopia-weather` and Dify/WenYuanGe lookup to
+`skills/knowledge-retrieval`. If Hermes loads this plugin from a copied profile-local
+directory, set `QINTOPIA_AGENT_OS_SKILLS_DIR` to the release `skills` directory.
 
 Enable in the profile `config.yaml`:
 

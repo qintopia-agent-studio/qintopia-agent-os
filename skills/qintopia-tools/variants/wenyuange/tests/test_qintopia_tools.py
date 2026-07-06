@@ -77,6 +77,9 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_MESSAGE_STORE_EMBEDDING_MODEL",
                 "QINTOPIA_MESSAGE_STORE_EMBEDDING_DB_MODEL",
                 "QINTOPIA_SIDECAR_DATABASE_URL",
+                "QINTOPIA_AGENT_OS_SKILLS_DIR",
+                "QINTOPIA_AGENT_OS_RELEASE_DIR",
+                "QINTOPIA_AGENT_OS_MONOREPO_DIR",
             ]
         }
         os.environ["QINTOPIA_DIFY_KB_BASE_URL"] = "http://dify.example.test/v1"
@@ -92,6 +95,9 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_MESSAGE_STORE_EMBEDDING_MODEL", None)
         os.environ.pop("QINTOPIA_MESSAGE_STORE_EMBEDDING_DB_MODEL", None)
         os.environ.pop("QINTOPIA_SIDECAR_DATABASE_URL", None)
+        os.environ.pop("QINTOPIA_AGENT_OS_SKILLS_DIR", None)
+        os.environ.pop("QINTOPIA_AGENT_OS_RELEASE_DIR", None)
+        os.environ.pop("QINTOPIA_AGENT_OS_MONOREPO_DIR", None)
         self.module = load_plugin()
 
     def tearDown(self) -> None:
@@ -230,6 +236,18 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertTrue(payload["delegated"])
         self.assertEqual(calls[0]["query"], "社区 WiFi 名称是什么")
+
+    def test_skill_dependency_loader_supports_explicit_skills_dir(self):
+        skills_dir = self.index_dir / "agent-os-skills"
+        knowledge_dir = skills_dir / "knowledge-retrieval"
+        knowledge_dir.mkdir(parents=True)
+        (knowledge_dir / "__init__.py").write_text("MARKER = 'knowledge-from-explicit-skills-dir'\n", encoding="utf-8")
+        os.environ["QINTOPIA_AGENT_OS_SKILLS_DIR"] = str(skills_dir)
+        self.module._KNOWLEDGE_RETRIEVAL_PLUGIN = None
+
+        knowledge_plugin = self.module._knowledge_retrieval_plugin()
+
+        self.assertEqual(knowledge_plugin.MARKER, "knowledge-from-explicit-skills-dir")
 
     def test_message_store_search_requires_wenyuange_caller(self):
         payload = json.loads(

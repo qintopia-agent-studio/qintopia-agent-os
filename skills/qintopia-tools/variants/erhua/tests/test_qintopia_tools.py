@@ -83,6 +83,9 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_WEATHER_LOCATION_NAME",
                 "QINTOPIA_WEATHER_QWEATHER_CITY",
                 "QINTOPIA_WEATHER_MCP_TIMEOUT_SECONDS",
+                "QINTOPIA_AGENT_OS_SKILLS_DIR",
+                "QINTOPIA_AGENT_OS_RELEASE_DIR",
+                "QINTOPIA_AGENT_OS_MONOREPO_DIR",
             ]
         }
         os.environ["QINTOPIA_DIFY_KB_BASE_URL"] = "http://dify.example.test/v1"
@@ -104,6 +107,9 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_WEATHER_LOCATION_NAME", None)
         os.environ.pop("QINTOPIA_WEATHER_QWEATHER_CITY", None)
         os.environ.pop("QINTOPIA_WEATHER_MCP_TIMEOUT_SECONDS", None)
+        os.environ.pop("QINTOPIA_AGENT_OS_SKILLS_DIR", None)
+        os.environ.pop("QINTOPIA_AGENT_OS_RELEASE_DIR", None)
+        os.environ.pop("QINTOPIA_AGENT_OS_MONOREPO_DIR", None)
         self.module = load_plugin()
 
     def tearDown(self) -> None:
@@ -242,6 +248,24 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertTrue(payload["delegated"])
         self.assertEqual(calls[0]["query"], "社区 WiFi 名称是什么")
+
+    def test_skill_dependency_loader_supports_explicit_skills_dir(self):
+        skills_dir = self.index_dir / "agent-os-skills"
+        knowledge_dir = skills_dir / "knowledge-retrieval"
+        weather_dir = skills_dir / "qintopia-weather"
+        knowledge_dir.mkdir(parents=True)
+        weather_dir.mkdir(parents=True)
+        (knowledge_dir / "__init__.py").write_text("MARKER = 'knowledge-from-explicit-skills-dir'\n", encoding="utf-8")
+        (weather_dir / "__init__.py").write_text("MARKER = 'weather-from-explicit-skills-dir'\n", encoding="utf-8")
+        os.environ["QINTOPIA_AGENT_OS_SKILLS_DIR"] = str(skills_dir)
+        self.module._KNOWLEDGE_RETRIEVAL_PLUGIN = None
+        self.module._QINTOPIA_WEATHER_PLUGIN = None
+
+        knowledge_plugin = self.module._knowledge_retrieval_plugin()
+        weather_plugin = self.module._qintopia_weather_plugin()
+
+        self.assertEqual(knowledge_plugin.MARKER, "knowledge-from-explicit-skills-dir")
+        self.assertEqual(weather_plugin.MARKER, "weather-from-explicit-skills-dir")
 
     def test_message_store_search_requires_wenyuange_caller(self):
         payload = json.loads(

@@ -86,32 +86,67 @@ _QINTOPIA_WEATHER_PLUGIN = None
 _KNOWLEDGE_RETRIEVAL_PLUGIN = None
 
 
+def _skill_plugin_candidates(skill_name: str) -> list[Path]:
+    current = Path(__file__).resolve()
+    candidates: list[Path] = []
+
+    skills_dir = os.getenv("QINTOPIA_AGENT_OS_SKILLS_DIR")
+    if skills_dir:
+        candidates.append(Path(skills_dir) / skill_name / "__init__.py")
+
+    release_dir = os.getenv("QINTOPIA_AGENT_OS_RELEASE_DIR")
+    if release_dir:
+        candidates.append(Path(release_dir) / "skills" / skill_name / "__init__.py")
+
+    monorepo_dir = os.getenv("QINTOPIA_AGENT_OS_MONOREPO_DIR")
+    if monorepo_dir:
+        candidates.append(Path(monorepo_dir) / "skills" / skill_name / "__init__.py")
+
+    for parent in current.parents:
+        candidates.append(parent / "skills" / skill_name / "__init__.py")
+        if parent.name in {"skills", "plugins"}:
+            candidates.append(parent / skill_name / "__init__.py")
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key not in seen:
+            deduped.append(candidate)
+            seen.add(key)
+    return deduped
+
+
+def _load_skill_plugin(skill_name: str, module_name: str):
+    checked_paths = _skill_plugin_candidates(skill_name)
+    for plugin_path in checked_paths:
+        if not plugin_path.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, plugin_path)
+        if not spec or not spec.loader:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    checked = ", ".join(str(path) for path in checked_paths)
+    raise RuntimeError(f"Cannot load {skill_name} skill. Checked paths: {checked}")
+
+
 def _qintopia_weather_plugin():
     global _QINTOPIA_WEATHER_PLUGIN
     if _QINTOPIA_WEATHER_PLUGIN is not None:
         return _QINTOPIA_WEATHER_PLUGIN
-    plugin_path = Path(__file__).resolve().parents[3] / "qintopia-weather" / "__init__.py"
-    spec = importlib.util.spec_from_file_location("qintopia_weather_plugin", plugin_path)
-    if not spec or not spec.loader:
-        raise RuntimeError(f"Cannot load qintopia-weather skill from {plugin_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    _QINTOPIA_WEATHER_PLUGIN = module
-    return module
+    _QINTOPIA_WEATHER_PLUGIN = _load_skill_plugin("qintopia-weather", "qintopia_weather_plugin")
+    return _QINTOPIA_WEATHER_PLUGIN
 
 
 def _knowledge_retrieval_plugin():
     global _KNOWLEDGE_RETRIEVAL_PLUGIN
     if _KNOWLEDGE_RETRIEVAL_PLUGIN is not None:
         return _KNOWLEDGE_RETRIEVAL_PLUGIN
-    plugin_path = Path(__file__).resolve().parents[3] / "knowledge-retrieval" / "__init__.py"
-    spec = importlib.util.spec_from_file_location("knowledge_retrieval_plugin", plugin_path)
-    if not spec or not spec.loader:
-        raise RuntimeError(f"Cannot load knowledge-retrieval skill from {plugin_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    _KNOWLEDGE_RETRIEVAL_PLUGIN = module
-    return module
+    _KNOWLEDGE_RETRIEVAL_PLUGIN = _load_skill_plugin("knowledge-retrieval", "knowledge_retrieval_plugin")
+    return _KNOWLEDGE_RETRIEVAL_PLUGIN
 
 
 QINTOPIA_WEATHER_LOOKUP_SCHEMA = _qintopia_weather_plugin().QINTOPIA_WEATHER_LOOKUP_SCHEMA
