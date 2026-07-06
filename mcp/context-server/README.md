@@ -17,6 +17,10 @@ The context server prepares safe answer context for Agent profiles such as Wenyu
 Erhua. It must distinguish static knowledge, discussion evidence, member-safe context,
 and live operational questions.
 
+Agent-facing Postgres context behavior is owned by `skills/postgres-context`. Start
+there before changing member-safe context, Erhua answer context, or trainer-memory
+writes in `runtime/sidecar/src/context_tools.rs`.
+
 ## Boundaries
 
 - It may read Postgres-backed context and evidence.
@@ -27,3 +31,8 @@ and live operational questions.
 ## Validation
 
 Run source tests plus context acceptance smoke before adopting changes.
+
+```bash
+pnpm skills:postgres-context:check
+pnpm test:sidecar
+```

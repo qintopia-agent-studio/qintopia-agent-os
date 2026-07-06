@@ -1,0 +1,31 @@
+{
+  "tool": "qintopia_member_context_lookup",
+  "mode": "read_only",
+  "request": {
+    "caller_profile": "erhua",
+    "platform": "qiwe",
+    "chat_id": "room_example",
+    "channel_user_id": "user_example",
+    "purpose": "prepare safe group reply context",
+    "current_message_summary": "member asks about event preference"
+  },
+  "expected_contract": {
+    "writes_audit": "qintopia_identity.member_context_audit",
+    "may_return": [
+      "person_id",
+      "display_name",
+      "identity_confidence",
+      "safe_summary",
+      "communication_style",
+      "safe_reply_hints",
+      "sources_used"
+    ],
+    "must_not_return": [
+      "raw_messages",
+      "hidden_profile_details",
+      "sensitive_facts",
+      "daily_digest_full_text",
+      "pending_training_notes"
+    ]
+  }
+}

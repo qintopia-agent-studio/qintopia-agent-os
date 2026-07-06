@@ -102,6 +102,9 @@ become versioned.
   the `qintopia_weather_lookup` capability.
 - Added the active `skills/knowledge-retrieval` implementation and package-local tests
   for WenYuanGe/Dify filtered answer basis and raw read wrappers.
+- Added the adopting `skills/postgres-context` contract, sanitized fixtures, and
+  validation gate for safe member context, Erhua answer context, and audited trainer
+  memory writes.
 
 ### Changed
 
