@@ -131,9 +131,9 @@ published and verified on the server. The timer runs
 the referenced request if it has not already been consumed locally, and then invokes
 `qintopia-agent-os-deploy-runner`.
 
-Missing `current.json` and already consumed pointers are normal idle timer states and
-must exit successfully. COS network, authentication, or permission failures remain hard
-failures.
+Missing `current.json`, pointers with an existing COS result, and locally consumed
+pointers are normal idle timer states and must exit successfully. COS network,
+authentication, or permission failures remain hard failures.
 
 Do not point the timer at a writable server checkout.
 

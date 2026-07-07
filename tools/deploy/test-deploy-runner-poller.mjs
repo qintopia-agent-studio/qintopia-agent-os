@@ -40,7 +40,7 @@ case "\${QINTOPIA_FAKE_COS_MODE:-}" in
     echo "NoSuchKey: object not found" >&2
     exit 1
     ;;
-  processed|failed)
+  processed|failed|remote-result)
     if [[ "$source_path" == *"/qintopia-agent-os/deploy-requests/production/current.json" ]]; then
       cat >"$dest_path" <<'JSON'
 {
@@ -53,6 +53,21 @@ case "\${QINTOPIA_FAKE_COS_MODE:-}" in
 }
 JSON
       exit 0
+    fi
+    if [[ "$source_path" == *"/qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json" ]]; then
+      if [[ "\${QINTOPIA_FAKE_COS_MODE:-}" == "remote-result" ]]; then
+        cat >"$dest_path" <<'JSON'
+{
+  "schema_version": 1,
+  "request_id": "deploy-20260706T000000Z-0123456789ab",
+  "environment": "production",
+  "status": "succeeded"
+}
+JSON
+        exit 0
+      fi
+      echo "NoSuchKey: object not found" >&2
+      exit 1
     fi
     echo "request should not be downloaded for already consumed state" >&2
     exit 65
@@ -137,6 +152,16 @@ try {
   });
   if (!processedOutput.includes("Deploy request already processed; idle")) {
     throw new Error("processed-pointer: processed idle message was not emitted");
+  }
+
+  const remoteResultOutput = runCase({
+    name: "remote-result-pointer",
+    mode: "remote-result",
+  });
+  if (!remoteResultOutput.includes("Deploy request result already exists; idle")) {
+    throw new Error(
+      "remote-result-pointer: remote-result idle message was not emitted"
+    );
   }
 
   const failedOutput = runCase({

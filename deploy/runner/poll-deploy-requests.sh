@@ -104,6 +104,10 @@ prefix="qintopia-agent-os"
 pointer_key="${prefix}/deploy-requests/production/current.json"
 pointer_file="${STATE_DIR}/requests/current.json"
 
+is_object_missing_error() {
+  [[ "$1" =~ (NoSuchKey|not[[:space:]]+found|not[[:space:]]+exist|does[[:space:]]+not[[:space:]]+exist|404|No[[:space:]]+such[[:space:]]+object|对象不存在) ]]
+}
+
 pointer_error="${tmp_dir}/pointer-cp.err"
 set +e
 "$coscli_path" cp "cos://${bucket_alias}/${pointer_key}" "$pointer_file" \
@@ -114,7 +118,7 @@ pointer_status=$?
 set -e
 if [[ "$pointer_status" -ne 0 ]]; then
   pointer_error_text="$(tr '\n' ' ' <"$pointer_error")"
-  if [[ "$pointer_error_text" =~ (NoSuchKey|not[[:space:]]+found|not[[:space:]]+exist|does[[:space:]]+not[[:space:]]+exist|404|No[[:space:]]+such[[:space:]]+object|对象不存在) ]]; then
+  if is_object_missing_error "$pointer_error_text"; then
     echo "No deploy request pointer found; idle: ${pointer_key}"
     exit 0
   fi
@@ -165,6 +169,27 @@ request_key="${remaining_identity%%$'\t'*}"
 result_key="${remaining_identity#*$'\t'}"
 request_name="${request_id}.json"
 request_file="${STATE_DIR}/requests/pending/${request_name}"
+remote_result_probe="${tmp_dir}/${request_id}-existing-result.json"
+remote_result_error="${tmp_dir}/${request_id}-result-cp.err"
+set +e
+"$coscli_path" cp "cos://${bucket_alias}/${result_key}" "$remote_result_probe" \
+  -c "$config_path" \
+  --disable-log \
+  2>"$remote_result_error"
+remote_result_status=$?
+set -e
+if [[ "$remote_result_status" -eq 0 ]]; then
+  echo "Deploy request result already exists; idle: ${request_id}"
+  exit 0
+fi
+remote_result_error_text="$(tr '\n' ' ' <"$remote_result_error")"
+if ! is_object_missing_error "$remote_result_error_text"; then
+  echo "Deploy request result probe failed: ${result_key}" >&2
+  if [[ -n "$remote_result_error_text" ]]; then
+    echo "$remote_result_error_text" >&2
+  fi
+  exit "$remote_result_status"
+fi
 if [[ -e "${STATE_DIR}/requests/processed/${request_name}" ]]; then
   echo "Deploy request already processed; idle: ${request_id}"
   exit 0

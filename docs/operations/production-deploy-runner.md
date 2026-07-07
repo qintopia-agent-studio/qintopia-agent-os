@@ -179,6 +179,8 @@ Cloud internal networking when DNS resolves to internal addresses.
 The poller is idempotent for systemd timer health:
 
 - if `current.json` does not exist yet, the poller exits successfully as idle;
+- if `current.json` points to a request whose result already exists in COS, the poller
+  exits successfully as idle even if local state was cleaned or migrated;
 - if `current.json` still points to a locally processed request, the poller exits
   successfully as idle;
 - if `current.json` still points to a locally failed request, the poller exits
