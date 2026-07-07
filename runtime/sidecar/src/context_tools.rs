@@ -341,7 +341,7 @@ async fn qintopia_answer_context_prepare(
         } else {
             Some(&sender_id)
         },
-        speaker_identity.as_ref().map(|identity| identity.person_id),
+        speaker_identity.person_id,
     )
     .await?;
     let mention_texts = mentioned_member_names(&message_text, speaker_context.as_ref());
@@ -358,7 +358,7 @@ async fn qintopia_answer_context_prepare(
         &platform,
         &chat_id,
         &sender_id,
-        speaker_identity.as_ref().map(|identity| identity.person_id),
+        speaker_identity.person_id,
     )
     .await?;
     let fields_returned = json!([
@@ -381,7 +381,7 @@ async fn qintopia_answer_context_prepare(
         &sender_id,
         &chat_id,
         &purpose,
-        speaker_identity.as_ref().map(|identity| identity.person_id),
+        speaker_identity.person_id,
         fields_returned,
         redactions.clone(),
         "qintopia_answer_context_prepare",
@@ -389,7 +389,7 @@ async fn qintopia_answer_context_prepare(
     .await?;
     Ok(json!({
         "success": true,
-        "speaker": speaker_context_json(speaker_context, speaker_identity.as_ref()),
+        "speaker": speaker_context_json(speaker_context, &speaker_identity),
         "mentioned_members": mentioned_members,
         "training_guidance": training_guidance,
         "answer_rules": {
@@ -542,40 +542,19 @@ async fn resolve_answer_context_person_id_by_channel(
     platform: &str,
     chat_id: &str,
     channel_user_id: &str,
-) -> Result<Option<ResolvedChannelIdentity>> {
+) -> Result<AnswerContextIdentityResolution> {
     if channel_user_id.is_empty() {
-        return Ok(None);
+        return Ok(AnswerContextIdentityResolution::unresolved());
     }
-    let row = sqlx::query(
+    let exact_row = sqlx::query(
         r#"
-        SELECT person_id, resolution_scope
-        FROM (
-            SELECT
-                ci.person_id,
-                ci.updated_at,
-                0 AS resolution_rank,
-                'exact_chat' AS resolution_scope
-            FROM qintopia_identity.channel_identities ci
-            WHERE ci.platform = $1
-              AND $2 <> ''
-              AND ci.chat_id = $2
-              AND ci.channel_user_id = $3
-              AND ci.person_id IS NOT NULL
-
-            UNION ALL
-
-            SELECT
-                ci.person_id,
-                ci.updated_at,
-                1 AS resolution_rank,
-                'same_channel_user' AS resolution_scope
-            FROM qintopia_identity.channel_identities ci
-            WHERE ci.platform = $1
-              AND $3 <> ''
-              AND ci.channel_user_id = $3
-              AND ci.person_id IS NOT NULL
-        ) candidates
-        ORDER BY resolution_rank ASC, updated_at DESC
+        SELECT ci.person_id
+        FROM qintopia_identity.channel_identities ci
+        WHERE ci.platform = $1
+          AND $2 <> ''
+          AND ci.chat_id = $2
+          AND ci.channel_user_id = $3
+          AND ci.person_id IS NOT NULL
         LIMIT 1
         "#,
     )
@@ -584,21 +563,57 @@ async fn resolve_answer_context_person_id_by_channel(
     .bind(channel_user_id)
     .fetch_optional(pool)
     .await
-    .context("resolve member context person id by channel identity")?;
-    row.map(|row| -> Result<ResolvedChannelIdentity> {
-        let scope: String = row.try_get("resolution_scope")?;
-        Ok(ResolvedChannelIdentity {
-            person_id: row.try_get("person_id")?,
-            resolution_scope: IdentityResolutionScope::from_db_value(&scope),
-        })
-    })
-    .transpose()
-    .map_err(Into::into)
+    .context("resolve exact answer context person id by channel identity")?;
+    if let Some(row) = exact_row {
+        return Ok(AnswerContextIdentityResolution::resolved(
+            row.try_get("person_id")?,
+            IdentityResolutionScope::ExactChat,
+        ));
+    }
+
+    if !platform.eq_ignore_ascii_case("qiwe") {
+        return Ok(AnswerContextIdentityResolution::unresolved());
+    }
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            ci.person_id,
+            bool_or(ci.chat_id = '') AS has_platform_identity
+        FROM qintopia_identity.channel_identities ci
+        WHERE ci.platform = 'qiwe'
+          AND ci.channel_user_id = $1
+          AND ci.person_id IS NOT NULL
+        GROUP BY ci.person_id
+        ORDER BY max(ci.updated_at) DESC
+        LIMIT 2
+        "#,
+    )
+    .bind(channel_user_id)
+    .fetch_all(pool)
+    .await
+    .context("resolve QiWe answer context person id by user identity")?;
+
+    match rows.as_slice() {
+        [] => Ok(AnswerContextIdentityResolution::unresolved()),
+        [row] => {
+            let has_platform_identity: bool = row.try_get("has_platform_identity")?;
+            if !has_platform_identity {
+                return Ok(AnswerContextIdentityResolution::unresolved());
+            }
+            Ok(AnswerContextIdentityResolution::resolved(
+                row.try_get("person_id")?,
+                IdentityResolutionScope::QiwePlatformUser,
+            ))
+        }
+        _ => Ok(AnswerContextIdentityResolution::conflict()),
+    }
 }
 
 #[cfg(test)]
 #[derive(Debug, Clone)]
 struct ChannelIdentityCandidate {
+    platform: String,
     chat_id: String,
     channel_user_id: String,
     person_id: uuid::Uuid,
@@ -607,40 +622,68 @@ struct ChannelIdentityCandidate {
 
 #[cfg(test)]
 fn select_answer_context_identity_candidate(
+    platform: &str,
     chat_id: &str,
     channel_user_id: &str,
     candidates: &[ChannelIdentityCandidate],
-) -> Option<ResolvedChannelIdentity> {
+) -> AnswerContextIdentityResolution {
     if channel_user_id.is_empty() {
-        return None;
+        return AnswerContextIdentityResolution::unresolved();
     }
-    candidates
+    if let Some(candidate) = candidates.iter().find(|candidate| {
+        candidate.platform == platform
+            && !chat_id.is_empty()
+            && candidate.chat_id == chat_id
+            && candidate.channel_user_id == channel_user_id
+    }) {
+        return AnswerContextIdentityResolution::resolved(
+            candidate.person_id,
+            IdentityResolutionScope::ExactChat,
+        );
+    }
+
+    if !platform.eq_ignore_ascii_case("qiwe") {
+        return AnswerContextIdentityResolution::unresolved();
+    }
+
+    let mut person_candidates = candidates
         .iter()
+        .filter(|candidate| candidate.platform == "qiwe")
         .filter(|candidate| candidate.channel_user_id == channel_user_id)
-        .filter_map(|candidate| {
-            let resolution_scope = if !chat_id.is_empty() && candidate.chat_id == chat_id {
-                IdentityResolutionScope::ExactChat
-            } else {
-                IdentityResolutionScope::SameChannelUser
-            };
-            let rank = match resolution_scope {
-                IdentityResolutionScope::ExactChat => 0,
-                IdentityResolutionScope::SameChannelUser => 1,
-            };
-            Some((
-                rank,
-                candidate.updated_at,
-                resolution_scope,
-                candidate.person_id,
-            ))
-        })
-        .min_by(|left, right| left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1)))
-        .map(
-            |(_, _, resolution_scope, person_id)| ResolvedChannelIdentity {
-                person_id,
-                resolution_scope,
+        .fold(
+            Vec::<(uuid::Uuid, bool, chrono::DateTime<chrono::Utc>)>::new(),
+            |mut acc, candidate| {
+                if let Some((_, has_platform_identity, updated_at)) = acc
+                    .iter_mut()
+                    .find(|(person_id, _, _)| *person_id == candidate.person_id)
+                {
+                    *has_platform_identity |= candidate.chat_id.is_empty();
+                    if candidate.updated_at > *updated_at {
+                        *updated_at = candidate.updated_at;
+                    }
+                } else {
+                    acc.push((
+                        candidate.person_id,
+                        candidate.chat_id.is_empty(),
+                        candidate.updated_at,
+                    ));
+                }
+                acc
             },
         )
+        .into_iter()
+        .collect::<Vec<_>>();
+    person_candidates.sort_by(|left, right| right.2.cmp(&left.2));
+
+    match person_candidates.as_slice() {
+        [] => AnswerContextIdentityResolution::unresolved(),
+        [(_, false, _)] => AnswerContextIdentityResolution::unresolved(),
+        [(person_id, true, _)] => AnswerContextIdentityResolution::resolved(
+            *person_id,
+            IdentityResolutionScope::QiwePlatformUser,
+        ),
+        _ => AnswerContextIdentityResolution::conflict(),
+    }
 }
 
 async fn resolve_person_id_by_channel_exact(
@@ -676,29 +719,49 @@ async fn resolve_person_id_by_channel_exact(
 }
 
 #[derive(Debug, Clone)]
-struct ResolvedChannelIdentity {
-    person_id: uuid::Uuid,
+struct AnswerContextIdentityResolution {
+    person_id: Option<uuid::Uuid>,
     resolution_scope: IdentityResolutionScope,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IdentityResolutionScope {
     ExactChat,
-    SameChannelUser,
+    QiwePlatformUser,
+    Conflict,
+    Unresolved,
 }
 
-impl IdentityResolutionScope {
-    fn from_db_value(value: &str) -> Self {
-        match value {
-            "same_channel_user" => Self::SameChannelUser,
-            _ => Self::ExactChat,
+impl AnswerContextIdentityResolution {
+    fn resolved(person_id: uuid::Uuid, resolution_scope: IdentityResolutionScope) -> Self {
+        Self {
+            person_id: Some(person_id),
+            resolution_scope,
         }
     }
 
+    fn unresolved() -> Self {
+        Self {
+            person_id: None,
+            resolution_scope: IdentityResolutionScope::Unresolved,
+        }
+    }
+
+    fn conflict() -> Self {
+        Self {
+            person_id: None,
+            resolution_scope: IdentityResolutionScope::Conflict,
+        }
+    }
+}
+
+impl IdentityResolutionScope {
     fn as_str(self) -> &'static str {
         match self {
             Self::ExactChat => "exact_chat",
-            Self::SameChannelUser => "same_channel_user",
+            Self::QiwePlatformUser => "qiwe_platform_user",
+            Self::Conflict => "conflict",
+            Self::Unresolved => "unresolved",
         }
     }
 }
@@ -2057,16 +2120,17 @@ fn mentioned_member_names(message_text: &str, speaker: Option<&MemberSafeContext
 
 fn speaker_context_json(
     context: Option<MemberSafeContext>,
-    identity: Option<&ResolvedChannelIdentity>,
+    identity: &AnswerContextIdentityResolution,
 ) -> Value {
     let Some(context) = context else {
-        return json!({"resolved": false});
+        return json!({
+            "resolved": false,
+            "resolution_scope": identity.resolution_scope.as_str()
+        });
     };
     json!({
         "resolved": context.person_id.is_some(),
-        "resolution_scope": identity
-            .map(|identity| identity.resolution_scope.as_str())
-            .unwrap_or("unresolved"),
+        "resolution_scope": identity.resolution_scope.as_str(),
         "display_name": context.display_name,
         "person_id": context.person_id,
         "safe_summary": context.safe_summary,
@@ -2217,9 +2281,9 @@ mod tests {
         classify_lookup_intent, classify_training_note, disclosure_hits, is_erhua_trainer,
         knowledge_excerpt, parse_allowed_callers, qintopia_gis_location_lookup,
         sanitize_training_summary, select_answer_context_identity_candidate, speaker_context_json,
-        tool_definitions, training_source_kind, validate_context_caller, ChannelIdentityCandidate,
-        ContextConfig, GisLocationLookupRequest, IdentityResolutionScope, MemberSafeContext,
-        ResolvedChannelIdentity, TrainingSourceKind,
+        tool_definitions, training_source_kind, validate_context_caller,
+        AnswerContextIdentityResolution, ChannelIdentityCandidate, ContextConfig,
+        GisLocationLookupRequest, IdentityResolutionScope, MemberSafeContext, TrainingSourceKind,
     };
     use crate::message_search::SearchConfig;
     use chrono::{TimeZone, Utc};
@@ -2282,18 +2346,19 @@ mod tests {
     }
 
     #[test]
-    fn answer_context_identity_falls_back_from_direct_chat_to_same_channel_user() {
-        let group_person = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    fn answer_context_identity_resolves_direct_chat_from_qiwe_platform_user_identity() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
         let other_person = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
-        let direct_chat = "user-1";
         let candidates = vec![
             ChannelIdentityCandidate {
-                chat_id: "group-1".to_string(),
+                platform: "qiwe".to_string(),
+                chat_id: String::new(),
                 channel_user_id: "user-1".to_string(),
-                person_id: group_person,
+                person_id,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
             },
             ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
                 chat_id: "group-2".to_string(),
                 channel_user_id: "user-2".to_string(),
                 person_id: other_person,
@@ -2302,38 +2367,40 @@ mod tests {
         ];
 
         let resolved =
-            select_answer_context_identity_candidate(direct_chat, "user-1", &candidates).unwrap();
+            select_answer_context_identity_candidate("qiwe", "user-1", "user-1", &candidates);
 
-        assert_eq!(resolved.person_id, group_person);
+        assert_eq!(resolved.person_id, Some(person_id));
         assert_eq!(
             resolved.resolution_scope,
-            IdentityResolutionScope::SameChannelUser
+            IdentityResolutionScope::QiwePlatformUser
         );
     }
 
     #[test]
-    fn answer_context_identity_prefers_exact_chat_over_newer_same_user_match() {
+    fn answer_context_identity_prefers_exact_chat_over_qiwe_platform_identity() {
         let direct_person = Uuid::parse_str("00000000-0000-0000-0000-000000000011").unwrap();
-        let group_person = Uuid::parse_str("00000000-0000-0000-0000-000000000012").unwrap();
+        let platform_person = Uuid::parse_str("00000000-0000-0000-0000-000000000012").unwrap();
         let candidates = vec![
             ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
                 chat_id: "user-1".to_string(),
                 channel_user_id: "user-1".to_string(),
                 person_id: direct_person,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
             },
             ChannelIdentityCandidate {
-                chat_id: "group-1".to_string(),
+                platform: "qiwe".to_string(),
+                chat_id: String::new(),
                 channel_user_id: "user-1".to_string(),
-                person_id: group_person,
+                person_id: platform_person,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
             },
         ];
 
         let resolved =
-            select_answer_context_identity_candidate("user-1", "user-1", &candidates).unwrap();
+            select_answer_context_identity_candidate("qiwe", "user-1", "user-1", &candidates);
 
-        assert_eq!(resolved.person_id, direct_person);
+        assert_eq!(resolved.person_id, Some(direct_person));
         assert_eq!(
             resolved.resolution_scope,
             IdentityResolutionScope::ExactChat
@@ -2341,7 +2408,86 @@ mod tests {
     }
 
     #[test]
-    fn speaker_context_json_reports_same_channel_user_resolution_scope() {
+    fn answer_context_identity_requires_materialized_qiwe_platform_identity() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000031").unwrap();
+        let candidates = vec![
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: "group-1".to_string(),
+                channel_user_id: "user-1".to_string(),
+                person_id,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+            },
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: "group-2".to_string(),
+                channel_user_id: "user-1".to_string(),
+                person_id,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+            },
+        ];
+
+        let resolved =
+            select_answer_context_identity_candidate("qiwe", "user-1", "user-1", &candidates);
+
+        assert_eq!(resolved.person_id, None);
+        assert_eq!(
+            resolved.resolution_scope,
+            IdentityResolutionScope::Unresolved
+        );
+    }
+
+    #[test]
+    fn answer_context_identity_reports_conflict_for_multiple_qiwe_people() {
+        let person_1 = Uuid::parse_str("00000000-0000-0000-0000-000000000041").unwrap();
+        let person_2 = Uuid::parse_str("00000000-0000-0000-0000-000000000042").unwrap();
+        let candidates = vec![
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: "group-1".to_string(),
+                channel_user_id: "user-1".to_string(),
+                person_id: person_1,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+            },
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: "group-2".to_string(),
+                channel_user_id: "user-1".to_string(),
+                person_id: person_2,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+            },
+        ];
+
+        let resolved =
+            select_answer_context_identity_candidate("qiwe", "user-1", "user-1", &candidates);
+
+        assert_eq!(resolved.person_id, None);
+        assert_eq!(resolved.resolution_scope, IdentityResolutionScope::Conflict);
+    }
+
+    #[test]
+    fn answer_context_identity_does_not_cross_chat_for_non_qiwe_platforms() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000051").unwrap();
+        let candidates = vec![ChannelIdentityCandidate {
+            platform: "example".to_string(),
+            chat_id: "chat-1".to_string(),
+            channel_user_id: "user-1".to_string(),
+            person_id,
+            updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+        }];
+
+        let resolved =
+            select_answer_context_identity_candidate("example", "chat-2", "user-1", &candidates);
+
+        assert_eq!(resolved.person_id, None);
+        assert_eq!(
+            resolved.resolution_scope,
+            IdentityResolutionScope::Unresolved
+        );
+    }
+
+    #[test]
+    fn speaker_context_json_reports_qiwe_platform_user_resolution_scope() {
         let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000021").unwrap();
         let context = MemberSafeContext {
             person_id: Some(person_id),
@@ -2355,15 +2501,15 @@ mod tests {
             source_summary_ids: Vec::new(),
             snapshot_generated_at: None,
         };
-        let identity = ResolvedChannelIdentity {
-            person_id,
-            resolution_scope: IdentityResolutionScope::SameChannelUser,
+        let identity = AnswerContextIdentityResolution {
+            person_id: Some(person_id),
+            resolution_scope: IdentityResolutionScope::QiwePlatformUser,
         };
 
-        let value = speaker_context_json(Some(context), Some(&identity));
+        let value = speaker_context_json(Some(context), &identity);
 
         assert_eq!(value["resolved"], true);
-        assert_eq!(value["resolution_scope"], "same_channel_user");
+        assert_eq!(value["resolution_scope"], "qiwe_platform_user");
         assert_eq!(value["display_name"], "Test Member");
     }
 

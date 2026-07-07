@@ -41,13 +41,13 @@ Read tools may return:
 - selected active training guidance;
 - source ids and audit-friendly metadata.
 
-For QiWe speaker identity in `qintopia_answer_context_prepare`, the read path first
-resolves the exact `platform + chat_id + channel_user_id` identity. If that exact
-chat-scoped row is not linked to a person, the answer-context path may fall back to the
-most recent linked identity for the same `platform + channel_user_id` so direct chats can
-reuse the same safe person context already established in a group. This fallback is
-read-only: it must not merge persons, update `channel_identities`, or create new
-identity rows.
+For QiWe speaker identity in `qintopia_answer_context_prepare`, `sender_id` is the
+current QiWe user id in both group mentions and direct chats. The read path first
+resolves the exact `platform + chat_id + channel_user_id` identity, then may use only
+the materialized QiWe platform identity
+`platform='qiwe' + chat_id='' + channel_user_id`. It must not pick the most recent
+cross-chat row. Cross-chat continuity is produced asynchronously by identity workers,
+which materialize `chat_id=''` only when the linked person is unambiguous.
 
 Read tools must not return:
 

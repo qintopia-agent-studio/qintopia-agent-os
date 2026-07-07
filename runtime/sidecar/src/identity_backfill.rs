@@ -113,7 +113,10 @@ async fn run_batch(
             if let Some(existing) = lookup_existing_identity(pool, &key).await? {
                 report.resolved += 1;
                 if apply {
-                    report.messages_updated += apply_identity(pool, &key, &existing).await?;
+                    let applied = apply_identity(pool, &key, &existing).await?;
+                    report.messages_updated += applied.messages_updated;
+                    report.platform_identities_materialized +=
+                        applied.platform_identities_materialized;
                 }
                 continue;
             }
@@ -145,8 +148,10 @@ async fn run_batch(
                         Some(resolved) => {
                             report.resolved += 1;
                             if apply {
-                                let updated = apply_identity(pool, &key, resolved).await?;
-                                report.messages_updated += updated;
+                                let applied = apply_identity(pool, &key, resolved).await?;
+                                report.messages_updated += applied.messages_updated;
+                                report.platform_identities_materialized +=
+                                    applied.platform_identities_materialized;
                             }
                         }
                         None => {
@@ -256,7 +261,7 @@ async fn apply_identity(
     pool: &PgPool,
     key: &IdentityKey,
     resolved: &ResolvedIdentity,
-) -> Result<i64> {
+) -> Result<AppliedIdentity> {
     let mut tx = pool
         .begin()
         .await
@@ -331,10 +336,142 @@ async fn apply_identity(
     .execute(&mut *tx)
     .await
     .context("update backfilled messages")?;
+    let platform_identities_materialized =
+        materialize_platform_identity(&mut tx, &key.sender_id).await?;
     tx.commit()
         .await
         .context("commit identity backfill transaction")?;
-    i64::try_from(result.rows_affected()).context("rows_affected overflow")
+    Ok(AppliedIdentity {
+        messages_updated: i64::try_from(result.rows_affected())
+            .context("rows_affected overflow")?,
+        platform_identities_materialized,
+    })
+}
+
+async fn materialize_platform_identity(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    sender_id: &str,
+) -> Result<i64> {
+    let row = sqlx::query_as::<_, (i64,)>(
+        r#"
+        WITH person_candidates AS (
+            SELECT ci.person_id
+            FROM qintopia_identity.channel_identities ci
+            WHERE ci.platform = 'qiwe'
+              AND ci.channel_user_id = $1
+              AND ci.person_id IS NOT NULL
+            GROUP BY ci.person_id
+        ),
+        unique_person AS (
+            SELECT person_id
+            FROM person_candidates
+            WHERE (SELECT count(*) FROM person_candidates) = 1
+        ),
+        source_identity AS (
+            SELECT ci.*
+            FROM qintopia_identity.channel_identities ci
+            JOIN unique_person up ON up.person_id = ci.person_id
+            WHERE ci.platform = 'qiwe'
+              AND ci.channel_user_id = $1
+              AND COALESCE(ci.display_name, '') <> ''
+            ORDER BY
+              CASE WHEN ci.chat_id = '' THEN 0 ELSE 1 END,
+              qintopia_identity.identity_source_rank(ci.identity_source) DESC,
+              ci.updated_at DESC
+            LIMIT 1
+        ),
+        upserted AS (
+            INSERT INTO qintopia_identity.channel_identities
+                (
+                    person_id,
+                    platform,
+                    channel_user_id,
+                    chat_id,
+                    display_name,
+                    normalized_display_name,
+                    identity_source,
+                    confidence,
+                    first_seen_at,
+                    last_seen_at,
+                    metadata
+                )
+            SELECT
+                source_identity.person_id,
+                'qiwe',
+                $1,
+                '',
+                source_identity.display_name,
+                source_identity.normalized_display_name,
+                source_identity.identity_source,
+                source_identity.confidence,
+                source_identity.first_seen_at,
+                source_identity.last_seen_at,
+                source_identity.metadata
+                    || jsonb_build_object(
+                        'identity_scope', 'qiwe_platform_user',
+                        'materialized_from_channel_identity_id', source_identity.id::text,
+                        'materialized_at', now()
+                    )
+            FROM source_identity
+            ON CONFLICT (platform, channel_user_id, chat_id) DO UPDATE SET
+                person_id = EXCLUDED.person_id,
+                display_name = CASE
+                    WHEN qintopia_identity.channel_identities.person_id IS NULL
+                      OR qintopia_identity.identity_source_rank(EXCLUDED.identity_source) >= qintopia_identity.identity_source_rank(qintopia_identity.channel_identities.identity_source)
+                    THEN EXCLUDED.display_name
+                    ELSE qintopia_identity.channel_identities.display_name
+                END,
+                normalized_display_name = CASE
+                    WHEN qintopia_identity.channel_identities.person_id IS NULL
+                      OR qintopia_identity.identity_source_rank(EXCLUDED.identity_source) >= qintopia_identity.identity_source_rank(qintopia_identity.channel_identities.identity_source)
+                    THEN EXCLUDED.normalized_display_name
+                    ELSE qintopia_identity.channel_identities.normalized_display_name
+                END,
+                identity_source = CASE
+                    WHEN qintopia_identity.channel_identities.person_id IS NULL
+                      OR qintopia_identity.identity_source_rank(EXCLUDED.identity_source) >= qintopia_identity.identity_source_rank(qintopia_identity.channel_identities.identity_source)
+                    THEN EXCLUDED.identity_source
+                    ELSE qintopia_identity.channel_identities.identity_source
+                END,
+                confidence = GREATEST(qintopia_identity.channel_identities.confidence, EXCLUDED.confidence),
+                last_seen_at = GREATEST(qintopia_identity.channel_identities.last_seen_at, EXCLUDED.last_seen_at),
+                metadata = qintopia_identity.channel_identities.metadata || EXCLUDED.metadata,
+                updated_at = now()
+            WHERE qintopia_identity.channel_identities.person_id IS NULL
+               OR qintopia_identity.channel_identities.person_id = EXCLUDED.person_id
+            RETURNING id, person_id
+        ),
+        linked_channel_identities AS (
+            UPDATE qintopia_identity.channel_identities ci
+            SET person_id = upserted.person_id,
+                updated_at = now()
+            FROM upserted
+            WHERE ci.platform = 'qiwe'
+              AND ci.channel_user_id = $1
+              AND ci.chat_id <> ''
+              AND ci.person_id IS NULL
+            RETURNING ci.id
+        ),
+        linked_messages AS (
+            UPDATE qintopia_messages.messages m
+            SET sender_person_id = upserted.person_id,
+                processing_hints = m.processing_hints
+                    || jsonb_build_object('sender_person_materialized_from_qiwe_userid', true),
+                updated_at = now()
+            FROM upserted
+            WHERE m.platform = 'qiwe'
+              AND m.sender_id = $1
+              AND m.sender_person_id IS NULL
+            RETURNING m.id
+        )
+        SELECT count(*)::bigint FROM upserted
+        "#,
+    )
+    .bind(sender_id)
+    .fetch_one(&mut **tx)
+    .await
+    .context("materialize QiWe platform user identity")?;
+    Ok(row.0)
 }
 
 async fn lookup_existing_identity(
@@ -783,6 +920,11 @@ fn error_chain(error: &anyhow::Error) -> String {
         .join(": ")
 }
 
+#[cfg(test)]
+fn can_materialize_platform_identity(person_ids: &[uuid::Uuid]) -> bool {
+    person_ids.iter().copied().collect::<HashSet<_>>().len() == 1
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct IdentityKey {
     chat_id: String,
@@ -797,12 +939,19 @@ struct ResolvedIdentity {
     refresh_existing_messages: bool,
 }
 
+#[derive(Debug, Default)]
+struct AppliedIdentity {
+    messages_updated: i64,
+    platform_identities_materialized: i64,
+}
+
 #[derive(Debug, Default, Serialize)]
 struct BackfillReport {
     total_identity_keys: usize,
     resolved: usize,
     unresolved: usize,
     messages_updated: i64,
+    platform_identities_materialized: i64,
     source: String,
     dry_run: bool,
     unresolved_keys: Vec<IdentityKey>,
@@ -815,9 +964,10 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        decode_chunked_body, parse_contact_identities, parse_http_response, parse_room_member_map,
-        IdentityResolver, QiWeBackfillClient,
+        can_materialize_platform_identity, decode_chunked_body, parse_contact_identities,
+        parse_http_response, parse_room_member_map, IdentityResolver, QiWeBackfillClient,
     };
+    use uuid::Uuid;
 
     #[test]
     fn parses_chunked_qiwe_response_when_utf8_character_spans_chunks() {
@@ -898,6 +1048,16 @@ mod tests {
         assert_eq!(resolved["u2"].display_name, "真实名");
         assert!(!resolved.contains_key("u3"));
         assert!(!resolved.contains_key("u4"));
+    }
+
+    #[test]
+    fn platform_identity_materialization_requires_one_unique_person() {
+        let person_1 = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let person_2 = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+
+        assert!(can_materialize_platform_identity(&[person_1, person_1]));
+        assert!(!can_materialize_platform_identity(&[]));
+        assert!(!can_materialize_platform_identity(&[person_1, person_2]));
     }
 
     #[test]
