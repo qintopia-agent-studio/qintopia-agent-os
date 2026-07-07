@@ -139,6 +139,34 @@ if (exists(".release-please-config.json")) {
       ".release-please-config.json: draft releases must force tag creation so future changelog calculations remain anchored"
     );
   }
+  const changelogSections = Array.isArray(rootPackage?.["changelog-sections"])
+    ? rootPackage["changelog-sections"]
+    : [];
+  const sectionByType = new Map(
+    changelogSections.map((section) => [section?.type, section])
+  );
+  for (const [type, section] of [
+    ["feat", "Features"],
+    ["fix", "Bug Fixes"],
+    ["build", "Build System"],
+    ["ci", "CI / Deployment"],
+    ["docs", "Documentation"],
+    ["chore", "Maintenance"],
+  ]) {
+    const configuredSection = sectionByType.get(type);
+    if (configuredSection?.section !== section || configuredSection?.hidden === true) {
+      addError(
+        `.release-please-config.json: ${type} commits must be visible in the ${section} changelog section`
+      );
+    }
+  }
+  for (const type of ["test", "style"]) {
+    if (sectionByType.get(type)?.hidden !== true) {
+      addError(
+        `.release-please-config.json: ${type} commits must stay hidden from release notes`
+      );
+    }
+  }
   if (rootPackage?.["skip-github-release"] === true) {
     addError(
       ".release-please-config.json: must create draft releases so manual Publish remains the production trigger"
