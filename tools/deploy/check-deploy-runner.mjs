@@ -54,6 +54,7 @@ const requiredFiles = [
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
   "tools/deploy/create-deploy-request.mjs",
+  "tools/deploy/test-deploy-runner-poller.mjs",
 ];
 
 for (const file of requiredFiles) {
@@ -213,7 +214,7 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       region: "ap-shanghai",
       prefix: "qintopia-agent-os",
       request_key:
-        "qintopia-agent-os/deploy-requests/production/pending/deploy-20260706T000000Z-0123456789ab.json",
+        "qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json",
       result_key:
         "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json",
     },
@@ -447,6 +448,7 @@ for (const fragment of [
   "request is expired",
   "repository mismatch",
   "cos.prefix must be qintopia-agent-os",
+  "deploy-requests/production/requests",
   "cos.bucket does not match runner environment",
   'previous_sha="${previous_target##*/}"',
   "promoted_current=true",
@@ -490,28 +492,35 @@ const pollerText = exists("deploy/runner/poll-deploy-requests.sh")
   : "";
 for (const fragment of [
   'prefix="qintopia-agent-os"',
+  'pointer_key="${prefix}/deploy-requests/production/current.json"',
+  "pointer_identity",
   "require_env DEPLOY_REQUEST_SIGNING_KEY",
   "require_env DEPLOY_REQUEST_SIGNING_KEY_ID",
-  "$NF ~ /\\.json$/",
-  "request_stem",
   "request_id_pattern",
   "actual_request_key",
   "request_key == actual_request_key",
-  "invalid-$(printf",
   "deploy request key or identity is invalid",
-  "deploy request was already consumed",
-  "deploy result already exists for request",
-  "archive_key=",
+  "is_object_missing_error",
+  "No deploy request pointer found; idle",
+  "Deploy request pointer download failed",
+  "Deploy request result already exists; idle",
+  "Deploy request result probe failed",
+  "Deploy request already processed; idle",
+  "Deploy request already failed; idle",
   "/failed",
   "deploy request failed before promotion result was written",
-  '"$coscli_path" rm "cos://${bucket_alias}/${request_key}"',
-  "failed to archive consumed request; leaving pending request in COS",
 ]) {
   if (!pollerText.includes(fragment)) {
     addError(`deploy/runner/poll-deploy-requests.sh: missing ${fragment}`);
   }
 }
 for (const forbidden of [
+  'coscli_path" ls',
+  "$NF ~ /\\.json$/",
+  "pending_prefix",
+  "deploy request was already consumed",
+  "archive_key=",
+  '"$coscli_path" rm "cos://${bucket_alias}/${request_key}"',
   "awk '/\\\\.json$/",
   'request_id="$parsed_request_id"',
   'result_key="$parsed_result_key"',
@@ -569,6 +578,15 @@ if (
 const uploadRequestText = exists("deploy/runner/upload-deploy-request.sh")
   ? readText("deploy/runner/upload-deploy-request.sh")
   : "";
+for (const fragment of [
+  "pointer_key",
+  "deploy-requests/production/current.json",
+  "Uploaded deploy request pointer",
+]) {
+  if (!uploadRequestText.includes(fragment)) {
+    addError(`deploy/runner/upload-deploy-request.sh: missing ${fragment}`);
+  }
+}
 if (
   uploadRequestText.includes(
     '${TENCENT_COS_SESSION_TOKEN:+--session_token "$TENCENT_COS_SESSION_TOKEN"}'
@@ -611,6 +629,9 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/rollback-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/smoke-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/upload-deploy-request.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-deploy-runner-poller.mjs"], {
     cwd: repoRoot,
   });
 } catch (error) {

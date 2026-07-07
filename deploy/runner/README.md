@@ -17,8 +17,8 @@ GitHub Release published
   -> production environment approval
   -> upload sidecar/deploy-bundle artifacts to COS
   -> generate a signed request from the reviewed master workflow code
-  -> upload deploy request JSON to fixed COS prefix qintopia-agent-os
-  -> server deploy runner reads pending request
+  -> upload deploy request JSON and current.json pointer to fixed COS prefix qintopia-agent-os
+  -> server deploy runner reads current.json and the referenced request
   -> validate request schema, signature, TTL, repository, environment, SHA, scope, and restart target
   -> download sidecar and deploy-bundle artifacts from COS
   -> verify manifests and SHA256SUMS
@@ -27,7 +27,7 @@ GitHub Release published
   -> restart approved system and Hermes user-service targets
   -> smoke
   -> write deploy result JSON to COS
-  -> archive consumed request and delete the pending COS object
+  -> archive local request state for idempotency
 ```
 
 No GitHub Action should SSH to production. No routine release should run `git fetch`,
@@ -127,8 +127,13 @@ The runner must not infer one SHA from another.
 Install `qintopia-agent-os-deploy-runner.service` and
 `qintopia-agent-os-deploy-runner.timer` only after a reviewed deploy bundle has been
 published and verified on the server. The timer runs
-`deploy/runner/poll-deploy-requests.sh`, which pulls one pending request from COS and
-then invokes `qintopia-agent-os-deploy-runner`.
+`deploy/runner/poll-deploy-requests.sh`, which pulls `current.json` from COS, downloads
+the referenced request if it has not already been consumed locally, and then invokes
+`qintopia-agent-os-deploy-runner`.
+
+Missing `current.json`, pointers with an existing COS result, and locally consumed
+pointers are normal idle timer states and must exit successfully. COS network,
+authentication, or permission failures remain hard failures.
 
 Do not point the timer at a writable server checkout.
 

@@ -65,6 +65,18 @@ with open(sys.argv[1], encoding="utf-8") as fh:
     print(json.load(fh)["cos"]["request_key"])
 PY
 )"
+pointer_file=""
+pointer_key="$(python3 - "$request_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+
+prefix = data["cos"]["prefix"].strip("/")
+print(f"{prefix}/deploy-requests/production/current.json")
+PY
+)"
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -72,6 +84,34 @@ cleanup() {
 }
 trap cleanup EXIT
 chmod 700 "$tmp_dir"
+pointer_file="${tmp_dir}/current.json"
+
+python3 - "$request_file" "$pointer_file" "$request_key" <<'PY'
+import json
+import sys
+
+request_path, pointer_path, request_key = sys.argv[1:4]
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+
+pointer = {
+    "schema_version": 1,
+    "environment": request["environment"],
+    "repository": request["repository"],
+    "request_id": request["request_id"],
+    "request_key": request_key,
+    "result_key": request["cos"]["result_key"],
+    "commit_sha": request["commit_sha"],
+    "release_sha": request["release_sha"],
+    "created_at": request["created_at"],
+    "expires_at": request["expires_at"],
+    "dry_run": request["dry_run"],
+}
+
+with open(pointer_path, "w", encoding="utf-8") as fh:
+    json.dump(pointer, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
 
 coscli_path="${COSCLI_PATH:-}"
 if [[ -z "$coscli_path" ]]; then
@@ -117,3 +157,9 @@ fi
   --disable-log
 
 echo "Uploaded deploy request to cos://${bucket_alias}/${request_key}"
+
+"$coscli_path" cp "$pointer_file" "cos://${bucket_alias}/${pointer_key}" \
+  -c "$config_path" \
+  --disable-log
+
+echo "Uploaded deploy request pointer to cos://${bucket_alias}/${pointer_key}"
