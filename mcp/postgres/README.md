@@ -7,6 +7,9 @@ context, memory, event, and operations data access.
 
 - Expose schema allowlists rather than unrestricted SQL access.
 - Separate read-only context lookup from audited write capabilities.
+- Keep QiWe direct-chat identity fallback read-only; resolving the same
+  `platform + channel_user_id` across chats must not perform person merges or identity
+  writes.
 - Require idempotency keys and audit fields for writes.
 - Keep secrets, connection strings, passwords, snapshots, and live database dumps
   outside git.

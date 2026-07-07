@@ -41,6 +41,14 @@ Read tools may return:
 - selected active training guidance;
 - source ids and audit-friendly metadata.
 
+For QiWe speaker identity in `qintopia_answer_context_prepare`, the read path first
+resolves the exact `platform + chat_id + channel_user_id` identity. If that exact
+chat-scoped row is not linked to a person, the answer-context path may fall back to the
+most recent linked identity for the same `platform + channel_user_id` so direct chats can
+reuse the same safe person context already established in a group. This fallback is
+read-only: it must not merge persons, update `channel_identities`, or create new
+identity rows.
+
 Read tools must not return:
 
 - raw message text outside an approved evidence contract;
