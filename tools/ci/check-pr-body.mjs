@@ -24,9 +24,10 @@ const isReleasePleasePullRequest = (pullRequest) => {
   const headRef = pullRequest.head?.ref ?? "";
   const author = pullRequest.user?.login ?? "";
   const body = pullRequest.body ?? "";
+  const releasePleaseAuthors = new Set(["github-actions[bot]", "app/github-actions"]);
   return (
     headRef.startsWith("release-please--branches--") &&
-    author === "github-actions[bot]" &&
+    releasePleaseAuthors.has(author) &&
     body.includes("This PR was generated with [Release Please]")
   );
 };

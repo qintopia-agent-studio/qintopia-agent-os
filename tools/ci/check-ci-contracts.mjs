@@ -37,6 +37,7 @@ for (const scriptName of [
   "secrets:check",
   "commitlint:check",
   "pr:check-body",
+  "release-please:check",
   "pr:doctor",
   "pr:bootstrap",
   "pr:create",
@@ -52,6 +53,7 @@ for (const requiredPath of [
   ".husky/commit-msg",
   "tools/ci/check-commit-messages.mjs",
   "tools/ci/check-pr-body.mjs",
+  "tools/ci/check-release-please-pr.mjs",
   "tools/agents/pr-body.mjs",
   "tools/agents/pr-doctor.mjs",
   "tools/agents/pr-bootstrap.mjs",
@@ -70,7 +72,9 @@ const prBodyCheck = fs.existsSync(path.join(repoRoot, "tools/ci/check-pr-body.mj
 for (const requiredFragment of [
   "isReleasePleasePullRequest",
   'headRef.startsWith("release-please--branches--")',
-  'author === "github-actions[bot]"',
+  "releasePleaseAuthors",
+  "github-actions[bot]",
+  "app/github-actions",
   "This PR was generated with [Release Please]",
   "PR body check skipped for Release Please generated release PR.",
 ]) {
@@ -122,6 +126,36 @@ if (ciWorkflow && !ciWorkflow.includes("pnpm pr:check-body")) {
   errors.push(".github/workflows/ci.yml: pull_request checks must validate PR body");
 }
 
+if (ciWorkflow && !ciWorkflow.includes("release-please-pr")) {
+  errors.push(".github/workflows/ci.yml: must detect Release Please PRs");
+}
+
+if (ciWorkflow && !ciWorkflow.includes("node tools/ci/check-release-please-pr.mjs")) {
+  errors.push(
+    ".github/workflows/ci.yml: Release Please PRs must run the release metadata check"
+  );
+}
+
+const releasePleaseCheck = fs.existsSync(
+  path.join(repoRoot, "tools/ci/check-release-please-pr.mjs")
+)
+  ? readText("tools/ci/check-release-please-pr.mjs")
+  : "";
+for (const requiredFragment of [
+  "release-please--branches--",
+  "github-actions[bot]",
+  "app/github-actions",
+  "This PR was generated with [Release Please]",
+  ".release-please-manifest.json",
+  "CHANGELOG.md",
+]) {
+  if (releasePleaseCheck && !releasePleaseCheck.includes(requiredFragment)) {
+    errors.push(
+      `tools/ci/check-release-please-pr.mjs: must include ${requiredFragment}`
+    );
+  }
+}
+
 if (ciWorkflow) {
   try {
     const parsedWorkflow = YAML.parse(ciWorkflow);
@@ -144,6 +178,27 @@ if (ciWorkflow) {
         if (!runScript.includes("pnpm check:light")) {
           errors.push(
             ".github/workflows/ci.yml: Light check must run pnpm check:light"
+          );
+        }
+      }
+      const releasePleaseCheckStep = checkSteps.find(
+        (step) => step?.name === "Release Please PR check"
+      );
+      if (!releasePleaseCheckStep) {
+        errors.push(
+          ".github/workflows/ci.yml: Release Please PR check must be in jobs.check.steps"
+        );
+      } else {
+        const runScript = String(releasePleaseCheckStep.run ?? "");
+        const condition = String(releasePleaseCheckStep.if ?? "");
+        if (!condition.includes("release-please-pr == 'true'")) {
+          errors.push(
+            ".github/workflows/ci.yml: Release Please PR check must run only for Release Please PRs"
+          );
+        }
+        if (!runScript.includes("tools/ci/check-release-please-pr.mjs")) {
+          errors.push(
+            ".github/workflows/ci.yml: Release Please PR check must run tools/ci/check-release-please-pr.mjs"
           );
         }
       }
