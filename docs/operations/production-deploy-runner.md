@@ -56,7 +56,11 @@ build Rust for routine releases.
 Release preparation is handled by `.github/workflows/release-please.yml`. Release Please
 opens or updates a release PR from merged Conventional Commits, updates `CHANGELOG.md`
 and `.release-please-manifest.json`, and creates a draft GitHub Release after the
-release PR is merged. Draft releases do not trigger production deployment.
+release PR is merged. Draft releases do not trigger production deployment. Because Agent
+OS release mechanics are production-adjacent operator behavior, Release Please includes
+`ci:` and `build:` commits in release notes. A deployment workflow or COS artifact
+change must not disappear from the release PR just because it does not change end-user
+application code.
 
 The production workflow is `.github/workflows/deploy-production.yml`. Its primary
 trigger is `release.published`: manually publishing a normal GitHub Release is the

@@ -8,7 +8,20 @@
       "include-component-in-tag": false,
       "include-v-in-tag": true,
       "draft": true,
-      "force-tag-creation": true
+      "force-tag-creation": true,
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "refactor", "section": "Refactoring" },
+        { "type": "build", "section": "Build System" },
+        { "type": "ci", "section": "CI / Deployment" },
+        { "type": "docs", "section": "Documentation" },
+        { "type": "chore", "section": "Maintenance" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "style", "section": "Style", "hidden": true }
+      ]
     }
   }
 }

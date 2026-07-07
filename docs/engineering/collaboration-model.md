@@ -70,6 +70,11 @@ Routine feature and fix PRs should not edit root `CHANGELOG.md`. Release Please 
 merged Conventional Commits to maintain a release PR with the generated changelog and
 release manifest changes.
 
+This repository treats release infrastructure as operator-visible product behavior.
+Release Please is configured to include `ci:`, `build:`, `docs:`, and `chore:` entries
+when they affect release, deploy, collaboration, or operating procedures. Pure `test:`
+and `style:` commits stay hidden from release notes.
+
 When a version is ready, the owner reviews and merges the Release Please PR. That merge
 prepares the version and creates a draft GitHub Release. It does not deploy production.
 Production deployment still requires manually publishing the draft GitHub Release, which
