@@ -2,6 +2,7 @@ node_modules/
 target/
 .git/
 pnpm-lock.yaml
+CHANGELOG.md
 *.png
 *.jpg
 *.jpeg

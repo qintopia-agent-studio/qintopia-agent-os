@@ -26,6 +26,7 @@ jobs:
     outputs:
       full-check: ${{ steps.detect.outputs.full-check }}
       changed-files: ${{ steps.detect.outputs.changed-files }}
+      release-please-pr: ${{ steps.detect.outputs.release-please-pr }}
 
     steps:
       - name: Checkout
@@ -36,8 +37,20 @@ jobs:
       - name: Detect changed files
         id: detect
         shell: bash
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login || '' }}
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: |
           set -euo pipefail
+
+          release_please_pr=false
+          if [[ "${{ github.event_name }}" == "pull_request" &&
+            "$PR_HEAD_REF" == release-please--branches--* &&
+            ( "$PR_AUTHOR" == "github-actions[bot]" || "$PR_AUTHOR" == "app/github-actions" ) &&
+            "$PR_BODY" == *"This PR was generated with [Release Please]"* ]]; then
+            release_please_pr=true
+          fi
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             base_sha="${{ github.event.pull_request.base.sha }}"
@@ -70,9 +83,11 @@ jobs:
             printf '%s\n' "${changed[@]}"
             echo "EOF"
             echo "full-check=${full_check}"
+            echo "release-please-pr=${release_please_pr}"
           } >> "$GITHUB_OUTPUT"
 
           printf 'full-check=%s\n' "$full_check"
+          printf 'release-please-pr=%s\n' "$release_please_pr"
           printf 'changed files:\n'
           printf '  %s\n' "${changed[@]}"
 
@@ -102,33 +117,47 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        if: ${{ needs.changes.outputs.release-please-pr != 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Light check
+        if: ${{ needs.changes.outputs.release-please-pr != 'true' }}
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pnpm pr:check-body
           fi
           pnpm check:light
 
+      - name: Release Please PR check
+        if: ${{ needs.changes.outputs.release-please-pr == 'true' }}
+        run: node tools/ci/check-release-please-pr.mjs
+
       - name: Setup Python
-        if: ${{ needs.changes.outputs.full-check == 'true' }}
+        if:
+          ${{ needs.changes.outputs.full-check == 'true' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Setup Rust
-        if: ${{ needs.changes.outputs.full-check == 'true' }}
+        if:
+          ${{ needs.changes.outputs.full-check == 'true' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
         uses: dtolnay/rust-toolchain@1.75.0
         with:
           components: rustfmt
 
       - name: Runtime check
-        if: ${{ needs.changes.outputs.full-check == 'true' }}
+        if:
+          ${{ needs.changes.outputs.full-check == 'true' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
         run: pnpm check:runtime
 
       - name: Report docs-only check
-        if: ${{ needs.changes.outputs.full-check != 'true' }}
+        if:
+          ${{ needs.changes.outputs.full-check != 'true' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
         run: |
           echo "Docs-only or Markdown-only change detected."
           echo "Skipped Python/Rust runtime checks and artifact builds."
