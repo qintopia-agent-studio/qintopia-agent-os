@@ -104,14 +104,24 @@ prefix="qintopia-agent-os"
 pointer_key="${prefix}/deploy-requests/production/current.json"
 pointer_file="${STATE_DIR}/requests/current.json"
 
+pointer_error="${tmp_dir}/pointer-cp.err"
 set +e
 "$coscli_path" cp "cos://${bucket_alias}/${pointer_key}" "$pointer_file" \
   -c "$config_path" \
-  --disable-log
+  --disable-log \
+  2>"$pointer_error"
 pointer_status=$?
 set -e
 if [[ "$pointer_status" -ne 0 ]]; then
-  echo "No deploy request pointer found or pointer download failed: ${pointer_key}" >&2
+  pointer_error_text="$(tr '\n' ' ' <"$pointer_error")"
+  if [[ "$pointer_error_text" =~ (NoSuchKey|not[[:space:]]+found|not[[:space:]]+exist|does[[:space:]]+not[[:space:]]+exist|404|No[[:space:]]+such[[:space:]]+object|对象不存在) ]]; then
+    echo "No deploy request pointer found; idle: ${pointer_key}"
+    exit 0
+  fi
+  echo "Deploy request pointer download failed: ${pointer_key}" >&2
+  if [[ -n "$pointer_error_text" ]]; then
+    echo "$pointer_error_text" >&2
+  fi
   exit "$pointer_status"
 fi
 
@@ -155,6 +165,14 @@ request_key="${remaining_identity%%$'\t'*}"
 result_key="${remaining_identity#*$'\t'}"
 request_name="${request_id}.json"
 request_file="${STATE_DIR}/requests/pending/${request_name}"
+if [[ -e "${STATE_DIR}/requests/processed/${request_name}" ]]; then
+  echo "Deploy request already processed; idle: ${request_id}"
+  exit 0
+fi
+if [[ -e "${STATE_DIR}/requests/failed/${request_name}" ]]; then
+  echo "Deploy request already failed; idle until current.json changes: ${request_id}" >&2
+  exit 0
+fi
 "$coscli_path" cp "cos://${bucket_alias}/${request_key}" "$request_file" \
   -c "$config_path" \
   --disable-log
@@ -197,9 +215,6 @@ fallback_error="deploy request failed before promotion result was written"
 if [[ -z "$parsed_identity" ]]; then
   runner_status=2
   fallback_error="deploy request key or identity is invalid"
-elif [[ -e "${STATE_DIR}/requests/processed/${request_name}" || -e "${STATE_DIR}/requests/failed/${request_name}" ]]; then
-  runner_status=2
-  fallback_error="deploy request was already consumed"
 else
   set +e
   "$RUNNER" --request-file "$request_file"

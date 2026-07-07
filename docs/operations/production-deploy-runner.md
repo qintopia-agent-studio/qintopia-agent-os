@@ -45,7 +45,7 @@ Owner manually publishes the draft GitHub Release
   -> server restarts approved system services and Hermes user services
   -> server runs smoke
   -> server uploads deploy result JSON
-  -> server archives the request and removes the pending COS object
+  -> server archives the local request state
 ```
 
 GitHub Actions must not SSH to the server. The server must not pull repository source or
@@ -132,7 +132,7 @@ The runner must not:
 - trust COS request JSON without server-side validation;
 - trust COS request JSON without HMAC signature verification;
 - process expired requests;
-- repeatedly process the same pending COS object after it has been archived;
+- repeatedly process the same current pointer after it has been archived locally;
 - roll back before `current` has been switched;
 - report rollback success when `rollback-release.sh` failed;
 - deploy a SHA that was not requested explicitly;
@@ -175,6 +175,17 @@ regional COS endpoint such as
 `qintopia-agent-os-artifacts-1305166808.cos.ap-shanghai.myqcloud.com` rather than the
 global acceleration endpoint. Same-region default COS access is expected to use Tencent
 Cloud internal networking when DNS resolves to internal addresses.
+
+The poller is idempotent for systemd timer health:
+
+- if `current.json` does not exist yet, the poller exits successfully as idle;
+- if `current.json` still points to a locally processed request, the poller exits
+  successfully as idle;
+- if `current.json` still points to a locally failed request, the poller exits
+  successfully as idle until GitHub uploads a new pointer.
+
+Network, authentication, or permission failures while downloading the pointer still
+return non-zero so COS outages do not look like normal idle time.
 
 ## First Server Installation
 

@@ -54,6 +54,7 @@ const requiredFiles = [
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
   "tools/deploy/create-deploy-request.mjs",
+  "tools/deploy/test-deploy-runner-poller.mjs",
 ];
 
 for (const file of requiredFiles) {
@@ -499,7 +500,10 @@ for (const fragment of [
   "actual_request_key",
   "request_key == actual_request_key",
   "deploy request key or identity is invalid",
-  "deploy request was already consumed",
+  "No deploy request pointer found; idle",
+  "Deploy request pointer download failed",
+  "Deploy request already processed; idle",
+  "Deploy request already failed; idle",
   "/failed",
   "deploy request failed before promotion result was written",
 ]) {
@@ -511,6 +515,7 @@ for (const forbidden of [
   'coscli_path" ls',
   "$NF ~ /\\.json$/",
   "pending_prefix",
+  "deploy request was already consumed",
   "archive_key=",
   '"$coscli_path" rm "cos://${bucket_alias}/${request_key}"',
   "awk '/\\\\.json$/",
@@ -621,6 +626,9 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/rollback-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/smoke-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/upload-deploy-request.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-deploy-runner-poller.mjs"], {
     cwd: repoRoot,
   });
 } catch (error) {
