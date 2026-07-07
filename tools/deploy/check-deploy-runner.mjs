@@ -55,6 +55,7 @@ const requiredFiles = [
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
   "tools/deploy/create-deploy-request.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
+  "tools/deploy/test-deploy-runner-promotion.mjs",
 ];
 
 for (const file of requiredFiles) {
@@ -450,8 +451,12 @@ for (const fragment of [
   "cos.prefix must be qintopia-agent-os",
   "deploy-requests/production/requests",
   "cos.bucket does not match runner environment",
+  'if [[ -e "${RELEASE_ROOT}/previous" || -L "${RELEASE_ROOT}/previous" ]]',
+  'if [[ -e "${RELEASE_ROOT}/current" || -L "${RELEASE_ROOT}/current" ]]',
   'previous_sha="${previous_target##*/}"',
   "promoted_current=true",
+  'promote-release.sh \\\n    "${promote_args[@]}" || return $?',
+  'smoke-release.sh --restart-targets "$restart_targets" || return $?',
   "run_promotion\n  status=$?",
   'if [[ "$promoted_current" == "true"',
   "rollback failed",
@@ -632,6 +637,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-poller.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-deploy-runner-promotion.mjs"], {
     cwd: repoRoot,
   });
 } catch (error) {
