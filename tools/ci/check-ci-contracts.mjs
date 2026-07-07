@@ -221,6 +221,43 @@ if (prAgentWorkflow) {
     parsedPrAgentWorkflow?.jobs?.["pr-agent"]?.steps?.find((step) =>
       String(step?.uses ?? "").includes("pr-agent")
     )?.env ?? {};
+  const prAgentSteps = parsedPrAgentWorkflow?.jobs?.["pr-agent"]?.steps ?? [];
+  const detectReleasePleaseStep = prAgentSteps.find(
+    (step) => step?.name === "Detect Release Please PR"
+  );
+  if (!detectReleasePleaseStep) {
+    errors.push(
+      ".github/workflows/pr-agent.yml: must detect and skip Release Please generated PRs"
+    );
+  } else {
+    const runScript = String(detectReleasePleaseStep.run ?? "");
+    for (const requiredFragment of [
+      "release-please--branches--",
+      "github-actions[bot]",
+      "app/github-actions",
+      "This PR was generated with [Release Please]",
+      "generated=${generated}",
+    ]) {
+      if (!runScript.includes(requiredFragment)) {
+        errors.push(
+          `.github/workflows/pr-agent.yml: Release Please detector must include ${requiredFragment}`
+        );
+      }
+    }
+  }
+  const runPrAgentStep = prAgentSteps.find((step) =>
+    String(step?.uses ?? "").includes("pr-agent")
+  );
+  if (
+    runPrAgentStep &&
+    !String(runPrAgentStep.if ?? "").includes(
+      "steps.release-please.outputs.generated != 'true'"
+    )
+  ) {
+    errors.push(
+      ".github/workflows/pr-agent.yml: PR-Agent must skip Release Please generated PRs"
+    );
+  }
   if (prAgentEnv["pr_description.add_original_user_description"] !== "false") {
     errors.push(
       ".github/workflows/pr-agent.yml: PR-Agent describe output must not repeat the original PR body"

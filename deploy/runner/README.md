@@ -27,6 +27,7 @@ GitHub Release published
   -> restart approved system and Hermes user-service targets
   -> smoke
   -> write deploy result JSON to COS
+  -> GitHub Actions optionally waits for the COS result JSON and fails the run on failed deploy
   -> archive local request state for idempotency
 ```
 
@@ -136,6 +137,22 @@ pointers are normal idle timer states and must exit successfully. COS network,
 authentication, or permission failures remain hard failures.
 
 Do not point the timer at a writable server checkout.
+
+## GitHub Result Visibility
+
+`deploy/runner/wait-deploy-result.sh` lets the production workflow wait for the
+server-written result in COS after the request is uploaded. Enable it only after the
+server timer is installed and active by setting repository or environment variable
+`WAIT_FOR_SERVER_DEPLOY_RESULT=true`.
+
+Recommended production values:
+
+- `WAIT_FOR_SERVER_DEPLOY_RESULT=true`
+- `DEPLOY_RESULT_TIMEOUT_SECONDS=900`
+- `DEPLOY_RESULT_POLL_SECONDS=15`
+
+Until the timer is active, keep `WAIT_FOR_SERVER_DEPLOY_RESULT=false`; otherwise the
+workflow will correctly time out because no server process is consuming deploy requests.
 
 ## Validation
 
