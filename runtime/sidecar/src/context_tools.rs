@@ -692,7 +692,7 @@ async fn resolve_person_id_by_channel_exact(
     chat_id: &str,
     channel_user_id: &str,
 ) -> Result<Option<uuid::Uuid>> {
-    if channel_user_id.is_empty() {
+    if chat_id.is_empty() || channel_user_id.is_empty() {
         return Ok(None);
     }
     let row = sqlx::query(
@@ -700,7 +700,7 @@ async fn resolve_person_id_by_channel_exact(
         SELECT ci.person_id
         FROM qintopia_identity.channel_identities ci
         WHERE ci.platform = $1
-          AND ($2 = '' OR ci.chat_id = $2)
+          AND ci.chat_id = $2
           AND ci.channel_user_id = $3
           AND ci.person_id IS NOT NULL
         ORDER BY ci.updated_at DESC
@@ -2478,6 +2478,27 @@ mod tests {
 
         let resolved =
             select_answer_context_identity_candidate("example", "chat-2", "user-1", &candidates);
+
+        assert_eq!(resolved.person_id, None);
+        assert_eq!(
+            resolved.resolution_scope,
+            IdentityResolutionScope::Unresolved
+        );
+    }
+
+    #[test]
+    fn answer_context_identity_does_not_treat_empty_chat_as_exact_match() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000052").unwrap();
+        let candidates = vec![ChannelIdentityCandidate {
+            platform: "example".to_string(),
+            chat_id: "chat-1".to_string(),
+            channel_user_id: "user-1".to_string(),
+            person_id,
+            updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+        }];
+
+        let resolved =
+            select_answer_context_identity_candidate("example", "", "user-1", &candidates);
 
         assert_eq!(resolved.person_id, None);
         assert_eq!(
