@@ -13,12 +13,11 @@ Claude Code. The collaboration model is intentionally git-first and CI-backed.
 5. Localize the change to one domain or package when possible.
 6. Update package docs or manifests when the package contract changes.
 7. Run focused validation, then repository checks.
-8. Update `CHANGELOG.md` for repository-visible changes.
-9. Commit with a Conventional Commits message such as `feat: add weather skill` or
+8. Commit with a Conventional Commits message such as `feat: add weather skill` or
    `fix: resolve qintopia-tools skill path`.
-10. Update the current roadmap or package docs when future direction changes.
-11. Open a PR with validation results and production-boundary notes.
-12. Deploy only reviewed commit SHAs through a documented runbook.
+9. Update the current roadmap or package docs when future direction changes.
+10. Open a PR with validation results and production-boundary notes.
+11. Deploy only reviewed commit SHAs through a documented runbook.
 
 Do not develop directly on `master`. CI runs on `master` after merge; feature work
 belongs on a branch.
@@ -64,6 +63,21 @@ build chore ci docs feat fix perf refactor revert style test
 
 Choose the type by the primary intent of the commit. Do not create project-specific or
 free-form types. The local `commit-msg` hook and CI both run commitlint.
+
+## Changelog And Release Preparation
+
+Routine feature and fix PRs should not edit root `CHANGELOG.md`. Release Please uses
+merged Conventional Commits to maintain a release PR with the generated changelog and
+release manifest changes.
+
+When a version is ready, the owner reviews and merges the Release Please PR. That merge
+prepares the version and creates a draft GitHub Release. It does not deploy production.
+Production deployment still requires manually publishing the draft GitHub Release, which
+triggers the `release.published` deploy workflow.
+
+If the Release Please PR stays open while more feature PRs merge, Release Please updates
+the same release PR. Avoid editing root `CHANGELOG.md` or
+`.release-please-manifest.json` from ordinary PRs to keep that release PR conflict-free.
 
 ## Language And Toolchain Boundary
 

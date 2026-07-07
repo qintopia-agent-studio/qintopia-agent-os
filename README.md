@@ -66,7 +66,9 @@ All changes go through git:
    `fix: resolve qintopia-tools skill path`.
 8. Run `pnpm pr:doctor`, then open a PR with
    `pnpm pr:create -- --body-file <completed-pr-body.md>`.
-9. Deploy only an approved commit SHA.
+9. Let Release Please maintain the release PR and root changelog from merged
+   Conventional Commits.
+10. Deploy only by manually publishing a reviewed draft GitHub Release.
 
 The server is a deployment target, not an editing workspace. Do not edit docs, code,
 scripts, wrappers, workers, runbooks, or runtime templates directly on the server or
@@ -108,6 +110,8 @@ Rules:
   auth files, raw chat logs, or runtime databases into git.
 - Treat PR-Agent comments as advisory only; CI, CODEOWNERS, branch protection, and owner
   review remain authoritative.
+- Do not manually edit root CHANGELOG.md in ordinary feature or fix PRs; Release Please
+  maintains release PR changelog entries from merged Conventional Commits.
 
 For every change, report:
 1. files and packages touched;
@@ -130,6 +134,17 @@ For product and Agent OS implementation context, read:
 - [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
 - [docs/agent-os/README.md](docs/agent-os/README.md)
 - [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)
+
+## Release Flow
+
+Release Please prepares versions; it does not replace owner release approval. After
+feature and fix PRs merge into `master`, Release Please keeps a release PR current with
+`CHANGELOG.md` and release manifest updates. When the owner merges that release PR,
+Release Please creates a draft GitHub Release.
+
+Production deployment starts only when the owner manually publishes the draft GitHub
+Release. The existing `release.published` workflow then builds artifacts, uploads them
+to COS, and creates the signed production deploy request.
 
 ## Migration Archive
 

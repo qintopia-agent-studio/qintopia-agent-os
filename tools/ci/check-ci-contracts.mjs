@@ -92,6 +92,11 @@ for (const requiredFragment of [
 const ciWorkflow = fs.existsSync(path.join(repoRoot, ".github/workflows/ci.yml"))
   ? readText(".github/workflows/ci.yml")
   : "";
+const prAgentWorkflow = fs.existsSync(
+  path.join(repoRoot, ".github/workflows/pr-agent.yml")
+)
+  ? readText(".github/workflows/pr-agent.yml")
+  : "";
 if (ciWorkflow && !ciWorkflow.includes("fetch-depth: 0")) {
   errors.push(
     ".github/workflows/ci.yml: checkouts must keep enough history for commitlint"
@@ -130,6 +135,26 @@ if (ciWorkflow) {
     }
   } catch (error) {
     errors.push(`.github/workflows/ci.yml: workflow YAML must parse: ${error.message}`);
+  }
+}
+
+if (prAgentWorkflow) {
+  let parsedPrAgentWorkflow;
+  try {
+    parsedPrAgentWorkflow = YAML.parse(prAgentWorkflow);
+  } catch (error) {
+    errors.push(
+      `.github/workflows/pr-agent.yml: workflow YAML must parse: ${error.message}`
+    );
+  }
+  const prAgentEnv =
+    parsedPrAgentWorkflow?.jobs?.["pr-agent"]?.steps?.find((step) =>
+      String(step?.uses ?? "").includes("pr-agent")
+    )?.env ?? {};
+  if (prAgentEnv["pr_description.add_original_user_description"] !== "false") {
+    errors.push(
+      ".github/workflows/pr-agent.yml: PR-Agent describe output must not repeat the original PR body"
+    );
   }
 }
 

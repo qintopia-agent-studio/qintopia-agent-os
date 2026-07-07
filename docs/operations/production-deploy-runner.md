@@ -26,7 +26,10 @@ fields separately and must not infer one from another.
 ## Target Flow
 
 ```text
-GitHub Release published
+Release Please release PR merged
+  -> Release Please updates CHANGELOG.md and the release manifest
+  -> Release Please creates a draft GitHub Release
+Owner manually publishes the draft GitHub Release
   -> validate release tag resolves to a commit on origin/master
   -> build sidecar and deploy-bundle artifacts
   -> production environment approval
@@ -50,18 +53,24 @@ build Rust for routine releases.
 
 ## GitHub Controls
 
-The workflow is `.github/workflows/deploy-production.yml`. Its primary trigger is
-`release.published`: publishing a normal GitHub Release is the production release
-entrypoint. The same workflow keeps `workflow_dispatch` only as an emergency or
-diagnostic path for explicitly named SHAs.
+Release preparation is handled by `.github/workflows/release-please.yml`. Release Please
+opens or updates a release PR from merged Conventional Commits, updates `CHANGELOG.md`
+and `.release-please-manifest.json`, and creates a draft GitHub Release after the
+release PR is merged. Draft releases do not trigger production deployment.
 
-Publishing a normal GitHub Release is the owner-approved production approval event for
-this repository. The `production` environment scopes COS and request-signing secrets to
-the deploy job, but Qintopia does not currently require a second GitHub environment
-review gate after Release publication. If required reviewers are added later, treat that
-as an extra gate on top of the Release approval, not as a replacement for Release-based
-version control. The workflow should use production environment secrets for COS upload
-and request signing:
+The production workflow is `.github/workflows/deploy-production.yml`. Its primary
+trigger is `release.published`: manually publishing a normal GitHub Release is the
+production release entrypoint. The same workflow keeps `workflow_dispatch` only as an
+emergency or diagnostic path for explicitly named SHAs.
+
+Merging the Release Please PR prepares a version but does not approve production
+deployment. Publishing the draft GitHub Release is the owner-approved production
+approval event for this repository. The `production` environment scopes COS and
+request-signing secrets to the deploy job, but Qintopia does not currently require a
+second GitHub environment review gate after Release publication. If required reviewers
+are added later, treat that as an extra gate on top of the Release approval, not as a
+replacement for Release-based version control. The workflow should use production
+environment secrets for COS upload and request signing:
 
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`

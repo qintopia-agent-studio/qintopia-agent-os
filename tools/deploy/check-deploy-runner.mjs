@@ -62,6 +62,101 @@ for (const file of requiredFiles) {
   }
 }
 
+if (exists(".github/workflows/release-please.yml")) {
+  const releasePleaseWorkflow = YAML.parse(
+    readText(".github/workflows/release-please.yml")
+  );
+  const releasePleaseText = readText(".github/workflows/release-please.yml");
+  const releasePleaseJob = releasePleaseWorkflow?.jobs?.["release-please"];
+  if (!releasePleaseWorkflow?.on?.push?.branches?.includes("master")) {
+    addError(".github/workflows/release-please.yml: must run from master pushes");
+  }
+  if (releasePleaseWorkflow?.on?.release) {
+    addError(".github/workflows/release-please.yml: must not run from release events");
+  }
+  if (releasePleaseWorkflow?.permissions?.contents !== "write") {
+    addError(
+      ".github/workflows/release-please.yml: must be able to update changelog and draft releases"
+    );
+  }
+  if (releasePleaseWorkflow?.permissions?.["pull-requests"] !== "write") {
+    addError(
+      ".github/workflows/release-please.yml: must be able to update release PRs"
+    );
+  }
+  const releasePleaseStep = releasePleaseJob?.steps?.find((step) =>
+    String(step?.uses ?? "").startsWith("googleapis/release-please-action@")
+  );
+  if (!releasePleaseStep) {
+    addError(".github/workflows/release-please.yml: must use release-please-action");
+  }
+  const releasePleaseUses = String(releasePleaseStep?.uses ?? "");
+  if (!/^googleapis\/release-please-action@[0-9a-f]{40}$/.test(releasePleaseUses)) {
+    addError(
+      ".github/workflows/release-please.yml: release-please-action must be pinned to a full commit SHA"
+    );
+  }
+  if (releasePleaseStep?.with?.["config-file"] !== ".release-please-config.json") {
+    addError(
+      ".github/workflows/release-please.yml: must use .release-please-config.json"
+    );
+  }
+  if (releasePleaseStep?.with?.["manifest-file"] !== ".release-please-manifest.json") {
+    addError(
+      ".github/workflows/release-please.yml: must use .release-please-manifest.json"
+    );
+  }
+  if (!releasePleaseText.includes("secrets.RELEASE_PLEASE_TOKEN || github.token")) {
+    addError(
+      ".github/workflows/release-please.yml: should support RELEASE_PLEASE_TOKEN with github.token fallback"
+    );
+  }
+} else {
+  addError(
+    ".github/workflows/release-please.yml: missing release preparation workflow"
+  );
+}
+
+if (exists(".release-please-config.json")) {
+  const releasePleaseConfig = JSON.parse(readText(".release-please-config.json"));
+  const rootPackage = releasePleaseConfig?.packages?.["."];
+  if (rootPackage?.["release-type"] !== "simple") {
+    addError(".release-please-config.json: root release type must be simple");
+  }
+  if (rootPackage?.["package-name"] !== "qintopia-agent-os") {
+    addError(".release-please-config.json: package-name must be qintopia-agent-os");
+  }
+  if (rootPackage?.["changelog-path"] !== "CHANGELOG.md") {
+    addError(".release-please-config.json: changelog-path must be CHANGELOG.md");
+  }
+  if (rootPackage?.["draft"] !== true) {
+    addError(
+      ".release-please-config.json: GitHub Releases must stay draft until owner publishes them"
+    );
+  }
+  if (rootPackage?.["force-tag-creation"] !== true) {
+    addError(
+      ".release-please-config.json: draft releases must force tag creation so future changelog calculations remain anchored"
+    );
+  }
+  if (rootPackage?.["skip-github-release"] === true) {
+    addError(
+      ".release-please-config.json: must create draft releases so manual Publish remains the production trigger"
+    );
+  }
+} else {
+  addError(".release-please-config.json: missing Release Please config");
+}
+
+if (exists(".release-please-manifest.json")) {
+  const releasePleaseManifest = JSON.parse(readText(".release-please-manifest.json"));
+  if (typeof releasePleaseManifest?.["."] !== "string") {
+    addError(".release-please-manifest.json: root version must be recorded");
+  }
+} else {
+  addError(".release-please-manifest.json: missing Release Please manifest");
+}
+
 const ajv = new Ajv2020({ allErrors: true });
 ajv.addFormat("date-time", true);
 if (exists("deploy/runner/deploy-request.schema.json")) {

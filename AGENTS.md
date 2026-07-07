@@ -52,6 +52,10 @@ Use `rg` and `rg --files` for search.
   production-adjacent work.
 - Use Conventional Commits for commit messages. Allowed types are `build`, `chore`,
   `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, and `test`.
+- Do not manually edit root `CHANGELOG.md` in ordinary feature or fix PRs. Release
+  Please owns routine release changelog updates from merged Conventional Commits.
+- Merging a Release Please PR prepares a version and draft GitHub Release. Production
+  deployment still requires the owner to manually publish that draft Release.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.

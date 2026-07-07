@@ -61,7 +61,9 @@ qintopia-agent-os-monorepo/
    `fix: resolve qintopia-tools skill path`。
 8. 先运行 `pnpm pr:doctor`，再用 `pnpm pr:create -- --body-file <completed-pr-body.md>`
    创建 PR。
-9. 只部署经过确认的 commit SHA。
+9. Release Please 会根据已合并的 Conventional Commits 维护 release PR 和 root
+   changelog。
+10. 只有 owner 手动发布已经审核过的 draft GitHub Release，才进入生产部署。
 
 服务器是部署目标，不是编辑现场。不要直接在服务器或 `.hermes`
 运行目录里修改文档、代码、脚本、wrapper、worker、runbook 或 runtime template。
@@ -96,6 +98,8 @@ docs/engineering/change-routing-index.md，以及目标 package 的 README 或 m
   链接交给人作为默认流程。
 - 不要把 secret、live .env、Hermes live state、私有日志、session、cache、auth 文件、原始聊天记录或 runtime 数据库复制进 git。
 - PR-Agent 评论只是辅助审查；CI、CODEOWNERS、branch protection 和 owner review 才是合并依据。
+- 普通 feature 或 fix PR 不要手动编辑 root CHANGELOG.md；Release Please 会根据已合并的
+  Conventional Commits 维护 release PR changelog。
 
 每次变更都要报告：
 1. 改动了哪些文件和 package；
@@ -118,6 +122,15 @@ docs/engineering/change-routing-index.md，以及目标 package 的 README 或 m
 - [docs/product/agent-os-prd.md](docs/product/agent-os-prd.md)
 - [docs/agent-os/README.md](docs/agent-os/README.md)
 - [docs/operations/runtime-baseline.md](docs/operations/runtime-baseline.md)
+
+## 发布流程
+
+Release Please 负责准备版本，不替代 owner 的发布审批。功能和修复 PR 合并到 `master`
+后，Release Please 会持续维护一个 release PR，更新 `CHANGELOG.md` 和 release
+manifest。owner 合并这个 release PR 后，Release Please 会创建 draft GitHub Release。
+
+生产部署只在 owner 手动发布 draft GitHub Release 后开始。现有 `release.published`
+workflow 随后构建 artifact、上传 COS，并创建签名的 production deploy request。
 
 ## 迁移归档
 

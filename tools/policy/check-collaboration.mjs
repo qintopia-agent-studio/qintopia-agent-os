@@ -177,6 +177,8 @@ for (const requiredFragment of [
   "Document first",
   "Do not introduce Java",
   "production-boundary",
+  "Release Please",
+  "Do not edit root `CHANGELOG.md`",
 ]) {
   if (contributing && !contributing.includes(requiredFragment)) {
     addError(`CONTRIBUTING.md: must mention ${requiredFragment}`);
@@ -188,6 +190,8 @@ for (const requiredFragment of [
   "Do not develop directly on `master`",
   "Document first",
   "Do not introduce Java",
+  "Release Please",
+  "Do not manually edit root `CHANGELOG.md`",
   "docs/plans/active/current-roadmap.md",
   "docs/engineering/change-routing-index.md",
 ]) {

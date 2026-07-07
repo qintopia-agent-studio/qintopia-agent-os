@@ -13,6 +13,7 @@ PR-Agent is allowed to:
 - summarize the changed files and intent;
 - flag possible missing tests, docs, production-boundary notes, and architecture drift;
 - respond to slash commands such as `/review`, `/describe`, and `/improve`.
+- provide advisory changelog suggestions when a maintainer asks for `/update_changelog`.
 
 PR-Agent is not allowed to:
 
@@ -20,6 +21,7 @@ PR-Agent is not allowed to:
 - replace CODEOWNERS review;
 - replace required CI checks;
 - approve production deploys;
+- own root changelog generation or version cutting;
 - decide that an unapproved language, framework, or server-side change is acceptable.
 
 ## Required GitHub Configuration
@@ -73,6 +75,14 @@ The workflow runs on:
 
 Automatic `/improve` is disabled to reduce noise. Maintainers can still request targeted
 suggestions from a PR comment when needed.
+
+Automatic `/describe` is configured without repeating the original PR body. The PR body
+remains in the GitHub PR description; PR-Agent should add only the AI-generated summary
+and file walkthrough.
+
+`/update_changelog` is advisory. Routine root `CHANGELOG.md` updates are owned by
+Release Please, which derives release entries from merged Conventional Commits and keeps
+the release PR current.
 
 The third-party PR-Agent Action is pinned to a full commit SHA. Upgrade it through a
 normal PR after reviewing the upstream release.
