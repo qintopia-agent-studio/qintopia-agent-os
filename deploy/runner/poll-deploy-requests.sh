@@ -108,12 +108,19 @@ is_object_missing_error() {
   [[ "$1" =~ (NoSuchKey|not[[:space:]]+found|not[[:space:]]+exist|does[[:space:]]+not[[:space:]]+exist|404|No[[:space:]]+such[[:space:]]+object|对象不存在) ]]
 }
 
+cos_cp_probe() {
+  local source="$1"
+  local destination="$2"
+  local output_file="$3"
+  "$coscli_path" cp "$source" "$destination" \
+    -c "$config_path" \
+    2>"$output_file" \
+    1>>"$output_file"
+}
+
 pointer_error="${tmp_dir}/pointer-cp.err"
 set +e
-"$coscli_path" cp "cos://${bucket_alias}/${pointer_key}" "$pointer_file" \
-  -c "$config_path" \
-  --disable-log \
-  2>"$pointer_error"
+cos_cp_probe "cos://${bucket_alias}/${pointer_key}" "$pointer_file" "$pointer_error"
 pointer_status=$?
 set -e
 if [[ "$pointer_status" -ne 0 ]]; then
@@ -172,10 +179,7 @@ request_file="${STATE_DIR}/requests/pending/${request_name}"
 remote_result_probe="${tmp_dir}/${request_id}-existing-result.json"
 remote_result_error="${tmp_dir}/${request_id}-result-cp.err"
 set +e
-"$coscli_path" cp "cos://${bucket_alias}/${result_key}" "$remote_result_probe" \
-  -c "$config_path" \
-  --disable-log \
-  2>"$remote_result_error"
+cos_cp_probe "cos://${bucket_alias}/${result_key}" "$remote_result_probe" "$remote_result_error"
 remote_result_status=$?
 set -e
 if [[ "$remote_result_status" -eq 0 ]]; then

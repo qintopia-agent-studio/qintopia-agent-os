@@ -40,7 +40,7 @@ case "\${QINTOPIA_FAKE_COS_MODE:-}" in
     echo "NoSuchKey: object not found" >&2
     exit 1
     ;;
-  processed|failed|remote-result)
+  processed|failed|remote-result|active)
     if [[ "$source_path" == *"/qintopia-agent-os/deploy-requests/production/current.json" ]]; then
       cat >"$dest_path" <<'JSON'
 {
@@ -50,6 +50,21 @@ case "\${QINTOPIA_FAKE_COS_MODE:-}" in
   "request_id": "deploy-20260706T000000Z-0123456789ab",
   "request_key": "qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json",
   "result_key": "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json"
+}
+JSON
+      exit 0
+    fi
+    if [[ "$source_path" == *"/qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json" ]]; then
+      cat >"$dest_path" <<'JSON'
+{
+  "schema_version": 1,
+  "environment": "production",
+  "repository": "qintopia-agent-studio/qintopia-agent-os",
+  "request_id": "deploy-20260706T000000Z-0123456789ab",
+  "cos": {
+    "request_key": "qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json",
+    "result_key": "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json"
+  }
 }
 JSON
       exit 0
@@ -66,8 +81,16 @@ JSON
 JSON
         exit 0
       fi
-      echo "NoSuchKey: object not found" >&2
+      if [[ " $* " == *" --disable-log "* ]]; then
+        exit 1
+      fi
+      echo "NoSuchKey: object not found"
       exit 1
+    fi
+    if [[ "$dest_path" == *"/qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json" ]]; then
+      mkdir -p "\${QINTOPIA_FAKE_COS_UPLOAD_DIR:-/tmp}/deploy-results"
+      cp "$source_path" "\${QINTOPIA_FAKE_COS_UPLOAD_DIR:-/tmp}/deploy-results/deploy-20260706T000000Z-0123456789ab.json"
+      exit 0
     fi
     echo "request should not be downloaded for already consumed state" >&2
     exit 65
@@ -83,8 +106,49 @@ esac
 const fakeRunner = writeExecutable(
   "fake-runner",
   `#!/usr/bin/env bash
-echo "runner should not execute for idle poller states" >&2
-exit 67
+set -euo pipefail
+if [[ "\${QINTOPIA_FAKE_RUNNER_EXPECTED:-idle}" == "idle" ]]; then
+  echo "runner should not execute for idle poller states" >&2
+  exit 67
+fi
+request_file=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --request-file)
+      request_file="\${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ -z "$request_file" ]]; then
+  echo "missing --request-file" >&2
+  exit 2
+fi
+python3 - "$request_file" <<'PY'
+import json
+import os
+import sys
+
+request_file = sys.argv[1]
+state_dir = os.environ["QINTOPIA_DEPLOY_RUNNER_STATE_DIR"]
+with open(request_file, encoding="utf-8") as fh:
+    request = json.load(fh)
+result_path = os.path.join(state_dir, "results", f"{request['request_id']}.json")
+with open(result_path, "w", encoding="utf-8") as fh:
+    json.dump(
+        {
+            "schema_version": 1,
+            "request_id": request["request_id"],
+            "environment": "production",
+            "status": "dry_run_succeeded",
+        },
+        fh,
+    )
+    fh.write("\\n")
+PY
 `
 );
 
@@ -104,12 +168,14 @@ const baseEnv = {
 const poller = path.join(repoRoot, "deploy/runner/poll-deploy-requests.sh");
 const requestName = "deploy-20260706T000000Z-0123456789ab.json";
 
-const runCase = ({ name, mode, archive }) => {
+const runCase = ({ name, mode, archive, runnerExpected = "idle" }) => {
   const stateDir = path.join(tmpRoot, name);
+  const uploadDir = path.join(tmpRoot, `${name}-uploads`);
   fs.mkdirSync(path.join(stateDir, "requests", "pending"), { recursive: true });
   fs.mkdirSync(path.join(stateDir, "requests", "processed"), { recursive: true });
   fs.mkdirSync(path.join(stateDir, "requests", "failed"), { recursive: true });
   fs.mkdirSync(path.join(stateDir, "results"), { recursive: true });
+  fs.mkdirSync(uploadDir, { recursive: true });
   if (archive) {
     fs.writeFileSync(
       path.join(stateDir, "requests", archive, requestName),
@@ -124,6 +190,8 @@ const runCase = ({ name, mode, archive }) => {
       ...baseEnv,
       QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
       QINTOPIA_FAKE_COS_MODE: mode,
+      QINTOPIA_FAKE_COS_UPLOAD_DIR: uploadDir,
+      QINTOPIA_FAKE_RUNNER_EXPECTED: runnerExpected,
     },
     encoding: "utf8",
   });
@@ -133,7 +201,7 @@ const runCase = ({ name, mode, archive }) => {
       `${name}: expected idle success, got ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
     );
   }
-  return `${result.stdout}${result.stderr}`;
+  return { output: `${result.stdout}${result.stderr}`, stateDir, uploadDir };
 };
 
 try {
@@ -141,7 +209,7 @@ try {
     name: "missing-pointer",
     mode: "missing-pointer",
   });
-  if (!missingPointerOutput.includes("No deploy request pointer found; idle")) {
+  if (!missingPointerOutput.output.includes("No deploy request pointer found; idle")) {
     throw new Error("missing-pointer: idle message was not emitted");
   }
 
@@ -150,7 +218,7 @@ try {
     mode: "processed",
     archive: "processed",
   });
-  if (!processedOutput.includes("Deploy request already processed; idle")) {
+  if (!processedOutput.output.includes("Deploy request already processed; idle")) {
     throw new Error("processed-pointer: processed idle message was not emitted");
   }
 
@@ -158,7 +226,9 @@ try {
     name: "remote-result-pointer",
     mode: "remote-result",
   });
-  if (!remoteResultOutput.includes("Deploy request result already exists; idle")) {
+  if (
+    !remoteResultOutput.output.includes("Deploy request result already exists; idle")
+  ) {
     throw new Error(
       "remote-result-pointer: remote-result idle message was not emitted"
     );
@@ -169,8 +239,31 @@ try {
     mode: "failed",
     archive: "failed",
   });
-  if (!failedOutput.includes("Deploy request already failed; idle")) {
+  if (!failedOutput.output.includes("Deploy request already failed; idle")) {
     throw new Error("failed-pointer: failed idle message was not emitted");
+  }
+
+  const activeOutput = runCase({
+    name: "active-pointer",
+    mode: "active",
+    runnerExpected: "active",
+  });
+  const processedRequest = path.join(
+    activeOutput.stateDir,
+    "requests",
+    "processed",
+    requestName
+  );
+  if (!fs.existsSync(processedRequest)) {
+    throw new Error("active-pointer: processed request archive was not written");
+  }
+  const uploadedResult = path.join(
+    activeOutput.uploadDir,
+    "deploy-results",
+    requestName
+  );
+  if (!fs.existsSync(uploadedResult)) {
+    throw new Error("active-pointer: deploy result was not uploaded");
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
