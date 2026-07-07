@@ -19,6 +19,8 @@ const checksumPath = path.join(bundleDir, "SHA256SUMS");
 
 const sourceFiles = [
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+  "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+  "deploy/sidecar/scripts/install-coscli.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "mcp/qintopia-collab/bin/qintopia-collab-mcp",
   "deploy/sidecar/docs/m9f-legacy-reference-removal.md",

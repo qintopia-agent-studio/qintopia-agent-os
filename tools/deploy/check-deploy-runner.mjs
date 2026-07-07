@@ -652,6 +652,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/runner/qintopia-agent-os-deploy-runner",
     "deploy/runner/poll-deploy-requests.sh",
     "deploy/runner/deploy-request.schema.json",
+    "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    "deploy/sidecar/scripts/install-coscli.sh",
   ]) {
     if (!builder.includes(fragment)) {
       addError(`tools/deploy/build-deploy-bundle.mjs: must package ${fragment}`);
