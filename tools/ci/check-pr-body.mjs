@@ -17,7 +17,25 @@ if (!eventPath || !fs.existsSync(eventPath)) {
 }
 
 const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
-const body = event.pull_request?.body ?? "";
+const pullRequest = event.pull_request ?? {};
+const body = pullRequest.body ?? "";
+
+const isReleasePleasePullRequest = (pullRequest) => {
+  const headRef = pullRequest.head?.ref ?? "";
+  const author = pullRequest.user?.login ?? "";
+  const body = pullRequest.body ?? "";
+  return (
+    headRef.startsWith("release-please--branches--") &&
+    author === "github-actions[bot]" &&
+    body.includes("This PR was generated with [Release Please]")
+  );
+};
+
+if (isReleasePleasePullRequest(pullRequest)) {
+  console.log("PR body check skipped for Release Please generated release PR.");
+  process.exit(0);
+}
+
 const errors = validatePrBody(body);
 
 if (errors.length > 0) {

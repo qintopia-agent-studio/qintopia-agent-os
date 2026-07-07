@@ -64,6 +64,21 @@ for (const requiredPath of [
   }
 }
 
+const prBodyCheck = fs.existsSync(path.join(repoRoot, "tools/ci/check-pr-body.mjs"))
+  ? readText("tools/ci/check-pr-body.mjs")
+  : "";
+for (const requiredFragment of [
+  "isReleasePleasePullRequest",
+  'headRef.startsWith("release-please--branches--")',
+  'author === "github-actions[bot]"',
+  "This PR was generated with [Release Please]",
+  "PR body check skipped for Release Please generated release PR.",
+]) {
+  if (prBodyCheck && !prBodyCheck.includes(requiredFragment)) {
+    errors.push(`tools/ci/check-pr-body.mjs: must include ${requiredFragment}`);
+  }
+}
+
 if (!packageJson.scripts?.["check:light"]?.includes("pnpm commitlint:check")) {
   errors.push("package.json: check:light must include pnpm commitlint:check");
 }
