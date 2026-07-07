@@ -229,6 +229,11 @@ async fn qintopia_member_context_lookup(
             Some(&channel_user_id)
         },
         person_id,
+        if channel_user_id.is_empty() {
+            MemberSafeIdentityRowScope::ChatContext
+        } else {
+            MemberSafeIdentityRowScope::ExactChat
+        },
     )
     .await?
     else {
@@ -342,6 +347,7 @@ async fn qintopia_answer_context_prepare(
             Some(&sender_id)
         },
         speaker_identity.person_id,
+        speaker_identity.member_safe_identity_row_scope(),
     )
     .await?;
     let mention_texts = mentioned_member_names(&message_text, speaker_context.as_ref());
@@ -350,7 +356,15 @@ async fn qintopia_answer_context_prepare(
         let person_id = resolve_person_id_by_member_name(pool, &platform, &chat_id, &mention_text)
             .await
             .with_context(|| format!("resolve mentioned member {mention_text}"))?;
-        let context = member_safe_context(pool, &platform, &chat_id, None, person_id).await?;
+        let context = member_safe_context(
+            pool,
+            &platform,
+            &chat_id,
+            None,
+            person_id,
+            MemberSafeIdentityRowScope::ChatContext,
+        )
+        .await?;
         mentioned_members.push(member_context_json(&mention_text, context));
     }
     let training_guidance = active_training_guidance(
@@ -686,6 +700,66 @@ fn select_answer_context_identity_candidate(
     }
 }
 
+#[cfg(test)]
+fn select_member_safe_identity_candidate<'a>(
+    platform: &str,
+    chat_id: &str,
+    channel_user_id: &str,
+    person_id: uuid::Uuid,
+    scope: MemberSafeIdentityRowScope,
+    candidates: &'a [ChannelIdentityCandidate],
+) -> Option<&'a ChannelIdentityCandidate> {
+    let mut matches = candidates
+        .iter()
+        .filter(|candidate| candidate.person_id == person_id)
+        .filter(|candidate| candidate.platform == platform)
+        .filter(|candidate| match scope {
+            MemberSafeIdentityRowScope::ExactChat => {
+                !chat_id.is_empty()
+                    && candidate.chat_id == chat_id
+                    && (channel_user_id.is_empty() || candidate.channel_user_id == channel_user_id)
+            }
+            MemberSafeIdentityRowScope::QiwePlatformUser => {
+                candidate.chat_id.is_empty()
+                    && (channel_user_id.is_empty() || candidate.channel_user_id == channel_user_id)
+            }
+            MemberSafeIdentityRowScope::ChatContext => {
+                channel_user_id.is_empty() && (chat_id.is_empty() || candidate.chat_id == chat_id)
+            }
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|left, right| {
+        let left_rank = member_safe_identity_candidate_rank(left, chat_id, scope);
+        let right_rank = member_safe_identity_candidate_rank(right, chat_id, scope);
+        left_rank
+            .cmp(&right_rank)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+    });
+    matches.into_iter().next()
+}
+
+#[cfg(test)]
+fn member_safe_identity_candidate_rank(
+    candidate: &ChannelIdentityCandidate,
+    chat_id: &str,
+    scope: MemberSafeIdentityRowScope,
+) -> i32 {
+    match scope {
+        MemberSafeIdentityRowScope::ExactChat
+            if !chat_id.is_empty() && candidate.chat_id == chat_id =>
+        {
+            0
+        }
+        MemberSafeIdentityRowScope::QiwePlatformUser if candidate.chat_id.is_empty() => 0,
+        MemberSafeIdentityRowScope::ChatContext
+            if !chat_id.is_empty() && candidate.chat_id == chat_id =>
+        {
+            0
+        }
+        _ => 1,
+    }
+}
+
 async fn resolve_person_id_by_channel_exact(
     pool: &PgPool,
     platform: &str,
@@ -753,6 +827,15 @@ impl AnswerContextIdentityResolution {
             resolution_scope: IdentityResolutionScope::Conflict,
         }
     }
+
+    fn member_safe_identity_row_scope(&self) -> MemberSafeIdentityRowScope {
+        match self.resolution_scope {
+            IdentityResolutionScope::QiwePlatformUser => {
+                MemberSafeIdentityRowScope::QiwePlatformUser
+            }
+            _ => MemberSafeIdentityRowScope::ExactChat,
+        }
+    }
 }
 
 impl IdentityResolutionScope {
@@ -762,6 +845,23 @@ impl IdentityResolutionScope {
             Self::QiwePlatformUser => "qiwe_platform_user",
             Self::Conflict => "conflict",
             Self::Unresolved => "unresolved",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemberSafeIdentityRowScope {
+    ExactChat,
+    QiwePlatformUser,
+    ChatContext,
+}
+
+impl MemberSafeIdentityRowScope {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactChat => "exact_chat",
+            Self::QiwePlatformUser => "qiwe_platform_user",
+            Self::ChatContext => "chat_context",
         }
     }
 }
@@ -786,6 +886,7 @@ async fn member_safe_context(
     chat_id: &str,
     channel_user_id: Option<&str>,
     person_id: Option<uuid::Uuid>,
+    identity_row_scope: MemberSafeIdentityRowScope,
 ) -> Result<Option<MemberSafeContext>> {
     let Some(person_id) = person_id else {
         return Ok(None);
@@ -810,10 +911,31 @@ async fn member_safe_context(
             FROM qintopia_identity.channel_identities ci
             WHERE ci.person_id = p.id
               AND ci.platform = $2
-              AND ($4 <> '' OR $3 = '' OR ci.chat_id = $3)
-              AND ($4 = '' OR ci.channel_user_id = $4)
+              AND (
+                (
+                  $5 = 'exact_chat'
+                  AND $3 <> ''
+                  AND ci.chat_id = $3
+                  AND ($4 = '' OR ci.channel_user_id = $4)
+                )
+                OR (
+                  $5 = 'qiwe_platform_user'
+                  AND ci.chat_id = ''
+                  AND ($4 = '' OR ci.channel_user_id = $4)
+                )
+                OR (
+                  $5 = 'chat_context'
+                  AND $4 = ''
+                  AND ($3 = '' OR ci.chat_id = $3)
+                )
+              )
             ORDER BY
-              CASE WHEN $3 <> '' AND ci.chat_id = $3 THEN 0 ELSE 1 END,
+              CASE
+                WHEN $5 = 'exact_chat' AND $3 <> '' AND ci.chat_id = $3 THEN 0
+                WHEN $5 = 'qiwe_platform_user' AND ci.chat_id = '' THEN 0
+                WHEN $5 = 'chat_context' AND $3 <> '' AND ci.chat_id = $3 THEN 0
+                ELSE 1
+              END,
               ci.updated_at DESC
             LIMIT 1
         ) ci ON true
@@ -835,6 +957,7 @@ async fn member_safe_context(
     .bind(platform)
     .bind(chat_id)
     .bind(channel_user_id)
+    .bind(identity_row_scope.as_str())
     .fetch_optional(pool)
     .await
     .context("load member safe context")?;
@@ -2280,10 +2403,11 @@ mod tests {
     use super::{
         classify_lookup_intent, classify_training_note, disclosure_hits, is_erhua_trainer,
         knowledge_excerpt, parse_allowed_callers, qintopia_gis_location_lookup,
-        sanitize_training_summary, select_answer_context_identity_candidate, speaker_context_json,
-        tool_definitions, training_source_kind, validate_context_caller,
-        AnswerContextIdentityResolution, ChannelIdentityCandidate, ContextConfig,
-        GisLocationLookupRequest, IdentityResolutionScope, MemberSafeContext, TrainingSourceKind,
+        sanitize_training_summary, select_answer_context_identity_candidate,
+        select_member_safe_identity_candidate, speaker_context_json, tool_definitions,
+        training_source_kind, validate_context_caller, AnswerContextIdentityResolution,
+        ChannelIdentityCandidate, ContextConfig, GisLocationLookupRequest, IdentityResolutionScope,
+        MemberSafeContext, MemberSafeIdentityRowScope, TrainingSourceKind,
     };
     use crate::message_search::SearchConfig;
     use chrono::{TimeZone, Utc};
@@ -2505,6 +2629,62 @@ mod tests {
             resolved.resolution_scope,
             IdentityResolutionScope::Unresolved
         );
+    }
+
+    #[test]
+    fn member_safe_context_platform_identity_scope_does_not_use_other_chat_identity() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000061").unwrap();
+        let candidates = vec![
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: String::new(),
+                channel_user_id: "user-1".to_string(),
+                person_id,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+            },
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: "group-2".to_string(),
+                channel_user_id: "user-1".to_string(),
+                person_id,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+            },
+        ];
+
+        let selected = select_member_safe_identity_candidate(
+            "qiwe",
+            "user-1",
+            "user-1",
+            person_id,
+            MemberSafeIdentityRowScope::QiwePlatformUser,
+            &candidates,
+        )
+        .unwrap();
+
+        assert_eq!(selected.chat_id, "");
+    }
+
+    #[test]
+    fn member_safe_context_exact_scope_does_not_fall_back_to_platform_identity() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000062").unwrap();
+        let candidates = vec![ChannelIdentityCandidate {
+            platform: "qiwe".to_string(),
+            chat_id: String::new(),
+            channel_user_id: "user-1".to_string(),
+            person_id,
+            updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+        }];
+
+        let selected = select_member_safe_identity_candidate(
+            "qiwe",
+            "group-1",
+            "user-1",
+            person_id,
+            MemberSafeIdentityRowScope::ExactChat,
+            &candidates,
+        );
+
+        assert!(selected.is_none());
     }
 
     #[test]
