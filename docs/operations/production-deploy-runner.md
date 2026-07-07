@@ -35,8 +35,8 @@ Owner manually publishes the draft GitHub Release
   -> production environment approval
   -> upload sidecar and deploy-bundle artifacts to COS
   -> generate a signed deploy request from the reviewed master workflow code
-  -> upload request to fixed COS pending queue
-  -> server systemd timer polls COS
+  -> upload request JSON and a fixed current.json pointer to COS
+  -> server systemd timer fetches current.json and the referenced request
   -> server validates request schema, HMAC signature, TTL, repository, environment, SHA, scope, and target
   -> server downloads sidecar and deploy-bundle artifacts from COS
   -> server verifies artifact-manifest.json and SHA256SUMS
@@ -148,7 +148,13 @@ and verify each requested Hermes target, or fail the deployment.
 Deploy requests live under:
 
 ```text
-qintopia-agent-os/deploy-requests/production/pending/<request-id>.json
+qintopia-agent-os/deploy-requests/production/requests/<request-id>.json
+```
+
+The latest deploy request pointer lives under:
+
+```text
+qintopia-agent-os/deploy-requests/production/current.json
 ```
 
 Deploy results live under:
@@ -159,6 +165,16 @@ qintopia-agent-os/deploy-results/production/<request-id>.json
 
 The request schema is `deploy/runner/deploy-request.schema.json`. The result schema is
 `deploy/runner/deploy-result.schema.json`.
+
+The server runner intentionally does not list `deploy-requests/production/pending/`.
+Tencent COS is object storage, not a queue, and ListBucket/prefix listing can be slower
+or less reliable than reading a known object. GitHub writes `current.json`; the server
+only needs `GetObject` for that fixed pointer and the referenced request. For Tencent
+Cloud CVM/Lighthouse instances in the same region as the bucket, prefer the default
+regional COS endpoint such as
+`qintopia-agent-os-artifacts-1305166808.cos.ap-shanghai.myqcloud.com` rather than the
+global acceleration endpoint. Same-region default COS access is expected to use Tencent
+Cloud internal networking when DNS resolves to internal addresses.
 
 ## First Server Installation
 

@@ -203,7 +203,7 @@ if not isinstance(cos, dict):
     fail("cos must be an object")
 if cos.get("prefix") != "qintopia-agent-os":
     fail("cos.prefix must be qintopia-agent-os")
-expected_request_key = f"qintopia-agent-os/deploy-requests/production/pending/{data['request_id']}.json"
+expected_request_key = f"qintopia-agent-os/deploy-requests/production/requests/{data['request_id']}.json"
 expected_result_key = f"qintopia-agent-os/deploy-results/production/{data['request_id']}.json"
 if cos.get("request_key") != expected_request_key:
     fail("cos.request_key does not match request_id")
