@@ -244,8 +244,12 @@ write_result() {
   local rollback_target="${5:-}"
   local previous_target=""
   local current_target=""
-  previous_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
-  current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -e "${RELEASE_ROOT}/previous" || -L "${RELEASE_ROOT}/previous" ]]; then
+    previous_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
+  fi
+  if [[ -e "${RELEASE_ROOT}/current" || -L "${RELEASE_ROOT}/current" ]]; then
+    current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  fi
   previous_sha="${previous_target##*/}"
   python3 - "$result_file" "$request_id" "$status" "$started_at" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_sha" \
@@ -306,12 +310,12 @@ run_promotion() {
     promote_args+=(--dry-run)
   fi
   deploy/runner/promote-release.sh \
-    "${promote_args[@]}"
+    "${promote_args[@]}" || return $?
   if [[ "$dry_run" == "true" ]]; then
     write_result dry_run_succeeded
   else
     promoted_current=true
-    deploy/runner/smoke-release.sh --restart-targets "$restart_targets"
+    deploy/runner/smoke-release.sh --restart-targets "$restart_targets" || return $?
     write_result succeeded
   fi
 }
