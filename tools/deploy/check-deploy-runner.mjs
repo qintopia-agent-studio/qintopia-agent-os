@@ -51,6 +51,7 @@ const requiredFiles = [
   "deploy/runner/rollback-release.sh",
   "deploy/runner/smoke-release.sh",
   "deploy/runner/upload-deploy-request.sh",
+  "deploy/runner/wait-deploy-result.sh",
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
   "tools/deploy/create-deploy-request.mjs",
@@ -387,16 +388,19 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "Build release deploy bundle",
     "Upload release sidecar artifact to Tencent COS",
     "Upload release deploy bundle to Tencent COS",
+    "Wait for server deploy result",
     'notes_delimiter="deploy_notes_$(uuidgen',
     'echo "notes<<${notes_delimiter}"',
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
+    "wait-deploy-result.sh",
     "git merge-base --is-ancestor",
     "pnpm deploy:runner:check",
     "DEPLOY_COMMIT_SHA",
     "DEPLOY_REQUEST_SIGNING_KEY",
     "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
     "RELEASE_DEPLOY_DRY_RUN: ${{ vars.RELEASE_DEPLOY_DRY_RUN || 'true' }}",
+    "WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}",
     "TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}",
     "TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}",
   ]) {
@@ -602,6 +606,26 @@ if (
   );
 }
 
+const waitResultText = exists("deploy/runner/wait-deploy-result.sh")
+  ? readText("deploy/runner/wait-deploy-result.sh")
+  : "";
+for (const fragment of [
+  "DEPLOY_RESULT_TIMEOUT_SECONDS",
+  "DEPLOY_RESULT_POLL_SECONDS",
+  "qintopia-agent-os/deploy-results/production",
+  "succeeded|dry_run_succeeded",
+  "failed|rolled_back",
+  "Timed out after",
+  "print_sanitized_coscli_output",
+]) {
+  if (!waitResultText.includes(fragment)) {
+    addError(`deploy/runner/wait-deploy-result.sh: missing ${fragment}`);
+  }
+}
+if (waitResultText.includes("ssh ")) {
+  addError("deploy/runner/wait-deploy-result.sh: must not SSH to production");
+}
+
 for (const script of requiredFiles.filter((file) =>
   file.startsWith("deploy/runner/")
 )) {
@@ -634,6 +658,9 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/rollback-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/smoke-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/upload-deploy-request.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync("bash", ["-n", "deploy/runner/wait-deploy-result.sh"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-poller.mjs"], {
