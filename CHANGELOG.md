@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.1.1](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.1.0...v0.1.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* include ci changes in release notes ([7f4f256](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7f4f2569df531a6137222cf4235003cd5230fd5c))
+* include ci changes in release notes ([6c33fc6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6c33fc6afe5beacc6acea82d86daed7df6ec4c6f))
+* skip release please pr body check ([#18](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/18)) ([843364c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/843364ced16f01c15d203c70a19fa349116ea341))
+* streamline release please ci gate ([#19](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/19)) ([87c97f8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/87c97f85a7502a38364ab0d55289463b88c61558))
+
+
+### CI / Deployment
+
+* add release please changelog flow ([3888508](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/388850844f704c28a40692d0188f7288ac55d955))
+* add release please changelog flow ([6405c40](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6405c400119bd7799d2c3a3715f89d0edb6e1ad5))
+* remove release assets from production deploy ([9150b87](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9150b871700399267ca9cb6abcdf5094158a0d08))
+* remove release assets from production deploy ([ec84783](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ec8478380ebcbc26585826a1e5933ab8dcf06f5d))
+
 ## [Unreleased]
 
 ### Added
