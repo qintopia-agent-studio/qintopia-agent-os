@@ -10,6 +10,8 @@ context, memory, event, and operations data access.
 - Keep QiWe speaker resolution deterministic: safe context reads may use exact
   chat-scoped identities or the pre-materialized QiWe platform identity with
   `chat_id=''`, but must not choose an arbitrary or newest cross-chat identity row.
+- Keep member-name and alias resolution deterministic: return resolved, ambiguous, or
+  unresolved context, and never use vector search or recent messages to guess a person.
 - Require idempotency keys and audit fields for writes.
 - Keep secrets, connection strings, passwords, snapshots, and live database dumps
   outside git.
