@@ -31,6 +31,7 @@ tags:
   - activity
   - signal
 next_actions:
-  - Seed real event signal rows before UUID-backed signal apply smoke coverage.
+  - Shadow-validate Feishu adapter reads against AgentOS event signal rows before any
+    Feishu write path is enabled.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.
