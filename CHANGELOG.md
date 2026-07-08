@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.1.6](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.1.5...v0.1.6) (2026-07-08)
+
+
+### Bug Fixes
+
+* resolve Erhua direct chat identity context ([#30](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/30)) ([f4d667d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f4d667debff628e9faadc96b91e96e1e9e38203e))
+
+
+### CI / Deployment
+
+* optimize deploy and review workflows ([#28](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/28)) ([bd8ec3c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bd8ec3c50f72d2b99e32df8b3ef6fc28073d3045))
+
 ## [0.1.5](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.1.4...v0.1.5) (2026-07-07)
 
 
