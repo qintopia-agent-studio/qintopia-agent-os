@@ -13,6 +13,7 @@ use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, Se
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use crate::{
     config::Cli,
@@ -21,7 +22,12 @@ use crate::{
 
 const ACTOR_AGENT: &str = "xiaoman";
 const READ_ONLY_OPERATIONS: &[&str] = &["record-get", "list-by-date", "material-summary"];
-const WRITE_OPERATIONS: &[&str] = &["status-update", "gap-update", "handoff-create"];
+const WRITE_OPERATIONS: &[&str] = &[
+    "status-update",
+    "gap-update",
+    "handoff-create",
+    "signal-ingest",
+];
 const TABLE_ROLES: &[&str] = &["activity_plan", "activity_occurrence"];
 const FEISHU_BASE_API: &str = "https://open.feishu.cn/open-apis/bitable/v1/apps";
 const FEISHU_AUTH_API: &str =
@@ -72,6 +78,26 @@ struct ActivityPayload {
     target_agent: String,
     #[serde(default)]
     brief_summary: String,
+    #[serde(default)]
+    event_signal_id: String,
+    #[serde(default)]
+    signal_type: String,
+    #[serde(default)]
+    activity_title: String,
+    #[serde(default)]
+    signal_date: String,
+    #[serde(default)]
+    chat_id: String,
+    #[serde(default)]
+    source_message_ids: Vec<String>,
+    #[serde(default)]
+    owner_name: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    location: String,
+    #[serde(default)]
+    related_member_names: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -194,6 +220,8 @@ async fn execute_with_config(
         );
     } else if operation == "handoff-create" {
         execute_handoff_create(cli, &mut report, &payload, apply_requested).await?;
+    } else if operation == "signal-ingest" {
+        execute_signal_ingest(cli, &mut report, &payload, apply_requested).await?;
     } else if apply_requested {
         report.action_status = "apply_not_implemented".to_string();
         report.limitations.push(
@@ -265,6 +293,171 @@ async fn execute_handoff_create(
         .guardrails
         .push("Feishu Task board mirroring remains a separate sync worker boundary".to_string());
     Ok(())
+}
+
+async fn execute_signal_ingest(
+    cli: &Cli,
+    report: &mut ActivityWorkerReport,
+    payload: &ActivityPayload,
+    apply_requested: bool,
+) -> Result<()> {
+    let missing_fields = signal_missing_fields(payload);
+    let request = signal_work_item_request(payload, &missing_fields);
+    let work_item_report = if apply_requested {
+        let database_url = cli.database_url_required()?;
+        let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+        let policy = operations::OperationsPolicy::from_cli(cli, true);
+        operations::create_work_item(&pool, request, true, &policy).await?
+    } else {
+        operations::create_work_item_dry_run(request)?
+    };
+
+    report.source = "agentos_event_signal".to_string();
+    report.safe_for_chat = false;
+    report.operations_work_item = Some(work_item_report);
+    if missing_fields.is_empty() {
+        report.action_status = report
+            .operations_work_item
+            .as_ref()
+            .map(|item| format!("operations_{}", item.action_status))
+            .unwrap_or_else(|| "operations_unavailable".to_string());
+    } else {
+        report.validation_status = "review_needed".to_string();
+        report.action_status = "review_needed".to_string();
+        report.limitations.push(format!(
+            "activity signal missing required fields: {}",
+            missing_fields.join(", ")
+        ));
+    }
+    report.guardrails.push(
+        "signal-ingest writes only AgentOS control-plane work items; it does not create visual assets or external sends".to_string(),
+    );
+    report
+        .guardrails
+        .push("duplicate signals use a stable event_signal_id idempotency key".to_string());
+    Ok(())
+}
+
+fn signal_work_item_request(
+    payload: &ActivityPayload,
+    missing_fields: &[String],
+) -> WorkItemCreateRequest {
+    let source_event_signal_id = signal_uuid(&payload.event_signal_id);
+    let source_refs = signal_source_refs(payload, source_event_signal_id);
+    let review_needed = !missing_fields.is_empty();
+    let brief_summary = if payload.brief_summary.trim().is_empty() {
+        signal_brief_summary(payload, review_needed)
+    } else {
+        payload.brief_summary.trim().to_string()
+    };
+
+    WorkItemCreateRequest {
+        requester_agent: "default".to_string(),
+        target_agent: "xiaoman".to_string(),
+        capability_key: "xiaoman.create_activity_request".to_string(),
+        work_item_type: "activity_promotion_request".to_string(),
+        brief_summary,
+        purpose: "activity_signal_intake".to_string(),
+        human_owner: payload.owner_name.trim().to_string(),
+        priority: signal_priority(&payload.priority),
+        source_type: "event_signal".to_string(),
+        source_refs,
+        source_event_signal_id,
+        payload: json!({
+            "workflow": "workflows/xiaoman-activity-signal",
+            "requested_by": payload.actor_agent,
+            "signal_type": payload.signal_type,
+            "activity_title": payload.activity_title,
+            "signal_date": payload.signal_date,
+            "location": payload.location,
+            "gap_summary": payload.gap_summary,
+            "review_needed": review_needed,
+            "missing_required_fields": missing_fields,
+        }),
+        payload_redaction_policy: "summary_only".to_string(),
+        idempotency_key: signal_idempotency_key(&payload.event_signal_id),
+        dedupe_key: String::new(),
+        metadata: json!({
+            "created_by_wrapper": "xiaoman-activity",
+            "workflow": "workflows/xiaoman-activity-signal",
+            "review_needed": review_needed,
+            "missing_required_fields": missing_fields,
+            "related_member_names_count": payload.related_member_names.len(),
+        }),
+        parent_work_item_id: None,
+        approved_artifact_id: None,
+    }
+}
+
+fn signal_source_refs(payload: &ActivityPayload, source_event_signal_id: Option<Uuid>) -> Value {
+    let event_ref = source_event_signal_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| payload.event_signal_id.trim().to_string());
+    let message_refs: Vec<String> = payload
+        .source_message_ids
+        .iter()
+        .map(|item| activity_record_ref("event_signal_message", item))
+        .collect();
+    json!({
+        "event_signal_id": event_ref,
+        "signal_type": payload.signal_type,
+        "signal_date": payload.signal_date,
+        "chat_ref": activity_record_ref("event_signal_chat", &payload.chat_id),
+        "source_message_refs": message_refs,
+    })
+}
+
+fn signal_missing_fields(payload: &ActivityPayload) -> Vec<String> {
+    [
+        ("event_signal_id", payload.event_signal_id.as_str()),
+        ("signal_type", payload.signal_type.as_str()),
+        ("activity_title", payload.activity_title.as_str()),
+        ("signal_date", payload.signal_date.as_str()),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| {
+        if value.trim().is_empty() {
+            Some(name.to_string())
+        } else {
+            None
+        }
+    })
+    .collect()
+}
+
+fn signal_uuid(value: &str) -> Option<Uuid> {
+    Uuid::parse_str(value.trim()).ok()
+}
+
+fn signal_idempotency_key(event_signal_id: &str) -> String {
+    format!("xiaoman_activity_signal:{}", event_signal_id.trim())
+}
+
+fn signal_priority(value: &str) -> String {
+    match value.trim() {
+        "high" | "urgent" | "low" | "normal" => value.trim().to_string(),
+        "高" => "high".to_string(),
+        "低" => "low".to_string(),
+        _ => "normal".to_string(),
+    }
+}
+
+fn signal_brief_summary(payload: &ActivityPayload, review_needed: bool) -> String {
+    let title = if payload.activity_title.trim().is_empty() {
+        "未命名活动"
+    } else {
+        payload.activity_title.trim()
+    };
+    let date = if payload.signal_date.trim().is_empty() {
+        "日期待确认"
+    } else {
+        payload.signal_date.trim()
+    };
+    if review_needed {
+        format!("{title} 活动信号需要人工补齐字段")
+    } else {
+        format!("{title} 活动信号待小满跟进（{date}）")
+    }
 }
 
 fn handoff_work_item_request(payload: &ActivityPayload) -> Result<WorkItemCreateRequest> {
@@ -1050,6 +1243,9 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
                 bail!("target_agent is not allowed");
             }
         }
+        "signal-ingest" => {
+            require_fields(&[("event_signal_id", &payload.event_signal_id)])?;
+        }
         "material-summary" => require_fields(&[
             ("record_id", &payload.record_id),
             ("table_role", &payload.table_role),
@@ -1187,6 +1383,140 @@ mod tests {
             report.records[0].material_summary.as_deref(),
             Some("现场照片 6 张，待筛选 2 张可用于复盘")
         );
+    }
+
+    #[tokio::test]
+    async fn signal_ingest_creates_activity_request_preview() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28",
+            "chat_id": "fixture-community-group",
+            "source_message_ids": ["22222222-2222-4222-8222-222222222222"],
+            "owner_name": "小满",
+            "priority": "高",
+            "location": "秦托邦共享厨房",
+            "gap_summary": "缺少海报主图和报名截止时间"
+        }));
+
+        validate("signal-ingest", &payload).expect("signal payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("signal ingest dry-run should succeed");
+
+        let work_item = report
+            .operations_work_item
+            .expect("signal ingest should create a work item preview");
+        assert_eq!(report.action_status, "operations_dry_run_ok");
+        assert_eq!(report.source, "agentos_event_signal");
+        assert_eq!(work_item.capability_key, "xiaoman.create_activity_request");
+        assert_eq!(work_item.work_item_type, "activity_promotion_request");
+        assert_eq!(work_item.requester_agent, "default");
+        assert_eq!(work_item.target_agent, "xiaoman");
+        assert_eq!(
+            work_item.idempotency_key,
+            "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111"
+        );
+        assert_eq!(work_item.current_status, "queued");
+        assert!(!serde_json::to_string(&work_item)
+            .unwrap()
+            .contains("22222222-2222-4222-8222-222222222222"));
+    }
+
+    #[tokio::test]
+    async fn signal_ingest_duplicate_uses_same_idempotency_key() {
+        let first = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28"
+        }));
+        let duplicate = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28"
+        }));
+
+        let first_report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            first,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("first signal should preview");
+        let duplicate_report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            duplicate,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("duplicate signal should preview");
+
+        assert_eq!(
+            first_report.operations_work_item.unwrap().idempotency_key,
+            duplicate_report
+                .operations_work_item
+                .unwrap()
+                .idempotency_key
+        );
+    }
+
+    #[tokio::test]
+    async fn signal_ingest_missing_fields_marks_review_needed() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "33333333-3333-4333-8333-333333333333",
+            "signal_type": "活动/聚会",
+            "activity_title": "社区共学",
+            "signal_date": ""
+        }));
+
+        validate("signal-ingest", &payload)
+            .expect("signal missing non-id fields should still validate");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("missing fields should create review-needed preview");
+
+        let work_item = report
+            .operations_work_item
+            .expect("review-needed signal should still produce a work item preview");
+        assert_eq!(report.action_status, "review_needed");
+        assert_eq!(report.validation_status, "review_needed");
+        assert_eq!(work_item.capability_key, "xiaoman.create_activity_request");
+        assert_eq!(work_item.current_status, "queued");
+        assert!(report
+            .limitations
+            .iter()
+            .any(|item| item.contains("signal_date")));
     }
 
     #[test]
