@@ -385,8 +385,8 @@ checkout, systemd units, Hermes profile config, symlinks, or running services.
 
 ## Release Promotion Direction
 
-The current `qintopia-agent-os-artifacts/<sha>` path is a transition download cache. The
-target release path is:
+The `qintopia-agent-os-artifacts/<sha>` path is a download cache and audit path. The
+active release path is:
 
 ```text
 /home/ubuntu/qintopia-agent-os-releases/<approved-sha>
@@ -394,8 +394,8 @@ target release path is:
 /home/ubuntu/qintopia-agent-os-releases/previous
 ```
 
-The release promotion step should copy verified payloads from the COS download cache
-into an immutable release directory, then switch `current` only after all checks pass.
+The release promotion step copies verified payloads from the COS download cache into an
+immutable release directory, then switches `current` only after all checks pass.
 Rollback switches `current` back to `previous`.
 
 ## Current Owner Inputs

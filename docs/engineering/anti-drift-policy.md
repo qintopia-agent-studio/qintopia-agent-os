@@ -22,10 +22,10 @@ The check currently enforces:
 - WorkTool and current WorkTool-bound Xiaoqin inventory records cannot be marked as
   active `adopt` or `template` inputs.
 - Huabaosi shadow work must stay in `review-pool` until owner approval.
-- `deploy/sidecar/scripts/server-deploy.sh` must stay marked as a legacy snapshot until
-  M9 cutover replaces or converts it.
-- Sidecar monorepo cutover must have an explicit plan while the deploy script remains a
-  legacy snapshot.
+- `deploy/sidecar/scripts/server-deploy.sh` must stay marked as a legacy snapshot unless
+  a reviewed deploy package explicitly converts or removes it.
+- Sidecar release/current checks must stay documented while the legacy deploy snapshot
+  remains in the repository for rollback evidence.
 - Postgres migrations must reference matching data-design notes, except for the initial
   bootstrap migration that predates `schema_change_log`.
 - Active packages cannot source from WorkTool, current WorkTool-bound Xiaoqin runtime,

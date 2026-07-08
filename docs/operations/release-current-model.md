@@ -1,7 +1,9 @@
 # Release/Current Model
 
-This document defines the target release model after M9-F removes the remaining
-references to `/home/ubuntu/qintopia-msg-sidecar`.
+This document defines the active release/current production model for Agent OS runtime
+payloads. M9-F removed the remaining active sidecar worker and Hermes MCP references to
+`/home/ubuntu/qintopia-msg-sidecar`; that old checkout is now archive evidence, not a
+runtime source.
 
 ## Direction
 
@@ -22,7 +24,7 @@ GitHub CI
 Routine releases must not depend on server-side `git fetch`, `git checkout`, local Rust
 builds, `scp` source overwrites, or direct edits under `.hermes`.
 
-## Target Directory Shape
+## Directory Shape
 
 ```text
 /home/ubuntu/qintopia-agent-os-releases/
@@ -43,14 +45,13 @@ builds, `scp` source overwrites, or direct edits under `.hermes`.
   previous -> <previous-approved-sha>
 ```
 
-`/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is only a transition download cache. It
-can be kept for rollback evidence, but services should eventually point at
-`/home/ubuntu/qintopia-agent-os-releases/current`.
+`/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is only an artifact cache and audit
+evidence. Services should use `/home/ubuntu/qintopia-agent-os-releases/current`.
 
 ## Release Payloads
 
-The first M9-F release assembles two verified COS inputs: the sidecar runtime artifact
-and the deploy bundle. The resulting release directory should contain:
+The M9-F release established the release assembly pattern from two verified COS inputs:
+the sidecar runtime artifact and the deploy bundle. A release directory should contain:
 
 ```text
 sidecar/

@@ -12,11 +12,10 @@ Qintopia Agent OS coordinates Hermes profiles, governed skills, workflows, MCP a
 runtime templates, deployment scripts, fixtures, and engineering docs in one git
 repository.
 
-The goal is to replace the current mixed model where some code lives in separate repos,
-some files are copied to the server, and some runtime assets are edited directly under
-`.hermes`.
-
-update readme
+This repository replaced the previous mixed collaboration model where code lived across
+separate repos, server-local files, and `.hermes` runtime edits. New Agent OS work
+should start here; older repositories and server captures are migration or audit inputs
+unless a package explicitly names them as source material.
 
 ## Repository Map
 

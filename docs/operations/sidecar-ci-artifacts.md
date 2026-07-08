@@ -72,12 +72,11 @@ operator files for M9-F: the Hermes MCP wrapper, systemd renderer, and deploymen
 runbooks. GitHub Actions and COS both keep the latest ten deploy bundle artifacts by
 default, matching the sidecar runtime artifact retention policy.
 
-`qintopia-agent-os-artifacts/<sha>` is the current transition download cache. The target
-release model promotes verified payloads into immutable
+`qintopia-agent-os-artifacts/<sha>` is an artifact download cache and audit path. The
+active release model promotes verified payloads into immutable
 `/home/ubuntu/qintopia-agent-os-releases/<sha>` directories and runs services through a
-stable `/home/ubuntu/qintopia-agent-os-releases/current` symlink. In that model, GitHub
-Actions and COS are the transport, while the server release directory is the runtime
-source.
+stable `/home/ubuntu/qintopia-agent-os-releases/current` symlink. GitHub Actions and COS
+are the transport, while the server release directory is the runtime source.
 
 ## COS Distribution
 

@@ -1,8 +1,9 @@
 # Operations
 
-This directory contains operational evidence, source inventories, and future runbook
-inputs. Server documents are summarized here as evidence before they are adopted into
-canonical architecture, engineering, package, or deployment docs.
+This directory contains operational evidence, source inventories, release/current
+runbooks, and archive-readiness records. Server documents are summarized here as
+evidence before they are adopted into canonical architecture, engineering, package, or
+deployment docs.
 
 ## Documents
 
@@ -12,11 +13,11 @@ canonical architecture, engineering, package, or deployment docs.
   post-M9-F Hermes profile/plugin/script inventory and M10/M11 migration gates.
 - [source-document-inventory.md](source-document-inventory.md): read-only inventory of
   server and local documents reviewed during the documentation organization pass.
-- [runtime-baseline.md](runtime-baseline.md): production runtime baseline and migration
-  implications.
+- [runtime-baseline.md](runtime-baseline.md): current production runtime baseline,
+  release/current state, and remaining profile/plugin or archive-retention work.
 - [server-directory-plan.md](server-directory-plan.md): target server filesystem shape,
   transition directories, legacy cleanup candidates, and Hermes runtime boundary.
-- [release-current-model.md](release-current-model.md): target release directory,
+- [release-current-model.md](release-current-model.md): active release directory,
   `current`/`previous` symlink, promotion, rollback, and Hermes mount model.
 - [production-deploy-runner.md](production-deploy-runner.md): GitHub Release-triggered
   production deploy requests, COS pull runner, release promotion, and rollback model.
@@ -39,8 +40,8 @@ canonical architecture, engineering, package, or deployment docs.
   build output, checksum verification, and server download requirements.
 - [cos-artifact-distribution.md](cos-artifact-distribution.md): Tencent COS bucket,
   credential, upload, and server download runbook for production artifact delivery.
-- [m9-server-cutover-runbook.md](m9-server-cutover-runbook.md): final migration runbook
-  for monorepo checkout, sidecar service cutover, deprecated runtime cleanup,
+- [m9-server-cutover-runbook.md](m9-server-cutover-runbook.md): historical cutover
+  evidence and reusable runbook for future approved repoints, cleanup windows,
   acceptance, and rollback.
 - [../deploy/sidecar/docs/systemd-cutover-plan.md](../../deploy/sidecar/docs/systemd-cutover-plan.md):
   M9.3 monorepo-native sidecar systemd target shape and rollback sequence.
