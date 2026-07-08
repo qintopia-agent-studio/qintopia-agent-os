@@ -43,13 +43,11 @@ review-needed fields, and the no-external-send boundary. `pnpm workflows:check`
 validates that static contract, and `pnpm check:runtime` runs the same fixtures through
 the sidecar smoke.
 
-The guarded Postgres apply smoke also replays a sanitized signal through
-`xiaoman-activity signal-ingest --apply`, verifies that it creates exactly one
-`xiaoman.create_activity_request` work item, and verifies that replaying the same signal
-returns the existing work item by idempotency key. The apply smoke uses a non-UUID
-`event_signal_id` unless it also seeds a matching `qintopia_agent_os.event_signals` row,
-because UUID signal ids are stored as `source_event_signal_id` and must satisfy the
-database foreign key.
+The guarded Postgres apply smoke seeds a matching `qintopia_agent_os.event_signals` row,
+replays its UUID through `xiaoman-activity signal-ingest --apply`, verifies that it
+creates exactly one `xiaoman.create_activity_request` work item, verifies that the work
+item stores `source_event_signal_id`, and verifies that replaying the same signal
+returns the existing work item by idempotency key.
 
 ## Production Boundary
 

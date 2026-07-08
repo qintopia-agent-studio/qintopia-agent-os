@@ -135,7 +135,44 @@ assert_sql_equals \
   4 \
   "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request');"
 
-xiaoman_signal_id="operations-apply-smoke-${smoke_suffix}"
+xiaoman_signal_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_signal_chat_id="operations-apply-smoke-chat-${smoke_suffix}"
+xiaoman_signal_dedupe_key="operations-apply-smoke:${smoke_suffix}:xiaoman-signal"
+psql_value "
+INSERT INTO qintopia_agent_os.event_signals (
+  id,
+  platform,
+  chat_id,
+  signal_date,
+  signal_type,
+  title,
+  summary,
+  owner_name,
+  owner_agent,
+  priority,
+  status,
+  confidence,
+  dedupe_key,
+  extraction_version,
+  metadata
+) VALUES (
+  '${xiaoman_signal_id}'::uuid,
+  'qiwe',
+  '${xiaoman_signal_chat_id}',
+  DATE '2026-07-08',
+  '活动/聚会',
+  'AgentOS apply smoke 小满活动',
+  'AgentOS apply smoke validates UUID-backed Xiaoman signal intake apply path',
+  'operations-apply-smoke-owner',
+  'xiaoman',
+  '中',
+  '待处理',
+  0.99,
+  '${xiaoman_signal_dedupe_key}',
+  'operations_apply_smoke_v1',
+  '{\"smoke_case\":\"xiaoman_uuid_signal\"}'::jsonb
+) ON CONFLICT (platform, chat_id, signal_date, dedupe_key, extraction_version) DO NOTHING
+RETURNING id;" >/dev/null
 xiaoman_signal_payload="$(
   python3 - "$xiaoman_signal_id" <<'PY'
 import json
@@ -182,7 +219,12 @@ PY
 assert_sql_equals \
   xiaoman_signal_work_item_created \
   1 \
-  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_signal_work_item_id}'::uuid AND capability_key = 'xiaoman.create_activity_request' AND requester_agent = 'default' AND target_agent = 'xiaoman' AND source_type = 'event_signal' AND idempotency_key = 'xiaoman_activity_signal:${xiaoman_signal_id}';"
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_signal_work_item_id}'::uuid AND capability_key = 'xiaoman.create_activity_request' AND requester_agent = 'default' AND target_agent = 'xiaoman' AND source_type = 'event_signal' AND source_event_signal_id = '${xiaoman_signal_id}'::uuid AND idempotency_key = 'xiaoman_activity_signal:${xiaoman_signal_id}';"
+
+assert_sql_equals \
+  xiaoman_signal_source_row_exists \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signals WHERE id = '${xiaoman_signal_id}'::uuid AND owner_agent = 'xiaoman' AND signal_type = '活动/聚会';"
 
 assert_sql_equals \
   xiaoman_signal_created_event_written \
