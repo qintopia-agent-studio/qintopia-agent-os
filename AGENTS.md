@@ -75,6 +75,10 @@ Use `rg` and `rg --files` for search.
   `xiaoman.create_activity_request` through the operations control plane with
   `requester_agent=default` and `target_agent=xiaoman`; do not bypass capability policy
   by making Xiaoman call its own provider capability directly.
+- Xiaoman signal apply smokes should use sanitized non-UUID event signal ids unless a
+  matching `qintopia_agent_os.event_signals` row is created first; UUID
+  `event_signal_id` values are stored as `source_event_signal_id` and must satisfy the
+  Postgres foreign key.
 
 ## Package Placement
 

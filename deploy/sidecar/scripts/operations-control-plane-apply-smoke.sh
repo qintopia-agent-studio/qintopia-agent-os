@@ -135,6 +135,81 @@ assert_sql_equals \
   4 \
   "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request');"
 
+xiaoman_signal_id="operations-apply-smoke-${smoke_suffix}"
+xiaoman_signal_payload="$(
+  python3 - "$xiaoman_signal_id" <<'PY'
+import json
+import sys
+signal_id = sys.argv[1]
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "signal-ingest",
+    "event_signal_id": signal_id,
+    "signal_type": "活动/聚会",
+    "activity_title": "AgentOS apply smoke 小满活动",
+    "signal_date": "2026-07-08",
+    "owner_name": "operations-apply-smoke-owner",
+    "priority": "normal",
+    "location": "AgentOS apply smoke fixture",
+    "brief_summary": "AgentOS apply smoke validates Xiaoman signal intake apply path",
+    "gap_summary": "No external send or visual asset should be created by signal-ingest itself."
+}, ensure_ascii=False))
+PY
+)"
+xiaoman_signal="$(run_json xiaoman_signal xiaoman-activity signal-ingest --apply --payload-json "$xiaoman_signal_payload")"
+assert_json "$xiaoman_signal" "data['success'] is True"
+assert_json "$xiaoman_signal" "data['source'] == 'agentos_event_signal'"
+assert_json "$xiaoman_signal" "data['validation_status'] == 'ok'"
+assert_json "$xiaoman_signal" "data['action_status'] == 'operations_created'"
+assert_json "$xiaoman_signal" "data['operations_work_item']['capability_key'] == 'xiaoman.create_activity_request'"
+assert_json "$xiaoman_signal" "data['operations_work_item']['work_item_type'] == 'activity_promotion_request'"
+assert_json "$xiaoman_signal" "data['operations_work_item']['requester_agent'] == 'default'"
+assert_json "$xiaoman_signal" "data['operations_work_item']['target_agent'] == 'xiaoman'"
+assert_json "$xiaoman_signal" "data['operations_work_item']['idempotency_key'] == 'xiaoman_activity_signal:${xiaoman_signal_id}'"
+assert_json "$xiaoman_signal" "data['operations_work_item']['existing'] is False"
+assert_json "$xiaoman_signal" "data['safe_for_chat'] is False"
+
+xiaoman_signal_work_item_id="$(
+  python3 - "$xiaoman_signal" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+print(data["operations_work_item"]["work_item_id"])
+PY
+)"
+
+assert_sql_equals \
+  xiaoman_signal_work_item_created \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_signal_work_item_id}'::uuid AND capability_key = 'xiaoman.create_activity_request' AND requester_agent = 'default' AND target_agent = 'xiaoman' AND source_type = 'event_signal' AND idempotency_key = 'xiaoman_activity_signal:${xiaoman_signal_id}';"
+
+assert_sql_equals \
+  xiaoman_signal_created_event_written \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_signal_work_item_id}'::uuid AND event_type = 'created';"
+
+assert_sql_equals \
+  xiaoman_signal_did_not_create_children \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_signal_work_item_id}'::uuid;"
+
+xiaoman_signal_again="$(run_json xiaoman_signal_again xiaoman-activity signal-ingest --apply --payload-json "$xiaoman_signal_payload")"
+assert_json "$xiaoman_signal_again" "data['success'] is True"
+assert_json "$xiaoman_signal_again" "data['action_status'] == 'operations_idempotent_existing'"
+assert_json "$xiaoman_signal_again" "data['operations_work_item']['existing'] is True"
+assert_json "$xiaoman_signal_again" "data['operations_work_item']['work_item_id'] == '${xiaoman_signal_work_item_id}'"
+
+assert_sql_equals \
+  xiaoman_signal_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE idempotency_key = 'xiaoman_activity_signal:${xiaoman_signal_id}';"
+
+assert_sql_equals \
+  xiaoman_signal_created_event_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_signal_work_item_id}'::uuid AND event_type = 'created';"
+
 planned_submit_payload="$(
   python3 - "$source_ref" <<'PY'
 import json

@@ -208,18 +208,21 @@ The migration is additive:
 - `scripts/operations-control-plane-apply-smoke.sh` is the guarded Postgres apply smoke.
   It requires `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1` and
   `QINTOPIA_SIDECAR_DATABASE_URL`, runs migrations, verifies the DB-backed capability
-  registry, creates one planned `visual_asset_request` through
-  `operations-request-submit`, confirms planner-submit idempotency, starts an
-  `activity_promotion` workflow with parent/evidence/visual work items through
-  `operations-workflow-start`, confirms workflow idempotency, runs the evidence worker
-  for the workflow-created `evidence_request`, runs the collaboration worker for the
-  workflow-created `visual_asset_request` to create a pending `poster_brief` artifact
-  and move the work item to `awaiting_review`, records an approved artifact review
-  without publishing or sending and marks the visual work item completed, creates a
-  controlled child `erhua.send_group_message` request from the approved artifact on the
-  same parent, records final confirmation, records send-readiness without sending,
-  verifies unapproved artifacts cannot create group-message requests, verifies the
-  evidence, visual, and group-message child work items share one parent
+  registry, replays a sanitized Xiaoman activity signal through
+  `xiaoman-activity signal-ingest --apply`, verifies the resulting
+  `xiaoman.create_activity_request` control-plane row and idempotent replay behavior,
+  creates one planned `visual_asset_request` through `operations-request-submit`,
+  confirms planner-submit idempotency, starts an `activity_promotion` workflow with
+  parent/evidence/visual work items through `operations-workflow-start`, confirms
+  workflow idempotency, runs the evidence worker for the workflow-created
+  `evidence_request`, runs the collaboration worker for the workflow-created
+  `visual_asset_request` to create a pending `poster_brief` artifact and move the work
+  item to `awaiting_review`, records an approved artifact review without publishing or
+  sending and marks the visual work item completed, creates a controlled child
+  `erhua.send_group_message` request from the approved artifact on the same parent,
+  records final confirmation, records send-readiness without sending, verifies
+  unapproved artifacts cannot create group-message requests, verifies the evidence,
+  visual, and group-message child work items share one parent
   `activity_promotion_request`, reads that parent status tree and current blocking
   point, syncs the durable parent workflow summary with `workflow_status_synced`,
   records a dry-run Feishu Task workbench reference with safe child status summaries and
