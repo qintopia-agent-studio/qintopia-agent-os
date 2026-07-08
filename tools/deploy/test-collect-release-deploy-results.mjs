@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
-import { extractDeployResultsFromLog } from "./collect-release-deploy-results.mjs";
+import {
+  attachWorkflowRunMetadata,
+  extractDeployResultsFromLog,
+} from "./collect-release-deploy-results.mjs";
 
 const log = [
   "request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0039484Z Deploy result succeeded: succeeded",
@@ -27,6 +30,19 @@ if (results[0].status !== "succeeded") {
 }
 if (results[0].release_sha !== "d083e5ccfce2d07048e07c0ceb8c052671f65911") {
   throw new Error("release_sha was not extracted");
+}
+
+const withMetadata = attachWorkflowRunMetadata(results, {
+  id: 123,
+  created_at: "2026-07-08T05:20:00Z",
+  run_started_at: "2026-07-08T05:21:00Z",
+  updated_at: "2026-07-08T05:24:30Z",
+});
+if (withMetadata[0].workflow_run?.id !== "123") {
+  throw new Error("workflow run id metadata was not attached");
+}
+if (withMetadata[0].workflow_run?.run_started_at !== "2026-07-08T05:21:00Z") {
+  throw new Error("workflow run timestamp metadata was not attached");
 }
 
 console.log("Release deploy result log collector tests passed.");

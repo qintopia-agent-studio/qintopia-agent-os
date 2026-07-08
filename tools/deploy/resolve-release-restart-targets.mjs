@@ -126,12 +126,26 @@ const applyDeployResult = ({ result, targetTags, commitToTag }) => {
   }
 };
 
-const sortedDeployResults = (results) =>
-  [...results].sort((left, right) =>
-    String(left?.finished_at || left?.started_at || "").localeCompare(
-      String(right?.finished_at || right?.started_at || "")
-    )
+const resultOrderKey = (result) =>
+  String(
+    result?.finished_at ||
+      result?.started_at ||
+      result?.workflow_run?.run_started_at ||
+      result?.workflow_run?.created_at ||
+      result?.workflow_run?.updated_at ||
+      ""
   );
+
+const resultOrderId = (result) => Number(result?.workflow_run?.id || 0);
+
+const sortedDeployResults = (results) =>
+  [...results].sort((left, right) => {
+    const byTime = resultOrderKey(left).localeCompare(resultOrderKey(right));
+    if (byTime !== 0) {
+      return byTime;
+    }
+    return resultOrderId(left) - resultOrderId(right);
+  });
 
 const resolveReleaseRestartTargets = ({ currentTag, releases, results, rules }) => {
   const commitToTag = tagByCommit(releases);
@@ -143,6 +157,16 @@ const resolveReleaseRestartTargets = ({ currentTag, releases, results, rules }) 
     const releaseSha = String(result?.release_sha || "");
     return releaseSha && isAncestor(releaseSha, currentCommit);
   });
+  if (
+    successfulResults.length > 1 &&
+    successfulResults.some(
+      (result) => !resultOrderKey(result) && !resultOrderId(result)
+    )
+  ) {
+    throw new Error(
+      "Multiple successful deploy results require deploy or workflow run timestamps"
+    );
+  }
   const firstPreviousTag = commitToTag.get(
     String(successfulResults[0]?.previous_sha || "")
   );

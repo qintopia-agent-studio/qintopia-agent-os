@@ -20,6 +20,39 @@ const workflowRuns = (runsJson) =>
 
 const runId = (runRecord) => String(runRecord?.id || runRecord?.databaseId || "");
 
+const runTimestamp = (runRecord) =>
+  String(
+    runRecord?.run_started_at ||
+      runRecord?.runStartedAt ||
+      runRecord?.created_at ||
+      runRecord?.createdAt ||
+      runRecord?.updated_at ||
+      runRecord?.updatedAt ||
+      ""
+  );
+
+const sortedWorkflowRuns = (runs) =>
+  [...runs].sort((left, right) => {
+    const byTime = runTimestamp(left).localeCompare(runTimestamp(right));
+    if (byTime !== 0) {
+      return byTime;
+    }
+    return Number(runId(left) || 0) - Number(runId(right) || 0);
+  });
+
+const deployResultMetadata = (runRecord) => ({
+  id: runId(runRecord),
+  created_at: String(runRecord?.created_at || runRecord?.createdAt || ""),
+  run_started_at: String(runRecord?.run_started_at || runRecord?.runStartedAt || ""),
+  updated_at: String(runRecord?.updated_at || runRecord?.updatedAt || ""),
+});
+
+export const attachWorkflowRunMetadata = (results, runRecord) =>
+  results.map((result) => ({
+    ...result,
+    workflow_run: deployResultMetadata(runRecord),
+  }));
+
 const isReleaseDeployRun = (runRecord) =>
   runRecord &&
   (!runRecord.event || runRecord.event === "release") &&
@@ -98,7 +131,7 @@ const main = () => {
     throw new Error("--output is required");
   }
 
-  const runs = workflowRuns(readJsonFile(workflowRunsFile));
+  const runs = sortedWorkflowRuns(workflowRuns(readJsonFile(workflowRunsFile)));
   const results = [];
   for (const runRecord of runs) {
     if (!isReleaseDeployRun(runRecord)) {
@@ -121,7 +154,9 @@ const main = () => {
         continue;
       }
     }
-    results.push(...extractDeployResultsFromLog(logText));
+    results.push(
+      ...attachWorkflowRunMetadata(extractDeployResultsFromLog(logText), runRecord)
+    );
   }
 
   fs.mkdirSync(path.dirname(path.resolve(repoRoot, output)), { recursive: true });

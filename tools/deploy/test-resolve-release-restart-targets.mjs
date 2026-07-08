@@ -98,12 +98,14 @@ try {
       {
         status: "dry_run_succeeded",
         release_sha: v021Sha,
+        workflow_run: { id: "101", run_started_at: "2026-07-08T05:00:00Z" },
         restart_targets: ["hermes-erhua", "qintopia-system-services"],
       },
       {
         status: "succeeded",
         release_sha: v022Sha,
         previous_sha: v020Sha,
+        workflow_run: { id: "102", run_started_at: "2026-07-08T06:00:00Z" },
         restart_targets: ["qintopia-system-services"],
       },
     ],
@@ -127,12 +129,14 @@ try {
         status: "succeeded",
         release_sha: v021Sha,
         previous_sha: v020Sha,
+        workflow_run: { id: "101", run_started_at: "2026-07-08T05:00:00Z" },
         restart_targets: ["hermes-erhua", "qintopia-system-services"],
       },
       {
         status: "succeeded",
         release_sha: v022Sha,
         previous_sha: v021Sha,
+        workflow_run: { id: "102", run_started_at: "2026-07-08T06:00:00Z" },
         restart_targets: ["qintopia-system-services"],
       },
     ],
@@ -144,6 +148,37 @@ try {
   }
   if (noRestart.stdout.trim() !== "") {
     throw new Error(`expected no targets, got ${noRestart.stdout.trim()}`);
+  }
+
+  const newestFirst = runResolver({
+    currentTag: "v0.2.2",
+    releases,
+    results: [
+      {
+        status: "succeeded",
+        release_sha: v022Sha,
+        previous_sha: v021Sha,
+        workflow_run: { id: "102", run_started_at: "2026-07-08T06:00:00Z" },
+        restart_targets: ["qintopia-system-services"],
+      },
+      {
+        status: "succeeded",
+        release_sha: v021Sha,
+        previous_sha: v020Sha,
+        workflow_run: { id: "101", run_started_at: "2026-07-08T05:00:00Z" },
+        restart_targets: ["hermes-erhua", "qintopia-system-services"],
+      },
+    ],
+  });
+  if (newestFirst.status !== 0) {
+    throw new Error(
+      `expected success, got ${newestFirst.status}\nstdout:\n${newestFirst.stdout}\nstderr:\n${newestFirst.stderr}`
+    );
+  }
+  if (newestFirst.stdout.trim() !== "") {
+    throw new Error(
+      `expected timestamp sorting to avoid restart, got ${newestFirst.stdout.trim()}`
+    );
   }
 
   if (!v020Sha || !v022Sha) {
