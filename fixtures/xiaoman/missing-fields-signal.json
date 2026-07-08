@@ -1,0 +1,18 @@
+{
+  "case": "missing-fields-signal",
+  "input": {
+    "workflow": "workflows/xiaoman-activity-signal",
+    "actor_agent": "xiaoman",
+    "operation": "signal-ingest",
+    "event_signal_id": "33333333-3333-4333-8333-333333333333",
+    "signal_type": "活动/聚会",
+    "activity_title": "社区共学",
+    "signal_date": ""
+  },
+  "expected": {
+    "action_status": "review_needed",
+    "review_needed": true,
+    "missing_required_fields": ["signal_date"],
+    "external_sends": false
+  }
+}
