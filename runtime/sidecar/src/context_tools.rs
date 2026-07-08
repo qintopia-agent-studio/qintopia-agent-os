@@ -1203,10 +1203,11 @@ async fn member_name_candidates(
                       OR regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g') = $3
                       OR regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 90
                     WHEN regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 85
-                    WHEN ci.normalized_display_name ILIKE $5 THEN 70
-                    WHEN ci.display_name ILIKE $5 THEN 65
-                    WHEN p.display_name ILIKE $5 OR p.preferred_name ILIKE $5 OR p.primary_name ILIKE $5 THEN 60
-                    WHEN a.alias ILIKE $5 THEN 55
+                    WHEN $6 = 'current_chat' AND ci.normalized_display_name ILIKE $5 THEN 70
+                    WHEN $6 = 'current_chat' AND ci.display_name ILIKE $5 THEN 65
+                    WHEN $6 = 'current_chat'
+                      AND (p.display_name ILIKE $5 OR p.preferred_name ILIKE $5 OR p.primary_name ILIKE $5) THEN 60
+                    WHEN $6 = 'current_chat' AND a.alias ILIKE $5 THEN 55
                     ELSE 0
                 END AS rank
             FROM qintopia_identity.channel_identities ci
@@ -1225,12 +1226,6 @@ async fn member_name_candidates(
                     OR regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g') = $3
                     OR regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g') = $3
                     OR regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g') = $3
-                    OR ci.normalized_display_name ILIKE $5
-                    OR ci.display_name ILIKE $5
-                    OR p.display_name ILIKE $5
-                    OR p.preferred_name ILIKE $5
-                    OR p.primary_name ILIKE $5
-                    OR a.alias ILIKE $5
                   )
                 )
               )
@@ -3499,6 +3494,15 @@ mod tests {
         assert_eq!(resolution.status, MemberNameResolutionStatus::Ambiguous);
         assert_eq!(resolution.person_id, None);
         assert_eq!(resolution.match_count, 2);
+    }
+
+    #[test]
+    fn member_name_resolution_does_not_platform_fallback_without_candidate() {
+        let resolution = select_scoped_member_name_resolution(&[], &[]);
+
+        assert_eq!(resolution.status, MemberNameResolutionStatus::Unresolved);
+        assert_eq!(resolution.person_id, None);
+        assert_eq!(resolution.match_count, 0);
     }
 
     #[test]
