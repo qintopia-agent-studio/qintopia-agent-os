@@ -3,7 +3,7 @@
 import process from "node:process";
 
 const defaultArtifactName = "qintopia-message-sidecar-linux-x86_64-gnu";
-const defaultKeepCount = 2;
+const defaultKeepCount = 10;
 const apiVersion = "2022-11-28";
 
 const args = process.argv.slice(2);

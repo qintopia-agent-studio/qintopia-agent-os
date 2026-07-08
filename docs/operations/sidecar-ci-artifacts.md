@@ -69,8 +69,8 @@ from GitHub artifact retention.
 
 The workflow can also build `qintopia-agent-os-deploy-bundle`, which contains reviewed
 operator files for M9-F: the Hermes MCP wrapper, systemd renderer, and deployment
-runbooks. GitHub Actions and COS both keep the latest two deploy bundle artifacts,
-matching the sidecar runtime artifact retention policy.
+runbooks. GitHub Actions and COS both keep the latest ten deploy bundle artifacts by
+default, matching the sidecar runtime artifact retention policy.
 
 `qintopia-agent-os-artifacts/<sha>` is the current transition download cache. The target
 release model promotes verified payloads into immutable
@@ -147,12 +147,12 @@ to COS upload. The verified accelerated upload for commit
 seconds.
 
 After each successful COS upload, the workflow runs
-`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2` for both `sidecar` and
-`deploy-bundle`. COS keeps only the latest two sidecar artifact SHA directories for
-`qintopia-message-sidecar-linux-x86_64-gnu` and the latest two deploy bundle SHA
+`deploy/sidecar/scripts/prune-cos-artifacts.sh` for both `sidecar` and `deploy-bundle`.
+COS keeps the latest ten sidecar artifact SHA directories for
+`qintopia-message-sidecar-linux-x86_64-gnu` and the latest ten deploy bundle SHA
 directories for `qintopia-agent-os-deploy-bundle`, matching the GitHub Actions artifact
-retention policy. This retention is implemented in CI because bucket lifecycle rules are
-time-based and cannot express "latest two builds".
+retention count. This retention is implemented in CI because bucket lifecycle rules are
+time-based and cannot express "latest N builds".
 
 Optional GitHub repository variables can override the workflow defaults:
 
@@ -214,7 +214,7 @@ After verification, assemble the runtime artifact and deploy bundle payload into
 
 ## GitHub Artifact Fallback
 
-GitHub Actions artifacts are still uploaded and pruned to the latest two builds for CI
+GitHub Actions artifacts are still uploaded and pruned to the latest ten builds for CI
 audit and emergency fallback. For the private repository, downloading GitHub Actions
 artifacts requires GitHub API read access through the Qintopia Agent OS deployer GitHub
 App or a short-lived `GITHUB_TOKEN`.

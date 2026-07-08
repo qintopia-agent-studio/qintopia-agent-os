@@ -104,7 +104,7 @@ GITHUB_REPOSITORY="qintopia-agent-studio/qintopia-agent-os" \
 pnpm artifact:prune:sidecar
 ```
 
-The command keeps the latest two artifacts named
-`qintopia-message-sidecar-linux-x86_64-gnu`: the current deployment candidate and one
-rollback candidate. Older same-name artifacts are deleted through the GitHub Actions
-Artifacts API.
+The command keeps the latest ten artifacts named
+`qintopia-message-sidecar-linux-x86_64-gnu` by default. Override the count with
+`QINTOPIA_ARTIFACT_KEEP_COUNT` or `--keep <count>`. Older same-name artifacts are
+deleted through the GitHub Actions Artifacts API.

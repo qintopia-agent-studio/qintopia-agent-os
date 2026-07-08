@@ -65,10 +65,9 @@ downloading it from Tencent COS and verifying `artifact-manifest.json` plus
 `SHA256SUMS`; it should not rebuild the sidecar with local Node.js, pnpm, or Rust
 tooling during the migration window.
 
-GitHub retains only the latest two sidecar CI artifacts for audit and emergency
-fallback. COS is the default production distribution path. Preserve the verified server
-copy under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` once it is
-downloaded.
+GitHub retains the latest ten sidecar CI artifacts for audit and emergency fallback. COS
+is the default production distribution path. Preserve the verified server copy under
+`/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` once it is downloaded.
 
 `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is a transition path. The next release
 model should promote verified payloads into

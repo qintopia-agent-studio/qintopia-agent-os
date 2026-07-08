@@ -60,6 +60,7 @@ env:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
   TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
+  QINTOPIA_COS_ARTIFACT_KEEP_COUNT: ${{ vars.QINTOPIA_COS_ARTIFACT_KEEP_COUNT || '10' }}
   WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
 
 jobs:
@@ -495,12 +496,10 @@ jobs:
         run: |
           set -euo pipefail
           deploy/sidecar/scripts/prune-cos-artifacts.sh \
-            --artifact-name qintopia-message-sidecar-linux-x86_64-gnu \
-            --keep 2
+            --artifact-name qintopia-message-sidecar-linux-x86_64-gnu
           deploy/sidecar/scripts/prune-cos-artifacts.sh \
             --artifact-type deploy-bundle \
-            --artifact-name qintopia-agent-os-deploy-bundle \
-            --keep 2
+            --artifact-name qintopia-agent-os-deploy-bundle
 
       - name: Create deploy request
         run:
