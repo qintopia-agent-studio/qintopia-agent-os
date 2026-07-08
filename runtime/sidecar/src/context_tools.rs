@@ -1197,9 +1197,12 @@ async fn member_name_candidates(
                 ci.updated_at AS observed_at,
                 CASE
                     WHEN ci.normalized_display_name = $3 THEN 100
+                    WHEN regexp_replace(btrim(coalesce(ci.display_name, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 98
                     WHEN ci.display_name = $4 THEN 95
-                    WHEN p.display_name = $4 OR p.preferred_name = $4 OR p.primary_name = $3 THEN 90
-                    WHEN a.alias = $4 THEN 85
+                    WHEN regexp_replace(btrim(coalesce(p.display_name, '')), '[[:space:]]+', ' ', 'g') = $3
+                      OR regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g') = $3
+                      OR regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 90
+                    WHEN regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 85
                     WHEN ci.normalized_display_name ILIKE $5 THEN 70
                     WHEN ci.display_name ILIKE $5 THEN 65
                     WHEN p.display_name ILIKE $5 OR p.preferred_name ILIKE $5 OR p.primary_name ILIKE $5 THEN 60
@@ -1212,7 +1215,24 @@ async fn member_name_candidates(
             WHERE ci.platform = $1
               AND (
                 ($6 = 'current_chat' AND ($2 = '' OR ci.chat_id = $2))
-                OR ($6 = 'platform' AND (ci.chat_id = '' OR p.display_name = $4 OR p.preferred_name = $4 OR p.primary_name = $3 OR a.alias = $4))
+                OR (
+                  $6 = 'platform'
+                  AND (
+                    ci.chat_id = ''
+                    OR ci.normalized_display_name = $3
+                    OR regexp_replace(btrim(coalesce(ci.display_name, '')), '[[:space:]]+', ' ', 'g') = $3
+                    OR regexp_replace(btrim(coalesce(p.display_name, '')), '[[:space:]]+', ' ', 'g') = $3
+                    OR regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g') = $3
+                    OR regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g') = $3
+                    OR regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g') = $3
+                    OR ci.normalized_display_name ILIKE $5
+                    OR ci.display_name ILIKE $5
+                    OR p.display_name ILIKE $5
+                    OR p.preferred_name ILIKE $5
+                    OR p.primary_name ILIKE $5
+                    OR a.alias ILIKE $5
+                  )
+                )
               )
               AND ci.person_id IS NOT NULL
             ) row_candidates
