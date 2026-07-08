@@ -167,6 +167,20 @@ jobs:
           ref: master
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Resolve release or manual deploy inputs
         id: resolve
         shell: bash
@@ -181,12 +195,13 @@ jobs:
           INPUT_ROLLBACK_ON_SMOKE_FAILURE:
             ${{ github.event.inputs.rollback_on_smoke_failure || '' }}
           INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name || '' }}
           RELEASE_HTML_URL: ${{ github.event.release.html_url || '' }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || 'false' }}
           RELEASE_DEPLOY_SCOPE: ${{ vars.RELEASE_DEPLOY_SCOPE || '' }}
-          RELEASE_DEPLOY_RESTART_TARGETS:
-            ${{ vars.RELEASE_DEPLOY_RESTART_TARGETS || 'qintopia-system-services' }}
+          RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE:
+            ${{ vars.RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE || '' }}
           RELEASE_DEPLOY_DRY_RUN: ${{ vars.RELEASE_DEPLOY_DRY_RUN || 'true' }}
         run: |
           set -euo pipefail
@@ -294,8 +309,64 @@ jobs:
               echo "origin/master HEAD: $master_sha" >&2
               exit 2
             fi
+            releases_json="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/releases?per_page=100")"
+            previous_release_tag="$(printf '%s' "$releases_json" | node -e '
+              const fs = require("node:fs");
+              const current = process.argv[1];
+              const releases = JSON.parse(fs.readFileSync(0, "utf8"));
+              for (const release of releases) {
+                if (
+                  release &&
+                  release.tag_name !== current &&
+                  release.draft !== true &&
+                  release.prerelease !== true &&
+                  /^v[0-9]/.test(String(release.tag_name || ""))
+                ) {
+                  console.log(release.tag_name);
+                }
+              }
+            ' "$RELEASE_TAG_NAME" | while read -r tag; do
+              if [[ -z "$tag" ]]; then
+                continue
+              fi
+              tag_commit="$(git rev-list -n 1 "${tag}^{commit}")"
+              if git merge-base --is-ancestor "$tag_commit" "$commit_sha"; then
+                printf '%s\n' "$tag"
+                break
+              fi
+            done)"
+            if [[ -z "$previous_release_tag" ]]; then
+              echo "Could not resolve previous published Release tag for ${RELEASE_TAG_NAME}." >&2
+              exit 2
+            fi
             release_scope="${RELEASE_DEPLOY_SCOPE:-sidecar-runtime,deploy-bundle,hermes-plugins}"
-            restart_targets="$RELEASE_DEPLOY_RESTART_TARGETS"
+            if [[ -n "$RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE" ]]; then
+              restart_targets="$RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE"
+              {
+                echo "## Restart Target Override"
+                echo
+                echo "Using RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE:"
+                echo
+                echo '```text'
+                echo "$restart_targets"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            else
+              restart_targets="$(node tools/deploy/resolve-restart-targets.mjs \
+                --base-tag "$previous_release_tag" \
+                --head-tag "$RELEASE_TAG_NAME" \
+                --mode production)"
+              if [[ -z "$restart_targets" ]]; then
+                restart_targets="qintopia-system-services"
+                {
+                  echo "## Restart Target Default"
+                  echo
+                  echo "No restart target matched the Release diff."
+                  echo "Using qintopia-system-services as the minimum deploy smoke target."
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
             dry_run="$RELEASE_DEPLOY_DRY_RUN"
             rollback_on_smoke_failure="true"
             notes="GitHub Release ${RELEASE_TAG_NAME}: ${RELEASE_HTML_URL}"
@@ -362,20 +433,6 @@ jobs:
             echo "$notes"
             echo "${notes_delimiter}"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Validate deploy runner contracts
         run: pnpm deploy:runner:check

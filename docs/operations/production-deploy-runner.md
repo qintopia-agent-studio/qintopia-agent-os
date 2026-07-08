@@ -103,13 +103,28 @@ Repository variables may keep non-secret COS defaults:
 - `TENCENT_COS_REGION`
 - `TENCENT_COS_ENDPOINT`
 - `RELEASE_DEPLOY_SCOPE`
-- `RELEASE_DEPLOY_RESTART_TARGETS`
 - `RELEASE_DEPLOY_DRY_RUN`
+- `RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE`
 
 `RELEASE_DEPLOY_DRY_RUN` controls what happens after a Release is published. Keep it
 `true` until the deploy runner is installed and the first dry-run result is inspected.
 After that, setting it to `false` makes publishing a normal GitHub Release generate a
 real production deploy request.
+
+Release-triggered deploys derive `restart_targets` from the diff between the previous
+published Release tag and the current Release tag. The mapping lives in
+`deploy/restart-target-rules.yaml` and is evaluated by
+`tools/deploy/resolve-restart-targets.mjs`. PRs only show a restart impact preview; the
+production request is resolved again from the final Release diff.
+
+`RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE` is only for emergency operator override. When
+set, it must contain deploy-runner allowlist targets such as `hermes-erhua` or
+`qintopia-system-services`; the workflow records the override in the job summary. Do not
+use the override as normal release configuration.
+
+Unknown production-adjacent paths fail closed. If a PR adds a new Agent, skill,
+workflow, runtime, MCP adapter, or deploy path without a restart rule, CI must fail
+until the package contract and restart target rule are added.
 
 The deploy request prefix is not configurable. It is fixed to `qintopia-agent-os` so the
 GitHub workflow, JSON schema, server-side validator, and COS poller share one production
@@ -142,6 +157,19 @@ The runner must not:
 Hermes restart targets map to ubuntu user-level systemd services such as
 `hermes-gateway-erhua.service`, not system-scope units. The smoke script must restart
 and verify each requested Hermes target, or fail the deployment.
+
+Each Agent package must declare its runtime target in `agents/<agent>/agent.yaml`:
+
+```yaml
+runtime:
+  restart_target: hermes-erhua
+  systemd_user_service: hermes-gateway-erhua.service
+```
+
+Adding a new Agent requires adding the Agent package, the runtime target declaration,
+the deploy request schema allowlist entry, the smoke restart case, the restart rule, and
+contract tests in the same PR. A profile directory without a deployable restart contract
+is not production-ready.
 
 ## Request And Result Records
 

@@ -130,6 +130,24 @@ if (ciWorkflow && !ciWorkflow.includes("release-please-pr")) {
   errors.push(".github/workflows/ci.yml: must detect Release Please PRs");
 }
 
+if (ciWorkflow && !ciWorkflow.includes("Restart impact preview")) {
+  errors.push(
+    ".github/workflows/ci.yml: pull_request checks must preview restart impact"
+  );
+}
+
+if (ciWorkflow && !ciWorkflow.includes("Fetch restart preview commits")) {
+  errors.push(".github/workflows/ci.yml: must fetch restart preview commits");
+}
+
+if (ciWorkflow && !ciWorkflow.includes("HEAD_REPOSITORY")) {
+  errors.push(".github/workflows/ci.yml: restart preview must handle fork PR heads");
+}
+
+if (ciWorkflow && !ciWorkflow.includes("tools/deploy/resolve-restart-targets.mjs")) {
+  errors.push(".github/workflows/ci.yml: must run restart target resolver");
+}
+
 if (ciWorkflow && !ciWorkflow.includes("node tools/ci/check-release-please-pr.mjs")) {
   errors.push(
     ".github/workflows/ci.yml: Release Please PRs must run the release metadata check"

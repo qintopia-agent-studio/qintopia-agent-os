@@ -16,6 +16,9 @@ production_boundary:
   database_writes: true
   runtime_profile: true
   secrets: true
+runtime:
+  restart_target: hermes-xiaoman
+  systemd_user_service: hermes-gateway-xiaoman.service
 validation:
   commands:
     - pnpm smoke:sidecar
