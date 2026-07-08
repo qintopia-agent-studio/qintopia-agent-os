@@ -1,5 +1,11 @@
 # Qintopia Agent OS Monorepo
 
+<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+
+[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors)
+
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
+
 [中文](README.zh-CN.md)
 
 This repository is the source of truth for Qintopia Agent OS. It uses a
@@ -172,3 +178,21 @@ Use the repository checks before opening a PR:
 ```bash
 pnpm check
 ```
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/qiaopengjun5162"><img src="https://avatars.githubusercontent.com/u/124650229?v=4?s=100" width="100px;" alt="Paxon Qiao"/><br /><sub><b>Paxon Qiao</b></sub></a><br /><a href="https://github.com/qintopia-agent-studio/qintopia-agent-os/commits?author=qiaopengjun5162" title="Code">💻</a> <a href="https://github.com/qintopia-agent-studio/qintopia-agent-os/commits?author=qiaopengjun5162" title="Documentation">📖</a> <a href="#infra-qiaopengjun5162" title="Infrastructure">🚇</a> <a href="https://github.com/qintopia-agent-studio/qintopia-agent-os/commits?author=qiaopengjun5162" title="Tests">⚠️</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
