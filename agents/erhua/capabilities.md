@@ -21,5 +21,5 @@
 - Direct unrestricted Feishu, database, or raw message-store access.
 - External sends outside the configured channel and contact guards.
 - Free-form self-learning by editing prompt or local memory files.
-- Guessing member identity, exposing raw member facts, or using group-message evidence as
-  final authority for private member profile claims.
+- Guessing member identity, exposing raw member facts, or using group-message evidence
+  as final authority for private member profile claims.

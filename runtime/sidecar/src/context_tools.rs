@@ -155,6 +155,7 @@ pub(crate) fn tool_definitions() -> Value {
                     "chat_id": {"type": "string", "description": "QiWe group/chat id."},
                     "sender_id": {"type": "string", "description": "Current QiWe sender/user id."},
                     "message_text": {"type": "string", "description": "Current inbound message text."},
+                    "mentioned_member_names": {"type": "array", "items": {"type": "string"}, "description": "Optional high-confidence member display names or aliases extracted by the channel adapter, including QiWe atList display text."},
                     "purpose": {"type": "string", "description": "Why answer context is needed."}
                 },
                 "required": ["caller_profile", "purpose", "message_text"],
@@ -212,13 +213,47 @@ async fn qintopia_member_context_lookup(
     let channel_user_id = clean_text(&request.channel_user_id, 120);
     let person_id_text = clean_text(&request.person_id, 80);
     let member_name = clean_text(&request.member_name, 120);
-    let person_id = if !person_id_text.is_empty() {
-        Some(person_id_text.parse::<uuid::Uuid>()?)
+    let member_resolution = if !person_id_text.is_empty() {
+        MemberNameResolution::resolved(person_id_text.parse::<uuid::Uuid>()?, 1)
     } else if !member_name.is_empty() {
-        resolve_person_id_by_member_name(pool, &platform, &chat_id, &member_name).await?
+        resolve_member_by_name(pool, &platform, &chat_id, &member_name).await?
     } else {
-        resolve_person_id_by_channel_exact(pool, &platform, &chat_id, &channel_user_id).await?
+        match resolve_person_id_by_channel_exact(pool, &platform, &chat_id, &channel_user_id)
+            .await?
+        {
+            Some(person_id) => MemberNameResolution::resolved(person_id, 1),
+            None => MemberNameResolution::unresolved(),
+        }
     };
+    if !member_resolution.status.is_resolved() {
+        let reason = if member_resolution.status == MemberNameResolutionStatus::Ambiguous {
+            "member_ambiguous"
+        } else {
+            "member_not_resolved"
+        };
+        write_member_context_audit(
+            pool,
+            &caller,
+            &platform,
+            &channel_user_id,
+            &chat_id,
+            &purpose,
+            None,
+            json!([]),
+            json!([reason]),
+            "qintopia_member_context_lookup",
+        )
+        .await?;
+        return Ok(json!({
+            "success": true,
+            "can_use_context": false,
+            "reason": reason,
+            "resolution_status": member_resolution.status.as_str(),
+            "match_count": member_resolution.match_count,
+            "safe_summary": "",
+            "do_not_disclose": ["raw_messages", "hidden_profile_details", "sensitive_facts", "daily_digest_full_text"]
+        }));
+    }
     let Some(context) = member_safe_context(
         pool,
         &platform,
@@ -228,7 +263,7 @@ async fn qintopia_member_context_lookup(
         } else {
             Some(&channel_user_id)
         },
-        person_id,
+        member_resolution.person_id,
         if channel_user_id.is_empty() {
             MemberSafeIdentityRowScope::ChatContext
         } else {
@@ -292,6 +327,8 @@ async fn qintopia_member_context_lookup(
     Ok(json!({
         "success": true,
         "can_use_context": !context.safe_summary.is_empty(),
+        "resolution_status": member_resolution.status.as_str(),
+        "match_count": member_resolution.match_count,
         "person_id": context.person_id,
         "display_name": context.display_name,
         "identity_confidence": context.identity_confidence,
@@ -350,22 +387,31 @@ async fn qintopia_answer_context_prepare(
         speaker_identity.member_safe_identity_row_scope(),
     )
     .await?;
-    let mention_texts = mentioned_member_names(&message_text, speaker_context.as_ref());
+    let mut mention_texts = request.mentioned_member_names();
+    mention_texts.extend(mentioned_member_names(
+        &message_text,
+        speaker_context.as_ref(),
+    ));
+    mention_texts = unique_member_mentions(mention_texts);
     let mut mentioned_members = Vec::new();
     for mention_text in mention_texts {
-        let person_id = resolve_person_id_by_member_name(pool, &platform, &chat_id, &mention_text)
+        let resolution = resolve_member_by_name(pool, &platform, &chat_id, &mention_text)
             .await
             .with_context(|| format!("resolve mentioned member {mention_text}"))?;
-        let context = member_safe_context(
-            pool,
-            &platform,
-            &chat_id,
-            None,
-            person_id,
-            MemberSafeIdentityRowScope::ChatContext,
-        )
-        .await?;
-        mentioned_members.push(member_context_json(&mention_text, context));
+        let context = if resolution.status.is_resolved() {
+            member_safe_context(
+                pool,
+                &platform,
+                &chat_id,
+                None,
+                resolution.person_id,
+                MemberSafeIdentityRowScope::ChatContext,
+            )
+            .await?
+        } else {
+            None
+        };
+        mentioned_members.push(member_context_json(&mention_text, resolution, context));
     }
     let training_guidance = active_training_guidance(
         pool,
@@ -405,13 +451,15 @@ async fn qintopia_answer_context_prepare(
         "success": true,
         "speaker": speaker_context_json(speaker_context, &speaker_identity),
         "mentioned_members": mentioned_members,
+        "answer_route": answer_route_json(&message_text),
         "training_guidance": training_guidance,
         "answer_rules": {
             "do_not_disclose_profile_source": true,
             "do_not_claim_monitoring": true,
             "ask_clarification_when_ambiguous": true,
             "do_not_guess_member_state": true,
-            "do_not_expose_raw_history": true
+            "do_not_expose_raw_history": true,
+            "do_not_use_vector_search_to_guess_member_identity": true
         },
         "redactions": redactions
     }))
@@ -990,17 +1038,98 @@ async fn member_safe_context(
     }))
 }
 
-async fn resolve_person_id_by_member_name(
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MemberNameResolution {
+    status: MemberNameResolutionStatus,
+    person_id: Option<uuid::Uuid>,
+    match_count: usize,
+}
+
+impl MemberNameResolution {
+    fn resolved(person_id: uuid::Uuid, match_count: usize) -> Self {
+        Self {
+            status: MemberNameResolutionStatus::Resolved,
+            person_id: Some(person_id),
+            match_count,
+        }
+    }
+
+    fn ambiguous(match_count: usize) -> Self {
+        Self {
+            status: MemberNameResolutionStatus::Ambiguous,
+            person_id: None,
+            match_count,
+        }
+    }
+
+    fn unresolved() -> Self {
+        Self {
+            status: MemberNameResolutionStatus::Unresolved,
+            person_id: None,
+            match_count: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemberNameResolutionStatus {
+    Resolved,
+    Ambiguous,
+    Unresolved,
+}
+
+impl MemberNameResolutionStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Resolved => "resolved",
+            Self::Ambiguous => "ambiguous",
+            Self::Unresolved => "unresolved",
+        }
+    }
+
+    fn is_resolved(self) -> bool {
+        self == Self::Resolved
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MemberNameCandidate {
+    person_id: uuid::Uuid,
+    rank: i32,
+}
+
+fn select_member_name_resolution(
+    candidates: &[MemberNameCandidate],
+    ambiguity_rank_gap: i32,
+) -> MemberNameResolution {
+    let Some(top) = candidates.first() else {
+        return MemberNameResolution::unresolved();
+    };
+    let close_matches = candidates
+        .iter()
+        .filter(|candidate| top.rank - candidate.rank <= ambiguity_rank_gap)
+        .map(|candidate| candidate.person_id)
+        .collect::<BTreeSet<_>>();
+    if close_matches.len() > 1 {
+        return MemberNameResolution::ambiguous(close_matches.len());
+    }
+    MemberNameResolution::resolved(top.person_id, close_matches.len())
+}
+
+async fn resolve_member_by_name(
     pool: &PgPool,
     platform: &str,
     chat_id: &str,
     member_name: &str,
-) -> Result<Option<uuid::Uuid>> {
+) -> Result<MemberNameResolution> {
     let normalized = db::normalize_display_name(member_name);
+    if normalized.is_empty() {
+        return Ok(MemberNameResolution::unresolved());
+    }
     let like_pattern = format!("%{normalized}%");
-    let row = sqlx::query(
+    let rows = sqlx::query(
         r#"
-        SELECT person_id
+        SELECT person_id, rank
         FROM (
             SELECT
                 ci.person_id,
@@ -1025,7 +1154,7 @@ async fn resolve_person_id_by_member_name(
         ) candidates
         WHERE rank > 0
         ORDER BY rank DESC, observed_at DESC
-        LIMIT 1
+        LIMIT 5
         "#,
     )
     .bind(platform)
@@ -1033,12 +1162,17 @@ async fn resolve_person_id_by_member_name(
     .bind(&normalized)
     .bind(member_name)
     .bind(&like_pattern)
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await
-    .context("resolve member context person id by member name")?;
-    row.map(|row| row.try_get("person_id"))
-        .transpose()
-        .map_err(Into::into)
+    .context("resolve member context by member name")?;
+    let mut candidates = Vec::new();
+    for row in rows {
+        candidates.push(MemberNameCandidate {
+            person_id: row.try_get("person_id")?,
+            rank: row.try_get("rank")?,
+        });
+    }
+    Ok(select_member_name_resolution(&candidates, 4))
 }
 
 async fn write_member_context_audit(
@@ -1190,7 +1324,13 @@ async fn resolve_training_target_person_id(
             .await;
     }
     if !target_member_name.is_empty() {
-        return resolve_person_id_by_member_name(pool, platform, chat_id, target_member_name).await;
+        let resolution =
+            resolve_member_by_name(pool, platform, chat_id, target_member_name).await?;
+        return Ok(if resolution.status.is_resolved() {
+            resolution.person_id
+        } else {
+            None
+        });
     }
     Ok(None)
 }
@@ -2210,6 +2350,81 @@ fn clean_text(value: &str, max_len: usize) -> String {
     value.trim().chars().take(max_len).collect()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnswerRouteKind {
+    SpeakerIdentity,
+    MemberIdentity,
+    LiveOperations,
+    AuthoritativePublicFact,
+    DiscussionHistory,
+    GeneralContext,
+}
+
+impl AnswerRouteKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::SpeakerIdentity => "speaker_identity",
+            Self::MemberIdentity => "member_identity",
+            Self::LiveOperations => "live_operations",
+            Self::AuthoritativePublicFact => "authoritative_public_fact",
+            Self::DiscussionHistory => "discussion_history",
+            Self::GeneralContext => "general_context",
+        }
+    }
+}
+
+fn classify_answer_route(message_text: &str) -> AnswerRouteKind {
+    let compact = clean_text(message_text, 1000)
+        .to_lowercase()
+        .replace(char::is_whitespace, "");
+    if compact.contains("我是谁")
+        || compact.contains("认识我吗")
+        || compact.contains("知道我是谁")
+        || compact.contains("你知道我是谁")
+    {
+        return AnswerRouteKind::SpeakerIdentity;
+    }
+    if is_member_identity_question(&compact) {
+        return AnswerRouteKind::MemberIdentity;
+    }
+    let lookup = classify_lookup_intent(message_text, "erhua answer context route");
+    if lookup.requires_live_operations {
+        AnswerRouteKind::LiveOperations
+    } else if lookup.requires_authoritative_source {
+        AnswerRouteKind::AuthoritativePublicFact
+    } else if lookup.kind == "message_discussion_history" {
+        AnswerRouteKind::DiscussionHistory
+    } else {
+        AnswerRouteKind::GeneralContext
+    }
+}
+
+fn answer_route_json(message_text: &str) -> Value {
+    let route = classify_answer_route(message_text);
+    json!({
+        "kind": route.as_str(),
+        "use_member_context": matches!(route, AnswerRouteKind::SpeakerIdentity | AnswerRouteKind::MemberIdentity),
+        "use_authoritative_knowledge": route == AnswerRouteKind::AuthoritativePublicFact,
+        "use_message_history": route == AnswerRouteKind::DiscussionHistory,
+        "requires_live_operations": route == AnswerRouteKind::LiveOperations,
+        "do_not_guess_identity": matches!(route, AnswerRouteKind::SpeakerIdentity | AnswerRouteKind::MemberIdentity)
+    })
+}
+
+fn is_member_identity_question(compact_lower: &str) -> bool {
+    if compact_lower.contains("我是谁") {
+        return false;
+    }
+    let explicit_identity_markers = ["是谁", "谁是", "什么人", "哪位", "whois", "who's"];
+    if explicit_identity_markers
+        .iter()
+        .any(|marker| compact_lower.contains(marker))
+    {
+        return true;
+    }
+    !chinese_identity_member_names(compact_lower).is_empty()
+}
+
 fn mentioned_member_names(message_text: &str, speaker: Option<&MemberSafeContext>) -> Vec<String> {
     let speaker_name = speaker
         .and_then(|item| item.display_name.as_deref())
@@ -2238,7 +2453,171 @@ fn mentioned_member_names(message_text: &str, speaker: Option<&MemberSafeContext
         }
         current.clear();
     }
+    names.extend(chinese_identity_member_names(message_text));
+    unique_member_mentions(names)
+}
+
+fn unique_member_mentions(names: Vec<String>) -> Vec<String> {
+    let mut unique = Vec::new();
+    for name in names {
+        let name = clean_text(&name, 120);
+        if name.is_empty() {
+            continue;
+        }
+        if !unique
+            .iter()
+            .any(|item: &String| item.eq_ignore_ascii_case(&name))
+        {
+            unique.push(name);
+        }
+    }
+    unique
+}
+
+fn chinese_identity_member_names(message_text: &str) -> Vec<String> {
+    let compact = clean_text(message_text, 1000).replace(char::is_whitespace, "");
+    if compact.is_empty() {
+        return Vec::new();
+    }
+    let lowered = compact.to_lowercase();
+    if lowered.contains("我是谁") {
+        return Vec::new();
+    }
+    let mut names = Vec::new();
+    for marker in ["是谁", "是誰", "什么人", "什麼人", "哪位"] {
+        if let Some(index) = compact.find(marker) {
+            collect_chinese_name_before_marker(&compact[..index], &mut names);
+        }
+    }
+    for marker in ["谁是", "誰是", "认识", "知道"] {
+        let mut remaining = compact.as_str();
+        while let Some(index) = remaining.find(marker) {
+            let after = &remaining[index + marker.len()..];
+            collect_chinese_name_after_marker(after, &mut names);
+            remaining = after;
+        }
+    }
     names
+}
+
+fn collect_chinese_name_before_marker(prefix: &str, names: &mut Vec<String>) {
+    let candidate = prefix
+        .chars()
+        .rev()
+        .take_while(|ch| is_member_name_char(*ch))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<String>();
+    push_member_name_candidate(&candidate, names);
+}
+
+fn collect_chinese_name_after_marker(suffix: &str, names: &mut Vec<String>) {
+    let candidate = suffix
+        .chars()
+        .take_while(|ch| is_member_name_char(*ch))
+        .collect::<String>();
+    push_member_name_candidate(&candidate, names);
+}
+
+fn push_member_name_candidate(candidate: &str, names: &mut Vec<String>) {
+    let candidate = clean_member_name_candidate(candidate)
+        .trim_matches(|ch: char| {
+            matches!(
+                ch,
+                '@' | ':' | '：' | ',' | '，' | '?' | '？' | '。' | '！' | '!' | '"' | '\''
+            )
+        })
+        .to_string();
+    let count = candidate.chars().count();
+    if (2..=8).contains(&count)
+        && !is_member_name_stopword(&candidate)
+        && !names.iter().any(|item| item == &candidate)
+    {
+        names.push(candidate);
+    }
+}
+
+fn clean_member_name_candidate(candidate: &str) -> String {
+    let mut candidate = candidate
+        .trim_matches(|ch: char| {
+            matches!(
+                ch,
+                '@' | ':' | '：' | ',' | '，' | '?' | '？' | '。' | '！' | '!' | '"' | '\''
+            )
+        })
+        .to_string();
+    for prefix in ["你知道", "知道", "认识", "請問", "请问", "那个", "那個"] {
+        if candidate.starts_with(prefix) {
+            candidate = candidate.chars().skip(prefix.chars().count()).collect();
+        }
+    }
+    loop {
+        let Some(last) = candidate.chars().last() else {
+            break;
+        };
+        if matches!(
+            last,
+            '吗' | '嗎' | '么' | '嘛' | '呀' | '啊' | '呢' | '吧' | '不'
+        ) {
+            candidate.pop();
+        } else {
+            break;
+        }
+    }
+    candidate
+}
+
+fn is_member_name_char(ch: char) -> bool {
+    ch.is_alphanumeric()
+        || ch == '_'
+        || ('\u{4e00}'..='\u{9fff}').contains(&ch)
+        || ('\u{3400}'..='\u{4dbf}').contains(&ch)
+}
+
+fn is_member_name_stopword(candidate: &str) -> bool {
+    let lowered = candidate.to_lowercase();
+    let non_member_terms = [
+        "wifi",
+        "wi-fi",
+        "密码",
+        "電話",
+        "电话",
+        "手机号",
+        "地址",
+        "位置",
+        "订餐",
+        "訂餐",
+        "外卖",
+        "外賣",
+        "无人机",
+        "無人機",
+        "空房",
+        "房态",
+        "房態",
+    ];
+    if non_member_terms.iter().any(|term| lowered.contains(term)) {
+        return true;
+    }
+    matches!(
+        candidate,
+        "二花"
+            | "本喵"
+            | "你"
+            | "你们"
+            | "我們"
+            | "我们"
+            | "大家"
+            | "有人"
+            | "谁"
+            | "誰"
+            | "什么"
+            | "什麼"
+            | "哪位"
+            | "这个人"
+            | "這個人"
+            | "一个人"
+    )
 }
 
 fn speaker_context_json(
@@ -2263,18 +2642,24 @@ fn speaker_context_json(
     })
 }
 
-fn member_context_json(mention_text: &str, context: Option<MemberSafeContext>) -> Value {
+fn member_context_json(
+    mention_text: &str,
+    resolution: MemberNameResolution,
+    context: Option<MemberSafeContext>,
+) -> Value {
     let Some(context) = context else {
         return json!({
             "mention_text": mention_text,
             "resolved": false,
-            "resolution_status": "unresolved"
+            "resolution_status": resolution.status.as_str(),
+            "match_count": resolution.match_count
         });
     };
     json!({
         "mention_text": mention_text,
         "resolved": context.person_id.is_some(),
-        "resolution_status": "resolved",
+        "resolution_status": resolution.status.as_str(),
+        "match_count": resolution.match_count,
         "display_name": context.display_name,
         "person_id": context.person_id,
         "safe_summary": context.safe_summary,
@@ -2361,7 +2746,19 @@ struct AnswerContextPrepareRequest {
     #[serde(default)]
     message_text: String,
     #[serde(default)]
+    mentioned_member_names: Vec<String>,
+    #[serde(default)]
     purpose: String,
+}
+
+impl AnswerContextPrepareRequest {
+    fn mentioned_member_names(&self) -> Vec<String> {
+        self.mentioned_member_names
+            .iter()
+            .map(|name| clean_text(name, 120))
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2401,13 +2798,15 @@ struct Location {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_lookup_intent, classify_training_note, disclosure_hits, is_erhua_trainer,
-        knowledge_excerpt, parse_allowed_callers, qintopia_gis_location_lookup,
+        classify_answer_route, classify_lookup_intent, classify_training_note, disclosure_hits,
+        is_erhua_trainer, knowledge_excerpt, parse_allowed_callers, qintopia_gis_location_lookup,
         sanitize_training_summary, select_answer_context_identity_candidate,
-        select_member_safe_identity_candidate, speaker_context_json, tool_definitions,
-        training_source_kind, validate_context_caller, AnswerContextIdentityResolution,
-        ChannelIdentityCandidate, ContextConfig, GisLocationLookupRequest, IdentityResolutionScope,
-        MemberSafeContext, MemberSafeIdentityRowScope, TrainingSourceKind,
+        select_member_name_resolution, select_member_safe_identity_candidate, speaker_context_json,
+        tool_definitions, training_source_kind, validate_context_caller,
+        AnswerContextIdentityResolution, AnswerRouteKind, ChannelIdentityCandidate, ContextConfig,
+        GisLocationLookupRequest, IdentityResolutionScope, MemberNameCandidate,
+        MemberNameResolutionStatus, MemberSafeContext, MemberSafeIdentityRowScope,
+        TrainingSourceKind,
     };
     use crate::message_search::SearchConfig;
     use chrono::{TimeZone, Utc};
@@ -2828,6 +3227,18 @@ mod tests {
     }
 
     #[test]
+    fn mentioned_member_names_extracts_chinese_identity_question() {
+        let names = super::mentioned_member_names("小乔是谁你知道吗", None);
+        assert_eq!(names, vec!["小乔"]);
+    }
+
+    #[test]
+    fn mentioned_member_names_extracts_chinese_name_after_question_marker() {
+        let names = super::mentioned_member_names("谁是小乔呀", None);
+        assert_eq!(names, vec!["小乔"]);
+    }
+
+    #[test]
     fn mentioned_member_names_ignores_speaker_name() {
         let speaker = MemberSafeContext {
             person_id: None,
@@ -2845,6 +3256,49 @@ mod tests {
         let names = super::mentioned_member_names("Cici 我是谁", Some(&speaker));
 
         assert!(names.is_empty());
+    }
+
+    #[test]
+    fn answer_route_separates_identity_from_public_knowledge() {
+        assert_eq!(
+            classify_answer_route("我是谁"),
+            AnswerRouteKind::SpeakerIdentity
+        );
+        assert_eq!(
+            classify_answer_route("小乔是谁你知道吗"),
+            AnswerRouteKind::MemberIdentity
+        );
+        assert_eq!(
+            classify_answer_route("你知道 WiFi 密码吗"),
+            AnswerRouteKind::AuthoritativePublicFact
+        );
+        assert_eq!(
+            classify_answer_route("还有空房吗"),
+            AnswerRouteKind::LiveOperations
+        );
+    }
+
+    #[test]
+    fn member_name_resolution_reports_ambiguous_close_matches() {
+        let person_1 = Uuid::parse_str("00000000-0000-0000-0000-000000000071").unwrap();
+        let person_2 = Uuid::parse_str("00000000-0000-0000-0000-000000000072").unwrap();
+        let resolution = select_member_name_resolution(
+            &[
+                MemberNameCandidate {
+                    person_id: person_1,
+                    rank: 90,
+                },
+                MemberNameCandidate {
+                    person_id: person_2,
+                    rank: 88,
+                },
+            ],
+            4,
+        );
+
+        assert_eq!(resolution.status, MemberNameResolutionStatus::Ambiguous);
+        assert_eq!(resolution.person_id, None);
+        assert_eq!(resolution.match_count, 2);
     }
 
     #[test]

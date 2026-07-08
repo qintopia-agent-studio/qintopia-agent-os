@@ -59,8 +59,9 @@ Each acceptance test should include:
 - Input: a member asks Erhua who another member is, using a display name, Chinese alias,
   or channel mention such as "小乔是谁".
 - Expected output: Erhua uses safe member context before knowledge lookup; if one member
-  resolves, it returns only Public-safe or reply-safe context; if multiple members match,
-  it asks a clarifying question; if no member resolves, it does not invent an identity.
+  resolves, it returns only Public-safe or reply-safe context; if multiple members
+  match, it asks a clarifying question; if no member resolves, it does not invent an
+  identity.
 - Required records: `AuditLog` for each member-context read and ambiguity metadata when
   applicable.
 - Approval: required before sharing sensitive, internal-only, or conflict-related member

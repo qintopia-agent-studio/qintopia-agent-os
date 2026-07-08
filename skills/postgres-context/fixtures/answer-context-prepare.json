@@ -6,18 +6,35 @@
     "platform": "qiwe",
     "chat_id": "room_example",
     "sender_id": "user_example",
-    "message_text": "@二花 Cici 今天怎么不说话了",
+    "message_text": "@二花 小乔是谁",
+    "mentioned_member_names": ["小乔"],
     "purpose": "prepare safe answer context before replying"
   },
   "expected_contract": {
     "writes_audit": "qintopia_identity.member_context_audit",
-    "may_return": ["speaker", "mentioned_members", "training_guidance", "answer_rules"],
+    "may_return": [
+      "speaker",
+      "mentioned_members",
+      "answer_route",
+      "training_guidance",
+      "answer_rules"
+    ],
+    "mentioned_members": ["resolved", "ambiguous", "unresolved"],
+    "answer_route": [
+      "speaker_identity",
+      "member_identity",
+      "authoritative_public_fact",
+      "discussion_history",
+      "live_operations",
+      "general_context"
+    ],
     "answer_rules": [
       "do_not_disclose_profile_source",
       "do_not_claim_monitoring",
       "ask_clarification_when_ambiguous",
       "do_not_guess_member_state",
-      "do_not_expose_raw_history"
+      "do_not_expose_raw_history",
+      "do_not_use_vector_search_to_guess_member_identity"
     ],
     "must_not_return": [
       "raw_messages",
