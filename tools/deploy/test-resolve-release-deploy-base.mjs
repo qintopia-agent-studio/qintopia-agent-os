@@ -15,14 +15,24 @@ const writeJson = (name, value) => {
   return filePath;
 };
 
-const runGit = (args) =>
+const fixtureRepo = path.join(tmpRoot, "repo");
+
+const runGit = (args, cwd = fixtureRepo) =>
   execFileSync("git", args, {
-    cwd: repoRoot,
+    cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 
 const tagCommit = (tag) => runGit(["rev-list", "-n", "1", `${tag}^{commit}`]);
+
+const createTaggedCommit = (tag, content) => {
+  fs.writeFileSync(path.join(fixtureRepo, "file.txt"), `${content}\n`, "utf8");
+  runGit(["add", "file.txt"]);
+  runGit(["commit", "-m", `commit ${tag}`]);
+  runGit(["tag", tag]);
+  return tagCommit(tag);
+};
 
 const runResolver = (currentTag, releases, runs) => {
   const releasesFile = writeJson("releases.json", releases);
@@ -30,7 +40,7 @@ const runResolver = (currentTag, releases, runs) => {
   return spawnSync(
     "node",
     [
-      "tools/deploy/resolve-release-deploy-base.mjs",
+      path.join(repoRoot, "tools/deploy/resolve-release-deploy-base.mjs"),
       "--current-tag",
       currentTag,
       "--releases-file",
@@ -39,7 +49,7 @@ const runResolver = (currentTag, releases, runs) => {
       runsFile,
     ],
     {
-      cwd: repoRoot,
+      cwd: fixtureRepo,
       encoding: "utf8",
     }
   );
@@ -59,6 +69,15 @@ const assertSuccess = (name, currentTag, releases, runs, expectedTag) => {
 };
 
 try {
+  fs.mkdirSync(fixtureRepo, { recursive: true });
+  runGit(["init"], fixtureRepo);
+  runGit(["config", "user.email", "codex@example.invalid"]);
+  runGit(["config", "user.name", "Codex Test"]);
+
+  const v020Sha = createTaggedCommit("v0.2.0", "v0.2.0");
+  const v021Sha = createTaggedCommit("v0.2.1", "v0.2.1");
+  const v022Sha = createTaggedCommit("v0.2.2", "v0.2.2");
+
   const releases = [
     { tag_name: "v0.2.2", draft: false, prerelease: false },
     { tag_name: "v0.2.1", draft: false, prerelease: false },
@@ -71,22 +90,37 @@ try {
     releases,
     [
       {
-        display_title: "v0.2.2",
+        head_branch: "v0.2.2",
         event: "release",
         conclusion: "failure",
-        head_sha: tagCommit("v0.2.2"),
+        head_sha: v022Sha,
       },
       {
-        display_title: "v0.2.1",
+        head_branch: "v0.2.1",
         event: "release",
         conclusion: "failure",
-        head_sha: tagCommit("v0.2.1"),
+        head_sha: v021Sha,
       },
+      {
+        head_branch: "v0.2.0",
+        event: "release",
+        conclusion: "success",
+        head_sha: v020Sha,
+      },
+    ],
+    "v0.2.0"
+  );
+
+  assertSuccess(
+    "falls-back-to-display-title-for-older-run-payloads",
+    "v0.2.2",
+    releases,
+    [
       {
         display_title: "v0.2.0",
         event: "release",
         conclusion: "success",
-        head_sha: tagCommit("v0.2.0"),
+        head_sha: v020Sha,
       },
     ],
     "v0.2.0"

@@ -39,8 +39,14 @@ const isPublishedProductionRelease = (release) =>
 const workflowRuns = (runsJson) =>
   Array.isArray(runsJson) ? runsJson : (runsJson?.workflow_runs ?? []);
 
-const runTitle = (runRecord) =>
-  String(runRecord?.display_title || runRecord?.displayTitle || runRecord?.name || "");
+const runReleaseTag = (runRecord) =>
+  String(
+    runRecord?.head_branch ||
+      runRecord?.headBranch ||
+      runRecord?.display_title ||
+      runRecord?.displayTitle ||
+      ""
+  );
 
 const runHeadSha = (runRecord) =>
   String(runRecord?.head_sha || runRecord?.headSha || "");
@@ -94,7 +100,7 @@ const latestSuccessfulDeployedReleaseTag = ({
     if (!isSuccessfulReleaseDeployRun(runRecord)) {
       continue;
     }
-    const tag = runTitle(runRecord);
+    const tag = runReleaseTag(runRecord);
     if (tag === currentTag || !publishedTags.has(tag)) {
       continue;
     }
