@@ -96,7 +96,9 @@ for (const file of xiaomanSignalFixtures) {
   }
   const parsed = JSON.parse(readText(fixturePath));
   if (parsed.input?.workflow !== "workflows/xiaoman-activity-signal") {
-    addError(`${fixturePath}: input.workflow must be workflows/xiaoman-activity-signal`);
+    addError(
+      `${fixturePath}: input.workflow must be workflows/xiaoman-activity-signal`
+    );
   }
   if (parsed.input?.operation !== "signal-ingest") {
     addError(`${fixturePath}: input.operation must be signal-ingest`);
@@ -112,15 +114,23 @@ for (const file of xiaomanSignalFixtures) {
 const duplicateSignal = JSON.parse(readText("fixtures/xiaoman/duplicate-signal.json"));
 const expectedDuplicateKey = `xiaoman_activity_signal:${duplicateSignal.input.event_signal_id}`;
 if (duplicateSignal.expected?.idempotency_key !== expectedDuplicateKey) {
-  addError("fixtures/xiaoman/duplicate-signal.json: expected.idempotency_key must match event_signal_id");
+  addError(
+    "fixtures/xiaoman/duplicate-signal.json: expected.idempotency_key must match event_signal_id"
+  );
 }
 
-const missingFieldsSignal = JSON.parse(readText("fixtures/xiaoman/missing-fields-signal.json"));
+const missingFieldsSignal = JSON.parse(
+  readText("fixtures/xiaoman/missing-fields-signal.json")
+);
 if (missingFieldsSignal.expected?.action_status !== "review_needed") {
-  addError("fixtures/xiaoman/missing-fields-signal.json: expected.action_status must be review_needed");
+  addError(
+    "fixtures/xiaoman/missing-fields-signal.json: expected.action_status must be review_needed"
+  );
 }
 if (!missingFieldsSignal.expected?.missing_required_fields?.includes("signal_date")) {
-  addError("fixtures/xiaoman/missing-fields-signal.json: expected missing_required_fields must include signal_date");
+  addError(
+    "fixtures/xiaoman/missing-fields-signal.json: expected missing_required_fields must include signal_date"
+  );
 }
 
 if (errors.length > 0) {

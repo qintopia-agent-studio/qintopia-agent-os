@@ -9,18 +9,13 @@
     "activity_title": "周日共创晚餐",
     "signal_date": "2026-06-28",
     "chat_id": "fixture-community-group",
-    "source_message_ids": [
-      "22222222-2222-4222-8222-222222222222"
-    ],
+    "source_message_ids": ["22222222-2222-4222-8222-222222222222"],
     "owner_name": "小满",
     "priority": "normal",
     "location": "秦托邦共享厨房",
     "brief_summary": "周日共创晚餐需要活动运营跟进",
     "gap_summary": "缺少海报主图和报名截止时间",
-    "related_member_names": [
-      "大羽",
-      "刘珊"
-    ]
+    "related_member_names": ["大羽", "刘珊"]
   },
   "expected": {
     "idempotent_key_required": true,

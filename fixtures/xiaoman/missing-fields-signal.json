@@ -12,9 +12,7 @@
   "expected": {
     "action_status": "review_needed",
     "review_needed": true,
-    "missing_required_fields": [
-      "signal_date"
-    ],
+    "missing_required_fields": ["signal_date"],
     "external_sends": false
   }
 }
