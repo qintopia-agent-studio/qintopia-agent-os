@@ -43,6 +43,14 @@ review-needed fields, and the no-external-send boundary. `pnpm workflows:check`
 validates that static contract, and `pnpm check:runtime` runs the same fixtures through
 the sidecar smoke.
 
+The guarded Postgres apply smoke also replays a sanitized signal through
+`xiaoman-activity signal-ingest --apply`, verifies that it creates exactly one
+`xiaoman.create_activity_request` work item, and verifies that replaying the same signal
+returns the existing work item by idempotency key. The apply smoke uses a non-UUID
+`event_signal_id` unless it also seeds a matching `qintopia_agent_os.event_signals` row,
+because UUID signal ids are stored as `source_event_signal_id` and must satisfy the
+database foreign key.
+
 ## Production Boundary
 
 - This workflow can write Agent OS control-plane rows after the sidecar contract is
@@ -52,8 +60,9 @@ the sidecar smoke.
 
 ## Acceptance Scenarios
 
-- New activity signal creates or updates one activity record idempotently.
-- Duplicate signal does not create duplicate activity state.
+- New activity signal creates one `xiaoman.create_activity_request` work item through
+  the operations control plane.
+- Duplicate signal returns the existing work item by idempotency key.
 - Missing required fields produce a review-needed state.
 - Valid signal can request a visual asset workflow without publishing anything.
 

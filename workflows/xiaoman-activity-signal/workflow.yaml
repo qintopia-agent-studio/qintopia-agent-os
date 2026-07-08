@@ -31,7 +31,6 @@ tags:
   - activity
   - signal
 next_actions:
-  - Add fixture replay for activity signal creation, duplicate handling, and
-    review-needed states.
+  - Seed real event signal rows before UUID-backed signal apply smoke coverage.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.
