@@ -12,6 +12,8 @@
   "expected_contract": {
     "writes_audit": "qintopia_identity.member_context_audit",
     "may_return": [
+      "resolution_status",
+      "match_count",
       "person_id",
       "display_name",
       "identity_confidence",
@@ -20,6 +22,7 @@
       "safe_reply_hints",
       "sources_used"
     ],
+    "resolution_status": ["resolved", "ambiguous", "unresolved"],
     "must_not_return": [
       "raw_messages",
       "hidden_profile_details",

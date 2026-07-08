@@ -42,6 +42,49 @@ Each acceptance test should include:
 - Required records: `ComplaintCase`, `ServiceCase`, `FollowUpTask`.
 - Approval: required for resolution and outbound final response.
 
+### HK-004 Member Self Identity
+
+- Input: a WeCom direct-chat or group-mentioned speaker asks Erhua "我是谁" or an
+  equivalent self-identity question.
+- Expected output: when safe member context resolves the speaker, Erhua answers with a
+  safe display identity; when identity is missing or ambiguous, Erhua asks for
+  clarification and does not guess.
+- Required records: `AuditLog` for the member-context read with returned safe fields and
+  redactions.
+- Approval: not required for safe display identity; required before exposing any
+  internal-only member information.
+
+### HK-005 Mentioned Member Identity
+
+- Input: a member asks Erhua who another member is, using a display name, Chinese alias,
+  or channel mention such as "小乔是谁".
+- Expected output: Erhua uses safe member context before knowledge lookup; if one member
+  resolves, it returns only Public-safe or reply-safe context; if multiple members
+  match, it asks a clarifying question; if no member resolves, it does not invent an
+  identity.
+- Required records: `AuditLog` for each member-context read and ambiguity metadata when
+  applicable.
+- Approval: required before sharing sensitive, internal-only, or conflict-related member
+  details.
+
+### HK-006 Discussion History Versus Authority
+
+- Input: a member asks whether the group recently discussed a topic or what people said
+  about it.
+- Expected output: Erhua uses group-message evidence as discussion/history context only,
+  not as final authority for policy, member identity, live availability, or prices.
+- Required records: source evidence and risk label.
+- Approval: required before turning discussion evidence into an approved public claim.
+
+### HK-007 Useful Degradation
+
+- Input: an otherwise valid public-safe question cannot be answered because the relevant
+  source or tool is unavailable.
+- Expected output: Erhua gives a useful next step or handoff instead of exposing an
+  implementation failure such as "knowledge base unavailable".
+- Required records: missing-source or tool-failure reason and optional `FollowUpTask`.
+- Approval: required before a human owner sends a final policy or operational answer.
+
 ## Content And Promotion
 
 ### CR-001 Topic Pool From Operations Signals

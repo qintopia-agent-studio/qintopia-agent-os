@@ -30,7 +30,9 @@ from adapter import (
     QiWeAdapter,
     SendResult,
     _answer_context_from_mcp_stdout,
+    _answer_context_mcp_request,
     _member_context_channel_prompt,
+    _mentioned_member_names_from_at_list,
     _training_note_mcp_request,
     parse_qiwe_payload,
     register,
@@ -1679,6 +1681,27 @@ class QiWeParserTests(unittest.TestCase):
 
         self.assertEqual(context["mentioned_members"][0]["display_name"], "Cici（27-29止语）")
         self.assertIn("短期沟通状态", context["mentioned_members"][0]["safe_reply_hints"]["topics"])
+
+    def test_answer_context_request_passes_non_bot_at_list_names(self) -> None:
+        request = _answer_context_mcp_request(
+            chat_id="room_example",
+            sender_id="user_example",
+            message_text="@二花 @小乔 小乔是谁",
+            mentioned_member_names=_mentioned_member_names_from_at_list(
+                [
+                    {"nickname": "二花", "userId": "bot-user"},
+                    {"nickname": "小乔", "userId": "member-user"},
+                    {"nickname": "小乔", "userId": "member-user"},
+                ],
+                bot_user_id="bot-user",
+                bot_names=["二花"],
+            ),
+        )
+        lines = [json.loads(line) for line in request.splitlines() if line.strip()]
+        call = next(item for item in lines if item.get("id") == 2)
+        args = call["params"]["arguments"]
+
+        self.assertEqual(args["mentioned_member_names"], ["小乔"])
 
     def test_identity_cache_persists_and_loads_from_state_dir(self) -> None:
         class RecordingAdapter(QiWeAdapter):
