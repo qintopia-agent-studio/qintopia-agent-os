@@ -99,6 +99,21 @@
         }
       }
     },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["restart_target", "systemd_user_service"],
+      "properties": {
+        "restart_target": {
+          "type": "string",
+          "pattern": "^hermes-[a-z0-9][a-z0-9-]*$"
+        },
+        "systemd_user_service": {
+          "type": "string",
+          "pattern": "^hermes-gateway-[a-z0-9][a-z0-9-]*\\.service$"
+        }
+      }
+    },
     "dependencies": {
       "type": "array",
       "items": {

@@ -16,6 +16,9 @@ production_boundary:
   database_writes: true
   runtime_profile: true
   secrets: true
+runtime:
+  restart_target: hermes-erhua
+  systemd_user_service: hermes-gateway-erhua.service
 validation:
   commands:
     - pnpm test:qiwe

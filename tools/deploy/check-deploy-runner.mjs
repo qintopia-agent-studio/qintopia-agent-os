@@ -13,6 +13,7 @@ const errors = [];
 const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));
 const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+const readYaml = (relativePath) => YAML.parse(readText(relativePath));
 const addError = (message) => errors.push(message);
 const hasDangerousInputInterpolationInRun = (workflowText) => {
   const lines = workflowText.split("\n");
@@ -52,9 +53,12 @@ const requiredFiles = [
   "deploy/runner/smoke-release.sh",
   "deploy/runner/upload-deploy-request.sh",
   "deploy/runner/wait-deploy-result.sh",
+  "deploy/restart-target-rules.yaml",
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
   "tools/deploy/create-deploy-request.mjs",
+  "tools/deploy/resolve-restart-targets.mjs",
+  "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
 ];
@@ -190,11 +194,12 @@ if (exists(".release-please-manifest.json")) {
 
 const ajv = new Ajv2020({ allErrors: true });
 ajv.addFormat("date-time", true);
+let deployRequestSchema = null;
 if (exists("deploy/runner/deploy-request.schema.json")) {
-  const requestSchema = JSON.parse(
+  deployRequestSchema = JSON.parse(
     readText("deploy/runner/deploy-request.schema.json")
   );
-  const validateRequest = ajv.compile(requestSchema);
+  const validateRequest = ajv.compile(deployRequestSchema);
   const sampleRequest = {
     schema_version: 1,
     request_id: "deploy-20260706T000000Z-0123456789ab",
@@ -389,6 +394,10 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "Upload release sidecar artifact to Tencent COS",
     "Upload release deploy bundle to Tencent COS",
     "Wait for server deploy result",
+    "previous_release_tag",
+    "repos/${GITHUB_REPOSITORY}/releases?per_page=100",
+    "resolve-restart-targets.mjs",
+    "RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE",
     'notes_delimiter="deploy_notes_$(uuidgen',
     'echo "notes<<${notes_delimiter}"',
     "create-deploy-request.mjs",
@@ -626,6 +635,80 @@ if (waitResultText.includes("ssh ")) {
   addError("deploy/runner/wait-deploy-result.sh: must not SSH to production");
 }
 
+const restartRules = exists("deploy/restart-target-rules.yaml")
+  ? readYaml("deploy/restart-target-rules.yaml")
+  : {};
+const ruleTargets = new Set((restartRules.rules ?? []).map((rule) => rule.target));
+const allowedRuleTargets = new Set(restartRules.allowed_targets ?? []);
+const schemaTargets = new Set(
+  deployRequestSchema?.properties?.restart_targets?.items?.enum ?? []
+);
+
+for (const target of allowedRuleTargets) {
+  if (!schemaTargets.has(target)) {
+    addError(`deploy/restart-target-rules.yaml: target ${target} missing from schema`);
+  }
+  if (!ruleTargets.has(target)) {
+    addError(`deploy/restart-target-rules.yaml: target ${target} has no path rule`);
+  }
+}
+for (const target of schemaTargets) {
+  if (!allowedRuleTargets.has(target)) {
+    addError(
+      `deploy/runner/deploy-request.schema.json: target ${target} missing from restart rules`
+    );
+  }
+}
+
+const agentRegistry = exists("registry/agents.yaml")
+  ? readYaml("registry/agents.yaml")
+  : { entries: [] };
+for (const entry of agentRegistry.entries ?? []) {
+  if (entry.id === "agents/default") {
+    continue;
+  }
+  if (!entry.manifest || !exists(entry.manifest)) {
+    continue;
+  }
+  const agentManifest = readYaml(entry.manifest);
+  const target = agentManifest.runtime?.restart_target;
+  const service = agentManifest.runtime?.systemd_user_service;
+  if (!target || !service) {
+    addError(`${entry.manifest}: runtime restart target and service are required`);
+    continue;
+  }
+  if (!schemaTargets.has(target)) {
+    addError(`${entry.manifest}: runtime.restart_target ${target} missing from schema`);
+  }
+  if (!allowedRuleTargets.has(target) || !ruleTargets.has(target)) {
+    addError(
+      `${entry.manifest}: runtime.restart_target ${target} missing from restart rules`
+    );
+  }
+  if (!smokeText.includes(`${target})`)) {
+    addError(`deploy/runner/smoke-release.sh: missing case for ${target}`);
+  }
+  if (!smokeText.includes(service)) {
+    addError(`deploy/runner/smoke-release.sh: missing service ${service}`);
+  }
+}
+
+const resolverText = exists("tools/deploy/resolve-restart-targets.mjs")
+  ? readText("tools/deploy/resolve-restart-targets.mjs")
+  : "";
+for (const fragment of [
+  "deploy/restart-target-rules.yaml",
+  "RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE",
+  "Restart Impact",
+  "unmatched production-adjacent",
+  "latestPreviousReleaseTag",
+  "--github-output",
+]) {
+  if (!resolverText.includes(fragment)) {
+    addError(`tools/deploy/resolve-restart-targets.mjs: missing ${fragment}`);
+  }
+}
+
 for (const script of requiredFiles.filter((file) =>
   file.startsWith("deploy/runner/")
 )) {
@@ -663,6 +746,9 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/wait-deploy-result.sh"], {
     cwd: repoRoot,
   });
+  execFileSync("node", ["tools/deploy/test-resolve-restart-targets.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync("node", ["tools/deploy/test-deploy-runner-poller.mjs"], {
     cwd: repoRoot,
   });
@@ -687,6 +773,9 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/runner/qintopia-agent-os-deploy-runner",
     "deploy/runner/poll-deploy-requests.sh",
     "deploy/runner/deploy-request.schema.json",
+    "deploy/runner/wait-deploy-result.sh",
+    "deploy/restart-target-rules.yaml",
+    "tools/deploy/resolve-restart-targets.mjs",
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
     "deploy/sidecar/scripts/install-coscli.sh",
   ]) {

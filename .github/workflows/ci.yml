@@ -27,6 +27,8 @@ jobs:
       full-check: ${{ steps.detect.outputs.full-check }}
       changed-files: ${{ steps.detect.outputs.changed-files }}
       release-please-pr: ${{ steps.detect.outputs.release-please-pr }}
+      base-sha: ${{ steps.detect.outputs.base-sha }}
+      head-sha: ${{ steps.detect.outputs.head-sha }}
 
     steps:
       - name: Checkout
@@ -84,6 +86,8 @@ jobs:
             echo "EOF"
             echo "full-check=${full_check}"
             echo "release-please-pr=${release_please_pr}"
+            echo "base-sha=${base_sha}"
+            echo "head-sha=${head_sha}"
           } >> "$GITHUB_OUTPUT"
 
           printf 'full-check=%s\n' "$full_check"
@@ -119,6 +123,38 @@ jobs:
       - name: Install dependencies
         if: ${{ needs.changes.outputs.release-please-pr != 'true' }}
         run: pnpm install --frozen-lockfile
+
+      - name: Fetch restart preview commits
+        if:
+          ${{ github.event_name == 'pull_request' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
+        shell: bash
+        env:
+          BASE_SHA: ${{ needs.changes.outputs.base-sha }}
+          HEAD_SHA: ${{ needs.changes.outputs.head-sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          base_sha="$BASE_SHA"
+          head_sha="$HEAD_SHA"
+          head_repository="$HEAD_REPOSITORY"
+          git fetch --no-tags --depth=1 origin "$base_sha" || true
+          if [[ -n "$head_repository" && "$head_repository" != "$GITHUB_REPOSITORY" ]]; then
+            git fetch --no-tags --depth=1 "https://github.com/${head_repository}.git" "$head_sha" || true
+          else
+            git fetch --no-tags --depth=1 origin "$head_sha" || true
+          fi
+          git cat-file -e "${base_sha}^{commit}"
+          git cat-file -e "${head_sha}^{commit}"
+
+      - name: Restart impact preview
+        if:
+          ${{ github.event_name == 'pull_request' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
+        run: >-
+          node tools/deploy/resolve-restart-targets.mjs --base-ref "${{
+          needs.changes.outputs.base-sha }}" --head-ref "${{
+          needs.changes.outputs.head-sha }}" --mode preview
 
       - name: Light check
         if: ${{ needs.changes.outputs.release-please-pr != 'true' }}

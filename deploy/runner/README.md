@@ -83,6 +83,33 @@ Rollback result records must distinguish rollback success from rollback failure.
 failed rollback is recorded as deployment `failed` with `rollback.status: failed`, not
 as `rolled_back`.
 
+## Restart Target Resolution
+
+Release deploys should not restart every Agent by default. GitHub resolves restart
+targets from the final Release diff:
+
+```text
+previous published Release tag..current Release tag
+  -> deploy/restart-target-rules.yaml
+  -> tools/deploy/resolve-restart-targets.mjs
+  -> deploy request restart_targets
+```
+
+PR checks may show a restart impact preview, but the Release workflow must recompute the
+target list from the final tags. PR output is advisory only.
+
+The resolver must fail closed for production-adjacent files that are not covered by a
+rule. This prevents a new Agent, skill, workflow, MCP adapter, runtime template, or
+deploy script from shipping without an explicit restart decision.
+
+`RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE` may replace the resolved list only for
+operator emergencies. Overrides must still use the deploy request schema allowlist and
+must be visible in the workflow summary.
+
+New Agents must declare their deploy target in `agents/<agent>/agent.yaml`, then add the
+matching deploy schema, smoke script, and restart-rule entries in the same PR. A new
+profile package without a restart target is incomplete.
+
 ## Server Requirements
 
 The target server currently has:
