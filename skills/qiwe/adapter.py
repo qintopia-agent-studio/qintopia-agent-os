@@ -1077,7 +1077,19 @@ def _answer_context_mcp_request(
     chat_id: str,
     sender_id: str,
     message_text: str,
+    mentioned_member_names: Optional[Iterable[str]] = None,
 ) -> str:
+    arguments = {
+        "caller_profile": "erhua",
+        "platform": "qiwe",
+        "chat_id": chat_id,
+        "sender_id": sender_id,
+        "message_text": message_text,
+        "purpose": "prepare QiWe reply context",
+    }
+    names = _dedupe_texts(mentioned_member_names or [])
+    if names:
+        arguments["mentioned_member_names"] = names
     payloads = [
         {
             "jsonrpc": "2.0",
@@ -1096,18 +1108,31 @@ def _answer_context_mcp_request(
             "method": "tools/call",
             "params": {
                 "name": "qintopia_answer_context_prepare",
-                "arguments": {
-                    "caller_profile": "erhua",
-                    "platform": "qiwe",
-                    "chat_id": chat_id,
-                    "sender_id": sender_id,
-                    "message_text": message_text,
-                    "purpose": "prepare QiWe reply context",
-                },
+                "arguments": arguments,
             },
         },
     ]
     return "\n".join(json.dumps(item, ensure_ascii=False) for item in payloads) + "\n"
+
+
+def _mentioned_member_names_from_at_list(
+    at_list: Iterable[Dict[str, Any]],
+    *,
+    bot_user_id: str = "",
+    bot_names: Iterable[str] = (),
+) -> List[str]:
+    bot_name_set = set(_dedupe_texts(bot_names))
+    names: List[str] = []
+    for item in at_list or []:
+        if not isinstance(item, dict):
+            continue
+        if bot_user_id and _text(item.get("userId")) == _text(bot_user_id):
+            continue
+        name = _display_text(item.get("nickname") or item.get("displayName") or item.get("name"))
+        if not name or name in bot_name_set:
+            continue
+        names.append(name)
+    return _dedupe_texts(names)
 
 
 def _training_note_mcp_request(
@@ -2011,6 +2036,11 @@ class QiWeAdapter(BasePlatformAdapter):
                 chat_id=parsed.chat_id,
                 sender_id=parsed.sender_id,
                 message_text=_text(parsed.text)[:1000],
+                mentioned_member_names=_mentioned_member_names_from_at_list(
+                    parsed.at_list,
+                    bot_user_id=self.qiwe.bot_user_id,
+                    bot_names=self.qiwe.bot_names,
+                ),
             )
             stdout, stderr = await asyncio.wait_for(process.communicate(request.encode("utf-8")), timeout=timeout)
         except asyncio.TimeoutError:
