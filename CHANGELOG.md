@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.2](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.1...v0.2.2) (2026-07-08)
+
+
+### Documentation
+
+* update readme ([a82d4d3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a82d4d352196ef8262484eff6e1709486e67a417))
+* update readme ([#38](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/38)) ([dbd418d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/dbd418d027443027e5e862d2bd7375cf5adf8c18))
+
 ## [0.2.1](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.0...v0.2.1) (2026-07-08)
 
 
