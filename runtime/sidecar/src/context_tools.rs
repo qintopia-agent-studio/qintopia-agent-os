@@ -411,6 +411,16 @@ async fn qintopia_answer_context_prepare(
         } else {
             None
         };
+        write_mentioned_member_context_audit(
+            pool,
+            &caller,
+            &platform,
+            &chat_id,
+            &purpose,
+            &mention_text,
+            &resolution,
+        )
+        .await?;
         mentioned_members.push(member_context_json(&mention_text, resolution, context));
     }
     let training_guidance = active_training_guidance(
@@ -1206,6 +1216,73 @@ async fn write_member_context_audit(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+async fn write_mentioned_member_context_audit(
+    pool: &PgPool,
+    caller: &str,
+    platform: &str,
+    chat_id: &str,
+    purpose: &str,
+    mention_text: &str,
+    resolution: &MemberNameResolution,
+) -> Result<()> {
+    let fields_returned = if resolution.status.is_resolved() {
+        json!([
+            "mention_text",
+            "person_id",
+            "display_name",
+            "identity_confidence",
+            "safe_summary",
+            "safe_reply_hints",
+            "communication_style"
+        ])
+    } else {
+        json!(["mention_text", "resolution_status", "match_count"])
+    };
+    let redactions = if resolution.status == MemberNameResolutionStatus::Ambiguous {
+        json!([
+            "raw_messages",
+            "hidden_profile_details",
+            "sensitive_facts",
+            "member_ambiguous"
+        ])
+    } else if resolution.status == MemberNameResolutionStatus::Unresolved {
+        json!([
+            "raw_messages",
+            "hidden_profile_details",
+            "sensitive_facts",
+            "member_not_resolved"
+        ])
+    } else {
+        json!([
+            "raw_messages",
+            "hidden_profile_details",
+            "sensitive_facts",
+            "internal_labels",
+            "daily_digest_full_text"
+        ])
+    };
+    let audit_purpose = format!(
+        "{}; mentioned_member={}; resolution_status={}; match_count={}",
+        clean_text(purpose, 360),
+        clean_text(mention_text, 80),
+        resolution.status.as_str(),
+        resolution.match_count
+    );
+    write_member_context_audit(
+        pool,
+        caller,
+        platform,
+        "",
+        chat_id,
+        &audit_purpose,
+        resolution.person_id,
+        fields_returned,
+        redactions,
+        "qintopia_answer_context_prepare.mentioned_member",
+    )
+    .await
 }
 
 async fn active_training_guidance(
