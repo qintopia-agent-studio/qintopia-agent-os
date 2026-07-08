@@ -407,6 +407,7 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "Wait for server deploy result",
     "previous_release_tag",
     "repos/${GITHUB_REPOSITORY}/releases?per_page=100",
+    "gh api --paginate --slurp",
     "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100",
     "collect-release-deploy-results.mjs",
     "deploy-results.json",

@@ -3,6 +3,7 @@
 import {
   attachWorkflowRunMetadata,
   extractDeployResultsFromLog,
+  workflowRuns,
 } from "./collect-release-deploy-results.mjs";
 
 const log = [
@@ -43,6 +44,14 @@ if (withMetadata[0].workflow_run?.id !== "123") {
 }
 if (withMetadata[0].workflow_run?.run_started_at !== "2026-07-08T05:21:00Z") {
   throw new Error("workflow run timestamp metadata was not attached");
+}
+
+const paginatedRuns = workflowRuns([
+  { workflow_runs: [{ id: 1 }, { id: 2 }] },
+  { workflow_runs: [{ id: 3 }] },
+]);
+if (paginatedRuns.map((run) => run.id).join(",") !== "1,2,3") {
+  throw new Error("paginated workflow runs were not flattened");
 }
 
 console.log("Release deploy result log collector tests passed.");

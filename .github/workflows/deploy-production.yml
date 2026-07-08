@@ -316,7 +316,8 @@ jobs:
             deploy_results_file="dist/deploy-resolution/deploy-results.json"
             gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
               > "$releases_file"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100" \
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100" \
               > "$workflow_runs_file"
             node tools/deploy/collect-release-deploy-results.mjs \
               --workflow-runs-file "$workflow_runs_file" \

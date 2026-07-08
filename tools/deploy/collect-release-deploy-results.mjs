@@ -15,8 +15,14 @@ const argValue = (name, fallback = "") => {
 const readJsonFile = (filePath) =>
   JSON.parse(fs.readFileSync(path.resolve(repoRoot, filePath), "utf8"));
 
-const workflowRuns = (runsJson) =>
-  Array.isArray(runsJson) ? runsJson : (runsJson?.workflow_runs ?? []);
+export const workflowRuns = (runsJson) => {
+  if (Array.isArray(runsJson)) {
+    return runsJson.flatMap((page) =>
+      Array.isArray(page?.workflow_runs) ? page.workflow_runs : [page]
+    );
+  }
+  return runsJson?.workflow_runs ?? [];
+};
 
 const runId = (runRecord) => String(runRecord?.id || runRecord?.databaseId || "");
 
