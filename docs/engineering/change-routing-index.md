@@ -90,7 +90,11 @@ Agent design and owner-approved registry entry.
 
 Release deploys derive restart targets from `deploy/restart-target-rules.yaml`, not from
 PR body text. PR checks may preview impact, but production deploy requests are computed
-again from the final Release tags.
+again from each restart target's latest server deploy result with status `succeeded` to
+the current Release tag. A successful GitHub workflow alone may be a dry-run, and a
+successful deploy may have restarted only some targets. When workflow logs cannot prove
+a target-specific live baseline, the workflow falls back to the previous published
+Release tag for that target.
 
 When adding an Agent, add `runtime.restart_target` and `runtime.systemd_user_service` to
 `agents/<agent>/agent.yaml`, then add the matching deploy request schema entry, smoke

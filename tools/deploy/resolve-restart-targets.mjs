@@ -303,4 +303,4 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   }
 }
 
-export { globToRegex, matchesAny, resolveTargets };
+export { globToRegex, matchesAny, readRules, resolveTargets, writeSummary };

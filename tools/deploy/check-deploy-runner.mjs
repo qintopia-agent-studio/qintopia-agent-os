@@ -57,7 +57,13 @@ const requiredFiles = [
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
   "tools/deploy/create-deploy-request.mjs",
+  "tools/deploy/collect-release-deploy-results.mjs",
+  "tools/deploy/resolve-release-deploy-base.mjs",
+  "tools/deploy/resolve-release-restart-targets.mjs",
   "tools/deploy/resolve-restart-targets.mjs",
+  "tools/deploy/test-collect-release-deploy-results.mjs",
+  "tools/deploy/test-resolve-release-deploy-base.mjs",
+  "tools/deploy/test-resolve-release-restart-targets.mjs",
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
@@ -289,6 +295,11 @@ if (exists(".github/workflows/deploy-production.yml")) {
       ".github/workflows/deploy-production.yml: request-deploy must keep contents permission read-only"
     );
   }
+  if (job?.permissions?.actions !== "read") {
+    addError(
+      ".github/workflows/deploy-production.yml: request-deploy must be able to read deploy workflow run logs"
+    );
+  }
   const buildAssetsJob = workflow?.jobs?.["build-release-artifacts"];
   if (!buildAssetsJob) {
     addError(
@@ -396,7 +407,12 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "Wait for server deploy result",
     "previous_release_tag",
     "repos/${GITHUB_REPOSITORY}/releases?per_page=100",
-    "resolve-restart-targets.mjs",
+    "gh api --paginate --slurp",
+    "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100",
+    "collect-release-deploy-results.mjs",
+    "deploy-results.json",
+    "resolve-release-restart-targets.mjs",
+    "--deploy-results-file",
     "RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE",
     'notes_delimiter="deploy_notes_$(uuidgen',
     'echo "notes<<${notes_delimiter}"',
@@ -749,6 +765,15 @@ try {
   execFileSync("node", ["tools/deploy/test-resolve-restart-targets.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync("node", ["tools/deploy/test-collect-release-deploy-results.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-resolve-release-restart-targets.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-resolve-release-deploy-base.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync("node", ["tools/deploy/test-deploy-runner-poller.mjs"], {
     cwd: repoRoot,
   });
@@ -775,6 +800,9 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/runner/deploy-request.schema.json",
     "deploy/runner/wait-deploy-result.sh",
     "deploy/restart-target-rules.yaml",
+    "tools/deploy/collect-release-deploy-results.mjs",
+    "tools/deploy/resolve-release-deploy-base.mjs",
+    "tools/deploy/resolve-release-restart-targets.mjs",
     "tools/deploy/resolve-restart-targets.mjs",
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
     "deploy/sidecar/scripts/install-coscli.sh",
