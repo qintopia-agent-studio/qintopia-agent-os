@@ -36,6 +36,8 @@ env:
   TENCENT_COS_PREFIX: ${{ vars.TENCENT_COS_PREFIX || 'qintopia-agent-os' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
   TENCENT_COS_UPLOAD_ENABLED: ${{ vars.TENCENT_COS_UPLOAD_ENABLED || 'false' }}
+  QINTOPIA_ARTIFACT_KEEP_COUNT: ${{ vars.QINTOPIA_ARTIFACT_KEEP_COUNT || '10' }}
+  QINTOPIA_COS_ARTIFACT_KEEP_COUNT: ${{ vars.QINTOPIA_COS_ARTIFACT_KEEP_COUNT || '10' }}
 
 jobs:
   publish-plan:
@@ -178,7 +180,7 @@ jobs:
           env.TENCENT_COS_SECRET_KEY != '' }}
         run: >-
           deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-name
-          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+          qintopia-message-sidecar-linux-x86_64-gnu
         env:
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
@@ -190,7 +192,7 @@ jobs:
       - name: Prune old sidecar artifacts
         run: >-
           node tools/deploy/prune-github-artifacts.mjs --artifact-name
-          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+          qintopia-message-sidecar-linux-x86_64-gnu
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
@@ -263,7 +265,7 @@ jobs:
           env.TENCENT_COS_SECRET_KEY != '' }}
         run: >-
           deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-type deploy-bundle
-          --artifact-name qintopia-agent-os-deploy-bundle --keep 2
+          --artifact-name qintopia-agent-os-deploy-bundle
         env:
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
@@ -275,6 +277,6 @@ jobs:
       - name: Prune old deploy bundles
         run: >-
           node tools/deploy/prune-github-artifacts.mjs --artifact-name
-          qintopia-agent-os-deploy-bundle --keep 2
+          qintopia-agent-os-deploy-bundle
         env:
           GITHUB_TOKEN: ${{ github.token }}

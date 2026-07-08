@@ -24,13 +24,13 @@ Optional environment:
   COSCLI_TRANSFER_TIMEOUT_SECONDS   Per list/delete command timeout. Defaults to 300.
   ARTIFACT_NAME                     Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
   QINTOPIA_COS_ARTIFACT_TYPE        Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
-  QINTOPIA_COS_ARTIFACT_KEEP_COUNT  Defaults to 2.
+  QINTOPIA_COS_ARTIFACT_KEEP_COUNT  Defaults to 10.
 USAGE
 }
 
 artifact_type="${QINTOPIA_COS_ARTIFACT_TYPE:-sidecar}"
 artifact_name="${ARTIFACT_NAME:-}"
-keep_count="${QINTOPIA_COS_ARTIFACT_KEEP_COUNT:-2}"
+keep_count="${QINTOPIA_COS_ARTIFACT_KEEP_COUNT:-10}"
 dry_run=0
 
 while [[ $# -gt 0 ]]; do

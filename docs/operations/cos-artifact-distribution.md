@@ -231,12 +231,12 @@ The `sidecar-artifact` job uploads to COS only when `TENCENT_COS_UPLOAD_ENABLED=
 and both upload secrets are present. If upload is disabled, CI still builds and uploads
 the GitHub Actions artifact.
 
-After a successful COS upload, CI prunes old COS artifact directories and keeps only the
-latest two sidecar artifact SHA directories for
-`qintopia-message-sidecar-linux-x86_64-gnu` and the latest two deploy bundle SHA
-directories for `qintopia-agent-os-deploy-bundle`. The prune steps use
-`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2`, so COS retention matches the
-GitHub Actions artifact retention policy.
+After a successful COS upload, CI prunes old COS artifact directories and keeps the
+latest ten sidecar artifact SHA directories for
+`qintopia-message-sidecar-linux-x86_64-gnu` and the latest ten deploy bundle SHA
+directories for `qintopia-agent-os-deploy-bundle` by default. The prune steps use
+`QINTOPIA_COS_ARTIFACT_KEEP_COUNT`, defaulting to `10`, so COS retention matches the
+GitHub Actions artifact retention count.
 
 ## Server Configuration
 

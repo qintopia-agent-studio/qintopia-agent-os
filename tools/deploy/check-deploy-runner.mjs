@@ -42,6 +42,7 @@ const hasDangerousInputInterpolationInRun = (workflowText) => {
 
 const requiredFiles = [
   ".github/workflows/deploy-production.yml",
+  ".github/workflows/rollback-production.yml",
   "deploy/runner/README.md",
   "deploy/runner/manifest.yaml",
   "deploy/runner/deploy-request.schema.json",
@@ -444,6 +445,84 @@ if (exists(".github/workflows/deploy-production.yml")) {
     addError(
       ".github/workflows/deploy-production.yml: upload step must receive COS secrets directly from production secrets"
     );
+  }
+}
+
+if (exists(".github/workflows/rollback-production.yml")) {
+  const workflow = YAML.parse(readText(".github/workflows/rollback-production.yml"));
+  const workflowText = readText(".github/workflows/rollback-production.yml");
+  const job = workflow?.jobs?.["request-rollback"];
+  const releaseTagInput = workflow?.on?.workflow_dispatch?.inputs?.release_tag;
+  const restartTargetsInput = workflow?.on?.workflow_dispatch?.inputs?.restart_targets;
+  const releaseTagOptions = releaseTagInput?.options ?? [];
+  if (releaseTagInput?.type !== "choice") {
+    addError(
+      ".github/workflows/rollback-production.yml: release_tag must use a choice input"
+    );
+  }
+  if (releaseTagOptions.length < 2) {
+    addError(
+      ".github/workflows/rollback-production.yml: release_tag must offer selectable rollback versions"
+    );
+  }
+  if (!releaseTagOptions.every((tag) => /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag))) {
+    addError(
+      ".github/workflows/rollback-production.yml: release_tag options must be semver-style vX.Y.Z tags"
+    );
+  }
+  if (restartTargetsInput?.type !== "choice") {
+    addError(
+      ".github/workflows/rollback-production.yml: restart_targets must use a choice input"
+    );
+  }
+  if (!restartTargetsInput?.options?.includes("all-hermes-and-system")) {
+    addError(
+      ".github/workflows/rollback-production.yml: restart_targets must include all-hermes-and-system"
+    );
+  }
+  if (job?.environment !== "production") {
+    addError(
+      ".github/workflows/rollback-production.yml: request-rollback must use production environment"
+    );
+  }
+  if (job?.permissions?.contents !== "read") {
+    addError(
+      ".github/workflows/rollback-production.yml: request-rollback must keep contents permission read-only"
+    );
+  }
+  if (hasDangerousInputInterpolationInRun(workflowText)) {
+    addError(
+      ".github/workflows/rollback-production.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
+    );
+  }
+  for (const forbidden of ["ssh ", "git checkout --detach", "gh release upload"]) {
+    if (workflowText.includes(forbidden)) {
+      addError(`.github/workflows/rollback-production.yml: forbidden ${forbidden}`);
+    }
+  }
+  for (const fragment of [
+    "workflow_dispatch:",
+    "type: choice",
+    "Resolve rollback target",
+    'gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}"',
+    "Rollback target must be a published non-prerelease GitHub Release.",
+    "git merge-base --is-ancestor",
+    "Validate rollback artifacts in Tencent COS",
+    "fetch-cos-artifact.sh",
+    "ROLLBACK_TARGET_SHA",
+    "DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins",
+    "DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: false",
+    "create-deploy-request.mjs",
+    "upload-deploy-request.sh",
+    "wait-deploy-result.sh",
+    "DEPLOY_REQUEST_SIGNING_KEY",
+    "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "environment: production",
+    "qintopia-agent-os-rollback-request",
+  ]) {
+    if (!workflowText.includes(fragment)) {
+      addError(`.github/workflows/rollback-production.yml: missing ${fragment}`);
+    }
   }
 }
 

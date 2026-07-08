@@ -668,7 +668,8 @@ for (const phrase of [
   "secrets.TENCENT_COS_SECRET_ID",
   "actions: write",
   "node tools/deploy/prune-github-artifacts.mjs",
-  "retention-days: 14",
+  "QINTOPIA_ARTIFACT_KEEP_COUNT",
+  "QINTOPIA_COS_ARTIFACT_KEEP_COUNT",
   "qintopia-message-sidecar-linux-x86_64-gnu",
   "dtolnay/rust-toolchain@1.75.0",
 ]) {

@@ -35,10 +35,16 @@ No GitHub Action should SSH to production. No routine release should run `git fe
 build Rust, copy source with `scp`, or edit `.hermes` live state.
 
 `workflow_dispatch` remains available as an emergency or diagnostic path, but normal
-operators should publish a GitHub Release instead of manually running Actions.
+operators should publish a GitHub Release instead of manually running deploy Actions.
 Publishing a non-prerelease GitHub Release is the production release entrypoint; the
 workflow still uses the GitHub `production` environment approval gate before it can
 write the signed deploy request.
+
+Rollback uses the separate `Rollback Production` workflow. It exposes a selectable
+published Release tag list for operators, resolves the chosen tag to a commit SHA, and
+then submits the same signed deploy request contract. GitHub Actions `choice` inputs are
+static YAML options, so adding a new rollback candidate requires updating the workflow
+option list in git.
 
 GitHub Release assets are not part of the production deploy path. COS is the artifact
 registry consumed by the server; the Release page is the operator-facing version record.
