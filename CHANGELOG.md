@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.0](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.2...v0.3.0) (2026-07-08)
+
+
+### Features
+
+* add xiaoman activity signal replay ([#42](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/42)) ([6955d41](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6955d41c1bcb78068cbc83cca76c4d1a10777929))
+
+
+### Bug Fixes
+
+* resolve deploy restarts from live release base ([#39](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/39)) ([cbb30cd](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cbb30cd8aa614ec0a4b0a16b3dc22dbf5c697625))
+
+
+### CI / Deployment
+
+* add selectable production rollback workflow ([#41](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/41)) ([aab600a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/aab600a1c77a1dbd5d5ff22d869b061c0fdb7ac4))
+
+
+### Documentation
+
+* sync current Agent OS documentation ([#43](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/43)) ([a648754](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a6487548621b2a7138a0dc3f4238f7582f01ccbc))
+
 ## [0.2.2](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.1...v0.2.2) (2026-07-08)
 
 
