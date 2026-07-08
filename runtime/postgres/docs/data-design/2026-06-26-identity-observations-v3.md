@@ -57,6 +57,18 @@ The identity worker keeps an in-process member map cache per `chat_id`, keyed by
 is a performance optimization only; durable identity facts remain in
 `channel_identities` and `channel_identity_observations`.
 
+For QiWe, `channel_identities.chat_id = ''` is reserved for a platform-level user
+identity keyed by `channel_user_id = userId`. It is materialized only by identity
+workers or bootstrap flows after the same `userId` has a single unambiguous linked
+`person_id`. Reply-context reads may use this platform identity to recognize the same
+speaker across group mentions and direct chats, but they must not scan all chat-scoped
+rows and choose the newest match.
+
+QiWe `external_userid` / `openUserId` enrichment is not part of the reply hot path. If
+enabled later, it should be fetched in batches from QiWe's `Userid转Openid` API and
+stored as metadata on the platform-level identity. Missing or failed enrichment must not
+block webhook ACKs or 二花 replies.
+
 `identity-bootstrap-persons` creates one `persons` row per unresolved
 `channel_identities.person_id`, links the identity to that person, writes a real
 nickname alias, and backfills `messages.sender_person_id`. This is intentionally

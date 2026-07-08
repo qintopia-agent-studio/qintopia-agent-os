@@ -17,6 +17,7 @@ struct BootstrapReport {
     total_channel_identities: i64,
     persons_created: i64,
     channel_identities_linked: i64,
+    platform_identities_materialized: i64,
     aliases_inserted: i64,
     messages_updated: i64,
     dry_run: bool,
@@ -66,7 +67,7 @@ async fn run_bootstrap(
     }
 
     let mut tx = pool.begin().await.context("begin person bootstrap")?;
-    let rows = sqlx::query_as::<_, (i64, i64, i64)>(
+    let rows = sqlx::query_as::<_, (i64, i64, i64, i64)>(
         r#"
         WITH candidates AS (
             SELECT id, display_name, normalized_display_name
@@ -100,7 +101,98 @@ async fn run_bootstrap(
                 updated_at = now()
             FROM created
             WHERE ci.id = created.channel_identity_id
-            RETURNING ci.id AS channel_identity_id, created.id AS person_id, ci.display_name
+            RETURNING
+                ci.id AS channel_identity_id,
+                created.id AS person_id,
+                ci.platform,
+                ci.channel_user_id,
+                ci.display_name,
+                ci.normalized_display_name,
+                ci.identity_source,
+                ci.confidence,
+                ci.first_seen_at,
+                ci.last_seen_at,
+                ci.metadata
+        ),
+        platform_identity_candidates AS (
+            SELECT platform, channel_user_id, person_id
+            FROM qintopia_identity.channel_identities
+            WHERE platform = 'qiwe'
+              AND person_id IS NOT NULL
+              AND channel_user_id IN (SELECT channel_user_id FROM linked)
+
+            UNION
+
+            SELECT platform, channel_user_id, person_id
+            FROM linked
+            WHERE platform = 'qiwe'
+        ),
+        materializable_platform_identities AS (
+            SELECT platform, channel_user_id, min(person_id::text)::uuid AS person_id
+            FROM platform_identity_candidates
+            GROUP BY platform, channel_user_id
+            HAVING count(DISTINCT person_id) = 1
+        ),
+        platform_identity_sources AS (
+            SELECT DISTINCT ON (linked.platform, linked.channel_user_id)
+                linked.*
+            FROM linked
+            JOIN materializable_platform_identities materializable
+              ON materializable.platform = linked.platform
+             AND materializable.channel_user_id = linked.channel_user_id
+             AND materializable.person_id = linked.person_id
+            WHERE linked.platform = 'qiwe'
+            ORDER BY
+                linked.platform,
+                linked.channel_user_id,
+                qintopia_identity.identity_source_rank(linked.identity_source) DESC,
+                linked.last_seen_at DESC
+        ),
+        platform_identities AS (
+            INSERT INTO qintopia_identity.channel_identities
+                (
+                    person_id,
+                    platform,
+                    channel_user_id,
+                    chat_id,
+                    display_name,
+                    normalized_display_name,
+                    identity_source,
+                    confidence,
+                    first_seen_at,
+                    last_seen_at,
+                    metadata
+                )
+            SELECT
+                source.person_id,
+                source.platform,
+                source.channel_user_id,
+                '',
+                source.display_name,
+                source.normalized_display_name,
+                source.identity_source,
+                source.confidence,
+                source.first_seen_at,
+                source.last_seen_at,
+                source.metadata
+                    || jsonb_build_object(
+                        'identity_scope', 'qiwe_platform_user',
+                        'materialized_from_channel_identity_id', source.channel_identity_id::text,
+                        'materialized_at', now()
+                    )
+            FROM platform_identity_sources source
+            ON CONFLICT (platform, channel_user_id, chat_id) DO UPDATE SET
+                person_id = EXCLUDED.person_id,
+                display_name = EXCLUDED.display_name,
+                normalized_display_name = EXCLUDED.normalized_display_name,
+                identity_source = EXCLUDED.identity_source,
+                confidence = GREATEST(qintopia_identity.channel_identities.confidence, EXCLUDED.confidence),
+                last_seen_at = GREATEST(qintopia_identity.channel_identities.last_seen_at, EXCLUDED.last_seen_at),
+                metadata = qintopia_identity.channel_identities.metadata || EXCLUDED.metadata,
+                updated_at = now()
+            WHERE qintopia_identity.channel_identities.person_id IS NULL
+               OR qintopia_identity.channel_identities.person_id = EXCLUDED.person_id
+            RETURNING id
         ),
         aliases AS (
             INSERT INTO qintopia_identity.person_aliases
@@ -132,6 +224,7 @@ async fn run_bootstrap(
         )
         SELECT
             (SELECT count(*)::bigint FROM linked) AS linked_count,
+            (SELECT count(*)::bigint FROM platform_identities) AS platform_identity_count,
             (SELECT count(*)::bigint FROM aliases) AS alias_count,
             (SELECT count(*)::bigint FROM updated_messages) AS message_count
         "#,
@@ -145,7 +238,8 @@ async fn run_bootstrap(
     tx.commit().await.context("commit person bootstrap")?;
     report.persons_created = rows.0;
     report.channel_identities_linked = rows.0;
-    report.aliases_inserted = rows.1;
-    report.messages_updated = rows.2;
+    report.platform_identities_materialized = rows.1;
+    report.aliases_inserted = rows.2;
+    report.messages_updated = rows.3;
     Ok(report)
 }
