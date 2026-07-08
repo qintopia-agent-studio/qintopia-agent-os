@@ -16,7 +16,7 @@ The goal is to replace the current mixed model where some code lives in separate
 some files are copied to the server, and some runtime assets are edited directly under
 `.hermes`.
 
-11
+update readme
 
 ## Repository Map
 
