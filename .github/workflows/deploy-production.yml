@@ -309,8 +309,14 @@ jobs:
               echo "origin/master HEAD: $master_sha" >&2
               exit 2
             fi
-            releases_json="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/releases?per_page=100")"
+            mkdir -p dist/deploy-resolution
+            releases_file="dist/deploy-resolution/releases.json"
+            workflow_runs_file="dist/deploy-resolution/deploy-runs.json"
+            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              > "$releases_file"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100" \
+              > "$workflow_runs_file"
+            releases_json="$(cat "$releases_file")"
             previous_release_tag="$(printf '%s' "$releases_json" | node -e '
               const fs = require("node:fs");
               const current = process.argv[1];
@@ -340,6 +346,11 @@ jobs:
               echo "Could not resolve previous published Release tag for ${RELEASE_TAG_NAME}." >&2
               exit 2
             fi
+            deployed_base_tag="$(node tools/deploy/resolve-release-deploy-base.mjs \
+              --current-tag "$RELEASE_TAG_NAME" \
+              --releases-file "$releases_file" \
+              --workflow-runs-file "$workflow_runs_file" \
+              --summary-output dist/deploy-resolution/release-deploy-base.md)"
             release_scope="${RELEASE_DEPLOY_SCOPE:-sidecar-runtime,deploy-bundle,hermes-plugins}"
             if [[ -n "$RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE" ]]; then
               restart_targets="$RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE"
@@ -354,7 +365,7 @@ jobs:
               } >> "$GITHUB_STEP_SUMMARY"
             else
               restart_targets="$(node tools/deploy/resolve-restart-targets.mjs \
-                --base-tag "$previous_release_tag" \
+                --base-tag "$deployed_base_tag" \
                 --head-tag "$RELEASE_TAG_NAME" \
                 --mode production)"
               if [[ -z "$restart_targets" ]]; then

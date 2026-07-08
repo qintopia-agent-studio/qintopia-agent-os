@@ -111,11 +111,13 @@ Repository variables may keep non-secret COS defaults:
 After that, setting it to `false` makes publishing a normal GitHub Release generate a
 real production deploy request.
 
-Release-triggered deploys derive `restart_targets` from the diff between the previous
-published Release tag and the current Release tag. The mapping lives in
-`deploy/restart-target-rules.yaml` and is evaluated by
+Release-triggered deploys derive `restart_targets` from the diff between the latest
+successful deployed Release tag and the current Release tag. If workflow history cannot
+prove a deployed baseline, the workflow falls back to the previous published Release
+tag. The mapping lives in `deploy/restart-target-rules.yaml` and is evaluated by
+`tools/deploy/resolve-release-deploy-base.mjs` plus
 `tools/deploy/resolve-restart-targets.mjs`. PRs only show a restart impact preview; the
-production request is resolved again from the final Release diff.
+production request is resolved again from the final Release deploy base.
 
 `RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE` is only for emergency operator override. When
 set, it must contain deploy-runner allowlist targets such as `hermes-erhua` or

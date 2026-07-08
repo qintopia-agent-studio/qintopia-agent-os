@@ -39,6 +39,7 @@ const sourceFiles = [
   "deploy/restart-target-rules.yaml",
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
+  "tools/deploy/resolve-release-deploy-base.mjs",
   "tools/deploy/resolve-restart-targets.mjs",
   "docs/operations/m9-server-cutover-runbook.md",
   "docs/operations/release-current-model.md",
