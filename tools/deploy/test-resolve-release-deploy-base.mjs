@@ -34,9 +34,10 @@ const createTaggedCommit = (tag, content) => {
   return tagCommit(tag);
 };
 
-const runResolver = (currentTag, releases, runs) => {
+const runResolver = (currentTag, releases, runs, results = []) => {
   const releasesFile = writeJson("releases.json", releases);
   const runsFile = writeJson("runs.json", { workflow_runs: runs });
+  const resultsFile = writeJson("results.json", results);
   return spawnSync(
     "node",
     [
@@ -47,6 +48,8 @@ const runResolver = (currentTag, releases, runs) => {
       releasesFile,
       "--workflow-runs-file",
       runsFile,
+      "--deploy-results-file",
+      resultsFile,
     ],
     {
       cwd: fixtureRepo,
@@ -55,8 +58,8 @@ const runResolver = (currentTag, releases, runs) => {
   );
 };
 
-const assertSuccess = (name, currentTag, releases, runs, expectedTag) => {
-  const result = runResolver(currentTag, releases, runs);
+const assertSuccess = (name, currentTag, releases, runs, results, expectedTag) => {
+  const result = runResolver(currentTag, releases, runs, results);
   if (result.status !== 0) {
     throw new Error(
       `${name}: expected success, got ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
@@ -108,6 +111,7 @@ try {
         head_sha: v020Sha,
       },
     ],
+    [{ status: "succeeded", release_sha: v020Sha }],
     "v0.2.0"
   );
 
@@ -123,6 +127,7 @@ try {
         head_sha: v020Sha,
       },
     ],
+    [{ status: "succeeded", release_sha: v020Sha }],
     "v0.2.0"
   );
 
@@ -139,6 +144,7 @@ try {
         head_sha: v020Sha,
       },
     ],
+    [{ status: "succeeded", release_sha: v020Sha }],
     "v0.2.0"
   );
 
@@ -146,6 +152,48 @@ try {
     "falls-back-to-previous-published-release",
     "v0.2.2",
     releases,
+    [],
+    [],
+    "v0.2.1"
+  );
+
+  assertSuccess(
+    "does-not-treat-dry-run-result-as-deployed",
+    "v0.2.2",
+    releases,
+    [
+      {
+        head_branch: "v0.2.1",
+        event: "release",
+        conclusion: "success",
+        head_sha: v021Sha,
+      },
+      {
+        head_branch: "v0.2.0",
+        event: "release",
+        conclusion: "success",
+        head_sha: v020Sha,
+      },
+    ],
+    [
+      { status: "dry_run_succeeded", release_sha: v021Sha },
+      { status: "succeeded", release_sha: v020Sha },
+    ],
+    "v0.2.0"
+  );
+
+  assertSuccess(
+    "ignores-successful-run-without-server-result",
+    "v0.2.2",
+    releases,
+    [
+      {
+        head_branch: "v0.2.1",
+        event: "release",
+        conclusion: "success",
+        head_sha: v021Sha,
+      },
+    ],
     [],
     "v0.2.1"
   );

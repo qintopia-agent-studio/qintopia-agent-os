@@ -39,6 +39,9 @@ const isPublishedProductionRelease = (release) =>
 const workflowRuns = (runsJson) =>
   Array.isArray(runsJson) ? runsJson : (runsJson?.workflow_runs ?? []);
 
+const deployResults = (resultsJson) =>
+  Array.isArray(resultsJson) ? resultsJson : (resultsJson?.results ?? []);
+
 const runReleaseTagCandidates = (runRecord) =>
   [
     runRecord?.head_branch,
@@ -92,10 +95,17 @@ const latestSuccessfulDeployedReleaseTag = ({
   currentTag,
   releases,
   runs,
+  results,
   currentCommit,
 }) => {
   const publishedTags = new Set(
     releases.filter(isPublishedProductionRelease).map(releaseTag)
+  );
+  const succeededReleaseShas = new Set(
+    results
+      .filter((result) => result?.status === "succeeded")
+      .map((result) => String(result.release_sha || ""))
+      .filter(Boolean)
   );
 
   for (const runRecord of runs) {
@@ -111,6 +121,9 @@ const latestSuccessfulDeployedReleaseTag = ({
       try {
         tagCommit = commitForTag(tag);
       } catch {
+        continue;
+      }
+      if (!succeededReleaseShas.has(tagCommit)) {
         continue;
       }
       if (runHeadSha(runRecord) && runHeadSha(runRecord) !== tagCommit) {
@@ -164,6 +177,7 @@ const main = () => {
   const currentTag = argValue("--current-tag");
   const releasesFile = argValue("--releases-file");
   const workflowRunsFile = argValue("--workflow-runs-file");
+  const deployResultsFile = argValue("--deploy-results-file");
   const summaryOutput = argValue("--summary-output");
 
   if (!currentTag) {
@@ -175,9 +189,13 @@ const main = () => {
   if (!workflowRunsFile) {
     throw new Error("--workflow-runs-file is required");
   }
+  if (!deployResultsFile) {
+    throw new Error("--deploy-results-file is required");
+  }
 
   const releases = readJsonFile(releasesFile, []);
   const runs = workflowRuns(readJsonFile(workflowRunsFile, []));
+  const results = deployResults(readJsonFile(deployResultsFile, []));
   const currentCommit = commitForTag(currentTag);
   const previousPublishedReleaseTag = latestPreviousPublishedReleaseTag({
     currentTag,
@@ -188,6 +206,7 @@ const main = () => {
     currentTag,
     releases,
     runs,
+    results,
     currentCommit,
   });
   const selectedBaseTag = successfulDeployedReleaseTag || previousPublishedReleaseTag;

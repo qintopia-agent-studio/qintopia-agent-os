@@ -89,16 +89,19 @@ Release deploys should not restart every Agent by default. GitHub resolves resta
 targets from the final deployed Release diff:
 
 ```text
-latest successful deployed Release tag..current Release tag
+each target's latest server deploy result status succeeded..current Release tag
   -> deploy/restart-target-rules.yaml
   -> tools/deploy/resolve-restart-targets.mjs
   -> deploy request restart_targets
 ```
 
-If no successful deployed Release can be identified from workflow history, the workflow
-falls back to the previous published Release tag. This keeps first-run and
-history-pruned cases deployable, while avoiding missed restarts after a published
-Release deploy failed.
+The resolver must use the server deploy result emitted by `wait-deploy-result.sh`; a
+successful GitHub workflow alone may be a dry-run, and a successful deploy may restart
+only some targets. If no target-specific successful deployed Release can be identified
+from workflow logs, the workflow falls back to the previous published Release tag for
+that target. This keeps first-run and history-pruned cases deployable, while avoiding
+missed restarts after a published Release deploy failed, only dry-ran, or skipped a
+target.
 
 PR checks may show a restart impact preview, but the Release workflow must recompute the
 target list from the final tags. PR output is advisory only.
