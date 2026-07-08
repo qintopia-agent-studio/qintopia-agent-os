@@ -39,14 +39,16 @@ const isPublishedProductionRelease = (release) =>
 const workflowRuns = (runsJson) =>
   Array.isArray(runsJson) ? runsJson : (runsJson?.workflow_runs ?? []);
 
-const runReleaseTag = (runRecord) =>
-  String(
-    runRecord?.head_branch ||
-      runRecord?.headBranch ||
-      runRecord?.display_title ||
-      runRecord?.displayTitle ||
-      ""
-  );
+const runReleaseTagCandidates = (runRecord) =>
+  [
+    runRecord?.head_branch,
+    runRecord?.headBranch,
+    runRecord?.display_title,
+    runRecord?.displayTitle,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
 
 const runHeadSha = (runRecord) =>
   String(runRecord?.head_sha || runRecord?.headSha || "");
@@ -100,22 +102,23 @@ const latestSuccessfulDeployedReleaseTag = ({
     if (!isSuccessfulReleaseDeployRun(runRecord)) {
       continue;
     }
-    const tag = runReleaseTag(runRecord);
-    if (tag === currentTag || !publishedTags.has(tag)) {
-      continue;
-    }
+    for (const tag of runReleaseTagCandidates(runRecord)) {
+      if (tag === currentTag || !publishedTags.has(tag)) {
+        continue;
+      }
 
-    let tagCommit = "";
-    try {
-      tagCommit = commitForTag(tag);
-    } catch {
-      continue;
-    }
-    if (runHeadSha(runRecord) && runHeadSha(runRecord) !== tagCommit) {
-      continue;
-    }
-    if (isAncestor(tagCommit, currentCommit)) {
-      return tag;
+      let tagCommit = "";
+      try {
+        tagCommit = commitForTag(tag);
+      } catch {
+        continue;
+      }
+      if (runHeadSha(runRecord) && runHeadSha(runRecord) !== tagCommit) {
+        continue;
+      }
+      if (isAncestor(tagCommit, currentCommit)) {
+        return tag;
+      }
     }
   }
   return "";

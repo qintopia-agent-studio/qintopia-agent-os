@@ -127,6 +127,22 @@ try {
   );
 
   assertSuccess(
+    "skips-non-tag-head-branch-before-display-title",
+    "v0.2.2",
+    releases,
+    [
+      {
+        head_branch: "master",
+        display_title: "v0.2.0",
+        event: "release",
+        conclusion: "success",
+        head_sha: v020Sha,
+      },
+    ],
+    "v0.2.0"
+  );
+
+  assertSuccess(
     "falls-back-to-previous-published-release",
     "v0.2.2",
     releases,
