@@ -22,6 +22,17 @@ const xiaomanSignalFixtures = [
   "duplicate-signal.json",
   "missing-fields-signal.json",
 ];
+const xiaomanSignalExpectedFields = [
+  "validation_status",
+  "action_status",
+  "capability_key",
+  "work_item_type",
+  "requester_agent",
+  "target_agent",
+  "idempotency_key",
+  "review_needed",
+  "missing_required_fields",
+];
 
 const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));
 const readText = (relativePath) =>
@@ -109,16 +120,49 @@ for (const file of xiaomanSignalFixtures) {
   if (!parsed.input?.event_signal_id) {
     addError(`${fixturePath}: input.event_signal_id is required`);
   }
+  for (const field of xiaomanSignalExpectedFields) {
+    if (!(field in (parsed.expected ?? {}))) {
+      addError(`${fixturePath}: expected.${field} is required`);
+    }
+  }
+  const expectedIdempotencyKey = `xiaoman_activity_signal:${parsed.input?.event_signal_id}`;
+  if (parsed.expected?.idempotency_key !== expectedIdempotencyKey) {
+    addError(
+      `${fixturePath}: expected.idempotency_key must match input.event_signal_id`
+    );
+  }
+  if (parsed.expected?.capability_key !== "xiaoman.create_activity_request") {
+    addError(
+      `${fixturePath}: expected.capability_key must be xiaoman.create_activity_request`
+    );
+  }
+  if (parsed.expected?.work_item_type !== "activity_promotion_request") {
+    addError(
+      `${fixturePath}: expected.work_item_type must be activity_promotion_request`
+    );
+  }
+  if (
+    parsed.expected?.requester_agent !== "default" ||
+    parsed.expected?.target_agent !== "xiaoman"
+  ) {
+    addError(
+      `${fixturePath}: expected routing must be requester_agent=default and target_agent=xiaoman`
+    );
+  }
+  if (parsed.expected?.external_sends !== false) {
+    addError(`${fixturePath}: expected.external_sends must be false`);
+  }
+  if (!Array.isArray(parsed.expected?.missing_required_fields)) {
+    addError(`${fixturePath}: expected.missing_required_fields must be an array`);
+  }
 }
 
 const duplicateSignal = JSON.parse(readText("fixtures/xiaoman/duplicate-signal.json"));
-const expectedDuplicateKey = `xiaoman_activity_signal:${duplicateSignal.input.event_signal_id}`;
-if (duplicateSignal.expected?.idempotency_key !== expectedDuplicateKey) {
+if (duplicateSignal.expected?.creates_duplicate_activity !== false) {
   addError(
-    "fixtures/xiaoman/duplicate-signal.json: expected.idempotency_key must match event_signal_id"
+    "fixtures/xiaoman/duplicate-signal.json: expected.creates_duplicate_activity must be false"
   );
 }
-
 const missingFieldsSignal = JSON.parse(
   readText("fixtures/xiaoman/missing-fields-signal.json")
 );
