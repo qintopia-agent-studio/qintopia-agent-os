@@ -59,7 +59,12 @@ assertSuccess(
 assertSuccess(
   "sidecar-only",
   ["runtime/sidecar/src/context_tools.rs"],
-  ["qintopia-system-services"]
+  ["hermes-erhua", "qintopia-system-services"]
+);
+assertSuccess(
+  "postgres-context-contract",
+  ["skills/postgres-context/fixtures/answer-context-prepare.json"],
+  ["hermes-erhua", "qintopia-system-services"]
 );
 assertSuccess(
   "erhua-and-sidecar",

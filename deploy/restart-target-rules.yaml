@@ -55,9 +55,14 @@ production_adjacent_paths:
 
 rules:
   - target: hermes-erhua
-    reason: Erhua profile, QiWe consultation, weather, and Erhua plugin behavior.
+    reason:
+      Erhua profile, QiWe consultation, context MCP, weather, and Erhua plugin behavior.
     paths:
       - "agents/erhua/**"
+      - "runtime/sidecar/**"
+      - "skills/postgres-context/**"
+      - "mcp/postgres/**"
+      - "mcp/context-server/**"
       - "skills/qintopia-tools/variants/erhua/**"
       - "workflows/erhua-consultation/**"
       - "skills/qintopia-weather/**"

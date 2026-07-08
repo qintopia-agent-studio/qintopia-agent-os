@@ -1126,6 +1126,23 @@ fn select_member_name_resolution(
     MemberNameResolution::resolved(top.person_id, close_matches.len())
 }
 
+fn select_scoped_member_name_resolution(
+    current_chat_candidates: &[MemberNameCandidate],
+    platform_candidates: &[MemberNameCandidate],
+) -> MemberNameResolution {
+    let current_chat_resolution = select_member_name_resolution(current_chat_candidates, 4);
+    if current_chat_resolution.status != MemberNameResolutionStatus::Unresolved {
+        return current_chat_resolution;
+    }
+    select_member_name_resolution(platform_candidates, 4)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemberNameLookupScope {
+    CurrentChat,
+    Platform,
+}
+
 async fn resolve_member_by_name(
     pool: &PgPool,
     platform: &str,
@@ -1136,11 +1153,45 @@ async fn resolve_member_by_name(
     if normalized.is_empty() {
         return Ok(MemberNameResolution::unresolved());
     }
+    let current_chat_candidates = member_name_candidates(
+        pool,
+        platform,
+        chat_id,
+        member_name,
+        &normalized,
+        MemberNameLookupScope::CurrentChat,
+    )
+    .await?;
+    let platform_candidates = member_name_candidates(
+        pool,
+        platform,
+        chat_id,
+        member_name,
+        &normalized,
+        MemberNameLookupScope::Platform,
+    )
+    .await?;
+    Ok(select_scoped_member_name_resolution(
+        &current_chat_candidates,
+        &platform_candidates,
+    ))
+}
+
+async fn member_name_candidates(
+    pool: &PgPool,
+    platform: &str,
+    chat_id: &str,
+    member_name: &str,
+    normalized: &str,
+    scope: MemberNameLookupScope,
+) -> Result<Vec<MemberNameCandidate>> {
     let like_pattern = format!("%{normalized}%");
     let rows = sqlx::query(
         r#"
         SELECT person_id, rank
         FROM (
+            SELECT person_id, max(rank) AS rank, max(observed_at) AS observed_at
+            FROM (
             SELECT
                 ci.person_id,
                 ci.updated_at AS observed_at,
@@ -1159,10 +1210,15 @@ async fn resolve_member_by_name(
             JOIN qintopia_identity.persons p ON p.id = ci.person_id
             LEFT JOIN qintopia_identity.person_aliases a ON a.person_id = p.id
             WHERE ci.platform = $1
-              AND ($2 = '' OR ci.chat_id = $2)
+              AND (
+                ($6 = 'current_chat' AND ($2 = '' OR ci.chat_id = $2))
+                OR ($6 = 'platform' AND (ci.chat_id = '' OR p.display_name = $4 OR p.preferred_name = $4 OR p.primary_name = $3 OR a.alias = $4))
+              )
               AND ci.person_id IS NOT NULL
+            ) row_candidates
+            WHERE rank > 0
+            GROUP BY person_id
         ) candidates
-        WHERE rank > 0
         ORDER BY rank DESC, observed_at DESC
         LIMIT 5
         "#,
@@ -1172,6 +1228,10 @@ async fn resolve_member_by_name(
     .bind(&normalized)
     .bind(member_name)
     .bind(&like_pattern)
+    .bind(match scope {
+        MemberNameLookupScope::CurrentChat => "current_chat",
+        MemberNameLookupScope::Platform => "platform",
+    })
     .fetch_all(pool)
     .await
     .context("resolve member context by member name")?;
@@ -1182,7 +1242,7 @@ async fn resolve_member_by_name(
             rank: row.try_get("rank")?,
         });
     }
-    Ok(select_member_name_resolution(&candidates, 4))
+    Ok(candidates)
 }
 
 async fn write_member_context_audit(
@@ -2878,12 +2938,12 @@ mod tests {
         classify_answer_route, classify_lookup_intent, classify_training_note, disclosure_hits,
         is_erhua_trainer, knowledge_excerpt, parse_allowed_callers, qintopia_gis_location_lookup,
         sanitize_training_summary, select_answer_context_identity_candidate,
-        select_member_name_resolution, select_member_safe_identity_candidate, speaker_context_json,
-        tool_definitions, training_source_kind, validate_context_caller,
-        AnswerContextIdentityResolution, AnswerRouteKind, ChannelIdentityCandidate, ContextConfig,
-        GisLocationLookupRequest, IdentityResolutionScope, MemberNameCandidate,
-        MemberNameResolutionStatus, MemberSafeContext, MemberSafeIdentityRowScope,
-        TrainingSourceKind,
+        select_member_name_resolution, select_member_safe_identity_candidate,
+        select_scoped_member_name_resolution, speaker_context_json, tool_definitions,
+        training_source_kind, validate_context_caller, AnswerContextIdentityResolution,
+        AnswerRouteKind, ChannelIdentityCandidate, ContextConfig, GisLocationLookupRequest,
+        IdentityResolutionScope, MemberNameCandidate, MemberNameResolutionStatus,
+        MemberSafeContext, MemberSafeIdentityRowScope, TrainingSourceKind,
     };
     use crate::message_search::SearchConfig;
     use chrono::{TimeZone, Utc};
@@ -3371,6 +3431,49 @@ mod tests {
                 },
             ],
             4,
+        );
+
+        assert_eq!(resolution.status, MemberNameResolutionStatus::Ambiguous);
+        assert_eq!(resolution.person_id, None);
+        assert_eq!(resolution.match_count, 2);
+    }
+
+    #[test]
+    fn member_name_resolution_falls_back_to_platform_scope() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000073").unwrap();
+        let resolution = select_scoped_member_name_resolution(
+            &[],
+            &[MemberNameCandidate {
+                person_id,
+                rank: 90,
+            }],
+        );
+
+        assert_eq!(resolution.status, MemberNameResolutionStatus::Resolved);
+        assert_eq!(resolution.person_id, Some(person_id));
+        assert_eq!(resolution.match_count, 1);
+    }
+
+    #[test]
+    fn member_name_resolution_does_not_fallback_when_chat_scope_is_ambiguous() {
+        let person_1 = Uuid::parse_str("00000000-0000-0000-0000-000000000074").unwrap();
+        let person_2 = Uuid::parse_str("00000000-0000-0000-0000-000000000075").unwrap();
+        let platform_person = Uuid::parse_str("00000000-0000-0000-0000-000000000076").unwrap();
+        let resolution = select_scoped_member_name_resolution(
+            &[
+                MemberNameCandidate {
+                    person_id: person_1,
+                    rank: 90,
+                },
+                MemberNameCandidate {
+                    person_id: person_2,
+                    rank: 88,
+                },
+            ],
+            &[MemberNameCandidate {
+                person_id: platform_person,
+                rank: 90,
+            }],
         );
 
         assert_eq!(resolution.status, MemberNameResolutionStatus::Ambiguous);
