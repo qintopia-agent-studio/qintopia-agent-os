@@ -1,6 +1,6 @@
 # Qintopia Agent OS PRD
 
-Updated: 2026-07-03
+Updated: 2026-07-08
 
 ## Product Definition
 
@@ -50,7 +50,7 @@ high-risk decisions.
 - Automatic public publishing.
 - Automatic final decisions on refund, compensation, contract, member conflict, privacy,
   or policy exception.
-- A full standalone control panel in the first migration phase.
+- A full standalone control panel in the current phase.
 - A new RAG framework, vector database, document parser, or Agent runtime.
 
 ## Roles

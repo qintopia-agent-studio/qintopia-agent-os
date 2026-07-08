@@ -34,16 +34,16 @@ Branch at inventory time: `codex/rust-agent-os-baseline`
 
 Branch at inventory time: `codex/huabaosi-localization-shadow`
 
-| Source path                                             | Disposition  | Notes                                        |
-| ------------------------------------------------------- | ------------ | -------------------------------------------- |
-| `docs/data-design/README.md`                            | adopt-input  | Data design process and schema discipline    |
-| `docs/data-design/2026-06-24-agent-os-data-layer-v2.md` | adopt-input  | Agent OS data layer reference                |
-| `docs/data-design/2026-06-29-erhua-training-memory.md`  | adopt-input  | Erhua trainer memory design input            |
-| `docs/operations/context-mcp.md`                        | adopt-input  | Context MCP and source policy reference      |
-| `docs/operations/message-store-mcp.md`                  | adopt-input  | Controlled raw message search boundary       |
-| `docs/operations/server-deployment.md`                  | runtime-only | Deployment evidence and future runbook input |
-| `docs/operations/huabaosi-*-shadow.md`                  | review-pool  | Shadow evidence; not production direction    |
-| `docs/operations/huabaosi-*-readonly.md`                | review-pool  | Read-only capture evidence                   |
+| Source path                                             | Disposition  | Notes                                     |
+| ------------------------------------------------------- | ------------ | ----------------------------------------- |
+| `docs/data-design/README.md`                            | adopt-input  | Data design process and schema discipline |
+| `docs/data-design/2026-06-24-agent-os-data-layer-v2.md` | adopt-input  | Agent OS data layer reference             |
+| `docs/data-design/2026-06-29-erhua-training-memory.md`  | adopt-input  | Erhua trainer memory design input         |
+| `docs/operations/context-mcp.md`                        | adopt-input  | Context MCP and source policy reference   |
+| `docs/operations/message-store-mcp.md`                  | adopt-input  | Controlled raw message search boundary    |
+| `docs/operations/server-deployment.md`                  | runtime-only | Historical deployment evidence            |
+| `docs/operations/huabaosi-*-shadow.md`                  | review-pool  | Shadow evidence; not production direction |
+| `docs/operations/huabaosi-*-readonly.md`                | review-pool  | Read-only capture evidence                |
 
 ## Local: `../qintopia-agent-os`
 
@@ -73,7 +73,7 @@ Branch at inventory time: `codex/huabaosi-localization-shadow`
 | `docs/operations/agentos-operations-control-plane.md`          | adopt-input  | Operations control plane runbook input |
 | `docs/operations/context-mcp.md`                               | adopt-input  | Context MCP policy                     |
 | `docs/operations/message-store-mcp.md`                         | adopt-input  | Message store MCP boundary             |
-| `docs/operations/server-deployment.md`                         | runtime-only | Deployment runbook input               |
+| `docs/operations/server-deployment.md`                         | runtime-only | Historical deployment evidence         |
 
 ## Local: `../qiwei-hermes-plugin`
 

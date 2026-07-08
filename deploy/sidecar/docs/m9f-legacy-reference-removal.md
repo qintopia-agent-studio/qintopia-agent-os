@@ -1,12 +1,12 @@
 # M9-F Legacy Reference Removal
 
-M9-F removes the remaining live references to the old standalone sidecar checkout. It is
-a repointing step, not a feature expansion and not a cleanup window.
+M9-F removed the remaining live references to the old standalone sidecar checkout. It
+was a repointing step, not a feature expansion and not a cleanup window.
 
 This document is now historical execution evidence and release/current reference
 material. Current repository validation uses `pnpm deploy:release-model:check`.
 
-## Current Verified State
+## Pre-M9-F Verified State
 
 Read-only verification on 2026-07-04 confirmed:
 
@@ -20,12 +20,12 @@ Read-only verification on 2026-07-04 confirmed:
 | `qintopia-agentos-daily-digest-publisher.service`  | active/enabled from `/home/ubuntu/qintopia-msg-sidecar` | verified artifact, then release/current     |
 | Hermes `mcp-context` command                       | old wrapper path is still the known live command source | monorepo wrapper or release-managed wrapper |
 
-## Scope
+## Historical Scope
 
-M9-F may update only the already-active legacy worker units listed above and the Hermes
-`mcp-context` command path.
+M9-F was allowed to update only the already-active legacy worker units listed above and
+the Hermes `mcp-context` command path.
 
-M9-F must not:
+M9-F was not allowed to:
 
 - Do not enable operations timers
 - Do not enable real external send
@@ -53,11 +53,11 @@ The check validates:
 
 The temporary M9-F check has been folded into the stable release/current deploy checks.
 
-## Target Worker Shape
+## Current Worker Shape
 
 The release payload must come from COS. The runtime artifact and deploy bundle are
-inputs for assembling `/home/ubuntu/qintopia-agent-os-releases/<release-sha>`. M9-F
-should point workers at `release/current`, not at deploy-bundle cache directories.
+inputs for assembling `/home/ubuntu/qintopia-agent-os-releases/<release-sha>`. Workers
+should point at `release/current`, not at deploy-bundle cache directories.
 
 Render target units for review:
 
@@ -66,7 +66,7 @@ QINTOPIA_M9_TARGET_SHA="<approved-target-sha>" \
 deploy/sidecar/scripts/render-systemd-units.sh
 ```
 
-Each M9-F worker unit should use:
+Each release/current worker unit should use:
 
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
@@ -91,7 +91,7 @@ Restart only services that were already active before the window.
 
 ## Hermes MCP Context
 
-During M9-F, Hermes `mcp-context` should move away from:
+During M9-F, Hermes `mcp-context` moved away from:
 
 ```text
 /home/ubuntu/qintopia-msg-sidecar/scripts/hermes/qintopia-context-mcp
@@ -111,8 +111,8 @@ The wrapper resolves the sidecar binary in this order:
 3. `/home/ubuntu/qintopia-agent-os-artifacts/$QINTOPIA_DEPLOYED_COMMIT_SHA/qintopia-message-sidecar`
 4. `/home/ubuntu/qintopia-agent-os-artifacts/current/qintopia-message-sidecar`
 
-For M9-F, prefer the release/current path. Provide `QINTOPIA_DEPLOYED_COMMIT_SHA` as
-evidence of the approved runtime SHA, but do not rely on it to resolve the old checkout.
+Prefer the release/current path. Provide `QINTOPIA_DEPLOYED_COMMIT_SHA` as evidence of
+the approved runtime SHA, but do not rely on it to resolve the old checkout.
 
 Do not point Hermes MCP config back to the old standalone checkout.
 

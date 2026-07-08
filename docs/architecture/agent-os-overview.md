@@ -1,8 +1,8 @@
 # Agent OS Architecture Overview
 
 This document records the current architecture baseline for Qintopia Agent OS. It is
-based on the local Agent OS documents, the read-only server document inventory, and the
-monorepo structure agreed for future development.
+based on the monorepo package structure, completed migration evidence, and the
+release/current production model.
 
 ## Architecture
 
@@ -24,7 +24,8 @@ Agent OS control and data plane
         |
         v
 Workers, MCP adapters, and sidecars
-  context lookup, message store, Feishu Base, Postgres, artifact generation
+  release/current services, context lookup, message store, Feishu Base, Postgres,
+  artifact generation
         |
         v
 Human workbench and external systems
@@ -73,7 +74,12 @@ The target control plane should make Agent work observable and recoverable:
 
 ## Current Engineering Direction
 
-The near-term work is to move from scattered server edits and separate repositories to a
-git-managed capability/plugin monorepo. The first migration pass should preserve the
-current production behavior while making ownership, package contracts, validation,
-deployment, and rollback explicit.
+The monorepo migration and sidecar release/current cutover are complete. Current work
+should harden package contracts, profile/plugin bundle distribution, external adapter
+allowlists, and owner-approved archive retention without reviving deprecated WorkTool,
+OpenClaw, or Hermes Kanban paths.
+
+Production runtime changes should move through reviewed artifacts, deploy requests,
+smoke checks, rollback notes, and the stable
+`/home/ubuntu/qintopia-agent-os-releases/current` symlink instead of server-local source
+edits or standalone checkouts.

@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-07-06
+Updated: 2026-07-08
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -53,6 +53,12 @@ unless correcting historical evidence.
 4. Archive retention cleanup
    - Permanent deletion of M12 archives is not approved.
    - Retention cleanup requires a separate owner-approved window and a new plan.
+
+5. Documentation system hygiene
+   - Keep current-state docs aligned with the release/current runtime model.
+   - Keep M9/M10/M12 execution records as historical evidence rather than active plans.
+   - Do not delete required deploy evidence docs while `pnpm deploy:preflight` and
+     `pnpm deploy:release-model:check` still use them as validation inputs.
 
 ## Rules For New Work
 

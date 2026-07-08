@@ -1,14 +1,15 @@
 # Sidecar Cutover Plan
 
-This plan describes how to move production sidecar deployment from the standalone
-`qintopia-msg-sidecar` checkout to this monorepo. It is a plan, not an approved deploy
-runbook.
+This document is historical sidecar cutover evidence. It records how production sidecar
+deployment moved from the standalone `qintopia-msg-sidecar` checkout into this
+monorepo's release/current model. Use it as reference for future repoints or rollback
+reasoning, not as permission to repeat the M9 mutation window.
 
 For the full M9 migration window, rollback, deprecated runtime cleanup, and acceptance
 contract, use `../../../docs/operations/m9-server-cutover-runbook.md`. For the
 monorepo-native systemd unit target, use `systemd-cutover-plan.md`.
 
-## Current Production Model
+## Pre-M9 Production Model
 
 - Server checkout: `/home/ubuntu/qintopia-msg-sidecar`
 - Existing deploy script snapshot: `deploy/sidecar/scripts/server-deploy.sh`
@@ -42,13 +43,13 @@ M9-D completed this cutover for the approved active service family on 2026-07-04
 `c70378408c53de5f4166e8b9bde45b15a97cabb0`. Future use of this plan should be treated as
 a new repoint or cleanup window, not as permission to enable additional services.
 
-M9 is not the final server shape. M9-F still needs to remove live references to the old
-`/home/ubuntu/qintopia-msg-sidecar` checkout from the remaining active
-`qintopia-agentos-*` workers and Hermes `mcp-context` command path.
+M9-F later removed live references to the old `/home/ubuntu/qintopia-msg-sidecar`
+checkout from the remaining active `qintopia-agentos-*` workers and Hermes `mcp-context`
+command path.
 
-## M10 Target Release Model
+## Current Release/Current Model
 
-The target model after M9-F is:
+The active production model after M9-F is:
 
 ```text
 /home/ubuntu/qintopia-agent-os-releases/<approved-sha>
@@ -68,7 +69,7 @@ Hermes profile directories remain live runtime state. Only reviewed non-secret p
 files, plugins, scripts, policies, and MCP command wrappers should become symlinks or
 mounts from the release directory.
 
-## Cutover Preconditions
+## Cutover Preconditions For Future Repoints
 
 - Owner approves the cutover window and target commit SHA.
 - Existing deploy runner scripts are already approved, or a separate deploy runner
@@ -87,7 +88,7 @@ mounts from the release directory.
 - Apply smokes that write Postgres are explicitly approved before they run.
 - Rollback command and previous standalone commit are recorded before service changes.
 
-## Proposed Cutover Sequence
+## Historical Cutover Sequence
 
 1. Read-only server verification:
 
@@ -130,10 +131,9 @@ mounts from the release directory.
    deploy/sidecar/scripts/render-systemd-units.sh
    ```
 
-5. Install or update only owner-approved systemd units to point to the CI-built artifact
-   and monorepo working directory.
+5. Install or update only owner-approved systemd units.
 
-   The service should use:
+   The M9-D transition service used:
 
    ```text
    WorkingDirectory=/home/ubuntu/qintopia-agent-os-monorepo
@@ -165,10 +165,12 @@ mounts from the release directory.
    deploy/sidecar/scripts/xiaoman-activity-acceptance-smoke.sh
    ```
 
-## Rollback
+## Rollback Reference
 
-Rollback must return systemd units to the old standalone checkout and restart the
-affected services.
+M9-D rollback would have returned systemd units to the old standalone checkout and
+restarted the affected services. Current release/current rollback should prefer the
+`previous` symlink model documented in
+`../../../docs/operations/release-current-model.md`.
 
 ```bash
 sudo systemctl stop qintopia-message-sidecar.service

@@ -1,9 +1,10 @@
 # Server Deployment Runbook
 
 This is the adopted standalone sidecar runbook from before the Agent OS monorepo
-cutover. Keep it as historical deployment evidence and rollback reference. M9 should use
-`../../../docs/operations/m9-server-cutover-runbook.md` and the CI-built sidecar
-artifact path instead of rebuilding from this standalone checkout.
+cutover. Keep it as historical deployment evidence and rollback reference. Current
+production deployment uses `../../../docs/operations/release-current-model.md`,
+`../../../docs/operations/m9-server-cutover-runbook.md`, and COS-verified release
+payloads instead of rebuilding from this standalone checkout.
 
 This sidecar runs on the Hermes server and persists QiWe/Hermes message events from
 local NATS JetStream into the Postgres tunnel exposed on the server.
@@ -101,14 +102,14 @@ mode for validating config and database connectivity without calling the embeddi
 
 ## Build And Validate
 
-Preferred server path after the deploy key and database URL are configured:
+Historical standalone path after the deploy key and database URL are configured:
 
 ```bash
 cd /home/ubuntu/qintopia-msg-sidecar
 scripts/server-deploy.sh deploy
 ```
 
-Manual path:
+Historical manual path:
 
 The production server currently has Rust 1.75.0 from apt, so builds must use the
 checked-in lockfile:

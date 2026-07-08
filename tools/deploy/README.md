@@ -25,7 +25,7 @@ Local mode additionally requires:
 
 ## Systemd Cutover Preview
 
-Validate that the M9 sidecar systemd renderer can produce monorepo-native units:
+Validate that the sidecar systemd renderer can produce reviewable units:
 
 ```bash
 pnpm deploy:systemd:check

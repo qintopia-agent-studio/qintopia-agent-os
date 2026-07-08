@@ -469,8 +469,10 @@ window. Do not enable new workers by default.
 
 ## Deprecated Runtime Cleanup
 
-Cleanup is allowed only after owner approval and after M9-F removes live references to
-legacy paths.
+Cleanup is allowed only after owner approval and after fresh read-only checks confirm no
+live references to the legacy paths remain. M9-F removed the known active sidecar worker
+and Hermes MCP references, but cleanup windows must still recheck processes, units,
+timers, cron, nginx, rollback, and evidence paths before archiving or deletion.
 
 Deprecated assets currently classified for final-migration handling:
 
