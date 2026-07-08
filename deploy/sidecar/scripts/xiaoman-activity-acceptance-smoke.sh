@@ -29,6 +29,51 @@ fixture_input_json() {
     "${SIGNAL_FIXTURE_DIR}/${fixture_name}"
 }
 
+run_signal_fixture_contract() {
+  local fixture_name="$1"
+  local signal_payload
+  local signal_output
+  signal_payload="$(fixture_input_json "$fixture_name")"
+  signal_output="$("${BIN_CMD[@]}" xiaoman-activity signal-ingest --payload-json "$signal_payload" --dry-run)"
+  CONTRACT_FIXTURE="${SIGNAL_FIXTURE_DIR}/${fixture_name}" SIGNAL_OUTPUT="$signal_output" python3 - <<'PY'
+import json
+import os
+
+fixture = json.load(open(os.environ["CONTRACT_FIXTURE"], encoding="utf-8"))
+expected = fixture["expected"]
+payload = json.loads(os.environ["SIGNAL_OUTPUT"])
+
+assert payload["success"] is True
+assert payload["source"] == "agentos_event_signal"
+assert payload["validation_status"] == expected["validation_status"]
+assert payload["action_status"] == expected["action_status"]
+
+work_item = payload["operations_work_item"]
+assert work_item["capability_key"] == expected["capability_key"]
+assert work_item["work_item_type"] == expected["work_item_type"]
+assert work_item["requester_agent"] == expected["requester_agent"]
+assert work_item["target_agent"] == expected["target_agent"]
+assert work_item["idempotency_key"] == expected["idempotency_key"]
+
+if expected["review_needed"]:
+    for field in expected["missing_required_fields"]:
+        assert any(field in item for item in payload["limitations"])
+else:
+    assert payload["validation_status"] == "ok"
+
+raw = json.dumps(payload, ensure_ascii=False)
+for message_id in fixture["input"].get("source_message_ids", []):
+    assert message_id not in raw
+if expected.get("external_sends") is False:
+    assert "erhua.send_group_message" not in raw
+assert "Dangerous command requires approval" not in raw
+assert "Working" not in raw
+assert "execute_code" not in raw
+assert "terminal" not in raw
+assert "skill_view" not in raw
+PY
+}
+
 list_output="$(run_json list-by-date '{"date":"2026-06-28","table_role":"activity_plan","actor_agent":"xiaoman","operation":"list-by-date","dry_run":false}')"
 LIST_OUTPUT="$list_output" python3 - <<'PY'
 import json
@@ -70,62 +115,9 @@ assert "skill_view" not in raw
 assert "lark-base" not in raw
 PY
 
-signal_payload="$(fixture_input_json activity-signal.json)"
-signal_output="$("${BIN_CMD[@]}" xiaoman-activity signal-ingest --payload-json "$signal_payload" --dry-run)"
-SIGNAL_OUTPUT="$signal_output" python3 - <<'PY'
-import json
-import os
-
-payload = json.loads(os.environ["SIGNAL_OUTPUT"])
-assert payload["success"] is True
-assert payload["source"] == "agentos_event_signal"
-assert payload["action_status"] == "operations_dry_run_ok"
-work_item = payload["operations_work_item"]
-assert work_item["capability_key"] == "xiaoman.create_activity_request"
-assert work_item["work_item_type"] == "activity_promotion_request"
-assert work_item["requester_agent"] == "default"
-assert work_item["target_agent"] == "xiaoman"
-assert work_item["idempotency_key"] == "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111"
-raw = json.dumps(payload, ensure_ascii=False)
-assert "22222222-2222-4222-8222-222222222222" not in raw
-assert "erhua.send_group_message" not in raw
-assert "Dangerous command requires approval" not in raw
-assert "Working" not in raw
-assert "execute_code" not in raw
-assert "terminal" not in raw
-assert "skill_view" not in raw
-PY
-
-duplicate_payload="$(fixture_input_json duplicate-signal.json)"
-duplicate_output="$("${BIN_CMD[@]}" xiaoman-activity signal-ingest --payload-json "$duplicate_payload" --dry-run)"
-DUPLICATE_OUTPUT="$duplicate_output" python3 - <<'PY'
-import json
-import os
-
-payload = json.loads(os.environ["DUPLICATE_OUTPUT"])
-assert payload["success"] is True
-assert payload["operations_work_item"]["idempotency_key"] == "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111"
-assert payload["operations_work_item"]["capability_key"] == "xiaoman.create_activity_request"
-assert payload["action_status"] == "operations_dry_run_ok"
-PY
-
-review_needed_payload="$(fixture_input_json missing-fields-signal.json)"
-review_needed_output="$("${BIN_CMD[@]}" xiaoman-activity signal-ingest --payload-json "$review_needed_payload" --dry-run)"
-REVIEW_NEEDED_OUTPUT="$review_needed_output" python3 - <<'PY'
-import json
-import os
-
-payload = json.loads(os.environ["REVIEW_NEEDED_OUTPUT"])
-assert payload["success"] is True
-assert payload["validation_status"] == "review_needed"
-assert payload["action_status"] == "review_needed"
-assert payload["operations_work_item"]["capability_key"] == "xiaoman.create_activity_request"
-assert any("signal_date" in item for item in payload["limitations"])
-raw = json.dumps(payload, ensure_ascii=False)
-assert "erhua.send_group_message" not in raw
-assert "execute_code" not in raw
-assert "terminal" not in raw
-PY
+run_signal_fixture_contract activity-signal.json
+run_signal_fixture_contract duplicate-signal.json
+run_signal_fixture_contract missing-fields-signal.json
 
 set +e
 feishu_error="$(

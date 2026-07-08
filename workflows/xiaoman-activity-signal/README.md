@@ -37,6 +37,12 @@ work item instead of creating duplicates. If required fields are missing, the wo
 still produces an operations work item preview with `review_needed` metadata and does
 not trigger downstream visual, evidence, or send work.
 
+Signal replay fixtures under `fixtures/xiaoman/` carry an `expected` block that defines
+the acceptance contract for `signal-ingest`: status, capability routing, idempotency,
+review-needed fields, and the no-external-send boundary. `pnpm workflows:check`
+validates that static contract, and `pnpm check:runtime` runs the same fixtures through
+the sidecar smoke.
+
 ## Production Boundary
 
 - This workflow can write Agent OS control-plane rows after the sidecar contract is
