@@ -70,6 +70,10 @@ smoke so it remains a composition of read-only observation scripts and does not 
 apply smoke, deploy, release, Feishu write, QiWe, or external-send behavior. The same
 gate protects the Xiaoman production preflight record template so production evidence
 keeps timer status, fixed commands, secret scans, queue counts, and pass/hold decisions.
+It also runs `tools/deploy/check-xiaoman-preflight-readiness.mjs`, a repository-only
+audit that verifies the Xiaoman workflow metadata, systemd command contracts, aggregate
+preflight smoke, evidence record, and guarded apply smoke still describe one coherent
+AgentOS-only production preflight path.
 
 ## GitHub App Git Access
 
