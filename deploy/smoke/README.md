@@ -17,6 +17,15 @@ are wrapped here without changing behavior.
 Smoke checks must be safe by default. Real external sends require separate owner review,
 allowlists, and explicit runtime configuration.
 
+## Xiaoman Production Preflight
+
+After an owner-approved deploy, run the aggregate Xiaoman production preflight from the
+sidecar scripts and record the sanitized result in
+[`docs/xiaoman-production-preflight-record.md`](docs/xiaoman-production-preflight-record.md).
+The record captures timer health, fixed service commands, read-only preview counts,
+secret-scan results, and the pass/hold decision. It is not a release approval and does
+not authorize Feishu writes, QiWe sends, poster publishing, or external adapters.
+
 ## Validation
 
 ```bash
