@@ -41,8 +41,9 @@ next_actions:
   - Run production observation after downstream evidence and visual worker timers are
     deployed, then confirm internal evidence_summary and poster_brief artifacts are
     created without external adapters.
-  - Add a guarded production observation smoke for the Xiaoman send request starter
-    before considering timer scheduling for awaiting-publish group message requests.
+  - Run the guarded Xiaoman send request starter observation smoke after an
+    owner-approved deploy, then decide whether timer scheduling is needed for
+    awaiting-publish group message requests.
   - Decide whether to schedule the Xiaoman send request starter only after approved
     poster_brief creation is stable in production.
   - Add real evidence retrieval and visual generation only after the internal artifact

@@ -45,6 +45,8 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh`
 - Xiaoman activity downstream observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh`
+- Xiaoman activity send request starter observation smoke:
+  `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
   `QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh`
 
@@ -128,6 +130,10 @@ Use `rg` and `rg --files` for search.
   from an approved Xiaoman `poster_brief`. It must not record final confirmation, queue
   the group message, run send-ready, publish, call QiWe, write Feishu, or call external
   adapters.
+- `xiaoman-activity-send-request-starter-observation-smoke.sh` is read-only unless a
+  future owner-reviewed timer exists and `EXPECT_TIMER=1` is explicitly set. It may run
+  the starter in `--check-only` mode only; do not turn it into an apply smoke, final
+  confirmation, send-ready worker, Feishu write, QiWe send, or external adapter trigger.
 
 ## Package Placement
 
