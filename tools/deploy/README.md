@@ -57,6 +57,18 @@ The check is non-mutating. It verifies the worker units render through
 that the Hermes `mcp-context` wrapper can run from a verified artifact,
 `release/current`, or explicit `QINTOPIA_SIDECAR_BIN`.
 
+## Deploy Contract Checks
+
+Validate deploy package metadata and production-adjacent smoke boundaries:
+
+```bash
+pnpm deploy:contracts:check
+```
+
+The check is non-mutating. It also protects the aggregate Xiaoman production preflight
+smoke so it remains a composition of read-only observation scripts and does not grow
+apply smoke, deploy, release, Feishu write, QiWe, or external-send behavior.
+
 ## GitHub App Git Access
 
 Validate the GitHub App git wrapper without credentials:
