@@ -33,6 +33,7 @@
 
 - Install dependencies: `pnpm install`
 - Format: `pnpm format`
+- Pre-commit quick checks: `.husky/pre-commit`
 - Repository check: `pnpm check`
 - Markdown lint: `pnpm lint:md`
 - PR readiness: `pnpm pr:doctor`
