@@ -19,6 +19,16 @@ const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath)
 const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 const addError = (message) => errors.push(message);
+const requireFragment = (relativePath, text, fragment) => {
+  if (!text.includes(fragment)) {
+    addError(`${relativePath}: must include ${fragment}`);
+  }
+};
+const forbidFragment = (relativePath, text, fragment) => {
+  if (text.includes(fragment)) {
+    addError(`${relativePath}: must not include ${fragment}`);
+  }
+};
 
 for (const [packagePath, requiredFragments] of Object.entries(packages)) {
   const readmePath = `${packagePath}/README.md`;
@@ -45,6 +55,43 @@ for (const [packagePath, requiredFragments] of Object.entries(packages)) {
   }
   if (manifest.type !== "deploy") {
     addError(`${manifestPath}: type must be deploy`);
+  }
+}
+
+const xiaomanPreflightPath =
+  "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh";
+if (!exists(xiaomanPreflightPath)) {
+  addError(`${xiaomanPreflightPath}: missing Xiaoman production preflight smoke`);
+} else {
+  const preflight = readText(xiaomanPreflightPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1",
+    "xiaoman-activity-signal-timer-observation-smoke.sh",
+    "QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1",
+    "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
+    "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1",
+    "operations-downstream-timers-observation-smoke.sh",
+    "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1",
+    "xiaoman-activity-send-request-starter-observation-smoke.sh",
+  ]) {
+    requireFragment(xiaomanPreflightPath, preflight, fragment);
+  }
+
+  for (const fragment of [
+    "QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1",
+    "server-deploy.sh",
+    "gh release",
+    "release create",
+    "release edit",
+    "run-group-message-send-worker",
+    "send_executed=true",
+    "--use-feishu-base",
+    "tenant_access_token",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+  ]) {
+    forbidFragment(xiaomanPreflightPath, preflight, fragment);
   }
 }
 
