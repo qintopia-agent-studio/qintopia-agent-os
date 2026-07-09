@@ -240,6 +240,10 @@ Install scope for the M9 window:
   owner review because it only creates missing AgentOS evidence/visual child
   work_items under existing Xiaoman activity request parents. It must not write
   Feishu, send QiWe messages, create visual assets, or run external adapters.
+- The Xiaoman activity send request starter timer may be enabled by default after
+  owner review because it only creates awaiting_publish AgentOS group_message_request
+  work_items from approved Xiaoman poster_brief artifacts. It must not confirm,
+  queue, send, publish, write Feishu, call QiWe, or run external adapters.
 - The operations evidence and visual worker timers may be enabled after the Xiaoman
   child intake path is observed healthy. They only process AgentOS work_items into
   internal evidence_summary and poster_brief artifacts. They must not write Feishu,
@@ -404,6 +408,17 @@ render_all() {
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service" \
     "6min" \
     "${QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Send Request Starter Worker" \
+    "run-xiaoman-activity-send-request-starter-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity send request starter" \
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
+    "9min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL:-2min}"
 }
 
 validate_output() {
@@ -432,6 +447,8 @@ validate_output() {
     "qintopia-agentos-xiaoman-activity-signal-worker.timer"
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer"
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
   )
 
   local file

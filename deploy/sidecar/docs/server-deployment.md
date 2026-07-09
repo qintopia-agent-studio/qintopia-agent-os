@@ -466,8 +466,43 @@ visual assets, or send externally. It fails if the service command is not
 `run-xiaoman-activity-promotion-starter-worker --once --apply` or if inspected output
 includes known secret/external-send markers.
 
-After both Xiaoman timers are healthy, run the downstream observation smoke before
-adding runtime scheduling for evidence or visual execution:
+The Xiaoman activity send request starter worker also runs as a systemd timer. It calls
+`run-xiaoman-activity-send-request-starter-worker --once --apply`, scans Xiaoman
+activity promotion parents with completed visual children and approved `poster_brief`
+artifacts, and creates only missing AgentOS `group_message_request` child `work_items`
+in `awaiting_publish`. It does not record final confirmation, move work items to
+`queued`, run send-ready, publish, read or write Feishu, call QiWe, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-send-request-starter-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL=5min` or another systemd
+time span.
+
+After an owner-approved deploy, run the guarded observation smoke to inspect the timer,
+service command, recent journal output, and a read-only worker preview:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-send-request-starter-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, record
+final confirmation, queue group messages, run send-ready, or send externally. It fails
+if the service command is not
+`run-xiaoman-activity-send-request-starter-worker --once --apply` or if inspected output
+includes known secret/external-send markers.
+
+After the Xiaoman intake and starter timers are healthy, run the downstream observation
+smoke before adding runtime scheduling for evidence or visual execution:
 
 ```bash
 set -a

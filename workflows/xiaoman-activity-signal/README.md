@@ -89,11 +89,11 @@ the request to `queued`, run send-ready, publish, call QiWe, write Feishu, or ca
 external adapters.
 
 `deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
-checks this handoff in read-only mode by running
-`run-xiaoman-activity-send-request-starter-worker --check-only` and verifying the
-sanitized report shape. Timer inspection is intentionally disabled unless
-`QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_EXPECT_TIMER=1` is set after a future
-owner-reviewed runtime scheduling change.
+checks this handoff after an owner-approved deploy. It verifies that the reviewed timer
+command is fixed to `run-xiaoman-activity-send-request-starter-worker --once --apply`,
+inspects recent journal output for known sensitive markers, and runs
+`run-xiaoman-activity-send-request-starter-worker --check-only` to verify the sanitized
+report shape without writing.
 
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
@@ -146,6 +146,8 @@ raw Feishu record ids.
 - Approved Xiaoman `poster_brief` artifacts can create one awaiting-publish
   `group_message_request` without final confirmation, queueing, send-ready, or external
   sends.
+- Runtime scheduling can create awaiting-publish `group_message_request` work items from
+  approved Xiaoman `poster_brief` artifacts without external adapters.
 - Activity request starter creates missing evidence and visual child work items without
   duplicating existing children.
 - Duplicate signal returns the existing work item by idempotency key.

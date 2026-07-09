@@ -42,10 +42,8 @@ next_actions:
     deployed, then confirm internal evidence_summary and poster_brief artifacts are
     created without external adapters.
   - Run the guarded Xiaoman send request starter observation smoke after an
-    owner-approved deploy, then decide whether timer scheduling is needed for
-    awaiting-publish group message requests.
-  - Decide whether to schedule the Xiaoman send request starter only after approved
-    poster_brief creation is stable in production.
+    owner-approved deploy, then confirm awaiting-publish group message request intake is
+    healthy.
   - Add real evidence retrieval and visual generation only after the internal artifact
     timers are stable and owner-reviewed.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
