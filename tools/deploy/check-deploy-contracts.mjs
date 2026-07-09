@@ -95,6 +95,38 @@ if (!exists(xiaomanPreflightPath)) {
   }
 }
 
+const xiaomanPreflightRecordPath =
+  "deploy/smoke/docs/xiaoman-production-preflight-record.md";
+if (!exists(xiaomanPreflightRecordPath)) {
+  addError(`${xiaomanPreflightRecordPath}: missing Xiaoman preflight record template`);
+} else {
+  const record = readText(xiaomanPreflightRecordPath);
+  for (const fragment of [
+    "Do not paste secrets, raw chat logs, Feishu Base",
+    "QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1",
+    "qintopia-agentos-xiaoman-activity-signal-worker.timer",
+    "run-xiaoman-activity-signal-worker --once --apply",
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
+    "run-xiaoman-activity-promotion-starter-worker --once --apply",
+    "qintopia-agentos-operations-evidence-worker.timer",
+    "run-evidence-worker --once --apply",
+    "qintopia-agentos-operations-visual-worker.timer",
+    "run-collaboration-worker --work-item-type visual_asset_request --once --apply",
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
+    "run-xiaoman-activity-send-request-starter-worker --once --apply",
+    "Secret and external-send scan",
+    "send_executed=true",
+    "Production boundary",
+    "Eligible Xiaoman `event_signals` preview count",
+    "Eligible awaiting publish group message request count",
+    "Pass: production observation can continue without enabling external adapters",
+    "Hold: one or more timers, commands, previews, or boundary checks failed",
+    "Passing this preflight does not approve publishing",
+  ]) {
+    requireFragment(xiaomanPreflightRecordPath, record, fragment);
+  }
+}
+
 if (errors.length > 0) {
   console.error("Deploy contract check failed:");
   for (const error of errors) {
