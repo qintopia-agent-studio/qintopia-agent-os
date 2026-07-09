@@ -6,6 +6,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.3](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.2...v0.2.3) (2026-07-09)
+
+
+### Features
+
+* add xiaoman activity promotion starter worker ([#56](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/56)) ([338dd87](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/338dd870c1e66f7ca2d13bbc953af31523a736b6))
+* add xiaoman activity signal replay ([#42](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/42)) ([6955d41](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6955d41c1bcb78068cbc83cca76c4d1a10777929))
+* add xiaoman activity signal worker ([#51](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/51)) ([e1da5bb](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e1da5bbcaf5b93ad768e037d6c6197a2ead6a9d8))
+* schedule operations downstream workers ([#61](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/61)) ([db0e3b3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/db0e3b32ed8a0fda050054a8c54cc9cd0a26f430))
+* schedule xiaoman activity promotion starter ([#57](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/57)) ([14fced8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/14fced80be709cfa4220fa4331e26da91ff22392))
+* schedule xiaoman activity signal worker ([#54](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/54)) ([48bbbb6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/48bbbb67babaccd040bd7848d2555da98e8872b2))
+
+
+### Bug Fixes
+
+* reset release line to published version ([#58](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/58)) ([32cc69f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/32cc69f57e078b83332b944f5f260083c591590b))
+* resolve deploy restarts from live release base ([#39](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/39)) ([cbb30cd](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cbb30cd8aa614ec0a4b0a16b3dc22dbf5c697625))
+
+
+### CI / Deployment
+
+* add selectable production rollback workflow ([#41](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/41)) ([aab600a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/aab600a1c77a1dbd5d5ff22d869b061c0fdb7ac4))
+
+
+### Documentation
+
+* add all contributors metadata ([#46](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/46)) ([c461767](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c4617674aeb19ba4992910b47009b5d52216a496))
+* list codeowners as contributors ([#48](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/48)) ([24136a1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/24136a1a1b6b8d8ae0f17daae04fee66c44d1fb9))
+* sync current Agent OS documentation ([#43](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/43)) ([a648754](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a6487548621b2a7138a0dc3f4238f7582f01ccbc))
+
+
+### Maintenance
+
+* add pre-commit quick checks ([#53](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/53)) ([9c29ad3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9c29ad3bfeb5c185629711ef0662f1c0a578658b))
+* **master:** release 0.3.0 ([#40](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/40)) ([b8333d9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b8333d9953a7793669c25702b14c8a90d471d0bb))
+* **master:** release 0.3.1 ([#47](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/47)) ([29b04ee](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/29b04ee620de427362cffe5e99287fcfbd3e8ade))
+
 ## [0.2.2](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.1...v0.2.2) (2026-07-08)
 
 
