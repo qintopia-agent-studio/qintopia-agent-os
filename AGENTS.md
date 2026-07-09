@@ -47,6 +47,8 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh`
 - Xiaoman activity send request starter observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
+- Xiaoman activity production preflight smoke:
+  `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
   `QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh`
 
@@ -139,6 +141,10 @@ Use `rg` and `rg --files` for search.
   awaiting-publish group message request intake. Do not repurpose it for final
   confirmation, queueing, send-ready, Feishu writeback, QiWe sends, or external
   adapters.
+- `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
+  timer observation smokes and downstream evidence/visual timer observation. It must not
+  set apply-smoke flags, deploy units, publish releases, write Feishu, call QiWe, or run
+  external adapters.
 
 ## Package Placement
 

@@ -95,6 +95,12 @@ inspects recent journal output for known sensitive markers, and runs
 `run-xiaoman-activity-send-request-starter-worker --check-only` to verify the sanitized
 report shape without writing.
 
+`deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh` is the aggregate
+read-only production preflight for this path. It composes the Xiaoman signal timer
+observation, promotion starter timer observation, downstream evidence/visual timer
+observation, and send request starter observation. It does not deploy, write Feishu,
+call QiWe, publish, or send externally.
+
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
 coverage by normalized activity title and date, and reports sanitized
@@ -175,5 +181,6 @@ pnpm check:runtime
 deploy/sidecar/scripts/xiaoman-activity-shadow-read-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh
 bash -n deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh
 ```

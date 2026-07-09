@@ -502,7 +502,7 @@ if the service command is not
 includes known secret/external-send markers.
 
 After the Xiaoman intake and starter timers are healthy, run the downstream observation
-smoke before adding runtime scheduling for evidence or visual execution:
+smoke to inspect the evidence and visual artifact timers:
 
 ```bash
 set -a
@@ -516,6 +516,20 @@ This smoke runs `run-evidence-worker --once --dry-run` and
 `run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`. It
 does not write Postgres, read or write Feishu, call QiWe, generate posters, or send
 externally. It fails if the preview output includes known secret/external-send markers.
+
+For the production preflight, run the Xiaoman aggregate observation smoke after an
+owner-approved deploy. It composes the Xiaoman signal timer observation, Xiaoman
+promotion starter timer observation, downstream evidence/visual timer observation, and
+Xiaoman send request starter timer observation. It is read-only and does not deploy,
+write Feishu, call QiWe, publish, or send externally.
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1
+scripts/xiaoman-activity-production-preflight-smoke.sh
+```
 
 ## Read-Only Database Checks
 

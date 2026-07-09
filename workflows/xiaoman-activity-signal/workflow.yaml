@@ -44,6 +44,8 @@ next_actions:
   - Run the guarded Xiaoman send request starter observation smoke after an
     owner-approved deploy, then confirm awaiting-publish group message request intake is
     healthy.
+  - Run the aggregate Xiaoman production preflight smoke after an owner-approved deploy
+    and record the observed queue counts and any blocking point.
   - Add real evidence retrieval and visual generation only after the internal artifact
     timers are stable and owner-reviewed.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
