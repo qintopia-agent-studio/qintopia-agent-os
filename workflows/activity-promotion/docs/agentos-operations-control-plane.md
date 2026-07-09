@@ -62,6 +62,10 @@ QINTOPIA_SIDECAR_BIN=/home/ubuntu/qintopia-msg-sidecar/target/release/qintopia-m
 - artifact review dry-run 只记录审核，不发布、不发送。
 - group message final confirmation dry-run 只把状态推进到 `queued`，不外发。
 - group message send worker fixture 只记录 send-ready，不外发。
+- evidence/visual worker 已有 systemd oneshot/timer 部署入口；timer 只把
+  `evidence_request` / `visual_asset_request` 处理成内部 `evidence_summary` / pending
+  `poster_brief`
+  artifact，不调用真实文渊阁检索、画报司生产生成、飞书、企微或外部 adapter。
 - group send-ready worker 已有 systemd oneshot/timer 部署入口；timer 只记录
   `send_executed=false` 的审计事件，不真实发送，且不会对已记录 send-ready 的 work
   item 重复追加审计；worker claim 会递增
@@ -215,6 +219,7 @@ ORDER BY event_type;
 | 画报司生产生成 adapter 未接入                         | 不能生成真实海报图片                                       | 已有 `poster_brief` artifact、审核状态和审计链                                                                                                                                                                                                                                                       |
 | 文渊阁真实证据检索 adapter 未接入                     | 不能自动拉取真实消息库/知识库证据                          | 已有 `evidence_request`、`evidence_summary` artifact 和 `evidence_artifact_created` 审计                                                                                                                                                                                                             |
 | 二花/企微生产发送 adapter 未接入                      | 不能真实群发                                               | 已有 approved artifact 校验、白名单群校验、最终确认和 send-ready 审计                                                                                                                                                                                                                                |
+| evidence/visual artifact timers 尚未线上部署验收      | 线上是否会自动生成内部证据摘要和 poster brief 还未确认     | 本地 `scripts/server-deploy.sh prepare/deploy` 已安装并启用 `qintopia-agentos-operations-evidence-worker.timer` 和 `qintopia-agentos-operations-visual-worker.timer`；二者只写 AgentOS artifact/audit，不调用真实文渊阁检索、画报司生产生成、飞书、企微或外部 adapter                                |
 | group send-ready timer 尚未线上部署验收               | 已最终确认的群发请求线上是否会自动记录 send-ready 还未确认 | 本地 `scripts/server-deploy.sh prepare/deploy` 已安装并启用 `qintopia-agentos-operations-group-send-ready.timer`，timer 只运行 `run-group-message-send-worker --once --apply`，且 `send_executed=false`；apply smoke 覆盖重复运行不重复写 send-ready、claim 后递增 `attempts`、达到 3 次后不再 claim |
 | 飞书任务评论/状态回写 sync worker 未接入              | 人类在飞书里的修改不能自动写回 AgentOS                     | 已有 Postgres 事实源、人工 CLI 审核/确认路径                                                                                                                                                                                                                                                         |
 | 飞书任务真实事件入口未接真实 API                      | 暂时不能从真实飞书评论/状态自动触发 AgentOS 审计           | 已有 `operations-workbench-event-record`，可校验并记录 human workbench event，且不会直接改事实状态                                                                                                                                                                                                   |
