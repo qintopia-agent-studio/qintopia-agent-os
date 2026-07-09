@@ -67,7 +67,9 @@ pnpm deploy:contracts:check
 
 The check is non-mutating. It also protects the aggregate Xiaoman production preflight
 smoke so it remains a composition of read-only observation scripts and does not grow
-apply smoke, deploy, release, Feishu write, QiWe, or external-send behavior.
+apply smoke, deploy, release, Feishu write, QiWe, or external-send behavior. The same
+gate protects the Xiaoman production preflight record template so production evidence
+keeps timer status, fixed commands, secret scans, queue counts, and pass/hold decisions.
 
 ## GitHub App Git Access
 
