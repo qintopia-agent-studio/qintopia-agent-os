@@ -64,11 +64,12 @@ group-send readiness. It may be scheduled by the reviewed
 `qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer`, whose service
 command is fixed to `run-xiaoman-activity-promotion-starter-worker --once --apply`.
 
-`deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh` is the next
-production-readiness check after both Xiaoman timers are healthy. It runs the existing
-evidence and visual workers in dry-run mode only: `run-evidence-worker --once --dry-run`
-and `run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`.
-The smoke proves the child queues can be previewed without writing Postgres, reading or
+`deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh` is the
+read-only production-readiness check for the evidence and visual worker previews. It
+runs the existing evidence and visual workers in dry-run mode only:
+`run-evidence-worker --once --dry-run` and
+`run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`. The
+smoke proves the child queues can be previewed without writing Postgres, reading or
 writing Feishu, calling QiWe, generating posters, or sending externally.
 
 The downstream evidence and visual workers may also be scheduled by the reviewed runtime
