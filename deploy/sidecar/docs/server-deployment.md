@@ -21,6 +21,8 @@ local NATS JetStream into the Postgres tunnel exposed on the server.
   `/etc/systemd/system/qintopia-agentos-operations-workbench-event.timer`
 - AgentOS operations group send-readiness timer:
   `/etc/systemd/system/qintopia-agentos-operations-group-send-ready.timer`
+- AgentOS Xiaoman activity signal worker timer:
+  `/etc/systemd/system/qintopia-agentos-xiaoman-activity-signal-worker.timer`
 - Environment file: `/etc/qintopia/message-sidecar.env`
 - NATS URL: `nats://127.0.0.1:4222`
 - Expected Postgres endpoint: `127.0.0.1:55432`
@@ -343,6 +345,22 @@ journalctl -u qintopia-agentos-operations-group-send-ready.service -n 100 --no-p
 The default timer interval is `1min`. Override it during unit installation with
 `QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL=2min` or another systemd time span.
 
+The Xiaoman activity signal worker runs as a systemd timer. It calls
+`run-xiaoman-activity-signal-worker --once --apply`, scans only Xiaoman activity
+`event_signals`, and creates missing AgentOS `xiaoman.create_activity_request`
+`work_items` through the existing `signal-ingest` contract. It does not read or write
+Feishu, call QiWe, create visual assets, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-signal-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-signal-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-xiaoman-activity-signal-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-signal-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL=5min` or another systemd time span.
+
 ## Read-Only Database Checks
 
 Before and after deployment, confirm pending embedding jobs and embedding rows with the
@@ -485,7 +503,10 @@ the WenYuanGe profile has confirmed tool discovery and successful
 9. Confirm `qintopia-agentos-operations-group-send-ready.timer` is active so
    final-confirmed group-send requests record send-ready audit events without manual CLI
    runs. This does not send messages.
-10. Mount `qintopia-context` MCP into the WenYuanGe Hermes profile first. Keep
+10. Confirm `qintopia-agentos-xiaoman-activity-signal-worker.timer` is active so Xiaoman
+    activity `event_signals` create AgentOS intake work items without manual CLI runs.
+    This does not read or write Feishu and does not send messages.
+11. Mount `qintopia-context` MCP into the WenYuanGe Hermes profile first. Keep
     the 二花 profile unchanged until the WenYuanGe MCP path is validated.
 
 Hermes publisher failures must remain best-effort only. NATS, sidecar, or Postgres

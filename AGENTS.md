@@ -84,6 +84,10 @@ Use `rg` and `rg --files` for search.
   submits the existing `xiaoman-activity signal-ingest` work item contract. It must not
   write Feishu, send QiWe messages, create visual assets, or be added to production
   scheduling without owner-reviewed runtime changes.
+- `qintopia-agentos-xiaoman-activity-signal-worker.timer` may only run
+  `run-xiaoman-activity-signal-worker --once --apply` for AgentOS work item intake. Do
+  not repurpose it for Feishu writeback, QiWe sends, visual asset creation, or external
+  adapters.
 
 ## Package Placement
 

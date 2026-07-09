@@ -31,7 +31,7 @@ tags:
   - activity
   - signal
 next_actions:
-  - Add reviewed runtime scheduling for the Xiaoman activity signal worker after owner
-    approval and production readiness checks.
+  - Observe the Xiaoman activity signal timer after owner-approved deploy with
+    production smoke and journal review.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.
