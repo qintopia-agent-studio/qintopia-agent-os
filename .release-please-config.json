@@ -3,6 +3,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
+      "bump-patch-for-minor-pre-major": true,
       "package-name": "qintopia-agent-os",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,

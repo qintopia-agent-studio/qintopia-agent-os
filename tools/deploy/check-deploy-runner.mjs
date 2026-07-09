@@ -137,6 +137,11 @@ if (exists(".release-please-config.json")) {
   if (rootPackage?.["release-type"] !== "simple") {
     addError(".release-please-config.json: root release type must be simple");
   }
+  if (rootPackage?.["bump-patch-for-minor-pre-major"] !== true) {
+    addError(
+      ".release-please-config.json: 0.x feature releases must stay on the patch line until owner-approved promotion"
+    );
+  }
   if (rootPackage?.["package-name"] !== "qintopia-agent-os") {
     addError(".release-please-config.json: package-name must be qintopia-agent-os");
   }
@@ -468,6 +473,11 @@ if (exists(".github/workflows/rollback-production.yml")) {
   if (!releaseTagOptions.every((tag) => /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag))) {
     addError(
       ".github/workflows/rollback-production.yml: release_tag options must be semver-style vX.Y.Z tags"
+    );
+  }
+  if (releaseTagInput?.default !== "v0.2.2" || !releaseTagOptions.includes("v0.2.2")) {
+    addError(
+      ".github/workflows/rollback-production.yml: release_tag must default to the latest published Release v0.2.2"
     );
   }
   if (restartTargetsInput?.type !== "choice") {

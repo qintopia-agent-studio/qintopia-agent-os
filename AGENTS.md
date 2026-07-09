@@ -61,6 +61,10 @@ Use `rg` and `rg --files` for search.
   Please owns routine release changelog updates from merged Conventional Commits.
 - Merging a Release Please PR prepares a version and draft GitHub Release. Production
   deployment still requires the owner to manually publish that draft Release.
+- Do not merge a Release Please PR unless the draft GitHub Release will be published or
+  intentionally deleted in the same release decision. The repository release manifest
+  must track the latest published Release tag; deleted draft-only releases must not
+  remain as the Release Please baseline.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
