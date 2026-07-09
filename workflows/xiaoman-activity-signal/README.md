@@ -70,8 +70,8 @@ There are two Feishu-writing paths today, and they have different jobs:
   ledger path for activity records, participant counts, status mapping, and table-level
   defaults.
 - The Xiaoman event radar path writes daily digest views through the sidecar publisher:
-  `event_signals` becomes `事件信号表`, and daily digest/archive rows become `日报总表` /
-  `文档归档表`.
+  `event_signals` becomes `事件信号表`, and daily digest/archive rows become `日报总表`
+  / `文档归档表`.
 
 The activity ledger can be a useful human workbench, but AgentOS still treats Postgres
 `event_signals` and `work_items` as the workflow source of truth. Shadow validation
