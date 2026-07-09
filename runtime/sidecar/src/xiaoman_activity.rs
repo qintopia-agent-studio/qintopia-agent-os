@@ -13,6 +13,7 @@ use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, Se
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
@@ -21,7 +22,12 @@ use crate::{
 };
 
 const ACTOR_AGENT: &str = "xiaoman";
-const READ_ONLY_OPERATIONS: &[&str] = &["record-get", "list-by-date", "material-summary"];
+const READ_ONLY_OPERATIONS: &[&str] = &[
+    "record-get",
+    "list-by-date",
+    "material-summary",
+    "shadow-validate",
+];
 const WRITE_OPERATIONS: &[&str] = &[
     "status-update",
     "gap-update",
@@ -166,8 +172,41 @@ struct ActivityWorkerReport {
     records: Vec<ActivityRecordView>,
     summaries: Vec<String>,
     operations_work_item: Option<WorkItemCreateReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    feishu_record_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_signal_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matched_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    missing_in_agentos: Option<Vec<ShadowItem>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    missing_in_feishu: Option<Vec<ShadowItem>>,
     limitations: Vec<String>,
     guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ActivityShadowReport {
+    action_status: String,
+    feishu_record_count: usize,
+    event_signal_count: usize,
+    matched_count: usize,
+    missing_in_agentos: Vec<ShadowItem>,
+    missing_in_feishu: Vec<ShadowItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ShadowItem {
+    title: String,
+    normalized_title: String,
+    signal_date: String,
+}
+
+#[derive(Debug, Clone)]
+struct EventSignalActivity {
+    title: String,
+    signal_date: String,
 }
 
 pub async fn run(
@@ -210,7 +249,9 @@ async fn execute_with_config(
     let apply_requested = apply && !dry_run;
     let mut report = base_report(operation.clone(), &payload, apply_requested);
 
-    if operation_is_read && apply_requested {
+    if operation == "shadow-validate" {
+        execute_shadow_validate(cli, &mut report, &payload, apply_requested, config).await?;
+    } else if operation_is_read && apply_requested {
         execute_read_operation(&mut report, &operation, &payload, config)?;
     } else if operation_is_read {
         report.action_status = "dry_run_ok".to_string();
@@ -254,6 +295,11 @@ fn base_report(
         records: Vec::new(),
         summaries: Vec::new(),
         operations_work_item: None,
+        feishu_record_count: None,
+        event_signal_count: None,
+        matched_count: None,
+        missing_in_agentos: None,
+        missing_in_feishu: None,
         limitations: Vec::new(),
         guardrails: vec![
             "validates wrapper payload before any data access".to_string(),
@@ -336,6 +382,72 @@ async fn execute_signal_ingest(
         .guardrails
         .push("duplicate signals use a stable event_signal_id idempotency key".to_string());
     Ok(())
+}
+
+async fn execute_shadow_validate(
+    cli: &Cli,
+    report: &mut ActivityWorkerReport,
+    payload: &ActivityPayload,
+    apply_requested: bool,
+    config: &ActivityRuntimeConfig,
+) -> Result<()> {
+    report.source = "feishu_agentos_shadow".to_string();
+    report.safe_for_chat = false;
+    report.guardrails.push(
+        "shadow-validate compares Feishu mirror coverage against AgentOS event_signals without treating Feishu as source of truth".to_string(),
+    );
+    report.guardrails.push(
+        "shadow-validate is read-only and must not write Feishu, QiWe, or AgentOS rows".to_string(),
+    );
+
+    if !apply_requested {
+        report.action_status = "dry_run_ok".to_string();
+        report.limitations.push(
+            "shadow-validate dry-run only validates payload shape; use --apply with explicit Feishu allowlist and database config for read-only comparison".to_string(),
+        );
+        return Ok(());
+    }
+
+    let Some(base_config) = config.feishu_base.as_ref() else {
+        report.action_status = "shadow_source_not_configured".to_string();
+        apply_shadow_report(report, ActivityShadowReport::not_configured());
+        report.limitations.push(
+            "set --use-feishu-base with the explicit Xiaoman Feishu allowlist before shadow validation".to_string(),
+        );
+        return Ok(());
+    };
+
+    let database_url = match cli.database_url.as_ref() {
+        Some(url) if !url.trim().is_empty() => url,
+        _ => {
+            report.action_status = "shadow_source_not_configured".to_string();
+            apply_shadow_report(report, ActivityShadowReport::not_configured());
+            report.limitations.push(
+                "QINTOPIA_SIDECAR_DATABASE_URL is required for AgentOS event_signals shadow validation".to_string(),
+            );
+            return Ok(());
+        }
+    };
+
+    let feishu_records = load_feishu_records_for_shadow(base_config)?;
+    let feishu_items = shadow_items_from_records(&feishu_records, &payload.date);
+    let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+    let event_signals = load_xiaoman_event_signals_for_shadow(&pool, &payload.date).await?;
+    let event_items = shadow_items_from_event_signals(&event_signals);
+    let shadow = compare_shadow_items(&feishu_items, &event_items);
+
+    report.action_status = shadow.action_status.clone();
+    report.record_count = shadow.feishu_record_count;
+    apply_shadow_report(report, shadow);
+    Ok(())
+}
+
+fn apply_shadow_report(report: &mut ActivityWorkerReport, shadow: ActivityShadowReport) {
+    report.feishu_record_count = Some(shadow.feishu_record_count);
+    report.event_signal_count = Some(shadow.event_signal_count);
+    report.matched_count = Some(shadow.matched_count);
+    report.missing_in_agentos = Some(shadow.missing_in_agentos);
+    report.missing_in_feishu = Some(shadow.missing_in_feishu);
 }
 
 fn signal_work_item_request(
@@ -616,6 +728,192 @@ fn load_feishu_records(
         .iter()
         .map(|record| ActivityRecord::from_feishu_value(record, table_role))
         .collect()
+}
+
+fn load_feishu_records_for_shadow(
+    config: &ActivityFeishuBaseConfig,
+) -> Result<Vec<ActivityRecord>> {
+    let mut records = Vec::new();
+    for table_role in TABLE_ROLES {
+        records.extend(load_feishu_records(config, table_role)?);
+    }
+    Ok(records)
+}
+
+async fn load_xiaoman_event_signals_for_shadow(
+    pool: &PgPool,
+    signal_date: &str,
+) -> Result<Vec<EventSignalActivity>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT title, signal_date::text AS signal_date
+        FROM qintopia_agent_os.event_signals
+        WHERE owner_agent = 'xiaoman'
+          AND signal_date = $1::date
+          AND status <> '已关闭'
+        ORDER BY title ASC, created_at ASC
+        "#,
+    )
+    .bind(signal_date)
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman event_signals for shadow validation")?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(EventSignalActivity {
+                title: row.try_get("title")?,
+                signal_date: row.try_get("signal_date")?,
+            })
+        })
+        .collect()
+}
+
+fn shadow_items_from_records(records: &[ActivityRecord], signal_date: &str) -> Vec<ShadowItem> {
+    let mut items = records
+        .iter()
+        .filter(|record| record.matches_date(signal_date))
+        .map(|record| ShadowItem::new(record.title.clone(), signal_date.to_string()))
+        .collect::<Vec<_>>();
+    sort_and_dedupe_shadow_items(&mut items);
+    items
+}
+
+fn shadow_items_from_event_signals(signals: &[EventSignalActivity]) -> Vec<ShadowItem> {
+    let mut items = signals
+        .iter()
+        .map(|signal| ShadowItem::new(signal.title.clone(), signal.signal_date.clone()))
+        .collect::<Vec<_>>();
+    sort_and_dedupe_shadow_items(&mut items);
+    items
+}
+
+fn compare_shadow_items(
+    feishu_items: &[ShadowItem],
+    event_items: &[ShadowItem],
+) -> ActivityShadowReport {
+    let missing_in_agentos = feishu_items
+        .iter()
+        .filter(|item| {
+            !event_items
+                .iter()
+                .any(|candidate| shadow_key_matches(item, candidate))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let missing_in_feishu = event_items
+        .iter()
+        .filter(|item| {
+            !feishu_items
+                .iter()
+                .any(|candidate| shadow_key_matches(item, candidate))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let matched_count = feishu_items
+        .iter()
+        .filter(|item| {
+            event_items
+                .iter()
+                .any(|candidate| shadow_key_matches(item, candidate))
+        })
+        .count();
+    let action_status = if missing_in_agentos.is_empty() && missing_in_feishu.is_empty() {
+        "shadow_match"
+    } else {
+        "shadow_mismatch"
+    }
+    .to_string();
+
+    ActivityShadowReport {
+        action_status,
+        feishu_record_count: feishu_items.len(),
+        event_signal_count: event_items.len(),
+        matched_count,
+        missing_in_agentos,
+        missing_in_feishu,
+    }
+}
+
+fn shadow_key_matches(left: &ShadowItem, right: &ShadowItem) -> bool {
+    left.signal_date == right.signal_date && left.normalized_title == right.normalized_title
+}
+
+fn sort_and_dedupe_shadow_items(items: &mut Vec<ShadowItem>) {
+    items.sort_by(|left, right| {
+        left.signal_date
+            .cmp(&right.signal_date)
+            .then_with(|| left.normalized_title.cmp(&right.normalized_title))
+    });
+    items.dedup_by(|left, right| shadow_key_matches(left, right));
+}
+
+fn normalize_shadow_title(value: &str) -> String {
+    value
+        .chars()
+        .filter_map(|ch| {
+            if ch.is_whitespace()
+                || matches!(
+                    ch,
+                    '，' | ','
+                        | '。'
+                        | '.'
+                        | '、'
+                        | '：'
+                        | ':'
+                        | '；'
+                        | ';'
+                        | '！'
+                        | '!'
+                        | '？'
+                        | '?'
+                        | '（'
+                        | ')'
+                        | '）'
+                        | '('
+                        | '【'
+                        | '】'
+                        | '['
+                        | ']'
+                        | '「'
+                        | '」'
+                        | '《'
+                        | '》'
+                        | '-'
+                        | '_'
+                        | '—'
+                )
+            {
+                None
+            } else {
+                Some(ch.to_lowercase().to_string())
+            }
+        })
+        .collect::<String>()
+}
+
+impl ActivityShadowReport {
+    fn not_configured() -> Self {
+        Self {
+            action_status: "shadow_source_not_configured".to_string(),
+            feishu_record_count: 0,
+            event_signal_count: 0,
+            matched_count: 0,
+            missing_in_agentos: Vec::new(),
+            missing_in_feishu: Vec::new(),
+        }
+    }
+}
+
+impl ShadowItem {
+    fn new(title: String, signal_date: String) -> Self {
+        let normalized_title = normalize_shadow_title(&title);
+        Self {
+            title,
+            normalized_title,
+            signal_date,
+        }
+    }
 }
 
 fn activity_feishu_base_config(cli: &Cli) -> Result<ActivityFeishuBaseConfig> {
@@ -1042,7 +1340,7 @@ fn post_raw(
     }
     let mut request = format!(
         "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.as_bytes().len()
+        body.len()
     );
     for header in headers {
         request.push_str(header);
@@ -1125,7 +1423,7 @@ fn parse_http_response(response: &[u8]) -> Result<String> {
     }
     let is_chunked = head
         .lines()
-        .any(|line| line.to_ascii_lowercase() == "transfer-encoding: chunked");
+        .any(|line| line.eq_ignore_ascii_case("transfer-encoding: chunked"));
     if is_chunked {
         decode_chunked_body(body)
     } else {
@@ -1250,6 +1548,7 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
             ("record_id", &payload.record_id),
             ("table_role", &payload.table_role),
         ])?,
+        "shadow-validate" => require_fields(&[("date", &payload.date)])?,
         _ => unreachable!("operation allowlist checked above"),
     }
     Ok(())
@@ -1571,6 +1870,140 @@ mod tests {
             feishu_timestamp_as_shanghai_datetime(&json!("1782630000000")),
             Some("2026-06-28 15:00".to_string())
         );
+    }
+
+    #[test]
+    fn shadow_validation_matches_feishu_records_and_event_signals() {
+        let feishu = vec![
+            ActivityRecord {
+                record_id: "rec_plan_shadow_1".to_string(),
+                table_role: "activity_plan".to_string(),
+                title: "周日共创晚餐".to_string(),
+                activity_date: Some("2026-06-28".to_string()),
+                start_time: None,
+                end_time: None,
+                location: None,
+                status: None,
+                promotion_status: None,
+                owner_name: None,
+                initiator_name: None,
+                material_summary: None,
+                gap_summary: None,
+                notes: None,
+                updated_at: None,
+            },
+            ActivityRecord {
+                record_id: "rec_occurrence_shadow_1".to_string(),
+                table_role: "activity_occurrence".to_string(),
+                title: "社区共学".to_string(),
+                activity_date: None,
+                start_time: Some("2026-06-28 15:00".to_string()),
+                end_time: None,
+                location: None,
+                status: None,
+                promotion_status: None,
+                owner_name: None,
+                initiator_name: None,
+                material_summary: None,
+                gap_summary: None,
+                notes: None,
+                updated_at: None,
+            },
+        ];
+        let signals = vec![
+            EventSignalActivity {
+                title: "周日共创晚餐".to_string(),
+                signal_date: "2026-06-28".to_string(),
+            },
+            EventSignalActivity {
+                title: "社区共学".to_string(),
+                signal_date: "2026-06-28".to_string(),
+            },
+        ];
+
+        let shadow = compare_shadow_items(
+            &shadow_items_from_records(&feishu, "2026-06-28"),
+            &shadow_items_from_event_signals(&signals),
+        );
+
+        assert_eq!(shadow.action_status, "shadow_match");
+        assert_eq!(shadow.feishu_record_count, 2);
+        assert_eq!(shadow.event_signal_count, 2);
+        assert_eq!(shadow.matched_count, 2);
+        assert!(shadow.missing_in_agentos.is_empty());
+        assert!(shadow.missing_in_feishu.is_empty());
+    }
+
+    #[test]
+    fn shadow_validation_reports_missing_sides() {
+        let feishu = vec![ShadowItem::new(
+            "Feishu 只有的活动".to_string(),
+            "2026-06-28".to_string(),
+        )];
+        let agentos = vec![ShadowItem::new(
+            "AgentOS 只有的活动".to_string(),
+            "2026-06-28".to_string(),
+        )];
+
+        let shadow = compare_shadow_items(&feishu, &agentos);
+
+        assert_eq!(shadow.action_status, "shadow_mismatch");
+        assert_eq!(shadow.matched_count, 0);
+        assert_eq!(shadow.missing_in_agentos[0].title, "Feishu 只有的活动");
+        assert_eq!(shadow.missing_in_feishu[0].title, "AgentOS 只有的活动");
+    }
+
+    #[test]
+    fn shadow_title_normalization_handles_case_space_and_punctuation() {
+        let feishu = vec![ShadowItem::new(
+            " AgentOS：周日-共创 晚餐！".to_string(),
+            "2026-06-28".to_string(),
+        )];
+        let agentos = vec![ShadowItem::new(
+            "agentos周日共创晚餐".to_string(),
+            "2026-06-28".to_string(),
+        )];
+
+        let shadow = compare_shadow_items(&feishu, &agentos);
+
+        assert_eq!(shadow.action_status, "shadow_match");
+        assert_eq!(shadow.matched_count, 1);
+    }
+
+    #[test]
+    fn shadow_report_does_not_expose_raw_feishu_or_message_ids() {
+        let feishu = vec![ActivityRecord {
+            record_id: "rec_sensitive_shadow".to_string(),
+            table_role: "activity_plan".to_string(),
+            title: "安全输出活动".to_string(),
+            activity_date: Some("2026-06-28".to_string()),
+            start_time: None,
+            end_time: None,
+            location: None,
+            status: None,
+            promotion_status: None,
+            owner_name: None,
+            initiator_name: None,
+            material_summary: None,
+            gap_summary: None,
+            notes: None,
+            updated_at: None,
+        }];
+        let signals = vec![EventSignalActivity {
+            title: "安全输出活动".to_string(),
+            signal_date: "2026-06-28".to_string(),
+        }];
+        let shadow = compare_shadow_items(
+            &shadow_items_from_records(&feishu, "2026-06-28"),
+            &shadow_items_from_event_signals(&signals),
+        );
+        let raw = serde_json::to_string(&shadow.missing_in_agentos).unwrap()
+            + &serde_json::to_string(&shadow.missing_in_feishu).unwrap();
+
+        assert!(!raw.contains("rec_sensitive_shadow"));
+        assert!(!raw.contains("tbl_"));
+        assert!(!raw.contains("msg_"));
+        assert!(!raw.contains("app_token"));
     }
 
     #[test]

@@ -31,7 +31,7 @@ tags:
   - activity
   - signal
 next_actions:
-  - Shadow-validate Feishu adapter reads against AgentOS event signal rows before any
-    Feishu write path is enabled.
+  - Add a read-only worker that scans eligible AgentOS event_signals and submits
+    signal-ingest work items without enabling external sends.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.

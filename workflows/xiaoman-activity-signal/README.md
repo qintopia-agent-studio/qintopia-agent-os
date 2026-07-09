@@ -49,6 +49,12 @@ creates exactly one `xiaoman.create_activity_request` work item, verifies that t
 item stores `source_event_signal_id`, and verifies that replaying the same signal
 returns the existing work item by idempotency key.
 
+`xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
+the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
+coverage by normalized activity title and date, and reports sanitized
+`missing_in_agentos` / `missing_in_feishu` lists. It does not write Feishu, write
+Postgres, send QiWe messages, or make Feishu the source of truth.
+
 ## Production Boundary
 
 - This workflow can write Agent OS control-plane rows after the sidecar contract is
@@ -82,4 +88,5 @@ reviewed monorepo contracts.
 ```bash
 pnpm workflows:check
 pnpm check:runtime
+deploy/sidecar/scripts/xiaoman-activity-shadow-read-smoke.sh
 ```
