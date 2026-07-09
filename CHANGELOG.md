@@ -39,8 +39,6 @@ become versioned.
 ### Maintenance
 
 * add pre-commit quick checks ([#53](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/53)) ([9c29ad3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9c29ad3bfeb5c185629711ef0662f1c0a578658b))
-* **master:** release 0.3.0 ([#40](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/40)) ([b8333d9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b8333d9953a7793669c25702b14c8a90d471d0bb))
-* **master:** release 0.3.1 ([#47](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/47)) ([29b04ee](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/29b04ee620de427362cffe5e99287fcfbd3e8ade))
 
 ## [0.2.2](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.1...v0.2.2) (2026-07-08)
 
