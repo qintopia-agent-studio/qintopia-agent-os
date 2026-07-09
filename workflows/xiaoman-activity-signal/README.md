@@ -49,6 +49,13 @@ creates exactly one `xiaoman.create_activity_request` work item, verifies that t
 item stores `source_event_signal_id`, and verifies that replaying the same signal
 returns the existing work item by idempotency key.
 
+After an owner-approved deploy, the guarded
+`deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh` checks that
+the runtime timer is active, that its service command is fixed to
+`run-xiaoman-activity-signal-worker --once --apply`, that recent journal output does not
+leak known sensitive markers, and that `run-xiaoman-activity-signal-worker --check-only`
+can preview the current AgentOS queue. It is a read-only production observation smoke.
+
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
 coverage by normalized activity title and date, and reports sanitized
