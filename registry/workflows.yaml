@@ -16,8 +16,10 @@ entries:
   - id: workflows/xiaoman-activity-signal
     path: workflows/xiaoman-activity-signal
     manifest: workflows/xiaoman-activity-signal/workflow.yaml
-    status: draft
-    notes: Xiaoman activity signal intake and Agent OS activity state workflow.
+    status: active
+    notes:
+      Xiaoman activity signal intake and AgentOS-only downstream preflight; production
+      observation record still pending.
   - id: workflows/visual-asset-request
     path: workflows/visual-asset-request
     manifest: workflows/visual-asset-request/workflow.yaml

@@ -11,6 +11,15 @@ reviewable Agent OS state.
 - Keep Xiaoman's path read-only or database-scoped until owner-reviewed runtime config
   enables more behavior.
 
+## Current Status
+
+This workflow is active for the AgentOS-only production preflight path:
+`event_signals -> activity request -> evidence/visual children -> internal artifacts -> awaiting-publish group message request`.
+The remaining production gate is an owner-approved, read-only aggregate preflight run
+recorded in `deploy/smoke/docs/xiaoman-production-preflight-record.md`. Passing that
+gate still does not approve Feishu writeback, QiWe sends, poster publishing, real
+Wenyuange retrieval, or Huabaosi production generation.
+
 ## Signal Intake Contract
 
 The sidecar entrypoint is `xiaoman-activity signal-ingest`. It accepts structured
