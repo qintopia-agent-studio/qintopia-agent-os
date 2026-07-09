@@ -80,6 +80,21 @@ create pending `poster_brief` artifacts. These timers still do not call live Wen
 search, Huabaosi production generation, Feishu, QiWe, poster publishing, or external
 send adapters.
 
+`run-xiaoman-activity-send-request-starter-worker` adds the next AgentOS-only handoff:
+after a Xiaoman visual child has a reviewed `approved` `poster_brief`, it creates one
+missing `erhua.send_group_message` / `group_message_request` child under the same
+activity parent. The new child starts at `awaiting_publish`, references the approved
+artifact, and records `send_executed=false`. It does not record final confirmation, move
+the request to `queued`, run send-ready, publish, call QiWe, write Feishu, or call
+external adapters.
+
+`deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
+checks this handoff in read-only mode by running
+`run-xiaoman-activity-send-request-starter-worker --check-only` and verifying the
+sanitized report shape. Timer inspection is intentionally disabled unless
+`QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_EXPECT_TIMER=1` is set after a future
+owner-reviewed runtime scheduling change.
+
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
 coverage by normalized activity title and date, and reports sanitized
@@ -128,6 +143,9 @@ raw Feishu record ids.
   applying artifact writes or calling external systems.
 - Downstream runtime scheduling can turn child work items into internal
   `evidence_summary` and pending `poster_brief` artifacts without external adapters.
+- Approved Xiaoman `poster_brief` artifacts can create one awaiting-publish
+  `group_message_request` without final confirmation, queueing, send-ready, or external
+  sends.
 - Activity request starter creates missing evidence and visual child work items without
   duplicating existing children.
 - Duplicate signal returns the existing work item by idempotency key.
@@ -154,4 +172,6 @@ pnpm workflows:check
 pnpm check:runtime
 deploy/sidecar/scripts/xiaoman-activity-shadow-read-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh
+bash -n deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh
 ```

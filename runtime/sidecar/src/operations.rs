@@ -328,6 +328,26 @@ pub struct XiaomanActivityPromotionStarterWorkerReport {
     pub guardrails: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct XiaomanActivitySendRequestStarterWorkerReport {
+    pub success: bool,
+    pub dry_run: bool,
+    pub apply_requested: bool,
+    pub check_only: bool,
+    pub worker: &'static str,
+    pub source: &'static str,
+    pub action_status: String,
+    pub requested_work_item_id: Option<Uuid>,
+    pub scanned_count: usize,
+    pub created_count: usize,
+    pub existing_count: usize,
+    pub missing_child_count: usize,
+    pub safe_for_chat: bool,
+    pub work_items: Vec<WorkItemCreateReport>,
+    pub limitations: Vec<String>,
+    pub guardrails: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 struct XiaomanActivityPromotionCandidate {
     id: Uuid,
@@ -339,6 +359,19 @@ struct XiaomanActivityPromotionCandidate {
     human_owner: String,
     missing_evidence_child: bool,
     missing_visual_child: bool,
+}
+
+#[derive(Debug, Clone)]
+struct XiaomanActivitySendRequestCandidate {
+    parent_id: Uuid,
+    visual_work_item_id: Uuid,
+    approved_artifact_id: Uuid,
+    brief_summary: String,
+    source_type: String,
+    source_refs: Value,
+    source_event_signal_id: Option<Uuid>,
+    priority: String,
+    human_owner: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -756,6 +789,44 @@ pub async fn run_xiaoman_activity_promotion_starter_worker(
     Ok(())
 }
 
+pub async fn run_xiaoman_activity_send_request_starter_worker(
+    cli: &Cli,
+    check_only: bool,
+    once: bool,
+    apply: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+    target_group_alias: String,
+    message_text: String,
+) -> Result<()> {
+    if check_only && apply {
+        bail!("use either --check-only or --apply, not both");
+    }
+    if !once && !check_only {
+        bail!("xiaoman activity send request starter worker currently supports --once or --check-only");
+    }
+    let database_url = cli.database_url_required()?;
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
+    let policy = if apply {
+        OperationsPolicy::from_cli(cli, true)
+    } else {
+        OperationsPolicy::dry_run()
+    };
+    let report = run_xiaoman_activity_send_request_starter_batch(
+        &pool,
+        check_only,
+        apply && !check_only,
+        batch_size,
+        work_item_id,
+        &target_group_alias,
+        &message_text,
+        &policy,
+    )
+    .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
 pub async fn run_capability_list(cli: &Cli, use_db: bool) -> Result<()> {
     let report = if use_db {
         let database_url = cli.database_url_required()?;
@@ -987,6 +1058,53 @@ async fn run_xiaoman_activity_promotion_starter_batch(
     ))
 }
 
+async fn run_xiaoman_activity_send_request_starter_batch(
+    pool: &PgPool,
+    check_only: bool,
+    apply_requested: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+    target_group_alias: &str,
+    message_text: &str,
+    policy: &OperationsPolicy,
+) -> Result<XiaomanActivitySendRequestStarterWorkerReport> {
+    let candidates =
+        load_xiaoman_activity_send_request_candidates(pool, work_item_id, batch_size).await?;
+    let mut work_items = Vec::new();
+
+    for candidate in &candidates {
+        let request = xiaoman_activity_send_request(candidate, target_group_alias, message_text)?;
+        let report = if apply_requested {
+            create_work_item(pool, request, true, policy).await?
+        } else {
+            create_work_item_dry_run(request)?
+        };
+        work_items.push(report);
+    }
+
+    let existing_count = work_items.iter().filter(|item| item.existing).count();
+    let created_count = work_items.len().saturating_sub(existing_count);
+    let action_status = if candidates.is_empty() {
+        "no_eligible_approved_visual_artifacts"
+    } else if apply_requested {
+        "group_message_requests_created"
+    } else {
+        "group_message_requests_preview"
+    };
+
+    Ok(xiaoman_activity_send_request_starter_report(
+        check_only,
+        apply_requested,
+        work_item_id,
+        candidates.len(),
+        created_count,
+        existing_count,
+        candidates.len(),
+        action_status,
+        work_items,
+    ))
+}
+
 async fn load_xiaoman_activity_promotion_candidates(
     pool: &PgPool,
     work_item_id: Option<Uuid>,
@@ -1059,6 +1177,76 @@ async fn load_xiaoman_activity_promotion_candidates(
                 human_owner: row.try_get("human_owner")?,
                 missing_evidence_child: row.try_get("missing_evidence_child")?,
                 missing_visual_child: row.try_get("missing_visual_child")?,
+            })
+        })
+        .collect()
+}
+
+async fn load_xiaoman_activity_send_request_candidates(
+    pool: &PgPool,
+    work_item_id: Option<Uuid>,
+    batch_size: i64,
+) -> Result<Vec<XiaomanActivitySendRequestCandidate>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            parent.id AS parent_id,
+            visual.id AS visual_work_item_id,
+            artifact.id AS approved_artifact_id,
+            parent.brief_summary,
+            parent.source_type,
+            parent.source_refs,
+            parent.source_event_signal_id,
+            parent.priority,
+            parent.human_owner
+        FROM qintopia_agent_os.work_items parent
+        JOIN qintopia_agent_os.work_items visual
+          ON visual.parent_work_item_id = parent.id
+         AND visual.capability_key = 'huabaosi.create_visual_asset'
+         AND visual.work_item_type = 'visual_asset_request'
+         AND visual.status = 'completed'
+        JOIN LATERAL (
+            SELECT id
+            FROM qintopia_agent_os.artifacts artifact
+            WHERE artifact.work_item_id = visual.id
+              AND artifact.artifact_type = 'poster_brief'
+              AND artifact.review_status = 'approved'
+            ORDER BY artifact.updated_at DESC, artifact.created_at DESC
+            LIMIT 1
+        ) artifact ON true
+        WHERE parent.capability_key = 'xiaoman.create_activity_request'
+          AND parent.work_item_type = 'activity_promotion_request'
+          AND parent.target_agent = 'xiaoman'
+          AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_items child
+              WHERE child.parent_work_item_id = parent.id
+                AND child.capability_key = 'erhua.send_group_message'
+                AND child.work_item_type = 'group_message_request'
+          )
+        ORDER BY parent.created_at ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(batch_size.max(1))
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman activity send request candidates")?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(XiaomanActivitySendRequestCandidate {
+                parent_id: row.try_get("parent_id")?,
+                visual_work_item_id: row.try_get("visual_work_item_id")?,
+                approved_artifact_id: row.try_get("approved_artifact_id")?,
+                brief_summary: row.try_get("brief_summary")?,
+                source_type: row.try_get("source_type")?,
+                source_refs: row.try_get("source_refs")?,
+                source_event_signal_id: row.try_get("source_event_signal_id")?,
+                priority: row.try_get("priority")?,
+                human_owner: row.try_get("human_owner")?,
             })
         })
         .collect()
@@ -3808,6 +3996,65 @@ fn xiaoman_activity_promotion_child_request(
     }
 }
 
+fn xiaoman_activity_send_request(
+    candidate: &XiaomanActivitySendRequestCandidate,
+    target_group_alias: &str,
+    message_text: &str,
+) -> Result<WorkItemCreateRequest> {
+    let target_group_alias = normalize_key(target_group_alias);
+    let message_text = message_text.trim();
+    require_non_empty("target_group_alias", &target_group_alias)?;
+    require_non_empty("message_text", message_text)?;
+    if message_text.chars().count() > 500 {
+        bail!("message_text must be 500 characters or fewer");
+    }
+    if contains_sensitive_text(message_text) {
+        bail!("message_text contains disallowed sensitive or raw internal content");
+    }
+
+    Ok(WorkItemCreateRequest {
+        requester_agent: "xiaoman".to_string(),
+        target_agent: "erhua".to_string(),
+        capability_key: "erhua.send_group_message".to_string(),
+        work_item_type: "group_message_request".to_string(),
+        brief_summary: format!("发送已审核活动海报：{}", candidate.brief_summary),
+        purpose: "activity_group_message_request".to_string(),
+        human_owner: candidate.human_owner.clone(),
+        priority: candidate.priority.clone(),
+        source_type: candidate.source_type.clone(),
+        source_refs: candidate.source_refs.clone(),
+        source_event_signal_id: candidate.source_event_signal_id,
+        payload: json!({
+            "workflow_type": "activity_promotion",
+            "planner_intent": "send_group_message_after_final_confirmation",
+            "approved_artifact_id": candidate.approved_artifact_id,
+            "visual_work_item_id": candidate.visual_work_item_id,
+            "target_channel": "qiwe",
+            "target_group_alias": target_group_alias,
+            "message_text": message_text,
+            "send_executed": false,
+        }),
+        payload_redaction_policy: "summary_only".to_string(),
+        idempotency_key: format!(
+            "xiaoman_activity_promotion:{}:group-message-child",
+            candidate.parent_id
+        ),
+        dedupe_key: String::new(),
+        metadata: json!({
+            "workflow_type": "activity_promotion",
+            "workflow_starter": "run-xiaoman-activity-send-request-starter-worker",
+            "workflow_step": "group_message",
+            "parent_activity_request_work_item_id": candidate.parent_id,
+            "visual_work_item_id": candidate.visual_work_item_id,
+            "approved_artifact_id": candidate.approved_artifact_id,
+            "requires_human_final_confirmation": true,
+            "send_executed": false,
+        }),
+        parent_work_item_id: Some(candidate.parent_id),
+        approved_artifact_id: Some(candidate.approved_artifact_id),
+    })
+}
+
 fn work_item_request_preview(request: &WorkItemCreateRequest) -> WorkItemCreateRequestPreview {
     WorkItemCreateRequestPreview {
         parent_work_item_id: request.parent_work_item_id,
@@ -4689,6 +4936,50 @@ fn xiaoman_activity_promotion_starter_report(
     }
 }
 
+fn xiaoman_activity_send_request_starter_report(
+    check_only: bool,
+    apply_requested: bool,
+    requested_work_item_id: Option<Uuid>,
+    scanned_count: usize,
+    created_count: usize,
+    existing_count: usize,
+    missing_child_count: usize,
+    action_status: &str,
+    work_items: Vec<WorkItemCreateReport>,
+) -> XiaomanActivitySendRequestStarterWorkerReport {
+    XiaomanActivitySendRequestStarterWorkerReport {
+        success: true,
+        dry_run: !apply_requested,
+        apply_requested,
+        check_only,
+        worker: "xiaoman-activity-send-request-starter-worker",
+        source: "agentos_work_items",
+        action_status: action_status.to_string(),
+        requested_work_item_id,
+        scanned_count,
+        created_count,
+        existing_count,
+        missing_child_count,
+        safe_for_chat: false,
+        work_items,
+        limitations: vec![
+            "starter worker only creates awaiting_publish AgentOS group_message_request work_items"
+                .to_string(),
+            "starter worker does not confirm, queue, send, publish, or call QiWe/Erhua adapters"
+                .to_string(),
+            "only approved poster_brief artifacts under Xiaoman activity promotion parents are eligible"
+                .to_string(),
+        ],
+        guardrails: vec![
+            "group_message_request still requires human final confirmation before it can be queued"
+                .to_string(),
+            "approved artifact and target group allowlist policies are enforced by operations create"
+                .to_string(),
+            "Postgres AgentOS work_items remain the source of truth".to_string(),
+        ],
+    }
+}
+
 fn recommended_command_for_workbench_event(
     request: &WorkbenchEventRecordRequest,
 ) -> Option<String> {
@@ -4916,6 +5207,22 @@ mod tests {
             human_owner: "xiaoman-owner".to_string(),
             missing_evidence_child,
             missing_visual_child,
+        }
+    }
+
+    fn xiaoman_send_candidate() -> XiaomanActivitySendRequestCandidate {
+        XiaomanActivitySendRequestCandidate {
+            parent_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            visual_work_item_id: Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap(),
+            approved_artifact_id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
+            brief_summary: "AgentOS 小满活动宣发".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({"event_signal_id": "evt_xiaoman_activity"}),
+            source_event_signal_id: Some(
+                Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
+            ),
+            priority: "normal".to_string(),
+            human_owner: "xiaoman-owner".to_string(),
         }
     }
 
@@ -5185,6 +5492,72 @@ mod tests {
         assert_eq!(report.action_status, "needs_clarification");
         assert!(report.work_item_result.is_none());
         assert!(!report.clarification_questions.is_empty());
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_builds_awaiting_publish_group_message() {
+        let candidate = xiaoman_send_candidate();
+        let request = xiaoman_activity_send_request(
+            &candidate,
+            "community_activity_group",
+            "活动海报已审核，请确认是否发送。",
+        )
+        .expect("request should build");
+        let report = create_work_item_dry_run(request).expect("request should validate");
+
+        assert_eq!(report.capability_key, "erhua.send_group_message");
+        assert_eq!(report.work_item_type, "group_message_request");
+        assert_eq!(report.current_status, "awaiting_publish");
+        assert_eq!(report.review_policy, "human_final_confirmation");
+        assert_eq!(report.parent_work_item_id, Some(candidate.parent_id));
+        assert_eq!(
+            report.idempotency_key,
+            format!(
+                "xiaoman_activity_promotion:{}:group-message-child",
+                candidate.parent_id
+            )
+        );
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_rejects_sensitive_message_text() {
+        let candidate = xiaoman_send_candidate();
+        let err = xiaoman_activity_send_request(
+            &candidate,
+            "community_activity_group",
+            "raw private chat transcript",
+        )
+        .expect_err("sensitive message should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("message_text contains disallowed sensitive"));
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_report_is_safe_for_chat() {
+        let report = xiaoman_activity_send_request_starter_report(
+            true,
+            false,
+            None,
+            1,
+            0,
+            0,
+            1,
+            "group_message_requests_preview",
+            Vec::new(),
+        );
+
+        assert_eq!(
+            report.worker,
+            "xiaoman-activity-send-request-starter-worker"
+        );
+        assert_eq!(report.source, "agentos_work_items");
+        assert!(!report.safe_for_chat);
+        assert!(report
+            .limitations
+            .iter()
+            .any(|item| item.contains("does not confirm")));
     }
 
     #[test]

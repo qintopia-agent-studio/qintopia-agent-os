@@ -126,37 +126,41 @@ allowlist。真实生产 adapter 启用前应让 `--profile production --strict`
    worker，写入 pending `poster_brief` artifact。
 7. 记录 artifact approved 审核，确认不会触发发布或发送事件，并确认 visual work
    item 推进到 `completed`。
-8. 在同一个 workflow parent 下，用 approved artifact 创建 child
+8. 对 Xiaoman activity promotion 路径运行
+   `run-xiaoman-activity-send-request-starter-worker`，从 approved `poster_brief`
+   创建一个 child `group_message_request`，初始状态必须是
+   `awaiting_publish`，且重复运行不重复创建、不确认、不排队、不发送。
+9. 在同一个 workflow parent 下，用 approved artifact 创建 child
    `group_message_request`，初始状态必须是 `awaiting_publish`。
-9. 记录人工最终确认，把群发请求推进到 `queued`。
-10. 定向运行 group-message send worker，只记录 `group_message_send_ready_recorded` 且
+10. 记录人工最终确认，把群发请求推进到 `queued`。
+11. 定向运行 group-message send worker，只记录 `group_message_send_ready_recorded` 且
     `send_executed=false`。
-11. 验证 unapproved artifact 不能创建群发请求，并写入 `denied_by_policy`。
-12. 验证已配置审核人/最终确认人 allowlist 时，非授权 reviewer/confirmer 会被拒绝并写入
+12. 验证 unapproved artifact 不能创建群发请求，并写入 `denied_by_policy`。
+13. 验证已配置审核人/最终确认人 allowlist 时，非授权 reviewer/confirmer 会被拒绝并写入
     `denied_by_policy`。
-13. 读取 parent status tree，确认 evidence、visual、group-message
+14. 读取 parent status tree，确认 evidence、visual、group-message
     child 都可追溯，且当前阻塞点可见。
-14. 运行 `operations-workflow-sync`，确认 parent metadata 写入
+15. 运行 `operations-workflow-sync`，确认 parent metadata 写入
     `workflow_summary`，并追加 `workflow_status_synced` 审计事件。
-15. 定向运行 `run-workflow-sync-worker --once`，确认 worker 路径也能写入同样的 parent
+16. 定向运行 `run-workflow-sync-worker --once`，确认 worker 路径也能写入同样的 parent
     summary，且不执行 child worker 或外部 adapter。
-16. 定向运行 workbench mirror，只写
+17. 定向运行 workbench mirror，只写
     `human_workbench_refs(provider=feishu_task_dry_run)`，不调用飞书。
-17. 记录一条 human workbench event，确认它只追加审计、不修改 work item 状态。
-18. 用相同 `external_event_id` 重放该事件，确认不会重复追加审计。
-19. 记录并处理一条审核请求类 workbench event，确认它通过
+18. 记录一条 human workbench event，确认它只追加审计、不修改 work item 状态。
+19. 用相同 `external_event_id` 重放该事件，确认不会重复追加审计。
+20. 记录并处理一条审核请求类 workbench event，确认它通过
     `operations-artifact-review-decision` 推进 artifact 审核状态。
-20. 记录并处理一条最终确认类 workbench event，确认它通过
+21. 记录并处理一条最终确认类 workbench event，确认它通过
     `operations-group-message-confirm` 把群发 work item 推进到 `queued`，但仍不发送。
-21. 记录并处理一条受控状态变更类 workbench event，确认它只能把非终态 work item 取消为
+22. 记录并处理一条受控状态变更类 workbench event，确认它只能把非终态 work item 取消为
     `cancelled`，并写入 `workbench_status_change_recorded`；尝试从任务看板直接标记
     `completed` 必须被拒绝，不能写入 processed 事件。
-22. 记录并处理一条负责人变更类 workbench event，确认它从 `metadata.new_human_owner` 更新
+23. 记录并处理一条负责人变更类 workbench event，确认它从 `metadata.new_human_owner` 更新
     `work_items.human_owner` 并写入 `workbench_owner_change_recorded`。
-23. 记录并处理一条附件类 workbench event，确认它从 `metadata.attachment_*` 创建
+24. 记录并处理一条附件类 workbench event，确认它从 `metadata.attachment_*` 创建
     `workbench_attachment` pending artifact，且不会发送或发布。
-24. 重复处理同一 event，确认 `human_workbench_event_processed` 幂等。
-25. 运行一次 workbench event
+25. 重复处理同一 event，确认 `human_workbench_event_processed` 幂等。
+26. 运行一次 workbench event
     worker 的空队列 dry-run，确认 comment-only 事件不会被误处理。
 
 ## Apply Smoke 后只读核查
