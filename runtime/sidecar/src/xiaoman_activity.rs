@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Row};
+use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::{
@@ -52,6 +53,15 @@ const FEISHU_READ_LIMITATION: &str = "Feishu Base read is allowlisted and read-o
 pub struct ActivityRuntimeConfig {
     pub fixture_path: Option<PathBuf>,
     pub feishu_base: Option<ActivityFeishuBaseConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignalWorkerOptions {
+    pub check_only: bool,
+    pub once: bool,
+    pub apply: bool,
+    pub batch_size: i64,
+    pub poll_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +219,40 @@ struct EventSignalActivity {
     signal_date: String,
 }
 
+#[derive(Debug, Clone)]
+struct EventSignalIngestCandidate {
+    id: Uuid,
+    signal_type: String,
+    title: String,
+    summary: String,
+    signal_date: String,
+    chat_id: String,
+    source_message_ids: Vec<Uuid>,
+    owner_name: String,
+    priority: String,
+    related_member_names: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SignalWorkerReport {
+    success: bool,
+    worker: &'static str,
+    source: &'static str,
+    dry_run: bool,
+    apply_requested: bool,
+    check_only: bool,
+    batch_size: i64,
+    scanned_count: usize,
+    submitted_count: usize,
+    existing_count: usize,
+    review_needed_count: usize,
+    action_status: String,
+    safe_for_chat: bool,
+    work_items: Vec<WorkItemCreateReport>,
+    limitations: Vec<String>,
+    guardrails: Vec<String>,
+}
+
 pub async fn run(
     cli: &Cli,
     operation: String,
@@ -235,6 +279,31 @@ pub async fn run(
 
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+pub async fn run_signal_worker(cli: &Cli, options: SignalWorkerOptions) -> Result<()> {
+    if options.check_only || options.once {
+        let report = run_signal_worker_batch(cli, &options).await?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+
+    let poll_seconds = options.poll_seconds.max(60);
+    loop {
+        match run_signal_worker_batch(cli, &options).await {
+            Ok(report) => tracing::info!(
+                scanned = report.scanned_count,
+                submitted = report.submitted_count,
+                existing = report.existing_count,
+                "xiaoman activity signal worker batch complete"
+            ),
+            Err(error) => tracing::warn!(
+                error = %error,
+                "xiaoman activity signal worker batch failed"
+            ),
+        }
+        sleep(StdDuration::from_secs(poll_seconds)).await;
+    }
 }
 
 async fn execute_with_config(
@@ -382,6 +451,113 @@ async fn execute_signal_ingest(
         .guardrails
         .push("duplicate signals use a stable event_signal_id idempotency key".to_string());
     Ok(())
+}
+
+async fn run_signal_worker_batch(
+    cli: &Cli,
+    options: &SignalWorkerOptions,
+) -> Result<SignalWorkerReport> {
+    let apply_requested = options.apply && !options.check_only;
+    let database_url = cli.database_url_required()?;
+    let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+    let candidates = load_signal_ingest_candidates(&pool, options.batch_size).await?;
+    let policy = operations::OperationsPolicy::from_cli(cli, true);
+    let mut work_items = Vec::new();
+    let mut review_needed_count = 0;
+
+    for candidate in &candidates {
+        let payload = candidate.to_activity_payload();
+        let missing_fields = signal_missing_fields(&payload);
+        if !missing_fields.is_empty() {
+            review_needed_count += 1;
+        }
+        let request = signal_work_item_request(&payload, &missing_fields);
+        let report = if apply_requested {
+            operations::create_work_item(&pool, request, true, &policy).await?
+        } else {
+            operations::create_work_item_dry_run(request)?
+        };
+        work_items.push(report);
+    }
+
+    let existing_count = work_items.iter().filter(|item| item.existing).count();
+    let submitted_count = work_items.len().saturating_sub(existing_count);
+    let action_status = if candidates.is_empty() {
+        "no_eligible_signals"
+    } else if apply_requested {
+        "signal_ingest_submitted"
+    } else {
+        "signal_ingest_preview"
+    }
+    .to_string();
+
+    Ok(SignalWorkerReport {
+        success: true,
+        worker: "xiaoman-activity-signal-worker",
+        source: "agentos_event_signals",
+        dry_run: !apply_requested,
+        apply_requested,
+        check_only: options.check_only,
+        batch_size: options.batch_size.max(1),
+        scanned_count: candidates.len(),
+        submitted_count,
+        existing_count,
+        review_needed_count,
+        action_status,
+        safe_for_chat: false,
+        work_items,
+        limitations: vec![
+            "worker submits only AgentOS signal-ingest work items; it does not write Feishu or send QiWe messages".to_string(),
+            "long-running production scheduling remains disabled until reviewed runtime config is added".to_string(),
+        ],
+        guardrails: vec![
+            "selects owner_agent=xiaoman activity event_signals only".to_string(),
+            "skips event_signals that already have a xiaoman.create_activity_request work item".to_string(),
+            "uses signal-ingest idempotency keys for replay safety".to_string(),
+            "technical report is for logs, not WeCom users".to_string(),
+        ],
+    })
+}
+
+async fn load_signal_ingest_candidates(
+    pool: &PgPool,
+    batch_size: i64,
+) -> Result<Vec<EventSignalIngestCandidate>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            signals.id,
+            signals.signal_type,
+            signals.title,
+            signals.summary,
+            signals.signal_date::text AS signal_date,
+            signals.chat_id,
+            signals.source_message_ids,
+            signals.owner_name,
+            signals.priority,
+            signals.related_member_names
+        FROM qintopia_agent_os.event_signals signals
+        WHERE signals.owner_agent = 'xiaoman'
+          AND signals.signal_type = '活动/聚会'
+          AND signals.status <> '已关闭'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_items work_items
+              WHERE work_items.source_event_signal_id = signals.id
+                AND work_items.capability_key = 'xiaoman.create_activity_request'
+          )
+        ORDER BY signals.signal_date ASC, signals.created_at ASC
+        LIMIT $1
+        "#,
+    )
+    .bind(batch_size.max(1))
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman event_signals for signal-ingest worker")?;
+
+    rows.into_iter()
+        .map(EventSignalIngestCandidate::from_row)
+        .collect()
 }
 
 async fn execute_shadow_validate(
@@ -912,6 +1088,53 @@ impl ShadowItem {
             title,
             normalized_title,
             signal_date,
+        }
+    }
+}
+
+impl EventSignalIngestCandidate {
+    fn from_row(row: sqlx::postgres::PgRow) -> Result<Self> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            signal_type: row.try_get("signal_type")?,
+            title: row.try_get("title")?,
+            summary: row.try_get("summary")?,
+            signal_date: row.try_get("signal_date")?,
+            chat_id: row.try_get("chat_id")?,
+            source_message_ids: row.try_get("source_message_ids")?,
+            owner_name: row.try_get("owner_name")?,
+            priority: row.try_get("priority")?,
+            related_member_names: row.try_get("related_member_names")?,
+        })
+    }
+
+    fn to_activity_payload(&self) -> ActivityPayload {
+        ActivityPayload {
+            actor_agent: ACTOR_AGENT.to_string(),
+            operation: "signal-ingest".to_string(),
+            record_id: String::new(),
+            source_record_id: String::new(),
+            date: String::new(),
+            table_role: String::new(),
+            status: String::new(),
+            gap_summary: String::new(),
+            handoff_type: String::new(),
+            target_agent: String::new(),
+            brief_summary: self.summary.clone(),
+            event_signal_id: self.id.to_string(),
+            signal_type: self.signal_type.clone(),
+            activity_title: self.title.clone(),
+            signal_date: self.signal_date.clone(),
+            chat_id: self.chat_id.clone(),
+            source_message_ids: self
+                .source_message_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect(),
+            owner_name: self.owner_name.clone(),
+            priority: self.priority.clone(),
+            location: String::new(),
+            related_member_names: self.related_member_names.clone(),
         }
     }
 }
@@ -1816,6 +2039,41 @@ mod tests {
             .limitations
             .iter()
             .any(|item| item.contains("signal_date")));
+    }
+
+    #[test]
+    fn signal_worker_candidate_uses_signal_ingest_contract() {
+        let candidate = EventSignalIngestCandidate {
+            id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
+            signal_type: "活动/聚会".to_string(),
+            title: "周末共创晚餐".to_string(),
+            summary: "成员在群内讨论周末共创晚餐，需要小满跟进活动宣发。".to_string(),
+            signal_date: "2026-07-05".to_string(),
+            chat_id: "fixture-community-group".to_string(),
+            source_message_ids: vec![
+                Uuid::parse_str("55555555-5555-4555-8555-555555555555").unwrap()
+            ],
+            owner_name: "小满".to_string(),
+            priority: "高".to_string(),
+            related_member_names: vec!["阿城".to_string(), "小林".to_string()],
+        };
+
+        let payload = candidate.to_activity_payload();
+        let missing_fields = signal_missing_fields(&payload);
+        let request = signal_work_item_request(&payload, &missing_fields);
+        let source_refs_json = serde_json::to_string(&request.source_refs).unwrap();
+
+        assert!(missing_fields.is_empty());
+        assert_eq!(payload.actor_agent, "xiaoman");
+        assert_eq!(payload.operation, "signal-ingest");
+        assert_eq!(request.capability_key, "xiaoman.create_activity_request");
+        assert_eq!(request.source_event_signal_id, Some(candidate.id));
+        assert_eq!(
+            request.idempotency_key,
+            "xiaoman_activity_signal:44444444-4444-4444-8444-444444444444"
+        );
+        assert!(source_refs_json.contains("event_signal_message:"));
+        assert!(!source_refs_json.contains("55555555-5555-4555-8555-555555555555"));
     }
 
     #[test]

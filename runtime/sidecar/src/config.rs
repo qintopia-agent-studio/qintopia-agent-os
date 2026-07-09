@@ -744,6 +744,28 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Scan Xiaoman activity event_signals and submit signal-ingest work items.
+    RunXiaomanActivitySignalWorker {
+        /// Scan without writing AgentOS work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum event_signals to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Poll interval for long-running mode.
+        #[arg(long, default_value_t = 300)]
+        poll_seconds: u64,
+    },
     /// Create a capability-governed AgentOS operations work item.
     OperationsWorkItemCreate {
         /// JSON payload for the generic capability/work item request.

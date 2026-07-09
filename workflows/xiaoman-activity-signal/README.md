@@ -55,6 +55,29 @@ coverage by normalized activity title and date, and reports sanitized
 `missing_in_agentos` / `missing_in_feishu` lists. It does not write Feishu, write
 Postgres, send QiWe messages, or make Feishu the source of truth.
 
+`run-xiaoman-activity-signal-worker` scans eligible Xiaoman `event_signals` and submits
+the same `signal-ingest` work item contract in batches. `--check-only` previews the
+batch without writes; `--once --apply` creates missing AgentOS work items. The worker
+does not write Feishu, send QiWe messages, create visual assets, or change production
+runtime scheduling by itself.
+
+## Feishu Write Boundaries
+
+There are two Feishu-writing paths today, and they have different jobs:
+
+- The QiWe solitaire activity path parses activity/registration messages and writes a
+  configured Feishu activity table through `FeishuActivityWriter`. This is the activity
+  ledger path for activity records, participant counts, status mapping, and table-level
+  defaults.
+- The Xiaoman event radar path writes daily digest views through the sidecar publisher:
+  `event_signals` becomes `事件信号表`, and daily digest/archive rows become `日报总表`
+  / `文档归档表`.
+
+The activity ledger can be a useful human workbench, but AgentOS still treats Postgres
+`event_signals` and `work_items` as the workflow source of truth. Shadow validation
+exists to compare the ledger mirror against AgentOS coverage, not to infer facts from
+raw Feishu record ids.
+
 ## Production Boundary
 
 - This workflow can write Agent OS control-plane rows after the sidecar contract is
