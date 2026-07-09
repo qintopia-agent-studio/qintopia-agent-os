@@ -230,8 +230,12 @@ This output is a review artifact. It is not an installer.
 Install scope for the M9 window:
 - Install or update only units approved by the owner for the migration window.
 - Restart the main sidecar first, then workers that were already active before cutover.
-- Do not enable new worker services or timers by default.
+- Do not enable new worker services or timers by default unless this plan names an
+  owner-reviewed default-enabled exception.
 - Operations timers are rendered for review but should remain disabled unless explicitly approved.
+- The Xiaoman activity signal worker timer may be enabled by default after owner
+  review because it writes only AgentOS work_items from Xiaoman event_signals.
+  It must not write Feishu, send QiWe messages, or create visual assets.
 
 Apply shape during the approved window:
 1. Copy reviewed unit files into /etc/systemd/system.
@@ -347,6 +351,17 @@ render_all() {
     "qintopia-agentos-operations-group-send-ready.service" \
     "4min" \
     "${QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL:-1min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-signal-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Signal Worker" \
+    "run-xiaoman-activity-signal-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-signal-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity signal intake" \
+    "qintopia-agentos-xiaoman-activity-signal-worker.service" \
+    "5min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL:-2min}"
 }
 
 validate_output() {
@@ -367,6 +382,8 @@ validate_output() {
     "qintopia-agentos-operations-workbench-event.timer"
     "qintopia-agentos-operations-group-send-ready.service"
     "qintopia-agentos-operations-group-send-ready.timer"
+    "qintopia-agentos-xiaoman-activity-signal-worker.service"
+    "qintopia-agentos-xiaoman-activity-signal-worker.timer"
   )
 
   local file

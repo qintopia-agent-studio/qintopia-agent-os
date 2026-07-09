@@ -252,6 +252,87 @@ assert_sql_equals \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_signal_work_item_id}'::uuid AND event_type = 'created';"
 
+xiaoman_worker_signal_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_worker_signal_chat_id="operations-apply-smoke-worker-chat-${smoke_suffix}"
+xiaoman_worker_signal_dedupe_key="operations-apply-smoke:${smoke_suffix}:xiaoman-worker-signal"
+psql_value "
+INSERT INTO qintopia_agent_os.event_signals (
+  id,
+  platform,
+  chat_id,
+  signal_date,
+  signal_type,
+  title,
+  summary,
+  owner_name,
+  owner_agent,
+  priority,
+  status,
+  confidence,
+  dedupe_key,
+  extraction_version,
+  metadata
+) VALUES (
+  '${xiaoman_worker_signal_id}'::uuid,
+  'qiwe',
+  '${xiaoman_worker_signal_chat_id}',
+  DATE '2001-01-01',
+  '活动/聚会',
+  'AgentOS worker apply smoke 小满活动',
+  'AgentOS apply smoke validates Xiaoman activity signal worker runtime intake path',
+  'operations-apply-smoke-owner',
+  'xiaoman',
+  '中',
+  '待处理',
+  0.99,
+  '${xiaoman_worker_signal_dedupe_key}',
+  'operations_apply_smoke_v1',
+  '{\"smoke_case\":\"xiaoman_worker_signal\"}'::jsonb
+) ON CONFLICT (platform, chat_id, signal_date, dedupe_key, extraction_version) DO NOTHING
+RETURNING id;" >/dev/null
+
+xiaoman_worker_preview="$(run_json xiaoman_worker_preview run-xiaoman-activity-signal-worker --check-only --batch-size 1)"
+assert_json "$xiaoman_worker_preview" "data['success'] is True"
+assert_json "$xiaoman_worker_preview" "data['worker'] == 'xiaoman-activity-signal-worker'"
+assert_json "$xiaoman_worker_preview" "data['source'] == 'agentos_event_signals'"
+assert_json "$xiaoman_worker_preview" "data['dry_run'] is True"
+assert_json "$xiaoman_worker_preview" "data['check_only'] is True"
+assert_json "$xiaoman_worker_preview" "data['action_status'] == 'signal_ingest_preview'"
+assert_json "$xiaoman_worker_preview" "data['scanned_count'] == 1"
+assert_json "$xiaoman_worker_preview" "data['work_items'][0]['capability_key'] == 'xiaoman.create_activity_request'"
+assert_json "$xiaoman_worker_preview" "data['work_items'][0]['idempotency_key'] == 'xiaoman_activity_signal:${xiaoman_worker_signal_id}'"
+assert_json "$xiaoman_worker_preview" "data['safe_for_chat'] is False"
+
+xiaoman_worker_apply="$(run_json xiaoman_worker_apply run-xiaoman-activity-signal-worker --once --apply --batch-size 1)"
+assert_json "$xiaoman_worker_apply" "data['success'] is True"
+assert_json "$xiaoman_worker_apply" "data['worker'] == 'xiaoman-activity-signal-worker'"
+assert_json "$xiaoman_worker_apply" "data['source'] == 'agentos_event_signals'"
+assert_json "$xiaoman_worker_apply" "data['dry_run'] is False"
+assert_json "$xiaoman_worker_apply" "data['apply_requested'] is True"
+assert_json "$xiaoman_worker_apply" "data['action_status'] == 'signal_ingest_submitted'"
+assert_json "$xiaoman_worker_apply" "data['scanned_count'] == 1"
+assert_json "$xiaoman_worker_apply" "data['submitted_count'] == 1"
+assert_json "$xiaoman_worker_apply" "data['work_items'][0]['capability_key'] == 'xiaoman.create_activity_request'"
+assert_json "$xiaoman_worker_apply" "data['work_items'][0]['idempotency_key'] == 'xiaoman_activity_signal:${xiaoman_worker_signal_id}'"
+assert_json "$xiaoman_worker_apply" "data['work_items'][0]['existing'] is False"
+assert_json "$xiaoman_worker_apply" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_worker_created_one_work_item \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE source_event_signal_id = '${xiaoman_worker_signal_id}'::uuid AND capability_key = 'xiaoman.create_activity_request' AND requester_agent = 'default' AND target_agent = 'xiaoman' AND source_type = 'event_signal' AND idempotency_key = 'xiaoman_activity_signal:${xiaoman_worker_signal_id}';"
+
+xiaoman_worker_again="$(run_json xiaoman_worker_again run-xiaoman-activity-signal-worker --once --apply --batch-size 1)"
+assert_json "$xiaoman_worker_again" "data['success'] is True"
+assert_json "$xiaoman_worker_again" "data['worker'] == 'xiaoman-activity-signal-worker'"
+assert_json "$xiaoman_worker_again" "data['action_status'] in ('no_eligible_signals', 'signal_ingest_submitted')"
+assert_json "$xiaoman_worker_again" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_worker_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE idempotency_key = 'xiaoman_activity_signal:${xiaoman_worker_signal_id}';"
+
 planned_submit_payload="$(
   python3 - "$source_ref" <<'PY'
 import json

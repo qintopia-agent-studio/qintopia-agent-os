@@ -38,6 +38,11 @@ GROUP_SEND_READY_SERVICE_FILE="/etc/systemd/system/${GROUP_SEND_READY_SERVICE_NA
 GROUP_SEND_READY_TIMER_NAME="${QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_NAME:-qintopia-agentos-operations-group-send-ready.timer}"
 GROUP_SEND_READY_TIMER_FILE="/etc/systemd/system/${GROUP_SEND_READY_TIMER_NAME}"
 GROUP_SEND_READY_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL:-1min}"
+XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME:-qintopia-agentos-xiaoman-activity-signal-worker.service}"
+XIAOMAN_ACTIVITY_SIGNAL_SERVICE_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME}"
+XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME:-qintopia-agentos-xiaoman-activity-signal-worker.timer}"
+XIAOMAN_ACTIVITY_SIGNAL_TIMER_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME}"
+XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL:-2min}"
 REMOTE="${QINTOPIA_SIDECAR_GIT_REMOTE:-origin}"
 BRANCH="${QINTOPIA_SIDECAR_GIT_BRANCH:-main}"
 BIN="${REPO_DIR}/target/release/qintopia-message-sidecar"
@@ -58,7 +63,8 @@ Required before deploy/verify:
 Worker units are installed for message embedding, identity resolution, member
 profiles, SQL graph projection, event signals, daily digests, Feishu publishing,
 raw-message archive, AgentOS operations workflow summary sync, and AgentOS
-workbench event processing, and AgentOS group-send readiness audit.
+workbench event processing, AgentOS group-send readiness audit, and Xiaoman
+activity signal intake.
 
 AgentOS operations control-plane dry smoke runs during deploy/verify. The
 Postgres apply smoke runs only when QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1.
@@ -370,6 +376,38 @@ Unit=${GROUP_SEND_READY_SERVICE_NAME}
 [Install]
 WantedBy=timers.target
 EOF
+  log "installing systemd unit at ${XIAOMAN_ACTIVITY_SIGNAL_SERVICE_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_SIGNAL_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Xiaoman Activity Signal Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-xiaoman-activity-signal-worker --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${XIAOMAN_ACTIVITY_SIGNAL_TIMER_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS Xiaoman activity signal intake
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=${XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
   sudo systemctl daemon-reload
 }
 
@@ -443,6 +481,10 @@ QINTOPIA_RAW_ARCHIVE_FORMAT=jsonl.zst
 # AgentOS group-send readiness audit is installed as a timer. It only records
 # send-ready events and never calls QiWe/Erhua production send adapters.
 # QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL is read at deploy-time.
+# Xiaoman activity signal intake is installed as a timer. It only scans
+# owner_agent=xiaoman event_signals and writes AgentOS work_items; it does not
+# read/write Feishu, call QiWe, create visual assets, or send externally.
+# QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL is read at deploy-time.
 RUST_LOG=info,qintopia_message_sidecar=debug
 EOF
   sudo chown ubuntu:ubuntu "$ENV_FILE"
@@ -533,6 +575,8 @@ run_migrations_and_checks() {
   "$BIN" run-workbench-event-worker --once --dry-run
   log "running operations group send-ready worker dry-run check"
   "$BIN" run-group-message-send-worker --once --dry-run
+  log "running Xiaoman activity signal worker dry-run check"
+  "$BIN" run-xiaoman-activity-signal-worker --check-only
 }
 
 start_service() {
@@ -550,6 +594,7 @@ start_service() {
   sudo systemctl enable --now "$WORKFLOW_SYNC_TIMER_NAME"
   sudo systemctl enable --now "$WORKBENCH_EVENT_TIMER_NAME"
   sudo systemctl enable --now "$GROUP_SEND_READY_TIMER_NAME"
+  sudo systemctl enable --now "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
   systemctl is-active "$IDENTITY_SERVICE_NAME"
   systemctl is-active "$PROFILE_SERVICE_NAME"
   systemctl is-active "$GRAPH_SERVICE_NAME"
@@ -560,6 +605,7 @@ start_service() {
   systemctl is-active "$WORKFLOW_SYNC_TIMER_NAME"
   systemctl is-active "$WORKBENCH_EVENT_TIMER_NAME"
   systemctl is-active "$GROUP_SEND_READY_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
 }
 
 run_smoke() {
@@ -604,6 +650,7 @@ verify_services() {
   systemctl is-active "$WORKFLOW_SYNC_TIMER_NAME"
   systemctl is-active "$WORKBENCH_EVENT_TIMER_NAME"
   systemctl is-active "$GROUP_SEND_READY_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
   systemctl --user is-active hermes-gateway-erhua.service
 }
 
