@@ -23,6 +23,8 @@ local NATS JetStream into the Postgres tunnel exposed on the server.
   `/etc/systemd/system/qintopia-agentos-operations-group-send-ready.timer`
 - AgentOS Xiaoman activity signal worker timer:
   `/etc/systemd/system/qintopia-agentos-xiaoman-activity-signal-worker.timer`
+- AgentOS Xiaoman activity promotion starter worker timer:
+  `/etc/systemd/system/qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer`
 - Environment file: `/etc/qintopia/message-sidecar.env`
 - NATS URL: `nats://127.0.0.1:4222`
 - Expected Postgres endpoint: `127.0.0.1:55432`
@@ -377,6 +379,39 @@ visual assets, or send externally. It fails if the service command is not
 `run-xiaoman-activity-signal-worker --once --apply` or if inspected output includes
 known secret/external-send markers.
 
+The Xiaoman activity promotion starter worker also runs as a systemd timer. It calls
+`run-xiaoman-activity-promotion-starter-worker --once --apply`, scans existing Xiaoman
+activity request `work_items`, and creates only missing AgentOS evidence/visual child
+`work_items`. It does not execute evidence retrieval, create visual assets, read or
+write Feishu, call QiWe, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-promotion-starter-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL=5min` or another systemd
+time span.
+
+After an owner-approved deploy, run the guarded observation smoke to inspect the timer,
+service command, recent journal output, and a read-only worker preview:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, create
+visual assets, or send externally. It fails if the service command is not
+`run-xiaoman-activity-promotion-starter-worker --once --apply` or if inspected output
+includes known secret/external-send markers.
+
 ## Read-Only Database Checks
 
 Before and after deployment, confirm pending embedding jobs and embedding rows with the
@@ -522,7 +557,11 @@ the WenYuanGe profile has confirmed tool discovery and successful
 10. Confirm `qintopia-agentos-xiaoman-activity-signal-worker.timer` is active so Xiaoman
     activity `event_signals` create AgentOS intake work items without manual CLI runs.
     This does not read or write Feishu and does not send messages.
-11. Mount `qintopia-context` MCP into the WenYuanGe Hermes profile first. Keep
+11. Confirm `qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer` is active
+    so Xiaoman activity requests create evidence/visual child work items without manual
+    CLI runs. This does not execute evidence retrieval, create visual assets, read or
+    write Feishu, or send messages.
+12. Mount `qintopia-context` MCP into the WenYuanGe Hermes profile first. Keep
     the 二花 profile unchanged until the WenYuanGe MCP path is validated.
 
 Hermes publisher failures must remain best-effort only. NATS, sidecar, or Postgres

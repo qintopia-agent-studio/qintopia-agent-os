@@ -236,6 +236,10 @@ Install scope for the M9 window:
 - The Xiaoman activity signal worker timer may be enabled by default after owner
   review because it writes only AgentOS work_items from Xiaoman event_signals.
   It must not write Feishu, send QiWe messages, or create visual assets.
+- The Xiaoman activity promotion starter timer may be enabled by default after
+  owner review because it only creates missing AgentOS evidence/visual child
+  work_items under existing Xiaoman activity request parents. It must not write
+  Feishu, send QiWe messages, create visual assets, or run external adapters.
 
 Apply shape during the approved window:
 1. Copy reviewed unit files into /etc/systemd/system.
@@ -362,6 +366,17 @@ render_all() {
     "qintopia-agentos-xiaoman-activity-signal-worker.service" \
     "5min" \
     "${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Promotion Starter Worker" \
+    "run-xiaoman-activity-promotion-starter-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity promotion child starter" \
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service" \
+    "6min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL:-2min}"
 }
 
 validate_output() {
@@ -384,6 +399,8 @@ validate_output() {
     "qintopia-agentos-operations-group-send-ready.timer"
     "qintopia-agentos-xiaoman-activity-signal-worker.service"
     "qintopia-agentos-xiaoman-activity-signal-worker.timer"
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service"
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer"
   )
 
   local file

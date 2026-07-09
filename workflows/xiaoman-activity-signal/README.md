@@ -60,7 +60,9 @@ can preview the current AgentOS queue. It is a read-only production observation 
 scans existing `xiaoman.create_activity_request` work items and creates only missing
 `evidence_request` and `visual_asset_request` child work items under the same parent. It
 does not execute evidence retrieval, visual generation, Feishu writes, QiWe sends, or
-group-send readiness.
+group-send readiness. It may be scheduled by the reviewed
+`qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer`, whose service
+command is fixed to `run-xiaoman-activity-promotion-starter-worker --once --apply`.
 
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
@@ -104,6 +106,8 @@ raw Feishu record ids.
 
 - New activity signal creates one `xiaoman.create_activity_request` work item through
   the operations control plane.
+- Runtime scheduling can turn the activity request into missing evidence and visual
+  child work items without manual CLI runs.
 - Activity request starter creates missing evidence and visual child work items without
   duplicating existing children.
 - Duplicate signal returns the existing work item by idempotency key.
