@@ -35,7 +35,10 @@ next_actions:
     owner-approved deploy, then record whether runtime intake is healthy.
   - Run the guarded Xiaoman activity promotion starter timer observation smoke after an
     owner-approved deploy, then record whether child work item intake is healthy.
-  - Add downstream evidence and visual worker execution only after production
-    observation confirms this AgentOS-only intake path is stable.
+  - Run the guarded Xiaoman downstream observation smoke after an owner-approved deploy
+    to confirm evidence and visual worker previews are safe before adding any runtime
+    scheduling.
+  - Add downstream evidence and visual worker runtime scheduling only after production
+    observation confirms this AgentOS-only path is stable.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.

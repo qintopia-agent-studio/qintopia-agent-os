@@ -412,6 +412,22 @@ visual assets, or send externally. It fails if the service command is not
 `run-xiaoman-activity-promotion-starter-worker --once --apply` or if inspected output
 includes known secret/external-send markers.
 
+After both Xiaoman timers are healthy, run the downstream observation smoke before
+adding runtime scheduling for evidence or visual execution:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-downstream-observation-smoke.sh
+```
+
+This smoke runs `run-evidence-worker --once --dry-run` and
+`run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`. It
+does not write Postgres, read or write Feishu, call QiWe, generate posters, or send
+externally. It fails if the preview output includes known secret/external-send markers.
+
 ## Read-Only Database Checks
 
 Before and after deployment, confirm pending embedding jobs and embedding rows with the
