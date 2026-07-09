@@ -240,6 +240,11 @@ Install scope for the M9 window:
   owner review because it only creates missing AgentOS evidence/visual child
   work_items under existing Xiaoman activity request parents. It must not write
   Feishu, send QiWe messages, create visual assets, or run external adapters.
+- The operations evidence and visual worker timers may be enabled after the Xiaoman
+  child intake path is observed healthy. They only process AgentOS work_items into
+  internal evidence_summary and poster_brief artifacts. They must not write Feishu,
+  send QiWe messages, run live Wenyuange search, call Huabaosi production generation,
+  or run external adapters.
 
 Apply shape during the approved window:
 1. Copy reviewed unit files into /etc/systemd/system.
@@ -335,6 +340,28 @@ render_all() {
     "${QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL:-2min}"
 
   render_oneshot_service \
+    "qintopia-agentos-operations-evidence-worker.service" \
+    "Qintopia AgentOS Operations Evidence Worker" \
+    "run-evidence-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-operations-evidence-worker.timer" \
+    "Run Qintopia AgentOS operations evidence worker" \
+    "qintopia-agentos-operations-evidence-worker.service" \
+    "7min" \
+    "${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-operations-visual-worker.service" \
+    "Qintopia AgentOS Operations Visual Worker" \
+    "run-collaboration-worker --work-item-type visual_asset_request --once --apply"
+  render_timer \
+    "qintopia-agentos-operations-visual-worker.timer" \
+    "Run Qintopia AgentOS operations visual worker" \
+    "qintopia-agentos-operations-visual-worker.service" \
+    "8min" \
+    "${QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
     "qintopia-agentos-operations-workbench-event.service" \
     "Qintopia AgentOS Operations Workbench Event Processor" \
     "run-workbench-event-worker --once --apply"
@@ -393,6 +420,10 @@ validate_output() {
     "qintopia-agentos-raw-archive-worker.service"
     "qintopia-agentos-operations-workflow-sync.service"
     "qintopia-agentos-operations-workflow-sync.timer"
+    "qintopia-agentos-operations-evidence-worker.service"
+    "qintopia-agentos-operations-evidence-worker.timer"
+    "qintopia-agentos-operations-visual-worker.service"
+    "qintopia-agentos-operations-visual-worker.timer"
     "qintopia-agentos-operations-workbench-event.service"
     "qintopia-agentos-operations-workbench-event.timer"
     "qintopia-agentos-operations-group-send-ready.service"

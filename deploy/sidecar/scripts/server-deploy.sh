@@ -28,6 +28,16 @@ WORKFLOW_SYNC_SERVICE_FILE="/etc/systemd/system/${WORKFLOW_SYNC_SERVICE_NAME}"
 WORKFLOW_SYNC_TIMER_NAME="${QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_NAME:-qintopia-agentos-operations-workflow-sync.timer}"
 WORKFLOW_SYNC_TIMER_FILE="/etc/systemd/system/${WORKFLOW_SYNC_TIMER_NAME}"
 WORKFLOW_SYNC_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL:-2min}"
+EVIDENCE_WORKER_SERVICE_NAME="${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_SERVICE_NAME:-qintopia-agentos-operations-evidence-worker.service}"
+EVIDENCE_WORKER_SERVICE_FILE="/etc/systemd/system/${EVIDENCE_WORKER_SERVICE_NAME}"
+EVIDENCE_WORKER_TIMER_NAME="${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_NAME:-qintopia-agentos-operations-evidence-worker.timer}"
+EVIDENCE_WORKER_TIMER_FILE="/etc/systemd/system/${EVIDENCE_WORKER_TIMER_NAME}"
+EVIDENCE_WORKER_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL:-2min}"
+VISUAL_WORKER_SERVICE_NAME="${QINTOPIA_OPERATIONS_VISUAL_WORKER_SERVICE_NAME:-qintopia-agentos-operations-visual-worker.service}"
+VISUAL_WORKER_SERVICE_FILE="/etc/systemd/system/${VISUAL_WORKER_SERVICE_NAME}"
+VISUAL_WORKER_TIMER_NAME="${QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_NAME:-qintopia-agentos-operations-visual-worker.timer}"
+VISUAL_WORKER_TIMER_FILE="/etc/systemd/system/${VISUAL_WORKER_TIMER_NAME}"
+VISUAL_WORKER_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL:-2min}"
 WORKBENCH_EVENT_SERVICE_NAME="${QINTOPIA_OPERATIONS_WORKBENCH_EVENT_SERVICE_NAME:-qintopia-agentos-operations-workbench-event.service}"
 WORKBENCH_EVENT_SERVICE_FILE="/etc/systemd/system/${WORKBENCH_EVENT_SERVICE_NAME}"
 WORKBENCH_EVENT_TIMER_NAME="${QINTOPIA_OPERATIONS_WORKBENCH_EVENT_TIMER_NAME:-qintopia-agentos-operations-workbench-event.timer}"
@@ -67,9 +77,10 @@ Required before deploy/verify:
 
 Worker units are installed for message embedding, identity resolution, member
 profiles, SQL graph projection, event signals, daily digests, Feishu publishing,
-raw-message archive, AgentOS operations workflow summary sync, and AgentOS
-workbench event processing, AgentOS group-send readiness audit, and Xiaoman
-activity signal intake and activity promotion child starter.
+raw-message archive, AgentOS operations workflow summary sync, AgentOS evidence and
+visual artifact workers, AgentOS workbench event processing, AgentOS group-send
+readiness audit, and Xiaoman activity signal intake and activity promotion child
+starter.
 
 AgentOS operations control-plane dry smoke runs during deploy/verify. The
 Postgres apply smoke runs only when QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1.
@@ -317,6 +328,70 @@ Unit=${WORKFLOW_SYNC_SERVICE_NAME}
 [Install]
 WantedBy=timers.target
 EOF
+  log "installing systemd unit at ${EVIDENCE_WORKER_SERVICE_FILE}"
+  sudo tee "$EVIDENCE_WORKER_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Operations Evidence Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-evidence-worker --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${EVIDENCE_WORKER_TIMER_FILE}"
+  sudo tee "$EVIDENCE_WORKER_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS operations evidence worker
+
+[Timer]
+OnBootSec=7min
+OnUnitActiveSec=${EVIDENCE_WORKER_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${EVIDENCE_WORKER_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
+  log "installing systemd unit at ${VISUAL_WORKER_SERVICE_FILE}"
+  sudo tee "$VISUAL_WORKER_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Operations Visual Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-collaboration-worker --work-item-type visual_asset_request --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${VISUAL_WORKER_TIMER_FILE}"
+  sudo tee "$VISUAL_WORKER_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS operations visual worker
+
+[Timer]
+OnBootSec=8min
+OnUnitActiveSec=${VISUAL_WORKER_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${VISUAL_WORKER_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
   log "installing systemd unit at ${WORKBENCH_EVENT_SERVICE_FILE}"
   sudo tee "$WORKBENCH_EVENT_SERVICE_FILE" >/dev/null <<EOF
 [Unit]
@@ -512,6 +587,12 @@ QINTOPIA_RAW_ARCHIVE_FORMAT=jsonl.zst
 # AgentOS operations workflow summary sync is installed as a systemd timer.
 # The timer interval is controlled at deploy-time by
 # QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL in scripts/server-deploy.sh.
+# AgentOS evidence and visual workers are installed as timers. They only process
+# AgentOS evidence_request / visual_asset_request work_items into internal
+# evidence_summary / poster_brief artifacts; they do not call Feishu, QiWe,
+# Wenyuange live search, Huabaosi production generation, or external adapters.
+# QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL is read at deploy-time.
+# QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL is read at deploy-time.
 # AgentOS workbench event processing is also installed as a timer. It only
 # processes already-recorded human_workbench_event_recorded events.
 # QINTOPIA_OPERATIONS_WORKBENCH_EVENT_TIMER_INTERVAL is read at deploy-time.
@@ -613,6 +694,10 @@ run_migrations_and_checks() {
   "$BIN" run-raw-archive-worker --check-only
   log "running operations workflow sync worker dry-run check"
   "$BIN" run-workflow-sync-worker --once --dry-run
+  log "running operations evidence worker dry-run check"
+  "$BIN" run-evidence-worker --once --dry-run
+  log "running operations visual worker dry-run check"
+  "$BIN" run-collaboration-worker --work-item-type visual_asset_request --once --dry-run
   log "running operations workbench event worker dry-run check"
   "$BIN" run-workbench-event-worker --once --dry-run
   log "running operations group send-ready worker dry-run check"
@@ -636,6 +721,8 @@ start_service() {
   sudo systemctl enable --now "$PUBLISHER_SERVICE_NAME"
   sudo systemctl enable --now "$ARCHIVE_SERVICE_NAME"
   sudo systemctl enable --now "$WORKFLOW_SYNC_TIMER_NAME"
+  sudo systemctl enable --now "$EVIDENCE_WORKER_TIMER_NAME"
+  sudo systemctl enable --now "$VISUAL_WORKER_TIMER_NAME"
   sudo systemctl enable --now "$WORKBENCH_EVENT_TIMER_NAME"
   sudo systemctl enable --now "$GROUP_SEND_READY_TIMER_NAME"
   sudo systemctl enable --now "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
@@ -648,6 +735,8 @@ start_service() {
   systemctl is-active "$PUBLISHER_SERVICE_NAME"
   systemctl is-active "$ARCHIVE_SERVICE_NAME"
   systemctl is-active "$WORKFLOW_SYNC_TIMER_NAME"
+  systemctl is-active "$EVIDENCE_WORKER_TIMER_NAME"
+  systemctl is-active "$VISUAL_WORKER_TIMER_NAME"
   systemctl is-active "$WORKBENCH_EVENT_TIMER_NAME"
   systemctl is-active "$GROUP_SEND_READY_TIMER_NAME"
   systemctl is-active "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
@@ -694,6 +783,8 @@ verify_services() {
   systemctl is-active "$PUBLISHER_SERVICE_NAME"
   systemctl is-active "$ARCHIVE_SERVICE_NAME"
   systemctl is-active "$WORKFLOW_SYNC_TIMER_NAME"
+  systemctl is-active "$EVIDENCE_WORKER_TIMER_NAME"
+  systemctl is-active "$VISUAL_WORKER_TIMER_NAME"
   systemctl is-active "$WORKBENCH_EVENT_TIMER_NAME"
   systemctl is-active "$GROUP_SEND_READY_TIMER_NAME"
   systemctl is-active "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"

@@ -71,6 +71,15 @@ and `run-collaboration-worker --work-item-type visual_asset_request --once --dry
 The smoke proves the child queues can be previewed without writing Postgres, reading or
 writing Feishu, calling QiWe, generating posters, or sending externally.
 
+The downstream evidence and visual workers may also be scheduled by the reviewed runtime
+deployment path. `qintopia-agentos-operations-evidence-worker.timer` runs
+`run-evidence-worker --once --apply` to create internal `evidence_summary` artifacts,
+and `qintopia-agentos-operations-visual-worker.timer` runs
+`run-collaboration-worker --work-item-type visual_asset_request --once --apply` to
+create pending `poster_brief` artifacts. These timers still do not call live Wenyuange
+search, Huabaosi production generation, Feishu, QiWe, poster publishing, or external
+send adapters.
+
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
 coverage by normalized activity title and date, and reports sanitized
@@ -117,6 +126,8 @@ raw Feishu record ids.
   child work items without manual CLI runs.
 - Downstream observation can preview evidence and visual worker consumption without
   applying artifact writes or calling external systems.
+- Downstream runtime scheduling can turn child work items into internal
+  `evidence_summary` and pending `poster_brief` artifacts without external adapters.
 - Activity request starter creates missing evidence and visual child work items without
   duplicating existing children.
 - Duplicate signal returns the existing work item by idempotency key.
