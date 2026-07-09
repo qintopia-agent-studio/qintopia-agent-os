@@ -14,7 +14,6 @@ SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_NAME:-qin
 TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME:-qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer}"
 EXPECTED_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL_EXPECTED:-2min}"
 JOURNAL_LINES="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_JOURNAL_LINES:-80}"
-EXPECT_TIMER="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_EXPECT_TIMER:-0}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 JOURNALCTL="${JOURNALCTL:-journalctl}"
 
@@ -69,11 +68,7 @@ assert_no_sensitive_output() {
   done
 }
 
-assert_timer_if_expected() {
-  if [[ "$EXPECT_TIMER" != "1" ]]; then
-    return 0
-  fi
-
+assert_timer() {
   if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
     echo "systemctl is required for Xiaoman activity send request starter timer observation" >&2
     exit 1
@@ -99,6 +94,7 @@ assert_timer_if_expected() {
 
   timer_unit="$tmp_dir/timer-unit.txt"
   "$SYSTEMCTL" cat "$TIMER_NAME" >"$timer_unit"
+  grep -F "OnBootSec=9min" "$timer_unit" >/dev/null
   grep -F "OnUnitActiveSec=${EXPECTED_INTERVAL}" "$timer_unit" >/dev/null
   grep -F "Unit=${SERVICE_NAME}" "$timer_unit" >/dev/null
   assert_no_sensitive_output "timer unit" "$timer_unit"
@@ -117,7 +113,7 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 source_env_if_present
-assert_timer_if_expected
+assert_timer
 
 worker_check="$tmp_dir/worker-check.json"
 "${BIN_CMD[@]}" run-xiaoman-activity-send-request-starter-worker --check-only >"$worker_check"

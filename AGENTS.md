@@ -131,9 +131,14 @@ Use `rg` and `rg --files` for search.
   the group message, run send-ready, publish, call QiWe, write Feishu, or call external
   adapters.
 - `xiaoman-activity-send-request-starter-observation-smoke.sh` is read-only unless a
-  future owner-reviewed timer exists and `EXPECT_TIMER=1` is explicitly set. It may run
-  the starter in `--check-only` mode only; do not turn it into an apply smoke, final
-  confirmation, send-ready worker, Feishu write, QiWe send, or external adapter trigger.
+  reviewed timer exists and may run the starter in `--check-only` mode only. Do not turn
+  it into an apply smoke, final confirmation, send-ready worker, Feishu write, QiWe
+  send, or external adapter trigger.
+- `qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer` may only run
+  `run-xiaoman-activity-send-request-starter-worker --once --apply` for AgentOS
+  awaiting-publish group message request intake. Do not repurpose it for final
+  confirmation, queueing, send-ready, Feishu writeback, QiWe sends, or external
+  adapters.
 
 ## Package Placement
 
