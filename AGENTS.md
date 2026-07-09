@@ -39,6 +39,8 @@
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
+- Xiaoman activity signal timer observation smoke:
+  `QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh`
 
 Use `rg` and `rg --files` for search.
 

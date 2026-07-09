@@ -361,6 +361,22 @@ journalctl -u qintopia-agentos-xiaoman-activity-signal-worker.service -n 100 --n
 The default timer interval is `2min`. Override it during unit installation with
 `QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL=5min` or another systemd time span.
 
+After an owner-approved deploy, run the guarded observation smoke to inspect the timer,
+service command, recent journal output, and a read-only worker preview:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-signal-timer-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, create
+visual assets, or send externally. It fails if the service command is not
+`run-xiaoman-activity-signal-worker --once --apply` or if inspected output includes
+known secret/external-send markers.
+
 ## Read-Only Database Checks
 
 Before and after deployment, confirm pending embedding jobs and embedding rows with the
