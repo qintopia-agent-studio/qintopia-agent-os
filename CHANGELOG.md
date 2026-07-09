@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.4.0](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.1...v0.4.0) (2026-07-09)
+
+
+### Features
+
+* add xiaoman activity promotion starter worker ([#56](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/56)) ([338dd87](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/338dd870c1e66f7ca2d13bbc953af31523a736b6))
+* add xiaoman activity signal worker ([#51](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/51)) ([e1da5bb](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e1da5bbcaf5b93ad768e037d6c6197a2ead6a9d8))
+* schedule xiaoman activity promotion starter ([#57](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/57)) ([14fced8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/14fced80be709cfa4220fa4331e26da91ff22392))
+* schedule xiaoman activity signal worker ([#54](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/54)) ([48bbbb6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/48bbbb67babaccd040bd7848d2555da98e8872b2))
+
+
+### Maintenance
+
+* add pre-commit quick checks ([#53](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/53)) ([9c29ad3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9c29ad3bfeb5c185629711ef0662f1c0a578658b))
+
 ## [0.3.1](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.0...v0.3.1) (2026-07-08)
 
 
