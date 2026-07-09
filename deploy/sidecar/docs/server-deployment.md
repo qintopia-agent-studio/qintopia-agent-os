@@ -17,6 +17,10 @@ local NATS JetStream into the Postgres tunnel exposed on the server.
 - Identity worker unit: `/etc/systemd/system/qintopia-message-identity-worker.service`
 - AgentOS operations workflow sync timer:
   `/etc/systemd/system/qintopia-agentos-operations-workflow-sync.timer`
+- AgentOS operations evidence worker timer:
+  `/etc/systemd/system/qintopia-agentos-operations-evidence-worker.timer`
+- AgentOS operations visual worker timer:
+  `/etc/systemd/system/qintopia-agentos-operations-visual-worker.timer`
 - AgentOS operations workbench event timer:
   `/etc/systemd/system/qintopia-agentos-operations-workbench-event.timer`
 - AgentOS operations group send-readiness timer:
@@ -313,6 +317,56 @@ journalctl -u qintopia-agentos-operations-workflow-sync.service -n 100 --no-page
 The default timer interval is `2min`. Override it during unit installation by running
 the deploy script with `QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL=5min` or
 another systemd time span.
+
+The AgentOS operations evidence worker runs as a systemd timer. It calls
+`run-evidence-worker --once --apply`, claims one queued `evidence_request`, creates an
+internal `evidence_summary` artifact, and records the audit trail in Postgres. It does
+not call live Wenyuange search, export raw messages, read or write Feishu, call QiWe, or
+send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-operations-evidence-worker.timer
+systemctl status qintopia-agentos-operations-evidence-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-operations-evidence-worker.timer --no-pager
+journalctl -u qintopia-agentos-operations-evidence-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL=5min` or another systemd time span.
+
+The AgentOS operations visual worker also runs as a systemd timer. It calls
+`run-collaboration-worker --work-item-type visual_asset_request --once --apply`, claims
+one queued `visual_asset_request`, creates a pending `poster_brief` artifact, and
+records the audit trail in Postgres. It does not call Huabaosi production generation,
+read or write Feishu, call QiWe, publish posters, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-operations-visual-worker.timer
+systemctl status qintopia-agentos-operations-visual-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-operations-visual-worker.timer --no-pager
+journalctl -u qintopia-agentos-operations-visual-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL=5min` or another systemd time span.
+
+After an owner-approved deploy, run the guarded downstream timer observation smoke to
+inspect both timer units, fixed service commands, recent journal output, and read-only
+worker previews:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1
+scripts/operations-downstream-timers-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, create
+production visual assets, or send externally. It fails if the services are not fixed to
+`run-evidence-worker --once --apply` and
+`run-collaboration-worker --work-item-type visual_asset_request --once --apply`, or if
+inspected output includes known secret/external-send markers.
 
 The AgentOS operations workbench event processor also runs as a systemd timer. It calls
 `run-workbench-event-worker --once --apply`, processes only already-recorded

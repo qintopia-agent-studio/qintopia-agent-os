@@ -45,6 +45,8 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh`
 - Xiaoman activity downstream observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh`
+- AgentOS downstream evidence/visual timers observation smoke:
+  `QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh`
 
 Use `rg` and `rg --files` for search.
 
@@ -112,6 +114,15 @@ Use `rg` and `rg --files` for search.
   `run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`; do
   not turn it into an apply smoke, Feishu write, QiWe send, poster generation, or
   external adapter trigger.
+- `qintopia-agentos-operations-evidence-worker.timer` may only run
+  `run-evidence-worker --once --apply` for internal `evidence_summary` artifact writes.
+  Do not repurpose it for Feishu writeback, QiWe sends, live Wenyuange search, raw
+  message export, or external adapters.
+- `qintopia-agentos-operations-visual-worker.timer` may only run
+  `run-collaboration-worker --work-item-type visual_asset_request --once --apply` for
+  internal pending `poster_brief` artifact writes. Do not repurpose it for Huabaosi
+  production generation, Feishu writeback, QiWe sends, group-send readiness, or external
+  adapters.
 
 ## Package Placement
 
