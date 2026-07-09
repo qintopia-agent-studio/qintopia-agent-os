@@ -43,6 +43,8 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh`
 - Xiaoman activity promotion starter timer observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh`
+- Xiaoman activity downstream observation smoke:
+  `QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh`
 
 Use `rg` and `rg --files` for search.
 
@@ -104,6 +106,12 @@ Use `rg` and `rg --files` for search.
   `run-xiaoman-activity-promotion-starter-worker --once --apply` for AgentOS child work
   item intake. Do not repurpose it for evidence execution, visual generation, Feishu
   writeback, QiWe sends, group-send readiness, or external adapters.
+- `xiaoman-activity-downstream-observation-smoke.sh` is a read-only production
+  observation check for existing evidence and visual workers. It may only run
+  `run-evidence-worker --once --dry-run` and
+  `run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`; do
+  not turn it into an apply smoke, Feishu write, QiWe send, poster generation, or
+  external adapter trigger.
 
 ## Package Placement
 

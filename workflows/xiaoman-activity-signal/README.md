@@ -64,6 +64,13 @@ group-send readiness. It may be scheduled by the reviewed
 `qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer`, whose service
 command is fixed to `run-xiaoman-activity-promotion-starter-worker --once --apply`.
 
+`deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh` is the next
+production-readiness check after both Xiaoman timers are healthy. It runs the existing
+evidence and visual workers in dry-run mode only: `run-evidence-worker --once --dry-run`
+and `run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`.
+The smoke proves the child queues can be previewed without writing Postgres, reading or
+writing Feishu, calling QiWe, generating posters, or sending externally.
+
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
 coverage by normalized activity title and date, and reports sanitized
@@ -108,6 +115,8 @@ raw Feishu record ids.
   the operations control plane.
 - Runtime scheduling can turn the activity request into missing evidence and visual
   child work items without manual CLI runs.
+- Downstream observation can preview evidence and visual worker consumption without
+  applying artifact writes or calling external systems.
 - Activity request starter creates missing evidence and visual child work items without
   duplicating existing children.
 - Duplicate signal returns the existing work item by idempotency key.
@@ -133,4 +142,5 @@ reviewed monorepo contracts.
 pnpm workflows:check
 pnpm check:runtime
 deploy/sidecar/scripts/xiaoman-activity-shadow-read-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh
 ```
