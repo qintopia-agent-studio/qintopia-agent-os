@@ -388,6 +388,104 @@ assert_sql_equals \
   2 \
   "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key IN ('wenyuange.retrieve_evidence','huabaosi.create_visual_asset');"
 
+xiaoman_promotion_visual_child_id="$(
+  psql_value "SELECT id FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'huabaosi.create_visual_asset' AND work_item_type = 'visual_asset_request';"
+)"
+
+xiaoman_promotion_visual="$(run_json xiaoman_promotion_visual run-collaboration-worker --work-item-type visual_asset_request --once --work-item-id "$xiaoman_promotion_visual_child_id" --apply)"
+assert_json "$xiaoman_promotion_visual" "data['success'] is True"
+assert_json "$xiaoman_promotion_visual" "data['action_status'] == 'artifacts_created'"
+assert_json "$xiaoman_promotion_visual" "data['work_item_id'] == '${xiaoman_promotion_visual_child_id}'"
+assert_json "$xiaoman_promotion_visual" "data['artifact_count'] == 1"
+assert_json "$xiaoman_promotion_visual" "data['artifact_previews'][0]['artifact_type'] == 'poster_brief'"
+assert_json "$xiaoman_promotion_visual" "data['artifact_previews'][0]['review_status'] == 'pending'"
+
+xiaoman_promotion_artifact_id="$(
+  python3 - "$xiaoman_promotion_visual" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+print(data["artifact_ids"][0])
+PY
+)"
+
+xiaoman_promotion_review_payload="$(
+  python3 - "$xiaoman_promotion_artifact_id" <<'PY'
+import json
+import sys
+artifact_id = sys.argv[1]
+print(json.dumps({
+    "artifact_id": artifact_id,
+    "reviewer_id": "operations-apply-smoke-reviewer",
+    "decision": "approved",
+    "reason": "xiaoman apply smoke approval; still does not publish or send",
+    "source": "operations_apply_smoke",
+}, ensure_ascii=False))
+PY
+)"
+
+xiaoman_promotion_review="$(run_json xiaoman_promotion_review operations-artifact-review-decision --apply --payload-json "$xiaoman_promotion_review_payload")"
+assert_json "$xiaoman_promotion_review" "data['success'] is True"
+assert_json "$xiaoman_promotion_review" "data['action_status'] == 'review_recorded'"
+assert_json "$xiaoman_promotion_review" "data['artifact_id'] == '${xiaoman_promotion_artifact_id}'"
+assert_json "$xiaoman_promotion_review" "data['work_item_id'] == '${xiaoman_promotion_visual_child_id}'"
+assert_json "$xiaoman_promotion_review" "data['review_status'] == 'approved'"
+
+xiaoman_send_preview="$(run_json xiaoman_send_preview run-xiaoman-activity-send-request-starter-worker --check-only --work-item-id "$xiaoman_worker_parent_id")"
+assert_json "$xiaoman_send_preview" "data['success'] is True"
+assert_json "$xiaoman_send_preview" "data['worker'] == 'xiaoman-activity-send-request-starter-worker'"
+assert_json "$xiaoman_send_preview" "data['source'] == 'agentos_work_items'"
+assert_json "$xiaoman_send_preview" "data['dry_run'] is True"
+assert_json "$xiaoman_send_preview" "data['check_only'] is True"
+assert_json "$xiaoman_send_preview" "data['action_status'] == 'group_message_requests_preview'"
+assert_json "$xiaoman_send_preview" "data['requested_work_item_id'] == '${xiaoman_worker_parent_id}'"
+assert_json "$xiaoman_send_preview" "data['scanned_count'] == 1"
+assert_json "$xiaoman_send_preview" "data['missing_child_count'] == 1"
+assert_json "$xiaoman_send_preview" "len(data['work_items']) == 1"
+assert_json "$xiaoman_send_preview" "data['work_items'][0]['capability_key'] == 'erhua.send_group_message'"
+assert_json "$xiaoman_send_preview" "data['work_items'][0]['work_item_type'] == 'group_message_request'"
+assert_json "$xiaoman_send_preview" "data['work_items'][0]['current_status'] == 'awaiting_publish'"
+assert_json "$xiaoman_send_preview" "data['safe_for_chat'] is False"
+
+xiaoman_send_apply="$(run_json xiaoman_send_apply run-xiaoman-activity-send-request-starter-worker --once --apply --work-item-id "$xiaoman_worker_parent_id")"
+assert_json "$xiaoman_send_apply" "data['success'] is True"
+assert_json "$xiaoman_send_apply" "data['worker'] == 'xiaoman-activity-send-request-starter-worker'"
+assert_json "$xiaoman_send_apply" "data['source'] == 'agentos_work_items'"
+assert_json "$xiaoman_send_apply" "data['dry_run'] is False"
+assert_json "$xiaoman_send_apply" "data['apply_requested'] is True"
+assert_json "$xiaoman_send_apply" "data['action_status'] == 'group_message_requests_created'"
+assert_json "$xiaoman_send_apply" "data['requested_work_item_id'] == '${xiaoman_worker_parent_id}'"
+assert_json "$xiaoman_send_apply" "data['scanned_count'] == 1"
+assert_json "$xiaoman_send_apply" "data['created_count'] == 1"
+assert_json "$xiaoman_send_apply" "data['missing_child_count'] == 1"
+assert_json "$xiaoman_send_apply" "data['work_items'][0]['current_status'] == 'awaiting_publish'"
+assert_json "$xiaoman_send_apply" "data['work_items'][0]['existing'] is False"
+assert_json "$xiaoman_send_apply" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_send_created_group_child \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request' AND status = 'awaiting_publish' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:group-message-child' AND approved_artifact_id = '${xiaoman_promotion_artifact_id}'::uuid AND payload->>'send_executed' = 'false';"
+
+assert_sql_equals \
+  xiaoman_send_did_not_send_or_queue \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id IN (SELECT id FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message') AND event_type IN ('group_message_final_confirmation_recorded','group_message_send_ready_recorded','send_executed','external_published');"
+
+xiaoman_send_again="$(run_json xiaoman_send_again run-xiaoman-activity-send-request-starter-worker --once --apply --work-item-id "$xiaoman_worker_parent_id")"
+assert_json "$xiaoman_send_again" "data['success'] is True"
+assert_json "$xiaoman_send_again" "data['worker'] == 'xiaoman-activity-send-request-starter-worker'"
+assert_json "$xiaoman_send_again" "data['action_status'] == 'no_eligible_approved_visual_artifacts'"
+assert_json "$xiaoman_send_again" "data['scanned_count'] == 0"
+assert_json "$xiaoman_send_again" "data['missing_child_count'] == 0"
+assert_json "$xiaoman_send_again" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_send_group_child_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request';"
+
 planned_submit_payload="$(
   python3 - "$source_ref" <<'PY'
 import json

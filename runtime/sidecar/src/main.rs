@@ -378,6 +378,27 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::RunXiaomanActivitySendRequestStarterWorker {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            work_item_id,
+            target_group_alias,
+            message_text,
+        } => {
+            operations::run_xiaoman_activity_send_request_starter_worker(
+                &cli,
+                check_only,
+                once,
+                apply,
+                batch_size,
+                work_item_id,
+                target_group_alias,
+                message_text,
+            )
+            .await
+        }
         Command::OperationsWorkItemCreate {
             payload_json,
             apply,

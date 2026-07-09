@@ -788,6 +788,36 @@ pub enum Command {
         #[arg(long)]
         work_item_id: Option<uuid::Uuid>,
     },
+    /// Add awaiting_publish group-message requests for approved Xiaoman activity posters.
+    RunXiaomanActivitySendRequestStarterWorker {
+        /// Scan without writing AgentOS group-message work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS group-message work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum parent work items to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Process one specific Xiaoman parent or visual child work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Target allowlisted group alias for the future final-confirmed send.
+        #[arg(long, default_value = "community_activity_group")]
+        target_group_alias: String,
+
+        /// Safe message text summary for final confirmation. This is not sent by this worker.
+        #[arg(long, default_value = "活动海报已审核，请确认是否发送。")]
+        message_text: String,
+    },
     /// Create a capability-governed AgentOS operations work item.
     OperationsWorkItemCreate {
         /// JSON payload for the generic capability/work item request.

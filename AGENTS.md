@@ -123,6 +123,11 @@ Use `rg` and `rg --files` for search.
   internal pending `poster_brief` artifact writes. Do not repurpose it for Huabaosi
   production generation, Feishu writeback, QiWe sends, group-send readiness, or external
   adapters.
+- `run-xiaoman-activity-send-request-starter-worker` may only create an
+  `awaiting_publish` AgentOS `erhua.send_group_message` / `group_message_request` child
+  from an approved Xiaoman `poster_brief`. It must not record final confirmation, queue
+  the group message, run send-ready, publish, call QiWe, write Feishu, or call external
+  adapters.
 
 ## Package Placement
 
