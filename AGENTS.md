@@ -79,6 +79,10 @@ Use `rg` and `rg --files` for search.
   matching `qintopia_agent_os.event_signals` row is created first; UUID
   `event_signal_id` values are stored as `source_event_signal_id` and must satisfy the
   Postgres foreign key.
+- `run-xiaoman-activity-signal-worker` only scans eligible Xiaoman `event_signals` and
+  submits the existing `xiaoman-activity signal-ingest` work item contract. It must not
+  write Feishu, send QiWe messages, create visual assets, or be added to production
+  scheduling without owner-reviewed runtime changes.
 
 ## Package Placement
 

@@ -342,6 +342,25 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::RunXiaomanActivitySignalWorker {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            poll_seconds,
+        } => {
+            xiaoman_activity::run_signal_worker(
+                &cli,
+                xiaoman_activity::SignalWorkerOptions {
+                    check_only,
+                    once,
+                    apply,
+                    batch_size,
+                    poll_seconds,
+                },
+            )
+            .await
+        }
         Command::OperationsWorkItemCreate {
             payload_json,
             apply,

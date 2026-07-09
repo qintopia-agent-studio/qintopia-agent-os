@@ -31,7 +31,7 @@ tags:
   - activity
   - signal
 next_actions:
-  - Add a read-only worker that scans eligible AgentOS event_signals and submits
-    signal-ingest work items without enabling external sends.
+  - Add reviewed runtime scheduling for the Xiaoman activity signal worker after
+    owner approval and production readiness checks.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.
