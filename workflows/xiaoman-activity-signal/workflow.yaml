@@ -33,7 +33,7 @@ tags:
 next_actions:
   - Run the guarded Xiaoman activity signal timer observation smoke after an
     owner-approved deploy, then record whether runtime intake is healthy.
-  - After production observation is healthy, decide whether to add a reviewed downstream
-    worker from created activity request work_items to the activity-promotion workflow.
+  - Add reviewed runtime scheduling and observation for the Xiaoman activity promotion
+    starter worker after apply smoke and owner approval.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.

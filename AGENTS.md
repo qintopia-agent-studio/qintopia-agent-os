@@ -90,6 +90,10 @@ Use `rg` and `rg --files` for search.
   `run-xiaoman-activity-signal-worker --once --apply` for AgentOS work item intake. Do
   not repurpose it for Feishu writeback, QiWe sends, visual asset creation, or external
   adapters.
+- `run-xiaoman-activity-promotion-starter-worker` may only create missing AgentOS
+  evidence/visual child `work_items` under existing Xiaoman activity request parents. It
+  must not execute evidence retrieval, visual generation, Feishu writeback, QiWe sends,
+  group-send readiness, or external adapters.
 
 ## Package Placement
 
