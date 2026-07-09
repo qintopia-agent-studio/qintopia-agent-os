@@ -333,6 +333,61 @@ assert_sql_equals \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.work_items WHERE idempotency_key = 'xiaoman_activity_signal:${xiaoman_worker_signal_id}';"
 
+xiaoman_worker_parent_id="$(
+  psql_value "SELECT id FROM qintopia_agent_os.work_items WHERE idempotency_key = 'xiaoman_activity_signal:${xiaoman_worker_signal_id}';"
+)"
+
+xiaoman_promotion_preview="$(run_json xiaoman_promotion_preview run-xiaoman-activity-promotion-starter-worker --check-only --work-item-id "$xiaoman_worker_parent_id")"
+assert_json "$xiaoman_promotion_preview" "data['success'] is True"
+assert_json "$xiaoman_promotion_preview" "data['worker'] == 'xiaoman-activity-promotion-starter-worker'"
+assert_json "$xiaoman_promotion_preview" "data['source'] == 'agentos_work_items'"
+assert_json "$xiaoman_promotion_preview" "data['dry_run'] is True"
+assert_json "$xiaoman_promotion_preview" "data['check_only'] is True"
+assert_json "$xiaoman_promotion_preview" "data['action_status'] == 'activity_promotion_children_preview'"
+assert_json "$xiaoman_promotion_preview" "data['requested_work_item_id'] == '${xiaoman_worker_parent_id}'"
+assert_json "$xiaoman_promotion_preview" "data['scanned_count'] == 1"
+assert_json "$xiaoman_promotion_preview" "data['missing_child_count'] == 2"
+assert_json "$xiaoman_promotion_preview" "len(data['work_items']) == 2"
+assert_json "$xiaoman_promotion_preview" "any(item['capability_key'] == 'wenyuange.retrieve_evidence' and item['work_item_type'] == 'evidence_request' for item in data['work_items'])"
+assert_json "$xiaoman_promotion_preview" "any(item['capability_key'] == 'huabaosi.create_visual_asset' and item['work_item_type'] == 'visual_asset_request' for item in data['work_items'])"
+assert_json "$xiaoman_promotion_preview" "data['safe_for_chat'] is False"
+
+xiaoman_promotion_apply="$(run_json xiaoman_promotion_apply run-xiaoman-activity-promotion-starter-worker --once --apply --work-item-id "$xiaoman_worker_parent_id")"
+assert_json "$xiaoman_promotion_apply" "data['success'] is True"
+assert_json "$xiaoman_promotion_apply" "data['worker'] == 'xiaoman-activity-promotion-starter-worker'"
+assert_json "$xiaoman_promotion_apply" "data['source'] == 'agentos_work_items'"
+assert_json "$xiaoman_promotion_apply" "data['dry_run'] is False"
+assert_json "$xiaoman_promotion_apply" "data['apply_requested'] is True"
+assert_json "$xiaoman_promotion_apply" "data['action_status'] == 'activity_promotion_children_created'"
+assert_json "$xiaoman_promotion_apply" "data['requested_work_item_id'] == '${xiaoman_worker_parent_id}'"
+assert_json "$xiaoman_promotion_apply" "data['scanned_count'] == 1"
+assert_json "$xiaoman_promotion_apply" "data['created_count'] == 2"
+assert_json "$xiaoman_promotion_apply" "data['missing_child_count'] == 2"
+assert_json "$xiaoman_promotion_apply" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_promotion_created_evidence_child \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'wenyuange.retrieve_evidence' AND work_item_type = 'evidence_request' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:evidence-child';"
+
+assert_sql_equals \
+  xiaoman_promotion_created_visual_child \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'huabaosi.create_visual_asset' AND work_item_type = 'visual_asset_request' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:visual-child';"
+
+xiaoman_promotion_again="$(run_json xiaoman_promotion_again run-xiaoman-activity-promotion-starter-worker --once --apply --work-item-id "$xiaoman_worker_parent_id")"
+assert_json "$xiaoman_promotion_again" "data['success'] is True"
+assert_json "$xiaoman_promotion_again" "data['worker'] == 'xiaoman-activity-promotion-starter-worker'"
+assert_json "$xiaoman_promotion_again" "data['action_status'] == 'no_eligible_activity_requests'"
+assert_json "$xiaoman_promotion_again" "data['scanned_count'] == 0"
+assert_json "$xiaoman_promotion_again" "data['missing_child_count'] == 0"
+assert_json "$xiaoman_promotion_again" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_promotion_children_not_duplicated \
+  2 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key IN ('wenyuange.retrieve_evidence','huabaosi.create_visual_asset');"
+
 planned_submit_payload="$(
   python3 - "$source_ref" <<'PY'
 import json

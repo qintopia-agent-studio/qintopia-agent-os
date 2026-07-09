@@ -56,6 +56,12 @@ the runtime timer is active, that its service command is fixed to
 leak known sensitive markers, and that `run-xiaoman-activity-signal-worker --check-only`
 can preview the current AgentOS queue. It is a read-only production observation smoke.
 
+`run-xiaoman-activity-promotion-starter-worker` completes the next AgentOS-only step: it
+scans existing `xiaoman.create_activity_request` work items and creates only missing
+`evidence_request` and `visual_asset_request` child work items under the same parent. It
+does not execute evidence retrieval, visual generation, Feishu writes, QiWe sends, or
+group-send readiness.
+
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
 coverage by normalized activity title and date, and reports sanitized
@@ -98,6 +104,8 @@ raw Feishu record ids.
 
 - New activity signal creates one `xiaoman.create_activity_request` work item through
   the operations control plane.
+- Activity request starter creates missing evidence and visual child work items without
+  duplicating existing children.
 - Duplicate signal returns the existing work item by idempotency key.
 - Missing required fields produce a review-needed state.
 - Valid signal can request a visual asset workflow without publishing anything.

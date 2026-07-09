@@ -766,6 +766,28 @@ pub enum Command {
         #[arg(long, default_value_t = 300)]
         poll_seconds: u64,
     },
+    /// Add missing evidence/visual child work items for Xiaoman activity requests.
+    RunXiaomanActivityPromotionStarterWorker {
+        /// Scan without writing AgentOS child work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS child work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum parent work items to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Process one specific Xiaoman activity request work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+    },
     /// Create a capability-governed AgentOS operations work item.
     OperationsWorkItemCreate {
         /// JSON payload for the generic capability/work item request.

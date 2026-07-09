@@ -309,6 +309,39 @@ pub struct WorkflowSyncWorkerReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct XiaomanActivityPromotionStarterWorkerReport {
+    pub success: bool,
+    pub dry_run: bool,
+    pub apply_requested: bool,
+    pub check_only: bool,
+    pub worker: &'static str,
+    pub source: &'static str,
+    pub action_status: String,
+    pub requested_work_item_id: Option<Uuid>,
+    pub scanned_count: usize,
+    pub created_count: usize,
+    pub existing_count: usize,
+    pub missing_child_count: usize,
+    pub safe_for_chat: bool,
+    pub work_items: Vec<WorkItemCreateReport>,
+    pub limitations: Vec<String>,
+    pub guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct XiaomanActivityPromotionCandidate {
+    id: Uuid,
+    brief_summary: String,
+    source_type: String,
+    source_refs: Value,
+    source_event_signal_id: Option<Uuid>,
+    priority: String,
+    human_owner: String,
+    missing_evidence_child: bool,
+    missing_visual_child: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct WorkflowChildStatusRef {
     pub work_item_id: Uuid,
     pub work_item_type: String,
@@ -691,6 +724,38 @@ pub async fn run_workflow_sync_worker(
     Ok(())
 }
 
+pub async fn run_xiaoman_activity_promotion_starter_worker(
+    cli: &Cli,
+    check_only: bool,
+    once: bool,
+    apply: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+) -> Result<()> {
+    if check_only && apply {
+        bail!("use either --check-only or --apply, not both");
+    }
+    if !once && !check_only {
+        bail!(
+            "xiaoman activity promotion starter worker currently supports --once or --check-only"
+        );
+    }
+    let database_url = cli.database_url_required()?;
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
+    let policy = OperationsPolicy::from_cli(cli, true);
+    let report = run_xiaoman_activity_promotion_starter_batch(
+        &pool,
+        check_only,
+        apply && !check_only,
+        batch_size,
+        work_item_id,
+        &policy,
+    )
+    .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
 pub async fn run_capability_list(cli: &Cli, use_db: bool) -> Result<()> {
     let report = if use_db {
         let database_url = cli.database_url_required()?;
@@ -871,6 +936,132 @@ async fn run_workflow_sync_worker_once(
         Some(sync_report),
         &action_status,
     ))
+}
+
+async fn run_xiaoman_activity_promotion_starter_batch(
+    pool: &PgPool,
+    check_only: bool,
+    apply_requested: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+    policy: &OperationsPolicy,
+) -> Result<XiaomanActivityPromotionStarterWorkerReport> {
+    let candidates =
+        load_xiaoman_activity_promotion_candidates(pool, work_item_id, batch_size).await?;
+    let mut work_items = Vec::new();
+    let mut missing_child_count = 0;
+
+    for candidate in &candidates {
+        let requests = xiaoman_activity_promotion_child_requests(candidate);
+        missing_child_count += requests.len();
+        for request in requests {
+            let report = if apply_requested {
+                create_work_item(pool, request, true, policy).await?
+            } else {
+                create_work_item_dry_run(request)?
+            };
+            work_items.push(report);
+        }
+    }
+
+    let existing_count = work_items.iter().filter(|item| item.existing).count();
+    let created_count = work_items.len().saturating_sub(existing_count);
+    let action_status = if candidates.is_empty() {
+        "no_eligible_activity_requests"
+    } else if apply_requested {
+        "activity_promotion_children_created"
+    } else {
+        "activity_promotion_children_preview"
+    };
+
+    Ok(xiaoman_activity_promotion_starter_report(
+        check_only,
+        apply_requested,
+        work_item_id,
+        candidates.len(),
+        created_count,
+        existing_count,
+        missing_child_count,
+        action_status,
+        work_items,
+    ))
+}
+
+async fn load_xiaoman_activity_promotion_candidates(
+    pool: &PgPool,
+    work_item_id: Option<Uuid>,
+    batch_size: i64,
+) -> Result<Vec<XiaomanActivityPromotionCandidate>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            parent.id,
+            parent.brief_summary,
+            parent.source_type,
+            parent.source_refs,
+            parent.source_event_signal_id,
+            parent.priority,
+            parent.human_owner,
+            NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'wenyuange.retrieve_evidence'
+                  AND child.work_item_type = 'evidence_request'
+            ) AS missing_evidence_child,
+            NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'huabaosi.create_visual_asset'
+                  AND child.work_item_type = 'visual_asset_request'
+            ) AS missing_visual_child
+        FROM qintopia_agent_os.work_items parent
+        WHERE parent.capability_key = 'xiaoman.create_activity_request'
+          AND parent.work_item_type = 'activity_promotion_request'
+          AND parent.target_agent = 'xiaoman'
+          AND ($1::uuid IS NULL OR parent.id = $1)
+          AND (
+            NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'wenyuange.retrieve_evidence'
+                  AND child.work_item_type = 'evidence_request'
+            )
+            OR NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'huabaosi.create_visual_asset'
+                  AND child.work_item_type = 'visual_asset_request'
+            )
+          )
+        ORDER BY parent.created_at ASC, parent.id ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(batch_size.max(1))
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman activity promotion starter candidates")?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(XiaomanActivityPromotionCandidate {
+                id: row.try_get("id")?,
+                brief_summary: row.try_get("brief_summary")?,
+                source_type: row.try_get("source_type")?,
+                source_refs: row.try_get("source_refs")?,
+                source_event_signal_id: row.try_get("source_event_signal_id")?,
+                priority: row.try_get("priority")?,
+                human_owner: row.try_get("human_owner")?,
+                missing_evidence_child: row.try_get("missing_evidence_child")?,
+                missing_visual_child: row.try_get("missing_visual_child")?,
+            })
+        })
+        .collect()
 }
 
 async fn next_syncable_workflow_parent_id(pool: &PgPool) -> Result<Option<Uuid>> {
@@ -3536,6 +3727,87 @@ fn workflow_work_item_requests(
     (parent, vec![evidence_child, visual_child])
 }
 
+fn xiaoman_activity_promotion_child_requests(
+    candidate: &XiaomanActivityPromotionCandidate,
+) -> Vec<WorkItemCreateRequest> {
+    let mut requests = Vec::new();
+    if candidate.missing_evidence_child {
+        requests.push(xiaoman_activity_promotion_child_request(
+            candidate,
+            "wenyuange",
+            "wenyuange.retrieve_evidence",
+            "evidence_request",
+            "activity_evidence_request",
+            format!("{} - 活动宣发背景资料", candidate.brief_summary),
+            "evidence-child",
+            json!({
+                "workflow_type": "activity_promotion",
+                "planner_intent": "retrieve_evidence",
+                "question": format!("请整理活动宣发前需要引用的背景资料和证据：{}", candidate.brief_summary),
+                "request_text": candidate.brief_summary,
+            }),
+        ));
+    }
+    if candidate.missing_visual_child {
+        requests.push(xiaoman_activity_promotion_child_request(
+            candidate,
+            "huabaosi",
+            "huabaosi.create_visual_asset",
+            "visual_asset_request",
+            "activity_visual_asset_request",
+            candidate.brief_summary.clone(),
+            "visual-child",
+            json!({
+                "workflow_type": "activity_promotion",
+                "planner_intent": "create_visual_asset",
+                "requested_output": "poster_or_visual_draft",
+                "request_text": candidate.brief_summary,
+            }),
+        ));
+    }
+    requests
+}
+
+fn xiaoman_activity_promotion_child_request(
+    candidate: &XiaomanActivityPromotionCandidate,
+    target_agent: &str,
+    capability_key: &str,
+    work_item_type: &str,
+    purpose: &str,
+    brief_summary: String,
+    idempotency_suffix: &str,
+    payload: Value,
+) -> WorkItemCreateRequest {
+    WorkItemCreateRequest {
+        requester_agent: "xiaoman".to_string(),
+        target_agent: target_agent.to_string(),
+        capability_key: capability_key.to_string(),
+        work_item_type: work_item_type.to_string(),
+        brief_summary,
+        purpose: purpose.to_string(),
+        human_owner: candidate.human_owner.clone(),
+        priority: candidate.priority.clone(),
+        source_type: candidate.source_type.clone(),
+        source_refs: candidate.source_refs.clone(),
+        source_event_signal_id: candidate.source_event_signal_id,
+        payload,
+        payload_redaction_policy: "summary_only".to_string(),
+        idempotency_key: format!(
+            "xiaoman_activity_promotion:{}:{}",
+            candidate.id, idempotency_suffix
+        ),
+        dedupe_key: String::new(),
+        metadata: json!({
+            "workflow_type": "activity_promotion",
+            "workflow_starter": "run-xiaoman-activity-promotion-starter-worker",
+            "workflow_step": idempotency_suffix,
+            "parent_activity_request_work_item_id": candidate.id,
+        }),
+        parent_work_item_id: Some(candidate.id),
+        approved_artifact_id: None,
+    }
+}
+
 fn work_item_request_preview(request: &WorkItemCreateRequest) -> WorkItemCreateRequestPreview {
     WorkItemCreateRequestPreview {
         parent_work_item_id: request.parent_work_item_id,
@@ -4375,6 +4647,48 @@ fn workflow_sync_worker_report(
     }
 }
 
+fn xiaoman_activity_promotion_starter_report(
+    check_only: bool,
+    apply_requested: bool,
+    requested_work_item_id: Option<Uuid>,
+    scanned_count: usize,
+    created_count: usize,
+    existing_count: usize,
+    missing_child_count: usize,
+    action_status: &str,
+    work_items: Vec<WorkItemCreateReport>,
+) -> XiaomanActivityPromotionStarterWorkerReport {
+    XiaomanActivityPromotionStarterWorkerReport {
+        success: true,
+        dry_run: !apply_requested,
+        apply_requested,
+        check_only,
+        worker: "xiaoman-activity-promotion-starter-worker",
+        source: "agentos_work_items",
+        action_status: action_status.to_string(),
+        requested_work_item_id,
+        scanned_count,
+        created_count,
+        existing_count,
+        missing_child_count,
+        safe_for_chat: false,
+        work_items,
+        limitations: vec![
+            "starter worker only creates missing AgentOS evidence/visual child work_items"
+                .to_string(),
+            "starter worker does not execute evidence, collaboration, group-send, or external adapters"
+                .to_string(),
+            "systemd/timer scheduling is intentionally out of scope for this worker change"
+                .to_string(),
+        ],
+        guardrails: vec![
+            "Postgres AgentOS work_items remain the source of truth".to_string(),
+            "child work items use parent work_item_id based idempotency keys".to_string(),
+            "Feishu, QiWe, visual generation, and external sends are not called".to_string(),
+        ],
+    }
+}
+
 fn recommended_command_for_workbench_event(
     request: &WorkbenchEventRecordRequest,
 ) -> Option<String> {
@@ -4584,6 +4898,85 @@ mod tests {
 
     fn request(value: Value) -> WorkItemCreateRequest {
         serde_json::from_value(value).expect("request should deserialize")
+    }
+
+    fn xiaoman_promotion_candidate(
+        missing_evidence_child: bool,
+        missing_visual_child: bool,
+    ) -> XiaomanActivityPromotionCandidate {
+        XiaomanActivityPromotionCandidate {
+            id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            brief_summary: "AgentOS 小满活动宣发".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({"event_signal_id": "evt_xiaoman_activity"}),
+            source_event_signal_id: Some(
+                Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
+            ),
+            priority: "normal".to_string(),
+            human_owner: "xiaoman-owner".to_string(),
+            missing_evidence_child,
+            missing_visual_child,
+        }
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_starter_preview_builds_two_children() {
+        let candidate = xiaoman_promotion_candidate(true, true);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].capability_key, "wenyuange.retrieve_evidence");
+        assert_eq!(requests[0].work_item_type, "evidence_request");
+        assert_eq!(requests[0].parent_work_item_id, Some(candidate.id));
+        assert_eq!(
+            requests[0].idempotency_key,
+            format!("xiaoman_activity_promotion:{}:evidence-child", candidate.id)
+        );
+        assert_eq!(requests[1].capability_key, "huabaosi.create_visual_asset");
+        assert_eq!(requests[1].work_item_type, "visual_asset_request");
+        assert_eq!(requests[1].parent_work_item_id, Some(candidate.id));
+        assert_eq!(
+            requests[1].idempotency_key,
+            format!("xiaoman_activity_promotion:{}:visual-child", candidate.id)
+        );
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_starter_only_builds_missing_visual_child() {
+        let candidate = xiaoman_promotion_candidate(false, true);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].capability_key, "huabaosi.create_visual_asset");
+        assert_eq!(
+            requests[0].source_event_signal_id,
+            candidate.source_event_signal_id
+        );
+        assert_eq!(requests[0].priority, "normal");
+        assert_eq!(requests[0].human_owner, "xiaoman-owner");
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_starter_report_is_safe_for_chat() {
+        let report = xiaoman_activity_promotion_starter_report(
+            true,
+            false,
+            None,
+            0,
+            0,
+            0,
+            0,
+            "no_eligible_activity_requests",
+            Vec::new(),
+        );
+        let raw = serde_json::to_string(&report).expect("report serializes");
+
+        assert_eq!(report.worker, "xiaoman-activity-promotion-starter-worker");
+        assert_eq!(report.source, "agentos_work_items");
+        assert!(!report.safe_for_chat);
+        assert!(!raw.contains("token"));
+        assert!(!raw.contains("table_id"));
+        assert!(!raw.contains("message_id"));
     }
 
     #[test]
