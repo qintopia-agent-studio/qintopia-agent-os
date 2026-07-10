@@ -1,0 +1,242 @@
+{
+  "case": "qweather-full-local-day",
+  "generated_at": "2026-07-06T07:00:00+08:00",
+  "bundle": {
+    "current": {
+      "success": true,
+      "data": {
+        "now": {
+          "obsTime": "2026-07-06T07:00+08:00",
+          "text": "晴",
+          "temp": "26",
+          "feelsLike": "27",
+          "humidity": "72",
+          "windDir": "东风",
+          "windScale": "2",
+          "windSpeed": "10",
+          "precip": "0.0"
+        }
+      }
+    },
+    "hourly": {
+      "success": true,
+      "data": {
+        "hourly": [
+          {
+            "fxTime": "2026-07-06T11:00+08:00",
+            "text": "晴",
+            "temp": "31",
+            "pop": "10",
+            "precip": "0.0",
+            "windDir": "东南风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T12:00+08:00",
+            "text": "晴",
+            "temp": "33",
+            "pop": "10",
+            "precip": "0.0",
+            "windDir": "东南风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T13:00+08:00",
+            "text": "多云",
+            "temp": "34",
+            "pop": "20",
+            "precip": "0.0",
+            "windDir": "东南风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T14:00+08:00",
+            "text": "多云",
+            "temp": "35",
+            "pop": "30",
+            "precip": "0.0",
+            "windDir": "南风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T15:00+08:00",
+            "text": "雷阵雨",
+            "temp": "34",
+            "pop": "70",
+            "precip": "1.2",
+            "windDir": "西南风",
+            "windScale": "3"
+          },
+          {
+            "fxTime": "2026-07-06T16:00+08:00",
+            "text": "雷阵雨",
+            "temp": "32",
+            "pop": "80",
+            "precip": "3.5",
+            "windDir": "西风",
+            "windScale": "4"
+          },
+          {
+            "fxTime": "2026-07-06T17:00+08:00",
+            "text": "多云",
+            "temp": "31",
+            "pop": "25",
+            "precip": "0.0",
+            "windDir": "西风",
+            "windScale": "3"
+          },
+          {
+            "fxTime": "2026-07-06T18:00+08:00",
+            "text": "多云",
+            "temp": "30",
+            "pop": "30",
+            "precip": "0.0",
+            "windDir": "西风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T19:00+08:00",
+            "text": "小雨",
+            "temp": "29",
+            "pop": "60",
+            "precip": "0.8",
+            "windDir": "西北风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T20:00+08:00",
+            "text": "小雨",
+            "temp": "28",
+            "pop": "55",
+            "precip": "0.4",
+            "windDir": "西北风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T21:00+08:00",
+            "text": "阴",
+            "temp": "27",
+            "pop": "20",
+            "precip": "0.0",
+            "windDir": "北风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-06T22:00+08:00",
+            "text": "多云",
+            "temp": "26",
+            "pop": "10",
+            "precip": "0.0",
+            "windDir": "北风",
+            "windScale": "2"
+          },
+          {
+            "fxTime": "2026-07-07T00:00+08:00",
+            "text": "暴雨",
+            "temp": "5",
+            "pop": "100",
+            "precip": "20.0",
+            "windDir": "北风",
+            "windScale": "6"
+          }
+        ]
+      }
+    },
+    "minutely": {
+      "success": true,
+      "data": {
+        "minutely": [
+          {
+            "fxTime": "2026-07-06T07:10+08:00",
+            "precip": "0.1"
+          },
+          {
+            "fxTime": "2026-07-06T07:15+08:00",
+            "precip": "0.2"
+          },
+          {
+            "fxTime": "2026-07-06T07:20+08:00",
+            "precip": "0.0"
+          }
+        ]
+      }
+    },
+    "air_quality": {
+      "success": true,
+      "data": {
+        "now": {
+          "pubTime": "2026-07-06T07:00+08:00",
+          "aqi": "32",
+          "category": "优",
+          "primary": "NA"
+        }
+      }
+    },
+    "weather_alert": {
+      "success": true,
+      "source": "weatheralert_v1",
+      "data": {
+        "alerts": [
+          {
+            "id": "sanitized-yellow",
+            "senderName": "陕西省气象台",
+            "headline": "陕西省气象台发布高温黄色预警",
+            "eventType": {
+              "name": "高温"
+            },
+            "color": {
+              "code": "Yellow"
+            },
+            "messageType": {
+              "code": "Alert"
+            },
+            "effectiveTime": "2026-07-06T06:00+08:00"
+          },
+          {
+            "id": "sanitized-blue",
+            "senderName": "西安市气象台",
+            "headline": "西安市气象台发布大风蓝色预警",
+            "eventType": {
+              "name": "大风"
+            },
+            "color": {
+              "code": "Blue"
+            },
+            "messageType": {
+              "code": "Alert"
+            },
+            "effectiveTime": "2026-07-06T05:30+08:00"
+          },
+          {
+            "id": "sanitized-orange",
+            "senderName": "鄠邑区气象台",
+            "headline": "鄠邑区气象台发布高温橙色预警",
+            "eventType": {
+              "name": "高温"
+            },
+            "color": {
+              "code": "Orange"
+            },
+            "messageType": {
+              "code": "Alert"
+            },
+            "effectiveTime": "2026-07-06T06:30+08:00"
+          }
+        ]
+      }
+    }
+  },
+  "expected": {
+    "forecast_date": "2026-07-06",
+    "status": "complete",
+    "period_ids": ["midday", "afternoon", "evening"],
+    "period_coverage_hours": [3, 4, 5],
+    "midday_temp_range_c": [31, 34],
+    "afternoon_temp_range_c": [31, 35],
+    "evening_temp_range_c": [26, 30],
+    "afternoon_max_precip_probability_pct": 80,
+    "evening_max_precip_mm": 0.8,
+    "excluded_next_day_temp_c": 5,
+    "warning_order": ["Orange", "Yellow", "Blue"]
+  }
+}
