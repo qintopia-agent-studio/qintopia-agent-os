@@ -70,6 +70,8 @@ if (!exists(xiaomanPreflightPath)) {
     "xiaoman-activity-signal-timer-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1",
     "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
+    "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1",
+    "operations-downstream-timers-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1",
     "xiaoman-activity-downstream-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1",
@@ -90,8 +92,6 @@ if (!exists(xiaomanPreflightPath)) {
     "tenant_access_token",
     "QIWE_TOKEN",
     "QIWE_GUID",
-    "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1",
-    "operations-downstream-timers-observation-smoke.sh",
   ]) {
     forbidFragment(xiaomanPreflightPath, preflight, fragment);
   }
