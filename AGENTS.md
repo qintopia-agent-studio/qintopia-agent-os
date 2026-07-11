@@ -142,9 +142,9 @@ Use `rg` and `rg --files` for search.
   confirmation, queueing, send-ready, Feishu writeback, QiWe sends, or external
   adapters.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
-  timer observation smokes and downstream evidence/visual timer observation. It must not
-  set apply-smoke flags, deploy units, publish releases, write Feishu, call QiWe, or run
-  external adapters.
+  timer observation smokes, the shared evidence/visual timer observation, and the
+  Xiaoman downstream evidence/visual preview. It must not set apply-smoke flags, deploy
+  units, publish releases, write Feishu, call QiWe, or run external adapters.
 
 ## Package Placement
 

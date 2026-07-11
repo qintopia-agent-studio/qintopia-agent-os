@@ -107,6 +107,7 @@ for (const fragment of [
   "xiaoman-activity-signal-timer-observation-smoke.sh",
   "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
   "operations-downstream-timers-observation-smoke.sh",
+  "xiaoman-activity-downstream-observation-smoke.sh",
   "xiaoman-activity-send-request-starter-observation-smoke.sh",
 ]) {
   requireFragment(preflightPath, preflight, fragment);
