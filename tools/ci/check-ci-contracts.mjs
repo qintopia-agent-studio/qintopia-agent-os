@@ -221,6 +221,67 @@ if (ciWorkflow) {
         }
       }
     }
+
+    const qualityJob = parsedWorkflow?.jobs?.["rust-quality-baseline"];
+    if (!qualityJob) {
+      errors.push(".github/workflows/ci.yml: missing rust-quality-baseline job");
+    } else {
+      const qualitySteps = qualityJob.steps ?? [];
+      for (const requiredStep of [
+        "Rust coverage baseline",
+        "Clippy baseline",
+        "Upload Rust quality baseline",
+      ]) {
+        if (!qualitySteps.some((step) => step?.name === requiredStep)) {
+          errors.push(
+            `.github/workflows/ci.yml: rust-quality-baseline must include ${requiredStep}`
+          );
+        }
+      }
+      const clippyStep = qualitySteps.find((step) => step?.name === "Clippy baseline");
+      if (clippyStep?.["continue-on-error"] !== true) {
+        errors.push(
+          ".github/workflows/ci.yml: Clippy baseline must stay non-blocking until debt is resolved"
+        );
+      }
+    }
+
+    const postgresJob = parsedWorkflow?.jobs?.["xiaoman-postgres-integration"];
+    if (!postgresJob) {
+      errors.push(".github/workflows/ci.yml: missing xiaoman-postgres-integration job");
+    } else {
+      const postgres = postgresJob.services?.postgres;
+      if (postgres?.image !== "postgres:16-alpine") {
+        errors.push(
+          ".github/workflows/ci.yml: Xiaoman integration must use the temporary PostgreSQL 16 service"
+        );
+      }
+      if (postgresJob.env?.QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE !== "1") {
+        errors.push(
+          ".github/workflows/ci.yml: Xiaoman integration must explicitly enable its disposable apply smoke"
+        );
+      }
+      if (
+        !String(postgresJob.env?.QINTOPIA_SIDECAR_DATABASE_URL ?? "").includes(
+          "127.0.0.1:5432/qintopia_test"
+        )
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Xiaoman integration must target only the disposable qintopia_test database"
+        );
+      }
+      if (
+        !postgresJob.steps?.some(
+          (step) =>
+            step?.name === "Xiaoman downstream apply smoke" &&
+            String(step.run ?? "").includes("operations-control-plane-apply-smoke.sh")
+        )
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Xiaoman integration must run the guarded apply smoke"
+        );
+      }
+    }
   } catch (error) {
     errors.push(`.github/workflows/ci.yml: workflow YAML must parse: ${error.message}`);
   }

@@ -33,6 +33,9 @@ The runtime gate adds:
 - QiWe package tests
 - sidecar Rust tests
 - no-credential sidecar smoke checks
+- a Rust coverage baseline artifact and non-blocking strict Clippy baseline
+- a Xiaoman downstream apply smoke against a disposable GitHub Actions PostgreSQL
+  service
 
 ## Secret And Runtime-State Gate
 
@@ -68,6 +71,13 @@ The CI workflow starts with a `changes` job. Markdown and docs-only changes skip
 Python/Rust runtime checks while still completing the required `check` job. Runtime,
 deployment script, package, workflow, or configuration changes run `pnpm check:runtime`
 after the light gate.
+
+Runtime-sensitive changes also run `rust-quality-baseline` with Rust 1.96. It stores
+LCOV and a text summary as a short-retention artifact. Strict Clippy is initially
+non-blocking so existing lint debt remains visible without turning unrelated PRs red.
+`xiaoman-postgres-integration` uses only a disposable `qintopia_test` PostgreSQL service
+and runs the guarded control-plane apply smoke with no production database URL, secrets,
+Feishu, QiWe, or external adapters.
 
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the

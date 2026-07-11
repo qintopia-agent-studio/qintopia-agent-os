@@ -145,6 +145,9 @@ Use `rg` and `rg --files` for search.
   timer observation smokes, the shared evidence/visual timer observation, and the
   Xiaoman downstream evidence/visual preview. It must not set apply-smoke flags, deploy
   units, publish releases, write Feishu, call QiWe, or run external adapters.
+- `xiaoman-postgres-integration` in GitHub Actions may enable the guarded apply smoke
+  only against its disposable `qintopia_test` PostgreSQL service. It must not use a
+  production database URL, secrets, Feishu, QiWe, or external adapters.
 
 ## Package Placement
 
