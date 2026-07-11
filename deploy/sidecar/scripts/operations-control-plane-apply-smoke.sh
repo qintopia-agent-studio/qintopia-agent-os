@@ -396,7 +396,7 @@ xiaoman_promotion_visual="$(run_json xiaoman_promotion_visual run-collaboration-
 assert_json "$xiaoman_promotion_visual" "data['success'] is True"
 assert_json "$xiaoman_promotion_visual" "data['action_status'] == 'artifacts_created'"
 assert_json "$xiaoman_promotion_visual" "data['work_item_id'] == '${xiaoman_promotion_visual_child_id}'"
-assert_json "$xiaoman_promotion_visual" "data['artifact_count'] == 1"
+assert_json "$xiaoman_promotion_visual" "len(data['artifact_ids']) == 1"
 assert_json "$xiaoman_promotion_visual" "data['artifact_previews'][0]['artifact_type'] == 'poster_brief'"
 assert_json "$xiaoman_promotion_visual" "data['artifact_previews'][0]['review_status'] == 'pending'"
 
@@ -616,7 +616,7 @@ collaboration="$(run_json collaboration run-collaboration-worker --work-item-typ
 assert_json "$collaboration" "data['success'] is True"
 assert_json "$collaboration" "data['action_status'] == 'artifacts_created'"
 assert_json "$collaboration" "data['work_item_id'] == '${work_item_id}'"
-assert_json "$collaboration" "data['artifact_count'] == 1"
+assert_json "$collaboration" "len(data['artifact_ids']) == 1"
 assert_json "$collaboration" "data['artifact_previews'][0]['review_status'] == 'pending'"
 
 artifact_id="$(
