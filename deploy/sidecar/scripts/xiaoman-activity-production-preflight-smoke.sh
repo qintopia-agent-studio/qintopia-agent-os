@@ -27,8 +27,8 @@ run_step \
 
 run_step \
   "downstream evidence/visual timer observation" \
-  env QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 \
-  "${SCRIPT_DIR}/operations-downstream-timers-observation-smoke.sh"
+  env QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 \
+  "${SCRIPT_DIR}/xiaoman-activity-downstream-observation-smoke.sh"
 
 run_step \
   "activity send request starter timer observation" \

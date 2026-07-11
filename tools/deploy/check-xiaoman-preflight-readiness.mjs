@@ -106,7 +106,7 @@ for (const fragment of [
   "QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE",
   "xiaoman-activity-signal-timer-observation-smoke.sh",
   "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
-  "operations-downstream-timers-observation-smoke.sh",
+  "xiaoman-activity-downstream-observation-smoke.sh",
   "xiaoman-activity-send-request-starter-observation-smoke.sh",
 ]) {
   requireFragment(preflightPath, preflight, fragment);
@@ -119,6 +119,8 @@ for (const fragment of [
   "--use-feishu-base",
   "QIWE_TOKEN",
   "tenant_access_token",
+  "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1",
+  "operations-downstream-timers-observation-smoke.sh",
 ]) {
   forbidFragment(preflightPath, preflight, fragment);
 }
