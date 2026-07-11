@@ -251,9 +251,9 @@ if (ciWorkflow) {
       errors.push(".github/workflows/ci.yml: missing xiaoman-postgres-integration job");
     } else {
       const postgres = postgresJob.services?.postgres;
-      if (postgres?.image !== "postgres:16-alpine") {
+      if (postgres?.image !== "pgvector/pgvector:pg16") {
         errors.push(
-          ".github/workflows/ci.yml: Xiaoman integration must use the temporary PostgreSQL 16 service"
+          ".github/workflows/ci.yml: Xiaoman integration must use the temporary PostgreSQL 16 service with the vector extension"
         );
       }
       if (postgresJob.env?.QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE !== "1") {
