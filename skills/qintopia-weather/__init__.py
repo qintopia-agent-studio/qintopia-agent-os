@@ -21,6 +21,7 @@ from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 
 DEFAULT_QINTOPIA_WEATHER_LOCATION = "108.5666545,34.0261288"
@@ -64,6 +65,12 @@ QWEATHER_FORBIDDEN_TOOL_PATTERNS = {
     "监测站",
 }
 QWEATHER_IMPORT_LOCK = Lock()
+ASIA_SHANGHAI = ZoneInfo("Asia/Shanghai")
+DAILY_FORECAST_PERIODS = (
+    ("midday", "中午", 11, 13),
+    ("afternoon", "下午", 14, 17),
+    ("evening", "晚上", 18, 22),
+)
 
 
 QINTOPIA_WEATHER_LOOKUP_SCHEMA = {
@@ -161,6 +168,40 @@ def _qintopia_weather_horizon(args: dict[str, Any]) -> int:
 
 def _qintopia_weather_now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _shanghai_datetime(value: Any) -> datetime | None:
+    text = _clean_text(value, max_len=80)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=ASIA_SHANGHAI)
+    return parsed.astimezone(ASIA_SHANGHAI)
+
+
+def _forecast_date() -> str:
+    current = _shanghai_datetime(_qintopia_weather_now_iso())
+    if current is None:
+        current = datetime.now(ASIA_SHANGHAI)
+    return current.date().isoformat()
+
+
+def _to_int(value: Any) -> int | None:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _qweather_forbidden_tool_names(tool_names: list[str]) -> list[str]:
@@ -432,6 +473,29 @@ def _qweather_current(now: Any) -> dict[str, Any] | None:
     }
 
 
+def _warning_level_code(level: Any) -> str:
+    text = _clean_text(level, max_len=40)
+    lowered = text.lower()
+    if "red" in lowered or "红" in text:
+        return "red"
+    if "orange" in lowered or "橙" in text:
+        return "orange"
+    if "yellow" in lowered or "黄" in text:
+        return "yellow"
+    if "blue" in lowered or "蓝" in text:
+        return "blue"
+    return "unknown"
+
+
+def _warning_level_copy(level: Any) -> str:
+    return {
+        "red": "红色",
+        "orange": "橙色",
+        "yellow": "黄色",
+        "blue": "蓝色",
+    }.get(_warning_level_code(level), "未标注级别")
+
+
 def _qweather_weather_alerts(data: Any) -> list[dict[str, str]]:
     if not isinstance(data, dict):
         return []
@@ -466,7 +530,11 @@ def _qweather_weather_alerts(data: Any) -> list[dict[str, str]]:
                 "instruction": _clean_text(item.get("instruction"), max_len=500),
             }
         )
-    return warnings[:5]
+    level_priority = {"red": 0, "orange": 1, "yellow": 2, "blue": 3, "unknown": 4}
+    return sorted(
+        warnings,
+        key=lambda item: level_priority.get(_warning_level_code(item.get("level")), 4),
+    )
 
 
 def _weather_window_time_label(value: str) -> str:
@@ -503,6 +571,119 @@ def _weather_window_copy(windows: list[dict[str, str]], empty: str) -> str:
     return "；".join(parts)
 
 
+def _unique_join(values: list[str], separator: str = "转") -> str | None:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _clean_text(value, max_len=80)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        deduped.append(text)
+    if not deduped:
+        return None
+    return separator.join(deduped)
+
+
+def _wind_summary(rows: list[dict[str, Any]]) -> str | None:
+    directions: list[str] = []
+    scale_values: set[int] = set()
+    for row in rows:
+        direction = _clean_text(row.get("windDir"), max_len=40)
+        if direction:
+            directions.append(direction)
+        scale = _to_int(row.get("windScale"))
+        if scale is not None:
+            scale_values.add(scale)
+    direction_text = _unique_join(directions)
+    sorted_scales = sorted(scale_values)
+    scale_text = None
+    if sorted_scales:
+        scale_text = (
+            f"{sorted_scales[0]}-{sorted_scales[-1]}级"
+            if len(sorted_scales) > 1
+            else f"{sorted_scales[0]}级"
+        )
+    if direction_text and scale_text:
+        return f"{direction_text}{scale_text}"
+    return direction_text or scale_text
+
+
+def _build_daily_period(
+    *,
+    period_id: str,
+    label: str,
+    start_hour: int,
+    end_hour: int,
+    hourly: list[dict[str, Any]],
+    forecast_date: str,
+) -> dict[str, Any]:
+    hourly_by_hour: dict[int, dict[str, Any]] = {}
+    for row in hourly:
+        if not isinstance(row, dict):
+            continue
+        local_time = _shanghai_datetime(row.get("fxTime") or row.get("time"))
+        if local_time is None or local_time.date().isoformat() != forecast_date:
+            continue
+        if not start_hour <= local_time.hour <= end_hour:
+            continue
+        hourly_by_hour.setdefault(local_time.hour, row)
+
+    rows = [hourly_by_hour[hour] for hour in sorted(hourly_by_hour)]
+    expected_hours = end_hour - start_hour + 1
+    coverage_hours = len(rows)
+    if coverage_hours == 0:
+        status = "unknown"
+    elif coverage_hours == expected_hours:
+        status = "complete"
+    else:
+        status = "partial"
+
+    temperatures = [
+        value for value in (_to_int(row.get("temp")) for row in rows) if value is not None
+    ]
+    precip_probabilities = [
+        value for value in (_to_int(row.get("pop")) for row in rows) if value is not None
+    ]
+    precip_amounts = [
+        value for value in (_to_float(row.get("precip")) for row in rows) if value is not None
+    ]
+    conditions = [
+        _clean_text(row.get("text"), max_len=40)
+        for row in rows
+        if _clean_text(row.get("text"), max_len=40)
+    ]
+
+    return {
+        "id": period_id,
+        "label": label,
+        "start_local": f"{start_hour:02d}:00",
+        "end_local": f"{end_hour:02d}:59",
+        "status": status,
+        "condition": _unique_join(conditions),
+        "temp_min_c": min(temperatures) if temperatures else None,
+        "temp_max_c": max(temperatures) if temperatures else None,
+        "max_precip_probability_pct": max(precip_probabilities) if precip_probabilities else None,
+        "max_precip_mm": max(precip_amounts) if precip_amounts else None,
+        "wind_summary": _wind_summary(rows),
+        "coverage_hours": coverage_hours,
+    }
+
+
+def _daily_periods(hourly: list[dict[str, Any]], forecast_date: str) -> list[dict[str, Any]]:
+    return [
+        _build_daily_period(
+            period_id=period_id,
+            label=label,
+            start_hour=start_hour,
+            end_hour=end_hour,
+            hourly=hourly,
+            forecast_date=forecast_date,
+        )
+        for period_id, label, start_hour, end_hour in DAILY_FORECAST_PERIODS
+    ]
+
+
 def _weather_warning_action(warning: dict[str, str]) -> str:
     instruction = _clean_text(warning.get("instruction"), max_len=80)
     if instruction:
@@ -521,11 +702,35 @@ def _weather_warning_summary(
     warnings: list[dict[str, str]], warning_source: dict[str, Any]
 ) -> dict[str, str]:
     if warnings:
+        level_priority = {"red": 0, "orange": 1, "yellow": 2, "blue": 3, "unknown": 4}
+        ordered = sorted(
+            warnings,
+            key=lambda item: level_priority.get(_warning_level_code(item.get("level")), 4),
+        )
+        if len(ordered) > 1:
+            rendered = []
+            for item in ordered[:2]:
+                sender = _clean_text(item.get("sender"), max_len=80)
+                warning_type = _clean_text(
+                    item.get("type") or item.get("title") or "天气", max_len=80
+                )
+                level = _warning_level_copy(item.get("level"))
+                rendered.append(f"{sender}{warning_type}{level}预警")
+            remaining = len(ordered) - len(rendered)
+            if remaining:
+                rendered.append(f"另有 {remaining} 条")
+            first_action = _weather_warning_action(ordered[0])
+            return {
+                "status": "present",
+                "copy": "；".join([*rendered, first_action]),
+                "action": first_action,
+            }
+
         warning = warnings[0]
         warning_type = _clean_text(
             warning.get("type") or warning.get("title") or "天气", max_len=80
         )
-        level = _clean_text(warning.get("level") or "未标注级别", max_len=40)
+        level = _warning_level_copy(warning.get("level"))
         start_time = _clean_text(
             warning.get("start_time") or "生效时间未标注", max_len=40
         )
@@ -562,8 +767,6 @@ def _weather_morning_reference(current: Any, air_quality: Any) -> dict[str, Any]
     wind_dir = _clean_text(current.get("wind_dir"), max_len=40)
     wind_scale = _clean_text(current.get("wind_scale"), max_len=20)
     wind_speed = _clean_text(current.get("wind_speed_kmh"), max_len=20)
-    aqi = _clean_text(air_quality.get("aqi"), max_len=20)
-    aqi_category = _clean_text(air_quality.get("category"), max_len=40)
     if text or temp:
         parts.append(f"{text or '天气'}{temp}°C" if temp else text)
     if feels_like:
@@ -577,12 +780,10 @@ def _weather_morning_reference(current: Any, air_quality: Any) -> dict[str, Any]
         parts.append(wind)
     elif wind_speed:
         parts.append(f"风速{wind_speed}km/h")
-    if aqi or aqi_category:
-        parts.append(f"AQI {aqi} {aqi_category}".strip())
     copy = (
         "今早参考：" + "，".join(parts)
         if parts
-        else "今早参考：当前温度、风和空气质量暂未确认"
+        else "今早参考：当前温度和风暂未确认"
     )
     return {
         "current": current or None,
@@ -591,19 +792,69 @@ def _weather_morning_reference(current: Any, air_quality: Any) -> dict[str, Any]
     }
 
 
+def _weather_period_copy(period: dict[str, Any]) -> str:
+    label = _clean_text(period.get("label"), max_len=20)
+    if period.get("status") == "unknown":
+        return f"{label}暂未确认"
+    details = []
+    condition = _clean_text(period.get("condition"), max_len=80)
+    if condition:
+        details.append(condition)
+    temp_min = period.get("temp_min_c")
+    temp_max = period.get("temp_max_c")
+    if temp_min is not None and temp_max is not None:
+        details.append(
+            f"{temp_min}°C" if temp_min == temp_max else f"{temp_min}-{temp_max}°C"
+        )
+    max_pop = period.get("max_precip_probability_pct")
+    if max_pop is not None:
+        details.append(f"降水概率最高{max_pop}%")
+    if period.get("status") == "partial":
+        details.append("部分时段暂未确认")
+    return f"{label}{'，'.join(details)}" if details else f"{label}暂未确认"
+
+
+def _weather_date_label(forecast_date: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(forecast_date)
+    except ValueError:
+        return forecast_date
+    return f"{parsed.month}月{parsed.day}日"
+
+
 def _weather_daily_forecast(
     *,
+    hourly: list[dict[str, Any]],
     umbrella_windows: list[dict[str, str]],
     thunderstorm_windows: list[dict[str, str]],
     warnings: list[dict[str, str]],
     warning_source: dict[str, Any],
     current: Any,
     air_quality: Any,
+    forecast_date: str | None = None,
 ) -> dict[str, Any]:
+    forecast_date = forecast_date or _forecast_date()
+    periods = _daily_periods(hourly, forecast_date)
+    if all(period["coverage_hours"] == 0 for period in periods):
+        daily_status = "unknown"
+    elif all(period["status"] == "complete" for period in periods):
+        daily_status = "complete"
+    else:
+        daily_status = "partial"
+
     warning = _weather_warning_summary(warnings, warning_source)
-    rain_copy = _weather_window_copy(umbrella_windows, "今天白天降水信号不明显")
-    thunder_copy = _weather_window_copy(thunderstorm_windows, "今天暂未看到明确雷暴窗口")
+    if daily_status == "unknown":
+        rain_copy = "全天分时预报暂不可用"
+        thunder_copy = "全天分时预报暂不可用"
+    elif daily_status == "partial":
+        rain_copy = _weather_window_copy(umbrella_windows, "部分时段降水情况暂未确认")
+        thunder_copy = _weather_window_copy(thunderstorm_windows, "部分时段雷暴情况暂未确认")
+    else:
+        rain_copy = _weather_window_copy(umbrella_windows, "今天白天降水信号不明显")
+        thunder_copy = _weather_window_copy(thunderstorm_windows, "今天暂未看到明确雷暴窗口")
     tips = []
+    if daily_status != "complete":
+        tips.append("分时预报暂未完全确认，出门前再看一眼天气更新。")
     if thunderstorm_windows:
         tips.append("雷阵雨窗口少在树下、空旷处停留。")
     if umbrella_windows:
@@ -614,22 +865,43 @@ def _weather_daily_forecast(
         tips.append("出门前再看一眼官方预警更新。")
     if not tips:
         tips.append("正常出行，傍晚前后再留意一次天气变化。")
-    if thunderstorm_windows:
+    if daily_status == "unknown":
+        summary = "今天天气分时预报暂不可用，出门前建议再看更新。"
+    elif thunderstorm_windows and daily_status == "partial":
+        summary = "今天有雷阵雨风险，但部分时段暂未确认。"
+    elif umbrella_windows and daily_status == "partial":
+        summary = "今天有降水窗口，但部分时段暂未确认。"
+    elif daily_status == "partial":
+        summary = "今天天气分时预报不完整，部分时段暂未确认。"
+    elif thunderstorm_windows:
         summary = "今天有雷阵雨风险，重点看时段和官方预警。"
     elif umbrella_windows:
         summary = "今天有降水窗口，雨具建议随身。"
     else:
         summary = "今天降水信号不明显，按正常出行准备。"
     morning_reference = _weather_morning_reference(current, air_quality)
+    period_copy = "；".join(_weather_period_copy(period) for period in periods)
     lines = [
-        f"秦托邦今日天气：{summary}",
+        f"秦托邦今日天气：{_weather_date_label(forecast_date)}，{summary}",
+        f"分时：{period_copy}",
         f"降水/带伞：{rain_copy}",
-        f"雷电提醒：{thunder_copy}",
         f"预警：{warning['copy']}",
-        f"出行提示：{tips[0]}",
         morning_reference["copy"],
     ]
+    aqi = ""
+    category = ""
+    if isinstance(air_quality, dict):
+        aqi = _clean_text(air_quality.get("aqi"), max_len=20)
+        category = _clean_text(air_quality.get("category"), max_len=40)
+    if aqi or category:
+        lines.append(f"空气（鄠邑区）：AQI {aqi} {category}".strip())
+    else:
+        lines.append("空气（鄠邑区）：AQI 暂未确认")
+    lines.append(f"出行提示：{tips[0]} 二花播报完毕～")
     return {
+        "forecast_date": forecast_date,
+        "status": daily_status,
+        "periods": periods,
         "summary": summary,
         "umbrella": rain_copy,
         "thunderstorm": thunder_copy,
@@ -690,23 +962,60 @@ def _qweather_payload(args: dict[str, Any], bundle: dict[str, dict[str, Any]]) -
         hourly = []
     if not isinstance(minutely, list):
         minutely = []
+    forecast_date = _forecast_date()
 
-    umbrella_source = minutely
-    umbrella_predicate = _qweather_precip_minute
-    umbrella_reason = "分钟级降水预报"
-    umbrella_windows = _time_windows(
-        umbrella_source, umbrella_predicate, "fxTime", max_windows=8
-    )
-    if not umbrella_windows:
-        umbrella_source = hourly[: _qintopia_weather_horizon(args)]
-        umbrella_predicate = _qweather_rainy_hour
-        umbrella_reason = "小时预报有降水信号"
-        umbrella_windows = _time_windows(umbrella_source, umbrella_predicate, "fxTime")
-    umbrella_windows = _annotate_windows(
-        umbrella_windows, umbrella_source, umbrella_predicate, umbrella_reason
-    )
+    hourly_same_day = []
+    for row in hourly:
+        if not isinstance(row, dict):
+            continue
+        local_time = _shanghai_datetime(row.get("fxTime") or row.get("time"))
+        if local_time is None or local_time.date().isoformat() != forecast_date:
+            continue
+        hourly_same_day.append(row)
 
-    thunderstorm_source = hourly[: _qintopia_weather_horizon(args)]
+    minutely_same_day = []
+    for row in minutely:
+        if not isinstance(row, dict):
+            continue
+        local_time = _shanghai_datetime(row.get("fxTime") or row.get("time"))
+        if local_time is None or local_time.date().isoformat() != forecast_date:
+            continue
+        minutely_same_day.append(row)
+
+    minutely_windows = _annotate_windows(
+        _time_windows(minutely_same_day, _qweather_precip_minute, "fxTime", max_windows=8),
+        minutely_same_day,
+        _qweather_precip_minute,
+        "分钟级降水预报",
+    )
+    hourly_source = hourly_same_day[: _qintopia_weather_horizon(args)]
+    if minutely_windows:
+        minutely_start = _shanghai_datetime(minutely_windows[0].get("start"))
+        if minutely_start is not None:
+            near_term_end = minutely_start.timestamp() + 2 * 60 * 60
+            hourly_source = [
+                row
+                for row in hourly_source
+                if (
+                    (row_time := _shanghai_datetime(row.get("fxTime") or row.get("time")))
+                    is None
+                    or row_time.timestamp() > near_term_end
+                )
+            ]
+    hourly_windows = _annotate_windows(
+        _time_windows(hourly_source, _qweather_rainy_hour, "fxTime", max_windows=8),
+        hourly_source,
+        _qweather_rainy_hour,
+        "小时预报有降水信号",
+    )
+    umbrella_windows = sorted(
+        [*minutely_windows, *hourly_windows],
+        key=lambda window: (
+            _shanghai_datetime(window.get("start")) or datetime.max.replace(tzinfo=ASIA_SHANGHAI)
+        ),
+    )[:8]
+
+    thunderstorm_source = hourly_same_day[: _qintopia_weather_horizon(args)]
     thunderstorm_windows = _time_windows(
         thunderstorm_source, _qweather_thunder_hour, "fxTime"
     )
@@ -739,12 +1048,14 @@ def _qweather_payload(args: dict[str, Any], bundle: dict[str, dict[str, Any]]) -
     current = _qweather_current(_qweather_data(bundle.get("current", {}), "now"))
     air_quality = _qweather_air_quality(bundle.get("air_quality", {}).get("data"))
     daily_forecast = _weather_daily_forecast(
+        hourly=hourly_same_day,
         umbrella_windows=umbrella_windows,
         thunderstorm_windows=thunderstorm_windows,
         warnings=warnings,
         warning_source=weather_alert,
         current=current,
         air_quality=air_quality,
+        forecast_date=forecast_date,
     )
 
     payload = {
@@ -852,6 +1163,7 @@ def _open_meteo_fallback() -> dict[str, Any]:
     }
     umbrella_windows = _time_windows(rows, rainy, "time")
     daily_forecast = _weather_daily_forecast(
+        hourly=rows,
         umbrella_windows=umbrella_windows,
         thunderstorm_windows=[],
         warnings=[],
