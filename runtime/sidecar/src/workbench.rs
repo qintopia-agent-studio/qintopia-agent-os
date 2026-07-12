@@ -180,20 +180,22 @@ async fn run_once(
     let ref_id = upsert_workbench_ref(&mut tx, &item, &plan).await?;
     append_event_in_tx(
         &mut tx,
-        Some(item.id),
-        None,
-        "mirror_dry_run_recorded",
-        "worker",
-        WORKER_ID,
-        "Feishu Task mirror payload recorded without calling Feishu",
-        json!({
-            "provider": PROVIDER,
-            "external_id": plan.external_id,
-            "task_title": plan.title,
-            "task_section": plan.section,
-            "description_fields": plan.description_fields,
-            "sensitive_fields_redacted": true,
-        }),
+        WorkItemEvent {
+            work_item_id: Some(item.id),
+            artifact_id: None,
+            event_type: "mirror_dry_run_recorded",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "Feishu Task mirror payload recorded without calling Feishu",
+            data: json!({
+                "provider": PROVIDER,
+                "external_id": plan.external_id,
+                "task_title": plan.title,
+                "task_section": plan.section,
+                "description_fields": plan.description_fields,
+                "sensitive_fields_redacted": true,
+            }),
+        },
     )
     .await?;
     tx.commit()
@@ -333,7 +335,7 @@ async fn lock_next_work_item(
               AND wi.status IN ('queued', 'processing', 'awaiting_review', 'awaiting_publish', 'failed')
             ORDER BY wi.created_at ASC
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF wi SKIP LOCKED
         )
         SELECT
             wi.id,
@@ -384,7 +386,7 @@ async fn lock_work_item_by_id(
               AND wi.id = $2
               AND wi.status IN ('queued', 'processing', 'awaiting_review', 'awaiting_publish', 'failed')
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF wi SKIP LOCKED
         )
         SELECT
             wi.id,
@@ -639,15 +641,19 @@ async fn upsert_workbench_ref(
     Ok(row.get("id"))
 }
 
-async fn append_event_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+struct WorkItemEvent<'a> {
     work_item_id: Option<Uuid>,
     artifact_id: Option<Uuid>,
-    event_type: &str,
-    actor_type: &str,
-    actor_id: &str,
-    message: &str,
+    event_type: &'a str,
+    actor_type: &'a str,
+    actor_id: &'a str,
+    message: &'a str,
     data: Value,
+}
+
+async fn append_event_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    event: WorkItemEvent<'_>,
 ) -> Result<()> {
     sqlx::query(
         r#"
@@ -656,13 +662,13 @@ async fn append_event_in_tx(
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
-    .bind(work_item_id)
-    .bind(artifact_id)
-    .bind(event_type)
-    .bind(actor_type)
-    .bind(actor_id)
-    .bind(message)
-    .bind(data)
+    .bind(event.work_item_id)
+    .bind(event.artifact_id)
+    .bind(event.event_type)
+    .bind(event.actor_type)
+    .bind(event.actor_id)
+    .bind(event.message)
+    .bind(event.data)
     .execute(&mut **tx)
     .await
     .context("append workbench mirror event")?;

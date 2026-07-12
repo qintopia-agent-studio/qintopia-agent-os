@@ -592,7 +592,7 @@ fn post_embedding_request(
          Connection: close\r\n\
          \r\n\
          {body}",
-        body.as_bytes().len()
+        body.len()
     );
 
     let server_name = ServerName::try_from(host).context("validate embedding endpoint host")?;

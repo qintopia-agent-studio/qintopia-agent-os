@@ -119,8 +119,9 @@ scripts/server-deploy.sh deploy
 
 Historical manual path:
 
-The production server currently has Rust 1.75.0 from apt, so builds must use the
-checked-in lockfile:
+The production server is an artifact deployment target. Its apt Rust version is not a
+supported build toolchain; any exceptional manual build must first install Rust 1.96.0
+and use the checked-in lockfile:
 
 ```bash
 cd /home/ubuntu/qintopia-msg-sidecar

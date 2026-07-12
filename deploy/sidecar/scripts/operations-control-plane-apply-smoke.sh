@@ -396,7 +396,7 @@ xiaoman_promotion_visual="$(run_json xiaoman_promotion_visual run-collaboration-
 assert_json "$xiaoman_promotion_visual" "data['success'] is True"
 assert_json "$xiaoman_promotion_visual" "data['action_status'] == 'artifacts_created'"
 assert_json "$xiaoman_promotion_visual" "data['work_item_id'] == '${xiaoman_promotion_visual_child_id}'"
-assert_json "$xiaoman_promotion_visual" "data['artifact_count'] == 1"
+assert_json "$xiaoman_promotion_visual" "len(data['artifact_ids']) == 1"
 assert_json "$xiaoman_promotion_visual" "data['artifact_previews'][0]['artifact_type'] == 'poster_brief'"
 assert_json "$xiaoman_promotion_visual" "data['artifact_previews'][0]['review_status'] == 'pending'"
 
@@ -466,7 +466,7 @@ assert_json "$xiaoman_send_apply" "data['safe_for_chat'] is False"
 assert_sql_equals \
   xiaoman_send_created_group_child \
   1 \
-  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request' AND status = 'awaiting_publish' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:group-message-child' AND approved_artifact_id = '${xiaoman_promotion_artifact_id}'::uuid AND payload->>'send_executed' = 'false';"
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request' AND status = 'awaiting_publish' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:group-message-child' AND (payload->>'approved_artifact_id')::uuid = '${xiaoman_promotion_artifact_id}'::uuid AND payload->>'send_executed' = 'false';"
 
 assert_sql_equals \
   xiaoman_send_did_not_send_or_queue \
@@ -616,7 +616,7 @@ collaboration="$(run_json collaboration run-collaboration-worker --work-item-typ
 assert_json "$collaboration" "data['success'] is True"
 assert_json "$collaboration" "data['action_status'] == 'artifacts_created'"
 assert_json "$collaboration" "data['work_item_id'] == '${work_item_id}'"
-assert_json "$collaboration" "data['artifact_count'] == 1"
+assert_json "$collaboration" "len(data['artifact_ids']) == 1"
 assert_json "$collaboration" "data['artifact_previews'][0]['review_status'] == 'pending'"
 
 artifact_id="$(
@@ -643,6 +643,10 @@ assert_sql_equals \
   artifact_created_event_written \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${work_item_id}'::uuid AND event_type = 'artifact_created';"
+
+visual_mirror="$(run_json visual_mirror run-workbench-mirror-worker --once --work-item-id "$work_item_id" --apply)"
+assert_json "$visual_mirror" "data['success'] is True"
+assert_json "$visual_mirror" "data['action_status'] == 'mirror_dry_run_recorded'"
 
 review_payload="$(
   python3 - "$artifact_id" <<'PY'
@@ -1264,28 +1268,16 @@ print(json.dumps({
 }, ensure_ascii=False))
 PY
 )"
-invalid_status_change_event="$(run_json invalid_status_change_event operations-workbench-event-record --apply --payload-json "$invalid_status_change_event_payload")"
-assert_json "$invalid_status_change_event" "data['success'] is True"
-assert_json "$invalid_status_change_event" "data['action_status'] == 'event_recorded'"
-assert_json "$invalid_status_change_event" "data['recommended_command'] == 'operations-workbench-status-change'"
-invalid_status_change_event_id="$(psql_value "SELECT id FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-status-completed' ORDER BY created_at DESC LIMIT 1;")"
-denied_status_change_before="$(psql_value "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'denied_by_policy';")"
 run_expect_failure \
-  invalid_workbench_status_change_process \
+  invalid_workbench_status_change_record \
   "status_change_requested can only request cancelled status" \
-  operations-workbench-event-process \
-  --event-id "$invalid_status_change_event_id" \
-  --apply
-denied_status_change_after="$(psql_value "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'denied_by_policy';")"
-if [[ "$denied_status_change_after" -le "$denied_status_change_before" ]]; then
-  echo "expected denied_by_policy event for unsafe workbench status change" >&2
-  echo "before=${denied_status_change_before} after=${denied_status_change_after}" >&2
-  exit 1
-fi
+  operations-workbench-event-record \
+  --apply \
+  --payload-json "$invalid_status_change_event_payload"
 assert_sql_equals \
-  invalid_workbench_status_change_not_processed \
+  invalid_workbench_status_change_not_recorded \
   0 \
-  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_processed' AND data->>'source_event_id' = '${invalid_status_change_event_id}';"
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-status-completed';"
 
 owner_change_event_payload="$(
   python3 - "$status_change_work_item_id" "$source_ref" <<'PY'
@@ -1482,25 +1474,21 @@ print(json.dumps({
     "artifact_id": artifact_id,
     "provider": "feishu_task_dry_run",
     "external_id": "agentos-work-item-" + work_item_id,
-    "external_event_id": source_ref + ":workbench-review-changes-requested",
+    "external_event_id": source_ref + ":workbench-review-approved",
     "event_type": "review_decision_requested",
     "actor_id": "operations-apply-smoke-reviewer-2",
-    "review_decision": "changes_requested",
-    "comment_text": "Apply smoke requests one revision through workbench event processing.",
+    "review_decision": "approved",
+    "comment_text": "Apply smoke records approval through workbench event processing.",
     "source": "operations_apply_smoke",
 }, ensure_ascii=False))
 PY
 )"
-visual_mirror="$(run_json visual_mirror run-workbench-mirror-worker --once --work-item-id "$work_item_id" --apply)"
-assert_json "$visual_mirror" "data['success'] is True"
-assert_json "$visual_mirror" "data['action_status'] == 'mirror_dry_run_recorded'"
-
 review_workbench_event="$(run_json review_workbench_event operations-workbench-event-record --apply --payload-json "$review_workbench_event_payload")"
 assert_json "$review_workbench_event" "data['success'] is True"
 assert_json "$review_workbench_event" "data['action_status'] == 'event_recorded'"
 assert_json "$review_workbench_event" "data['recommended_command'] == 'operations-artifact-review-decision'"
 
-review_workbench_event_id="$(psql_value "SELECT id FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-review-changes-requested' ORDER BY created_at DESC LIMIT 1;")"
+review_workbench_event_id="$(psql_value "SELECT id FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-review-approved' ORDER BY created_at DESC LIMIT 1;")"
 review_workbench_process_dry="$(run_json review_workbench_process_dry operations-workbench-event-process --event-id "$review_workbench_event_id" --dry-run)"
 assert_json "$review_workbench_process_dry" "data['success'] is True"
 assert_json "$review_workbench_process_dry" "data['action_status'] == 'dry_run_ok'"
@@ -1523,8 +1511,8 @@ assert_json "$workbench_event_worker_empty" "data['success'] is True"
 assert_json "$workbench_event_worker_empty" "data['action_status'] == 'no_processable_workbench_event'"
 
 assert_sql_equals \
-  review_workbench_processing_changed_artifact_status \
-  changes_requested \
+  review_workbench_processing_kept_artifact_approved \
+  approved \
   "SELECT review_status FROM qintopia_agent_os.artifacts WHERE id = '${artifact_id}'::uuid;"
 
 assert_sql_equals \

@@ -540,6 +540,10 @@ fn publish_guardrails() -> Vec<String> {
     ]
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the report mirrors the explicit publisher outcome contract"
+)]
 fn report_from_digest(
     digest: &DigestRow,
     options: &PublishOptions,
@@ -982,6 +986,10 @@ async fn record_publish_failure(
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the audit record fields remain explicit at the database boundary"
+)]
 async fn insert_audit(
     pool: &PgPool,
     digest: &DigestRow,
@@ -1124,7 +1132,7 @@ fn post_raw(
     }
     let mut request = format!(
         "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.as_bytes().len()
+        body.len()
     );
     for header in headers {
         request.push_str(header);
@@ -1169,7 +1177,7 @@ fn parse_http_response(response: &[u8]) -> Result<String> {
     }
     let is_chunked = head
         .lines()
-        .any(|line| line.to_ascii_lowercase() == "transfer-encoding: chunked");
+        .any(|line| line.eq_ignore_ascii_case("transfer-encoding: chunked"));
     if is_chunked {
         decode_chunked_body(body.as_bytes())
     } else {

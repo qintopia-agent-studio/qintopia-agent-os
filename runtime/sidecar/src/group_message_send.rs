@@ -513,20 +513,22 @@ async fn record_send_ready(
 
     append_event_in_tx(
         tx,
-        Some(work_item.id),
-        None,
-        "group_message_send_ready_recorded",
-        "worker",
-        WORKER_ID,
-        "group message send worker validated request without sending",
-        json!({
-            "target_channel": plan.target_channel,
-            "target_group_alias": plan.target_group_alias,
-            "target_group_id": plan.target_group_id,
-            "approved_artifact_id": plan.approved_artifact_id,
-            "send_executed": false,
-            "message_preview": message_preview(&plan.message_text),
-        }),
+        WorkItemEvent {
+            work_item_id: Some(work_item.id),
+            artifact_id: None,
+            event_type: "group_message_send_ready_recorded",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "group message send worker validated request without sending",
+            data: json!({
+                "target_channel": plan.target_channel,
+                "target_group_alias": plan.target_group_alias,
+                "target_group_id": plan.target_group_id,
+                "approved_artifact_id": plan.approved_artifact_id,
+                "send_executed": false,
+                "message_preview": message_preview(&plan.message_text),
+            }),
+        },
     )
     .await?;
     Ok(())
@@ -557,27 +559,33 @@ async fn mark_work_item_failed(
     .context("mark group message work item failed")?;
     append_event_in_tx(
         tx,
-        Some(work_item.id),
-        None,
-        "group_message_send_denied_by_policy",
-        "worker",
-        WORKER_ID,
-        "group message send worker rejected request before sending",
-        json!({"error": message, "send_executed": false}),
+        WorkItemEvent {
+            work_item_id: Some(work_item.id),
+            artifact_id: None,
+            event_type: "group_message_send_denied_by_policy",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "group message send worker rejected request before sending",
+            data: json!({"error": message, "send_executed": false}),
+        },
     )
     .await?;
     Ok(())
 }
 
-async fn append_event_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+struct WorkItemEvent<'a> {
     work_item_id: Option<Uuid>,
     artifact_id: Option<Uuid>,
-    event_type: &str,
-    actor_type: &str,
-    actor_id: &str,
-    message: &str,
+    event_type: &'a str,
+    actor_type: &'a str,
+    actor_id: &'a str,
+    message: &'a str,
     data: Value,
+}
+
+async fn append_event_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    event: WorkItemEvent<'_>,
 ) -> Result<()> {
     sqlx::query(
         r#"
@@ -586,13 +594,13 @@ async fn append_event_in_tx(
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
-    .bind(work_item_id)
-    .bind(artifact_id)
-    .bind(event_type)
-    .bind(actor_type)
-    .bind(actor_id)
-    .bind(message)
-    .bind(data)
+    .bind(event.work_item_id)
+    .bind(event.artifact_id)
+    .bind(event.event_type)
+    .bind(event.actor_type)
+    .bind(event.actor_id)
+    .bind(event.message)
+    .bind(event.data)
     .execute(&mut **tx)
     .await
     .context("append group message send event")?;

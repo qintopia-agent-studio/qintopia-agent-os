@@ -789,6 +789,10 @@ pub async fn run_xiaoman_activity_promotion_starter_worker(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the CLI command maps its reviewed flags directly to the protected worker boundary"
+)]
 pub async fn run_xiaoman_activity_send_request_starter_worker(
     cli: &Cli,
     check_only: bool,
@@ -1058,6 +1062,10 @@ async fn run_xiaoman_activity_promotion_starter_batch(
     ))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the batch receives explicit queue selection, payload, and policy inputs"
+)]
 async fn run_xiaoman_activity_send_request_starter_batch(
     pool: &PgPool,
     check_only: bool,
@@ -2590,6 +2598,12 @@ async fn next_processable_workbench_event_id(pool: &PgPool) -> Result<Option<Uui
               WHERE processed.event_type = 'human_workbench_event_processed'
                 AND processed.data->>'source_event_id' = e.id::text
           )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events denied
+              WHERE denied.event_type = 'denied_by_policy'
+                AND denied.data->>'source_event_id' = e.id::text
+          )
         ORDER BY e.created_at ASC
         LIMIT 1
         "#,
@@ -3470,6 +3484,10 @@ fn capability_list_item(capability: &Capability) -> CapabilityListItem {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "work item event columns are explicit at the shared transaction boundary"
+)]
 async fn append_event_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     work_item_id: Option<Uuid>,
@@ -3956,6 +3974,10 @@ fn xiaoman_activity_promotion_child_requests(
     requests
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "child request creation keeps capability and idempotency fields explicit"
+)]
 fn xiaoman_activity_promotion_child_request(
     candidate: &XiaomanActivityPromotionCandidate,
     target_agent: &str,
@@ -4562,17 +4584,16 @@ fn validate_workbench_event_request_payload(request: &WorkbenchEventRecordReques
             }
             validate_human_actor_id("metadata.new_human_owner", owner)?;
         }
-        "attachment_added" => {
+        "attachment_added"
             if request
                 .metadata
                 .get("attachment_uri")
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|item| !item.is_empty())
-                .is_none()
-            {
-                bail!("metadata.attachment_uri is required for attachment_added");
-            }
+                .is_none() =>
+        {
+            bail!("metadata.attachment_uri is required for attachment_added");
         }
         _ => {}
     }
@@ -4648,6 +4669,10 @@ fn approved_artifact_id(request: &WorkItemCreateRequest) -> Result<Uuid> {
     Uuid::parse_str(text).context("approved_artifact_id must be a uuid")
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "work item reports preserve explicit lifecycle outcome fields"
+)]
 fn report_from_request(
     request: &WorkItemCreateRequest,
     capability: &Capability,
@@ -4894,6 +4919,10 @@ fn workflow_sync_worker_report(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the worker report exposes each queue count explicitly"
+)]
 fn xiaoman_activity_promotion_starter_report(
     check_only: bool,
     apply_requested: bool,
@@ -4936,6 +4965,10 @@ fn xiaoman_activity_promotion_starter_report(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the worker report exposes each queue count explicitly"
+)]
 fn xiaoman_activity_send_request_starter_report(
     check_only: bool,
     apply_requested: bool,
