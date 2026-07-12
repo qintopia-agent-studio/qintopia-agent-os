@@ -7,6 +7,11 @@ if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE:-}" != "1" ]]; th
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+if [[ -z "${QINTOPIA_SIDECAR_BIN:-}" && -x "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar" ]]; then
+  export QINTOPIA_SIDECAR_BIN="${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar"
+fi
 
 run_step() {
   local label="$1"

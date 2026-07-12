@@ -166,6 +166,19 @@ set, it must contain deploy-runner allowlist targets such as `hermes-erhua` or
 `qintopia-system-services`; the workflow records the override in the job summary. Do not
 use the override as normal release configuration.
 
+## Systemd Unit Bootstrap
+
+After each promotion, the release runner renders the reviewed systemd unit allowlist
+from the immutable release, installs it, reloads systemd, and enables only AgentOS
+internal workflow timers. This keeps `QINTOPIA_DEPLOYED_COMMIT_SHA`, `WorkingDirectory`,
+and sidecar binary paths aligned with `current`.
+
+The first release that introduces this runner behavior needs one follow-up approved
+`workflow_dispatch` request for the same published SHA after the release has become
+`current`: that first promotion is still processed by the prior runner, while the second
+request is processed by the new runner and installs the units. Do not bootstrap this by
+editing `/etc/systemd/system` or release files on the server.
+
 Unknown production-adjacent paths fail closed. If a PR adds a new Agent, skill,
 workflow, runtime, MCP adapter, or deploy path without a restart rule, CI must fail
 until the package contract and restart target rule are added.

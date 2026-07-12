@@ -24,6 +24,8 @@ GitHub Release published
   -> verify manifests and SHA256SUMS
   -> assemble /home/ubuntu/qintopia-agent-os-releases/<release-sha>
   -> switch previous/current symlinks
+  -> render and install reviewed systemd units from the immutable release
+  -> enable internal AgentOS worker timers
   -> restart approved system and Hermes user-service targets
   -> smoke
   -> write deploy result JSON to COS
@@ -33,6 +35,11 @@ GitHub Release published
 
 No GitHub Action should SSH to production. No routine release should run `git fetch`,
 build Rust, copy source with `scp`, or edit `.hermes` live state.
+
+After promotion, the root-owned runner renders systemd units from the release-local
+bundle, installs a fixed allowlist under `/etc/systemd/system`, and enables only
+internal AgentOS worker timers. Those timers may write AgentOS/Postgres state, but they
+do not enable Feishu writeback, QiWe sends, or external adapters.
 
 `workflow_dispatch` remains available as an emergency or diagnostic path, but normal
 operators should publish a GitHub Release instead of manually running deploy Actions.
