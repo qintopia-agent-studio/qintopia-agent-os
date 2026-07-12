@@ -239,6 +239,11 @@ Before a PR:
 ## Documentation Rules
 
 - Keep decisions in git, not only in chat.
+- For every production, deploy, preflight, or CI integration failure, add or update a
+  dated, indexed record under `docs/reports/` in the same PR. Include the observed
+  evidence, root cause, resolution, validation, remaining boundary, and follow-up owner
+  action. Update affected runbooks, package READMEs, manifests, or checks in that same
+  PR; do not leave the repair documented only in a report or chat.
 - Prefer short, focused docs over one large manual.
 - Mark server-side exploration as unapproved until owner review confirms it.
 - Avoid formalistic phrasing when writing internal engineering docs.
