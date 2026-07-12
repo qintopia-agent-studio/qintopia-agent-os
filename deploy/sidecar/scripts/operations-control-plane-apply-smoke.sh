@@ -1264,28 +1264,16 @@ print(json.dumps({
 }, ensure_ascii=False))
 PY
 )"
-invalid_status_change_event="$(run_json invalid_status_change_event operations-workbench-event-record --apply --payload-json "$invalid_status_change_event_payload")"
-assert_json "$invalid_status_change_event" "data['success'] is True"
-assert_json "$invalid_status_change_event" "data['action_status'] == 'event_recorded'"
-assert_json "$invalid_status_change_event" "data['recommended_command'] == 'operations-workbench-status-change'"
-invalid_status_change_event_id="$(psql_value "SELECT id FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-status-completed' ORDER BY created_at DESC LIMIT 1;")"
-denied_status_change_before="$(psql_value "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'denied_by_policy';")"
 run_expect_failure \
-  invalid_workbench_status_change_process \
+  invalid_workbench_status_change_record \
   "status_change_requested can only request cancelled status" \
-  operations-workbench-event-process \
-  --event-id "$invalid_status_change_event_id" \
-  --apply
-denied_status_change_after="$(psql_value "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'denied_by_policy';")"
-if [[ "$denied_status_change_after" -le "$denied_status_change_before" ]]; then
-  echo "expected denied_by_policy event for unsafe workbench status change" >&2
-  echo "before=${denied_status_change_before} after=${denied_status_change_after}" >&2
-  exit 1
-fi
+  operations-workbench-event-record \
+  --apply \
+  --payload-json "$invalid_status_change_event_payload"
 assert_sql_equals \
-  invalid_workbench_status_change_not_processed \
+  invalid_workbench_status_change_not_recorded \
   0 \
-  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_processed' AND data->>'source_event_id' = '${invalid_status_change_event_id}';"
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-status-completed';"
 
 owner_change_event_payload="$(
   python3 - "$status_change_work_item_id" "$source_ref" <<'PY'
