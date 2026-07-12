@@ -18,6 +18,24 @@ Read-only verification on 2026-07-06 showed:
 - `/etc/qintopia/cos-artifacts.env` exists but was not readable by the `ubuntu` user;
 - no deploy runner or timer existed yet.
 
+## v0.2.2 History Correction (2026-07-12)
+
+- Owner approval: approved by owner in Codex task `019f4b0b-1f6a-7260-9e88-8da61ca605ea`
+  on `2026-07-12`, to preserve release-history continuity.
+- Source correction: restore original published Release tag `v0.2.2` to
+  `d083e5ccfce2d07048e07c0ceb8c052671f65911` (historical continuity correction).
+- Evidence: maintain `run` `28919370259` as successful `Deploy Production` evidence in
+  record.
+- Boundary exception: this is a narrow temporary exception to the manifest rule
+  (`manifest tracks existing published Releases`) and keeps
+  `.release-please-manifest.json` at `v0.2.2` so `v0.2.3` can be generated in the next
+  release cycle.
+- Post-conditions: do not rebuild deleted legacy GitHub Releases, do not reuse version
+  numbers, and end this exception after publishing `v0.2.3`.
+- Rollback policy correction: before `v0.2.3` publishes, rollback `release_tag` default
+  in the workflow must be `v0.2.1`, and the workflow/checker must explicitly reject
+  `v0.2.2`.
+
 The server has enough disk space for immutable release assembly. The release history
 also contains manual assembly records where the directory name, `runtime_sha`, and
 `deploy_bundle_sha` are not always the same. New automated releases must record those
