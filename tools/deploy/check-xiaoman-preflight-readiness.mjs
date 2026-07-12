@@ -21,6 +21,8 @@ const requireFragment = (relativePath, text, fragment) => {
   }
 };
 
+const normalizeWhitespace = (value) => value.replace(/\s+/g, " ").trim();
+
 const forbidFragment = (relativePath, text, fragment) => {
   if (text.includes(fragment)) {
     addError(`${relativePath}: must not include ${fragment}`);
@@ -77,6 +79,7 @@ if (exists(registryPath)) {
 
 const readmePath = "workflows/xiaoman-activity-signal/README.md";
 const readme = requireFile(readmePath);
+const normalizedReadme = normalizeWhitespace(readme);
 for (const fragment of [
   "event_signals -> activity request -> evidence/visual children -> internal artifacts -> awaiting-publish group message request",
   "deploy/smoke/docs/xiaoman-production-preflight-record.md",
@@ -84,7 +87,7 @@ for (const fragment of [
   "xiaoman-activity-production-preflight-smoke.sh",
   "safe_for_chat=false",
 ]) {
-  requireFragment(readmePath, readme, fragment);
+  requireFragment(readmePath, normalizedReadme, fragment);
 }
 
 const smokeReadmePath = "deploy/smoke/README.md";
@@ -167,11 +170,15 @@ for (const fragment of [
   "run-xiaoman-activity-signal-worker --once --apply",
   "run-xiaoman-activity-promotion-starter-worker --check-only",
   "run-xiaoman-activity-promotion-starter-worker --once --apply",
+  "run-evidence-worker --once",
   "run-collaboration-worker --work-item-type visual_asset_request --once",
   "operations-artifact-review-decision --apply",
   "run-xiaoman-activity-send-request-starter-worker --check-only",
   "run-xiaoman-activity-send-request-starter-worker --once --apply",
+  "operations-group-message-confirm --apply",
+  "run-group-message-send-worker --once",
   "xiaoman_send_did_not_send_or_queue",
+  "xiaoman_group_send_ready_event_not_duplicated",
   "payload->>'send_executed' = 'false'",
 ]) {
   requireFragment(applySmokePath, applySmoke, fragment);
