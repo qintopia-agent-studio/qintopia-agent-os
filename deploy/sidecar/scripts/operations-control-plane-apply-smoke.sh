@@ -1474,11 +1474,11 @@ print(json.dumps({
     "artifact_id": artifact_id,
     "provider": "feishu_task_dry_run",
     "external_id": "agentos-work-item-" + work_item_id,
-    "external_event_id": source_ref + ":workbench-review-changes-requested",
+    "external_event_id": source_ref + ":workbench-review-approved",
     "event_type": "review_decision_requested",
     "actor_id": "operations-apply-smoke-reviewer-2",
-    "review_decision": "changes_requested",
-    "comment_text": "Apply smoke requests one revision through workbench event processing.",
+    "review_decision": "approved",
+    "comment_text": "Apply smoke records approval through workbench event processing.",
     "source": "operations_apply_smoke",
 }, ensure_ascii=False))
 PY
@@ -1488,7 +1488,7 @@ assert_json "$review_workbench_event" "data['success'] is True"
 assert_json "$review_workbench_event" "data['action_status'] == 'event_recorded'"
 assert_json "$review_workbench_event" "data['recommended_command'] == 'operations-artifact-review-decision'"
 
-review_workbench_event_id="$(psql_value "SELECT id FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-review-changes-requested' ORDER BY created_at DESC LIMIT 1;")"
+review_workbench_event_id="$(psql_value "SELECT id FROM qintopia_agent_os.work_item_events WHERE event_type = 'human_workbench_event_recorded' AND data->>'external_event_id' = '${source_ref}:workbench-review-approved' ORDER BY created_at DESC LIMIT 1;")"
 review_workbench_process_dry="$(run_json review_workbench_process_dry operations-workbench-event-process --event-id "$review_workbench_event_id" --dry-run)"
 assert_json "$review_workbench_process_dry" "data['success'] is True"
 assert_json "$review_workbench_process_dry" "data['action_status'] == 'dry_run_ok'"
@@ -1511,8 +1511,8 @@ assert_json "$workbench_event_worker_empty" "data['success'] is True"
 assert_json "$workbench_event_worker_empty" "data['action_status'] == 'no_processable_workbench_event'"
 
 assert_sql_equals \
-  review_workbench_processing_changed_artifact_status \
-  changes_requested \
+  review_workbench_processing_kept_artifact_approved \
+  approved \
   "SELECT review_status FROM qintopia_agent_os.artifacts WHERE id = '${artifact_id}'::uuid;"
 
 assert_sql_equals \
