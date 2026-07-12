@@ -644,6 +644,10 @@ assert_sql_equals \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${work_item_id}'::uuid AND event_type = 'artifact_created';"
 
+visual_mirror="$(run_json visual_mirror run-workbench-mirror-worker --once --work-item-id "$work_item_id" --apply)"
+assert_json "$visual_mirror" "data['success'] is True"
+assert_json "$visual_mirror" "data['action_status'] == 'mirror_dry_run_recorded'"
+
 review_payload="$(
   python3 - "$artifact_id" <<'PY'
 import json
@@ -1479,10 +1483,6 @@ print(json.dumps({
 }, ensure_ascii=False))
 PY
 )"
-visual_mirror="$(run_json visual_mirror run-workbench-mirror-worker --once --work-item-id "$work_item_id" --apply)"
-assert_json "$visual_mirror" "data['success'] is True"
-assert_json "$visual_mirror" "data['action_status'] == 'mirror_dry_run_recorded'"
-
 review_workbench_event="$(run_json review_workbench_event operations-workbench-event-record --apply --payload-json "$review_workbench_event_payload")"
 assert_json "$review_workbench_event" "data['success'] is True"
 assert_json "$review_workbench_event" "data['action_status'] == 'event_recorded'"
