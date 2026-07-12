@@ -335,7 +335,7 @@ async fn lock_next_work_item(
               AND wi.status IN ('queued', 'processing', 'awaiting_review', 'awaiting_publish', 'failed')
             ORDER BY wi.created_at ASC
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF wi SKIP LOCKED
         )
         SELECT
             wi.id,
@@ -386,7 +386,7 @@ async fn lock_work_item_by_id(
               AND wi.id = $2
               AND wi.status IN ('queued', 'processing', 'awaiting_review', 'awaiting_publish', 'failed')
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF wi SKIP LOCKED
         )
         SELECT
             wi.id,
