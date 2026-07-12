@@ -2598,6 +2598,12 @@ async fn next_processable_workbench_event_id(pool: &PgPool) -> Result<Option<Uui
               WHERE processed.event_type = 'human_workbench_event_processed'
                 AND processed.data->>'source_event_id' = e.id::text
           )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events denied
+              WHERE denied.event_type = 'denied_by_policy'
+                AND denied.data->>'source_event_id' = e.id::text
+          )
         ORDER BY e.created_at ASC
         LIMIT 1
         "#,
