@@ -95,6 +95,7 @@ for (const fragment of [
   "run-evidence-worker --once --apply",
   "run-collaboration-worker --work-item-type visual_asset_request --once --apply",
   "run-xiaoman-activity-send-request-starter-worker --once --apply",
+  "run-group-message-send-worker --once --apply",
 ]) {
   requireFragment(renderPath, render, fragment);
 }
@@ -109,6 +110,7 @@ for (const fragment of [
   "operations-downstream-timers-observation-smoke.sh",
   "xiaoman-activity-downstream-observation-smoke.sh",
   "xiaoman-activity-send-request-starter-observation-smoke.sh",
+  "operations-group-send-ready-timer-observation-smoke.sh",
 ]) {
   requireFragment(preflightPath, preflight, fragment);
 }
@@ -134,6 +136,7 @@ for (const fragment of [
   "Operations evidence timer",
   "Operations visual timer",
   "Xiaoman send request starter timer",
+  "Operations group send-ready timer",
   "Secret and external-send scan",
   "Queue Snapshot",
   "Pass: production observation can continue without enabling external adapters",
