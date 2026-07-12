@@ -87,6 +87,20 @@ for (const fragment of [
   requireFragment(readmePath, readme, fragment);
 }
 
+const smokeReadmePath = "deploy/smoke/README.md";
+const smokeReadme = requireFile(smokeReadmePath);
+requireFragment(smokeReadmePath, smokeReadme, "group send-ready timer");
+requireFragment(smokeReadmePath, smokeReadme, "preflight does not run that worker");
+
+const serverDeploymentPath = "deploy/sidecar/docs/server-deployment.md";
+const serverDeployment = requireFile(serverDeploymentPath);
+requireFragment(
+  serverDeploymentPath,
+  serverDeployment,
+  "group send-ready timer observation"
+);
+requireFragment(serverDeploymentPath, serverDeployment, "does not run the send-ready");
+
 const renderPath = "deploy/sidecar/scripts/render-systemd-units.sh";
 const render = requireFile(renderPath);
 for (const fragment of [

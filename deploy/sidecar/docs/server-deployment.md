@@ -535,9 +535,9 @@ externally. It fails if the preview output includes known secret/external-send m
 For the production preflight, run the Xiaoman aggregate observation smoke after an
 owner-approved deploy. It composes the Xiaoman signal timer observation, Xiaoman
 promotion starter timer observation, shared evidence/visual timer observation, Xiaoman
-downstream evidence/visual preview, and Xiaoman send request starter timer observation.
-It is read-only and does not deploy, write Feishu, call QiWe, publish, or send
-externally.
+downstream evidence/visual preview, Xiaoman send request starter timer observation, and
+the group send-ready timer observation. It is read-only, does not run the send-ready
+worker, and does not deploy, write Feishu, call QiWe, publish, or send externally.
 
 ```bash
 set -a
