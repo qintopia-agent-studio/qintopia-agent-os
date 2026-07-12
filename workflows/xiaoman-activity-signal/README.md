@@ -14,12 +14,26 @@ reviewable Agent OS state.
 ## Current Status
 
 This workflow is active for the AgentOS-only production preflight path:
-`event_signals -> activity request -> evidence/visual children -> internal artifacts -> awaiting-publish group message request`.
-The remaining production gate is an owner-approved, read-only aggregate preflight run
-recorded in `deploy/smoke/docs/xiaoman-production-preflight-record.md`. Passing that
-gate requires sanitized observation output with `safe_for_chat=false` where present and
-still does not approve Feishu writeback, QiWe sends, poster publishing, real Wenyuange
-retrieval, or Huabaosi production generation.
+
+```text
+event_signals
+  -> activity request
+  -> evidence/visual children
+  -> internal artifacts
+  -> awaiting-publish group message request
+  -> human final confirmation
+  -> queued send-ready audit
+```
+
+Only the final-confirmation transition is human-operated; all other arrows above are
+AgentOS work-item or internal-artifact operations. The send-ready audit deliberately
+keeps the request queued and records `send_executed=false` because no production send
+adapter is enabled. The remaining production gate is an owner-approved, read-only
+aggregate preflight run recorded in
+`deploy/smoke/docs/xiaoman-production-preflight-record.md`. Passing that gate requires
+sanitized observation output with `safe_for_chat=false` where present and still does not
+approve Feishu writeback, QiWe sends, poster publishing, real Wenyuange retrieval, or
+Huabaosi production generation.
 
 ## Signal Intake Contract
 
@@ -109,8 +123,9 @@ report shape without writing.
 `deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh` is the aggregate
 read-only production preflight for this path. It composes the Xiaoman signal timer
 observation, promotion starter timer observation, shared evidence/visual timer
-observation, Xiaoman downstream evidence/visual preview, and send request starter
-observation. It does not deploy, write Feishu, call QiWe, publish, or send externally.
+observation, Xiaoman downstream evidence/visual preview, send request starter
+observation, and group send-ready timer observation. It does not run the send-ready
+worker, deploy, write Feishu, call QiWe, publish, or send externally.
 
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
@@ -165,6 +180,9 @@ raw Feishu record ids.
   sends.
 - Runtime scheduling can create awaiting-publish `group_message_request` work items from
   approved Xiaoman `poster_brief` artifacts without external adapters.
+- A human final confirmation can move the Xiaoman group-message request to `queued`, and
+  the send-ready worker records exactly one internal `send_executed=false` audit event
+  without calling an external adapter.
 - Activity request starter creates missing evidence and visual child work items without
   duplicating existing children.
 - Duplicate signal returns the existing work item by idempotency key.

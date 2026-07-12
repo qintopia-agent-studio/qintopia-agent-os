@@ -402,6 +402,20 @@ journalctl -u qintopia-agentos-operations-group-send-ready.service -n 100 --no-p
 The default timer interval is `1min`. Override it during unit installation with
 `QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL=2min` or another systemd time span.
 
+After an owner-approved deploy, inspect this timer with the read-only observation smoke:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE=1
+scripts/operations-group-send-ready-timer-observation-smoke.sh
+```
+
+This observation checks only systemd state, rendered unit commands, and sanitized
+journal output. It does not run the worker, confirm a group message, write Postgres,
+call QiWe, or send externally.
+
 The Xiaoman activity signal worker runs as a systemd timer. It calls
 `run-xiaoman-activity-signal-worker --once --apply`, scans only Xiaoman activity
 `event_signals`, and creates missing AgentOS `xiaoman.create_activity_request`
@@ -521,9 +535,9 @@ externally. It fails if the preview output includes known secret/external-send m
 For the production preflight, run the Xiaoman aggregate observation smoke after an
 owner-approved deploy. It composes the Xiaoman signal timer observation, Xiaoman
 promotion starter timer observation, shared evidence/visual timer observation, Xiaoman
-downstream evidence/visual preview, and Xiaoman send request starter timer observation.
-It is read-only and does not deploy, write Feishu, call QiWe, publish, or send
-externally.
+downstream evidence/visual preview, Xiaoman send request starter timer observation, and
+the group send-ready timer observation. It is read-only, does not run the send-ready
+worker, and does not deploy, write Feishu, call QiWe, publish, or send externally.
 
 ```bash
 set -a

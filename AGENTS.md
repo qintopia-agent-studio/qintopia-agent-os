@@ -141,10 +141,14 @@ Use `rg` and `rg --files` for search.
   awaiting-publish group message request intake. Do not repurpose it for final
   confirmation, queueing, send-ready, Feishu writeback, QiWe sends, or external
   adapters.
+- `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
+  send-ready systemd timer, unit commands, and sanitized journal output. It must not run
+  the worker, record final confirmation, write Postgres, call QiWe, or send externally.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
-  timer observation smokes, the shared evidence/visual timer observation, and the
-  Xiaoman downstream evidence/visual preview. It must not set apply-smoke flags, deploy
-  units, publish releases, write Feishu, call QiWe, or run external adapters.
+  timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
+  evidence/visual preview, and the group send-ready timer observation. It must not set
+  apply-smoke flags, deploy units, publish releases, write Feishu, call QiWe, run the
+  send-ready worker, or run external adapters.
 - `xiaoman-postgres-integration` in GitHub Actions may enable the guarded apply smoke
   only against its disposable `qintopia_test` PostgreSQL service. It must not use a
   production database URL, secrets, Feishu, QiWe, or external adapters.
