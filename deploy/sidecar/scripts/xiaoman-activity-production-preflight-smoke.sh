@@ -40,4 +40,9 @@ run_step \
   env QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 \
   "${SCRIPT_DIR}/xiaoman-activity-send-request-starter-observation-smoke.sh"
 
+run_step \
+  "operations group send-ready timer observation" \
+  env QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE=1 \
+  "${SCRIPT_DIR}/operations-group-send-ready-timer-observation-smoke.sh"
+
 echo "xiaoman activity production preflight passed"

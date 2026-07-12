@@ -23,8 +23,10 @@ After an owner-approved deploy, run the aggregate Xiaoman production preflight f
 sidecar scripts and record the sanitized result in
 [`docs/xiaoman-production-preflight-record.md`](docs/xiaoman-production-preflight-record.md).
 The record captures timer health, fixed service commands, read-only preview counts,
-secret-scan results, and the pass/hold decision. It is not a release approval and does
-not authorize Feishu writes, QiWe sends, poster publishing, or external adapters.
+secret-scan results, and the pass/hold decision. This includes a read-only observation
+of the group send-ready timer; the preflight does not run that worker. It is not a
+release approval and does not authorize Feishu writes, QiWe sends, poster publishing, or
+external adapters.
 
 ## Validation
 
