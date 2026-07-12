@@ -466,7 +466,7 @@ assert_json "$xiaoman_send_apply" "data['safe_for_chat'] is False"
 assert_sql_equals \
   xiaoman_send_created_group_child \
   1 \
-  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request' AND status = 'awaiting_publish' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:group-message-child' AND approved_artifact_id = '${xiaoman_promotion_artifact_id}'::uuid AND payload->>'send_executed' = 'false';"
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request' AND status = 'awaiting_publish' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:group-message-child' AND (payload->>'approved_artifact_id')::uuid = '${xiaoman_promotion_artifact_id}'::uuid AND payload->>'send_executed' = 'false';"
 
 assert_sql_equals \
   xiaoman_send_did_not_send_or_queue \
