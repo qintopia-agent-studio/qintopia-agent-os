@@ -6,10 +6,9 @@ on:
       release_tag:
         description: Published Release tag to roll production back to.
         required: true
-        default: v0.2.2
+        default: v0.2.1
         type: choice
         options:
-          - v0.2.2
           - v0.2.1
           - v0.2.0
           - v0.1.7

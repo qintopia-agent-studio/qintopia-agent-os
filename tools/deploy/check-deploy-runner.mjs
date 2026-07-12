@@ -475,9 +475,14 @@ if (exists(".github/workflows/rollback-production.yml")) {
       ".github/workflows/rollback-production.yml: release_tag options must be semver-style vX.Y.Z tags"
     );
   }
-  if (releaseTagInput?.default !== "v0.2.2" || !releaseTagOptions.includes("v0.2.2")) {
+  if (releaseTagInput?.default !== "v0.2.1" || !releaseTagOptions.includes("v0.2.1")) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag must default to the latest published Release v0.2.2"
+      ".github/workflows/rollback-production.yml: release_tag must default to the latest published Release v0.2.1"
+    );
+  }
+  if (releaseTagOptions.includes("v0.2.2")) {
+    addError(
+      ".github/workflows/rollback-production.yml: release_tag options must not include v0.2.2 (rollback temporarily targets only existing published releases through v0.2.3)"
     );
   }
   if (restartTargetsInput?.type !== "choice") {
