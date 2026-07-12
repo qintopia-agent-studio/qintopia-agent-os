@@ -33,7 +33,7 @@ The runtime gate adds:
 - QiWe package tests
 - sidecar Rust tests
 - no-credential sidecar smoke checks
-- a Rust coverage baseline artifact and non-blocking strict Clippy baseline
+- a Rust coverage baseline artifact and blocking strict Clippy gate
 - a Xiaoman downstream apply smoke against a disposable GitHub Actions PostgreSQL
   service
 
@@ -73,8 +73,8 @@ deployment script, package, workflow, or configuration changes run `pnpm check:r
 after the light gate.
 
 Runtime-sensitive changes also run `rust-quality-baseline` with Rust 1.96. It stores
-LCOV and a text summary as a short-retention artifact. Strict Clippy is initially
-non-blocking so existing lint debt remains visible without turning unrelated PRs red.
+LCOV and a text summary as a short-retention artifact. Strict Clippy runs with
+`cargo clippy --all-targets -- -D warnings` and blocks runtime-sensitive changes.
 `xiaoman-postgres-integration` uses only a disposable `qintopia_test` PostgreSQL service
 and runs the guarded control-plane apply smoke with no production database URL, secrets,
 Feishu, QiWe, or external adapters.
@@ -134,10 +134,11 @@ latest-ten default. Override the counts with `QINTOPIA_ARTIFACT_KEEP_COUNT` and
 Artifact jobs have `actions: write` only for cleanup; repository CI remains read-only.
 
 Rust dependency caching is intentionally not enabled yet. The sidecar is pinned to Rust
-1.75.0 for server compatibility, and the first Rust-specific cache trial produced
-post-step metadata cleanup noise against newer registry crates. Keep CI clean first;
-revisit Rust caching only with a tested cache command that is compatible with the pinned
-toolchain.
+1.96.0, and the first Rust-specific cache trial produced post-step metadata cleanup
+noise against newer registry crates. Keep CI clean first; revisit Rust caching only with
+a tested cache command that is compatible with the pinned toolchain. Review Rust version
+changes quarterly or alongside a dependency upgrade; do not upgrade the toolchain
+opportunistically in unrelated feature work.
 
 Required production-adjacent PR evidence:
 

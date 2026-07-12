@@ -680,7 +680,7 @@ fn post_json(
          Connection: close\r\n\
          \r\n\
          {body}",
-        body.as_bytes().len()
+        body.len()
     );
 
     if url.scheme() == "https" {

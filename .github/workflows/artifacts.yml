@@ -28,7 +28,7 @@ concurrency:
 
 env:
   NODE_VERSION: "24"
-  RUST_TOOLCHAIN: "1.75.0"
+  RUST_TOOLCHAIN: "1.96.0"
   PNPM_VERSION: "10.29.2"
   TENCENT_COS_BUCKET:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
@@ -134,7 +134,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.75.0
+        uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Build sidecar artifact
         run: node tools/deploy/build-sidecar-artifact.mjs

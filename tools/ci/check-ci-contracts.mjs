@@ -239,9 +239,18 @@ if (ciWorkflow) {
         }
       }
       const clippyStep = qualitySteps.find((step) => step?.name === "Clippy baseline");
-      if (clippyStep?.["continue-on-error"] !== true) {
+      if (clippyStep?.["continue-on-error"] === true) {
         errors.push(
-          ".github/workflows/ci.yml: Clippy baseline must stay non-blocking until debt is resolved"
+          ".github/workflows/ci.yml: Clippy baseline must block on lint failures"
+        );
+      }
+      if (
+        !String(clippyStep?.run ?? "").includes(
+          "cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets -- -D warnings"
+        )
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Clippy baseline must deny all warnings for every sidecar target"
         );
       }
     }

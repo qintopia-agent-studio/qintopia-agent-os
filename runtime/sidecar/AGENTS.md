@@ -33,7 +33,7 @@ From the monorepo root, prefer:
 
 - Keep the sidecar independent from 二花's reply path; NATS, sidecar, or Postgres
   failures must not be able to block Hermes webhook ACK or replies.
-- Keep compatibility with the server Rust toolchain: `rustc/cargo 1.75.0`.
+- Keep compatibility with the supported Rust toolchain: `rustc/cargo 1.96.0`.
 - Manage this project through the monorepo root git repository.
 - Treat `deploy/sidecar/docs/server-deployment.md` as historical rollback evidence, not
   the current deployment path.

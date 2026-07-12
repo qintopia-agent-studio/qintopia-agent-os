@@ -12,7 +12,7 @@ concurrency:
 
 env:
   NODE_VERSION: "24"
-  RUST_TOOLCHAIN: "1.75.0"
+  RUST_TOOLCHAIN: "1.96.0"
   PNPM_VERSION: "10.29.2"
 
 jobs:
@@ -180,7 +180,7 @@ jobs:
         if:
           ${{ needs.changes.outputs.full-check == 'true' &&
           needs.changes.outputs.release-please-pr != 'true' }}
-        uses: dtolnay/rust-toolchain@1.75.0
+        uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: rustfmt
 
@@ -232,7 +232,6 @@ jobs:
           cat coverage/summary.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clippy baseline
-        continue-on-error: true
         run: |
           set -o pipefail
           cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets -- -D warnings 2>&1 | tee coverage/clippy.txt
@@ -280,7 +279,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.75.0
+        uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Verify temporary PostgreSQL client
         run: psql --version
