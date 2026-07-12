@@ -46,19 +46,14 @@ pub(crate) struct SearchRequest {
     pub purpose: String,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SearchMode {
+    #[default]
     Hybrid,
     Semantic,
     Keyword,
     Recent,
-}
-
-impl Default for SearchMode {
-    fn default() -> Self {
-        Self::Hybrid
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -505,9 +500,10 @@ fn merge_rows(
 }
 
 fn semantic_candidate_limit(limit: i64) -> i64 {
-    (limit * 3)
-        .max(DEFAULT_SEMANTIC_CANDIDATE_LIMIT)
-        .min(MAX_SEMANTIC_CANDIDATE_LIMIT)
+    (limit * 3).clamp(
+        DEFAULT_SEMANTIC_CANDIDATE_LIMIT,
+        MAX_SEMANTIC_CANDIDATE_LIMIT,
+    )
 }
 
 fn message_embedding_endpoint(cli: &Cli) -> String {

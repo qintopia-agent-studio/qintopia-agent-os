@@ -457,6 +457,10 @@ fn judge_candidate(candidate: &Candidate) -> Option<AcceptedEvent> {
     None
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "rule classification keeps each accepted event field explicit for review"
+)]
 fn event_from_candidate(
     candidate: &Candidate,
     signal_type: &str,

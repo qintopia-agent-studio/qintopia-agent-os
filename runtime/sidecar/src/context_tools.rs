@@ -549,7 +549,7 @@ async fn qintopia_erhua_training_note_submit(
             sanitized_summary: &decision.sanitized_summary,
             status: decision.status,
             risk_level: decision.risk_level,
-            reason: &decision.reason,
+            reason: decision.reason,
             source_platform_message_id: &source_platform_message_id,
             source_conversation_type: &source_conversation_type,
             purpose: &purpose,
@@ -745,7 +745,7 @@ fn select_answer_context_identity_candidate(
         )
         .into_iter()
         .collect::<Vec<_>>();
-    person_candidates.sort_by(|left, right| right.2.cmp(&left.2));
+    person_candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.2));
 
     match person_candidates.as_slice() {
         [] => AnswerContextIdentityResolution::unresolved(),
@@ -1240,7 +1240,7 @@ async fn member_name_candidates(
     )
     .bind(platform)
     .bind(chat_id)
-    .bind(&normalized)
+    .bind(normalized)
     .bind(member_name)
     .bind(&like_pattern)
     .bind(match scope {
@@ -1260,6 +1260,10 @@ async fn member_name_candidates(
     Ok(candidates)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the audit schema uses explicit fixed fields to prevent sensitive context from being omitted"
+)]
 async fn write_member_context_audit(
     pool: &PgPool,
     caller: &str,
@@ -1558,6 +1562,10 @@ struct AppliedTrainingMemory {
     profile_snapshot_id: Option<Uuid>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the training memory write keeps identity, provenance, and redacted content explicit"
+)]
 async fn apply_training_member_memory(
     pool: &PgPool,
     training_id: Uuid,
@@ -2462,8 +2470,7 @@ fn disclosure_hits(text: &str) -> serde_json::Map<String, Value> {
 fn normalize_location(value: &str) -> String {
     value
         .to_lowercase()
-        .replace('幢', "栋")
-        .replace('楼', "栋")
+        .replace(['幢', '楼'], "栋")
         .replace(' ', "")
 }
 
@@ -2704,10 +2711,7 @@ fn clean_member_name_candidate(candidate: &str) -> String {
             candidate = candidate.chars().skip(prefix.chars().count()).collect();
         }
     }
-    loop {
-        let Some(last) = candidate.chars().last() else {
-            break;
-        };
+    while let Some(last) = candidate.chars().last() {
         if matches!(
             last,
             '吗' | '嗎' | '么' | '嘛' | '呀' | '啊' | '呢' | '吧' | '不'

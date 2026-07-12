@@ -169,19 +169,21 @@ async fn run_once(
     update_work_item_completed(&mut tx, &work_item).await?;
     append_event_in_tx(
         &mut tx,
-        Some(work_item.id),
-        None,
-        "evidence_artifact_created",
-        "worker",
-        WORKER_ID,
-        "evidence summary artifact created by evidence worker",
-        json!({
-            "artifact_count": drafts.len(),
-            "review_policy": work_item.review_policy,
-            "target_agent": work_item.target_agent,
-            "capability_key": work_item.capability_key,
-            "external_calls_executed": false,
-        }),
+        WorkItemEvent {
+            work_item_id: Some(work_item.id),
+            artifact_id: None,
+            event_type: "evidence_artifact_created",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "evidence summary artifact created by evidence worker",
+            data: json!({
+                "artifact_count": drafts.len(),
+                "review_policy": work_item.review_policy,
+                "target_agent": work_item.target_agent,
+                "capability_key": work_item.capability_key,
+                "external_calls_executed": false,
+            }),
+        },
     )
     .await?;
     tx.commit().await.context("commit evidence transaction")?;
@@ -536,27 +538,33 @@ async fn mark_work_item_failed(
     .context("mark evidence work item failed")?;
     append_event_in_tx(
         tx,
-        Some(work_item.id),
-        None,
-        "failed",
-        "worker",
-        WORKER_ID,
-        "evidence worker failed to create artifacts",
-        json!({"error": message}),
+        WorkItemEvent {
+            work_item_id: Some(work_item.id),
+            artifact_id: None,
+            event_type: "failed",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "evidence worker failed to create artifacts",
+            data: json!({"error": message}),
+        },
     )
     .await?;
     Ok(())
 }
 
-async fn append_event_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+struct WorkItemEvent<'a> {
     work_item_id: Option<Uuid>,
     artifact_id: Option<Uuid>,
-    event_type: &str,
-    actor_type: &str,
-    actor_id: &str,
-    message: &str,
+    event_type: &'a str,
+    actor_type: &'a str,
+    actor_id: &'a str,
+    message: &'a str,
     data: Value,
+}
+
+async fn append_event_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    event: WorkItemEvent<'_>,
 ) -> Result<()> {
     sqlx::query(
         r#"
@@ -565,13 +573,13 @@ async fn append_event_in_tx(
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
-    .bind(work_item_id)
-    .bind(artifact_id)
-    .bind(event_type)
-    .bind(actor_type)
-    .bind(actor_id)
-    .bind(message)
-    .bind(data)
+    .bind(event.work_item_id)
+    .bind(event.artifact_id)
+    .bind(event.event_type)
+    .bind(event.actor_type)
+    .bind(event.actor_id)
+    .bind(event.message)
+    .bind(event.data)
     .execute(&mut **tx)
     .await
     .context("append evidence event")?;

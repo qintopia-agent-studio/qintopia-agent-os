@@ -32,3 +32,11 @@ validates the release manifest and changelog shape.
 
 Ordinary PRs still run `pnpm pr:check-body` and `pnpm check:light`; runtime-sensitive
 changes still add `pnpm check:runtime` through the existing changed-file gate.
+
+## Rust Quality And Xiaoman Integration
+
+Runtime-sensitive changes also run a Rust 1.96 quality baseline. It uploads LCOV and a
+coverage summary; strict Clippy runs `--all-targets -- -D warnings` as a blocking gate.
+The Xiaoman downstream integration job runs the guarded apply smoke only against a
+disposable GitHub Actions PostgreSQL service. It must not accept production database
+URLs, secrets, Feishu credentials, QiWe credentials, or external adapters.

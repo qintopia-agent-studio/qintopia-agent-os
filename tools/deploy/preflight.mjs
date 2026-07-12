@@ -636,7 +636,7 @@ for (const phrase of [
   "actions/setup-python@v6",
   "concurrency:",
   "cancel-in-progress: true",
-  "dtolnay/rust-toolchain@1.75.0",
+  "dtolnay/rust-toolchain@1.96.0",
   "components: rustfmt",
 ]) {
   if (!ciWorkflow.includes(phrase)) {
@@ -671,7 +671,7 @@ for (const phrase of [
   "QINTOPIA_ARTIFACT_KEEP_COUNT",
   "QINTOPIA_COS_ARTIFACT_KEEP_COUNT",
   "qintopia-message-sidecar-linux-x86_64-gnu",
-  "dtolnay/rust-toolchain@1.75.0",
+  "dtolnay/rust-toolchain@1.96.0",
 ]) {
   if (!artifactsWorkflow.includes(phrase)) {
     addError(`.github/workflows/artifacts.yml: must include ${phrase}`);
