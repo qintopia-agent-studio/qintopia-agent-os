@@ -15,6 +15,12 @@ const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 const readYaml = (relativePath) => YAML.parse(readText(relativePath));
 const addError = (message) => errors.push(message);
+const countExactOccurrences = (text, fragment) => text.split(fragment).length - 1;
+const stripCommentOnlyLines = (text) =>
+  text
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#"))
+    .join("\n");
 const hasDangerousInputInterpolationInRun = (workflowText) => {
   const lines = workflowText.split("\n");
   let inRun = false;
@@ -457,6 +463,12 @@ if (exists(".github/workflows/rollback-production.yml")) {
   const workflow = YAML.parse(readText(".github/workflows/rollback-production.yml"));
   const workflowText = readText(".github/workflows/rollback-production.yml");
   const job = workflow?.jobs?.["request-rollback"];
+  const resolveStep = job?.steps?.find(
+    (step) => step?.name === "Resolve rollback target"
+  );
+  const resolveRun = resolveStep?.run;
+  const executableResolveRun =
+    typeof resolveRun === "string" ? stripCommentOnlyLines(resolveRun) : "";
   const releaseTagInput = workflow?.on?.workflow_dispatch?.inputs?.release_tag;
   const restartTargetsInput = workflow?.on?.workflow_dispatch?.inputs?.restart_targets;
   const releaseTagOptions = releaseTagInput?.options ?? [];
@@ -465,9 +477,9 @@ if (exists(".github/workflows/rollback-production.yml")) {
       ".github/workflows/rollback-production.yml: release_tag must use a choice input"
     );
   }
-  if (releaseTagOptions.length < 2) {
+  if (releaseTagOptions.length !== 1) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag must offer selectable rollback versions"
+      ".github/workflows/rollback-production.yml: release_tag options must be narrowed to exactly one verified candidate"
     );
   }
   if (!releaseTagOptions.every((tag) => /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag))) {
@@ -475,14 +487,37 @@ if (exists(".github/workflows/rollback-production.yml")) {
       ".github/workflows/rollback-production.yml: release_tag options must be semver-style vX.Y.Z tags"
     );
   }
-  if (releaseTagInput?.default !== "v0.2.1" || !releaseTagOptions.includes("v0.2.1")) {
+  if (releaseTagInput?.default !== "v0.2.0" || !releaseTagOptions.includes("v0.2.0")) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag must default to the latest published Release v0.2.1"
+      ".github/workflows/rollback-production.yml: release_tag must default to verified candidate v0.2.0"
     );
   }
-  if (releaseTagOptions.includes("v0.2.2")) {
+  if (!releaseTagOptions.every((tag) => tag === "v0.2.0")) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag options must not include v0.2.2 (rollback temporarily targets only existing published releases through v0.2.3)"
+      ".github/workflows/rollback-production.yml: release_tag options must be exactly [v0.2.0] after v0.2.3 rollback audit"
+    );
+  }
+  if (typeof resolveRun !== "string") {
+    addError(
+      ".github/workflows/rollback-production.yml: Resolve rollback target step must have a run script"
+    );
+  }
+  const releaseTagGuardBlock = `if [[ "$INPUT_RELEASE_TAG" != "v0.2.0" ]]; then
+  echo "Rollback target must be v0.2.0 (verified candidate after v0.2.3 audit)." >&2
+  exit 2
+fi`;
+  if (countExactOccurrences(executableResolveRun, releaseTagGuardBlock) !== 1) {
+    addError(
+      ".github/workflows/rollback-production.yml: Resolve rollback target must contain exactly one executable INPUT_RELEASE_TAG guard for audited candidate v0.2.0"
+    );
+  }
+  const targetShaGuardBlock = `if [[ "$target_sha" != "b24c3f714b19962c5a7b57a486f7aa18c4ae3e86" ]]; then
+  echo "Rollback target SHA must match the audited v0.2.0 release commit." >&2
+  exit 2
+fi`;
+  if (countExactOccurrences(executableResolveRun, targetShaGuardBlock) !== 1) {
+    addError(
+      ".github/workflows/rollback-production.yml: Resolve rollback target must contain exactly one executable target_sha guard for audited v0.2.0 commit b24c3f714b19962c5a7b57a486f7aa18c4ae3e86"
     );
   }
   if (restartTargetsInput?.type !== "choice") {

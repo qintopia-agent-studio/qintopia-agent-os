@@ -36,6 +36,26 @@ Read-only verification on 2026-07-06 showed:
   in the workflow must be `v0.2.1`, and the workflow/checker must explicitly reject
   `v0.2.2`.
 
+## v0.2.3 Rollback Candidate Audit (2026-07-12)
+
+- Release state: `v0.2.3` is published, and its tag, `master`, and GitHub Release target
+  all resolve to `1b988be2744aa148200ede8cca9de468a42807fa`.
+- Deployment evidence: `Deploy Production` run `29184865975` succeeded.
+- Evidence basis also includes verified release metadata and current COS inventory
+  checks.
+- Verified release candidates/evidence set currently records:
+  - `v0.2.3` (`1b988be2744aa148200ede8cca9de468a42807fa`) is the published current
+    release, with successful deployment evidence.
+  - `v0.2.2` (`d083e5c`) has evidence records and local visibility context but does not
+    satisfy current GitHub rollback selection criteria.
+  - `v0.2.1` deploy run `28918954440` is failed deploy evidence.
+  - `v0.2.0` (`b24c3f7`) has published Release and paired COS artifacts for workflow
+    rollback path (`sidecar-runtime` + `deploy-bundle`).
+- Audit result after `v0.2.3`: GitHub rollback path currently accepts only `v0.2.0`
+  candidates that are published, non-prerelease, and have both required COS asset types.
+- Documentation boundary: these checks are current-evidence-based; future additions
+  require manifest/release proof plus evidence replay before widening workflow options.
+
 The server has enough disk space for immutable release assembly. The release history
 also contains manual assembly records where the directory name, `runtime_sha`, and
 `deploy_bundle_sha` are not always the same. New automated releases must record those
