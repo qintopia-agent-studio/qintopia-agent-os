@@ -315,6 +315,9 @@ run_promotion() {
     write_result dry_run_succeeded
   else
     promoted_current=true
+    deploy/runner/install-release-systemd-units.sh \
+      --release-root "$RELEASE_ROOT" \
+      --release-sha "$release_sha" || return $?
     deploy/runner/smoke-release.sh --restart-targets "$restart_targets" || return $?
     write_result succeeded
   fi

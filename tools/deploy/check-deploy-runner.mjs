@@ -53,6 +53,7 @@ const requiredFiles = [
   "deploy/runner/manifest.yaml",
   "deploy/runner/deploy-request.schema.json",
   "deploy/runner/deploy-result.schema.json",
+  "deploy/runner/install-release-systemd-units.sh",
   "deploy/runner/qintopia-agent-os-deploy-runner",
   "deploy/runner/poll-deploy-requests.sh",
   "deploy/runner/promote-release.sh",
@@ -883,6 +884,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("bash", ["-n", "deploy/runner/promote-release.sh"], { cwd: repoRoot });
+  execFileSync("bash", ["-n", "deploy/runner/install-release-systemd-units.sh"], {
+    cwd: repoRoot,
+  });
   execFileSync("bash", ["-n", "deploy/runner/rollback-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/smoke-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/upload-deploy-request.sh"], {
@@ -909,6 +913,9 @@ try {
   execFileSync("node", ["tools/deploy/test-deploy-runner-promotion.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync("node", ["tools/deploy/test-release-systemd-install.mjs"], {
+    cwd: repoRoot,
+  });
 } catch (error) {
   addError(`deploy runner shell syntax check failed: ${error.message}`);
 }
@@ -926,6 +933,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
   for (const fragment of [
     "deploy/runner/qintopia-agent-os-deploy-runner",
     "deploy/runner/poll-deploy-requests.sh",
+    "deploy/runner/install-release-systemd-units.sh",
     "deploy/runner/deploy-request.schema.json",
     "deploy/runner/wait-deploy-result.sh",
     "deploy/restart-target-rules.yaml",
@@ -935,9 +943,50 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "tools/deploy/resolve-restart-targets.mjs",
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
     "deploy/sidecar/scripts/install-coscli.sh",
+    "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
+    "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
+    "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
+    "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh",
+    "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
+    "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",
+    "deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh",
   ]) {
     if (!builder.includes(fragment)) {
       addError(`tools/deploy/build-deploy-bundle.mjs: must package ${fragment}`);
+    }
+  }
+}
+
+if (exists("deploy/runner/qintopia-agent-os-deploy-runner")) {
+  const runner = readText("deploy/runner/qintopia-agent-os-deploy-runner");
+  for (const fragment of [
+    "install-release-systemd-units.sh",
+    '--release-root "$RELEASE_ROOT"',
+    '--release-sha "$release_sha"',
+  ]) {
+    if (!runner.includes(fragment)) {
+      addError(`deploy runner must install release systemd units (${fragment})`);
+    }
+  }
+}
+
+if (exists("deploy/runner/install-release-systemd-units.sh")) {
+  const installer = readText("deploy/runner/install-release-systemd-units.sh");
+  for (const fragment of [
+    "render-systemd-units.sh",
+    "qintopia-agentos-xiaoman-activity-signal-worker.timer",
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
+    "qintopia-agentos-operations-group-send-ready.timer",
+    '"$systemctl_bin" daemon-reload',
+  ]) {
+    if (!installer.includes(fragment)) {
+      addError(`release systemd installer is missing ${fragment}`);
+    }
+  }
+  for (const forbidden of ["eval ", "bash -c", "ssh "]) {
+    if (installer.includes(forbidden)) {
+      addError(`release systemd installer must not contain ${forbidden}`);
     }
   }
 }

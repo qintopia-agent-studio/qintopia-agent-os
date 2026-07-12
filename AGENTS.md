@@ -149,6 +149,14 @@ Use `rg` and `rg --files` for search.
   evidence/visual preview, and the group send-ready timer observation. It must not set
   apply-smoke flags, deploy units, publish releases, write Feishu, call QiWe, run the
   send-ready worker, or run external adapters.
+- `install-release-systemd-units.sh` may only render units from the promoted immutable
+  release, install its fixed allowlist, and enable AgentOS internal workflow timers. Do
+  not extend it to execute arbitrary commands, enable Feishu/QiWe/external adapters, or
+  source a writable server checkout.
+- The first release containing a deploy-runner behavior change is processed by the
+  previous runner. Use a reviewed follow-up `workflow_dispatch` request for the same
+  published SHA to activate the new runner behavior; do not bootstrap it with server
+  edits.
 - `xiaoman-postgres-integration` in GitHub Actions may enable the guarded apply smoke
   only against its disposable `qintopia_test` PostgreSQL service. It must not use a
   production database URL, secrets, Feishu, QiWe, or external adapters.
@@ -231,6 +239,11 @@ Before a PR:
 ## Documentation Rules
 
 - Keep decisions in git, not only in chat.
+- For every production, deploy, preflight, or CI integration failure, add or update a
+  dated, indexed record under `docs/reports/` in the same PR. Include the observed
+  evidence, root cause, resolution, validation, remaining boundary, and follow-up owner
+  action. Update affected runbooks, package READMEs, manifests, or checks in that same
+  PR; do not leave the repair documented only in a report or chat.
 - Prefer short, focused docs over one large manual.
 - Mark server-side exploration as unapproved until owner review confirms it.
 - Avoid formalistic phrasing when writing internal engineering docs.

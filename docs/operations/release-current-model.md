@@ -87,8 +87,10 @@ services that Hermes mounts or executes.
 6. Record the current symlink target as the rollback SHA.
 7. Update `previous` to the old `current` target.
 8. Atomically switch `current` to `<approved-sha>`.
-9. Restart only owner-approved services or Hermes profile processes.
-10. Record the release SHA, previous SHA, checks, and rollback command in git.
+9. Render and install the fixed systemd unit allowlist from the immutable release, then
+   enable internal AgentOS worker timers.
+10. Restart only owner-approved services or Hermes profile processes.
+11. Record the release SHA, previous SHA, checks, and rollback command in git.
 
 The release assembly step should be idempotent: if the release directory already exists,
 the operator must verify its manifest and checksum instead of overwriting it blindly.
@@ -103,6 +105,10 @@ Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-relea
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-sha>
 ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
 ```
+
+After each promotion, render and reinstall these units from the immutable release so
+`QINTOPIA_DEPLOYED_COMMIT_SHA` matches the release behind `current`. Do not leave stale
+deployment metadata in a unit merely because its path uses the `current` symlink.
 
 Hermes profile directories remain live runtime state. Preserve:
 

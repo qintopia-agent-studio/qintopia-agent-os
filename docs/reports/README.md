@@ -12,6 +12,7 @@ team onboarding, architecture review, or migration decisions.
 | `../qintopia-agent-os/docs/reports/qintopia-agent-os-kb-synthesis-2026-06-28.html` | report-ref  | Knowledge-base synthesis report                                        |
 | `2026-07-12-xiaoman-postgres-integration-hardening.md`                             | adopt-input | PostgreSQL integration smoke findings and remediation record           |
 | `2026-07-12-xiaoman-group-send-ready-observation.md`                               | adopt-input | Group send-ready production observation gap and remediation record     |
+| `2026-07-12-xiaoman-production-release-gap.md`                                     | adopt-input | Release payload and timer-installation gap remediation record          |
 
 ## Rules
 
