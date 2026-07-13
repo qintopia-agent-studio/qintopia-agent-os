@@ -1999,6 +1999,11 @@ pub async fn record_artifact_review_decision(
                   AND event.actor_id = $2
                   AND event.data->>'content_hash' = artifact.content_hash
                   AND event.data->>'mime_type' = artifact.metadata->>'mime_type'
+                  AND event.data->>'provider_source_mime_type' = artifact.metadata->>'provider_source_mime_type'
+                  AND event.data->>'provider_source_content_hash' = artifact.metadata->>'provider_source_content_hash'
+                  AND event.data->>'media_transform' = artifact.metadata->>'media_transform'
+                  AND event.data->>'jpeg_quality' = artifact.metadata->>'jpeg_quality'
+                  AND event.data->>'alpha_background' = artifact.metadata->>'alpha_background'
                   AND event.data->>'width' = artifact.metadata->>'width'
                   AND event.data->>'height' = artifact.metadata->>'height'
                   AND event.data->>'byte_size' = artifact.metadata->>'byte_size'
@@ -4817,7 +4822,10 @@ fn validate_generated_image_approval(
         ("generated_by", GENERATED_IMAGE_WORKER_ID),
         ("provider", "openai-compatible"),
         ("model", "gpt-image-2"),
-        ("mime_type", "image/png"),
+        ("mime_type", "image/jpeg"),
+        ("provider_source_mime_type", "image/png"),
+        ("media_transform", "png_to_jpeg_white_background_q92_v1"),
+        ("alpha_background", "#ffffff"),
     ] {
         if json_string(&context.metadata, key) != Some(expected) {
             bail!("generated_image approval requires canonical worker metadata");
@@ -4826,7 +4834,16 @@ fn validate_generated_image_approval(
     if json_i64(&context.metadata, "width") != Some(1024)
         || json_i64(&context.metadata, "height") != Some(1024)
     {
-        bail!("generated_image approval requires 1024x1024 PNG metadata");
+        bail!("generated_image approval requires 1024x1024 JPEG metadata");
+    }
+    let provider_source_content_hash =
+        json_string(&context.metadata, "provider_source_content_hash").unwrap_or_default();
+    validate_canonical_sha256(
+        provider_source_content_hash,
+        "generated_image provider source content hash",
+    )?;
+    if json_i64(&context.metadata, "jpeg_quality") != Some(92) {
+        bail!("generated_image approval requires the reviewed JPEG quality");
     }
     let byte_size = json_i64(&context.metadata, "byte_size").unwrap_or_default();
     if !(1..=MAX_APPROVABLE_GENERATED_IMAGE_BYTES).contains(&byte_size) {
@@ -4872,6 +4889,10 @@ fn validate_generated_image_uri(value: &str) -> Result<()> {
         || matches!(uri.path(), "" | "/")
     {
         bail!("generated_image artifact_uri must be a stable HTTPS media URL");
+    }
+    let path = uri.path().to_ascii_lowercase();
+    if !path.ends_with(".jpg") && !path.ends_with(".jpeg") {
+        bail!("generated_image artifact_uri must reference a JPEG object");
     }
     Ok(())
 }
@@ -6747,7 +6768,7 @@ mod tests {
             artifact_type: GENERATED_IMAGE_ARTIFACT_TYPE.to_string(),
             review_status: "pending".to_string(),
             created_by_agent: "huabaosi".to_string(),
-            artifact_uri: Some("https://media.example.test/posters/image.png".to_string()),
+            artifact_uri: Some("https://media.example.test/posters/image.jpg".to_string()),
             content_hash: Some(format!("sha256:{}", "a".repeat(64))),
             source_ids: json!([{
                 "approved_brief_artifact_id": brief_id,
@@ -6762,7 +6783,12 @@ mod tests {
                 "generated_by": GENERATED_IMAGE_WORKER_ID,
                 "provider": "openai-compatible",
                 "model": "gpt-image-2",
-                "mime_type": "image/png",
+                "mime_type": "image/jpeg",
+                "provider_source_mime_type": "image/png",
+                "provider_source_content_hash": format!("sha256:{}", "d".repeat(64)),
+                "media_transform": "png_to_jpeg_white_background_q92_v1",
+                "jpeg_quality": 92,
+                "alpha_background": "#ffffff",
                 "width": 1024,
                 "height": 1024,
                 "byte_size": 4096,
@@ -6812,9 +6838,31 @@ mod tests {
     }
 
     #[test]
+    fn generated_image_approval_rejects_unreviewed_transform_metadata() {
+        let mut context = generated_image_approval_context();
+        context.metadata["media_transform"] = json!("different-transform");
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("transform identity must be fixed");
+
+        assert!(error.to_string().contains("canonical worker metadata"));
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_invalid_source_hash() {
+        let mut context = generated_image_approval_context();
+        context.metadata["provider_source_content_hash"] = json!("sha256:invalid");
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("source PNG hash must be canonical");
+
+        assert!(error.to_string().contains("provider source content hash"));
+    }
+
+    #[test]
     fn generated_image_approval_rejects_noncanonical_media_identity() {
         let mut context = generated_image_approval_context();
-        context.artifact_uri = Some("https://media.example.test/image.png?token=value".to_string());
+        context.artifact_uri = Some("https://media.example.test/image.jpg?token=value".to_string());
         let uri_error = validate_generated_image_approval(&context, "approved")
             .expect_err("media URL query must be rejected");
         assert!(uri_error.to_string().contains("stable HTTPS media URL"));
@@ -6824,6 +6872,12 @@ mod tests {
         let hash_error = validate_generated_image_approval(&context, "approved")
             .expect_err("noncanonical hash must be rejected");
         assert!(hash_error.to_string().contains("canonical sha256"));
+
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some("https://media.example.test/image.png".to_string());
+        let mime_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("non-JPEG artifact path must be rejected");
+        assert!(mime_error.to_string().contains("JPEG object"));
     }
 
     #[test]

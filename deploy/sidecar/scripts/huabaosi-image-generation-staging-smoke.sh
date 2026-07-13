@@ -157,6 +157,12 @@ assert payload["action_status"] == "generated_image_created"
 assert len(payload["artifact_ids"]) == 1
 assert payload["artifact_preview"]["artifact_type"] == "generated_image"
 assert payload["artifact_preview"]["review_status"] == "pending"
+assert payload["artifact_preview"]["mime_type"] == "image/jpeg"
+assert payload["artifact_preview"]["width"] == 1024
+assert payload["artifact_preview"]["height"] == 1024
+assert payload["artifact_preview"]["byte_size"] > 0
+content_hash = payload["artifact_preview"]["content_hash"]
+assert content_hash.startswith("sha256:") and len(content_hash) == 71
 assert payload["safe_for_chat"] is False
 
 artifact_uri = payload["artifact_preview"].get("artifact_uri")

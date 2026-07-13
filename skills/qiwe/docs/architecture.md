@@ -265,10 +265,11 @@ For new AgentOS image sends, an HTTPS artifact URI is not itself a valid
 for one `cmd=20000` Webhook result with complete file credentials, and only then builds
 the send request. The older synchronous URL and local upload APIs are marked for
 deprecation and must not be used as a fallback. The adapter remains disabled while the
-current generated PNG and the documented JPG upload type are incompatible. Request
-construction must recheck the target group allowlist at the final boundary. A send
-result is successful only when QiWe returns both `code=0` and `isSendSuccess=1`; any
-other value remains a terminal unconfirmed send result.
+deterministic provider-PNG-to-final-JPEG path, isolated media readback, and complete
+callback credential shape await owner-approved staging evidence. Request construction
+must recheck the target group allowlist at the final boundary. A send result is
+successful only when QiWe returns both `code=0` and `isSendSuccess=1`; any other value
+remains a terminal unconfirmed send result.
 
 Approved message correction/moderation uses:
 

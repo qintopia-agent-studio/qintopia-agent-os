@@ -38,9 +38,10 @@ to depth 8 and 32 refs and reports explicitly if that bound truncates an abnorma
 
 - Visual artifacts need review before use.
 - An approved `poster_brief` may create an `image_generation_request`. The guarded
-  adapter accepts only OpenAI-compatible `gpt-image-2` `b64_json` PNG output, uploads it
-  to an isolated allowlisted media boundary, and validates a same-byte readback before
-  recording a pending `generated_image`.
+  adapter accepts only OpenAI-compatible `gpt-image-2` `b64_json` PNG output, fully
+  decodes it, composites alpha over white, and encodes a quality-92 JPEG. Only that
+  final JPEG is uploaded to the isolated allowlisted media boundary, read back
+  byte-for-byte, and recorded as the pending `generated_image`.
 - The adapter remains disabled until separately owner-reviewed provider, storage,
   staged-smoke, budget, and rollback decisions exist.
 - `huabaosi-image-generation-preflight` can validate the local adapter configuration
@@ -48,8 +49,9 @@ to depth 8 and 32 refs and reports explicitly if that bound truncates an abnorma
   result is only a staging prerequisite, not approval to generate or publish.
 - A `generated_image` must remain pending human review before any downstream use.
 - Approving a `generated_image` also requires its recorded worker provenance, HTTPS URI,
-  sha256, PNG metadata, source brief/prompt refs, and creation audit to match the image
-  request. Human review cannot approve a manually inserted or incomplete image record.
+  final JPEG sha256, source PNG hash, fixed transform metadata, source brief/prompt
+  refs, and creation audit to match the image request. Human review cannot approve a
+  manually inserted, stale, or incomplete image record.
 - The send-request starter creates `group_message_request` only from an approved
   `generated_image` whose image-generation request is completed. An approved
   `poster_brief` alone is insufficient.
@@ -85,8 +87,9 @@ The final QiWe image-send contract is documented in
 upload, correlates the `cmd=20000` Webhook by `requestId`, and only then permits a
 `/msg/sendImage` request with complete file credentials. The Rust contract and local
 preflight are implemented, but no network worker or timer exists. The current Huabaosi
-artifact is PNG while the QiWe send-image documentation names JPG; staging must resolve
-that mismatch before any external-send implementation can be enabled.
+path converts provider PNG into the exact final JPEG artifact reviewed by humans.
+Staging must still verify that JPEG through the isolated media and QiWe callback
+boundaries before any external-send implementation can be enabled.
 
 The no-network configuration check is:
 
@@ -121,7 +124,8 @@ may run through `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.
 requires an explicit flag, approval phrase, isolated staging env file, matching staging
 database URL hash, and one existing image request UUID. It accepts only a newly created
 pending `generated_image`; it never sends, writes Feishu, publishes, or installs a
-timer.
+timer. The smoke must assert `image/jpeg`, 1024x1024, a positive bounded byte size, and
+a canonical hash for the exact reviewed bytes.
 
 ## Acceptance Scenarios
 

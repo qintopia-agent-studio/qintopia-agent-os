@@ -26,18 +26,19 @@ The synchronous local and URL upload APIs return file credentials directly, but 
 marked for deprecation. New AgentOS work must not make either deprecated API the
 production foundation.
 
-## Current Compatibility Gap
+## Final Artifact Format Decision
 
 The official send-image page names JPG as the supported image format and asynchronous
-upload uses `fileType=1` for JPG. The current Huabaosi adapter deliberately produces and
-verifies only `image/png`. Renaming PNG bytes to `.jpg` is invalid and must fail closed.
+upload uses `fileType=1` for JPG. The provider source remains a fully decoded 1024x1024
+PNG, but Huabaosi deterministically composites alpha over white and encodes a quality-92
+JPEG before media upload. Only the exact read-back JPEG bytes become the pending
+`generated_image` reviewed by humans and referenced by QiWe. The artifact records the
+source PNG hash, final JPEG hash, and fixed transform identity; renaming PNG bytes to
+`.jpg` remains forbidden.
 
-Before staging, the owner and provider must choose one reviewed path:
-
-1. add deterministic PNG-to-JPEG conversion after generated-image validation while
-   preserving source and derived hashes; or
-2. obtain vendor evidence that the current upload/send path accepts PNG bytes and update
-   the checked contract and tests accordingly.
+This resolves the code-level format gap. It does not approve external generation or
+sending: owner-approved staging must still prove the provider, isolated media storage,
+JPEG upload/readback, and QiWe callback behavior together.
 
 The async callback documentation shows correlation but its public example contains only
 `cloudUrl`. The send step remains blocked unless a staging callback proves that complete
@@ -72,7 +73,9 @@ target, or missing final confirmation must stop before sending.
   QiWe rich-message adapter fixtures; every other value fails closed.
 - Header and protocol values reject control characters, endpoints require the reviewed
   HTTPS path, media URLs reject credentials/query/fragment and non-allowlisted hosts,
-  and JPEG MIME/JPG naming are enforced until compatibility is decided.
+  and JPEG MIME/JPG naming are enforced.
+- The Huabaosi final-artifact path converts provider PNG to the immutable reviewed JPEG
+  while preserving source and final hashes plus the fixed transform metadata.
 - `qiwe-image-send-preflight` checks only local configuration and emits a sanitized
   report. It opens no network or database connection and fails closed if the send-enable
   flag is already `1` because this PR does not approve enablement.
@@ -81,7 +84,8 @@ target, or missing final confirmation must stop before sending.
 
 ## Next Implementation
 
-1. Resolve and test the PNG/JPG decision.
+1. Run one owner-approved staging image generation and verify the final JPEG media
+   metadata and same-byte readback without sending.
 2. Capture one owner-approved staging async callback and confirm the exact credential
    field names and the existing `isSendSuccess=1` success assumption without storing raw
    credentials in git or logs.

@@ -802,7 +802,7 @@ INSERT INTO qintopia_agent_os.artifacts (
   'huabaosi',
   'Apply smoke generated image',
   'Disposable fixture for reviewed image downstream dependency.',
-  'https://media.example.test/apply-smoke/${smoke_suffix}.png',
+  'https://media.example.test/apply-smoke/${smoke_suffix}.jpg',
   'sha256:apply-smoke-${smoke_suffix}',
   jsonb_build_array(jsonb_build_object('approved_brief_artifact_id', '${xiaoman_promotion_artifact_id}')),
   ARRAY['external_use_review_required','generated_media']::text[],
@@ -851,7 +851,7 @@ assert_sql_equals \
 psql_value "
 UPDATE qintopia_agent_os.artifacts
 SET
-  artifact_uri = 'https://media.example.test/apply-smoke/${smoke_suffix}.png',
+  artifact_uri = 'https://media.example.test/apply-smoke/${smoke_suffix}.jpg',
   content_hash = 'sha256:' || repeat('a', 64),
   source_ids = jsonb_build_array(jsonb_build_object(
     'approved_brief_artifact_id', '${xiaoman_promotion_artifact_id}',
@@ -863,7 +863,12 @@ SET
     'generated_by', 'huabaosi-image-generation-worker',
     'provider', 'openai-compatible',
     'model', 'gpt-image-2',
-    'mime_type', 'image/png',
+    'mime_type', 'image/jpeg',
+    'provider_source_mime_type', 'image/png',
+    'provider_source_content_hash', 'sha256:' || repeat('d', 64),
+    'media_transform', 'png_to_jpeg_white_background_q92_v1',
+    'jpeg_quality', 92,
+    'alpha_background', '#ffffff',
     'width', 1024,
     'height', 1024,
     'byte_size', 4096,
@@ -885,7 +890,12 @@ INSERT INTO qintopia_agent_os.work_item_events (
   'generated image fixture repaired for approval integrity smoke',
   jsonb_build_object(
     'content_hash', 'sha256:' || repeat('a', 64),
-    'mime_type', 'image/png',
+    'mime_type', 'image/jpeg',
+    'provider_source_mime_type', 'image/png',
+    'provider_source_content_hash', 'sha256:' || repeat('d', 64),
+    'media_transform', 'png_to_jpeg_white_background_q92_v1',
+    'jpeg_quality', 92,
+    'alpha_background', '#ffffff',
     'width', 1024,
     'height', 1024,
     'byte_size', 4096,

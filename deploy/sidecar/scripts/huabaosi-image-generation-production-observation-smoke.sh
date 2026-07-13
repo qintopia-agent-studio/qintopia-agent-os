@@ -176,7 +176,7 @@ preview = payload["artifact_preview"]
 if preview is not None:
     assert preview["artifact_type"] == "generated_image"
     assert preview["review_status"] == "pending"
-    assert preview["mime_type"] == "image/png"
+    assert preview["mime_type"] == "image/jpeg"
     assert preview["byte_size"] == 0
 PY
 
