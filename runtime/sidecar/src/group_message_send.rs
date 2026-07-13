@@ -862,6 +862,131 @@ fn contains_sensitive_text(text: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = url::Url::parse(&database_url).expect("integration database URL must parse");
+        assert!(
+            matches!(parsed.scheme(), "postgres" | "postgresql"),
+            "PostgreSQL integration test requires a postgres URL"
+        );
+        assert!(
+            matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1")),
+            "PostgreSQL integration test may only use a loopback database"
+        );
+        assert_eq!(
+            parsed.path().trim_start_matches('/'),
+            "qintopia_test",
+            "PostgreSQL integration test may only use qintopia_test"
+        );
+        database_url
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn insert_image_and_group_request(
+        pool: &PgPool,
+        artifact_review_status: &str,
+    ) -> (Uuid, Uuid, Uuid) {
+        let image_work_item_id = Uuid::new_v4();
+        let artifact_id = Uuid::new_v4();
+        let group_work_item_id = Uuid::new_v4();
+        let suffix = Uuid::new_v4();
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, purpose, source_type, source_refs,
+                 dedupe_key, idempotency_key, risk_level, information_class,
+                 payload, review_policy)
+            VALUES
+                ($1, 'image_generation_request', 'completed', 'xiaoman', 'huabaosi',
+                 'huabaosi.generate_image_asset', 'integration generated image',
+                 'activity promotion image', 'integration_test', '{}'::jsonb,
+                 $2, $3, 'medium', 'internal_ops', '{}'::jsonb, 'before_external_use')
+            "#,
+        )
+        .bind(image_work_item_id)
+        .bind(format!("group-send-integration-image:{suffix}"))
+        .bind(format!("group-send-integration-image:{suffix}"))
+        .execute(pool)
+        .await
+        .expect("insert image-generation work item");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, risk_labels,
+                 information_class, metadata)
+            VALUES
+                ($1, $2, 'generated_image', $3, 'huabaosi', 'integration image',
+                 'sanitized integration fixture',
+                 'https://media.example.test/posters/integration.png',
+                 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                 ARRAY['external_publish']::text[], 'internal_ops', '{}'::jsonb)
+            "#,
+        )
+        .bind(artifact_id)
+        .bind(image_work_item_id)
+        .bind(artifact_review_status)
+        .execute(pool)
+        .await
+        .expect("insert generated-image artifact");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, purpose, source_type, source_refs,
+                 dedupe_key, idempotency_key, risk_level, information_class,
+                 payload, review_policy)
+            VALUES
+                ($1, 'group_message_request', 'queued', 'xiaoman', 'erhua',
+                 'erhua.send_group_message', 'integration group message',
+                 'activity promotion send readiness', 'integration_test', '{}'::jsonb,
+                 $2, $3, 'high', 'internal_ops', $4, 'human_final_confirmation')
+            "#,
+        )
+        .bind(group_work_item_id)
+        .bind(format!("group-send-integration-request:{suffix}"))
+        .bind(format!("group-send-integration-request:{suffix}"))
+        .bind(json!({
+            "approved_artifact_id": artifact_id,
+            "approved_artifact_type": "generated_image",
+            "workflow_type": "activity_promotion",
+            "target_channel": "qiwe",
+            "target_group_alias": "integration_test_group",
+            "message_text": "活动海报已完成审核，请发送到测试群。",
+            "send_executed": false
+        }))
+        .execute(pool)
+        .await
+        .expect("insert group-message work item");
+
+        (image_work_item_id, artifact_id, group_work_item_id)
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn delete_integration_rows(pool: &PgPool, image_id: Uuid, group_id: Uuid) {
+        sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = $1")
+            .bind(group_id)
+            .execute(pool)
+            .await
+            .expect("delete group-message integration work item");
+        sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = $1")
+            .bind(image_id)
+            .execute(pool)
+            .await
+            .expect("delete image-generation integration work item");
+    }
+
     #[test]
     fn fixture_worker_reports_send_ready_without_sending() {
         let report = run_fixture(false).expect("fixture should validate");
@@ -940,5 +1065,110 @@ mod tests {
             .expect_err("awaiting_publish should require final confirmation first");
 
         assert!(err.to_string().contains("must be queued"));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_send_ready_is_idempotent_and_fails_closed() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let policy = SendPolicy {
+            allowed_group_aliases: vec!["integration_test_group".to_string()],
+            allowed_group_ids: Vec::new(),
+        };
+
+        let (image_id, _artifact_id, group_id) =
+            insert_image_and_group_request(&pool, "approved").await;
+        let report = run_once(&pool, &policy, true, Some(group_id))
+            .await
+            .expect("approved request should record send readiness");
+        assert_eq!(report.action_status, "send_ready_recorded");
+        assert!(report.apply_requested);
+        assert!(!report.send_executed);
+
+        let state: (String, i32, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                status,
+                attempts,
+                count(*) FILTER (
+                    WHERE event_type = 'group_message_send_ready_recorded'
+                      AND data->>'send_executed' = 'false'
+                ),
+                count(*) FILTER (
+                    WHERE event_type IN ('send_executed', 'external_published')
+                )
+            FROM qintopia_agent_os.work_items item
+            LEFT JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id = item.id
+            WHERE item.id = $1
+            GROUP BY item.status, item.attempts
+            "#,
+        )
+        .bind(group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read send-ready integration state");
+        assert_eq!(state, ("queued".to_string(), 1, 1, 0));
+
+        let second = run_once(&pool, &policy, true, Some(group_id))
+            .await
+            .expect("duplicate apply should be a no-op");
+        assert_eq!(second.action_status, "no_claimable_group_message_request");
+        let ready_count: (i64,) = sqlx::query_as(
+            r#"
+            SELECT count(*)
+            FROM qintopia_agent_os.work_item_events
+            WHERE work_item_id = $1
+              AND event_type = 'group_message_send_ready_recorded'
+            "#,
+        )
+        .bind(group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count idempotent send-ready events");
+        assert_eq!(ready_count.0, 1);
+        delete_integration_rows(&pool, image_id, group_id).await;
+
+        let (pending_image_id, _pending_artifact_id, pending_group_id) =
+            insert_image_and_group_request(&pool, "pending").await;
+        let error = run_once(&pool, &policy, true, Some(pending_group_id))
+            .await
+            .expect_err("pending artifact must fail closed");
+        assert!(error
+            .to_string()
+            .contains("must reference an approved artifact"));
+        let denied_state: (String, i32, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                status,
+                attempts,
+                count(*) FILTER (
+                    WHERE event_type = 'group_message_send_denied_by_policy'
+                      AND data->>'send_executed' = 'false'
+                ),
+                count(*) FILTER (
+                    WHERE event_type IN ('group_message_send_ready_recorded',
+                                         'send_executed', 'external_published')
+                )
+            FROM qintopia_agent_os.work_items item
+            LEFT JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id = item.id
+            WHERE item.id = $1
+            GROUP BY item.status, item.attempts
+            "#,
+        )
+        .bind(pending_group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read denied send-ready integration state");
+        assert_eq!(denied_state, ("failed".to_string(), 1, 1, 0));
+        delete_integration_rows(&pool, pending_image_id, pending_group_id).await;
     }
 }

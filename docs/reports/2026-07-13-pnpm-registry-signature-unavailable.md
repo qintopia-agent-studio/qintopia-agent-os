@@ -59,3 +59,11 @@ repository check started. Signature enforcement remained enabled. The affected f
 repository entrypoints, sidecar smokes, Rust format/Clippy/tests, and pre-commit checks
 were run directly. The final PR still requires the normal GitHub `check` job to pass;
 local direct execution is not a substitute for that package-manager gate.
+
+The Xiaoman group send-ready PostgreSQL integration change reproduced the same failure
+again on 2026-07-14. Both `pnpm exec prettier` and `pnpm check` waited for the signed
+package-manager lookup, then refused to run because `@pnpm/exe`, the macOS arm64
+package, and `pnpm@10.29.2` could not be fetched and verified. The repository-local
+Prettier binary and the inspected fixed Node, Python, Bash, and Cargo entrypoints were
+run directly. Signature enforcement was not bypassed, and the PR still requires the
+normal GitHub `check` job.

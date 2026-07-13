@@ -17,13 +17,23 @@ run_json() {
   local name="$1"
   shift
   local output="$tmp_dir/${name}.json"
-  "${BIN_CMD[@]}" "$@" >"$output"
-  python3 - "$output" <<'PY'
+  local stderr="$tmp_dir/${name}.stderr"
+  if ! "${BIN_CMD[@]}" "$@" >"$output" 2>"$stderr"; then
+    echo "operations smoke command failed: ${name}" >&2
+    cat "$stderr" >&2
+    return 1
+  fi
+  if ! python3 - "$output" 2>/dev/null <<'PY'
 import json
 import sys
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     json.load(fh)
 PY
+  then
+    echo "operations smoke command returned invalid JSON: ${name}" >&2
+    cat "$stderr" >&2
+    return 1
+  fi
   printf '%s\n' "$output"
 }
 

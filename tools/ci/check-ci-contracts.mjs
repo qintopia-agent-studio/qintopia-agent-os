@@ -336,7 +336,7 @@ if (ciWorkflow) {
       }
       if (
         !String(clippyStep?.run ?? "").includes(
-          "cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets -- -D warnings"
+          "cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings"
         )
       ) {
         errors.push(
@@ -379,6 +379,22 @@ if (ciWorkflow) {
         errors.push(
           ".github/workflows/ci.yml: Xiaoman integration must run the guarded apply smoke"
         );
+      }
+      const groupSendIntegrationStep = postgresJob.steps?.find(
+        (step) => step?.name === "Rust group send-ready PostgreSQL integration"
+      );
+      const groupSendIntegrationCommand = String(groupSendIntegrationStep?.run ?? "");
+      for (const requiredFragment of [
+        "cargo test --manifest-path runtime/sidecar/Cargo.toml",
+        "--features postgres-integration-tests",
+        "group_message_send::tests::postgres_send_ready_is_idempotent_and_fails_closed",
+        "-- --ignored --exact",
+      ]) {
+        if (!groupSendIntegrationCommand.includes(requiredFragment)) {
+          errors.push(
+            `.github/workflows/ci.yml: Xiaoman integration Rust send-ready test must include ${requiredFragment}`
+          );
+        }
       }
     }
   } catch (error) {

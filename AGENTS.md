@@ -74,6 +74,11 @@ Use `rg` and `rg --files` for search.
   `RUST_MIN_STACK=33554432 cargo test --manifest-path runtime/sidecar/Cargo.toml`. The
   default test-thread stack can overflow in an existing Xiaoman async test; see
   `docs/reports/2026-07-13-rust-test-stack-limit.md`.
+- The ignored `group_message_send` PostgreSQL integration test may run only with
+  `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1` against a database named exactly
+  `qintopia_test` on loopback and with the explicit Cargo feature
+  `postgres-integration-tests`. It validates internal send-ready state and must never
+  call QiWe or an external adapter.
 - Do not develop directly on `master`; create a feature branch first.
 - Document first for new features, behavior changes, migrations, runtime changes, or
   production-adjacent work.

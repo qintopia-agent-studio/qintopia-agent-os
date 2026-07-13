@@ -313,7 +313,7 @@ jobs:
       - name: Clippy baseline
         run: |
           set -o pipefail
-          cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets -- -D warnings 2>&1 | tee coverage/clippy.txt
+          cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings 2>&1 | tee coverage/clippy.txt
 
       - name: Upload Rust quality baseline
         if: ${{ always() }}
@@ -362,6 +362,13 @@ jobs:
 
       - name: Verify temporary PostgreSQL client
         run: psql --version
+
+      - name: Rust group send-ready PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          group_message_send::tests::postgres_send_ready_is_idempotent_and_fails_closed
+          -- --ignored --exact
 
       - name: Xiaoman downstream apply smoke
         run: deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh
