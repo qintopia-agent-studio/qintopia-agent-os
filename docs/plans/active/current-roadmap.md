@@ -34,6 +34,10 @@ unless correcting historical evidence.
      rollback are reviewed.
    - Do not broaden Feishu, QiWe, or workbench permissions in the same PR as unrelated
      feature work.
+   - The proposed
+     [Aliang image-generation adapter](aliang-production-image-generation.md) keeps real
+     image generation, user-media storage, human review, and publication as separate
+     gates. It is not enabled by the existing internal visual brief worker.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,
