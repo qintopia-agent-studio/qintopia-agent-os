@@ -136,6 +136,20 @@ if (ciWorkflow && !ciWorkflow.includes("release-please-pr")) {
   errors.push(".github/workflows/ci.yml: must detect Release Please PRs");
 }
 
+for (const requiredFragment of [
+  "workflow_dispatch:",
+  "release_please_pr_number:",
+  "DISPATCH_RELEASE_PLEASE_PR_NUMBER",
+  "workflow_dispatch ref must resolve to the exact release PR head SHA",
+  "workflow_dispatch PR is not an authentic Release Please PR",
+]) {
+  if (ciWorkflow && !ciWorkflow.includes(requiredFragment)) {
+    errors.push(
+      `.github/workflows/ci.yml: Release Please manual validation must include ${requiredFragment}`
+    );
+  }
+}
+
 if (ciWorkflow && !ciWorkflow.includes("Restart impact preview")) {
   errors.push(
     ".github/workflows/ci.yml: pull_request checks must preview restart impact"
@@ -183,6 +197,21 @@ for (const requiredFragment of [
 if (ciWorkflow) {
   try {
     const parsedWorkflow = YAML.parse(ciWorkflow);
+    const workflowDispatch = parsedWorkflow?.on?.workflow_dispatch;
+    if (!workflowDispatch?.inputs?.release_please_pr_number) {
+      errors.push(
+        ".github/workflows/ci.yml: workflow_dispatch must require an explicit Release Please PR number input contract"
+      );
+    }
+    for (const jobName of ["changes", "check"]) {
+      const permission =
+        parsedWorkflow?.jobs?.[jobName]?.permissions?.["pull-requests"];
+      if (permission !== "read") {
+        errors.push(
+          `.github/workflows/ci.yml: jobs.${jobName} needs pull-requests: read for Release Please dispatch validation`
+        );
+      }
+    }
     const checkSteps = parsedWorkflow?.jobs?.check?.steps;
     if (!Array.isArray(checkSteps)) {
       errors.push(".github/workflows/ci.yml: jobs.check.steps must be a step list");
@@ -224,6 +253,17 @@ if (ciWorkflow) {
           errors.push(
             ".github/workflows/ci.yml: Release Please PR check must run tools/ci/check-release-please-pr.mjs"
           );
+        }
+        for (const requiredFragment of [
+          "gh api",
+          "GITHUB_EVENT_NAME=pull_request",
+          "GITHUB_EVENT_PATH",
+        ]) {
+          if (!runScript.includes(requiredFragment)) {
+            errors.push(
+              `.github/workflows/ci.yml: Release Please dispatch check must include ${requiredFragment}`
+            );
+          }
         }
       }
     }

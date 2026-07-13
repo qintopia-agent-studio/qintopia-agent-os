@@ -79,6 +79,27 @@ LCOV and a text summary as a short-retention artifact. Strict Clippy runs with
 and runs the guarded control-plane apply smoke with no production database URL, secrets,
 Feishu, QiWe, or external adapters.
 
+### Release Please PR Validation
+
+GitHub does not recursively trigger PR workflows when a workflow using `GITHUB_TOKEN`
+creates or updates the Release Please PR. A release PR can therefore show no checks even
+though the repository CI contract is valid. No checks is not a passing state.
+
+Run CI manually on the release PR's exact head branch:
+
+```bash
+gh workflow run ci.yml \
+  --ref release-please--branches--master--components--qintopia-agent-os \
+  -f release_please_pr_number=<pr-number>
+```
+
+The dispatch reads the PR through the GitHub API and fails unless it is open, targets
+`master`, is authored by the Release Please bot, contains the generated-body marker, and
+its head SHA equals the workflow checkout SHA. Only then does it run the dedicated
+manifest/changelog validator. The resulting `changes` and `check` runs attach to that
+head SHA and must pass before merge. This validation does not approve publication;
+merging and publishing remain one owner release decision.
+
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the
 heavy steps inside the workflow.
