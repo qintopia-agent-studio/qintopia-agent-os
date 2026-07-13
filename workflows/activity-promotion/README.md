@@ -23,6 +23,11 @@ Huabaosi visual asset work, human review, optional image-generation request inta
 Erhua group-message readiness. It is a control-plane workflow, not an autonomous publish
 path.
 
+`operations-work-item-status` resolves any nested work item back to the top-level
+activity request and returns every descendant with its direct `parent_work_item_id`.
+This keeps the image-generation request, which is nested under the visual request,
+visible in the same status report and workflow summary.
+
 ## Required Human Gates
 
 - Visual artifacts need review before use.
@@ -50,6 +55,8 @@ path.
   bounded local keyword fallback. It does not call external Wenyuange, embeddings,
   Feishu, QiWe, Huabaosi image providers, or send adapters.
 - Must not use Hermes Kanban as the future orchestration backbone.
+- Recursive status reporting is read-only. Workflow sync may persist the derived AgentOS
+  summary, but neither command executes a worker or acts as a general DAG scheduler.
 
 ## Production Boundary
 
@@ -97,6 +104,8 @@ timer.
 - An approved `poster_brief` can create one idempotent image-generation request on
   `master`, including through the internal starter timer; that request does not call a
   provider or create an image.
+- Querying the status of a nested image-generation request resolves the activity root
+  and reports immediate and nested descendants without losing the parent relation.
 - Group-send readiness requires final human confirmation before any external send path
   is considered.
 

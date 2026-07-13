@@ -104,11 +104,13 @@ adapters. The server deployment script installs an optional systemd oneshot serv
 timer for this worker; the timer only processes events that were already recorded into
 Postgres by the guarded intake path.
 
-`operations-workflow-sync` persists a one-level workflow parent summary after child work
-items change. It reads the same status tree as `operations-work-item-status`, writes
-`workflow_summary` into the parent `work_items.metadata`, updates the parent aggregate
-status, and appends `workflow_status_synced`. It does not execute workers, create Feishu
-Tasks, publish artifacts, or send group messages.
+`operations-workflow-sync` persists a recursive workflow parent summary after descendant
+work items change. It reads the same status tree as `operations-work-item-status`, keeps
+immediate child refs for compatibility, adds every descendant with its direct parent and
+depth, writes `workflow_summary` into the parent `work_items.metadata`, updates the
+parent aggregate status, and appends `workflow_status_synced`. It does not execute
+workers, schedule a general DAG, create Feishu Tasks, publish artifacts, or send group
+messages.
 
 `run-workflow-sync-worker --once` is the worker form of the same operation. It selects
 the oldest syncable `activity_promotion_request` parent unless a specific

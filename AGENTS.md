@@ -221,6 +221,10 @@ Use `rg` and `rg --files` for search.
   evidence/visual preview, and the group send-ready timer observation. It must not set
   apply-smoke flags, deploy units, publish releases, write Feishu, call QiWe, run the
   send-ready worker, or run external adapters.
+- `operations-work-item-status` must resolve nested work items to the top-level workflow
+  root and report every descendant while preserving each direct `parent_work_item_id`.
+  `operations-workflow-sync` may persist that recursive AgentOS summary, but neither
+  command may execute workers, schedule a general DAG, call external adapters, or send.
 - `install-release-systemd-units.sh` may only render units from the promoted immutable
   release, install its fixed allowlist, and enable AgentOS internal workflow timers. Do
   not extend it to execute arbitrary commands, enable Feishu/QiWe/external adapters, or
