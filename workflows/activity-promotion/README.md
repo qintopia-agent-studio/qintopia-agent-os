@@ -72,6 +72,13 @@ or invalid configuration is reported as `success=false` / `adapter_not_configure
 without exposing the failed value, then exits non-zero. Staging automation must treat
 that exit status as a hard stop.
 
+After the Required Human Gates have owner approval, one controlled staging generation
+may run through `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`. It
+requires an explicit flag, approval phrase, isolated staging env file, matching staging
+database URL hash, and one existing image request UUID. It accepts only a newly created
+pending `generated_image`; it never sends, writes Feishu, publishes, or installs a
+timer.
+
 ## Acceptance Scenarios
 
 - Activity signal creates a governed work item without sending an external message.

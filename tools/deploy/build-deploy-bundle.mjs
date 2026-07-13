@@ -20,6 +20,7 @@ const checksumPath = path.join(bundleDir, "SHA256SUMS");
 const sourceFiles = [
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/install-coscli.sh",
   "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",

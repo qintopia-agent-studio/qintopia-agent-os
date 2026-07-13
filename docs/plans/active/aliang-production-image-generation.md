@@ -185,6 +185,11 @@ until a real isolated storage service accepts this contract.
   只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。配置无效时它输出
   `success=false`、`adapter_not_configured` 后以非零退出码失败，staging 自动化必须 fail
   closed。
+- `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`
+  是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
+  `staging` 的独立 env、匹配的 staging database URL SHA-256，以及一个明确的 image
+  request UUID。它只运行一次 image worker 并断言得到一个
+  `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。
 
 运行无网络预检：
 
@@ -195,6 +200,15 @@ huabaosi-image-generation-preflight
 预检完成后，仍必须先记录 Required Owner
 Decisions，再在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
 smoke；该 smoke 不得发送、发布或写飞书。
+
+```bash
+QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID='<approved staging image request UUID>' \
+deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh
+```
 
 ## Explicit Non-Goals
 

@@ -36,6 +36,10 @@ next_actions:
     configuration without contacting external services, then obtain owner approval for
     the image provider account, isolated media storage, staging smoke, budget, reviewer
     allowlist, and rollback owner before enabling the guarded image adapter in staging.
+  - After those decisions are recorded, run exactly one
+    huabaosi-image-generation-staging-smoke.sh invocation against an approved staging
+    image request. Record only its sanitized result and keep the generated image pending
+    human review.
   - Keep image generation and group-send execution out of runtime scheduling until the
     staged adapter observation is reviewed; final confirmation and send-adapter gates
     remain separate.
