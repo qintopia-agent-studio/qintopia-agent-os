@@ -60,6 +60,7 @@ pub struct GeneratedImagePreview {
 #[derive(Debug, Clone)]
 struct ImageGenerationWorkItem {
     id: Uuid,
+    claim_token: Option<String>,
     approved_brief_artifact_id: Uuid,
     approved_brief_content_hash: String,
     approved_brief_text: String,
@@ -166,6 +167,7 @@ fn fixture_report() -> ImageGenerationWorkerReport {
 fn fixture_work_item() -> ImageGenerationWorkItem {
     ImageGenerationWorkItem {
         id: Uuid::nil(),
+        claim_token: None,
         approved_brief_artifact_id: Uuid::nil(),
         approved_brief_content_hash: "sha256:fixture-approved-brief".to_string(),
         approved_brief_text: "活动主题：fixture 活动。".to_string(),
@@ -254,24 +256,16 @@ async fn run_once(
     };
     let work_item_id = work_item.id;
     let worker_input = work_item.clone();
-    let generated = tokio::task::spawn_blocking(move || generate_and_store(&config, &worker_input))
-        .await
-        .context("join image provider task")?;
+    let generated =
+        match tokio::task::spawn_blocking(move || generate_and_store(&config, &worker_input)).await
+        {
+            Ok(generated) => generated,
+            Err(_) => return record_generation_failure_report(pool, &work_item).await,
+        };
 
     let generated = match generated {
         Ok(generated) => generated,
-        Err(_) => {
-            mark_work_item_failed(pool, work_item_id).await?;
-            return Ok(report(
-                false,
-                true,
-                false,
-                "image_generation_failed",
-                Some(work_item_id),
-                Vec::new(),
-                None,
-            ));
-        }
+        Err(_) => return record_generation_failure_report(pool, &work_item).await,
     };
 
     let persisted = persist_generated_image(pool, &work_item, &generated).await;
@@ -285,19 +279,28 @@ async fn run_once(
             vec![artifact_id],
             Some(generated.preview()),
         )),
-        Err(_) => {
-            mark_work_item_failed(pool, work_item_id).await?;
-            Ok(report(
-                false,
-                true,
-                false,
-                "image_generation_failed",
-                Some(work_item_id),
-                Vec::new(),
-                None,
-            ))
-        }
+        Err(_) => record_generation_failure_report(pool, &work_item).await,
     }
+}
+
+async fn record_generation_failure_report(
+    pool: &PgPool,
+    work_item: &ImageGenerationWorkItem,
+) -> Result<ImageGenerationWorkerReport> {
+    let action_status = if mark_work_item_failed(pool, work_item).await? {
+        "image_generation_failed"
+    } else {
+        "image_generation_stale_claim"
+    };
+    Ok(report(
+        false,
+        true,
+        false,
+        action_status,
+        Some(work_item.id),
+        Vec::new(),
+        None,
+    ))
 }
 
 impl AdapterConfig {
@@ -565,6 +568,9 @@ impl HttpClient {
             path.push('?');
             path.push_str(query);
         }
+        for (name, value) in headers {
+            validate_http_header(name, value)?;
+        }
         let mut request = format!(
             "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n",
             body.len()
@@ -611,6 +617,41 @@ impl HttpClient {
         };
         parse_http_response(response, max_response_body_bytes)
     }
+}
+
+fn validate_http_header(name: &str, value: &str) -> Result<()> {
+    if name.is_empty() || !name.bytes().all(is_http_header_name_byte) {
+        bail!("image adapter request contains an invalid header name");
+    }
+    if !value.bytes().all(is_http_header_value_byte) {
+        bail!("image adapter request contains an invalid header value");
+    }
+    Ok(())
+}
+
+fn is_http_header_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
+        )
+}
+
+fn is_http_header_value_byte(byte: u8) -> bool {
+    byte == b'\t' || (b' '..=b'~').contains(&byte)
 }
 
 fn tls_config() -> ClientConfig {
@@ -754,6 +795,7 @@ async fn load_work_item(
         r#"
         SELECT
             request.id,
+            NULL::text AS claim_token,
             artifact.id AS approved_brief_artifact_id,
             artifact.content_hash AS approved_brief_content_hash,
             COALESCE(artifact.content_text, artifact.summary) AS approved_brief_text,
@@ -795,6 +837,7 @@ async fn claim_work_item(
     pool: &PgPool,
     work_item_id: Option<Uuid>,
 ) -> Result<Option<ImageGenerationWorkItem>> {
+    let claim_token = new_claim_token();
     let row = sqlx::query(
         r#"
         WITH claimable AS (
@@ -839,6 +882,7 @@ async fn claim_work_item(
         WHERE request.id = claimable.id
         RETURNING
             request.id,
+            request.claimed_by AS claim_token,
             claimable.approved_brief_artifact_id,
             claimable.approved_brief_content_hash,
             claimable.approved_brief_text,
@@ -850,7 +894,7 @@ async fn claim_work_item(
     .bind(WORK_ITEM_TYPE)
     .bind(SPECIFICATION)
     .bind(work_item_id)
-    .bind(WORKER_ID)
+    .bind(&claim_token)
     .fetch_optional(pool)
     .await
     .context("claim Huabaosi image generation request")?;
@@ -860,12 +904,17 @@ async fn claim_work_item(
 fn work_item_from_row(row: sqlx::postgres::PgRow) -> Result<ImageGenerationWorkItem> {
     Ok(ImageGenerationWorkItem {
         id: row.try_get("id")?,
+        claim_token: row.try_get("claim_token")?,
         approved_brief_artifact_id: row.try_get("approved_brief_artifact_id")?,
         approved_brief_content_hash: row.try_get("approved_brief_content_hash")?,
         approved_brief_text: row.try_get("approved_brief_text")?,
         image_specification: row.try_get("image_specification")?,
         prompt_hash: row.try_get("prompt_hash")?,
     })
+}
+
+fn new_claim_token() -> String {
+    format!("{WORKER_ID}:{}", Uuid::new_v4())
 }
 
 async fn persist_generated_image(
@@ -877,6 +926,29 @@ async fn persist_generated_image(
         .begin()
         .await
         .context("begin generated image transaction")?;
+    let claim_token = work_item
+        .claim_token
+        .as_deref()
+        .ok_or_else(|| anyhow!("image generation apply requires a claim token"))?;
+    let claim_is_current: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM qintopia_agent_os.work_items
+        WHERE id = $1
+          AND status = 'processing'
+          AND claimed_by = $2
+          AND claim_expires_at > now()
+        FOR UPDATE
+        "#,
+    )
+    .bind(work_item.id)
+    .bind(claim_token)
+    .fetch_optional(&mut *tx)
+    .await
+    .context("lock current image generation claim")?;
+    if claim_is_current.is_none() {
+        bail!("image generation claim is no longer current");
+    }
     let still_approved: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS (
@@ -993,7 +1065,7 @@ async fn persist_generated_image(
         }
     };
 
-    sqlx::query(
+    let updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.work_items
         SET
@@ -1005,13 +1077,17 @@ async fn persist_generated_image(
         WHERE id = $1
           AND status = 'processing'
           AND claimed_by = $2
+          AND claim_expires_at > now()
         "#,
     )
     .bind(work_item.id)
-    .bind(WORKER_ID)
+    .bind(claim_token)
     .execute(&mut *tx)
     .await
     .context("mark image generation request awaiting review")?;
+    if updated.rows_affected() != 1 {
+        bail!("image generation claim changed before pending artifact could be recorded");
+    }
     if artifact_created {
         sqlx::query(
             r#"
@@ -1045,12 +1121,16 @@ fn can_reuse_existing_generated_image(review_status: &str) -> bool {
     review_status == "pending"
 }
 
-async fn mark_work_item_failed(pool: &PgPool, work_item_id: Uuid) -> Result<()> {
+async fn mark_work_item_failed(pool: &PgPool, work_item: &ImageGenerationWorkItem) -> Result<bool> {
     let mut tx = pool
         .begin()
         .await
         .context("begin image generation failure transaction")?;
-    sqlx::query(
+    let claim_token = work_item
+        .claim_token
+        .as_deref()
+        .ok_or_else(|| anyhow!("image generation failure handling requires a claim token"))?;
+    let updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.work_items
         SET
@@ -1062,13 +1142,20 @@ async fn mark_work_item_failed(pool: &PgPool, work_item_id: Uuid) -> Result<()> 
         WHERE id = $1
           AND status = 'processing'
           AND claimed_by = $2
+          AND claim_expires_at > now()
         "#,
     )
-    .bind(work_item_id)
-    .bind(WORKER_ID)
+    .bind(work_item.id)
+    .bind(claim_token)
     .execute(&mut *tx)
     .await
     .context("mark image generation request failed")?;
+    if updated.rows_affected() != 1 {
+        tx.commit()
+            .await
+            .context("commit stale image generation claim")?;
+        return Ok(false);
+    }
     sqlx::query(
         r#"
         INSERT INTO qintopia_agent_os.work_item_events
@@ -1076,7 +1163,7 @@ async fn mark_work_item_failed(pool: &PgPool, work_item_id: Uuid) -> Result<()> 
         VALUES ($1, 'failed', 'worker', $2, 'image generation failed before pending artifact creation', $3)
         "#,
     )
-    .bind(work_item_id)
+    .bind(work_item.id)
     .bind(WORKER_ID)
     .bind(json!({"external_publish_executed": false, "sensitive_fields_redacted": true}))
     .execute(&mut *tx)
@@ -1085,7 +1172,7 @@ async fn mark_work_item_failed(pool: &PgPool, work_item_id: Uuid) -> Result<()> 
     tx.commit()
         .await
         .context("commit image generation failure transaction")?;
-    Ok(())
+    Ok(true)
 }
 
 fn image_preview(work_item: &ImageGenerationWorkItem) -> GeneratedImagePreview {
@@ -1325,6 +1412,28 @@ mod tests {
     }
 
     #[test]
+    fn request_headers_reject_injection_characters_before_connecting() {
+        let header_value = "Bearer test\r\nX-Injected: true";
+        let value_error = validate_http_header("Authorization", header_value)
+            .expect_err("header values must reject CR/LF");
+        assert!(value_error.to_string().contains("invalid header value"));
+        assert!(!value_error.to_string().contains("X-Injected"));
+
+        let name_error = validate_http_header("X-Test\nInjected", "safe")
+            .expect_err("header names must reject CR/LF");
+        assert!(name_error.to_string().contains("invalid header name"));
+    }
+
+    #[test]
+    fn claims_use_unique_per_attempt_tokens() {
+        let first = new_claim_token();
+        let second = new_claim_token();
+
+        assert!(first.starts_with(&format!("{WORKER_ID}:")));
+        assert_ne!(first, second);
+    }
+
+    #[test]
     fn response_reading_and_decoding_enforce_size_limits() {
         let mut oversized_headers = Cursor::new(vec![0_u8; MAX_HTTP_RESPONSE_HEADER_BYTES + 1]);
         let read_error = read_response_limited(&mut oversized_headers, 0)
@@ -1559,6 +1668,7 @@ mod tests {
     fn fixture_work_item() -> ImageGenerationWorkItem {
         ImageGenerationWorkItem {
             id: Uuid::new_v4(),
+            claim_token: None,
             approved_brief_artifact_id: Uuid::new_v4(),
             approved_brief_content_hash: "sha256:approved-brief".to_string(),
             approved_brief_text: "活动主题：周末共创晚餐。时间地点以已审核活动信息为准。"
