@@ -233,7 +233,7 @@ fn preflight_report(
         limitations: vec![
             "this preflight validates local configuration only; it does not contact QiWe, upload media, or send a message".to_string(),
             "the official async upload callback must provide complete file credentials before a send request can be built".to_string(),
-            "the official send-image documentation names JPG as the supported format; the current generated-image artifact is PNG and requires a separately reviewed compatibility decision".to_string(),
+            "the generated-image contract requires the deterministic final JPEG; owner-approved staging must still verify isolated media upload and same-byte readback".to_string(),
         ],
         guardrails: vec![
             "the adapter remains disabled unless its explicit enable flag and separate staging approval exist".to_string(),
@@ -726,6 +726,8 @@ mod tests {
         assert!(report.success);
         assert!(!report.send_enabled);
         assert!(!report.safe_for_chat);
+        assert!(output.contains("deterministic final JPEG"));
+        assert!(!output.contains("current generated-image artifact is PNG"));
         for sensitive_value in [
             "super-secret-token",
             "live-device-guid",

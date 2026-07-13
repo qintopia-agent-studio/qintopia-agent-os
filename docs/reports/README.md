@@ -33,6 +33,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-xiaoman-group-send-postgres-integration.md`                            | adopt-input | Group send-ready Rust/PostgreSQL integration coverage                  |
 | `2026-07-14-release-pr-ci-not-triggered.md`                                        | adopt-input | Bot-generated Release Please PR manual CI remediation                  |
 | `2026-07-14-pr-body-edit-ci-cancellation.md`                                       | adopt-input | PR body edit replacement-run cancellation evidence                     |
+| `2026-07-14-qiwe-preflight-jpeg-state-drift.md`                                    | adopt-input | QiWe preflight stale PNG state remediation                             |
 
 ## Rules
 
