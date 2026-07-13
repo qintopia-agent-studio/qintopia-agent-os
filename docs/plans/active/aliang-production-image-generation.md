@@ -135,7 +135,10 @@ until a real isolated storage service accepts this contract.
 
 1. 人工审核 `poster_brief` 后，才可创建 `image_generation_request`。
 2. 图片生成后，`generated_image` 仍是
-   `pending`，由审核人检查事实、视觉质量、素材授权和渠道规格。
+   `pending`，由审核人检查事实、视觉质量、素材授权和渠道规格。批准命令还必须在同一事务中验证该 artifact 来自受控 Huabaosi
+   image worker，且 HTTPS URI、sha256、PNG 尺寸/字节 metadata、brief/prompt 来源和
+   `generated_image_created`
+   审计一致；手工或残缺 artifact 不能靠人工 decision 绕过系统 provenance。
 3. 审核通过只代表该图片可被下游受控流程引用，不代表发送或发布。
 4. 需要发送时，仍须经过现有 group-message final
    confirmation 与 send-ready 边界。send-request starter 只引用 completed
@@ -180,6 +183,9 @@ until a real isolated storage service accepts this contract.
   response、prompt 或凭据。
 - 下游 group-message starter 已收紧为 completed image request 下 approved
   `generated_image`；approved `poster_brief` 不再足以触发群发请求。
+- `operations-artifact-review-decision` 在批准 `generated_image` 前会验证受控 worker
+  provenance、媒体 metadata、来源 request 和 creation audit；校验失败保持 artifact
+  pending、保持 image request awaiting-review，并追加脱敏 policy denial。
 - adapter 默认仍禁用、没有 timer，且未做 staging/prod 网络调用。已实现最多三次的有界 provider 重试：只有连接/读写失败和 HTTP
   408、429、5xx 会按 60/120 秒延迟重新排队；认证、响应 payload、PNG、媒体上传/readback、持久化和 claim 失败都是终态。每次只审计脱敏的 attempt、stage、outcome 和 delay，不保存原始错误或响应。starter
   timer 只负责内部 request intake。必须在 Required Owner

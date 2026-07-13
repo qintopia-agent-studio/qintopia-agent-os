@@ -782,8 +782,8 @@ assert_sql_equals \
 export QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
 
 # The network adapter is separately covered by a local fake provider/media server. This
-# disposable database fixture proves that only a reviewed generated_image can unlock the
-# downstream send-request path while production generation remains disabled here.
+# disposable database fixture first proves that an incomplete generated_image cannot be
+# approved, then repairs it to the production worker shape before unlocking downstream.
 xiaoman_generated_image_id="$(psql_value "SELECT gen_random_uuid();")"
 psql_value "
 UPDATE qintopia_agent_os.work_items
@@ -825,6 +825,73 @@ print(json.dumps({
 }, ensure_ascii=False))
 PY
 )"
+
+run_expect_failure \
+  xiaoman_generated_image_incomplete_review \
+  "generated_image content_hash must be a canonical sha256" \
+  operations-artifact-review-decision \
+  --apply \
+  --payload-json "$xiaoman_generated_image_review_payload"
+
+assert_sql_equals \
+  xiaoman_generated_image_incomplete_review_keeps_pending \
+  pending \
+  "SELECT review_status FROM qintopia_agent_os.artifacts WHERE id = '${xiaoman_generated_image_id}'::uuid;"
+
+assert_sql_equals \
+  xiaoman_generated_image_incomplete_review_keeps_request_awaiting_review \
+  awaiting_review \
+  "SELECT status FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid;"
+
+assert_sql_equals \
+  xiaoman_generated_image_incomplete_review_is_audited \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_image_work_item_id}'::uuid AND artifact_id = '${xiaoman_generated_image_id}'::uuid AND event_type = 'denied_by_policy' AND data->>'policy' = 'generated_image_approval_integrity' AND data->>'reason' = 'generated_image artifact integrity validation failed';"
+
+psql_value "
+UPDATE qintopia_agent_os.artifacts
+SET
+  artifact_uri = 'https://media.example.test/apply-smoke/${smoke_suffix}.png',
+  content_hash = 'sha256:' || repeat('a', 64),
+  source_ids = jsonb_build_array(jsonb_build_object(
+    'approved_brief_artifact_id', '${xiaoman_promotion_artifact_id}',
+    'approved_brief_content_hash', (SELECT content_hash FROM qintopia_agent_os.artifacts WHERE id = '${xiaoman_promotion_artifact_id}'::uuid)
+  )),
+  risk_labels = ARRAY['external_use_review_required','generated_media']::text[],
+  information_class = 'internal_ops',
+  metadata = jsonb_build_object(
+    'generated_by', 'huabaosi-image-generation-worker',
+    'provider', 'openai-compatible',
+    'model', 'gpt-image-2',
+    'mime_type', 'image/png',
+    'width', 1024,
+    'height', 1024,
+    'byte_size', 4096,
+    'approved_brief_artifact_id', '${xiaoman_promotion_artifact_id}',
+    'approved_brief_content_hash', (SELECT content_hash FROM qintopia_agent_os.artifacts WHERE id = '${xiaoman_promotion_artifact_id}'::uuid),
+    'prompt_hash', (SELECT payload->>'prompt_hash' FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid)
+  ),
+  updated_at = now()
+WHERE id = '${xiaoman_generated_image_id}'::uuid;
+
+INSERT INTO qintopia_agent_os.work_item_events (
+  work_item_id, artifact_id, event_type, actor_type, actor_id, message, data
+) VALUES (
+  '${xiaoman_image_work_item_id}'::uuid,
+  '${xiaoman_generated_image_id}'::uuid,
+  'generated_image_created',
+  'worker',
+  'huabaosi-image-generation-worker',
+  'generated image fixture repaired for approval integrity smoke',
+  jsonb_build_object(
+    'content_hash', 'sha256:' || repeat('a', 64),
+    'mime_type', 'image/png',
+    'width', 1024,
+    'height', 1024,
+    'byte_size', 4096,
+    'external_publish_executed', false
+  )
+);" >/dev/null
 
 xiaoman_generated_image_review="$(run_json xiaoman_generated_image_review operations-artifact-review-decision --apply --payload-json "$xiaoman_generated_image_review_payload")"
 assert_json "$xiaoman_generated_image_review" "data['success'] is True"

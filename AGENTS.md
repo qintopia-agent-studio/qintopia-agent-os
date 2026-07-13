@@ -188,6 +188,11 @@ Use `rg` and `rg --files` for search.
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
   configuration exist, it may only validate and preview requests. It must not create a
   `generated_image` artifact, contact an external service, or be attached to a timer.
+- `operations-artifact-review-decision` may approve a `generated_image` only after its
+  Huabaosi worker provenance, HTTPS URI, sha256, PNG metadata, source brief/prompt refs,
+  and `generated_image_created` audit match its image-generation request. Integrity
+  denial must leave the artifact pending and must not complete the work item or unlock
+  downstream send intake.
 - When the Huabaosi adapter is explicitly enabled in an approved staging boundary, it
   may retry only provider transport failures and HTTP 408, 429, or 5xx responses. It
   must stop after three total attempts, use delayed requeueing, and record only

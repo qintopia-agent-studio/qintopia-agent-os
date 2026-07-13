@@ -40,6 +40,12 @@ For Xiaoman activity promotion, an approved `poster_brief` only authorizes an
 `image_generation_request`. A completed image request with an approved `generated_image`
 is required before the group-message starter can create `group_message_request`.
 
+The artifact review command does not trust `artifact_type=generated_image` alone. An
+approval must match the awaiting-review image request, Huabaosi worker marker, stable
+HTTPS URI, canonical sha256, PNG dimensions and byte size, source brief/prompt refs,
+risk labels, and `generated_image_created` audit. Integrity denial leaves both artifact
+and request unchanged and records a sanitized policy event.
+
 ## Rollback
 
 Set the generation flag to `0` and stop any future reviewed timer. Retain requests,
