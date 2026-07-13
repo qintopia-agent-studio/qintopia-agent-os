@@ -29,6 +29,13 @@ When enabled by that reviewed configuration, the adapter accepts only OpenAI-com
 readback, and writes one `generated_image` artifact with `review_status=pending`.
 Provider URLs and temporary provider download tokens are never stored as `artifact_uri`.
 
+Enabled staging attempts are bounded at three. Provider transport failures and HTTP 408,
+429, or 5xx responses return the work item to `queued` with 60/120-second delayed
+availability. The third recoverable failure becomes terminal. Authentication, malformed
+provider payloads, invalid images, media upload/readback, persistence, and stale-claim
+failures are never retried. Retry and terminal events store only attempt number, failure
+class/stage, delay, and boundary booleans; raw errors and responses are not persisted.
+
 For Xiaoman activity promotion, an approved `poster_brief` only authorizes an
 `image_generation_request`. A completed image request with an approved `generated_image`
 is required before the group-message starter can create `group_message_request`.

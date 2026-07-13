@@ -180,8 +180,13 @@ Use `rg` and `rg --files` for search.
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
   configuration exist, it may only validate and preview requests. It must not create a
   `generated_image` artifact, contact an external service, or be attached to a timer.
-  When explicitly enabled in a reviewed staging configuration, every provider, upload,
-  and readback response must be size-capped before parsing, and an already reviewed
+- When the Huabaosi adapter is explicitly enabled in an approved staging boundary, it
+  may retry only provider transport failures and HTTP 408, 429, or 5xx responses. It
+  must stop after three total attempts, use delayed requeueing, and record only
+  sanitized attempt/stage/outcome metadata. Authentication, payload, PNG, media upload,
+  readback, persistence, and claim failures are terminal and must not be retried. When
+  explicitly enabled in a reviewed staging configuration, every provider, upload, and
+  readback response must be size-capped before parsing, and an already reviewed
   `generated_image` must never be overwritten or returned to `pending` by a retry. Every
   outbound HTTP header name/value must reject control characters before socket
   connection. Each work-item claim must use a unique token; artifact or failure writes
