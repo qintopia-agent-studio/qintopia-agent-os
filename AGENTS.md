@@ -137,8 +137,12 @@ Use `rg` and `rg --files` for search.
   any mismatch rather than weakening that assertion.
 - `qintopia-agentos-operations-evidence-worker.timer` may only run
   `run-evidence-worker --once --apply` for internal `evidence_summary` artifact writes.
-  Do not repurpose it for Feishu writeback, QiWe sends, live Wenyuange search, raw
-  message export, or external adapters.
+  Xiaoman activity evidence with `source_type=event_signal` must resolve
+  `source_event_signal_id` to explicitly linked Postgres messages, with a same-chat
+  bounded-window local keyword fallback. It must fail closed when no source evidence
+  exists and must not export platform message ids, raw chat ids, sender ids, or
+  unbounded raw chat. Do not repurpose it for Feishu writeback, QiWe sends, external
+  Wenyuange or embedding search, raw message export, or external adapters.
 - `qintopia-agentos-operations-visual-worker.timer` may only run
   `run-collaboration-worker --work-item-type visual_asset_request --once --apply` for
   internal pending `poster_brief` artifact writes. For `activity_promotion`, it must

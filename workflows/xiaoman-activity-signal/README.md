@@ -98,6 +98,15 @@ group-send readiness. It may be scheduled by the reviewed
 `qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer`, whose service
 command is fixed to `run-xiaoman-activity-promotion-starter-worker --once --apply`.
 
+For Xiaoman activity evidence children whose `source_type` is `event_signal`, the
+evidence worker resolves the inherited `source_event_signal_id` back to Postgres
+`event_signals`. It first reads the explicitly referenced internal message UUIDs and
+only falls back to same-chat, bounded-window local keyword retrieval. It stores
+sanitized short snippets and internal source UUIDs in the `evidence_summary`; it does
+not store platform message ids, raw chat ids, sender ids, or unbounded raw chat. Missing
+source evidence fails closed instead of completing a placeholder artifact, and no
+embedding or external retrieval endpoint is called.
+
 `deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh` is the
 read-only production-readiness check for the evidence and visual worker previews. It
 runs the existing evidence and visual workers in dry-run mode only:
@@ -114,8 +123,8 @@ and `qintopia-agentos-operations-visual-worker.timer` runs
 create pending 阿靓（Huabaosi / 画报司）`poster_brief` artifacts. For an
 `activity_promotion` child, the visual worker waits for the sibling completed
 `evidence_summary` before it claims the visual request. These timers still do not call
-live Wenyuange search, Huabaosi production generation, Feishu, QiWe, poster publishing,
-or external send adapters.
+external Wenyuange or embedding search, Huabaosi production generation, Feishu, QiWe,
+poster publishing, or external send adapters.
 
 `run-xiaoman-activity-image-generation-starter-worker` performs the next internal-only
 handoff. The reviewed runtime timer runs it as

@@ -259,6 +259,40 @@ assert_sql_equals \
 xiaoman_worker_signal_id="$(psql_value "SELECT gen_random_uuid();")"
 xiaoman_worker_signal_chat_id="operations-apply-smoke-worker-chat-${smoke_suffix}"
 xiaoman_worker_signal_dedupe_key="operations-apply-smoke:${smoke_suffix}:xiaoman-worker-signal"
+xiaoman_worker_source_message_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_worker_platform_message_id="operations-apply-smoke-platform-message-${smoke_suffix}"
+xiaoman_worker_sender_id="operations-apply-smoke-sender-${smoke_suffix}"
+psql_value "
+INSERT INTO qintopia_messages.messages (
+  id,
+  platform,
+  message_id,
+  event_id,
+  chat_id,
+  chat_type,
+  sender_id,
+  message_kind,
+  text,
+  sent_at,
+  received_at,
+  raw,
+  processing_hints
+) VALUES (
+  '${xiaoman_worker_source_message_id}'::uuid,
+  'qiwe',
+  '${xiaoman_worker_platform_message_id}',
+  'operations-apply-smoke-event-${smoke_suffix}',
+  '${xiaoman_worker_signal_chat_id}',
+  'group',
+  '${xiaoman_worker_sender_id}',
+  'text',
+  'AgentOS worker apply smoke 小满活动将在周六举办，联系电话 13800138000，详情 https://example.com/private',
+  TIMESTAMPTZ '2001-01-01 10:00:00+00',
+  TIMESTAMPTZ '2001-01-01 10:00:01+00',
+  '{}'::jsonb,
+  '{}'::jsonb
+) ON CONFLICT (platform, message_id) DO NOTHING
+RETURNING id;" >/dev/null
 psql_value "
 INSERT INTO qintopia_agent_os.event_signals (
   id,
@@ -273,6 +307,9 @@ INSERT INTO qintopia_agent_os.event_signals (
   priority,
   status,
   confidence,
+  source_message_ids,
+  source_window_start,
+  source_window_end,
   dedupe_key,
   extraction_version,
   metadata
@@ -289,6 +326,9 @@ INSERT INTO qintopia_agent_os.event_signals (
   '中',
   '待处理',
   0.99,
+  ARRAY['${xiaoman_worker_source_message_id}'::uuid],
+  TIMESTAMPTZ '2001-01-01 00:00:00+00',
+  TIMESTAMPTZ '2001-01-02 00:00:00+00',
   '${xiaoman_worker_signal_dedupe_key}',
   'operations_apply_smoke_v1',
   '{\"smoke_case\":\"xiaoman_worker_signal\"}'::jsonb
@@ -426,6 +466,9 @@ assert_json "$xiaoman_promotion_evidence_dry_run" "data['action_status'] == 'dry
 assert_json "$xiaoman_promotion_evidence_dry_run" "data['work_item_id'] == '${xiaoman_promotion_evidence_child_id}'"
 assert_json "$xiaoman_promotion_evidence_dry_run" "len(data['artifact_ids']) == 0"
 assert_json "$xiaoman_promotion_evidence_dry_run" "data['artifact_previews'][0]['artifact_type'] == 'evidence_summary'"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['retrieval_strategy'] == 'exact_source_messages'"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['source_message_count'] == 1"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['safe_for_chat'] is False"
 assert_sql_equals \
   xiaoman_promotion_evidence_dry_run_keeps_work_item_queued \
   1 \
@@ -442,11 +485,24 @@ assert_json "$xiaoman_promotion_evidence" "data['work_item_id'] == '${xiaoman_pr
 assert_json "$xiaoman_promotion_evidence" "len(data['artifact_ids']) == 1"
 assert_json "$xiaoman_promotion_evidence" "data['artifact_previews'][0]['artifact_type'] == 'evidence_summary'"
 assert_json "$xiaoman_promotion_evidence" "data['artifact_previews'][0]['review_status'] == 'not_required'"
+assert_json "$xiaoman_promotion_evidence" "data['retrieval_strategy'] == 'exact_source_messages'"
+assert_json "$xiaoman_promotion_evidence" "data['source_message_count'] == 1"
+assert_json "$xiaoman_promotion_evidence" "data['safe_for_chat'] is False"
 
 assert_sql_equals \
   xiaoman_promotion_created_evidence_summary \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.artifacts WHERE work_item_id = '${xiaoman_promotion_evidence_child_id}'::uuid AND artifact_type = 'evidence_summary' AND review_status = 'not_required';"
+
+assert_sql_equals \
+  xiaoman_promotion_evidence_uses_internal_source_uuid \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.artifacts WHERE work_item_id = '${xiaoman_promotion_evidence_child_id}'::uuid AND source_ids @> '[{\"message_uuid\":\"${xiaoman_worker_source_message_id}\"}]'::jsonb;"
+
+assert_sql_equals \
+  xiaoman_promotion_evidence_redacts_external_identifiers \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.artifacts WHERE work_item_id = '${xiaoman_promotion_evidence_child_id}'::uuid AND (content_text LIKE '%${xiaoman_worker_platform_message_id}%' OR content_text LIKE '%${xiaoman_worker_signal_chat_id}%' OR content_text LIKE '%${xiaoman_worker_sender_id}%' OR content_text LIKE '%13800138000%' OR content_text LIKE '%example.com%');"
 
 xiaoman_promotion_visual_dry_run="$(run_json xiaoman_promotion_visual_dry_run run-collaboration-worker --work-item-type visual_asset_request --once --work-item-id "$xiaoman_promotion_visual_child_id" --dry-run)"
 assert_json "$xiaoman_promotion_visual_dry_run" "data['success'] is True"
