@@ -25,6 +25,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-13-observation-secret-diagnostic-remediation.md`                          | adopt-input | Observation smoke secret-diagnostic remediation record                 |
 | `2026-07-13-github-action-download-service-unavailable.md`                         | adopt-input | GitHub Actions hosted-runner setup failure record                      |
 | `2026-07-13-pnpm-registry-signature-unavailable.md`                                | adopt-input | Local pnpm signature-validation interruption and bounded fallback      |
+| `2026-07-13-aliang-production-observation-stderr-remediation.md`                   | adopt-input | Aliang production observation stderr leak remediation                  |
 
 ## Rules
 

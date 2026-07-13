@@ -54,6 +54,10 @@ case "$1" in
     ;;
   run-huabaosi-image-generation-worker)
     [[ "$2" == "--once" && "$3" == "--dry-run" ]]
+    if [[ -n "\${FAKE_STDERR_LEAK_VALUE:-}" ]]; then
+      printf '%s\n' "\${FAKE_STDERR_LEAK_VALUE}" >&2
+      exit 1
+    fi
     printf '{"success":true,"dry_run":true,"apply_requested":false,"fixture_mode":false,"worker":"huabaosi-image-generation-worker","action_status":"no_claimable_image_request","work_item_id":null,"artifact_ids":[],"artifact_preview":null,"safe_for_chat":false,"unexpected":"%s"}\n' "\${FAKE_LEAK_VALUE:-}"
     ;;
   *)
@@ -135,6 +139,18 @@ esac
   }
   if (`${leaked.stdout}\n${leaked.stderr}`.includes(leakedValue)) {
     throw new Error("observation failure repeated the configured secret");
+  }
+
+  const stderrLeakedValue = "stderr-secret-must-be-redacted";
+  const stderrLeaked = runObservation({
+    QINTOPIA_HUABAOSI_IMAGE_API_KEY: stderrLeakedValue,
+    FAKE_STDERR_LEAK_VALUE: stderrLeakedValue,
+  });
+  if (stderrLeaked.status === 0) {
+    throw new Error("expected configured secret in worker stderr to fail observation");
+  }
+  if (`${stderrLeaked.stdout}\n${stderrLeaked.stderr}`.includes(stderrLeakedValue)) {
+    throw new Error("observation failure repeated the configured stderr secret");
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

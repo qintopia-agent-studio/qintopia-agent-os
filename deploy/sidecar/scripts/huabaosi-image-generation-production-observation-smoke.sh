@@ -143,7 +143,17 @@ assert_no_sensitive_output "image adapter preflight" "$preflight"
 assert_no_sensitive_output "image adapter preflight stderr" "$preflight_stderr"
 
 worker_preview="$tmp_dir/worker-preview.json"
-"${BIN_CMD[@]}" run-huabaosi-image-generation-worker --once --dry-run >"$worker_preview"
+worker_stderr="$tmp_dir/worker-preview.stderr"
+set +e
+"${BIN_CMD[@]}" run-huabaosi-image-generation-worker --once --dry-run >"$worker_preview" 2>"$worker_stderr"
+worker_status=$?
+set -e
+assert_no_sensitive_output "image worker dry-run" "$worker_preview"
+assert_no_sensitive_output "image worker dry-run stderr" "$worker_stderr"
+if [[ "$worker_status" != "0" ]]; then
+  echo "Huabaosi image worker dry-run failed" >&2
+  exit 1
+fi
 python3 - "$worker_preview" <<'PY'
 import json
 import sys
@@ -169,6 +179,5 @@ if preview is not None:
     assert preview["mime_type"] == "image/png"
     assert preview["byte_size"] == 0
 PY
-assert_no_sensitive_output "image worker dry-run" "$worker_preview"
 
 echo "Huabaosi image generation production observation passed"
