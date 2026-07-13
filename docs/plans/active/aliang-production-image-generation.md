@@ -120,6 +120,11 @@ the HTTP `Content-Length` and chunked-decoding paths use the same cap. A retry m
 only an existing pending artifact with the same content hash. It must never update a
 reviewed artifact URI, metadata, or review status.
 
+All outbound header names and values reject control characters before a socket is
+opened. Each image-generation attempt owns a unique claim token. Before recording an
+artifact or failure, the worker locks the work item and requires the same unexpired
+token; the state update must affect exactly one row or the transaction rolls back.
+
 The only accepted first-version media type is `image/png`. This narrow protocol is
 covered by a local fake provider/media server. Production configuration remains disabled
 until a real isolated storage service accepts this contract.

@@ -159,7 +159,10 @@ Use `rg` and `rg --files` for search.
   `generated_image` artifact, contact an external service, or be attached to a timer.
   When explicitly enabled in a reviewed staging configuration, every provider, upload,
   and readback response must be size-capped before parsing, and an already reviewed
-  `generated_image` must never be overwritten or returned to `pending` by a retry.
+  `generated_image` must never be overwritten or returned to `pending` by a retry. Every
+  outbound HTTP header name/value must reject control characters before socket
+  connection. Each work-item claim must use a unique token; artifact or failure writes
+  must lock and match that unexpired token, with exactly one affected work-item row.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.
