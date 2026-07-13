@@ -18,6 +18,8 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-13-aliang-image-generation-ci-smoke-fix.md`                               | adopt-input | Capability-count CI smoke remediation record                           |
 | `2026-07-13-aliang-image-adapter-local-integration.md`                             | adopt-input | Local pgvector/Docker preflight limitation and CI validation boundary  |
 | `2026-07-13-aliang-image-adapter-review-remediation.md`                            | adopt-input | Response-limit and reviewed-artifact immutability remediation record   |
+| `2026-07-13-aliang-image-adapter-claim-header-remediation.md`                      | adopt-input | Header injection and stale-claim remediation record                    |
+| `2026-07-13-deploy-template-secret-remediation.md`                                 | adopt-input | Deploy-template secret removal and provider rotation record            |
 | `2026-07-13-documentation-architecture-consistency-audit.md`                       | adopt-input | Documentation, implementation, and production-state consistency audit  |
 
 ## Rules

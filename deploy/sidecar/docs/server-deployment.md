@@ -100,6 +100,13 @@ QINTOPIA_IDENTITY_WORKER_POLL_SECONDS=60
 RUST_LOG=info,qintopia_message_sidecar=debug
 ```
 
+The deployment template contains placeholders for Feishu Base tokens and table ids. Fill
+those values only in the server-local environment file through the approved secret
+process; the deploy script leaves an existing environment file unchanged. If a runtime
+value is found in git, revoke or rotate it in the provider, replace the server-local
+value, deploy an approved SHA, and record the verification. Do not hot-edit source files
+on the server.
+
 By default the worker calls `QINTOPIA_EMBEDDING_BASE_URL` plus `/v1/embeddings`. Set
 `QINTOPIA_MESSAGE_EMBEDDING_ENDPOINT` to a full endpoint when a provider uses a
 different path.
