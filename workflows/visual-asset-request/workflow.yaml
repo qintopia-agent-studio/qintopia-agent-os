@@ -5,8 +5,8 @@ owner: PatrickLiveCool
 status: active
 risk_level: medium
 description:
-  Workflow for Xiaoman-to-Huabaosi visual asset requests, draft evidence, human review,
-  and delivery state.
+  Workflow for Xiaoman-to-Huabaosi visual briefs, human review, controlled
+  image-generation request intake, and delivery state.
 source:
   path: runtime/sidecar/src/operations.rs
   reference: current-monorepo
@@ -34,6 +34,6 @@ tags:
 next_actions:
   - Keep the reviewed AgentOS internal brief path observable in the PostgreSQL apply
     smoke.
-  - Design a production image-generation adapter, storage contract, and staged rollout
-    separately before enabling any real generation.
+  - Implement a separately owner-reviewed provider, isolated media storage, and staged
+    rollout before enabling any real image generation.
   - Keep publication and external sends outside this workflow until separately approved.

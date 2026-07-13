@@ -215,6 +215,7 @@ required_versions=(
 
 required_capabilities=(
   huabaosi.create_visual_asset
+  huabaosi.generate_image_asset
   erhua.send_group_message
   wenyuange.retrieve_evidence
   xiaoman.create_activity_request
@@ -254,8 +255,8 @@ if [[ "$capabilities_table_exists" == "t" ]]; then
   done
   check_count_at_least \
     "capability_seed_count" \
-    "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request') AND enabled IS TRUE;" \
-    4
+    "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','huabaosi.generate_image_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request') AND enabled IS TRUE;" \
+    5
 fi
 
 if (( ${#failures[@]} > 0 )); then

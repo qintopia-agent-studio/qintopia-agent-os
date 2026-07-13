@@ -60,6 +60,10 @@ Use `rg` and `rg --files` for search.
 - Rust, Python, TypeScript, shell, and SQL are implementation details inside a package.
 - Do not create top-level `python/`, `rust/`, `typescript/`, or similar language
   buckets.
+- On macOS, run the complete sidecar unit suite with
+  `RUST_MIN_STACK=33554432 cargo test --manifest-path runtime/sidecar/Cargo.toml`. The
+  default test-thread stack can overflow in an existing Xiaoman async test; see
+  `docs/reports/2026-07-13-rust-test-stack-limit.md`.
 - Do not develop directly on `master`; create a feature branch first.
 - Document first for new features, behavior changes, migrations, runtime changes, or
   production-adjacent work.
@@ -145,6 +149,14 @@ Use `rg` and `rg --files` for search.
   awaiting-publish group message request intake. Do not repurpose it for final
   confirmation, queueing, send-ready, Feishu writeback, QiWe sends, or external
   adapters.
+- `run-xiaoman-activity-image-generation-starter-worker` may only create an
+  `image_generation_request` from an approved Xiaoman `poster_brief`; it must not call
+  an image provider, upload media, write Feishu, send QiWe, or publish.
+- `run-huabaosi-image-generation-worker` defaults to
+  `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
+  storage, host allowlist, staged smoke, rollback owner, and an owner-reviewed adapter
+  exist, it may only validate and preview requests. It must not create a
+  `generated_image` artifact, contact an external service, or be attached to a timer.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

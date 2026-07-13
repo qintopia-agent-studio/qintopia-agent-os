@@ -109,6 +109,9 @@ export QINTOPIA_OPERATIONS_ALLOWED_REVIEWER_IDS="${QINTOPIA_OPERATIONS_ALLOWED_R
 export QINTOPIA_OPERATIONS_ALLOWED_CONFIRMER_IDS="${QINTOPIA_OPERATIONS_ALLOWED_CONFIRMER_IDS:-operations-apply-smoke-confirmer,operations-apply-smoke-reviewer}"
 export QINTOPIA_OPERATIONS_ALLOWED_OWNER_IDS="${QINTOPIA_OPERATIONS_ALLOWED_OWNER_IDS:-operations-apply-smoke-owner}"
 export QINTOPIA_OPERATIONS_ALLOWED_ATTACHMENT_HOSTS="${QINTOPIA_OPERATIONS_ALLOWED_ATTACHMENT_HOSTS:-example.com}"
+# The disposable apply smoke proves the disabled boundary. It must never contact an image
+# provider or media service, even if a caller has unrelated local settings.
+export QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
 
 "${BIN_CMD[@]}" migrate >/dev/null
 
@@ -128,12 +131,13 @@ run_expect_failure \
 
 capabilities="$(run_json capabilities operations-capability-list --use-db)"
 assert_json "$capabilities" "data['success'] is True"
-assert_json "$capabilities" "data['capability_count'] >= 4"
+assert_json "$capabilities" "data['capability_count'] >= 5"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.create_visual_asset' for item in data['capabilities'])"
+assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.generate_image_asset' for item in data['capabilities'])"
 assert_sql_equals \
   capability_seed_count \
-  4 \
-  "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request');"
+  5 \
+  "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','huabaosi.generate_image_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request');"
 
 xiaoman_signal_id="$(psql_value "SELECT gen_random_uuid();")"
 xiaoman_signal_chat_id="operations-apply-smoke-chat-${smoke_suffix}"
@@ -501,6 +505,70 @@ assert_json "$xiaoman_promotion_review" "data['action_status'] == 'review_record
 assert_json "$xiaoman_promotion_review" "data['artifact_id'] == '${xiaoman_promotion_artifact_id}'"
 assert_json "$xiaoman_promotion_review" "data['work_item_id'] == '${xiaoman_promotion_visual_child_id}'"
 assert_json "$xiaoman_promotion_review" "data['review_status'] == 'approved'"
+
+xiaoman_image_preview="$(run_json xiaoman_image_preview run-xiaoman-activity-image-generation-starter-worker --check-only --work-item-id "$xiaoman_promotion_visual_child_id")"
+assert_json "$xiaoman_image_preview" "data['success'] is True"
+assert_json "$xiaoman_image_preview" "data['worker'] == 'xiaoman-activity-image-generation-starter-worker'"
+assert_json "$xiaoman_image_preview" "data['source'] == 'agentos_work_items'"
+assert_json "$xiaoman_image_preview" "data['dry_run'] is True"
+assert_json "$xiaoman_image_preview" "data['check_only'] is True"
+assert_json "$xiaoman_image_preview" "data['action_status'] == 'image_generation_requests_preview'"
+assert_json "$xiaoman_image_preview" "data['scanned_count'] == 1"
+assert_json "$xiaoman_image_preview" "len(data['work_items']) == 1"
+assert_json "$xiaoman_image_preview" "data['work_items'][0]['capability_key'] == 'huabaosi.generate_image_asset'"
+assert_json "$xiaoman_image_preview" "data['work_items'][0]['work_item_type'] == 'image_generation_request'"
+assert_json "$xiaoman_image_preview" "data['safe_for_chat'] is False"
+
+xiaoman_image_apply="$(run_json xiaoman_image_apply run-xiaoman-activity-image-generation-starter-worker --once --apply --work-item-id "$xiaoman_promotion_visual_child_id")"
+assert_json "$xiaoman_image_apply" "data['success'] is True"
+assert_json "$xiaoman_image_apply" "data['action_status'] == 'image_generation_requests_created'"
+assert_json "$xiaoman_image_apply" "data['created_count'] == 1"
+assert_json "$xiaoman_image_apply" "data['work_items'][0]['existing'] is False"
+
+xiaoman_image_work_item_id="$(
+  psql_value "SELECT id FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_promotion_visual_child_id}'::uuid AND capability_key = 'huabaosi.generate_image_asset' AND work_item_type = 'image_generation_request';"
+)"
+
+assert_sql_equals \
+  xiaoman_image_created_one_request \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid AND status = 'queued' AND payload->>'approved_brief_artifact_id' = '${xiaoman_promotion_artifact_id}' AND payload->>'image_specification' = 'community_poster_1024x1024';"
+
+xiaoman_image_worker_preview="$(run_json xiaoman_image_worker_preview run-huabaosi-image-generation-worker --once --work-item-id "$xiaoman_image_work_item_id" --dry-run)"
+assert_json "$xiaoman_image_worker_preview" "data['success'] is True"
+assert_json "$xiaoman_image_worker_preview" "data['dry_run'] is True"
+assert_json "$xiaoman_image_worker_preview" "data['apply_requested'] is False"
+assert_json "$xiaoman_image_worker_preview" "data['action_status'] == 'image_generation_preview'"
+assert_json "$xiaoman_image_worker_preview" "data['artifact_preview']['artifact_type'] == 'generated_image'"
+assert_json "$xiaoman_image_worker_preview" "data['artifact_preview']['review_status'] == 'pending'"
+assert_json "$xiaoman_image_worker_preview" "data['safe_for_chat'] is False"
+
+xiaoman_image_worker_disabled="$(run_json xiaoman_image_worker_disabled run-huabaosi-image-generation-worker --once --work-item-id "$xiaoman_image_work_item_id" --apply)"
+assert_json "$xiaoman_image_worker_disabled" "data['success'] is True"
+assert_json "$xiaoman_image_worker_disabled" "data['dry_run'] is False"
+assert_json "$xiaoman_image_worker_disabled" "data['apply_requested'] is True"
+assert_json "$xiaoman_image_worker_disabled" "data['action_status'] == 'image_generation_disabled'"
+assert_json "$xiaoman_image_worker_disabled" "data['artifact_preview']['review_status'] == 'pending'"
+assert_json "$xiaoman_image_worker_disabled" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_image_disabled_does_not_write_artifact \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.artifacts WHERE work_item_id = '${xiaoman_image_work_item_id}'::uuid AND artifact_type = 'generated_image';"
+assert_sql_equals \
+  xiaoman_image_disabled_keeps_request_queued \
+  queued \
+  "SELECT status FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid;"
+
+xiaoman_image_again="$(run_json xiaoman_image_again run-xiaoman-activity-image-generation-starter-worker --once --apply --work-item-id "$xiaoman_promotion_visual_child_id")"
+assert_json "$xiaoman_image_again" "data['success'] is True"
+assert_json "$xiaoman_image_again" "data['action_status'] == 'no_eligible_approved_visual_artifacts'"
+assert_json "$xiaoman_image_again" "data['scanned_count'] == 0"
+
+assert_sql_equals \
+  xiaoman_image_request_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_promotion_visual_child_id}'::uuid AND capability_key = 'huabaosi.generate_image_asset' AND work_item_type = 'image_generation_request';"
 
 xiaoman_send_preview="$(run_json xiaoman_send_preview run-xiaoman-activity-send-request-starter-worker --check-only --work-item-id "$xiaoman_worker_parent_id")"
 assert_json "$xiaoman_send_preview" "data['success'] is True"

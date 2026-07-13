@@ -818,6 +818,28 @@ pub enum Command {
         #[arg(long, default_value = "活动海报已审核，请确认是否发送。")]
         message_text: String,
     },
+    /// Add image-generation requests for approved Xiaoman activity poster briefs.
+    RunXiaomanActivityImageGenerationStarterWorker {
+        /// Scan without writing AgentOS image-generation work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS image-generation work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum approved visual artifacts to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Process one specific visual work item or approved poster brief artifact.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+    },
     /// Create a capability-governed AgentOS operations work item.
     OperationsWorkItemCreate {
         /// JSON payload for the generic capability/work item request.
@@ -1017,6 +1039,28 @@ pub enum Command {
         dry_run: bool,
 
         /// Use deterministic local fixture input instead of reading Postgres.
+        #[arg(long)]
+        fixture_mode: bool,
+    },
+    /// Generate review-pending image artifacts from approved Huabaosi poster briefs.
+    RunHuabaosiImageGenerationWorker {
+        /// Process one work item and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Restrict processing to one image-generation work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Apply the configured provider adapter. Disabled by default and requires owner-reviewed configuration.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force preview mode even if --apply is absent.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Use a deterministic local preview without database writes or network calls.
         #[arg(long)]
         fixture_mode: bool,
     },

@@ -10,6 +10,9 @@ prompts, caption drafts, and related creative artifacts.
 - Return artifacts for human review before any external use.
 - For Xiaoman activity promotion, wait for the sibling `evidence_summary` before
   creating a `poster_brief`.
+- After a human approves a `poster_brief`, create an auditable
+  `image_generation_request`; a real image is still blocked on the dedicated provider
+  and media-storage approval gate.
 
 ## Boundaries
 
@@ -18,8 +21,9 @@ prompts, caption drafts, and related creative artifacts.
   material unless the request includes explicit approval and source evidence.
 - Must not treat server-side shadow or Rust exploration as an approved production
   migration.
-- Must not call an image model, write the Feishu design ledger, or publish a poster from
-  the internal `poster_brief` workflow.
+- Must not call an image model, upload user media, write the Feishu design ledger, or
+  publish a poster from the internal `poster_brief` workflow until the dedicated adapter
+  is reviewed and explicitly enabled.
 
 ## Runtime Source
 

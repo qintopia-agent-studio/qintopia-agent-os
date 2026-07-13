@@ -15,12 +15,16 @@ signals into reviewed operating assets and controlled group-send readiness.
 ## Responsibility
 
 The workflow coordinates Xiaoman activity requests, Wenyuange evidence retrieval,
-Huabaosi visual asset work, human review, and Erhua group-message readiness. It is a
-control-plane workflow, not an autonomous publish path.
+Huabaosi visual asset work, human review, optional image-generation request intake, and
+Erhua group-message readiness. It is a control-plane workflow, not an autonomous publish
+path.
 
 ## Required Human Gates
 
 - Visual artifacts need review before use.
+- An approved `poster_brief` may create an `image_generation_request`, but the image
+  provider and isolated media storage remain disabled until separately owner-reviewed.
+- A future `generated_image` must remain pending human review before any downstream use.
 - Group message requests need final human confirmation before send readiness.
 - Allowlists control group targets, reviewers, confirmers, owners, and attachment hosts
   when configured.
@@ -28,8 +32,8 @@ control-plane workflow, not an autonomous publish path.
 ## Boundaries
 
 - Writes Postgres work items, events, artifacts, and workflow summaries.
-- Does not directly call Feishu, QiWe, Huabaosi, Wenyuange, or external send adapters in
-  dry-run and current apply smoke paths.
+- Does not directly call Feishu, QiWe, Huabaosi image providers, Wenyuange, or external
+  send adapters in dry-run and current apply smoke paths.
 - Must not use Hermes Kanban as the future orchestration backbone.
 
 ## Production Boundary
