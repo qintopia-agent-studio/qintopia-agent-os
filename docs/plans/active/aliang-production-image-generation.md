@@ -243,7 +243,9 @@ data but are not eligible for the future QiWe JPG send contract.
   可在 staging 环境只读取本地环境变量并输出脱敏配置状态。它不访问 provider、媒体存储、Postgres、飞书或企微；`adapter_config_ready`
   只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。配置无效时它输出
   `success=false`、`adapter_not_configured` 后以非零退出码失败，staging 自动化必须 fail
-  closed。
+  closed。报告的 `missing_configuration` 只可按固定顺序列出 `.env.example`
+  已公开的缺失必填变量名，不得输出值、URL、host、group id 或 enable flag；数组为空但
+  `config_valid=false` 表示字段存在但格式或 allowlist 校验失败。
 - `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`
   是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
   `staging` 的独立 env、匹配的 staging database URL SHA-256，以及一个明确的 image
@@ -281,9 +283,9 @@ deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh
 After rebasing onto the merge of PR #111 on 2026-07-14:
 
 - Rust format and strict all-target/all-feature Clippy passed;
-- the complete sidecar suite passed: 274 tests, 0 failed;
-- `cargo llvm-cov nextest --summary-only` passed with 41.47% total line coverage;
-- `image_generation.rs` reached 61.39% line and 68.98% region coverage; and
+- the complete sidecar suite passed: 276 tests, 0 failed;
+- `cargo llvm-cov nextest --summary-only` passed with 41.62% total line coverage;
+- `image_generation.rs` reached 61.95% line and 69.50% region coverage; and
 - local fake provider/media tests exercised full PNG decode, decoder allocation limits,
   deterministic white-background JPEG conversion, JPEG metadata, exact upload bytes, and
   same-byte readback rejection.

@@ -224,7 +224,9 @@ Use `rg` and `rg --files` for search.
 - `huabaosi-image-generation-preflight` may only validate and emit a sanitized summary
   of local image-adapter configuration. It must not open network or database
   connections, reveal configuration values, enable generation, write Feishu, send QiWe,
-  or publish.
+  or publish. Its `missing_configuration` field may contain only fixed public env names
+  already documented in `.env.example`; it must never contain values, URLs, hosts, ids,
+  or enable flags.
 - `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
   image request after the fail-closed preflight, explicit smoke flag and approval
   phrase, staging-only env file, matching staging database URL hash, and an explicit
@@ -242,6 +244,8 @@ Use `rg` and `rg --files` for search.
   response parsing must fail closed unless both `code=0` and `isSendSuccess=1`, and this
   disabled-state preflight must fail when the send-enable flag is `1`. All future
   outbound header values must reject every control character before socket connection.
+  Its `missing_configuration` field follows the same public-name-only rule as the image
+  preflight and must never include enable flags or configuration values.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
   timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
   evidence/visual preview, and the group send-ready timer observation. It must not set

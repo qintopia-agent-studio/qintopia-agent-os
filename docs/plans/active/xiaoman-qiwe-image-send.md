@@ -79,6 +79,10 @@ target, or missing final confirmation must stop before sending.
 - `qiwe-image-send-preflight` checks only local configuration and emits a sanitized
   report. It opens no network or database connection and fails closed if the send-enable
   flag is already `1` because this PR does not approve enablement.
+- Preflight `missing_configuration` may list only fixed public variable names from
+  `.env.example`, never values, URLs, hosts, group ids, or enable flags. An empty list
+  with `config_valid=false` means present configuration failed format, readiness, or
+  allowlist validation and must still fail closed.
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; no worker, callback listener,
   staging smoke, service, or timer is installed.
 

@@ -130,9 +130,23 @@ assert payload["generation_enabled"] is False
 assert payload["safe_for_chat"] is False
 assert isinstance(payload["config_valid"], bool)
 assert isinstance(payload["media_allowed_host_count"], int)
+missing = payload["missing_configuration"]
+allowed_missing = {
+    "QINTOPIA_HUABAOSI_IMAGE_PROVIDER",
+    "QINTOPIA_HUABAOSI_IMAGE_MODEL",
+    "QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL",
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+    "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
+    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+}
+assert isinstance(missing, list)
+assert len(missing) == len(set(missing))
+assert set(missing).issubset(allowed_missing)
 if payload["config_valid"]:
     assert payload["success"] is True
     assert payload["action_status"] == "adapter_config_ready"
+    assert missing == []
     assert status == 0
 else:
     assert payload["success"] is False

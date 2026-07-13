@@ -40,6 +40,15 @@ const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
 const MAX_GENERATION_ATTEMPTS: i32 = 3;
 const BASE_RETRY_DELAY_SECONDS: i64 = 60;
+const REQUIRED_IMAGE_CONFIGURATION: &[&str] = &[
+    "QINTOPIA_HUABAOSI_IMAGE_PROVIDER",
+    "QINTOPIA_HUABAOSI_IMAGE_MODEL",
+    "QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL",
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+    "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
+    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+];
 
 #[derive(Debug, Serialize)]
 pub struct ImageGenerationWorkerReport {
@@ -65,6 +74,7 @@ pub struct ImageGenerationPreflightReport {
     pub generation_enabled: bool,
     pub config_valid: bool,
     pub media_allowed_host_count: usize,
+    pub missing_configuration: Vec<&'static str>,
     pub safe_for_chat: bool,
     pub limitations: Vec<String>,
     pub guardrails: Vec<String>,
@@ -287,8 +297,14 @@ pub fn run_preflight() -> Result<()> {
             true,
             image_generation_enabled(),
             config.media_allowed_hosts.len(),
+            Vec::new(),
         ),
-        Err(_) => preflight_report(false, image_generation_enabled(), 0),
+        Err(_) => preflight_report(
+            false,
+            image_generation_enabled(),
+            0,
+            missing_image_configuration(),
+        ),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
     ensure_preflight_success(&report)
@@ -305,6 +321,7 @@ fn preflight_report(
     config_valid: bool,
     generation_enabled: bool,
     media_allowed_host_count: usize,
+    missing_configuration: Vec<&'static str>,
 ) -> ImageGenerationPreflightReport {
     ImageGenerationPreflightReport {
         success: config_valid,
@@ -317,6 +334,7 @@ fn preflight_report(
         generation_enabled,
         config_valid,
         media_allowed_host_count,
+        missing_configuration,
         safe_for_chat: false,
         limitations: vec![
             "this preflight validates local configuration only; it does not prove provider or media service reachability".to_string(),
@@ -564,6 +582,30 @@ fn required_env(name: &str) -> Result<String> {
         .filter(|value| !value.is_empty() && !is_placeholder(value))
         .ok_or_else(|| anyhow!("required image adapter configuration is missing"))?;
     Ok(value)
+}
+
+fn missing_image_configuration() -> Vec<&'static str> {
+    missing_required_configuration_with(REQUIRED_IMAGE_CONFIGURATION, |name| {
+        std::env::var(name).ok()
+    })
+}
+
+fn missing_required_configuration_with<F>(
+    required: &'static [&'static str],
+    mut read: F,
+) -> Vec<&'static str>
+where
+    F: FnMut(&str) -> Option<String>,
+{
+    required
+        .iter()
+        .copied()
+        .filter(|name| {
+            read(name)
+                .map(|value| value.trim().to_string())
+                .is_none_or(|value| value.is_empty() || is_placeholder(&value))
+        })
+        .collect()
 }
 
 fn is_placeholder(value: &str) -> bool {
@@ -1882,7 +1924,7 @@ mod tests {
 
     #[test]
     fn preflight_reports_only_sanitized_configuration_state() {
-        let report = preflight_report(true, false, 2);
+        let report = preflight_report(true, false, 2, Vec::new());
         let raw = serde_json::to_string(&report).expect("report serializes");
 
         assert!(report.success);
@@ -1891,6 +1933,7 @@ mod tests {
         assert!(!report.generation_enabled);
         assert!(report.config_valid);
         assert_eq!(report.media_allowed_host_count, 2);
+        assert!(report.missing_configuration.is_empty());
         assert!(!report.safe_for_chat);
         assert!(ensure_preflight_success(&report).is_ok());
         assert!(!raw.contains("api_key"));
@@ -1901,15 +1944,33 @@ mod tests {
 
     #[test]
     fn preflight_reports_missing_configuration_without_enabling_generation() {
-        let report = preflight_report(false, false, 0);
+        let report = preflight_report(false, false, 0, vec!["QINTOPIA_HUABAOSI_IMAGE_API_KEY"]);
 
         assert!(!report.success);
         assert_eq!(report.action_status, "adapter_not_configured");
         assert!(!report.config_valid);
         assert!(!report.generation_enabled);
         assert_eq!(report.media_allowed_host_count, 0);
+        assert_eq!(
+            report.missing_configuration,
+            vec!["QINTOPIA_HUABAOSI_IMAGE_API_KEY"]
+        );
         assert!(!report.safe_for_chat);
         assert!(ensure_preflight_success(&report).is_err());
+    }
+
+    #[test]
+    fn image_preflight_missing_configuration_is_public_and_deterministic() {
+        let missing = missing_required_configuration_with(
+            &["PUBLIC_READY", "PUBLIC_PLACEHOLDER", "PUBLIC_ABSENT"],
+            |name| match name {
+                "PUBLIC_READY" => Some("configured".to_string()),
+                "PUBLIC_PLACEHOLDER" => Some("replace-with-secret".to_string()),
+                _ => None,
+            },
+        );
+
+        assert_eq!(missing, vec!["PUBLIC_PLACEHOLDER", "PUBLIC_ABSENT"]);
     }
 
     #[test]
