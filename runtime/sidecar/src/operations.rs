@@ -387,6 +387,7 @@ struct XiaomanActivityPromotionCandidate {
 struct XiaomanActivitySendRequestCandidate {
     parent_id: Uuid,
     visual_work_item_id: Uuid,
+    image_generation_work_item_id: Uuid,
     approved_artifact_id: Uuid,
     brief_summary: String,
     source_type: String,
@@ -1165,7 +1166,7 @@ async fn run_xiaoman_activity_send_request_starter_batch(
     let existing_count = work_items.iter().filter(|item| item.existing).count();
     let created_count = work_items.len().saturating_sub(existing_count);
     let action_status = if candidates.is_empty() {
-        "no_eligible_approved_visual_artifacts"
+        "no_eligible_approved_generated_images"
     } else if apply_requested {
         "group_message_requests_created"
     } else {
@@ -1317,7 +1318,8 @@ async fn load_xiaoman_activity_send_request_candidates(
         SELECT
             parent.id AS parent_id,
             visual.id AS visual_work_item_id,
-            artifact.id AS approved_artifact_id,
+            image_request.id AS image_generation_work_item_id,
+            generated_image.id AS approved_artifact_id,
             parent.brief_summary,
             parent.source_type,
             parent.source_refs,
@@ -1330,19 +1332,24 @@ async fn load_xiaoman_activity_send_request_candidates(
          AND visual.capability_key = 'huabaosi.create_visual_asset'
          AND visual.work_item_type = 'visual_asset_request'
          AND visual.status = 'completed'
+        JOIN qintopia_agent_os.work_items image_request
+          ON image_request.parent_work_item_id = visual.id
+         AND image_request.capability_key = 'huabaosi.generate_image_asset'
+         AND image_request.work_item_type = 'image_generation_request'
+         AND image_request.status = 'completed'
         JOIN LATERAL (
             SELECT id
-            FROM qintopia_agent_os.artifacts artifact
-            WHERE artifact.work_item_id = visual.id
-              AND artifact.artifact_type = 'poster_brief'
-              AND artifact.review_status = 'approved'
-            ORDER BY artifact.updated_at DESC, artifact.created_at DESC
+            FROM qintopia_agent_os.artifacts generated_image
+            WHERE generated_image.work_item_id = image_request.id
+              AND generated_image.artifact_type = 'generated_image'
+              AND generated_image.review_status = 'approved'
+            ORDER BY generated_image.updated_at DESC, generated_image.created_at DESC
             LIMIT 1
-        ) artifact ON true
+        ) generated_image ON true
         WHERE parent.capability_key = 'xiaoman.create_activity_request'
           AND parent.work_item_type = 'activity_promotion_request'
           AND parent.target_agent = 'xiaoman'
-          AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1)
+          AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1 OR image_request.id = $1)
           AND NOT EXISTS (
               SELECT 1
               FROM qintopia_agent_os.work_items child
@@ -1365,6 +1372,7 @@ async fn load_xiaoman_activity_send_request_candidates(
             Ok(XiaomanActivitySendRequestCandidate {
                 parent_id: row.try_get("parent_id")?,
                 visual_work_item_id: row.try_get("visual_work_item_id")?,
+                image_generation_work_item_id: row.try_get("image_generation_work_item_id")?,
                 approved_artifact_id: row.try_get("approved_artifact_id")?,
                 brief_summary: row.try_get("brief_summary")?,
                 source_type: row.try_get("source_type")?,
@@ -4267,7 +4275,7 @@ fn xiaoman_activity_send_request(
         target_agent: "erhua".to_string(),
         capability_key: "erhua.send_group_message".to_string(),
         work_item_type: "group_message_request".to_string(),
-        brief_summary: format!("发送已审核活动海报：{}", candidate.brief_summary),
+        brief_summary: format!("发送已审核活动图片：{}", candidate.brief_summary),
         purpose: "activity_group_message_request".to_string(),
         human_owner: candidate.human_owner.clone(),
         priority: candidate.priority.clone(),
@@ -4278,7 +4286,9 @@ fn xiaoman_activity_send_request(
             "workflow_type": "activity_promotion",
             "planner_intent": "send_group_message_after_final_confirmation",
             "approved_artifact_id": candidate.approved_artifact_id,
+            "approved_artifact_type": "generated_image",
             "visual_work_item_id": candidate.visual_work_item_id,
+            "image_generation_work_item_id": candidate.image_generation_work_item_id,
             "target_channel": "qiwe",
             "target_group_alias": target_group_alias,
             "message_text": message_text,
@@ -4296,7 +4306,9 @@ fn xiaoman_activity_send_request(
             "workflow_step": "group_message",
             "parent_activity_request_work_item_id": candidate.parent_id,
             "visual_work_item_id": candidate.visual_work_item_id,
+            "image_generation_work_item_id": candidate.image_generation_work_item_id,
             "approved_artifact_id": candidate.approved_artifact_id,
+            "approved_artifact_type": "generated_image",
             "requires_human_final_confirmation": true,
             "send_executed": false,
         }),
@@ -4554,7 +4566,7 @@ async fn validate_apply_policy(
         let artifact_id = approved_artifact_id(request)?;
         let row = sqlx::query(
             r#"
-            SELECT review_status
+            SELECT artifact_type, review_status
             FROM qintopia_agent_os.artifacts
             WHERE id = $1
             "#,
@@ -4564,9 +4576,16 @@ async fn validate_apply_policy(
         .await
         .context("load approved artifact for group message request")?
         .ok_or_else(|| anyhow::anyhow!("approved_artifact_id does not exist"))?;
+        let artifact_type: String = row.get("artifact_type");
         let review_status: String = row.get("review_status");
         if review_status != "approved" {
             bail!("approved_artifact_id must reference an approved artifact");
+        }
+        if request.payload.get("workflow_type").and_then(Value::as_str)
+            == Some("activity_promotion")
+            && artifact_type != "generated_image"
+        {
+            bail!("activity promotion group message requests require an approved generated_image");
         }
     }
     Ok(())
@@ -5636,6 +5655,8 @@ mod tests {
         XiaomanActivitySendRequestCandidate {
             parent_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
             visual_work_item_id: Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap(),
+            image_generation_work_item_id: Uuid::parse_str("55555555-5555-4555-8555-555555555555")
+                .unwrap(),
             approved_artifact_id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
             brief_summary: "AgentOS 小满活动宣发".to_string(),
             source_type: "event_signal".to_string(),
@@ -6002,13 +6023,18 @@ mod tests {
             "活动海报已审核，请确认是否发送。",
         )
         .expect("request should build");
-        let report = create_work_item_dry_run(request).expect("request should validate");
+        let report = create_work_item_dry_run(request.clone()).expect("request should validate");
 
         assert_eq!(report.capability_key, "erhua.send_group_message");
         assert_eq!(report.work_item_type, "group_message_request");
         assert_eq!(report.current_status, "awaiting_publish");
         assert_eq!(report.review_policy, "human_final_confirmation");
         assert_eq!(report.parent_work_item_id, Some(candidate.parent_id));
+        assert_eq!(request.payload["approved_artifact_type"], "generated_image");
+        assert_eq!(
+            request.payload["image_generation_work_item_id"],
+            candidate.image_generation_work_item_id.to_string()
+        );
         assert_eq!(
             report.idempotency_key,
             format!(

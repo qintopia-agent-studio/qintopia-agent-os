@@ -24,6 +24,15 @@ artifact creation, Feishu writeback, QiWe sending, or publication. The worker de
 to `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`; a separate owner-reviewed adapter and
 isolated media storage decision are required before any network call.
 
+When enabled by that reviewed configuration, the adapter accepts only OpenAI-compatible
+`b64_json` PNG output, uploads it to the dedicated media boundary, verifies a same-byte
+readback, and writes one `generated_image` artifact with `review_status=pending`.
+Provider URLs and temporary provider download tokens are never stored as `artifact_uri`.
+
+For Xiaoman activity promotion, an approved `poster_brief` only authorizes an
+`image_generation_request`. A completed image request with an approved `generated_image`
+is required before the group-message starter can create `group_message_request`.
+
 ## Rollback
 
 Set the generation flag to `0` and stop any future reviewed timer. Retain requests,

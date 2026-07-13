@@ -32,8 +32,9 @@ tags:
   - huabaosi
   - erhua
 next_actions:
-  - Keep group-send execution out of scope until reviewed send adapter and final
-    confirmation gates exist.
-  - Release the merged image-request boundary before attempting staging provider work;
-    do not attach an image worker timer before its adapter and media storage are
-    reviewed.
+  - Obtain owner approval for the image provider account, isolated media storage,
+    staging smoke, budget, reviewer allowlist, and rollback owner before enabling the
+    guarded image adapter in staging.
+  - Keep image generation and group-send execution out of runtime scheduling until the
+    staged adapter observation is reviewed; final confirmation and send-adapter gates
+    remain separate.

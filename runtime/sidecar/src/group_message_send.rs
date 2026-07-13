@@ -135,7 +135,12 @@ async fn run_once(
             ));
         };
         let plan = validate_work_item(&work_item, policy)?;
-        validate_approved_artifact(pool, plan.approved_artifact_id).await?;
+        validate_approved_artifact(
+            pool,
+            plan.approved_artifact_id,
+            required_artifact_type(&work_item.payload),
+        )
+        .await?;
         return Ok(report_from_plan(
             false,
             false,
@@ -172,7 +177,13 @@ async fn run_once(
             return Err(err);
         }
     };
-    if let Err(err) = validate_approved_artifact_in_tx(&mut tx, plan.approved_artifact_id).await {
+    if let Err(err) = validate_approved_artifact_in_tx(
+        &mut tx,
+        plan.approved_artifact_id,
+        required_artifact_type(&work_item.payload),
+    )
+    .await
+    {
         mark_work_item_failed(&mut tx, &work_item, &err.to_string()).await?;
         tx.commit()
             .await
@@ -439,10 +450,19 @@ fn validate_payload(payload: &Value, policy: &SendPolicy) -> Result<SendPlan> {
     })
 }
 
-async fn validate_approved_artifact(pool: &PgPool, artifact_id: Uuid) -> Result<()> {
+fn required_artifact_type(payload: &Value) -> Option<&'static str> {
+    (payload.get("workflow_type").and_then(Value::as_str) == Some("activity_promotion"))
+        .then_some("generated_image")
+}
+
+async fn validate_approved_artifact(
+    pool: &PgPool,
+    artifact_id: Uuid,
+    required_artifact_type: Option<&str>,
+) -> Result<()> {
     let row = sqlx::query(
         r#"
-        SELECT review_status
+        SELECT artifact_type, review_status
         FROM qintopia_agent_os.artifacts
         WHERE id = $1
         "#,
@@ -452,9 +472,15 @@ async fn validate_approved_artifact(pool: &PgPool, artifact_id: Uuid) -> Result<
     .await
     .context("load approved artifact for group message send")?
     .ok_or_else(|| anyhow::anyhow!("approved_artifact_id does not exist"))?;
+    let artifact_type: String = row.get("artifact_type");
     let review_status: String = row.get("review_status");
     if review_status != "approved" {
         bail!("approved_artifact_id must reference an approved artifact");
+    }
+    if let Some(required_artifact_type) = required_artifact_type {
+        if artifact_type != required_artifact_type {
+            bail!("approved_artifact_id must reference an approved {required_artifact_type}");
+        }
     }
     Ok(())
 }
@@ -462,10 +488,11 @@ async fn validate_approved_artifact(pool: &PgPool, artifact_id: Uuid) -> Result<
 async fn validate_approved_artifact_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     artifact_id: Uuid,
+    required_artifact_type: Option<&str>,
 ) -> Result<()> {
     let row = sqlx::query(
         r#"
-        SELECT review_status
+        SELECT artifact_type, review_status
         FROM qintopia_agent_os.artifacts
         WHERE id = $1
         "#,
@@ -475,9 +502,15 @@ async fn validate_approved_artifact_in_tx(
     .await
     .context("load approved artifact for group message send")?
     .ok_or_else(|| anyhow::anyhow!("approved_artifact_id does not exist"))?;
+    let artifact_type: String = row.get("artifact_type");
     let review_status: String = row.get("review_status");
     if review_status != "approved" {
         bail!("approved_artifact_id must reference an approved artifact");
+    }
+    if let Some(required_artifact_type) = required_artifact_type {
+        if artifact_type != required_artifact_type {
+            bail!("approved_artifact_id must reference an approved {required_artifact_type}");
+        }
     }
     Ok(())
 }
@@ -874,6 +907,15 @@ mod tests {
         .expect_err("sensitive message should be rejected");
 
         assert!(err.to_string().contains("contains disallowed sensitive"));
+    }
+
+    #[test]
+    fn activity_promotion_requires_a_generated_image_artifact() {
+        assert_eq!(
+            required_artifact_type(&json!({"workflow_type": "activity_promotion"})),
+            Some("generated_image")
+        );
+        assert_eq!(required_artifact_type(&json!({})), None);
     }
 
     #[test]
