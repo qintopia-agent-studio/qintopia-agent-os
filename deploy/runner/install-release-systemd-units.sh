@@ -112,6 +112,8 @@ unit_files=(
   qintopia-agentos-xiaoman-activity-signal-worker.timer
   qintopia-agentos-xiaoman-activity-promotion-starter-worker.service
   qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer
+  qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service
+  qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.service
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer
 )
@@ -136,6 +138,7 @@ internal_timers=(
   qintopia-agentos-operations-group-send-ready.timer
   qintopia-agentos-xiaoman-activity-signal-worker.timer
   qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer
+  qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer
 )
 

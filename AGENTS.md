@@ -47,6 +47,8 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh`
 - Xiaoman activity send request starter observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
+- Xiaoman activity image generation starter observation smoke:
+  `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
 - Xiaoman activity production preflight smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
@@ -154,6 +156,10 @@ Use `rg` and `rg --files` for search.
 - `run-xiaoman-activity-image-generation-starter-worker` may only create an
   `image_generation_request` from an approved Xiaoman `poster_brief`; it must not call
   an image provider, upload media, write Feishu, send QiWe, or publish.
+- `qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer` may only run
+  `run-xiaoman-activity-image-generation-starter-worker --once --apply` for AgentOS
+  image-generation request intake. Do not repurpose it for provider calls, media upload,
+  generated-image creation, Feishu writeback, QiWe sends, or publishing.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime

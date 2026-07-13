@@ -33,7 +33,7 @@ tags:
 next_actions:
   - Re-run the aggregate Xiaoman production preflight smoke after each owner-approved
     deploy and record the observed queue counts and any blocking point.
-  - Add real evidence retrieval and visual generation only after the internal artifact
-    timers are stable and owner-reviewed.
+  - Observe the image-generation starter timer separately from the disabled image
+    provider worker; only run real generation through an owner-approved staging gate.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.

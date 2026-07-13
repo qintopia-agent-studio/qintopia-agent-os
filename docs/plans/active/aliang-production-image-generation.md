@@ -1,7 +1,7 @@
 # 阿靓真实图片生成 Adapter 计划
 
-Status: request intake merged on `master`; adapter implementation in progress; external
-adapter enablement still requires owner decision
+Status: request intake, guarded adapter, preflight, and staging smoke merged on
+`master`; external adapter enablement still requires owner decision
 
 Scope: 阿靓（画报司 / `huabaosi`）受控图片生成，不含飞书写回、企微发送或对外发布
 
@@ -26,6 +26,8 @@ allowlist。
 - 小满活动推广路径需要先完成 `evidence_summary`，再生成 `poster_brief`。
 - `run-xiaoman-activity-image-generation-starter-worker` 只会从已审核的 `poster_brief`
   创建幂等的 `image_generation_request`。
+- reviewed runtime deployment 会安装 starter timer，只自动创建内部
+  `image_generation_request`；它不会运行图片 provider worker。
 - `run-huabaosi-image-generation-worker` 目前只校验和预览请求；默认开关为
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`，因此不会请求 provider、上传媒体或创建
   `generated_image`。
@@ -178,8 +180,9 @@ until a real isolated storage service accepts this contract.
   response、prompt 或凭据。
 - 下游 group-message starter 已收紧为 completed image request 下 approved
   `generated_image`；approved `poster_brief` 不再足以触发群发请求。
-- adapter 默认仍禁用，未加 timer、未做 staging/prod 网络调用、未实现自动重试或真实 staging
-  smoke。必须在 Required Owner Decisions 有明确 PR 记录后继续。
+- adapter 默认仍禁用、没有 timer，且未做 staging/prod 网络调用或实现自动重试。starter
+  timer 只负责内部 request intake。必须在 Required Owner
+  Decisions 有明确 PR 记录后，才可运行已实现的受保护 staging smoke。
 - `huabaosi-image-generation-preflight`
   可在 staging 环境只读取本地环境变量并输出脱敏配置状态。它不访问 provider、媒体存储、Postgres、飞书或企微；`adapter_config_ready`
   只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。配置无效时它输出

@@ -5399,7 +5399,7 @@ fn xiaoman_activity_image_generation_starter_report(
         limitations: vec![
             "starter worker only creates AgentOS image_generation_request work_items from approved poster_brief artifacts".to_string(),
             "starter worker does not call image providers, upload media, write Feishu, send QiWe, or publish".to_string(),
-            "systemd/timer scheduling is intentionally out of scope for this worker change".to_string(),
+            "runtime scheduling may only invoke this starter and must not invoke the image provider worker".to_string(),
         ],
         guardrails: vec![
             "Postgres AgentOS work_items and artifact review remain the source of truth".to_string(),

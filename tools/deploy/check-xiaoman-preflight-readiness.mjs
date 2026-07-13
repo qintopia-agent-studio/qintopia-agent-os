@@ -95,7 +95,7 @@ for (const fragment of [
 const smokeReadmePath = "deploy/smoke/README.md";
 const smokeReadme = requireFile(smokeReadmePath);
 requireFragment(smokeReadmePath, smokeReadme, "group send-ready timer");
-requireFragment(smokeReadmePath, smokeReadme, "preflight does not run that worker");
+requireFragment(smokeReadmePath, smokeReadme, "image provider worker");
 
 const serverDeploymentPath = "deploy/sidecar/docs/server-deployment.md";
 const serverDeployment = requireFile(serverDeploymentPath);
@@ -104,7 +104,16 @@ requireFragment(
   serverDeployment,
   "group send-ready timer observation"
 );
-requireFragment(serverDeploymentPath, serverDeployment, "does not run the send-ready");
+requireFragment(
+  serverDeploymentPath,
+  serverDeployment,
+  "does not run the image provider or send-ready worker"
+);
+requireFragment(
+  serverDeploymentPath,
+  serverDeployment,
+  "xiaoman-activity-image-generation-starter-observation-smoke.sh"
+);
 
 const renderPath = "deploy/sidecar/scripts/render-systemd-units.sh";
 const render = requireFile(renderPath);
@@ -113,11 +122,17 @@ for (const fragment of [
   "run-xiaoman-activity-promotion-starter-worker --once --apply",
   "run-evidence-worker --once --apply",
   "run-collaboration-worker --work-item-type visual_asset_request --once --apply",
+  "run-xiaoman-activity-image-generation-starter-worker --once --apply",
   "run-xiaoman-activity-send-request-starter-worker --once --apply",
   "run-group-message-send-worker --once --apply",
 ]) {
   requireFragment(renderPath, render, fragment);
 }
+forbidFragment(
+  renderPath,
+  render,
+  "run-huabaosi-image-generation-worker --once --apply"
+);
 
 const preflightPath =
   "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh";
@@ -128,6 +143,7 @@ for (const fragment of [
   "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
   "operations-downstream-timers-observation-smoke.sh",
   "xiaoman-activity-downstream-observation-smoke.sh",
+  "xiaoman-activity-image-generation-starter-observation-smoke.sh",
   "xiaoman-activity-send-request-starter-observation-smoke.sh",
   "operations-group-send-ready-timer-observation-smoke.sh",
 ]) {
@@ -154,6 +170,7 @@ for (const fragment of [
   "Xiaoman promotion starter timer",
   "Operations evidence timer",
   "Operations visual timer",
+  "Xiaoman image request starter timer",
   "Xiaoman send request starter timer",
   "Operations group send-ready timer",
   "Secret and external-send scan",
@@ -161,6 +178,7 @@ for (const fragment of [
   "Pass: production observation can continue without enabling external adapters",
   "Hold: one or more timers, commands, previews, or boundary checks failed",
   "Passing this preflight does not approve publishing",
+  "Eligible image-generation request preview count",
 ]) {
   requireFragment(recordPath, record, fragment);
 }

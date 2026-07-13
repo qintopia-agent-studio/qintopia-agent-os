@@ -240,6 +240,10 @@ Install scope for the M9 window:
   owner review because it only creates missing AgentOS evidence/visual child
   work_items under existing Xiaoman activity request parents. It must not write
   Feishu, send QiWe messages, create visual assets, or run external adapters.
+- The Xiaoman activity image-generation starter timer may be enabled by default after
+  owner review because it only creates AgentOS image_generation_request work_items from
+  approved poster_brief artifacts. It must not call an image provider, upload media,
+  create generated images, write Feishu, call QiWe, publish, or send externally.
 - The Xiaoman activity send request starter timer may be enabled by default after
   owner review because it only creates awaiting_publish AgentOS group_message_request
   work_items from approved Xiaoman poster_brief artifacts. It must not confirm,
@@ -410,6 +414,17 @@ render_all() {
     "${QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL:-2min}"
 
   render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Image Generation Starter Worker" \
+    "run-xiaoman-activity-image-generation-starter-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity image-generation request starter" \
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service" \
+    "9min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
     "Qintopia AgentOS Xiaoman Activity Send Request Starter Worker" \
     "run-xiaoman-activity-send-request-starter-worker --once --apply"
@@ -417,7 +432,7 @@ render_all() {
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer" \
     "Run Qintopia AgentOS Xiaoman activity send request starter" \
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
-    "9min" \
+    "10min" \
     "${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL:-2min}"
 }
 
@@ -447,6 +462,8 @@ validate_output() {
     "qintopia-agentos-xiaoman-activity-signal-worker.timer"
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer"
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service"
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
   )

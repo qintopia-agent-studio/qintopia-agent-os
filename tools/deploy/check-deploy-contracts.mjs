@@ -74,6 +74,8 @@ if (!exists(xiaomanPreflightPath)) {
     "operations-downstream-timers-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1",
     "xiaoman-activity-downstream-observation-smoke.sh",
+    "QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1",
+    "xiaoman-activity-image-generation-starter-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1",
     "xiaoman-activity-send-request-starter-observation-smoke.sh",
   ]) {
@@ -114,18 +116,49 @@ if (!exists(xiaomanPreflightRecordPath)) {
     "run-evidence-worker --once --apply",
     "qintopia-agentos-operations-visual-worker.timer",
     "run-collaboration-worker --work-item-type visual_asset_request --once --apply",
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
+    "run-xiaoman-activity-image-generation-starter-worker --once --apply",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "run-xiaoman-activity-send-request-starter-worker --once --apply",
     "Secret and external-send scan",
     "send_executed=true",
     "Production boundary",
     "Eligible Xiaoman `event_signals` preview count",
+    "Eligible image-generation request preview count",
     "Eligible awaiting publish group message request count",
     "Pass: production observation can continue without enabling external adapters",
     "Hold: one or more timers, commands, previews, or boundary checks failed",
     "Passing this preflight does not approve publishing",
   ]) {
     requireFragment(xiaomanPreflightRecordPath, record, fragment);
+  }
+}
+
+const xiaomanImageStarterObservationPath =
+  "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh";
+if (!exists(xiaomanImageStarterObservationPath)) {
+  addError(`${xiaomanImageStarterObservationPath}: missing observation smoke`);
+} else {
+  const smoke = readText(xiaomanImageStarterObservationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE",
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service",
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
+    "run-xiaoman-activity-image-generation-starter-worker --once --apply",
+    "run-xiaoman-activity-image-generation-starter-worker --check-only",
+    "OnBootSec=9min",
+    "safe_for_chat",
+    "--use-feishu-base",
+    "send_executed=true",
+  ]) {
+    requireFragment(xiaomanImageStarterObservationPath, smoke, fragment);
+  }
+  for (const fragment of [
+    "QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1",
+    "run-huabaosi-image-generation-worker --once --apply",
+    "xiaoman-activity shadow-validate",
+  ]) {
+    forbidFragment(xiaomanImageStarterObservationPath, smoke, fragment);
   }
 }
 

@@ -26,6 +26,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",

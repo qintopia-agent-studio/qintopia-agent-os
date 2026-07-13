@@ -488,6 +488,30 @@ visual assets, or send externally. It fails if the service command is not
 `run-xiaoman-activity-promotion-starter-worker --once --apply` or if inspected output
 includes known secret/external-send markers.
 
+The Xiaoman image-generation starter runs as a separate internal systemd timer. It calls
+`run-xiaoman-activity-image-generation-starter-worker --once --apply` and only creates
+missing AgentOS `image_generation_request` work items from approved `poster_brief`
+artifacts. It does not run the Huabaosi image worker, contact a provider, upload media,
+create generated images, write Feishu, call QiWe, publish, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service -n 100 --no-pager
+```
+
+The default interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL=5min` or another
+systemd time span. After an owner-approved deploy, run the read-only observation:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
+```
+
 The Xiaoman activity send request starter worker also runs as a systemd timer. It calls
 `run-xiaoman-activity-send-request-starter-worker --once --apply`, scans Xiaoman
 activity promotion parents with completed visual children and approved `poster_brief`
@@ -542,9 +566,13 @@ externally. It fails if the preview output includes known secret/external-send m
 For the production preflight, run the Xiaoman aggregate observation smoke after an
 owner-approved deploy. It composes the Xiaoman signal timer observation, Xiaoman
 promotion starter timer observation, shared evidence/visual timer observation, Xiaoman
-downstream evidence/visual preview, Xiaoman send request starter timer observation, and
-the group send-ready timer observation. It is read-only, does not run the send-ready
-worker, and does not deploy, write Feishu, call QiWe, publish, or send externally.
+downstream evidence/visual preview, Xiaoman image-generation starter observation,
+Xiaoman send request starter timer observation, and the group send-ready timer
+observation. It is read-only, does not run the image provider or send-ready worker, and
+does not deploy, write Feishu, call QiWe, publish, or send externally.
+
+The group send-ready timer observation only inspects the fixed command, timer state, and
+sanitized journal; it does not run the send-ready worker.
 
 ```bash
 set -a
