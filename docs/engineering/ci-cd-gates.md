@@ -97,8 +97,12 @@ The dispatch reads the PR through the GitHub API and fails unless it is open, ta
 `master`, is authored by the Release Please bot, contains the generated-body marker, and
 its head SHA equals the workflow checkout SHA. Only then does it run the dedicated
 manifest/changelog validator. The resulting `changes` and `check` runs attach to that
-head SHA and must pass before merge. This validation does not approve publication;
-merging and publishing remain one owner release decision.
+head SHA but workflow-dispatch check suites are not listed automatically in the PR
+rollup. The authenticated `check` job therefore publishes a fixed
+`Release Please validation` commit status on the verified head SHA, linked to the
+workflow run. That status must pass and be visible on the PR before merge. This
+validation does not approve publication; merging and publishing remain one owner release
+decision.
 
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the
