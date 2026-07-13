@@ -1064,6 +1064,8 @@ pub enum Command {
         #[arg(long)]
         fixture_mode: bool,
     },
+    /// Validate Huabaosi image adapter configuration without opening network or database connections.
+    HuabaosiImageGenerationPreflight,
     /// Claim Wenyuange evidence requests and create internal evidence artifacts.
     RunEvidenceWorker {
         /// Run one batch and exit.

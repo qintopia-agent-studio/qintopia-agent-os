@@ -45,6 +45,19 @@ pub struct ImageGenerationWorkerReport {
     pub guardrails: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ImageGenerationPreflightReport {
+    pub success: bool,
+    pub worker: &'static str,
+    pub action_status: &'static str,
+    pub generation_enabled: bool,
+    pub config_valid: bool,
+    pub media_allowed_host_count: usize,
+    pub safe_for_chat: bool,
+    pub limitations: Vec<String>,
+    pub guardrails: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct GeneratedImagePreview {
     pub artifact_type: &'static str,
@@ -149,6 +162,55 @@ pub async fn run(
 
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+pub fn run_preflight() -> Result<()> {
+    let report = match AdapterConfig::from_env() {
+        Ok(config) => preflight_report(
+            true,
+            image_generation_enabled(),
+            config.media_allowed_hosts.len(),
+        ),
+        Err(_) => preflight_report(false, image_generation_enabled(), 0),
+    };
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    ensure_preflight_success(&report)
+}
+
+fn ensure_preflight_success(report: &ImageGenerationPreflightReport) -> Result<()> {
+    if report.success {
+        return Ok(());
+    }
+    bail!("image adapter preflight configuration is invalid")
+}
+
+fn preflight_report(
+    config_valid: bool,
+    generation_enabled: bool,
+    media_allowed_host_count: usize,
+) -> ImageGenerationPreflightReport {
+    ImageGenerationPreflightReport {
+        success: config_valid,
+        worker: WORKER_ID,
+        action_status: if config_valid {
+            "adapter_config_ready"
+        } else {
+            "adapter_not_configured"
+        },
+        generation_enabled,
+        config_valid,
+        media_allowed_host_count,
+        safe_for_chat: false,
+        limitations: vec![
+            "this preflight validates local configuration only; it does not prove provider or media service reachability".to_string(),
+            "a ready configuration does not authorize generation, publishing, Feishu writeback, or QiWe sends".to_string(),
+        ],
+        guardrails: vec![
+            "this command does not open network or database connections".to_string(),
+            "credentials, service addresses, hosts, prompts, Feishu identifiers, and QiWe payloads are not emitted".to_string(),
+            "the image-generation worker remains disabled unless its explicit enable flag and separate owner approvals exist".to_string(),
+        ],
+    }
 }
 
 fn fixture_report() -> ImageGenerationWorkerReport {
@@ -1399,6 +1461,38 @@ mod tests {
         assert!(!image_generation_enabled_value(""));
         assert!(!image_generation_enabled_value("0"));
         assert!(image_generation_enabled_value("1"));
+    }
+
+    #[test]
+    fn preflight_reports_only_sanitized_configuration_state() {
+        let report = preflight_report(true, false, 2);
+        let raw = serde_json::to_string(&report).expect("report serializes");
+
+        assert!(report.success);
+        assert_eq!(report.worker, WORKER_ID);
+        assert_eq!(report.action_status, "adapter_config_ready");
+        assert!(!report.generation_enabled);
+        assert!(report.config_valid);
+        assert_eq!(report.media_allowed_host_count, 2);
+        assert!(!report.safe_for_chat);
+        assert!(ensure_preflight_success(&report).is_ok());
+        assert!(!raw.contains("api_key"));
+        assert!(!raw.contains("endpoint"));
+        assert!(!raw.contains("table_id"));
+        assert!(!raw.contains("message_id"));
+    }
+
+    #[test]
+    fn preflight_reports_missing_configuration_without_enabling_generation() {
+        let report = preflight_report(false, false, 0);
+
+        assert!(!report.success);
+        assert_eq!(report.action_status, "adapter_not_configured");
+        assert!(!report.config_valid);
+        assert!(!report.generation_enabled);
+        assert_eq!(report.media_allowed_host_count, 0);
+        assert!(!report.safe_for_chat);
+        assert!(ensure_preflight_success(&report).is_err());
     }
 
     #[test]
