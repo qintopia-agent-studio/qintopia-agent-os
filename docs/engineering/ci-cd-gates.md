@@ -64,8 +64,8 @@ belongs to a reviewed runbook using an approved commit SHA.
 
 ## GitHub Actions CI
 
-The GitHub Actions CI workflow runs on pull requests and pushes to `master`. It uses
-Node.js 24 actions and always runs `pnpm check:light`.
+The GitHub Actions CI workflow runs on pull requests, pull-request body edits, and
+pushes to `master`. It uses Node.js 24 actions and always runs `pnpm check:light`.
 
 The CI workflow starts with a `changes` job. Markdown and docs-only changes skip
 Python/Rust runtime checks while still completing the required `check` job. Runtime,

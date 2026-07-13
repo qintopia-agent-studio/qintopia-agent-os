@@ -76,9 +76,10 @@ The workflow runs on:
 Automatic `/improve` is disabled to reduce noise. Maintainers can still request targeted
 suggestions from a PR comment when needed.
 
-Automatic `/describe` is configured without repeating the original PR body. The PR body
-remains in the GitHub PR description; PR-Agent should add only the AI-generated summary
-and file walkthrough.
+Automatic `/describe` is disabled. The completed repository PR template remains in the
+GitHub PR description and is author-owned because CI validates its required sections.
+Maintainers may explicitly request `/describe`; its output is published as a comment and
+must not replace the PR body.
 
 `/update_changelog` is advisory. Routine root `CHANGELOG.md` updates are owned by
 Release Please, which derives release entries from merged Conventional Commits and keeps

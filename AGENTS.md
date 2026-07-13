@@ -80,6 +80,8 @@ Use `rg` and `rg --files` for search.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
+- PR-Agent must not automatically edit PR descriptions. The completed repository PR
+  template is author-owned because CI validates its required sections.
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
@@ -167,6 +169,11 @@ Use `rg` and `rg --files` for search.
   of local image-adapter configuration. It must not open network or database
   connections, reveal configuration values, enable generation, write Feishu, send QiWe,
   or publish.
+- `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
+  image request after the fail-closed preflight, explicit smoke flag and approval
+  phrase, staging-only env file, matching staging database URL hash, and an explicit
+  UUID work item id. It must leave the image pending review and must not run in
+  production, add a timer, write Feishu, send QiWe, or publish.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

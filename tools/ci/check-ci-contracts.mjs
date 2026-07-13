@@ -126,6 +126,12 @@ if (ciWorkflow && !ciWorkflow.includes("pnpm pr:check-body")) {
   errors.push(".github/workflows/ci.yml: pull_request checks must validate PR body");
 }
 
+if (ciWorkflow && !ciWorkflow.includes("      - edited")) {
+  errors.push(
+    ".github/workflows/ci.yml: pull_request body edits must trigger fresh validation"
+  );
+}
+
 if (ciWorkflow && !ciWorkflow.includes("release-please-pr")) {
   errors.push(".github/workflows/ci.yml: must detect Release Please PRs");
 }
@@ -349,6 +355,11 @@ if (prAgentWorkflow) {
   if (prAgentEnv["pr_description.add_original_user_description"] !== "false") {
     errors.push(
       ".github/workflows/pr-agent.yml: PR-Agent describe output must not repeat the original PR body"
+    );
+  }
+  if (prAgentEnv["github_action_config.auto_describe"] !== "false") {
+    errors.push(
+      ".github/workflows/pr-agent.yml: PR-Agent must not automatically replace the required PR body"
     );
   }
 }

@@ -55,6 +55,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
@@ -160,6 +161,7 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/github-app-git.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
@@ -383,6 +385,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
   for (const requiredFragment of [
     "qintopia-agent-os-deploy-bundle",
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+    "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",
     "skills/qintopia-tools/variants",

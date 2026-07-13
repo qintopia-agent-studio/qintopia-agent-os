@@ -129,6 +129,42 @@ if (!exists(xiaomanPreflightRecordPath)) {
   }
 }
 
+const aliangStagingSmokePath =
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh";
+if (!exists(aliangStagingSmokePath)) {
+  addError(`${aliangStagingSmokePath}: missing Huabaosi staging smoke`);
+} else {
+  const smoke = readText(aliangStagingSmokePath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL",
+    "approved-staging-image-generation",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID",
+    "huabaosi-image-generation-preflight",
+    "run-huabaosi-image-generation-worker",
+    "generated_image_created",
+    "pending",
+    "artifact_uri",
+    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "urlparse(sys.stdin.read())",
+  ]) {
+    requireFragment(aliangStagingSmokePath, smoke, fragment);
+  }
+
+  for (const fragment of [
+    "systemctl",
+    'python3 - "$QINTOPIA_SIDECAR_DATABASE_URL"',
+    "run-group-message-send-worker",
+    "--use-feishu-base",
+    "send-ready",
+    "operations-group-message-confirm",
+  ]) {
+    forbidFragment(aliangStagingSmokePath, smoke, fragment);
+  }
+}
+
 if (errors.length > 0) {
   console.error("Deploy contract check failed:");
   for (const error of errors) {
