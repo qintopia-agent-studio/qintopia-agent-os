@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::{Read, Write},
+    fmt,
+    io::{self, Read, Write},
     net::TcpStream,
     sync::Arc,
     time::Duration,
@@ -28,6 +29,8 @@ const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 const MAX_HTTP_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
 const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
+const MAX_GENERATION_ATTEMPTS: i32 = 3;
+const BASE_RETRY_DELAY_SECONDS: i64 = 60;
 
 #[derive(Debug, Serialize)]
 pub struct ImageGenerationWorkerReport {
@@ -74,6 +77,7 @@ pub struct GeneratedImagePreview {
 struct ImageGenerationWorkItem {
     id: Uuid,
     claim_token: Option<String>,
+    attempts: i32,
     approved_brief_artifact_id: Uuid,
     approved_brief_content_hash: String,
     approved_brief_text: String,
@@ -114,6 +118,40 @@ struct HttpResponse {
     body: Vec<u8>,
 }
 
+#[derive(Debug)]
+struct HttpRequestError {
+    transport: bool,
+    source: anyhow::Error,
+}
+
+type HttpRequestResult<T> = std::result::Result<T, HttpRequestError>;
+
+impl HttpRequestError {
+    fn transport(source: anyhow::Error) -> Self {
+        Self {
+            transport: true,
+            source,
+        }
+    }
+
+    fn terminal(source: anyhow::Error) -> Self {
+        Self {
+            transport: false,
+            source,
+        }
+    }
+
+    fn into_source(self) -> anyhow::Error {
+        self.source
+    }
+}
+
+impl fmt::Display for HttpRequestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.source.fmt(formatter)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct ProviderResponse {
     data: Vec<ProviderImage>,
@@ -132,6 +170,75 @@ struct MediaUploadResponse {
     byte_size: usize,
     width: u32,
     height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GenerationFailureClass {
+    RetryableProvider,
+    Terminal,
+}
+
+impl GenerationFailureClass {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::RetryableProvider => "retryable_provider",
+            Self::Terminal => "terminal",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct GenerationAttemptError {
+    class: GenerationFailureClass,
+    stage: &'static str,
+    source: anyhow::Error,
+}
+
+type GenerationAttemptResult<T> = std::result::Result<T, GenerationAttemptError>;
+
+impl GenerationAttemptError {
+    fn retryable_provider(stage: &'static str, source: anyhow::Error) -> Self {
+        Self {
+            class: GenerationFailureClass::RetryableProvider,
+            stage,
+            source,
+        }
+    }
+
+    fn terminal(stage: &'static str, source: anyhow::Error) -> Self {
+        Self {
+            class: GenerationFailureClass::Terminal,
+            stage,
+            source,
+        }
+    }
+
+    fn failure(&self) -> GenerationFailure {
+        GenerationFailure {
+            class: self.class,
+            stage: self.stage,
+        }
+    }
+}
+
+impl fmt::Display for GenerationAttemptError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.source.fmt(formatter)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GenerationFailure {
+    class: GenerationFailureClass,
+    stage: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailureRecordOutcome {
+    RetryScheduled,
+    RetryExhausted,
+    Failed,
+    StaleClaim,
 }
 
 pub async fn run(
@@ -230,6 +337,7 @@ fn fixture_work_item() -> ImageGenerationWorkItem {
     ImageGenerationWorkItem {
         id: Uuid::nil(),
         claim_token: None,
+        attempts: 0,
         approved_brief_artifact_id: Uuid::nil(),
         approved_brief_content_hash: "sha256:fixture-approved-brief".to_string(),
         approved_brief_text: "活动主题：fixture 活动。".to_string(),
@@ -322,12 +430,24 @@ async fn run_once(
         match tokio::task::spawn_blocking(move || generate_and_store(&config, &worker_input)).await
         {
             Ok(generated) => generated,
-            Err(_) => return record_generation_failure_report(pool, &work_item).await,
+            Err(_) => {
+                return record_generation_failure_report(
+                    pool,
+                    &work_item,
+                    GenerationFailure {
+                        class: GenerationFailureClass::Terminal,
+                        stage: "worker_execution",
+                    },
+                )
+                .await
+            }
         };
 
     let generated = match generated {
         Ok(generated) => generated,
-        Err(_) => return record_generation_failure_report(pool, &work_item).await,
+        Err(error) => {
+            return record_generation_failure_report(pool, &work_item, error.failure()).await
+        }
     };
 
     let persisted = persist_generated_image(pool, &work_item, &generated).await;
@@ -341,18 +461,30 @@ async fn run_once(
             vec![artifact_id],
             Some(generated.preview()),
         )),
-        Err(_) => record_generation_failure_report(pool, &work_item).await,
+        Err(_) => {
+            record_generation_failure_report(
+                pool,
+                &work_item,
+                GenerationFailure {
+                    class: GenerationFailureClass::Terminal,
+                    stage: "persistence",
+                },
+            )
+            .await
+        }
     }
 }
 
 async fn record_generation_failure_report(
     pool: &PgPool,
     work_item: &ImageGenerationWorkItem,
+    failure: GenerationFailure,
 ) -> Result<ImageGenerationWorkerReport> {
-    let action_status = if mark_work_item_failed(pool, work_item).await? {
-        "image_generation_failed"
-    } else {
-        "image_generation_stale_claim"
+    let action_status = match record_generation_failure(pool, work_item, failure).await? {
+        FailureRecordOutcome::RetryScheduled => "image_generation_retry_scheduled",
+        FailureRecordOutcome::RetryExhausted => "image_generation_retry_exhausted",
+        FailureRecordOutcome::Failed => "image_generation_failed",
+        FailureRecordOutcome::StaleClaim => "image_generation_stale_claim",
     };
     Ok(report(
         false,
@@ -615,13 +747,15 @@ impl HttpClient {
         headers: &[(&str, String)],
         body: &[u8],
         max_response_body_bytes: usize,
-    ) -> Result<HttpResponse> {
+    ) -> HttpRequestResult<HttpResponse> {
         let host = endpoint
             .host_str()
-            .ok_or_else(|| anyhow!("HTTP endpoint is missing a host"))?;
+            .ok_or_else(|| anyhow!("HTTP endpoint is missing a host"))
+            .map_err(HttpRequestError::terminal)?;
         let port = endpoint
             .port_or_known_default()
-            .ok_or_else(|| anyhow!("HTTP endpoint has no known port"))?;
+            .ok_or_else(|| anyhow!("HTTP endpoint has no known port"))
+            .map_err(HttpRequestError::terminal)?;
         let mut path = endpoint.path().to_string();
         if path.is_empty() {
             path = "/".to_string();
@@ -631,7 +765,7 @@ impl HttpClient {
             path.push_str(query);
         }
         for (name, value) in headers {
-            validate_http_header(name, value)?;
+            validate_http_header(name, value).map_err(HttpRequestError::terminal)?;
         }
         let mut request = format!(
             "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n",
@@ -649,35 +783,46 @@ impl HttpClient {
 
         let response = match endpoint.scheme() {
             "https" => {
-                let server_name = ServerName::try_from(host).context("validate HTTPS host")?;
+                let server_name = ServerName::try_from(host)
+                    .context("validate HTTPS host")
+                    .map_err(HttpRequestError::terminal)?;
                 let mut connection =
                     ClientConnection::new(Arc::clone(&self.tls_config), server_name)
-                        .context("create image adapter TLS connection")?;
-                let mut socket =
-                    TcpStream::connect((host, port)).context("connect image adapter endpoint")?;
-                configure_socket(&socket)?;
+                        .context("create image adapter TLS connection")
+                        .map_err(HttpRequestError::terminal)?;
+                let mut socket = TcpStream::connect((host, port))
+                    .context("connect image adapter endpoint")
+                    .map_err(HttpRequestError::transport)?;
+                configure_socket(&socket).map_err(HttpRequestError::transport)?;
                 let mut stream = Stream::new(&mut connection, &mut socket);
                 stream
                     .write_all(&request_bytes)
-                    .context("write image adapter request")?;
-                stream.flush().context("flush image adapter request")?;
-                read_response_limited(&mut stream, max_response_body_bytes)
-                    .context("read image adapter response")?
+                    .map_err(|error| request_io_error("write image adapter request", error))?;
+                stream
+                    .flush()
+                    .map_err(|error| request_io_error("flush image adapter request", error))?;
+                read_response_limited(&mut stream, max_response_body_bytes)?
             }
             "http" if self.allow_insecure_http => {
                 let mut socket = TcpStream::connect((host, port))
-                    .context("connect test image adapter endpoint")?;
-                configure_socket(&socket)?;
+                    .context("connect test image adapter endpoint")
+                    .map_err(HttpRequestError::transport)?;
+                configure_socket(&socket).map_err(HttpRequestError::transport)?;
                 socket
                     .write_all(&request_bytes)
-                    .context("write test image adapter request")?;
-                socket.flush().context("flush test image adapter request")?;
-                read_response_limited(&mut socket, max_response_body_bytes)
-                    .context("read test image adapter response")?
+                    .map_err(|error| request_io_error("write test image adapter request", error))?;
+                socket
+                    .flush()
+                    .map_err(|error| request_io_error("flush test image adapter request", error))?;
+                read_response_limited(&mut socket, max_response_body_bytes)?
             }
-            _ => bail!("image adapter endpoints must use HTTPS"),
+            _ => {
+                return Err(HttpRequestError::terminal(anyhow!(
+                    "image adapter endpoints must use HTTPS"
+                )))
+            }
         };
-        parse_http_response(response, max_response_body_bytes)
+        parse_http_response(response, max_response_body_bytes).map_err(HttpRequestError::terminal)
     }
 }
 
@@ -741,21 +886,43 @@ fn configure_socket(socket: &TcpStream) -> Result<()> {
     Ok(())
 }
 
-fn read_response_limited(reader: &mut impl Read, max_body_bytes: usize) -> Result<Vec<u8>> {
+fn request_io_error(context: &'static str, error: io::Error) -> HttpRequestError {
+    let terminal = matches!(
+        error.kind(),
+        io::ErrorKind::InvalidData
+            | io::ErrorKind::InvalidInput
+            | io::ErrorKind::PermissionDenied
+            | io::ErrorKind::Unsupported
+    );
+    let source = anyhow::Error::new(error).context(context);
+    if terminal {
+        HttpRequestError::terminal(source)
+    } else {
+        HttpRequestError::transport(source)
+    }
+}
+
+fn read_response_limited(
+    reader: &mut impl Read,
+    max_body_bytes: usize,
+) -> HttpRequestResult<Vec<u8>> {
     let max_response_bytes = max_body_bytes
         .checked_add(MAX_HTTP_RESPONSE_HEADER_BYTES)
-        .ok_or_else(|| anyhow!("image adapter response size limit overflow"))?;
+        .ok_or_else(|| anyhow!("image adapter response size limit overflow"))
+        .map_err(HttpRequestError::terminal)?;
     let mut response = Vec::with_capacity(max_response_bytes.min(64 * 1024));
     let mut buffer = [0_u8; 8192];
     loop {
         let count = reader
             .read(&mut buffer)
-            .context("read image adapter response")?;
+            .map_err(|error| request_io_error("read image adapter response", error))?;
         if count == 0 {
             return Ok(response);
         }
         if response.len().saturating_add(count) > max_response_bytes {
-            bail!("image adapter response exceeded the configured size limit");
+            return Err(HttpRequestError::terminal(anyhow!(
+                "image adapter response exceeded the configured size limit"
+            )));
         }
         response.extend_from_slice(&buffer[..count]);
     }
@@ -858,6 +1025,7 @@ async fn load_work_item(
         SELECT
             request.id,
             NULL::text AS claim_token,
+            request.attempts,
             artifact.id AS approved_brief_artifact_id,
             artifact.content_hash AS approved_brief_content_hash,
             COALESCE(artifact.content_text, artifact.summary) AS approved_brief_text,
@@ -876,11 +1044,12 @@ async fn load_work_item(
           AND request.target_agent = 'huabaosi'
           AND request.payload->>'image_specification' = $3
           AND request.payload->>'prompt_hash' LIKE 'sha256:%'
+          AND request.attempts < $4
           AND (
               (request.status = 'queued' AND request.available_at <= now())
               OR (request.status = 'processing' AND request.claim_expires_at <= now())
           )
-          AND ($4::uuid IS NULL OR request.id = $4)
+          AND ($5::uuid IS NULL OR request.id = $5)
         ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
         LIMIT 1
         "#,
@@ -888,6 +1057,7 @@ async fn load_work_item(
     .bind(CAPABILITY_KEY)
     .bind(WORK_ITEM_TYPE)
     .bind(SPECIFICATION)
+    .bind(MAX_GENERATION_ATTEMPTS)
     .bind(work_item_id)
     .fetch_optional(pool)
     .await
@@ -923,11 +1093,12 @@ async fn claim_work_item(
               AND request.target_agent = 'huabaosi'
               AND request.payload->>'image_specification' = $3
               AND request.payload->>'prompt_hash' LIKE 'sha256:%'
+              AND request.attempts < $4
               AND (
                   (request.status = 'queued' AND request.available_at <= now())
                   OR (request.status = 'processing' AND request.claim_expires_at <= now())
               )
-              AND ($4::uuid IS NULL OR request.id = $4)
+              AND ($5::uuid IS NULL OR request.id = $5)
             ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
             LIMIT 1
             FOR UPDATE OF request SKIP LOCKED
@@ -935,7 +1106,7 @@ async fn claim_work_item(
         UPDATE qintopia_agent_os.work_items request
         SET
             status = 'processing',
-            claimed_by = $5,
+            claimed_by = $6,
             locked_at = now(),
             claim_expires_at = now() + interval '10 minutes',
             attempts = attempts + 1,
@@ -945,6 +1116,7 @@ async fn claim_work_item(
         RETURNING
             request.id,
             request.claimed_by AS claim_token,
+            request.attempts,
             claimable.approved_brief_artifact_id,
             claimable.approved_brief_content_hash,
             claimable.approved_brief_text,
@@ -955,6 +1127,7 @@ async fn claim_work_item(
     .bind(CAPABILITY_KEY)
     .bind(WORK_ITEM_TYPE)
     .bind(SPECIFICATION)
+    .bind(MAX_GENERATION_ATTEMPTS)
     .bind(work_item_id)
     .bind(&claim_token)
     .fetch_optional(pool)
@@ -967,6 +1140,7 @@ fn work_item_from_row(row: sqlx::postgres::PgRow) -> Result<ImageGenerationWorkI
     Ok(ImageGenerationWorkItem {
         id: row.try_get("id")?,
         claim_token: row.try_get("claim_token")?,
+        attempts: row.try_get("attempts")?,
         approved_brief_artifact_id: row.try_get("approved_brief_artifact_id")?,
         approved_brief_content_hash: row.try_get("approved_brief_content_hash")?,
         approved_brief_text: row.try_get("approved_brief_text")?,
@@ -1183,7 +1357,11 @@ fn can_reuse_existing_generated_image(review_status: &str) -> bool {
     review_status == "pending"
 }
 
-async fn mark_work_item_failed(pool: &PgPool, work_item: &ImageGenerationWorkItem) -> Result<bool> {
+async fn record_generation_failure(
+    pool: &PgPool,
+    work_item: &ImageGenerationWorkItem,
+    failure: GenerationFailure,
+) -> Result<FailureRecordOutcome> {
     let mut tx = pool
         .begin()
         .await
@@ -1192,14 +1370,32 @@ async fn mark_work_item_failed(pool: &PgPool, work_item: &ImageGenerationWorkIte
         .claim_token
         .as_deref()
         .ok_or_else(|| anyhow!("image generation failure handling requires a claim token"))?;
+    let retry_scheduled = should_retry_generation(failure.class, work_item.attempts);
+    let retry_exhausted =
+        failure.class == GenerationFailureClass::RetryableProvider && !retry_scheduled;
+    let status = if retry_scheduled { "queued" } else { "failed" };
+    let retry_delay_seconds = if retry_scheduled {
+        generation_retry_delay_seconds(work_item.attempts)
+    } else {
+        0
+    };
+    let last_error = if retry_scheduled {
+        "retryable image provider failure; retry scheduled"
+    } else if retry_exhausted {
+        "retryable image provider failure; retry attempts exhausted"
+    } else {
+        "image generation failed; inspect sanitized worker metrics"
+    };
     let updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.work_items
         SET
-            status = 'failed',
+            status = $3,
+            available_at = now() + ($4::text || ' seconds')::interval,
+            claimed_by = NULL,
             locked_at = NULL,
             claim_expires_at = NULL,
-            last_error = 'image generation failed; inspect sanitized worker metrics',
+            last_error = $5,
             updated_at = now()
         WHERE id = $1
           AND status = 'processing'
@@ -1209,32 +1405,74 @@ async fn mark_work_item_failed(pool: &PgPool, work_item: &ImageGenerationWorkIte
     )
     .bind(work_item.id)
     .bind(claim_token)
+    .bind(status)
+    .bind(retry_delay_seconds)
+    .bind(last_error)
     .execute(&mut *tx)
     .await
-    .context("mark image generation request failed")?;
+    .context("record image generation request failure")?;
     if updated.rows_affected() != 1 {
         tx.commit()
             .await
             .context("commit stale image generation claim")?;
-        return Ok(false);
+        return Ok(FailureRecordOutcome::StaleClaim);
     }
+    let event_type = if retry_scheduled {
+        "image_generation_retry_scheduled"
+    } else {
+        "failed"
+    };
+    let message = if retry_scheduled {
+        "retryable image provider failure scheduled for another attempt"
+    } else if retry_exhausted {
+        "image generation retry attempts exhausted before pending artifact creation"
+    } else {
+        "image generation failed before pending artifact creation"
+    };
     sqlx::query(
         r#"
         INSERT INTO qintopia_agent_os.work_item_events
             (work_item_id, event_type, actor_type, actor_id, message, data)
-        VALUES ($1, 'failed', 'worker', $2, 'image generation failed before pending artifact creation', $3)
+        VALUES ($1, $2, 'worker', $3, $4, $5)
         "#,
     )
     .bind(work_item.id)
+    .bind(event_type)
     .bind(WORKER_ID)
-    .bind(json!({"external_publish_executed": false, "sensitive_fields_redacted": true}))
+    .bind(message)
+    .bind(json!({
+        "attempt_number": work_item.attempts,
+        "max_attempts": MAX_GENERATION_ATTEMPTS,
+        "failure_class": failure.class.as_str(),
+        "failure_stage": failure.stage,
+        "retry_delay_seconds": retry_delay_seconds,
+        "retry_scheduled": retry_scheduled,
+        "retry_exhausted": retry_exhausted,
+        "external_publish_executed": false,
+        "sensitive_fields_redacted": true,
+    }))
     .execute(&mut *tx)
     .await
     .context("append image generation failure event")?;
     tx.commit()
         .await
         .context("commit image generation failure transaction")?;
-    Ok(true)
+    Ok(if retry_scheduled {
+        FailureRecordOutcome::RetryScheduled
+    } else if retry_exhausted {
+        FailureRecordOutcome::RetryExhausted
+    } else {
+        FailureRecordOutcome::Failed
+    })
+}
+
+fn generation_retry_delay_seconds(attempts: i32) -> i64 {
+    let exponent = attempts.saturating_sub(1).clamp(0, 6) as u32;
+    BASE_RETRY_DELAY_SECONDS.saturating_mul(2_i64.saturating_pow(exponent))
+}
+
+fn should_retry_generation(class: GenerationFailureClass, attempts: i32) -> bool {
+    class == GenerationFailureClass::RetryableProvider && attempts < MAX_GENERATION_ATTEMPTS
 }
 
 fn image_preview(work_item: &ImageGenerationWorkItem) -> GeneratedImagePreview {
@@ -1290,11 +1528,13 @@ fn report(
         limitations: vec![
             "generation requires an explicit enable flag plus reviewed provider and media configuration".to_string(),
             "generated images remain pending human review and are never published by this worker".to_string(),
+            "only recoverable provider failures are retried, with at most three total attempts".to_string(),
             "provider responses, prompts, credentials, Feishu identifiers, and QiWe payloads are not emitted".to_string(),
         ],
         guardrails: vec![
             "only approved poster_brief artifacts are eligible".to_string(),
             "production endpoints must use HTTPS and media hosts must be allowlisted".to_string(),
+            "retry events contain only sanitized failure class, stage, attempt, and delay".to_string(),
             "generated image bytes are uploaded and read back before the pending artifact is recorded".to_string(),
         ],
     }
@@ -1313,14 +1553,14 @@ fn generate_and_store_with_client(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
     client: HttpClient,
-) -> Result<GeneratedImage> {
+) -> GenerationAttemptResult<GeneratedImage> {
     generate_and_store_with(config, work_item, &client)
 }
 
 fn generate_and_store(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
-) -> Result<GeneratedImage> {
+) -> GenerationAttemptResult<GeneratedImage> {
     generate_and_store_with(config, work_item, &HttpClient::production())
 }
 
@@ -1328,49 +1568,75 @@ fn generate_and_store_with(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
     client: &HttpClient,
-) -> Result<GeneratedImage> {
-    let prompt = build_prompt(work_item)?;
+) -> GenerationAttemptResult<GeneratedImage> {
+    let prompt = build_prompt(work_item)
+        .map_err(|source| GenerationAttemptError::terminal("prompt_validation", source))?;
     let provider_body = serde_json::to_vec(&json!({
         "model": config.model,
         "prompt": prompt,
         "size": IMAGE_SIZE,
         "response_format": "b64_json",
     }))
-    .context("serialize image provider request")?;
-    let provider_response = client.request(
-        "POST",
-        &config.provider_endpoint,
-        &[
-            ("Authorization", format!("Bearer {}", config.api_key)),
-            ("Content-Type", "application/json".to_string()),
-            ("Accept", "application/json".to_string()),
-        ],
-        &provider_body,
-        provider_response_limit(config.max_media_bytes),
-    )?;
-    let provider_response = parse_provider_response(&provider_response)?;
+    .context("serialize image provider request")
+    .map_err(|source| GenerationAttemptError::terminal("provider_request", source))?;
+    let provider_response = client
+        .request(
+            "POST",
+            &config.provider_endpoint,
+            &[
+                ("Authorization", format!("Bearer {}", config.api_key)),
+                ("Content-Type", "application/json".to_string()),
+                ("Accept", "application/json".to_string()),
+            ],
+            &provider_body,
+            provider_response_limit(config.max_media_bytes),
+        )
+        .map_err(|error| {
+            let retryable = error.transport;
+            let source = error.into_source();
+            if retryable {
+                GenerationAttemptError::retryable_provider("provider_transport", source)
+            } else {
+                GenerationAttemptError::terminal("provider_request", source)
+            }
+        })?;
+    let provider_class = classify_provider_response(provider_response.status);
+    let provider_response =
+        parse_provider_response(&provider_response).map_err(|source| match provider_class {
+            GenerationFailureClass::RetryableProvider => {
+                GenerationAttemptError::retryable_provider("provider_response", source)
+            }
+            GenerationFailureClass::Terminal => {
+                GenerationAttemptError::terminal("provider_response", source)
+            }
+        })?;
     let bytes = Base64::decode_vec(&provider_response)
-        .map_err(|_| anyhow!("decode image provider b64_json response"))?;
-    let metadata = inspect_png(&bytes, config.max_media_bytes)?;
+        .map_err(|_| anyhow!("decode image provider b64_json response"))
+        .map_err(|source| GenerationAttemptError::terminal("provider_payload", source))?;
+    let metadata = inspect_png(&bytes, config.max_media_bytes)
+        .map_err(|source| GenerationAttemptError::terminal("provider_payload", source))?;
     let content_hash = content_hash_bytes(&bytes);
 
-    let upload_response = client.request(
-        "POST",
-        &config.media_upload_endpoint,
-        &[
-            ("Content-Type", PNG_MIME_TYPE.to_string()),
-            ("Accept", "application/json".to_string()),
-            ("X-Qintopia-Content-Hash", content_hash.clone()),
-            ("X-Qintopia-Byte-Size", bytes.len().to_string()),
-            ("X-Qintopia-Width", metadata.width.to_string()),
-            ("X-Qintopia-Height", metadata.height.to_string()),
-            ("X-Qintopia-Work-Item-Id", work_item.id.to_string()),
-            ("X-Qintopia-Idempotency-Key", work_item.prompt_hash.clone()),
-        ],
-        &bytes,
-        MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
-    )?;
-    let media = parse_media_upload_response(&upload_response)?;
+    let upload_response = client
+        .request(
+            "POST",
+            &config.media_upload_endpoint,
+            &[
+                ("Content-Type", PNG_MIME_TYPE.to_string()),
+                ("Accept", "application/json".to_string()),
+                ("X-Qintopia-Content-Hash", content_hash.clone()),
+                ("X-Qintopia-Byte-Size", bytes.len().to_string()),
+                ("X-Qintopia-Width", metadata.width.to_string()),
+                ("X-Qintopia-Height", metadata.height.to_string()),
+                ("X-Qintopia-Work-Item-Id", work_item.id.to_string()),
+                ("X-Qintopia-Idempotency-Key", work_item.prompt_hash.clone()),
+            ],
+            &bytes,
+            MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
+        )
+        .map_err(|error| GenerationAttemptError::terminal("media_upload", error.into_source()))?;
+    let media = parse_media_upload_response(&upload_response)
+        .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
     let media_url = validate_media_response(
         config,
         &media,
@@ -1378,25 +1644,36 @@ fn generate_and_store_with(
         &metadata,
         bytes.len(),
         client.allow_insecure_http,
-    )?;
+    )
+    .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
 
-    let readback = client.request("GET", &media_url, &[], &[], config.max_media_bytes)?;
-    ensure_success(&readback, "media readback")?;
+    let readback = client
+        .request("GET", &media_url, &[], &[], config.max_media_bytes)
+        .map_err(|error| GenerationAttemptError::terminal("media_readback", error.into_source()))?;
+    ensure_success(&readback, "media readback")
+        .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
     let content_type = readback
         .headers
         .get("content-type")
         .map(|value| value.split(';').next().unwrap_or_default().trim())
         .unwrap_or_default();
     if content_type != PNG_MIME_TYPE {
-        bail!("media readback returned an unexpected MIME type");
+        return Err(GenerationAttemptError::terminal(
+            "media_readback",
+            anyhow!("media readback returned an unexpected MIME type"),
+        ));
     }
-    let readback_metadata = inspect_png(&readback.body, config.max_media_bytes)?;
+    let readback_metadata = inspect_png(&readback.body, config.max_media_bytes)
+        .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
     if readback.body != bytes
         || content_hash_bytes(&readback.body) != content_hash
         || readback_metadata.width != metadata.width
         || readback_metadata.height != metadata.height
     {
-        bail!("media readback did not match uploaded image");
+        return Err(GenerationAttemptError::terminal(
+            "media_readback",
+            anyhow!("media readback did not match uploaded image"),
+        ));
     }
     Ok(GeneratedImage {
         bytes,
@@ -1405,6 +1682,14 @@ fn generate_and_store_with(
         height: metadata.height,
         artifact_uri: media.uri,
     })
+}
+
+fn classify_provider_response(status: u16) -> GenerationFailureClass {
+    if status == 408 || status == 429 || (500..600).contains(&status) {
+        GenerationFailureClass::RetryableProvider
+    } else {
+        GenerationFailureClass::Terminal
+    }
 }
 
 fn provider_response_limit(max_media_bytes: usize) -> usize {
@@ -1519,6 +1804,40 @@ mod tests {
     }
 
     #[test]
+    fn invalid_provider_headers_are_terminal_and_never_retried() {
+        let mut config = test_config("https://media.example.test/public");
+        config.api_key = "test\r\nX-Injected: true".to_string();
+
+        let error =
+            generate_and_store_with_client(&config, &fixture_work_item(), HttpClient::test_only())
+                .expect_err("invalid header must fail before connecting");
+
+        assert_eq!(error.class, GenerationFailureClass::Terminal);
+        assert_eq!(error.stage, "provider_request");
+        assert!(error.to_string().contains("invalid header value"));
+        assert!(!should_retry_generation(error.class, 1));
+    }
+
+    #[test]
+    fn refused_provider_connection_is_retryable_transport() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("reserve loopback port");
+        let port = listener.local_addr().expect("loopback address").port();
+        drop(listener);
+        let mut config = test_config("https://media.example.test/public");
+        config.provider_endpoint =
+            Url::parse(&format!("https://127.0.0.1:{port}/v1/images/generations"))
+                .expect("loopback provider URL");
+
+        let error =
+            generate_and_store_with_client(&config, &fixture_work_item(), HttpClient::production())
+                .expect_err("refused loopback provider must fail");
+
+        assert_eq!(error.class, GenerationFailureClass::RetryableProvider);
+        assert_eq!(error.stage, "provider_transport");
+        assert!(should_retry_generation(error.class, 1));
+    }
+
+    #[test]
     fn claims_use_unique_per_attempt_tokens() {
         let first = new_claim_token();
         let second = new_claim_token();
@@ -1528,11 +1847,43 @@ mod tests {
     }
 
     #[test]
+    fn retry_policy_is_bounded_to_recoverable_provider_failures() {
+        for status in [408, 429, 500, 503, 599] {
+            assert_eq!(
+                classify_provider_response(status),
+                GenerationFailureClass::RetryableProvider
+            );
+        }
+        for status in [200, 400, 401, 403, 404] {
+            assert_eq!(
+                classify_provider_response(status),
+                GenerationFailureClass::Terminal
+            );
+        }
+        assert_eq!(generation_retry_delay_seconds(1), 60);
+        assert_eq!(generation_retry_delay_seconds(2), 120);
+        assert_eq!(generation_retry_delay_seconds(3), 240);
+        assert!(should_retry_generation(
+            GenerationFailureClass::RetryableProvider,
+            1
+        ));
+        assert!(!should_retry_generation(
+            GenerationFailureClass::RetryableProvider,
+            3
+        ));
+        assert!(!should_retry_generation(
+            GenerationFailureClass::Terminal,
+            1
+        ));
+    }
+
+    #[test]
     fn response_reading_and_decoding_enforce_size_limits() {
         let mut oversized_headers = Cursor::new(vec![0_u8; MAX_HTTP_RESPONSE_HEADER_BYTES + 1]);
         let read_error = read_response_limited(&mut oversized_headers, 0)
             .expect_err("raw response must be capped before parsing");
         assert!(read_error.to_string().contains("size limit"));
+        assert!(!read_error.transport);
 
         let response = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n12345".to_vec();
         let parse_error = parse_http_response(response, 4)
@@ -1542,6 +1893,21 @@ mod tests {
         let chunked_error = decode_chunked_body(b"5\r\n12345\r\n0\r\n\r\n", 4)
             .expect_err("chunked bodies must use the same cap");
         assert!(chunked_error.to_string().contains("size limit"));
+    }
+
+    #[test]
+    fn invalid_tls_or_protocol_io_is_terminal() {
+        let invalid_data = request_io_error(
+            "test TLS validation",
+            io::Error::new(io::ErrorKind::InvalidData, "invalid certificate"),
+        );
+        let timed_out = request_io_error(
+            "test provider timeout",
+            io::Error::new(io::ErrorKind::TimedOut, "timed out"),
+        );
+
+        assert!(!invalid_data.transport);
+        assert!(timed_out.transport);
     }
 
     #[test]
@@ -1763,6 +2129,7 @@ mod tests {
         ImageGenerationWorkItem {
             id: Uuid::new_v4(),
             claim_token: None,
+            attempts: 0,
             approved_brief_artifact_id: Uuid::new_v4(),
             approved_brief_content_hash: "sha256:approved-brief".to_string(),
             approved_brief_text: "活动主题：周末共创晚餐。时间地点以已审核活动信息为准。"

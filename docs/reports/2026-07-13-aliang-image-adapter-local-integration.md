@@ -51,3 +51,14 @@ executed.
 Use a pgvector-enabled disposable database only when a local rerun is needed. Retry the
 image pull after Docker Hub is available; do not install extensions or change
 configuration on a production database to work around this local preflight limitation.
+
+## 2026-07-14 Bounded-Retry Follow-Up
+
+The same CI image was still absent locally, and the latest pull attempt in this
+workspace again returned Docker Hub `Bad Gateway`. The new bounded-retry assertions
+therefore did not run against a local database. Rust tests prove provider failure
+classification and loopback refusal behavior; the guarded apply smoke now proves the
+first recoverable failure requeues for 60 seconds and the third failure becomes
+terminal. The final PR SHA must not merge unless `Xiaoman PostgreSQL integration` runs
+those assertions successfully on its disposable pgvector service. No production database
+or external provider is an acceptable substitute.

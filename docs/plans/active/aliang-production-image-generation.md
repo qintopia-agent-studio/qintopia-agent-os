@@ -180,7 +180,8 @@ until a real isolated storage service accepts this contract.
   response、prompt 或凭据。
 - 下游 group-message starter 已收紧为 completed image request 下 approved
   `generated_image`；approved `poster_brief` 不再足以触发群发请求。
-- adapter 默认仍禁用、没有 timer，且未做 staging/prod 网络调用或实现自动重试。starter
+- adapter 默认仍禁用、没有 timer，且未做 staging/prod 网络调用。已实现最多三次的有界 provider 重试：只有连接/读写失败和 HTTP
+  408、429、5xx 会按 60/120 秒延迟重新排队；认证、响应 payload、PNG、媒体上传/readback、持久化和 claim 失败都是终态。每次只审计脱敏的 attempt、stage、outcome 和 delay，不保存原始错误或响应。starter
   timer 只负责内部 request intake。必须在 Required Owner
   Decisions 有明确 PR 记录后，才可运行已实现的受保护 staging smoke。
 - `huabaosi-image-generation-preflight`

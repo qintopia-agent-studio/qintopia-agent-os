@@ -737,6 +737,50 @@ assert_sql_equals \
   queued \
   "SELECT status FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid;"
 
+# A refused loopback connection proves the retry state machine without contacting an
+# external provider or reaching the media upload stage.
+export QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1
+export QINTOPIA_HUABAOSI_IMAGE_PROVIDER=openai-compatible
+export QINTOPIA_HUABAOSI_IMAGE_MODEL=gpt-image-2
+export QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL=https://127.0.0.1:1/v1
+export QINTOPIA_HUABAOSI_IMAGE_API_KEY=apply-smoke-test-key
+export QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT=https://127.0.0.1:1/upload
+export QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL=https://127.0.0.1:1/public
+export QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=127.0.0.1
+
+xiaoman_image_retry_scheduled="$(run_json xiaoman_image_retry_scheduled run-huabaosi-image-generation-worker --once --work-item-id "$xiaoman_image_work_item_id" --apply)"
+assert_json "$xiaoman_image_retry_scheduled" "data['success'] is False"
+assert_json "$xiaoman_image_retry_scheduled" "data['action_status'] == 'image_generation_retry_scheduled'"
+assert_json "$xiaoman_image_retry_scheduled" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_image_retry_requeues_request \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid AND status = 'queued' AND attempts = 1 AND available_at > now() AND claimed_by IS NULL AND last_error = 'retryable image provider failure; retry scheduled';"
+
+assert_sql_equals \
+  xiaoman_image_retry_event_is_sanitized \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_image_work_item_id}'::uuid AND event_type = 'image_generation_retry_scheduled' AND data->>'attempt_number' = '1' AND data->>'max_attempts' = '3' AND data->>'failure_class' = 'retryable_provider' AND data->>'failure_stage' = 'provider_transport' AND data->>'retry_delay_seconds' = '60' AND data->>'retry_scheduled' = 'true' AND data->>'retry_exhausted' = 'false' AND data->>'sensitive_fields_redacted' = 'true' AND data->>'external_publish_executed' = 'false';"
+
+psql_value "UPDATE qintopia_agent_os.work_items SET attempts = 2, available_at = now() WHERE id = '${xiaoman_image_work_item_id}'::uuid;" >/dev/null
+xiaoman_image_retry_exhausted="$(run_json xiaoman_image_retry_exhausted run-huabaosi-image-generation-worker --once --work-item-id "$xiaoman_image_work_item_id" --apply)"
+assert_json "$xiaoman_image_retry_exhausted" "data['success'] is False"
+assert_json "$xiaoman_image_retry_exhausted" "data['action_status'] == 'image_generation_retry_exhausted'"
+assert_json "$xiaoman_image_retry_exhausted" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_image_retry_exhaustion_is_terminal \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid AND status = 'failed' AND attempts = 3 AND claimed_by IS NULL AND last_error = 'retryable image provider failure; retry attempts exhausted';"
+
+assert_sql_equals \
+  xiaoman_image_retry_exhaustion_is_sanitized \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_image_work_item_id}'::uuid AND event_type = 'failed' AND data->>'attempt_number' = '3' AND data->>'max_attempts' = '3' AND data->>'failure_class' = 'retryable_provider' AND data->>'failure_stage' = 'provider_transport' AND data->>'retry_scheduled' = 'false' AND data->>'retry_exhausted' = 'true' AND data->>'sensitive_fields_redacted' = 'true' AND data->>'external_publish_executed' = 'false';"
+
+export QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
+
 # The network adapter is separately covered by a local fake provider/media server. This
 # disposable database fixture proves that only a reviewed generated_image can unlock the
 # downstream send-request path while production generation remains disabled here.

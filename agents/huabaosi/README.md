@@ -24,6 +24,9 @@ prompts, caption drafts, and related creative artifacts.
 - Must not call an image model, upload user media, write the Feishu design ledger, or
   publish a poster from the internal `poster_brief` workflow until the dedicated adapter
   is reviewed and explicitly enabled.
+- An approved staging adapter may retry only recoverable provider failures and must stop
+  after three total attempts. Media upload/readback, content validation, authentication,
+  persistence, and claim failures remain terminal.
 
 ## Runtime Source
 
