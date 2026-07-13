@@ -34,4 +34,5 @@ tags:
   - hermes-profile
 next_actions:
   - Separate approved profile behavior from Huabaosi shadow and Rust exploration.
-  - Define a production visual adapter only after owner approval and artifact review.
+  - Follow `docs/plans/active/aliang-production-image-generation.md` to define a
+    production visual adapter only after owner approval and artifact review.
