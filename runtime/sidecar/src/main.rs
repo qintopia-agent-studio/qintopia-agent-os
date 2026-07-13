@@ -20,6 +20,7 @@ mod mcp_server;
 mod member_profile;
 mod message_search;
 mod operations;
+mod qiwe_image_send;
 mod raw_archive;
 mod smoke;
 mod workbench;
@@ -508,6 +509,7 @@ async fn main() -> Result<()> {
             fixture_mode,
         } => image_generation::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
         Command::HuabaosiImageGenerationPreflight => image_generation::run_preflight(),
+        Command::QiweImageSendPreflight => qiwe_image_send::run_preflight(),
         Command::RunEvidenceWorker {
             once,
             work_item_id,

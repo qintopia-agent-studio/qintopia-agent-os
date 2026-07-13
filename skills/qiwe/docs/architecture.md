@@ -259,6 +259,14 @@ The tool accepts only the documented fields for the selected type, requires a st
 code/message, `msgServerId`, `msgUniqueIdentifier`, sequence, and timestamp. It does not
 echo file AES keys, file ids, or raw media credentials back to the Agent.
 
+For new AgentOS image sends, an HTTPS artifact URI is not itself a valid
+`/msg/sendImage` payload. The reviewed protocol first calls
+`/cloud/cdnUploadByUrlAsync`, persists only the returned `requestId` correlation, waits
+for one `cmd=20000` Webhook result with complete file credentials, and only then builds
+the send request. The older synchronous URL and local upload APIs are marked for
+deprecation and must not be used as a fallback. The adapter remains disabled while the
+current generated PNG and the documented JPG upload type are incompatible.
+
 Approved message correction/moderation uses:
 
 ```text
