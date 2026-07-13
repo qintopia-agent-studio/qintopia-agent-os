@@ -127,7 +127,8 @@ Use `rg` and `rg --files` for search.
   message export, or external adapters.
 - `qintopia-agentos-operations-visual-worker.timer` may only run
   `run-collaboration-worker --work-item-type visual_asset_request --once --apply` for
-  internal pending `poster_brief` artifact writes. Do not repurpose it for Huabaosi
+  internal pending `poster_brief` artifact writes. For `activity_promotion`, it must
+  wait for the sibling completed `evidence_summary`; do not repurpose it for Huabaosi
   production generation, Feishu writeback, QiWe sends, group-send readiness, or external
   adapters.
 - `run-xiaoman-activity-send-request-starter-worker` may only create an

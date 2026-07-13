@@ -38,6 +38,7 @@ pub struct ArtifactPreview {
 #[derive(Debug, Clone)]
 struct WorkItem {
     id: Uuid,
+    parent_work_item_id: Option<Uuid>,
     work_item_type: String,
     requester_agent: String,
     target_agent: String,
@@ -49,6 +50,13 @@ struct WorkItem {
 }
 
 #[derive(Debug, Clone)]
+struct EvidenceContext {
+    work_item_id: Uuid,
+    artifact_id: Uuid,
+    content_hash: String,
+}
+
+#[derive(Debug, Clone)]
 struct ArtifactDraft {
     artifact_type: String,
     title: String,
@@ -56,6 +64,7 @@ struct ArtifactDraft {
     content_text: String,
     content_hash: String,
     review_status: String,
+    evidence_context: Option<EvidenceContext>,
 }
 
 pub async fn run(
@@ -95,6 +104,7 @@ fn run_fixture(apply_requested: bool) -> Result<CollaborationWorkerReport> {
     }
     let work_item = WorkItem {
         id: Uuid::nil(),
+        parent_work_item_id: None,
         work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
         requester_agent: "xiaoman".to_string(),
         target_agent: "huabaosi".to_string(),
@@ -105,7 +115,7 @@ fn run_fixture(apply_requested: bool) -> Result<CollaborationWorkerReport> {
         review_policy: "before_external_use".to_string(),
     };
     validate_work_item(&work_item)?;
-    let drafts = build_artifact_drafts(&work_item)?;
+    let drafts = build_artifact_drafts(&work_item, None)?;
     Ok(report_from_drafts(
         false,
         true,
@@ -121,17 +131,29 @@ async fn run_once(
     apply_requested: bool,
     work_item_id: Option<Uuid>,
 ) -> Result<CollaborationWorkerReport> {
+    let Some(preview_work_item) = peek_work_item(pool, work_item_id).await? else {
+        return Ok(empty_report(
+            false,
+            apply_requested,
+            "no_claimable_work_item",
+        ));
+    };
+    validate_work_item(&preview_work_item)?;
+    let preview_evidence = load_evidence_context(pool, &preview_work_item).await?;
+    if evidence_required(&preview_work_item) && preview_evidence.is_none() {
+        return Ok(waiting_for_evidence_report(
+            apply_requested,
+            Some(preview_work_item.id),
+        ));
+    }
+
     if !apply_requested {
-        let Some(work_item) = peek_work_item(pool, work_item_id).await? else {
-            return Ok(empty_report(false, false, "no_claimable_work_item"));
-        };
-        validate_work_item(&work_item)?;
-        let drafts = build_artifact_drafts(&work_item)?;
+        let drafts = build_artifact_drafts(&preview_work_item, preview_evidence.as_ref())?;
         return Ok(report_from_drafts(
             false,
             false,
             "dry_run_ok",
-            Some(work_item.id),
+            Some(preview_work_item.id),
             Vec::new(),
             &drafts,
         ));
@@ -154,7 +176,15 @@ async fn run_once(
             .context("commit failed validation collaboration transaction")?;
         return Err(err);
     }
-    let drafts = match build_artifact_drafts(&work_item) {
+    let evidence_context = load_evidence_context_in_tx(&mut tx, &work_item).await?;
+    if evidence_required(&work_item) && evidence_context.is_none() {
+        release_work_item_claim(&mut tx, &work_item).await?;
+        tx.commit()
+            .await
+            .context("commit collaboration evidence wait transaction")?;
+        return Ok(waiting_for_evidence_report(true, Some(work_item.id)));
+    }
+    let drafts = match build_artifact_drafts(&work_item, evidence_context.as_ref()) {
         Ok(drafts) => drafts,
         Err(err) => {
             mark_work_item_failed(&mut tx, &work_item, &err.to_string()).await?;
@@ -211,14 +241,33 @@ async fn peek_work_item(pool: &PgPool, work_item_id: Option<Uuid>) -> Result<Opt
 async fn peek_next_work_item(pool: &PgPool) -> Result<Option<WorkItem>> {
     let row = sqlx::query(
         r#"
-        SELECT id, work_item_type, requester_agent, target_agent, capability_key,
-               brief_summary, source_refs, payload, review_policy
-        FROM qintopia_agent_os.work_items
-        WHERE status = 'queued'
-          AND available_at <= now()
-          AND work_item_type = $1
-          AND capability_key = $2
-        ORDER BY priority DESC, available_at ASC, created_at ASC
+        SELECT id, parent_work_item_id, work_item_type, requester_agent, target_agent,
+               capability_key, brief_summary, source_refs, payload, review_policy
+        FROM qintopia_agent_os.work_items visual
+        WHERE (
+              (visual.status = 'queued' AND visual.available_at <= now())
+              OR (visual.status = 'processing' AND visual.claim_expires_at <= now())
+          )
+          AND visual.work_item_type = $1
+          AND visual.capability_key = $2
+          AND (
+              COALESCE(visual.payload->>'workflow_type', '') <> 'activity_promotion'
+              OR EXISTS (
+                  SELECT 1
+                  FROM qintopia_agent_os.work_items evidence
+                  JOIN qintopia_agent_os.artifacts artifact
+                    ON artifact.work_item_id = evidence.id
+                   AND artifact.artifact_type = 'evidence_summary'
+                   AND artifact.review_status = 'not_required'
+                   AND artifact.content_hash IS NOT NULL
+                   AND artifact.content_hash <> ''
+                  WHERE evidence.parent_work_item_id = visual.parent_work_item_id
+                    AND evidence.work_item_type = 'evidence_request'
+                    AND evidence.capability_key = 'wenyuange.retrieve_evidence'
+                    AND evidence.status = 'completed'
+              )
+          )
+        ORDER BY visual.priority DESC, visual.available_at ASC, visual.created_at ASC
         LIMIT 1
         "#,
     )
@@ -233,12 +282,14 @@ async fn peek_next_work_item(pool: &PgPool) -> Result<Option<WorkItem>> {
 async fn peek_work_item_by_id(pool: &PgPool, work_item_id: Uuid) -> Result<Option<WorkItem>> {
     let row = sqlx::query(
         r#"
-        SELECT id, work_item_type, requester_agent, target_agent, capability_key,
-               brief_summary, source_refs, payload, review_policy
+        SELECT id, parent_work_item_id, work_item_type, requester_agent, target_agent,
+               capability_key, brief_summary, source_refs, payload, review_policy
         FROM qintopia_agent_os.work_items
         WHERE id = $1
-          AND status = 'queued'
-          AND available_at <= now()
+          AND (
+              (status = 'queued' AND available_at <= now())
+              OR (status = 'processing' AND claim_expires_at <= now())
+          )
           AND work_item_type = $2
           AND capability_key = $3
         LIMIT 1
@@ -269,15 +320,32 @@ async fn claim_next_work_item(
     let row = sqlx::query(
         r#"
         WITH claimed AS (
-            SELECT id
-            FROM qintopia_agent_os.work_items
+            SELECT visual.id
+            FROM qintopia_agent_os.work_items visual
             WHERE (
-                  (status = 'queued' AND available_at <= now())
-                  OR (status = 'processing' AND claim_expires_at <= now())
+                  (visual.status = 'queued' AND visual.available_at <= now())
+                  OR (visual.status = 'processing' AND visual.claim_expires_at <= now())
               )
-              AND work_item_type = $1
-              AND capability_key = $2
-            ORDER BY priority DESC, available_at ASC, created_at ASC
+              AND visual.work_item_type = $1
+              AND visual.capability_key = $2
+              AND (
+                  COALESCE(visual.payload->>'workflow_type', '') <> 'activity_promotion'
+                  OR EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.work_items evidence
+                      JOIN qintopia_agent_os.artifacts artifact
+                        ON artifact.work_item_id = evidence.id
+                       AND artifact.artifact_type = 'evidence_summary'
+                       AND artifact.review_status = 'not_required'
+                       AND artifact.content_hash IS NOT NULL
+                       AND artifact.content_hash <> ''
+                      WHERE evidence.parent_work_item_id = visual.parent_work_item_id
+                        AND evidence.work_item_type = 'evidence_request'
+                        AND evidence.capability_key = 'wenyuange.retrieve_evidence'
+                        AND evidence.status = 'completed'
+                  )
+              )
+            ORDER BY visual.priority DESC, visual.available_at ASC, visual.created_at ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED
         )
@@ -291,9 +359,9 @@ async fn claim_next_work_item(
             updated_at = now()
         FROM claimed
         WHERE items.id = claimed.id
-        RETURNING items.id, items.work_item_type, items.requester_agent,
-                  items.target_agent, items.capability_key, items.brief_summary,
-                  items.source_refs, items.payload, items.review_policy
+        RETURNING items.id, items.parent_work_item_id, items.work_item_type,
+                  items.requester_agent, items.target_agent, items.capability_key,
+                  items.brief_summary, items.source_refs, items.payload, items.review_policy
         "#,
     )
     .bind(SUPPORTED_WORK_ITEM_TYPE)
@@ -334,9 +402,9 @@ async fn claim_work_item_by_id(
             updated_at = now()
         FROM claimed
         WHERE items.id = claimed.id
-        RETURNING items.id, items.work_item_type, items.requester_agent,
-                  items.target_agent, items.capability_key, items.brief_summary,
-                  items.source_refs, items.payload, items.review_policy
+        RETURNING items.id, items.parent_work_item_id, items.work_item_type,
+                  items.requester_agent, items.target_agent, items.capability_key,
+                  items.brief_summary, items.source_refs, items.payload, items.review_policy
         "#,
     )
     .bind(work_item_id)
@@ -352,6 +420,7 @@ async fn claim_work_item_by_id(
 fn work_item_from_row(row: sqlx::postgres::PgRow) -> Result<WorkItem> {
     Ok(WorkItem {
         id: row.try_get("id")?,
+        parent_work_item_id: row.try_get("parent_work_item_id")?,
         work_item_type: row.try_get("work_item_type")?,
         requester_agent: row.try_get("requester_agent")?,
         target_agent: row.try_get("target_agent")?,
@@ -386,12 +455,110 @@ fn validate_work_item(work_item: &WorkItem) -> Result<()> {
     Ok(())
 }
 
-fn build_artifact_drafts(work_item: &WorkItem) -> Result<Vec<ArtifactDraft>> {
+fn evidence_required(work_item: &WorkItem) -> bool {
+    work_item
+        .payload
+        .get("workflow_type")
+        .and_then(Value::as_str)
+        == Some("activity_promotion")
+}
+
+async fn load_evidence_context(
+    pool: &PgPool,
+    work_item: &WorkItem,
+) -> Result<Option<EvidenceContext>> {
+    let Some(parent_work_item_id) = work_item.parent_work_item_id else {
+        return Ok(None);
+    };
+    evidence_context_from_query(
+        sqlx::query(
+            r#"
+            SELECT evidence.id AS evidence_work_item_id, artifact.id AS evidence_artifact_id,
+                   artifact.content_hash
+            FROM qintopia_agent_os.work_items evidence
+            JOIN qintopia_agent_os.artifacts artifact
+             ON artifact.work_item_id = evidence.id
+             AND artifact.artifact_type = 'evidence_summary'
+             AND artifact.review_status = 'not_required'
+             AND artifact.content_hash IS NOT NULL
+             AND artifact.content_hash <> ''
+            WHERE evidence.parent_work_item_id = $1
+              AND evidence.work_item_type = 'evidence_request'
+              AND evidence.capability_key = 'wenyuange.retrieve_evidence'
+              AND evidence.status = 'completed'
+            ORDER BY artifact.updated_at DESC, artifact.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(parent_work_item_id)
+        .fetch_optional(pool)
+        .await
+        .context("load collaboration evidence context")?,
+    )
+}
+
+async fn load_evidence_context_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    work_item: &WorkItem,
+) -> Result<Option<EvidenceContext>> {
+    let Some(parent_work_item_id) = work_item.parent_work_item_id else {
+        return Ok(None);
+    };
+    evidence_context_from_query(
+        sqlx::query(
+            r#"
+            SELECT evidence.id AS evidence_work_item_id, artifact.id AS evidence_artifact_id,
+                   artifact.content_hash
+            FROM qintopia_agent_os.work_items evidence
+            JOIN qintopia_agent_os.artifacts artifact
+             ON artifact.work_item_id = evidence.id
+             AND artifact.artifact_type = 'evidence_summary'
+             AND artifact.review_status = 'not_required'
+             AND artifact.content_hash IS NOT NULL
+             AND artifact.content_hash <> ''
+            WHERE evidence.parent_work_item_id = $1
+              AND evidence.work_item_type = 'evidence_request'
+              AND evidence.capability_key = 'wenyuange.retrieve_evidence'
+              AND evidence.status = 'completed'
+            ORDER BY artifact.updated_at DESC, artifact.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(parent_work_item_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .context("load collaboration evidence context in transaction")?,
+    )
+}
+
+fn evidence_context_from_query(
+    row: Option<sqlx::postgres::PgRow>,
+) -> Result<Option<EvidenceContext>> {
+    row.map(|row| {
+        Ok(EvidenceContext {
+            work_item_id: row.try_get("evidence_work_item_id")?,
+            artifact_id: row.try_get("evidence_artifact_id")?,
+            content_hash: row.try_get("content_hash")?,
+        })
+    })
+    .transpose()
+}
+
+fn build_artifact_drafts(
+    work_item: &WorkItem,
+    evidence_context: Option<&EvidenceContext>,
+) -> Result<Vec<ArtifactDraft>> {
+    if evidence_required(work_item) && evidence_context.is_none() {
+        bail!("activity promotion visual brief requires a completed evidence summary");
+    }
     let title = format!("{} - 视觉素材 brief", work_item.brief_summary);
     let summary = format!("面向活动运营的视觉素材草稿：{}", work_item.brief_summary);
     let content_text = format!(
-        "海报目标：{}\n画面方向：温暖、清晰、适合社区活动报名提醒。\n文案重点：活动主题、时间地点、报名提醒、审核后再外部使用。\n来源引用：{}",
+        "海报目标：{}\n画面方向：温暖、清晰、适合社区活动报名提醒。\n文案重点：活动主题、时间地点、报名提醒、审核后再外部使用。\n证据状态：{}\n来源引用：{}",
         work_item.brief_summary,
+        evidence_context
+            .map(|context| format!("已关联 AgentOS evidence_summary ({})", context.content_hash))
+            .unwrap_or_else(|| "未要求活动推广证据摘要".to_string()),
         safe_source_refs(&work_item.source_refs)
     );
     let content_hash = content_hash(&format!(
@@ -405,6 +572,7 @@ fn build_artifact_drafts(work_item: &WorkItem) -> Result<Vec<ArtifactDraft>> {
         content_text,
         content_hash,
         review_status: "pending".to_string(),
+        evidence_context: evidence_context.cloned(),
     }])
 }
 
@@ -462,11 +630,19 @@ async fn upsert_artifact(
     .bind(&draft.summary)
     .bind(&draft.content_text)
     .bind(&draft.content_hash)
-    .bind(json!([{"source_refs": work_item.source_refs}]))
+    .bind(json!([{
+        "source_refs": work_item.source_refs,
+        "evidence_work_item_id": draft.evidence_context.as_ref().map(|context| context.work_item_id),
+        "evidence_artifact_id": draft.evidence_context.as_ref().map(|context| context.artifact_id),
+        "evidence_content_hash": draft.evidence_context.as_ref().map(|context| &context.content_hash),
+    }]))
     .bind(json!({
         "generated_by": WORKER_ID,
         "capability_key": work_item.capability_key,
         "review_policy": work_item.review_policy,
+        "evidence_work_item_id": draft.evidence_context.as_ref().map(|context| context.work_item_id),
+        "evidence_artifact_id": draft.evidence_context.as_ref().map(|context| context.artifact_id),
+        "evidence_content_hash": draft.evidence_context.as_ref().map(|context| &context.content_hash),
     }))
     .fetch_one(&mut **tx)
     .await
@@ -494,6 +670,29 @@ async fn update_work_item_after_artifacts(
     .execute(&mut **tx)
     .await
     .context("mark work item awaiting review")?;
+    Ok(())
+}
+
+async fn release_work_item_claim(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    work_item: &WorkItem,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.work_items
+        SET
+            status = 'queued',
+            claimed_by = NULL,
+            locked_at = NULL,
+            claim_expires_at = NULL,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(work_item.id)
+    .execute(&mut **tx)
+    .await
+    .context("release collaboration work item waiting for evidence")?;
     Ok(())
 }
 
@@ -632,6 +831,31 @@ fn empty_report(
     }
 }
 
+fn waiting_for_evidence_report(
+    apply_requested: bool,
+    work_item_id: Option<Uuid>,
+) -> CollaborationWorkerReport {
+    CollaborationWorkerReport {
+        success: true,
+        dry_run: !apply_requested,
+        apply_requested,
+        fixture_mode: false,
+        worker: WORKER_ID,
+        action_status: "waiting_for_evidence".to_string(),
+        work_item_id,
+        artifact_ids: Vec::new(),
+        artifact_previews: Vec::new(),
+        limitations: vec![
+            "activity promotion visual work waits for a completed internal evidence summary"
+                .to_string(),
+        ],
+        guardrails: vec![
+            "visual briefs do not use ungrounded activity-promotion context".to_string(),
+            "no Feishu, QiWe, image-generation, or external adapter is called".to_string(),
+        ],
+    }
+}
+
 fn content_hash(text: &str) -> String {
     format!("sha256:{:x}", Sha256::digest(text.as_bytes()))
 }
@@ -704,6 +928,7 @@ mod tests {
     fn rejects_sensitive_work_item_content() {
         let work_item = WorkItem {
             id: Uuid::nil(),
+            parent_work_item_id: None,
             work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
             requester_agent: "xiaoman".to_string(),
             target_agent: "huabaosi".to_string(),
@@ -730,5 +955,59 @@ mod tests {
         assert!(refs.contains("source_record_ref"));
         assert!(!refs.contains("tbl_secret"));
         assert!(!refs.contains("table_id"));
+    }
+
+    #[test]
+    fn activity_promotion_brief_requires_evidence() {
+        let work_item = WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: Some(Uuid::new_v4()),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "周末共创晚餐活动运营海报".to_string(),
+            source_refs: json!({"source_record_ref": "activity_occurrence:test"}),
+            payload: json!({"workflow_type": "activity_promotion"}),
+            review_policy: "before_external_use".to_string(),
+        };
+
+        let err = build_artifact_drafts(&work_item, None)
+            .expect_err("activity promotion requires evidence before visual brief creation");
+
+        assert!(err
+            .to_string()
+            .contains("requires a completed evidence summary"));
+    }
+
+    #[test]
+    fn activity_promotion_brief_records_evidence_context() {
+        let work_item = WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: Some(Uuid::new_v4()),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "周末共创晚餐活动运营海报".to_string(),
+            source_refs: json!({"source_record_ref": "activity_occurrence:test"}),
+            payload: json!({"workflow_type": "activity_promotion"}),
+            review_policy: "before_external_use".to_string(),
+        };
+        let evidence = EvidenceContext {
+            work_item_id: Uuid::new_v4(),
+            artifact_id: Uuid::new_v4(),
+            content_hash: "sha256:evidence".to_string(),
+        };
+
+        let drafts = build_artifact_drafts(&work_item, Some(&evidence))
+            .expect("evidence-backed activity promotion brief should build");
+
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(
+            drafts[0].evidence_context.as_ref().unwrap().artifact_id,
+            evidence.artifact_id
+        );
+        assert!(drafts[0].content_text.contains("sha256:evidence"));
     }
 }
