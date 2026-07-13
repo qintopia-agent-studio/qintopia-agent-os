@@ -157,6 +157,9 @@ Use `rg` and `rg --files` for search.
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
   configuration exist, it may only validate and preview requests. It must not create a
   `generated_image` artifact, contact an external service, or be attached to a timer.
+  When explicitly enabled in a reviewed staging configuration, every provider, upload,
+  and readback response must be size-capped before parsing, and an already reviewed
+  `generated_image` must never be overwritten or returned to `pending` by a retry.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

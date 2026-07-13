@@ -25,6 +25,9 @@ const SPECIFICATION: &str = "community_poster_1024x1024";
 const IMAGE_SIZE: &str = "1024x1024";
 const PNG_MIME_TYPE: &str = "image/png";
 const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
+const MAX_HTTP_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
+const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
+const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Serialize)]
 pub struct ImageGenerationWorkerReport {
@@ -546,6 +549,7 @@ impl HttpClient {
         endpoint: &Url,
         headers: &[(&str, String)],
         body: &[u8],
+        max_response_body_bytes: usize,
     ) -> Result<HttpResponse> {
         let host = endpoint
             .host_str()
@@ -589,11 +593,8 @@ impl HttpClient {
                     .write_all(&request_bytes)
                     .context("write image adapter request")?;
                 stream.flush().context("flush image adapter request")?;
-                let mut response = Vec::new();
-                stream
-                    .read_to_end(&mut response)
-                    .context("read image adapter response")?;
-                response
+                read_response_limited(&mut stream, max_response_body_bytes)
+                    .context("read image adapter response")?
             }
             "http" if self.allow_insecure_http => {
                 let mut socket = TcpStream::connect((host, port))
@@ -603,15 +604,12 @@ impl HttpClient {
                     .write_all(&request_bytes)
                     .context("write test image adapter request")?;
                 socket.flush().context("flush test image adapter request")?;
-                let mut response = Vec::new();
-                socket
-                    .read_to_end(&mut response)
-                    .context("read test image adapter response")?;
-                response
+                read_response_limited(&mut socket, max_response_body_bytes)
+                    .context("read test image adapter response")?
             }
             _ => bail!("image adapter endpoints must use HTTPS"),
         };
-        parse_http_response(&response)
+        parse_http_response(response, max_response_body_bytes)
     }
 }
 
@@ -640,7 +638,27 @@ fn configure_socket(socket: &TcpStream) -> Result<()> {
     Ok(())
 }
 
-fn parse_http_response(bytes: &[u8]) -> Result<HttpResponse> {
+fn read_response_limited(reader: &mut impl Read, max_body_bytes: usize) -> Result<Vec<u8>> {
+    let max_response_bytes = max_body_bytes
+        .checked_add(MAX_HTTP_RESPONSE_HEADER_BYTES)
+        .ok_or_else(|| anyhow!("image adapter response size limit overflow"))?;
+    let mut response = Vec::with_capacity(max_response_bytes.min(64 * 1024));
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .context("read image adapter response")?;
+        if count == 0 {
+            return Ok(response);
+        }
+        if response.len().saturating_add(count) > max_response_bytes {
+            bail!("image adapter response exceeded the configured size limit");
+        }
+        response.extend_from_slice(&buffer[..count]);
+    }
+}
+
+fn parse_http_response(mut bytes: Vec<u8>, max_body_bytes: usize) -> Result<HttpResponse> {
     let header_end = bytes
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
@@ -659,13 +677,25 @@ fn parse_http_response(bytes: &[u8]) -> Result<HttpResponse> {
         .filter_map(|line| line.split_once(':'))
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_string()))
         .collect::<BTreeMap<_, _>>();
-    let body = bytes[header_end + 4..].to_vec();
+    if let Some(content_length) = headers.get("content-length") {
+        let content_length = content_length
+            .parse::<usize>()
+            .context("parse image adapter content length")?;
+        if content_length > max_body_bytes {
+            bail!("image adapter response exceeded the configured size limit");
+        }
+    }
+    let body = bytes.split_off(header_end + 4);
+    drop(bytes);
     let body = if headers
         .get("transfer-encoding")
         .is_some_and(|value| value.eq_ignore_ascii_case("chunked"))
     {
-        decode_chunked_body(&body)?
+        decode_chunked_body(&body, max_body_bytes)?
     } else {
+        if body.len() > max_body_bytes {
+            bail!("image adapter response exceeded the configured size limit");
+        }
         body
     };
     Ok(HttpResponse {
@@ -675,7 +705,7 @@ fn parse_http_response(bytes: &[u8]) -> Result<HttpResponse> {
     })
 }
 
-fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>> {
+fn decode_chunked_body(body: &[u8], max_body_bytes: usize) -> Result<Vec<u8>> {
     let mut cursor = 0;
     let mut decoded = Vec::new();
     loop {
@@ -700,6 +730,9 @@ fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>> {
             .ok_or_else(|| anyhow!("chunked image response overflow"))?;
         if end + 2 > body.len() || &body[end..end + 2] != b"\r\n" {
             bail!("chunked image response ended early");
+        }
+        if decoded.len().saturating_add(size) > max_body_bytes {
+            bail!("chunked image response exceeded the configured size limit");
         }
         decoded.extend_from_slice(&body[cursor..end]);
         cursor = end + 2;
@@ -871,7 +904,7 @@ async fn persist_generated_image(
         bail!("approved poster brief changed before generated image could be recorded");
     }
 
-    let row = sqlx::query(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO qintopia_agent_os.artifacts
             (
@@ -906,10 +939,7 @@ async fn persist_generated_image(
                 now()
             )
         ON CONFLICT (work_item_id, content_hash) WHERE content_hash IS NOT NULL AND content_hash <> ''
-        DO UPDATE SET
-            artifact_uri = EXCLUDED.artifact_uri,
-            metadata = qintopia_agent_os.artifacts.metadata || EXCLUDED.metadata,
-            updated_at = now()
+        DO NOTHING
         RETURNING id
         "#,
     )
@@ -932,10 +962,36 @@ async fn persist_generated_image(
         "approved_brief_content_hash": work_item.approved_brief_content_hash,
         "prompt_hash": work_item.prompt_hash,
     }))
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await
-    .context("upsert generated image artifact")?;
-    let artifact_id: Uuid = row.get("id");
+    .context("insert generated image artifact")?;
+    let (artifact_id, artifact_created) = match inserted {
+        Some(row) => (row.get("id"), true),
+        None => {
+            let row = sqlx::query(
+                r#"
+                SELECT id, review_status
+                FROM qintopia_agent_os.artifacts
+                WHERE work_item_id = $1
+                  AND content_hash = $2
+                  AND artifact_type = 'generated_image'
+                "#,
+            )
+            .bind(work_item.id)
+            .bind(&generated.content_hash)
+            .fetch_optional(&mut *tx)
+            .await
+            .context("load existing generated image artifact")?
+            .ok_or_else(|| {
+                anyhow!("generated image content hash conflicts with another artifact")
+            })?;
+            let review_status: String = row.get("review_status");
+            if !can_reuse_existing_generated_image(&review_status) {
+                bail!("refusing to modify an already reviewed generated image artifact");
+            }
+            (row.get("id"), false)
+        }
+    };
 
     sqlx::query(
         r#"
@@ -956,31 +1012,37 @@ async fn persist_generated_image(
     .execute(&mut *tx)
     .await
     .context("mark image generation request awaiting review")?;
-    sqlx::query(
-        r#"
-        INSERT INTO qintopia_agent_os.work_item_events
-            (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
-        VALUES ($1, $2, 'generated_image_created', 'worker', $3, 'generated image stored pending human review', $4)
-        "#,
-    )
-    .bind(work_item.id)
-    .bind(artifact_id)
-    .bind(WORKER_ID)
-    .bind(json!({
-        "content_hash": generated.content_hash,
-        "mime_type": PNG_MIME_TYPE,
-        "width": generated.width,
-        "height": generated.height,
-        "byte_size": generated.bytes.len(),
-        "external_publish_executed": false,
-    }))
-    .execute(&mut *tx)
-    .await
-    .context("append generated image event")?;
+    if artifact_created {
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_item_events
+                (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+            VALUES ($1, $2, 'generated_image_created', 'worker', $3, 'generated image stored pending human review', $4)
+            "#,
+        )
+        .bind(work_item.id)
+        .bind(artifact_id)
+        .bind(WORKER_ID)
+        .bind(json!({
+            "content_hash": generated.content_hash,
+            "mime_type": PNG_MIME_TYPE,
+            "width": generated.width,
+            "height": generated.height,
+            "byte_size": generated.bytes.len(),
+            "external_publish_executed": false,
+        }))
+        .execute(&mut *tx)
+        .await
+        .context("append generated image event")?;
+    }
     tx.commit()
         .await
         .context("commit generated image transaction")?;
     Ok(artifact_id)
+}
+
+fn can_reuse_existing_generated_image(review_status: &str) -> bool {
+    review_status == "pending"
 }
 
 async fn mark_work_item_failed(pool: &PgPool, work_item_id: Uuid) -> Result<()> {
@@ -1135,6 +1197,7 @@ fn generate_and_store_with(
             ("Accept", "application/json".to_string()),
         ],
         &provider_body,
+        provider_response_limit(config.max_media_bytes),
     )?;
     let provider_response = parse_provider_response(&provider_response)?;
     let bytes = Base64::decode_vec(&provider_response)
@@ -1156,6 +1219,7 @@ fn generate_and_store_with(
             ("X-Qintopia-Idempotency-Key", work_item.prompt_hash.clone()),
         ],
         &bytes,
+        MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
     )?;
     let media = parse_media_upload_response(&upload_response)?;
     let media_url = validate_media_response(
@@ -1167,7 +1231,7 @@ fn generate_and_store_with(
         client.allow_insecure_http,
     )?;
 
-    let readback = client.request("GET", &media_url, &[], &[])?;
+    let readback = client.request("GET", &media_url, &[], &[], config.max_media_bytes)?;
     ensure_success(&readback, "media readback")?;
     let content_type = readback
         .headers
@@ -1194,10 +1258,18 @@ fn generate_and_store_with(
     })
 }
 
+fn provider_response_limit(max_media_bytes: usize) -> usize {
+    max_media_bytes
+        .checked_mul(4)
+        .and_then(|value| value.checked_div(3))
+        .and_then(|value| value.checked_add(PROVIDER_RESPONSE_OVERHEAD_BYTES))
+        .expect("configured media size limit keeps provider response limit representable")
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
-        io::{Read, Write},
+        io::{Cursor, Read, Write},
         net::TcpListener,
         thread,
     };
@@ -1250,6 +1322,31 @@ mod tests {
     #[test]
     fn production_endpoints_reject_query_parameters() {
         assert!(https_url("https://media.example.test/upload?token=secret", "media").is_err());
+    }
+
+    #[test]
+    fn response_reading_and_decoding_enforce_size_limits() {
+        let mut oversized_headers = Cursor::new(vec![0_u8; MAX_HTTP_RESPONSE_HEADER_BYTES + 1]);
+        let read_error = read_response_limited(&mut oversized_headers, 0)
+            .expect_err("raw response must be capped before parsing");
+        assert!(read_error.to_string().contains("size limit"));
+
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n12345".to_vec();
+        let parse_error = parse_http_response(response, 4)
+            .expect_err("content length must be capped before body handling");
+        assert!(parse_error.to_string().contains("size limit"));
+
+        let chunked_error = decode_chunked_body(b"5\r\n12345\r\n0\r\n\r\n", 4)
+            .expect_err("chunked bodies must use the same cap");
+        assert!(chunked_error.to_string().contains("size limit"));
+    }
+
+    #[test]
+    fn only_pending_generated_images_can_be_reused() {
+        assert!(can_reuse_existing_generated_image("pending"));
+        assert!(!can_reuse_existing_generated_image("approved"));
+        assert!(!can_reuse_existing_generated_image("rejected"));
+        assert!(!can_reuse_existing_generated_image("changes_requested"));
     }
 
     #[test]

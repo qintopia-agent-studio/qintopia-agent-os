@@ -115,6 +115,11 @@ and the same metadata. The worker then performs a readback from that URI and ver
 3. SHA-256 matches before upload, upload response, and readback; and
 4. the returned URI is under the configured media public base URL and allowed host.
 
+Provider JSON, media-upload JSON, and readback bytes are size-capped while being read;
+the HTTP `Content-Length` and chunked-decoding paths use the same cap. A retry may reuse
+only an existing pending artifact with the same content hash. It must never update a
+reviewed artifact URI, metadata, or review status.
+
 The only accepted first-version media type is `image/png`. This narrow protocol is
 covered by a local fake provider/media server. Production configuration remains disabled
 until a real isolated storage service accepts this contract.
