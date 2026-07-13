@@ -68,8 +68,9 @@ huabaosi-image-generation-preflight
 ```
 
 The command neither contacts the provider/media service nor mutates AgentOS. A missing
-or invalid configuration is reported as `adapter_not_configured` without exposing the
-failed value.
+or invalid configuration is reported as `success=false` / `adapter_not_configured`
+without exposing the failed value, then exits non-zero. Staging automation must treat
+that exit status as a hard stop.
 
 ## Acceptance Scenarios
 

@@ -174,7 +174,14 @@ pub fn run_preflight() -> Result<()> {
         Err(_) => preflight_report(false, image_generation_enabled(), 0),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(())
+    ensure_preflight_success(&report)
+}
+
+fn ensure_preflight_success(report: &ImageGenerationPreflightReport) -> Result<()> {
+    if report.success {
+        return Ok(());
+    }
+    bail!("image adapter preflight configuration is invalid")
 }
 
 fn preflight_report(
@@ -183,7 +190,7 @@ fn preflight_report(
     media_allowed_host_count: usize,
 ) -> ImageGenerationPreflightReport {
     ImageGenerationPreflightReport {
-        success: true,
+        success: config_valid,
         worker: WORKER_ID,
         action_status: if config_valid {
             "adapter_config_ready"
@@ -1468,6 +1475,7 @@ mod tests {
         assert!(report.config_valid);
         assert_eq!(report.media_allowed_host_count, 2);
         assert!(!report.safe_for_chat);
+        assert!(ensure_preflight_success(&report).is_ok());
         assert!(!raw.contains("api_key"));
         assert!(!raw.contains("endpoint"));
         assert!(!raw.contains("table_id"));
@@ -1478,12 +1486,13 @@ mod tests {
     fn preflight_reports_missing_configuration_without_enabling_generation() {
         let report = preflight_report(false, false, 0);
 
-        assert!(report.success);
+        assert!(!report.success);
         assert_eq!(report.action_status, "adapter_not_configured");
         assert!(!report.config_valid);
         assert!(!report.generation_enabled);
         assert_eq!(report.media_allowed_host_count, 0);
         assert!(!report.safe_for_chat);
+        assert!(ensure_preflight_success(&report).is_err());
     }
 
     #[test]

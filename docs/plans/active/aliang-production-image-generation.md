@@ -182,7 +182,9 @@ until a real isolated storage service accepts this contract.
   smoke。必须在 Required Owner Decisions 有明确 PR 记录后继续。
 - `huabaosi-image-generation-preflight`
   可在 staging 环境只读取本地环境变量并输出脱敏配置状态。它不访问 provider、媒体存储、Postgres、飞书或企微；`adapter_config_ready`
-  只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。
+  只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。配置无效时它输出
+  `success=false`、`adapter_not_configured` 后以非零退出码失败，staging 自动化必须 fail
+  closed。
 
 运行无网络预检：
 
