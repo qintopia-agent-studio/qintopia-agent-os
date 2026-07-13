@@ -102,8 +102,6 @@ assert_no_sensitive_output() {
     QINTOPIA_HUABAOSI_IMAGE_API_KEY \
     QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL \
     QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT \
-    QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL \
-    QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS \
     QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN \
     QIWE_TOKEN \
     QIWE_GUID; do
@@ -160,6 +158,18 @@ assert len(payload["artifact_ids"]) == 1
 assert payload["artifact_preview"]["artifact_type"] == "generated_image"
 assert payload["artifact_preview"]["review_status"] == "pending"
 assert payload["safe_for_chat"] is False
+
+artifact_uri = payload["artifact_preview"].get("artifact_uri")
+if artifact_uri is not None:
+    from urllib.parse import urlparse
+    import os
+
+    public_base = os.environ["QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL"].rstrip("/")
+    parsed = urlparse(artifact_uri)
+    assert parsed.scheme == "https"
+    assert not parsed.username and not parsed.password
+    assert not parsed.query and not parsed.fragment
+    assert artifact_uri.startswith(f"{public_base}/")
 PY
 assert_no_sensitive_output "image generation worker" "$worker_output"
 

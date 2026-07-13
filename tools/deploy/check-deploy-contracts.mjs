@@ -146,6 +146,8 @@ if (!exists(aliangStagingSmokePath)) {
     "run-huabaosi-image-generation-worker",
     "generated_image_created",
     "pending",
+    "artifact_uri",
+    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
     "urlparse(sys.stdin.read())",
   ]) {
     requireFragment(aliangStagingSmokePath, smoke, fragment);

@@ -189,7 +189,10 @@ until a real isolated storage service accepts this contract.
   是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
   `staging` 的独立 env、匹配的 staging database URL SHA-256，以及一个明确的 image
   request UUID。它只运行一次 image worker 并断言得到一个
-  `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。
+  `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。若将来的 worker
+  report 增加 `artifact_uri`，该 URI 只能是无 query/fragment/userinfo 且位于 allowlisted
+  public media base 下的 HTTPS 地址；provider/upload
+  endpoint、密钥和数据库 URL 仍必须拒绝输出。
 
 运行无网络预检：
 
