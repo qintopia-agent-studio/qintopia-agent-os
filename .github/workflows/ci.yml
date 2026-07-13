@@ -10,6 +10,12 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      release_please_pr_number:
+        description: Open Release Please PR number to validate on its exact head branch
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,6 +34,7 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: read
 
     outputs:
       full-check: ${{ steps.detect.outputs.full-check }}
@@ -49,23 +56,51 @@ jobs:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login || '' }}
           PR_BODY: ${{ github.event.pull_request.body || '' }}
+          DISPATCH_RELEASE_PLEASE_PR_NUMBER:
+            ${{ inputs.release_please_pr_number || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
+          event_name="${{ github.event_name }}"
+          base_sha=""
+          head_sha=""
+          if [[ "$event_name" == "workflow_dispatch" && -n "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" ]]; then
+            pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${DISPATCH_RELEASE_PLEASE_PR_NUMBER}")"
+            PR_HEAD_REF="$(jq -r '.head.ref // ""' <<<"$pr_json")"
+            PR_AUTHOR="$(jq -r '.user.login // ""' <<<"$pr_json")"
+            PR_BODY="$(jq -r '.body // ""' <<<"$pr_json")"
+            pr_state="$(jq -r '.state // ""' <<<"$pr_json")"
+            pr_base="$(jq -r '.base.ref // ""' <<<"$pr_json")"
+            base_sha="$(jq -r '.base.sha // ""' <<<"$pr_json")"
+            head_sha="$(jq -r '.head.sha // ""' <<<"$pr_json")"
+            if [[ "$pr_state" != "open" || "$pr_base" != "master" ]]; then
+              echo "release PR dispatch requires an open PR targeting master" >&2
+              exit 1
+            fi
+            if [[ "$head_sha" != "${{ github.sha }}" ]]; then
+              echo "workflow_dispatch ref must resolve to the exact release PR head SHA" >&2
+              exit 1
+            fi
+          elif [[ "$event_name" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+          fi
+
           release_please_pr=false
-          if [[ "${{ github.event_name }}" == "pull_request" &&
+          if [[ ( "$event_name" == "pull_request" || -n "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" ) &&
             "$PR_HEAD_REF" == release-please--branches--* &&
             ( "$PR_AUTHOR" == "github-actions[bot]" || "$PR_AUTHOR" == "app/github-actions" ) &&
             "$PR_BODY" == *"This PR was generated with [Release Please]"* ]]; then
             release_please_pr=true
           fi
 
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            base_sha="${{ github.event.pull_request.base.sha }}"
-            head_sha="${{ github.event.pull_request.head.sha }}"
-          else
-            base_sha="${{ github.event.before }}"
-            head_sha="${{ github.sha }}"
+          if [[ -n "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" && "$release_please_pr" != "true" ]]; then
+            echo "workflow_dispatch PR is not an authentic Release Please PR" >&2
+            exit 1
           fi
 
           if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
@@ -108,6 +143,7 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: read
 
     steps:
       - name: Checkout
@@ -172,7 +208,20 @@ jobs:
 
       - name: Release Please PR check
         if: ${{ needs.changes.outputs.release-please-pr == 'true' }}
-        run: node tools/ci/check-release-please-pr.mjs
+        env:
+          DISPATCH_RELEASE_PLEASE_PR_NUMBER:
+            ${{ inputs.release_please_pr_number || '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            event_path="${RUNNER_TEMP}/release-please-pr-event.json"
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${DISPATCH_RELEASE_PLEASE_PR_NUMBER}" \
+              | jq '{pull_request: .}' >"$event_path"
+            GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$event_path" \
+              node tools/ci/check-release-please-pr.mjs
+          else
+            node tools/ci/check-release-please-pr.mjs
+          fi
 
       - name: Setup Python
         if:

@@ -39,6 +39,8 @@
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
+- Release Please PR manual CI validation:
+  `gh workflow run ci.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
 - If the local pnpm version shim cannot verify a registry signature, do not set
   `pmOnFail=ignore`. Confirm the exact `package.json` script first; when it is a fixed
   repository-local Node entrypoint, run that entrypoint directly and record the failed
@@ -85,6 +87,12 @@ Use `rg` and `rg --files` for search.
   intentionally deleted in the same release decision. The repository release manifest
   must track the latest published Release tag; deleted draft-only releases must not
   remain as the Release Please baseline.
+- A Release Please PR created or updated with `GITHUB_TOKEN` may have no automatic PR
+  checks because GitHub suppresses recursive workflow triggers. Before merging such a
+  PR, run the manual CI validation command on its exact head branch and require the
+  attached `changes` and `check` jobs to pass. The dispatch must fail if the PR is not
+  open, does not target `master`, is not bot-authored, or the checked-out SHA differs
+  from the PR head.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
