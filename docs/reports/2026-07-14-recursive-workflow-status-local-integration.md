@@ -55,3 +55,17 @@ The PR must not merge unless this integration job passes.
 
 Retry the local image pull only after Docker Hub recovers. Do not install pgvector on or
 point the smoke at production as a workaround.
+
+## Workbench Mirror Follow-Up
+
+The follow-up that exposes recursive status in the `feishu_task_dry_run` workbench
+mirror retried the same CI-equivalent image pull. Docker Hub again returned the same
+`Bad Gateway` response before a container was created. Focused workbench Rust tests
+passed, including the recursive SQL shape and sanitized lineage summary. The final full
+Rust suite passed 246/246 outside the network sandbox.
+
+The final PR must still pass `Xiaoman PostgreSQL integration`. Its guarded apply smoke
+must prove the mirror keeps three immediate child refs, reports four descendants,
+includes the depth-two Huabaosi image-generation request with its direct visual parent,
+and writes only a dry-run `human_workbench_refs` row plus audit event. It must not call
+Feishu or any external adapter.

@@ -102,7 +102,9 @@ QINTOPIA_SIDECAR_BIN=/home/ubuntu/qintopia-msg-sidecar/target/release/qintopia-m
   sync，不触发任何外部 adapter。
 - workbench event worker 已有 systemd
   oneshot/timer 部署入口；timer 只处理已记录的审核、最终确认、受控取消状态变更和负责人变更事件，不直接轮询飞书。
-- workbench mirror fixture 只生成脱敏飞书任务描述，不泄漏 payload。
+- workbench mirror fixture 只生成脱敏飞书任务描述，不泄漏 payload；描述保留直属
+  `child_status_refs`，并增加带直接 parent 和 depth 的完整
+  `descendant_status_refs`；异常大 tree 会按 depth 8 / 32 refs 截断并显式标记。
 - 敏感 payload、raw prompt handoff、Hermes Kanban
   fallback、非白名单群发、取消无原因都会被拒绝。
 - 未知来源、缺少来源引用、`event_signal` 缺少事件 id 也会被拒绝。
@@ -173,7 +175,7 @@ allowlist。真实生产 adapter 启用前应让 `--profile production --strict`
     `workflow_summary`，并追加 `workflow_status_synced` 审计事件。
 17. 定向运行 `run-workflow-sync-worker --once`，确认 worker 路径也能写入同样的 parent
     summary，且不执行 child worker 或外部 adapter。
-18. 定向运行 workbench mirror，只写
+18. 定向运行 workbench mirror，确认直属 child 和完整 descendant 状态都可见，只写
     `human_workbench_refs(provider=feishu_task_dry_run)`，不调用飞书。
 19. 记录一条 human workbench event，确认它只追加审计、不修改 work item 状态。
 20. 用相同 `external_event_id` 重放该事件，确认不会重复追加审计。
