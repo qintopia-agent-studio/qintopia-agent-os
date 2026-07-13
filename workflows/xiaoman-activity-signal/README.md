@@ -117,6 +117,16 @@ create pending 阿靓（Huabaosi / 画报司）`poster_brief` artifacts. For an
 live Wenyuange search, Huabaosi production generation, Feishu, QiWe, poster publishing,
 or external send adapters.
 
+`run-xiaoman-activity-image-generation-starter-worker` performs the next internal-only
+handoff. The reviewed runtime timer runs it as
+`run-xiaoman-activity-image-generation-starter-worker --once --apply` and creates one
+idempotent `image_generation_request` only after a Xiaoman `poster_brief` is approved.
+The timer does not run `run-huabaosi-image-generation-worker`, contact a provider,
+upload media, create a `generated_image`, write Feishu, call QiWe, publish, or send
+externally. Its production observation smoke inspects the fixed unit command and
+sanitized journal, then runs the starter with `--check-only` so the observation itself
+remains read-only.
+
 `run-xiaoman-activity-send-request-starter-worker` adds the next AgentOS-only handoff:
 only after a Xiaoman visual child has a completed image-generation request with a
 reviewed `approved` `generated_image`, it creates one missing `erhua.send_group_message`
@@ -136,9 +146,10 @@ report shape without writing.
 `deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh` is the aggregate
 read-only production preflight for this path. It composes the Xiaoman signal timer
 observation, promotion starter timer observation, shared evidence/visual timer
-observation, Xiaoman downstream evidence/visual preview, send request starter
-observation, and group send-ready timer observation. It does not run the send-ready
-worker, deploy, write Feishu, call QiWe, publish, or send externally.
+observation, Xiaoman downstream evidence/visual preview, image-generation starter
+observation, send request starter observation, and group send-ready timer observation.
+It does not run the image provider worker or send-ready worker, deploy, write Feishu,
+call QiWe, publish, or send externally.
 
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
@@ -226,6 +237,7 @@ pnpm workflows:check
 pnpm check:runtime
 deploy/sidecar/scripts/xiaoman-activity-shadow-read-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh
 bash -n deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh

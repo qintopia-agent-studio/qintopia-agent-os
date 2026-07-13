@@ -41,6 +41,11 @@ run_step \
   "${SCRIPT_DIR}/xiaoman-activity-downstream-observation-smoke.sh"
 
 run_step \
+  "activity image-generation starter timer observation" \
+  env QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 \
+  "${SCRIPT_DIR}/xiaoman-activity-image-generation-starter-observation-smoke.sh"
+
+run_step \
   "activity send request starter timer observation" \
   env QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 \
   "${SCRIPT_DIR}/xiaoman-activity-send-request-starter-observation-smoke.sh"

@@ -58,8 +58,9 @@ enables real external sends needs owner review, allowlist evidence, smoke output
 rollback notes.
 
 The image request starter and preview worker are merged on `master`, but they are not in
-the observed production `v0.2.6` release. They remain disabled and have no systemd
-timer.
+the observed production `v0.2.6` release. The reviewed deployment path installs an
+internal timer that only creates `image_generation_request` work items from approved
+briefs. The separate provider worker remains disabled and has no systemd timer.
 
 Before any staging adapter smoke, run:
 
@@ -85,7 +86,8 @@ timer.
 - Evidence lookup records source basis and risk notes.
 - Visual asset work records artifact evidence and review state.
 - An approved `poster_brief` can create one idempotent image-generation request on
-  `master`; that request does not call a provider or create an image.
+  `master`, including through the internal starter timer; that request does not call a
+  provider or create an image.
 - Group-send readiness requires final human confirmation before any external send path
   is considered.
 

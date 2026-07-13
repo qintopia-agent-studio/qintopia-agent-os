@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE:-}" != "1" ]]; then
-  echo "xiaoman activity send request starter observation skipped: set QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 to inspect runtime state" >&2
+if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE:-}" != "1" ]]; then
+  echo "xiaoman activity image-generation starter observation skipped: set QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 to inspect runtime state" >&2
   exit 0
 fi
 
@@ -10,10 +10,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
 ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
-SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_NAME:-qintopia-agentos-xiaoman-activity-send-request-starter-worker.service}"
-TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME:-qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer}"
-EXPECTED_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL_EXPECTED:-2min}"
-JOURNAL_LINES="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_JOURNAL_LINES:-80}"
+SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_NAME:-qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service}"
+TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_NAME:-qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer}"
+JOURNAL_LINES="${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_JOURNAL_LINES:-80}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 JOURNALCTL="${JOURNALCTL:-journalctl}"
 
@@ -40,6 +39,7 @@ assert_no_sensitive_output() {
   local forbidden=(
     "tenant_access_token"
     "QINTOPIA_SIDECAR_DATABASE_URL=postgres://"
+    "run-huabaosi-image-generation-worker"
     "--use-feishu-base"
     "send_executed=true"
     "message_id"
@@ -50,8 +50,10 @@ assert_no_sensitive_output() {
   local value_name
   for value_name in \
     QINTOPIA_SIDECAR_DATABASE_URL \
+    QINTOPIA_HUABAOSI_IMAGE_API_KEY \
+    QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL \
+    QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT \
     QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN \
-    QINTOPIA_DAILY_DIGEST_FEISHU_BASE_TOKEN \
     QIWE_TOKEN \
     QIWE_GUID; do
     if [[ -n "${!value_name:-}" ]]; then
@@ -70,12 +72,12 @@ assert_no_sensitive_output() {
 
 assert_timer() {
   if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
-    echo "systemctl is required for Xiaoman activity send request starter timer observation" >&2
+    echo "systemctl is required for Xiaoman activity image-generation starter observation" >&2
     exit 1
   fi
 
   if ! command -v "$JOURNALCTL" >/dev/null 2>&1; then
-    echo "journalctl is required for Xiaoman activity send request starter timer observation" >&2
+    echo "journalctl is required for Xiaoman activity image-generation starter observation" >&2
     exit 1
   fi
 
@@ -89,12 +91,12 @@ assert_timer() {
 
   service_unit="$tmp_dir/service-unit.txt"
   "$SYSTEMCTL" cat "$SERVICE_NAME" >"$service_unit"
-  grep -E "ExecStart=.*run-xiaoman-activity-send-request-starter-worker --once --apply$" "$service_unit" >/dev/null
+  grep -E "ExecStart=.*run-xiaoman-activity-image-generation-starter-worker --once --apply$" "$service_unit" >/dev/null
   assert_no_sensitive_output "service unit" "$service_unit"
 
   timer_unit="$tmp_dir/timer-unit.txt"
   "$SYSTEMCTL" cat "$TIMER_NAME" >"$timer_unit"
-  grep -F "OnBootSec=10min" "$timer_unit" >/dev/null
+  grep -F "OnBootSec=9min" "$timer_unit" >/dev/null
   grep -F "OnUnitActiveSec=${EXPECTED_INTERVAL}" "$timer_unit" >/dev/null
   grep -F "Unit=${SERVICE_NAME}" "$timer_unit" >/dev/null
   assert_no_sensitive_output "timer unit" "$timer_unit"
@@ -113,10 +115,11 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 source_env_if_present
+EXPECTED_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL_EXPECTED:-${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL:-2min}}"
 assert_timer
 
 worker_check="$tmp_dir/worker-check.json"
-"${BIN_CMD[@]}" run-xiaoman-activity-send-request-starter-worker --check-only >"$worker_check"
+"${BIN_CMD[@]}" run-xiaoman-activity-image-generation-starter-worker --check-only >"$worker_check"
 python3 - "$worker_check" <<'PY'
 import json
 import sys
@@ -125,14 +128,15 @@ with open(sys.argv[1], encoding="utf-8") as fh:
     payload = json.load(fh)
 
 assert payload["success"] is True
-assert payload["worker"] == "xiaoman-activity-send-request-starter-worker"
+assert payload["worker"] == "xiaoman-activity-image-generation-starter-worker"
 assert payload["source"] == "agentos_work_items"
 assert payload["dry_run"] is True
+assert payload["apply_requested"] is False
 assert payload["check_only"] is True
 assert payload["safe_for_chat"] is False
 assert payload["action_status"] in {
     "no_eligible_approved_visual_artifacts",
-    "group_message_requests_preview",
+    "image_generation_requests_preview",
 }
 for field in (
     "scanned_count",
@@ -145,4 +149,4 @@ assert isinstance(payload["work_items"], list)
 PY
 assert_no_sensitive_output "worker check" "$worker_check"
 
-echo "xiaoman activity send request starter observation passed"
+echo "xiaoman activity image-generation starter observation passed"

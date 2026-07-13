@@ -76,7 +76,7 @@ assert_no_sensitive_output() {
   local token
   for token in "${forbidden[@]}"; do
     if [[ -n "$token" ]] && grep -Fq -- "$token" "$file"; then
-      echo "${label} leaked forbidden output: ${token}" >&2
+      echo "${label} contains forbidden sensitive output" >&2
       exit 1
     fi
   done

@@ -95,6 +95,7 @@ esac
   for (const timer of [
     "qintopia-agentos-xiaoman-activity-signal-worker.timer",
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "qintopia-agentos-operations-group-send-ready.timer",
   ]) {
@@ -107,6 +108,7 @@ esac
     "daemon-reload",
     "enable --now qintopia-agentos-xiaoman-activity-signal-worker.timer",
     "enable --now qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
+    "enable --now qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
     "enable --now qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "enable --now qintopia-agentos-operations-group-send-ready.timer",
   ]) {

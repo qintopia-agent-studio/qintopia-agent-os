@@ -17,8 +17,9 @@ under `runtime/sidecar`, and production deployment uses the release/current mode
 - These timers only write internal AgentOS work items, artifacts, or audit records. They
   do not call external evidence, image, Feishu, QiWe, or publish adapters.
 - The image-generation request boundary is merged on `master` but is not in the deployed
-  `v0.2.6` binary. There is no image-generation timer, provider call, media upload, or
-  `generated_image` artifact write.
+  `v0.2.6` binary. Current deployment code renders an internal request-starter timer;
+  production has not observed it yet. There is still no provider-worker timer, provider
+  call, media upload, or production `generated_image` artifact write.
 - The blocker rows below describe the 2026-06-30 baseline. The passed Xiaoman preflight
   supersedes its evidence/visual, send-request, group send-ready, and
   aggregate-preflight observation rows; remaining external-adapter blockers still apply.
