@@ -226,6 +226,15 @@ Use `rg` and `rg --files` for search.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.
+- `qiwe-image-send-preflight` may only validate the disabled async URL-upload/send-image
+  contract from local configuration. It must not open network or database connections,
+  emit tokens, device/group ids, media URLs, file credentials, or message identifiers,
+  write Feishu, or send externally. Do not add a QiWe send worker or timer until staging
+  proves complete `cmd=20000` callback credentials and resolves the current PNG/JPG
+  compatibility gap. Final request construction must recheck the target group allowlist,
+  response parsing must fail closed unless both `code=0` and `isSendSuccess=1`, and this
+  disabled-state preflight must fail when the send-enable flag is `1`. All future
+  outbound header values must reject every control character before socket connection.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
   timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
   evidence/visual preview, and the group send-ready timer observation. It must not set

@@ -39,6 +39,11 @@ unless correcting historical evidence.
      historically observed OpenAI-compatible `gpt-image-2` path as its implementation
      target. Real image generation, user-media storage, human review, and publication
      remain separate gates; the merged request intake is not in production `v0.2.6`.
+   - The final Xiaoman image-send boundary is tracked in
+     [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
+     QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`; it remains
+     disabled while the current PNG/JPG mismatch and callback credential shape are
+     unresolved in staging.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,

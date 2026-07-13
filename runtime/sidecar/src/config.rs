@@ -1066,6 +1066,8 @@ pub enum Command {
     },
     /// Validate Huabaosi image adapter configuration without opening network or database connections.
     HuabaosiImageGenerationPreflight,
+    /// Validate the disabled QiWe async image-upload/send contract without network or database access.
+    QiweImageSendPreflight,
     /// Claim Wenyuange evidence requests and create internal evidence artifacts.
     RunEvidenceWorker {
         /// Run one batch and exit.

@@ -80,6 +80,25 @@ also newer than that observed release. The reviewed deployment path installs int
 timers for evidence artifacts and `image_generation_request` intake. The separate image
 provider worker remains disabled and has no systemd timer.
 
+The final QiWe image-send contract is documented in
+`../../docs/plans/active/xiaoman-qiwe-image-send.md`. It uses the official async URL
+upload, correlates the `cmd=20000` Webhook by `requestId`, and only then permits a
+`/msg/sendImage` request with complete file credentials. The Rust contract and local
+preflight are implemented, but no network worker or timer exists. The current Huabaosi
+artifact is PNG while the QiWe send-image documentation names JPG; staging must resolve
+that mismatch before any external-send implementation can be enabled.
+
+The no-network configuration check is:
+
+```bash
+qiwe-image-send-preflight
+```
+
+It fails closed unless the HTTPS API host, generated-image media hosts, target groups,
+credentials, and reviewed Webhook readiness flag are configured. A successful preflight
+still does not authorize upload or sending. The command fails when the send-enable flag
+is `1`; staging enablement needs a separate owner-reviewed gate.
+
 Before any staging adapter smoke, run:
 
 ```bash
