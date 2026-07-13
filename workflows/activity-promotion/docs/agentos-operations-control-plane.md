@@ -1,8 +1,27 @@
 # AgentOS 运营控制面部署与验收 Runbook
 
-Status: draft v1  
-Scope: `qintopia-message-sidecar` AgentOS operations control plane  
-Date: 2026-06-30
+- Status: historical baseline (2026-06-30); current-state addendum below
+- Scope: standalone `qintopia-message-sidecar` AgentOS operations control plane
+- Date: 2026-06-30
+
+## Current State Addendum (2026-07-13)
+
+This document preserves the original standalone runbook as migration evidence. Do not
+use its server checkout paths or commands for current deployment. Current code lives
+under `runtime/sidecar`, and production deployment uses the release/current model.
+
+- Production `v0.2.6` has active Xiaoman signal, promotion-starter, evidence, visual,
+  send-request-starter, and group send-ready internal timers. The aggregate read-only
+  preflight passed; see
+  [`deploy/smoke/docs/xiaoman-production-preflight-record.md`](../../../deploy/smoke/docs/xiaoman-production-preflight-record.md).
+- These timers only write internal AgentOS work items, artifacts, or audit records. They
+  do not call external evidence, image, Feishu, QiWe, or publish adapters.
+- The image-generation request boundary is merged on `master` but is not in the deployed
+  `v0.2.6` binary. There is no image-generation timer, provider call, media upload, or
+  `generated_image` artifact write.
+- The blocker rows below describe the 2026-06-30 baseline. The passed Xiaoman preflight
+  supersedes its evidence/visual, send-request, group send-ready, and
+  aggregate-preflight observation rows; remaining external-adapter blockers still apply.
 
 ## 目标
 

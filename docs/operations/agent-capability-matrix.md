@@ -1,6 +1,6 @@
 # Agent Capability Matrix
 
-Updated: 2026-07-03
+Updated: 2026-07-13
 
 This matrix summarizes the active Agent packages after M6.1. It is an operations view,
 not a permission implementation.
@@ -24,6 +24,10 @@ not a permission implementation.
 - `xiaoqin` is not an active Agent package in the current phase. Future Xiaoqin work
   requires a new non-WorkTool Agent contract and owner-approved registry change.
 - Huabaosi shadow/Rust material remains review-pool until owner approval.
+- Huabaosi's profile package and external image adapter remain draft/review-pool. The
+  separate AgentOS visual-brief control-plane workflow is active and may only create
+  internal `poster_brief` artifacts; it does not make the profile or image generation
+  production-approved.
 - Every active Agent template must declare `dry_run_expectations`.
 
 ## Minimum Checks

@@ -5,8 +5,8 @@ owner: PatrickLiveCool
 status: active
 risk_level: medium
 description:
-  Xiaoman workflow for activity signal intake, activity state updates, and downstream
-  request triggering.
+  Xiaoman workflow for activity signal intake and downstream request triggering;
+  status-update and gap-update applies remain blocked pending audited field allowlists.
 source:
   path: runtime/sidecar/src/xiaoman_activity.rs
   reference: current-monorepo
@@ -31,8 +31,8 @@ tags:
   - activity
   - signal
 next_actions:
-  - Run the aggregate Xiaoman production preflight smoke after an owner-approved deploy
-    and record the observed queue counts and any blocking point.
+  - Re-run the aggregate Xiaoman production preflight smoke after each owner-approved
+    deploy and record the observed queue counts and any blocking point.
   - Add real evidence retrieval and visual generation only after the internal artifact
     timers are stable and owner-reviewed.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of

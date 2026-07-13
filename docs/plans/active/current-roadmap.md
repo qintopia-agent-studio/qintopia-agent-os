@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-07-08
+Updated: 2026-07-13
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -35,9 +35,10 @@ unless correcting historical evidence.
    - Do not broaden Feishu, QiWe, or workbench permissions in the same PR as unrelated
      feature work.
    - The proposed
-     [Aliang image-generation adapter](aliang-production-image-generation.md) keeps real
-     image generation, user-media storage, human review, and publication as separate
-     gates. It is not enabled by the existing internal visual brief worker.
+     [Aliang image-generation adapter](aliang-production-image-generation.md) uses the
+     historically observed OpenAI-compatible `gpt-image-2` path as its implementation
+     target. Real image generation, user-media storage, human review, and publication
+     remain separate gates; the merged request intake is not in production `v0.2.6`.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,
