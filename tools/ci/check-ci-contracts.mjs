@@ -212,6 +212,16 @@ if (ciWorkflow) {
         );
       }
     }
+    if (parsedWorkflow?.jobs?.check?.permissions?.statuses !== "write") {
+      errors.push(
+        ".github/workflows/ci.yml: jobs.check needs statuses: write to publish the authenticated Release Please result"
+      );
+    }
+    if (parsedWorkflow?.jobs?.changes?.permissions?.statuses) {
+      errors.push(
+        ".github/workflows/ci.yml: jobs.changes must not receive commit status write permission"
+      );
+    }
     const checkSteps = parsedWorkflow?.jobs?.check?.steps;
     if (!Array.isArray(checkSteps)) {
       errors.push(".github/workflows/ci.yml: jobs.check.steps must be a step list");
@@ -262,6 +272,40 @@ if (ciWorkflow) {
           if (!runScript.includes(requiredFragment)) {
             errors.push(
               `.github/workflows/ci.yml: Release Please dispatch check must include ${requiredFragment}`
+            );
+          }
+        }
+      }
+      const releaseStatusStep = checkSteps.find(
+        (step) => step?.name === "Publish Release Please validation status"
+      );
+      if (!releaseStatusStep) {
+        errors.push(
+          ".github/workflows/ci.yml: must publish a Release Please validation commit status"
+        );
+      } else {
+        const runScript = String(releaseStatusStep.run ?? "");
+        const condition = String(releaseStatusStep.if ?? "");
+        for (const requiredFragment of [
+          "always()",
+          "workflow_dispatch",
+          "release-please-pr == 'true'",
+        ]) {
+          if (!condition.includes(requiredFragment)) {
+            errors.push(
+              `.github/workflows/ci.yml: Release Please status condition must include ${requiredFragment}`
+            );
+          }
+        }
+        for (const requiredFragment of [
+          "statuses/${HEAD_SHA}",
+          'context="Release Please validation"',
+          'state="$state"',
+          'target_url="$RUN_URL"',
+        ]) {
+          if (!runScript.includes(requiredFragment)) {
+            errors.push(
+              `.github/workflows/ci.yml: Release Please status publisher must include ${requiredFragment}`
             );
           }
         }

@@ -29,6 +29,8 @@ suppresses recursive workflow events created by that token, so the PR's `opened`
 - Reconstruct the pull-request event only for the existing dedicated manifest/changelog
   validator.
 - Give only the `changes` and `check` jobs read access to pull-request metadata.
+- Give only the authenticated `check` job commit-status write permission, and publish a
+  fixed `Release Please validation` success/failure status on the verified head SHA.
 
 The dispatch rejects ordinary branches, stale release heads, closed PRs, and PRs that do
 not target `master`. It does not merge, tag, publish, deploy, or use production secrets.
@@ -41,7 +43,16 @@ not target `master`. It does not merge, tag, publish, deploy, or use production 
 - `sh .husky/pre-commit`
 - After merge, run
   `gh workflow run ci.yml --ref <release-head> -f release_please_pr_number=90` and
-  require the attached checks to pass.
+  require the workflow plus PR commit status to pass.
+
+## First Dispatch Follow-Up
+
+The first exact-head dispatch for #90 succeeded on `077e120`, including the dedicated
+Release Please validator. GitHub still returned no checks in the PR status rollup;
+workflow-dispatch check suites were visible only on the Actions run. The result was
+technically valid but not enforceable or visible at the PR merge surface. The follow-up
+adds an authenticated commit status linked to that run. A successful Actions run without
+the fixed PR status remains insufficient for merge.
 
 ## Remaining Boundary
 

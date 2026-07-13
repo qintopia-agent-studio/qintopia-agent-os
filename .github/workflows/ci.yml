@@ -144,6 +144,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      statuses: write
 
     steps:
       - name: Checkout
@@ -222,6 +223,29 @@ jobs:
           else
             node tools/ci/check-release-please-pr.mjs
           fi
+
+      - name: Publish Release Please validation status
+        if: >-
+          ${{ always() && github.event_name == 'workflow_dispatch' &&
+          needs.changes.outputs.release-please-pr == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ needs.changes.outputs.head-sha }}
+          RUN_URL:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
+        run: |
+          state=success
+          description="Release Please metadata validation passed"
+          if [[ "${{ job.status }}" != "success" ]]; then
+            state=failure
+            description="Release Please metadata validation failed"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context="Release Please validation" \
+            -f description="$description" \
+            -f target_url="$RUN_URL"
 
       - name: Setup Python
         if:

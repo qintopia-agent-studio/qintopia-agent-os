@@ -90,9 +90,9 @@ Use `rg` and `rg --files` for search.
 - A Release Please PR created or updated with `GITHUB_TOKEN` may have no automatic PR
   checks because GitHub suppresses recursive workflow triggers. Before merging such a
   PR, run the manual CI validation command on its exact head branch and require the
-  attached `changes` and `check` jobs to pass. The dispatch must fail if the PR is not
-  open, does not target `master`, is not bot-authored, or the checked-out SHA differs
-  from the PR head.
+  workflow `changes` and `check` jobs plus the PR-attached `Release Please validation`
+  commit status to pass. The dispatch must fail if the PR is not open, does not target
+  `master`, is not bot-authored, or the checked-out SHA differs from the PR head.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
