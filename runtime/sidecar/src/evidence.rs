@@ -106,7 +106,6 @@ fn run_fixture(apply_requested: bool) -> Result<EvidenceWorkerReport> {
     validate_work_item(&work_item)?;
     let drafts = build_evidence_drafts(&work_item)?;
     Ok(report_from_drafts(
-        true,
         false,
         true,
         "fixture_dry_run_ok",
@@ -128,7 +127,6 @@ async fn run_once(
         validate_work_item(&work_item)?;
         let drafts = build_evidence_drafts(&work_item)?;
         return Ok(report_from_drafts(
-            false,
             false,
             false,
             "dry_run_ok",
@@ -189,7 +187,6 @@ async fn run_once(
     tx.commit().await.context("commit evidence transaction")?;
 
     Ok(report_from_drafts(
-        false,
         true,
         false,
         "evidence_artifact_created",
@@ -587,7 +584,6 @@ async fn append_event_in_tx(
 }
 
 fn report_from_drafts(
-    dry_run: bool,
     apply_requested: bool,
     fixture_mode: bool,
     action_status: &str,
@@ -597,7 +593,7 @@ fn report_from_drafts(
 ) -> EvidenceWorkerReport {
     EvidenceWorkerReport {
         success: true,
-        dry_run,
+        dry_run: !apply_requested,
         apply_requested,
         fixture_mode,
         worker: WORKER_ID,
@@ -711,6 +707,8 @@ mod tests {
         let report = run_fixture(false).expect("fixture should validate");
 
         assert_eq!(report.action_status, "fixture_dry_run_ok");
+        assert!(report.dry_run);
+        assert!(!report.apply_requested);
         assert_eq!(report.artifact_previews.len(), 1);
         assert_eq!(
             report.artifact_previews[0].artifact_type,
