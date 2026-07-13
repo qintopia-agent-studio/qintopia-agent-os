@@ -396,6 +396,24 @@ xiaoman_promotion_evidence_child_id="$(
   psql_value "SELECT id FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'wenyuange.retrieve_evidence' AND work_item_type = 'evidence_request';"
 )"
 
+xiaoman_promotion_evidence_dry_run="$(run_json xiaoman_promotion_evidence_dry_run run-evidence-worker --once --work-item-id "$xiaoman_promotion_evidence_child_id" --dry-run)"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['success'] is True"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['dry_run'] is True"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['apply_requested'] is False"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['fixture_mode'] is False"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['action_status'] == 'dry_run_ok'"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['work_item_id'] == '${xiaoman_promotion_evidence_child_id}'"
+assert_json "$xiaoman_promotion_evidence_dry_run" "len(data['artifact_ids']) == 0"
+assert_json "$xiaoman_promotion_evidence_dry_run" "data['artifact_previews'][0]['artifact_type'] == 'evidence_summary'"
+assert_sql_equals \
+  xiaoman_promotion_evidence_dry_run_keeps_work_item_queued \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_promotion_evidence_child_id}'::uuid AND status = 'queued';"
+assert_sql_equals \
+  xiaoman_promotion_evidence_dry_run_creates_no_artifact \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.artifacts WHERE work_item_id = '${xiaoman_promotion_evidence_child_id}'::uuid;"
+
 xiaoman_promotion_evidence="$(run_json xiaoman_promotion_evidence run-evidence-worker --once --work-item-id "$xiaoman_promotion_evidence_child_id" --apply)"
 assert_json "$xiaoman_promotion_evidence" "data['success'] is True"
 assert_json "$xiaoman_promotion_evidence" "data['action_status'] == 'evidence_artifact_created'"
@@ -408,6 +426,24 @@ assert_sql_equals \
   xiaoman_promotion_created_evidence_summary \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.artifacts WHERE work_item_id = '${xiaoman_promotion_evidence_child_id}'::uuid AND artifact_type = 'evidence_summary' AND review_status = 'not_required';"
+
+xiaoman_promotion_visual_dry_run="$(run_json xiaoman_promotion_visual_dry_run run-collaboration-worker --work-item-type visual_asset_request --once --work-item-id "$xiaoman_promotion_visual_child_id" --dry-run)"
+assert_json "$xiaoman_promotion_visual_dry_run" "data['success'] is True"
+assert_json "$xiaoman_promotion_visual_dry_run" "data['dry_run'] is True"
+assert_json "$xiaoman_promotion_visual_dry_run" "data['apply_requested'] is False"
+assert_json "$xiaoman_promotion_visual_dry_run" "data['fixture_mode'] is False"
+assert_json "$xiaoman_promotion_visual_dry_run" "data['action_status'] == 'dry_run_ok'"
+assert_json "$xiaoman_promotion_visual_dry_run" "data['work_item_id'] == '${xiaoman_promotion_visual_child_id}'"
+assert_json "$xiaoman_promotion_visual_dry_run" "len(data['artifact_ids']) == 0"
+assert_json "$xiaoman_promotion_visual_dry_run" "data['artifact_previews'][0]['artifact_type'] == 'poster_brief'"
+assert_sql_equals \
+  xiaoman_promotion_visual_dry_run_keeps_work_item_queued \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_promotion_visual_child_id}'::uuid AND status = 'queued';"
+assert_sql_equals \
+  xiaoman_promotion_visual_dry_run_creates_no_artifact \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.artifacts WHERE work_item_id = '${xiaoman_promotion_visual_child_id}'::uuid;"
 
 xiaoman_promotion_visual="$(run_json xiaoman_promotion_visual run-collaboration-worker --work-item-type visual_asset_request --once --work-item-id "$xiaoman_promotion_visual_child_id" --apply)"
 assert_json "$xiaoman_promotion_visual" "data['success'] is True"
