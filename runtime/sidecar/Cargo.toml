@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
 
+[features]
+postgres-integration-tests = []
+
 [dependencies]
 anyhow = "=1.0.86"
 async-nats = { version = "=0.37.0", default-features = false, features = ["server_2_10", "ring"] }

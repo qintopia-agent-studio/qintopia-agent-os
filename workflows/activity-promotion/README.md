@@ -134,3 +134,11 @@ pnpm workflows:check
 
 The Postgres apply smoke is guarded and must only run with explicit owner approval and
 configured database credentials.
+
+The Rust send-ready PostgreSQL integration test is ignored by default and may run only
+against the disposable `qintopia_test` database with
+`QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1` and the explicit `postgres-integration-tests`
+Cargo feature. It proves an approved generated image records exactly one internal
+`group_message_send_ready_recorded` event, duplicate apply is a no-op, and a pending
+artifact fails closed without any `send_executed` or `external_published` event. It does
+not call QiWe.

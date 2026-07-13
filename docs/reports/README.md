@@ -30,6 +30,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-xiaoman-mutation-local-postgres-integration.md`                        | adopt-input | Xiaoman mutation local pgvector image-pull limitation                  |
 | `2026-07-14-recursive-workflow-status-local-integration.md`                        | adopt-input | Recursive status local pgvector image-pull limitation                  |
 | `2026-07-14-generated-image-approval-integrity.md`                                 | adopt-input | Generated-image approval provenance remediation                        |
+| `2026-07-14-xiaoman-group-send-postgres-integration.md`                            | adopt-input | Group send-ready Rust/PostgreSQL integration coverage                  |
 | `2026-07-14-release-pr-ci-not-triggered.md`                                        | adopt-input | Bot-generated Release Please PR manual CI remediation                  |
 
 ## Rules
