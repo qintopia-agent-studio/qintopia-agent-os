@@ -126,6 +126,12 @@ if (ciWorkflow && !ciWorkflow.includes("pnpm pr:check-body")) {
   errors.push(".github/workflows/ci.yml: pull_request checks must validate PR body");
 }
 
+if (ciWorkflow && !ciWorkflow.includes("      - edited")) {
+  errors.push(
+    ".github/workflows/ci.yml: pull_request body edits must trigger fresh validation"
+  );
+}
+
 if (ciWorkflow && !ciWorkflow.includes("release-please-pr")) {
   errors.push(".github/workflows/ci.yml: must detect Release Please PRs");
 }

@@ -21,13 +21,17 @@ Repair the required PR-body CI failure on Huabaosi staging smoke PR #99.
 PR-Agent's automatic describe action owns the GitHub PR description, which conflicts
 with the repository-owned PR template and its required CI fields. The prior
 `pr_description.add_original_user_description: "false"` setting made the replacement
-discard the completed body rather than preserve it.
+discard the completed body rather than preserve it. GitHub Actions reruns retain the
+original event payload, so rerunning a failed job after manually restoring the PR body
+still validates the stale overwritten body.
 
 ## Resolution
 
 - Disable PR-Agent automatic describe while retaining automatic review and comment-based
   advice.
 - Make CI contract validation require `github_action_config.auto_describe: "false"`.
+- Trigger CI on `pull_request.edited`, so a repaired body produces a fresh event payload
+  and can be validated without another source commit.
 - Record that the PR body is author-owned in `AGENTS.md` and the PR-Agent operating
   guide.
 - Restore the completed PR #99 body, then rerun the failed check after this workflow
