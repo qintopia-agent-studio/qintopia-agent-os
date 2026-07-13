@@ -162,6 +162,20 @@ if (!exists(xiaomanImageStarterObservationPath)) {
   }
 }
 
+for (const observationPath of [
+  "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
+  "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh",
+]) {
+  const smoke = exists(observationPath) ? readText(observationPath) : "";
+  requireFragment(observationPath, smoke, "contains forbidden sensitive output");
+  forbidFragment(observationPath, smoke, "leaked forbidden output: ${token}");
+}
+
 const aliangStagingSmokePath =
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh";
 if (!exists(aliangStagingSmokePath)) {

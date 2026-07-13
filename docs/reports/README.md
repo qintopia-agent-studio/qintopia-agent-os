@@ -22,6 +22,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-13-deploy-template-secret-remediation.md`                                 | adopt-input | Deploy-template secret removal and provider rotation record            |
 | `2026-07-13-documentation-architecture-consistency-audit.md`                       | adopt-input | Documentation, implementation, and production-state consistency audit  |
 | `2026-07-13-pr-agent-pr-body-overwrite.md`                                         | adopt-input | PR-Agent description overwrite CI remediation record                   |
+| `2026-07-13-observation-secret-diagnostic-remediation.md`                          | adopt-input | Observation smoke secret-diagnostic remediation record                 |
 
 ## Rules
 
