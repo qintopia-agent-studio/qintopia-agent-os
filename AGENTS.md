@@ -137,9 +137,9 @@ Use `rg` and `rg --files` for search.
   adapters.
 - `run-xiaoman-activity-send-request-starter-worker` may only create an
   `awaiting_publish` AgentOS `erhua.send_group_message` / `group_message_request` child
-  from an approved Xiaoman `poster_brief`. It must not record final confirmation, queue
-  the group message, run send-ready, publish, call QiWe, write Feishu, or call external
-  adapters.
+  from an approved Xiaoman `generated_image` whose image-generation request is
+  completed. It must not record final confirmation, queue the group message, run
+  send-ready, publish, call QiWe, write Feishu, or call external adapters.
 - `xiaoman-activity-send-request-starter-observation-smoke.sh` is read-only unless a
   reviewed timer exists and may run the starter in `--check-only` mode only. Do not turn
   it into an apply smoke, final confirmation, send-ready worker, Feishu write, QiWe
@@ -154,9 +154,12 @@ Use `rg` and `rg --files` for search.
   an image provider, upload media, write Feishu, send QiWe, or publish.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
-  storage, host allowlist, staged smoke, rollback owner, and an owner-reviewed adapter
-  exist, it may only validate and preview requests. It must not create a
+  storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
+  configuration exist, it may only validate and preview requests. It must not create a
   `generated_image` artifact, contact an external service, or be attached to a timer.
+  When explicitly enabled in a reviewed staging configuration, every provider, upload,
+  and readback response must be size-capped before parsing, and an already reviewed
+  `generated_image` must never be overwritten or returned to `pending` by a retry.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

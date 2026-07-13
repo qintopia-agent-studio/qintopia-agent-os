@@ -26,6 +26,16 @@ event_signals
   -> queued send-ready audit
 ```
 
+The guarded image adapter adds this approved-asset dependency before the final handoff:
+
+```text
+approved poster_brief
+  -> image_generation_request
+  -> generated_image (pending human review)
+  -> approved generated_image
+  -> awaiting-publish group message request
+```
+
 Only the final-confirmation transition is human-operated; all other arrows above are
 AgentOS work-item or internal-artifact operations. The send-ready audit deliberately
 keeps the request queued and records `send_executed=false` because no production send
@@ -108,12 +118,13 @@ live Wenyuange search, Huabaosi production generation, Feishu, QiWe, poster publ
 or external send adapters.
 
 `run-xiaoman-activity-send-request-starter-worker` adds the next AgentOS-only handoff:
-after a Xiaoman visual child has a reviewed `approved` `poster_brief`, it creates one
-missing `erhua.send_group_message` / `group_message_request` child under the same
-activity parent. The new child starts at `awaiting_publish`, references the approved
-artifact, and records `send_executed=false`. It does not record final confirmation, move
-the request to `queued`, run send-ready, publish, call QiWe, write Feishu, or call
-external adapters.
+only after a Xiaoman visual child has a completed image-generation request with a
+reviewed `approved` `generated_image`, it creates one missing `erhua.send_group_message`
+/ `group_message_request` child under the same activity parent. The new child starts at
+`awaiting_publish`, references that image, and records `send_executed=false`. An
+approved `poster_brief` alone cannot unlock this handoff. It does not record final
+confirmation, move the request to `queued`, run send-ready, publish, call QiWe, write
+Feishu, or call external adapters.
 
 `deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 checks this handoff after an owner-approved deploy. It verifies that the reviewed timer
@@ -177,11 +188,13 @@ raw Feishu record ids.
   applying artifact writes or calling external systems.
 - Downstream runtime scheduling can turn child work items into internal
   `evidence_summary` and pending `poster_brief` artifacts without external adapters.
-- Approved Xiaoman `poster_brief` artifacts can create one awaiting-publish
+- Approved Xiaoman `poster_brief` artifacts can create one idempotent
+  `image_generation_request`; they cannot create a group-message request by themselves.
+- An approved Xiaoman `generated_image` can create one awaiting-publish
   `group_message_request` without final confirmation, queueing, send-ready, or external
   sends.
-- Runtime scheduling can create awaiting-publish `group_message_request` work items from
-  approved Xiaoman `poster_brief` artifacts without external adapters.
+- Runtime scheduling can create awaiting-publish `group_message_request` work items only
+  from approved Xiaoman `generated_image` artifacts without external adapters.
 - A human final confirmation can move the Xiaoman group-message request to `queued`, and
   the send-ready worker records exactly one internal `send_executed=false` audit event
   without calling an external adapter.

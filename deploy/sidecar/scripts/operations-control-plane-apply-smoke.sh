@@ -560,6 +560,60 @@ assert_sql_equals \
   queued \
   "SELECT status FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid;"
 
+# The network adapter is separately covered by a local fake provider/media server. This
+# disposable database fixture proves that only a reviewed generated_image can unlock the
+# downstream send-request path while production generation remains disabled here.
+xiaoman_generated_image_id="$(psql_value "SELECT gen_random_uuid();")"
+psql_value "
+UPDATE qintopia_agent_os.work_items
+SET status = 'awaiting_review', updated_at = now()
+WHERE id = '${xiaoman_image_work_item_id}'::uuid;
+
+INSERT INTO qintopia_agent_os.artifacts (
+  id, work_item_id, artifact_type, review_status, created_by_agent, title, summary,
+  artifact_uri, content_hash, source_ids, risk_labels, information_class, metadata,
+  review_requested_at
+) VALUES (
+  '${xiaoman_generated_image_id}'::uuid,
+  '${xiaoman_image_work_item_id}'::uuid,
+  'generated_image',
+  'pending',
+  'huabaosi',
+  'Apply smoke generated image',
+  'Disposable fixture for reviewed image downstream dependency.',
+  'https://media.example.test/apply-smoke/${smoke_suffix}.png',
+  'sha256:apply-smoke-${smoke_suffix}',
+  jsonb_build_array(jsonb_build_object('approved_brief_artifact_id', '${xiaoman_promotion_artifact_id}')),
+  ARRAY['external_use_review_required','generated_media']::text[],
+  'internal_ops',
+  jsonb_build_object('fixture_mode', true, 'external_publish_executed', false),
+  now()
+);"
+
+xiaoman_generated_image_review_payload="$(
+  python3 - "$xiaoman_generated_image_id" <<'PY'
+import json
+import sys
+artifact_id = sys.argv[1]
+print(json.dumps({
+    "artifact_id": artifact_id,
+    "reviewer_id": "operations-apply-smoke-reviewer",
+    "decision": "approved",
+    "reason": "disposable fixture approval; does not send or publish",
+    "source": "operations_apply_smoke",
+}, ensure_ascii=False))
+PY
+)"
+
+xiaoman_generated_image_review="$(run_json xiaoman_generated_image_review operations-artifact-review-decision --apply --payload-json "$xiaoman_generated_image_review_payload")"
+assert_json "$xiaoman_generated_image_review" "data['success'] is True"
+assert_json "$xiaoman_generated_image_review" "data['artifact_id'] == '${xiaoman_generated_image_id}'"
+assert_json "$xiaoman_generated_image_review" "data['review_status'] == 'approved'"
+assert_sql_equals \
+  xiaoman_generated_image_review_completes_request \
+  completed \
+  "SELECT status FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_image_work_item_id}'::uuid;"
+
 xiaoman_image_again="$(run_json xiaoman_image_again run-xiaoman-activity-image-generation-starter-worker --once --apply --work-item-id "$xiaoman_promotion_visual_child_id")"
 assert_json "$xiaoman_image_again" "data['success'] is True"
 assert_json "$xiaoman_image_again" "data['action_status'] == 'no_eligible_approved_visual_artifacts'"
@@ -604,7 +658,7 @@ assert_json "$xiaoman_send_apply" "data['safe_for_chat'] is False"
 assert_sql_equals \
   xiaoman_send_created_group_child \
   1 \
-  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request' AND status = 'awaiting_publish' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:group-message-child' AND (payload->>'approved_artifact_id')::uuid = '${xiaoman_promotion_artifact_id}'::uuid AND payload->>'send_executed' = 'false';"
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request' AND status = 'awaiting_publish' AND idempotency_key = 'xiaoman_activity_promotion:${xiaoman_worker_parent_id}:group-message-child' AND (payload->>'approved_artifact_id')::uuid = '${xiaoman_generated_image_id}'::uuid AND payload->>'approved_artifact_type' = 'generated_image' AND (payload->>'image_generation_work_item_id')::uuid = '${xiaoman_image_work_item_id}'::uuid AND payload->>'send_executed' = 'false';"
 
 assert_sql_equals \
   xiaoman_send_did_not_send_or_queue \
@@ -614,7 +668,7 @@ assert_sql_equals \
 xiaoman_send_again="$(run_json xiaoman_send_again run-xiaoman-activity-send-request-starter-worker --once --apply --work-item-id "$xiaoman_worker_parent_id")"
 assert_json "$xiaoman_send_again" "data['success'] is True"
 assert_json "$xiaoman_send_again" "data['worker'] == 'xiaoman-activity-send-request-starter-worker'"
-assert_json "$xiaoman_send_again" "data['action_status'] == 'no_eligible_approved_visual_artifacts'"
+assert_json "$xiaoman_send_again" "data['action_status'] == 'no_eligible_approved_generated_images'"
 assert_json "$xiaoman_send_again" "data['scanned_count'] == 0"
 assert_json "$xiaoman_send_again" "data['missing_child_count'] == 0"
 assert_json "$xiaoman_send_again" "data['safe_for_chat'] is False"
@@ -661,7 +715,7 @@ assert_json "$xiaoman_send_ready" "data['success'] is True"
 assert_json "$xiaoman_send_ready" "data['action_status'] == 'send_ready_recorded'"
 assert_json "$xiaoman_send_ready" "data['work_item_id'] == '${xiaoman_group_work_item_id}'"
 assert_json "$xiaoman_send_ready" "data['send_executed'] is False"
-assert_json "$xiaoman_send_ready" "data['approved_artifact_id'] == '${xiaoman_promotion_artifact_id}'"
+assert_json "$xiaoman_send_ready" "data['approved_artifact_id'] == '${xiaoman_generated_image_id}'"
 
 assert_sql_equals \
   xiaoman_group_send_ready_event_written \

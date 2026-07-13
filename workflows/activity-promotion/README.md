@@ -26,12 +26,16 @@ path.
 ## Required Human Gates
 
 - Visual artifacts need review before use.
-- An approved `poster_brief` may create an `image_generation_request`, but the image
-  provider and isolated media storage remain disabled until separately owner-reviewed.
-- A future `generated_image` must remain pending human review before any downstream use.
-- The existing send-request starter still creates `group_message_request` from an
-  approved `poster_brief`. It does not claim a real image exists. A later image-adapter
-  change must require an approved `generated_image` before using one downstream.
+- An approved `poster_brief` may create an `image_generation_request`. The guarded
+  adapter accepts only OpenAI-compatible `gpt-image-2` `b64_json` PNG output, uploads it
+  to an isolated allowlisted media boundary, and validates a same-byte readback before
+  recording a pending `generated_image`.
+- The adapter remains disabled until separately owner-reviewed provider, storage,
+  staged-smoke, budget, and rollback decisions exist.
+- A `generated_image` must remain pending human review before any downstream use.
+- The send-request starter creates `group_message_request` only from an approved
+  `generated_image` whose image-generation request is completed. An approved
+  `poster_brief` alone is insufficient.
 - Group message requests need final human confirmation before send readiness.
 - Allowlists control group targets, reviewers, confirmers, owners, and attachment hosts
   when configured.
