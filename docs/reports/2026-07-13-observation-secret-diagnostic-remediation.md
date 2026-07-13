@@ -42,3 +42,16 @@ the secret into CI or operator logs while reporting the original leak.
 These smokes inspect only bounded unit, journal, and dry-run output. They do not make
 arbitrary logs safe to publish, and operators must still avoid copying raw production
 output into git or chat.
+
+## Follow-Up: Custom Timer Interval
+
+The updated PR review also found that the new image-request starter observation used a
+fixed `2min` default unless the operator set a separate `_EXPECTED` variable. A reviewed
+deployment using
+`QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL=5min` could therefore
+install the correct unit and still fail observation.
+
+The observation now initializes its expected interval after loading the environment. It
+uses the explicit observation `_EXPECTED` override first, then the actual deployment
+interval, then the `2min` default. The deploy contract requires this fallback chain so a
+future edit cannot silently restore the false failure.

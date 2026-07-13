@@ -148,6 +148,7 @@ if (!exists(xiaomanImageStarterObservationPath)) {
     "run-xiaoman-activity-image-generation-starter-worker --check-only",
     "OnBootSec=9min",
     "safe_for_chat",
+    "QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL_EXPECTED:-${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL:-2min}",
     "--use-feishu-base",
     "send_executed=true",
   ]) {
