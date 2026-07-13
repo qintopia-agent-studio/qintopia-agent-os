@@ -82,6 +82,8 @@ const blockedFilePatterns = [
 const privateKeyPattern = /-----BEGIN (?:RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/;
 const credentialAssignmentPattern =
   /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|tenant[_-]?access[_-]?token|auth[_-]?token|client[_-]?secret|app[_-]?secret|secret|password)\b\s*[:=]\s*["']?([A-Za-z0-9_./+=:@-]{32,})["']?/gi;
+const protectedRuntimeAssignmentPattern =
+  /\b([A-Z][A-Z0-9_]*(?:FEISHU|LARK)[A-Z0-9_]*(?:BASE_TOKEN|TABLE_ID)[A-Z0-9_]*)\b[ \t]*[:=][ \t]*["']?([^\s"'#]+)["']?/g;
 
 const placeholderPattern =
   /^(replace[-_]?with|example|dummy|fake|test|unused|placeholder|changeme|redacted|xxxx|your[-_]?)/i;
@@ -184,6 +186,14 @@ const inspectContent = (relativePath) => {
     if (!isPlaceholder(value)) {
       const line = content.slice(0, match.index).split(/\r?\n/).length;
       addError(`${relativePath}:${line}: high-confidence credential assignment`);
+    }
+  }
+
+  while ((match = protectedRuntimeAssignmentPattern.exec(content)) !== null) {
+    const value = match[2];
+    if (!isPlaceholder(value)) {
+      const line = content.slice(0, match.index).split(/\r?\n/).length;
+      addError(`${relativePath}:${line}: protected Feishu/Lark runtime assignment`);
     }
   }
 };
