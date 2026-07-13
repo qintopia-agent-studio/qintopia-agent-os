@@ -6,7 +6,8 @@ reviewable Agent OS state.
 ## Responsibility
 
 - Detect activity signals and map them to activity records.
-- Track status transitions without treating Feishu as the system source of truth.
+- Validate status-transition requests without treating Feishu as the system source of
+  truth. `status-update` and `gap-update` apply writes remain intentionally blocked.
 - Trigger downstream work requests only when required fields are present.
 - Keep Xiaoman's path read-only or database-scoped until owner-reviewed runtime config
   enables more behavior.
@@ -28,12 +29,11 @@ event_signals
 Only the final-confirmation transition is human-operated; all other arrows above are
 AgentOS work-item or internal-artifact operations. The send-ready audit deliberately
 keeps the request queued and records `send_executed=false` because no production send
-adapter is enabled. The remaining production gate is an owner-approved, read-only
-aggregate preflight run recorded in
-`deploy/smoke/docs/xiaoman-production-preflight-record.md`. Passing that gate requires
-sanitized observation output with `safe_for_chat=false` where present and still does not
-approve Feishu writeback, QiWe sends, poster publishing, real Wenyuange retrieval, or
-Huabaosi production generation.
+adapter is enabled. The `v0.2.6` owner-approved, read-only aggregate preflight has
+passed and is recorded in `deploy/smoke/docs/xiaoman-production-preflight-record.md`.
+Passing that gate requires sanitized observation output with `safe_for_chat=false` where
+present and still does not approve Feishu writeback, QiWe sends, poster publishing, real
+Wenyuange retrieval, or Huabaosi production generation.
 
 ## Signal Intake Contract
 
@@ -190,6 +190,8 @@ raw Feishu record ids.
 - Duplicate signal returns the existing work item by idempotency key.
 - Missing required fields produce a review-needed state.
 - Valid signal can request a visual asset workflow without publishing anything.
+- `status-update` and `gap-update` payloads may be validated but cannot apply a state
+  change until their field allowlists, idempotency, and audit behavior are implemented.
 
 ## Source References
 

@@ -65,11 +65,13 @@ if (exists(registryPath)) {
     if (entry.status !== "active") {
       addError(`${registryPath}: Xiaoman workflow registry status must be active`);
     }
+    const notes = String(entry.notes ?? "");
     if (
-      !String(entry.notes ?? "").includes("production observation record still pending")
+      !notes.includes("production observation passed") ||
+      !notes.includes("external adapters remain gated")
     ) {
       addError(
-        `${registryPath}: Xiaoman notes must keep production observation pending`
+        `${registryPath}: Xiaoman notes must record the passed observation and external-adapter boundary`
       );
     }
   }

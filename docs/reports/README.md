@@ -14,6 +14,8 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-12-xiaoman-group-send-ready-observation.md`                               | adopt-input | Group send-ready production observation gap and remediation record     |
 | `2026-07-12-xiaoman-production-release-gap.md`                                     | adopt-input | Release payload and timer-installation gap remediation record          |
 | `2026-07-13-xiaoman-downstream-dry-run-report.md`                                  | adopt-input | Production preflight dry-run report mismatch and remediation record    |
+| `2026-07-13-aliang-image-provider-runtime-inventory.md`                            | adopt-input | Read-only evidence for the historical OpenAI-compatible Image2 path    |
+| `2026-07-13-documentation-architecture-consistency-audit.md`                       | adopt-input | Documentation, implementation, and production-state consistency audit  |
 
 ## Rules
 

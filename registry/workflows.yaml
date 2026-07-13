@@ -18,8 +18,8 @@ entries:
     manifest: workflows/xiaoman-activity-signal/workflow.yaml
     status: active
     notes:
-      Xiaoman activity signal intake and AgentOS-only downstream preflight; production
-      observation record still pending.
+      Xiaoman activity signal intake and AgentOS-only downstream workflow; v0.2.6
+      production observation passed while external adapters remain gated.
   - id: workflows/visual-asset-request
     path: workflows/visual-asset-request
     manifest: workflows/visual-asset-request/workflow.yaml

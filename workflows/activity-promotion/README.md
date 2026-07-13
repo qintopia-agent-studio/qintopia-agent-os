@@ -5,12 +5,16 @@ signals into reviewed operating assets and controlled group-send readiness.
 
 ## Current Source
 
-- Local source: `../qintopia-message-sidecar/src/operations.rs`
-- Supporting modules: `src/collaboration.rs`, `src/evidence.rs`,
-  `src/group_message_send.rs`, `src/workbench.rs`, `src/xiaoman_activity.rs`
-- Operations doc:
-  `../qintopia-message-sidecar/docs/operations/agentos-operations-control-plane.md`
-- Adopted reference: `eda2652f21999e4f32699463413372accbd3b76e`
+- Current implementation: `../../runtime/sidecar/src/operations.rs`
+- Supporting modules: `../../runtime/sidecar/src/collaboration.rs`,
+  `../../runtime/sidecar/src/evidence.rs`,
+  `../../runtime/sidecar/src/group_message_send.rs`,
+  `../../runtime/sidecar/src/workbench.rs`, and
+  `../../runtime/sidecar/src/xiaoman_activity.rs`
+- Current production observation:
+  `../../deploy/smoke/docs/xiaoman-production-preflight-record.md`
+- Historical 2026-06-30 control-plane baseline:
+  `docs/agentos-operations-control-plane.md`
 
 ## Responsibility
 
@@ -25,6 +29,9 @@ path.
 - An approved `poster_brief` may create an `image_generation_request`, but the image
   provider and isolated media storage remain disabled until separately owner-reviewed.
 - A future `generated_image` must remain pending human review before any downstream use.
+- The existing send-request starter still creates `group_message_request` from an
+  approved `poster_brief`. It does not claim a real image exists. A later image-adapter
+  change must require an approved `generated_image` before using one downstream.
 - Group message requests need final human confirmation before send readiness.
 - Allowlists control group targets, reviewers, confirmers, owners, and attachment hosts
   when configured.
@@ -43,11 +50,17 @@ external publication remain outside the current approved boundary. Any change th
 enables real external sends needs owner review, allowlist evidence, smoke output, and
 rollback notes.
 
+The image request starter and preview worker are merged on `master`, but they are not in
+the observed production `v0.2.6` release. They remain disabled and have no systemd
+timer.
+
 ## Acceptance Scenarios
 
 - Activity signal creates a governed work item without sending an external message.
 - Evidence lookup records source basis and risk notes.
 - Visual asset work records artifact evidence and review state.
+- An approved `poster_brief` can create one idempotent image-generation request on
+  `master`; that request does not call a provider or create an image.
 - Group-send readiness requires final human confirmation before any external send path
   is considered.
 
@@ -57,6 +70,7 @@ Use the local no-credential smoke first:
 
 ```bash
 deploy/sidecar/scripts/operations-control-plane-smoke.sh
+pnpm workflows:check
 ```
 
 The Postgres apply smoke is guarded and must only run with explicit owner approval and

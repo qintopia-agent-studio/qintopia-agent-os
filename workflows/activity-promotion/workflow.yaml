@@ -9,7 +9,7 @@ description:
   group-send readiness.
 source:
   path: runtime/sidecar/src/operations.rs
-  reference: eda2652f21999e4f32699463413372accbd3b76e
+  reference: current-monorepo
   disposition: adopt
 production_boundary:
   external_sends: false
@@ -34,3 +34,6 @@ tags:
 next_actions:
   - Keep group-send execution out of scope until reviewed send adapter and final
     confirmation gates exist.
+  - Release the merged image-request boundary before attempting staging provider work;
+    do not attach an image worker timer before its adapter and media storage are
+    reviewed.

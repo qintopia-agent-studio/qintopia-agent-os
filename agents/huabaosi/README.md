@@ -34,6 +34,10 @@ prompts, caption drafts, and related creative artifacts.
 - Runtime `.env`, memories, sessions, caches, auth files, locks, logs, and databases are
   excluded from this package.
 
+The AgentOS visual-brief worker is an active internal control-plane capability, but it
+does not make this Hermes profile package or a real image provider adapter
+production-ready.
+
 ## Validation
 
 ```bash
