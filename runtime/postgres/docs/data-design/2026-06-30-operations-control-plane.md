@@ -76,8 +76,11 @@ capability and work item layer.
 
 The first human workbench worker is a Feishu Task mirror payload generator. It uses
 provider `feishu_task_dry_run`, writes only allowlisted fields to
-`human_workbench_refs`, and records `mirror_dry_run_recorded`. It does not call Feishu
-Task APIs or treat Feishu as a source of truth.
+`human_workbench_refs`, and records `mirror_dry_run_recorded`. Immediate child refs are
+kept for compatibility; a separate descendant summary includes every nested work item
+with its direct parent and depth. It does not call Feishu Task APIs or treat Feishu as a
+source of truth. The dry-run description caps traversal at depth 8 and 32 refs and
+records an explicit truncation flag instead of producing an unbounded task description.
 
 `operations-workbench-event-record` is the matching controlled intake path for future
 Feishu Task comments, section changes, review requests, and final confirmation requests.
@@ -135,9 +138,9 @@ are rejected before capability execution.
 
 Workbench mirror descriptions are allowlisted to stable operational fields:
 `work_item_id`, `work_item_type`, `capability_key`, requester/target agents, human
-owner, sanitized source refs, risk/review policy, artifact counts, and current status.
-Raw payload, internal prompts, Base table ids, tokens, and raw private text are rejected
-rather than mirrored.
+owner, sanitized source refs, risk/review policy, artifact counts, immediate child refs,
+recursive descendant refs, and current status. Raw payload, internal prompts, Base table
+ids, tokens, and raw private text are rejected rather than mirrored.
 
 External-send capabilities such as `erhua.send_group_message` are high risk. They
 require approved artifacts, allowlisted targets, human final confirmation, bounded
@@ -227,15 +230,15 @@ The migration is additive:
   visual, and group-message child work items share one parent
   `activity_promotion_request`, reads that parent status tree and current blocking
   point, syncs the durable parent workflow summary with `workflow_status_synced`,
-  records a dry-run Feishu Task workbench reference with safe child status summaries and
-  the current blocking point, records a human workbench event against that mirror
-  reference without mutating work item status, confirms duplicate external workbench
-  event ids are idempotent, records and processes review-request, final-confirmation,
-  controlled cancellation status-change, owner-change, and attachment workbench events
-  through `run-workbench-event-worker`, verifies processing idempotency, and confirms
-  policy denial audit events. The script uses `run-collaboration-worker --work-item-id`,
-  `run-evidence-worker --work-item-id`, `operations-workflow-sync --work-item-id`,
-  `run-workflow-sync-worker --work-item-id`,
+  records a dry-run Feishu Task workbench reference with safe immediate-child and
+  recursive-descendant status summaries and the current blocking point, records a human
+  workbench event against that mirror reference without mutating work item status,
+  confirms duplicate external workbench event ids are idempotent, records and processes
+  review-request, final-confirmation, controlled cancellation status-change,
+  owner-change, and attachment workbench events through `run-workbench-event-worker`,
+  verifies processing idempotency, and confirms policy denial audit events. The script
+  uses `run-collaboration-worker --work-item-id`, `run-evidence-worker --work-item-id`,
+  `operations-workflow-sync --work-item-id`, `run-workflow-sync-worker --work-item-id`,
   `run-group-message-send-worker --work-item-id`, and
   `run-workbench-mirror-worker --work-item-id` so it processes only the smoke work item.
   It does not call Feishu, QiWe, Huabaosi, Wenyuange, or external send/publish adapters.

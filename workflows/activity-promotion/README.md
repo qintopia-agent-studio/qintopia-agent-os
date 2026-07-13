@@ -28,6 +28,12 @@ activity request and returns every descendant with its direct `parent_work_item_
 This keeps the image-generation request, which is nested under the visual request,
 visible in the same status report and workflow summary.
 
+The `feishu_task_dry_run` workbench mirror keeps its immediate `child_status_refs` and
+adds a complete `descendant_status_refs` summary with direct parent and depth. This
+makes the same nested image-generation stage visible to human operators without calling
+a Feishu API or copying raw payloads into the mirror. The dry-run description is bounded
+to depth 8 and 32 refs and reports explicitly if that bound truncates an abnormal tree.
+
 ## Required Human Gates
 
 - Visual artifacts need review before use.
@@ -106,6 +112,9 @@ timer.
   provider or create an image.
 - Querying the status of a nested image-generation request resolves the activity root
   and reports immediate and nested descendants without losing the parent relation.
+- A workbench mirror description reports both immediate children and all descendants,
+  including the nested image-generation request, while keeping sensitive payload fields
+  excluded.
 - Group-send readiness requires final human confirmation before any external send path
   is considered.
 

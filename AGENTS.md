@@ -225,6 +225,10 @@ Use `rg` and `rg --files` for search.
   root and report every descendant while preserving each direct `parent_work_item_id`.
   `operations-workflow-sync` may persist that recursive AgentOS summary, but neither
   command may execute workers, schedule a general DAG, call external adapters, or send.
+- The `feishu_task_dry_run` workbench mirror must preserve immediate `child_status_refs`
+  and expose nested work only through sanitized `descendant_status_refs` with direct
+  parent and depth. It must not copy raw payloads, call Feishu, or make the workbench a
+  fact source. Keep the description bounded and report truncation explicitly.
 - `install-release-systemd-units.sh` may only render units from the promoted immutable
   release, install its fixed allowlist, and enable AgentOS internal workflow timers. Do
   not extend it to execute arbitrary commands, enable Feishu/QiWe/external adapters, or

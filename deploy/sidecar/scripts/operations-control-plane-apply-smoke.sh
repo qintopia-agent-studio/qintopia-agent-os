@@ -987,6 +987,29 @@ assert_json "$xiaoman_nested_workflow_sync" "len(data['descendant_status_refs'])
 assert_json "$xiaoman_nested_workflow_sync" "any(item['work_item_id'] == '${xiaoman_image_work_item_id}' and item['parent_work_item_id'] == '${xiaoman_promotion_visual_child_id}' and item['depth'] == 2 for item in data['descendant_status_refs'])"
 assert_json "$xiaoman_nested_workflow_sync" "data['current_blocking_point'] == 'group_message_request:send_ready_waiting_for_production_send_adapter'"
 
+xiaoman_workbench_mirror="$(run_json xiaoman_workbench_mirror run-workbench-mirror-worker --once --work-item-id "$xiaoman_worker_parent_id" --apply)"
+assert_json "$xiaoman_workbench_mirror" "data['success'] is True"
+assert_json "$xiaoman_workbench_mirror" "data['action_status'] == 'mirror_dry_run_recorded'"
+assert_json "$xiaoman_workbench_mirror" "data['work_item_id'] == '${xiaoman_worker_parent_id}'"
+assert_json "$xiaoman_workbench_mirror" "data['provider'] == 'feishu_task_dry_run'"
+assert_json "$xiaoman_workbench_mirror" "'payload' not in data['description']"
+assert_json "$xiaoman_workbench_mirror" "'child_status_refs' in data['description']"
+assert_json "$xiaoman_workbench_mirror" "'descendant_status_refs' in data['description']"
+assert_json "$xiaoman_workbench_mirror" "'descendant_status_truncated: false' in data['description']"
+assert_json "$xiaoman_workbench_mirror" "'${xiaoman_image_work_item_id}:parent=${xiaoman_promotion_visual_child_id}:depth=2:image_generation_request:completed:huabaosi.generate_image_asset:none' in data['description']"
+assert_json "$xiaoman_workbench_mirror" "'current_blocking_point: group_message_request:send_ready_waiting_for_production_send_adapter' in data['description']"
+assert_json "$xiaoman_workbench_mirror" "data['sensitive_fields_redacted'] is True"
+
+assert_sql_equals \
+  xiaoman_workbench_mirror_counts_descendants \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.human_workbench_refs WHERE work_item_id = '${xiaoman_worker_parent_id}'::uuid AND provider = 'feishu_task_dry_run' AND metadata->>'child_status_count' = '3' AND metadata->>'descendant_status_count' = '4' AND metadata->>'descendant_status_truncated' = 'false';"
+
+assert_sql_equals \
+  xiaoman_workbench_mirror_event_written \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_worker_parent_id}'::uuid AND event_type = 'mirror_dry_run_recorded';"
+
 planned_submit_payload="$(
   python3 - "$source_ref" <<'PY'
 import json
@@ -1612,6 +1635,7 @@ assert_json "$mirror" "data['work_item_id'] == '${parent_work_item_id}'"
 assert_json "$mirror" "data['provider'] == 'feishu_task_dry_run'"
 assert_json "$mirror" "'payload' not in data['description']"
 assert_json "$mirror" "'child_status_refs' in data['description']"
+assert_json "$mirror" "'descendant_status_refs' in data['description']"
 assert_json "$mirror" "'current_blocking_point: group_message_request:send_ready_waiting_for_production_send_adapter' in data['description']"
 assert_json "$mirror" "data['sensitive_fields_redacted'] is True"
 
