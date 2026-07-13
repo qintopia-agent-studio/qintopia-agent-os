@@ -127,6 +127,12 @@ externally. Its production observation smoke inspects the fixed unit command and
 sanitized journal, then runs the starter with `--check-only` so the observation itself
 remains read-only.
 
+The separate Huabaosi provider disabled-state observation verifies that
+`QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED` remains off and that no provider worker
+service or timer is installed. It may run the provider worker only as
+`run-huabaosi-image-generation-worker --once --dry-run` for a read-only queue preview;
+it never claims a request or calls provider/media endpoints.
+
 `run-xiaoman-activity-send-request-starter-worker` adds the next AgentOS-only handoff:
 only after a Xiaoman visual child has a completed image-generation request with a
 reviewed `approved` `generated_image`, it creates one missing `erhua.send_group_message`
@@ -147,9 +153,10 @@ report shape without writing.
 read-only production preflight for this path. It composes the Xiaoman signal timer
 observation, promotion starter timer observation, shared evidence/visual timer
 observation, Xiaoman downstream evidence/visual preview, image-generation starter
-observation, send request starter observation, and group send-ready timer observation.
-It does not run the image provider worker or send-ready worker, deploy, write Feishu,
-call QiWe, publish, or send externally.
+observation, Huabaosi provider disabled-state observation, send request starter
+observation, and group send-ready timer observation. It runs the image worker only in
+dry-run and does not run the send-ready worker, deploy, write Postgres or Feishu, call
+provider/media endpoints or QiWe, publish, or send externally.
 
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
@@ -238,6 +245,7 @@ pnpm check:runtime
 deploy/sidecar/scripts/xiaoman-activity-shadow-read-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
+QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh
 QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh
 bash -n deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh

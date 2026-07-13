@@ -76,6 +76,8 @@ if (!exists(xiaomanPreflightPath)) {
     "xiaoman-activity-downstream-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1",
     "xiaoman-activity-image-generation-starter-observation-smoke.sh",
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1",
+    "huabaosi-image-generation-production-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1",
     "xiaoman-activity-send-request-starter-observation-smoke.sh",
   ]) {
@@ -118,6 +120,8 @@ if (!exists(xiaomanPreflightRecordPath)) {
     "run-collaboration-worker --work-item-type visual_asset_request --once --apply",
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
     "run-xiaoman-activity-image-generation-starter-worker --once --apply",
+    "Huabaosi provider disabled state",
+    "run-huabaosi-image-generation-worker --once --dry-run",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "run-xiaoman-activity-send-request-starter-worker --once --apply",
     "Secret and external-send scan",
@@ -163,11 +167,45 @@ if (!exists(xiaomanImageStarterObservationPath)) {
   }
 }
 
+const huabaosiImageProductionObservationPath =
+  "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh";
+if (!exists(huabaosiImageProductionObservationPath)) {
+  addError(`${huabaosiImageProductionObservationPath}: missing observation smoke`);
+} else {
+  const smoke = readText(huabaosiImageProductionObservationPath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE",
+    "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED",
+    'PROVIDER_SERVICE_NAME="qintopia-agentos-huabaosi-image-generation-worker.service"',
+    'PROVIDER_TIMER_NAME="qintopia-agentos-huabaosi-image-generation-worker.timer"',
+    "huabaosi-image-generation-preflight",
+    "run-huabaosi-image-generation-worker --once --dry-run",
+    'worker_stderr="$tmp_dir/worker-preview.stderr"',
+    "worker_status=$?",
+    'assert_no_sensitive_output "image worker dry-run stderr"',
+    "generation_enabled",
+    "generation_flag//[[:space:]]/",
+    "safe_for_chat",
+    "contains forbidden sensitive output",
+    "--use-feishu-base",
+  ]) {
+    requireFragment(huabaosiImageProductionObservationPath, smoke, fragment);
+  }
+  for (const fragment of [
+    "run-huabaosi-image-generation-worker --once --apply",
+    "generated_image_created",
+    "run-group-message-send-worker",
+  ]) {
+    forbidFragment(huabaosiImageProductionObservationPath, smoke, fragment);
+  }
+}
+
 for (const observationPath of [
   "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh",

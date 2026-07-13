@@ -196,6 +196,10 @@ until a real isolated storage service accepts this contract.
   report 增加 `artifact_uri`，该 URI 只能是无 query/fragment/userinfo 且位于 allowlisted
   public media base 下的 HTTPS 地址；provider/upload
   endpoint、密钥和数据库 URL 仍必须拒绝输出。
+- `deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
+  只读验证生产开关保持关闭、provider service/timer 未安装，并运行配置预检和
+  `run-huabaosi-image-generation-worker --once --dry-run` 队列预览。它不 claim work
+  item、不写 artifact、不调用 provider/media、飞书或企微。该 observation 通过只证明 adapter 仍被安全关闭，不代表 staging 或生产生成获批。
 
 运行无网络预检：
 

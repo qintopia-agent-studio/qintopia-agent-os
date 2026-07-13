@@ -512,6 +512,18 @@ export QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1
 scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
 ```
 
+Separately verify that the real Huabaosi provider worker remains disabled and has no
+systemd service or timer. This observation runs configuration preflight and a read-only
+queue preview only; it does not claim requests or contact provider/media endpoints.
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1
+scripts/huabaosi-image-generation-production-observation-smoke.sh
+```
+
 The Xiaoman activity send request starter worker also runs as a systemd timer. It calls
 `run-xiaoman-activity-send-request-starter-worker --once --apply`, scans Xiaoman
 activity promotion parents with completed visual children and approved `poster_brief`
@@ -567,9 +579,11 @@ For the production preflight, run the Xiaoman aggregate observation smoke after 
 owner-approved deploy. It composes the Xiaoman signal timer observation, Xiaoman
 promotion starter timer observation, shared evidence/visual timer observation, Xiaoman
 downstream evidence/visual preview, Xiaoman image-generation starter observation,
-Xiaoman send request starter timer observation, and the group send-ready timer
-observation. It is read-only, does not run the image provider or send-ready worker, and
-does not deploy, write Feishu, call QiWe, publish, or send externally.
+Huabaosi provider disabled-state observation, Xiaoman send request starter timer
+observation, and the group send-ready timer observation. It runs the provider worker
+only as `--once --dry-run`, does not run the send-ready worker, and does not deploy,
+write Postgres or Feishu, call provider/media endpoints or QiWe, publish, or send
+externally.
 
 The group send-ready timer observation only inspects the fixed command, timer state, and
 sanitized journal; it does not run the send-ready worker.

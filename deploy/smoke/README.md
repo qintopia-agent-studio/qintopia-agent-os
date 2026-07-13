@@ -24,10 +24,11 @@ sidecar scripts and record the sanitized result in
 [`docs/xiaoman-production-preflight-record.md`](docs/xiaoman-production-preflight-record.md).
 The record captures timer health, fixed service commands, read-only preview counts,
 secret-scan results, and the pass/hold decision. This includes read-only observations of
-the image-generation request starter and group send-ready timers; the preflight runs
-neither the image provider worker nor the send-ready worker. It is not a release
-approval and does not authorize Feishu writes, QiWe sends, poster publishing, or
-external adapters.
+the image-generation request starter, the disabled Huabaosi provider worker, and the
+group send-ready timer. The preflight runs the provider worker only with
+`--once --dry-run` and does not run the send-ready worker. It is not a release approval
+and does not authorize Feishu writes, QiWe sends, poster publishing, or external
+adapters.
 
 ## Validation
 
