@@ -31,6 +31,8 @@ tags:
   - activity
   - signal
 next_actions:
+  - Observe source-grounded Postgres evidence retrieval against the disposable apply
+    smoke before the next owner-approved production release.
   - Re-run the aggregate Xiaoman production preflight smoke after each owner-approved
     deploy and record the observed queue counts and any blocking point.
   - Observe the image-generation starter timer separately from the disabled image

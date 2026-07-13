@@ -18,7 +18,7 @@ signals into reviewed operating assets and controlled group-send readiness.
 
 ## Responsibility
 
-The workflow coordinates Xiaoman activity requests, Wenyuange evidence retrieval,
+The workflow coordinates Xiaoman activity requests, source-grounded evidence retrieval,
 Huabaosi visual asset work, human review, optional image-generation request intake, and
 Erhua group-message readiness. It is a control-plane workflow, not an autonomous publish
 path.
@@ -46,8 +46,9 @@ path.
 ## Boundaries
 
 - Writes Postgres work items, events, artifacts, and workflow summaries.
-- Does not directly call Feishu, QiWe, Huabaosi image providers, Wenyuange, or external
-  send adapters in dry-run and current apply smoke paths.
+- Event-signal evidence may read explicitly linked Postgres messages, with a same-chat
+  bounded local keyword fallback. It does not call external Wenyuange, embeddings,
+  Feishu, QiWe, Huabaosi image providers, or send adapters.
 - Must not use Hermes Kanban as the future orchestration backbone.
 
 ## Production Boundary
@@ -58,9 +59,10 @@ enables real external sends needs owner review, allowlist evidence, smoke output
 rollback notes.
 
 The image request starter and preview worker are merged on `master`, but they are not in
-the observed production `v0.2.6` release. The reviewed deployment path installs an
-internal timer that only creates `image_generation_request` work items from approved
-briefs. The separate provider worker remains disabled and has no systemd timer.
+the observed production `v0.2.6` release. Source-grounded Postgres evidence retrieval is
+also newer than that observed release. The reviewed deployment path installs internal
+timers for evidence artifacts and `image_generation_request` intake. The separate image
+provider worker remains disabled and has no systemd timer.
 
 Before any staging adapter smoke, run:
 
@@ -89,7 +91,8 @@ timer.
 ## Acceptance Scenarios
 
 - Activity signal creates a governed work item without sending an external message.
-- Evidence lookup records source basis and risk notes.
+- Event-signal evidence lookup records sanitized Postgres message sources and fails
+  closed when no authorized source exists.
 - Visual asset work records artifact evidence and review state.
 - An approved `poster_brief` can create one idempotent image-generation request on
   `master`, including through the internal starter timer; that request does not call a
