@@ -74,7 +74,7 @@ jobs:
           config.custom_model_max_tokens:
             ${{ vars.PR_AGENT_CUSTOM_MODEL_MAX_TOKENS || '32000' }}
           github_action_config.auto_review: "true"
-          github_action_config.auto_describe: "true"
+          github_action_config.auto_describe: "false"
           github_action_config.auto_improve: "false"
           pr_description.add_original_user_description: "false"
           github_action_config.pr_actions:

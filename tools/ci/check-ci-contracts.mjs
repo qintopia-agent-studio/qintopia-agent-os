@@ -351,6 +351,11 @@ if (prAgentWorkflow) {
       ".github/workflows/pr-agent.yml: PR-Agent describe output must not repeat the original PR body"
     );
   }
+  if (prAgentEnv["github_action_config.auto_describe"] !== "false") {
+    errors.push(
+      ".github/workflows/pr-agent.yml: PR-Agent must not automatically replace the required PR body"
+    );
+  }
 }
 
 const agentToolFiles = [

@@ -21,6 +21,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-13-aliang-image-adapter-claim-header-remediation.md`                      | adopt-input | Header injection and stale-claim remediation record                    |
 | `2026-07-13-deploy-template-secret-remediation.md`                                 | adopt-input | Deploy-template secret removal and provider rotation record            |
 | `2026-07-13-documentation-architecture-consistency-audit.md`                       | adopt-input | Documentation, implementation, and production-state consistency audit  |
+| `2026-07-13-pr-agent-pr-body-overwrite.md`                                         | adopt-input | PR-Agent description overwrite CI remediation record                   |
 
 ## Rules
 
