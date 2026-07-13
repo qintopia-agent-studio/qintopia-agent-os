@@ -67,6 +67,9 @@ target, or missing final confirmation must stop before sending.
 - Response parsers cap JSON bodies before parsing and reject non-zero API status.
 - Callback parsing requires exactly one matching `cmd=20000` event and complete file
   credentials.
+- Send request construction requires the target group in the reviewed allowlist. Send
+  response parsing requires both `code=0` and `isSendSuccess=1`, matching the existing
+  QiWe rich-message adapter fixtures; every other value fails closed.
 - Header values reject CR/LF, endpoints require the reviewed HTTPS path, media URLs
   reject credentials/query/fragment and non-allowlisted hosts, and JPEG MIME/JPG naming
   are enforced until compatibility is decided.
@@ -79,8 +82,8 @@ target, or missing final confirmation must stop before sending.
 
 1. Resolve and test the PNG/JPG decision.
 2. Capture one owner-approved staging async callback and confirm the exact credential
-   field names and `isSendSuccess` semantics without storing raw credentials in git or
-   logs.
+   field names and the existing `isSendSuccess=1` success assumption without storing raw
+   credentials in git or logs.
 3. Add Postgres upload-correlation state, callback idempotency, claim-token validation,
    and durable sanitized external-send audit.
 4. Add a local fake QiWe server for upload acceptance, callback, send response, timeout,

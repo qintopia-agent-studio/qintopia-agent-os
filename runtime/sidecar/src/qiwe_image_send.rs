@@ -10,6 +10,7 @@ const ASYNC_UPLOAD_METHOD: &str = "/cloud/cdnUploadByUrlAsync";
 const SEND_IMAGE_METHOD: &str = "/msg/sendImage";
 const IMAGE_FILE_TYPE: u8 = 1;
 const ASYNC_EVENT_COMMAND: i64 = 20_000;
+const SEND_SUCCESS_VALUE: i64 = 1;
 const MAX_JSON_RESPONSE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Serialize)]
@@ -144,6 +145,7 @@ pub fn run_preflight() -> Result<()> {
 
 fn validate_contract() -> Result<()> {
     let media_allowed_hosts = BTreeSet::from(["media.example.test".to_string()]);
+    let allowed_group_ids = BTreeSet::from(["contract-group".to_string()]);
     build_async_upload_request(
         "contract-device",
         "contract-image.jpg",
@@ -171,12 +173,17 @@ fn validate_contract() -> Result<()> {
         }"#,
         &request_id,
     )?;
-    build_send_image_request("contract-device", "contract-group", &credentials)?;
+    build_send_image_request(
+        "contract-device",
+        "contract-group",
+        &credentials,
+        &allowed_group_ids,
+    )?;
     let receipt = parse_send_image_response(
         br#"{
           "code":0,
           "data":{
-            "isSendSuccess":0,
+            "isSendSuccess":1,
             "msgServerId":1,
             "msgType":14,
             "msgUniqueIdentifier":"contract-message",
@@ -187,7 +194,7 @@ fn validate_contract() -> Result<()> {
         }"#,
     )?;
     if receipt.message_identifier != "contract-message"
-        || receipt.is_send_success != 0
+        || receipt.is_send_success != SEND_SUCCESS_VALUE
         || receipt.sequence != 2
         || receipt.timestamp != 3
     {
@@ -354,9 +361,13 @@ pub fn build_send_image_request(
     guid: &str,
     target_group_id: &str,
     credentials: &QiweImageCredentials,
+    allowed_group_ids: &BTreeSet<String>,
 ) -> Result<Vec<u8>> {
     validate_plain_value(guid, "QiWe device id")?;
     validate_plain_value(target_group_id, "QiWe target group id")?;
+    if !allowed_group_ids.contains(&target_group_id.to_ascii_lowercase()) {
+        bail!("QiWe target group id is not allowlisted");
+    }
     credentials.validate()?;
     serde_json::to_vec(&ApiRequest {
         method: SEND_IMAGE_METHOD,
@@ -379,6 +390,9 @@ pub fn parse_send_image_response(body: &[u8]) -> Result<QiweSendReceipt> {
         serde_json::from_slice(body).context("parse QiWe send-image response")?;
     if response.code != 0 {
         bail!("QiWe send-image request was rejected");
+    }
+    if response.data.is_send_success != SEND_SUCCESS_VALUE {
+        bail!("QiWe send-image response did not confirm success");
     }
     validate_plain_value(
         &response.data.msg_unique_identifier,
@@ -564,8 +578,10 @@ mod tests {
         }"#;
         let credentials = parse_async_upload_callback(callback, "upload-request-1")
             .expect("parse matching callback");
-        let request = build_send_image_request("device-guid", "group-id", &credentials)
-            .expect("build send request");
+        let allowed_group_ids = BTreeSet::from(["group-id".to_string()]);
+        let request =
+            build_send_image_request("device-guid", "group-id", &credentials, &allowed_group_ids)
+                .expect("build send request");
         let value: Value = serde_json::from_slice(&request).expect("parse send request");
 
         assert_eq!(value["method"], SEND_IMAGE_METHOD);
@@ -613,7 +629,7 @@ mod tests {
             br#"{
               "code":0,
               "data":{
-                "isSendSuccess":0,
+                "isSendSuccess":1,
                 "msgServerId":1,
                 "msgType":14,
                 "msgUniqueIdentifier":"message-1",
@@ -625,10 +641,45 @@ mod tests {
         )
         .expect("parse send response");
 
-        assert_eq!(receipt.is_send_success, 0);
+        assert_eq!(receipt.is_send_success, SEND_SUCCESS_VALUE);
         assert_eq!(receipt.message_identifier, "message-1");
         assert_eq!(receipt.sequence, 2);
         assert_eq!(receipt.timestamp, 3);
+    }
+
+    #[test]
+    fn send_response_requires_explicit_provider_success() {
+        let response = br#"{
+          "code":0,
+          "data":{
+            "isSendSuccess":0,
+            "msgUniqueIdentifier":"message-1",
+            "seq":2,
+            "timestamp":3
+          }
+        }"#;
+
+        assert!(parse_send_image_response(response).is_err());
+    }
+
+    #[test]
+    fn send_request_rejects_non_allowlisted_group() {
+        let credentials = QiweImageCredentials {
+            file_aes_key: "aes-key".to_string(),
+            file_id: "file-id".to_string(),
+            file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+            file_size: 48_300,
+            filename: "activity-poster.jpg".to_string(),
+        };
+        let allowed_group_ids = BTreeSet::from(["reviewed-group".to_string()]);
+
+        assert!(build_send_image_request(
+            "device-guid",
+            "unreviewed-group",
+            &credentials,
+            &allowed_group_ids,
+        )
+        .is_err());
     }
 
     #[test]

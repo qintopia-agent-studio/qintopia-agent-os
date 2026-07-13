@@ -231,7 +231,8 @@ Use `rg` and `rg --files` for search.
   emit tokens, device/group ids, media URLs, file credentials, or message identifiers,
   write Feishu, or send externally. Do not add a QiWe send worker or timer until staging
   proves complete `cmd=20000` callback credentials and resolves the current PNG/JPG
-  compatibility gap.
+  compatibility gap. Final request construction must recheck the target group allowlist,
+  and response parsing must fail closed unless both `code=0` and `isSendSuccess=1`.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
   timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
   evidence/visual preview, and the group send-ready timer observation. It must not set
