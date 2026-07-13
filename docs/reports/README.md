@@ -28,6 +28,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-13-aliang-production-observation-stderr-remediation.md`                   | adopt-input | Aliang production observation stderr leak remediation                  |
 | `2026-07-13-xiaoman-evidence-local-postgres-integration.md`                        | adopt-input | Xiaoman evidence local pgvector image-pull limitation                  |
 | `2026-07-14-xiaoman-mutation-local-postgres-integration.md`                        | adopt-input | Xiaoman mutation local pgvector image-pull limitation                  |
+| `2026-07-14-recursive-workflow-status-local-integration.md`                        | adopt-input | Recursive status local pgvector image-pull limitation                  |
 | `2026-07-14-release-pr-ci-not-triggered.md`                                        | adopt-input | Bot-generated Release Please PR manual CI remediation                  |
 
 ## Rules

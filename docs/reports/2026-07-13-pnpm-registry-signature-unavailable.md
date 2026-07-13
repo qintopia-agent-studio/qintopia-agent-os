@@ -52,3 +52,10 @@ directly. All formatting, 191 Python tests, registry, MCP, skills, workflow, run
 deploy, CI, agent, policy, secret, preflight, release-model, deploy-runner, and systemd
 checks passed. This does not validate pnpm registry availability; CI must still run the
 normal package-manager path on the final commit.
+
+The recursive workflow status change reproduced the same failure when running the full
+`pnpm check`: the shim could not fetch signed metadata for `pnpm@10.29.2`, and no
+repository check started. Signature enforcement remained enabled. The affected fixed
+repository entrypoints, sidecar smokes, Rust format/Clippy/tests, and pre-commit checks
+were run directly. The final PR still requires the normal GitHub `check` job to pass;
+local direct execution is not a substitute for that package-manager gate.

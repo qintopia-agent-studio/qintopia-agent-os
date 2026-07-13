@@ -275,6 +275,8 @@ pub struct WorkItemStatusTreeReport {
     pub root: WorkItemStatusNode,
     pub children: Vec<WorkItemStatusNode>,
     pub child_count: usize,
+    pub descendants: Vec<WorkItemStatusNode>,
+    pub descendant_count: usize,
     pub current_blocking_point: Option<String>,
     pub limitations: Vec<String>,
     pub guardrails: Vec<String>,
@@ -288,9 +290,11 @@ pub struct WorkflowSyncReport {
     pub action_status: String,
     pub root_work_item_id: Uuid,
     pub child_count: usize,
+    pub descendant_count: usize,
     pub aggregate_status: String,
     pub current_blocking_point: Option<String>,
     pub child_status_refs: Vec<WorkflowChildStatusRef>,
+    pub descendant_status_refs: Vec<WorkflowChildStatusRef>,
     pub event_id: Option<Uuid>,
     pub limitations: Vec<String>,
     pub guardrails: Vec<String>,
@@ -414,6 +418,8 @@ struct XiaomanActivityImageGenerationCandidate {
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkflowChildStatusRef {
     pub work_item_id: Uuid,
+    pub parent_work_item_id: Option<Uuid>,
+    pub depth: i32,
     pub work_item_type: String,
     pub status: String,
     pub capability_key: String,
@@ -424,6 +430,7 @@ pub struct WorkflowChildStatusRef {
 pub struct WorkItemStatusNode {
     pub work_item_id: Uuid,
     pub parent_work_item_id: Option<Uuid>,
+    pub depth: i32,
     pub work_item_type: String,
     pub status: String,
     pub requester_agent: String,
@@ -934,23 +941,39 @@ async fn work_item_status_tree(
     work_item_id: Uuid,
 ) -> Result<WorkItemStatusTreeReport> {
     let root_id = resolve_root_work_item_id(pool, work_item_id).await?;
-    let root = load_work_item_status_row(pool, root_id).await?;
-    let children = load_child_work_item_status_rows(pool, root_id).await?;
-    let mut ordered_nodes = Vec::with_capacity(children.len() + 1);
+    let mut rows = load_work_item_status_tree_rows(pool, root_id).await?;
+    let root = rows
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("workflow root is not found"))?;
+    if root.node.work_item_id != root_id || root.node.depth != 0 {
+        bail!("workflow status tree did not start at the resolved root");
+    }
+    let descendants = rows.split_off(1);
+    let children = descendants
+        .iter()
+        .filter(|row| row.node.parent_work_item_id == Some(root_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut ordered_nodes = Vec::with_capacity(descendants.len() + 1);
     ordered_nodes.push(root.clone());
-    ordered_nodes.extend(children.iter().cloned());
+    ordered_nodes.extend(descendants.iter().cloned());
     let current_blocking_point = current_blocking_point(&ordered_nodes);
+    let child_count = children.len();
+    let descendant_count = descendants.len();
     Ok(WorkItemStatusTreeReport {
         success: true,
         queried_work_item_id: work_item_id,
         root_work_item_id: root_id,
         root: root.node,
         children: children.into_iter().map(|row| row.node).collect(),
-        child_count: ordered_nodes.len().saturating_sub(1),
+        child_count,
+        descendants: descendants.into_iter().map(|row| row.node).collect(),
+        descendant_count,
         current_blocking_point,
         limitations: vec![
             "status tree is read-only and does not execute workers".to_string(),
-            "this is a one-level parent/child summary, not a full DAG engine".to_string(),
+            "recursive status reporting is not a general DAG scheduler".to_string(),
             "Feishu Task sync state is represented only by AgentOS mirror events and refs"
                 .to_string(),
         ],
@@ -971,6 +994,7 @@ async fn sync_workflow_status(
     validate_syncable_workflow(&status_tree)?;
     let aggregate_status = workflow_aggregate_status(&status_tree);
     let child_status_refs = workflow_child_status_refs(&status_tree);
+    let descendant_status_refs = workflow_descendant_status_refs(&status_tree);
     let mut event_id = None;
 
     if apply_requested {
@@ -995,7 +1019,9 @@ async fn sync_workflow_status(
                 "aggregate_status": aggregate_status,
                 "current_blocking_point": status_tree.current_blocking_point,
                 "child_count": status_tree.child_count,
+                "descendant_count": status_tree.descendant_count,
                 "child_status_refs": child_status_refs,
+                "descendant_status_refs": descendant_status_refs,
                 "synced_by": "operations-workflow-sync"
             }
         }))
@@ -1015,7 +1041,9 @@ async fn sync_workflow_status(
                     "aggregate_status": aggregate_status,
                     "current_blocking_point": status_tree.current_blocking_point,
                     "child_count": status_tree.child_count,
+                    "descendant_count": status_tree.descendant_count,
                     "child_status_refs": child_status_refs,
+                    "descendant_status_refs": descendant_status_refs,
                     "does_not_execute_workers": true,
                     "does_not_call_external_systems": true
                 }),
@@ -1038,14 +1066,16 @@ async fn sync_workflow_status(
         },
         root_work_item_id: status_tree.root_work_item_id,
         child_count: status_tree.child_count,
+        descendant_count: status_tree.descendant_count,
         aggregate_status,
         current_blocking_point: status_tree.current_blocking_point,
         child_status_refs,
+        descendant_status_refs,
         event_id,
         limitations: vec![
             "workflow sync updates only the AgentOS parent summary; it does not execute workers"
                 .to_string(),
-            "summary is one-level parent/child state, not a general DAG engine".to_string(),
+            "recursive summary reporting is not a general DAG scheduler".to_string(),
             "Feishu Task remains a workbench mirror, not the source of truth".to_string(),
         ],
         guardrails: vec![
@@ -1493,14 +1523,14 @@ fn validate_syncable_workflow(status_tree: &WorkItemStatusTreeReport) -> Result<
 
 fn workflow_aggregate_status(status_tree: &WorkItemStatusTreeReport) -> String {
     if status_tree
-        .children
+        .descendants
         .iter()
         .any(|child| child.status == "failed")
     {
         return "failed".to_string();
     }
     if status_tree
-        .children
+        .descendants
         .iter()
         .any(|child| child.status == "cancelled")
     {
@@ -1510,7 +1540,7 @@ fn workflow_aggregate_status(status_tree: &WorkItemStatusTreeReport) -> String {
         return "processing".to_string();
     }
     if status_tree
-        .children
+        .descendants
         .iter()
         .all(|child| child.status == "completed")
     {
@@ -1522,15 +1552,26 @@ fn workflow_aggregate_status(status_tree: &WorkItemStatusTreeReport) -> String {
 fn workflow_child_status_refs(
     status_tree: &WorkItemStatusTreeReport,
 ) -> Vec<WorkflowChildStatusRef> {
-    status_tree
-        .children
+    workflow_status_refs(&status_tree.children)
+}
+
+fn workflow_descendant_status_refs(
+    status_tree: &WorkItemStatusTreeReport,
+) -> Vec<WorkflowChildStatusRef> {
+    workflow_status_refs(&status_tree.descendants)
+}
+
+fn workflow_status_refs(nodes: &[WorkItemStatusNode]) -> Vec<WorkflowChildStatusRef> {
+    nodes
         .iter()
-        .map(|child| WorkflowChildStatusRef {
-            work_item_id: child.work_item_id,
-            work_item_type: child.work_item_type.clone(),
-            status: child.status.clone(),
-            capability_key: child.capability_key.clone(),
-            blocking_reason: child.blocking_reason.clone(),
+        .map(|node| WorkflowChildStatusRef {
+            work_item_id: node.work_item_id,
+            parent_work_item_id: node.parent_work_item_id,
+            depth: node.depth,
+            work_item_type: node.work_item_type.clone(),
+            status: node.status.clone(),
+            capability_key: node.capability_key.clone(),
+            blocking_reason: node.blocking_reason.clone(),
         })
         .collect()
 }
@@ -1538,48 +1579,54 @@ fn workflow_child_status_refs(
 async fn resolve_root_work_item_id(pool: &PgPool, work_item_id: Uuid) -> Result<Uuid> {
     let row = sqlx::query(
         r#"
-        SELECT COALESCE(parent_work_item_id, id) AS root_work_item_id
-        FROM qintopia_agent_os.work_items
-        WHERE id = $1
+        WITH RECURSIVE ancestry AS (
+            SELECT id, parent_work_item_id, ARRAY[id] AS path
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+
+            UNION ALL
+
+            SELECT parent.id, parent.parent_work_item_id, ancestry.path || parent.id
+            FROM qintopia_agent_os.work_items parent
+            JOIN ancestry ON parent.id = ancestry.parent_work_item_id
+            WHERE NOT parent.id = ANY(ancestry.path)
+        )
+        SELECT id AS root_work_item_id
+        FROM ancestry
+        WHERE parent_work_item_id IS NULL
+        LIMIT 1
         "#,
     )
     .bind(work_item_id)
     .fetch_optional(pool)
     .await
     .context("load work item root")?
-    .ok_or_else(|| anyhow::anyhow!("work item is not found"))?;
+    .ok_or_else(|| anyhow::anyhow!("work item is not found or its parent chain is cyclic"))?;
     Ok(row.get("root_work_item_id"))
 }
 
-async fn load_work_item_status_row(pool: &PgPool, work_item_id: Uuid) -> Result<WorkItemStatusRow> {
-    let sql = status_row_sql("wi.id = $1");
-    let row = sqlx::query(&sql)
-        .bind(work_item_id)
-        .fetch_one(pool)
-        .await
-        .context("load work item status row")?;
-    status_row_from_row(row)
-}
-
-async fn load_child_work_item_status_rows(
+async fn load_work_item_status_tree_rows(
     pool: &PgPool,
     root_work_item_id: Uuid,
 ) -> Result<Vec<WorkItemStatusRow>> {
-    let sql = status_row_sql("wi.parent_work_item_id = $1");
-    let rows = sqlx::query(&sql)
-        .bind(root_work_item_id)
-        .fetch_all(pool)
-        .await
-        .context("load child work item status rows")?;
-    rows.into_iter().map(status_row_from_row).collect()
-}
-
-fn status_row_sql(predicate: &str) -> String {
-    format!(
+    let rows = sqlx::query(
         r#"
+        WITH RECURSIVE status_tree AS (
+            SELECT id, 0::integer AS depth, ARRAY[id] AS path
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+
+            UNION ALL
+
+            SELECT child.id, parent.depth + 1, parent.path || child.id
+            FROM qintopia_agent_os.work_items child
+            JOIN status_tree parent ON child.parent_work_item_id = parent.id
+            WHERE NOT child.id = ANY(parent.path)
+        )
         SELECT
             wi.id,
             wi.parent_work_item_id,
+            status_tree.depth,
             wi.work_item_type,
             wi.status,
             wi.requester_agent,
@@ -1611,13 +1658,18 @@ fn status_row_sql(predicate: &str) -> String {
                   AND e.event_type = 'group_message_send_ready_recorded'
                   AND e.data->>'send_executed' = 'false'
             ) AS send_ready_event_count
-        FROM qintopia_agent_os.work_items wi
+        FROM status_tree
+        JOIN qintopia_agent_os.work_items wi ON wi.id = status_tree.id
         LEFT JOIN qintopia_agent_os.artifacts a ON a.work_item_id = wi.id
-        WHERE {predicate}
-        GROUP BY wi.id
-        ORDER BY wi.created_at ASC
-        "#
+        GROUP BY wi.id, status_tree.depth
+        ORDER BY status_tree.depth ASC, wi.created_at ASC, wi.id ASC
+        "#,
     )
+        .bind(root_work_item_id)
+        .fetch_all(pool)
+        .await
+        .context("load recursive work item status tree")?;
+    rows.into_iter().map(status_row_from_row).collect()
 }
 
 fn status_row_from_row(row: sqlx::postgres::PgRow) -> Result<WorkItemStatusRow> {
@@ -1635,6 +1687,7 @@ fn status_row_from_row(row: sqlx::postgres::PgRow) -> Result<WorkItemStatusRow> 
         node: WorkItemStatusNode {
             work_item_id: row.try_get("id")?,
             parent_work_item_id: row.try_get("parent_work_item_id")?,
+            depth: row.try_get("depth")?,
             work_item_type,
             status,
             requester_agent: row.try_get("requester_agent")?,
@@ -5262,7 +5315,7 @@ fn workflow_sync_worker_report(
             "workflow sync worker updates only AgentOS parent summaries".to_string(),
             "worker currently supports --once only; systemd/timer scheduling is external"
                 .to_string(),
-            "summary is one-level parent/child state, not a general DAG engine".to_string(),
+            "recursive summary reporting is not a general DAG scheduler".to_string(),
         ],
         guardrails: vec![
             "worker does not execute child workers or external adapters".to_string(),
@@ -7034,10 +7087,29 @@ mod tests {
         send_ready_event_count: i64,
         parent_work_item_id: Option<Uuid>,
     ) -> WorkItemStatusRow {
+        status_row_at_depth(
+            work_item_type,
+            status,
+            pending_artifact_count,
+            send_ready_event_count,
+            parent_work_item_id,
+            i32::from(parent_work_item_id.is_some()),
+        )
+    }
+
+    fn status_row_at_depth(
+        work_item_type: &str,
+        status: &str,
+        pending_artifact_count: i64,
+        send_ready_event_count: i64,
+        parent_work_item_id: Option<Uuid>,
+        depth: i32,
+    ) -> WorkItemStatusRow {
         WorkItemStatusRow {
             node: WorkItemStatusNode {
                 work_item_id: Uuid::new_v4(),
                 parent_work_item_id,
+                depth,
                 work_item_type: work_item_type.to_string(),
                 status: status.to_string(),
                 requester_agent: "xiaoman".to_string(),
@@ -7061,6 +7133,7 @@ mod tests {
     }
 
     fn status_tree(children: Vec<WorkItemStatusNode>) -> WorkItemStatusTreeReport {
+        let descendants = children.clone();
         WorkItemStatusTreeReport {
             success: true,
             queried_work_item_id: Uuid::new_v4(),
@@ -7068,6 +7141,8 @@ mod tests {
             root: status_row("activity_promotion_request", "processing", 0, 0, None).node,
             child_count: children.len(),
             children,
+            descendant_count: descendants.len(),
+            descendants,
             current_blocking_point: None,
             limitations: vec![],
             guardrails: vec![],
@@ -7136,6 +7211,27 @@ mod tests {
     }
 
     #[test]
+    fn workflow_aggregate_status_includes_failed_nested_descendant() {
+        let root_id = Uuid::new_v4();
+        let visual =
+            status_row_at_depth("visual_asset_request", "completed", 0, 0, Some(root_id), 1).node;
+        let image = status_row_at_depth(
+            "image_generation_request",
+            "failed",
+            0,
+            0,
+            Some(visual.work_item_id),
+            2,
+        )
+        .node;
+        let mut tree = status_tree(vec![visual.clone()]);
+        tree.descendants = vec![visual, image];
+        tree.descendant_count = tree.descendants.len();
+
+        assert_eq!(workflow_aggregate_status(&tree), "failed");
+    }
+
+    #[test]
     fn workflow_child_status_refs_keep_safe_summary_fields() {
         let tree = status_tree(vec![
             status_row(
@@ -7151,11 +7247,38 @@ mod tests {
         let refs = workflow_child_status_refs(&tree);
 
         assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].depth, 1);
         assert_eq!(refs[0].work_item_type, "group_message_request");
         assert_eq!(
             refs[0].blocking_reason.as_deref(),
             Some("send_ready_waiting_for_production_send_adapter")
         );
+    }
+
+    #[test]
+    fn workflow_descendant_status_refs_preserve_nested_parent_and_depth() {
+        let root_id = Uuid::new_v4();
+        let visual =
+            status_row_at_depth("visual_asset_request", "completed", 0, 0, Some(root_id), 1).node;
+        let image = status_row_at_depth(
+            "image_generation_request",
+            "awaiting_review",
+            1,
+            0,
+            Some(visual.work_item_id),
+            2,
+        )
+        .node;
+        let mut tree = status_tree(vec![visual.clone()]);
+        tree.descendants = vec![visual.clone(), image.clone()];
+        tree.descendant_count = tree.descendants.len();
+
+        let refs = workflow_descendant_status_refs(&tree);
+
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[1].work_item_id, image.work_item_id);
+        assert_eq!(refs[1].parent_work_item_id, Some(visual.work_item_id));
+        assert_eq!(refs[1].depth, 2);
     }
 
     #[test]
