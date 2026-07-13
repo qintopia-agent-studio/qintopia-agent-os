@@ -23,9 +23,10 @@ entries:
   - id: workflows/visual-asset-request
     path: workflows/visual-asset-request
     manifest: workflows/visual-asset-request/workflow.yaml
-    status: draft
+    status: active
     notes:
-      Xiaoman-to-Huabaosi visual asset request, draft, review, and delivery workflow.
+      Xiaoman-to-Aliang/Huabaosi evidence-gated visual brief, review, and delivery
+      workflow; real image generation remains separately gated.
   - id: workflows/silaoshi-daily-ops
     path: workflows/silaoshi-daily-ops
     manifest: workflows/silaoshi-daily-ops/workflow.yaml
