@@ -118,6 +118,9 @@ Use `rg` and `rg --files` for search.
   `run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`; do
   not turn it into an apply smoke, Feishu write, QiWe send, poster generation, or
   external adapter trigger.
+- Evidence and visual worker reports must derive `dry_run` from `apply_requested` so a
+  `--dry-run` observation cannot report `dry_run=false`; preflight must fail closed on
+  any mismatch rather than weakening that assertion.
 - `qintopia-agentos-operations-evidence-worker.timer` may only run
   `run-evidence-worker --once --apply` for internal `evidence_summary` artifact writes.
   Do not repurpose it for Feishu writeback, QiWe sends, live Wenyuange search, raw

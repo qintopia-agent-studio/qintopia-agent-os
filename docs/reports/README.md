@@ -13,6 +13,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-12-xiaoman-postgres-integration-hardening.md`                             | adopt-input | PostgreSQL integration smoke findings and remediation record           |
 | `2026-07-12-xiaoman-group-send-ready-observation.md`                               | adopt-input | Group send-ready production observation gap and remediation record     |
 | `2026-07-12-xiaoman-production-release-gap.md`                                     | adopt-input | Release payload and timer-installation gap remediation record          |
+| `2026-07-13-xiaoman-downstream-dry-run-report.md`                                  | adopt-input | Production preflight dry-run report mismatch and remediation record    |
 
 ## Rules
 
