@@ -95,7 +95,7 @@ for (const fragment of [
 const smokeReadmePath = "deploy/smoke/README.md";
 const smokeReadme = requireFile(smokeReadmePath);
 requireFragment(smokeReadmePath, smokeReadme, "group send-ready timer");
-requireFragment(smokeReadmePath, smokeReadme, "image provider worker");
+requireFragment(smokeReadmePath, smokeReadme, "disabled Huabaosi provider worker");
 
 const serverDeploymentPath = "deploy/sidecar/docs/server-deployment.md";
 const serverDeployment = requireFile(serverDeploymentPath);
@@ -107,8 +107,9 @@ requireFragment(
 requireFragment(
   serverDeploymentPath,
   serverDeployment,
-  "does not run the image provider or send-ready worker"
+  "does not run the send-ready worker"
 );
+requireFragment(serverDeploymentPath, serverDeployment, "provider/media endpoints");
 requireFragment(
   serverDeploymentPath,
   serverDeployment,
@@ -144,6 +145,7 @@ for (const fragment of [
   "operations-downstream-timers-observation-smoke.sh",
   "xiaoman-activity-downstream-observation-smoke.sh",
   "xiaoman-activity-image-generation-starter-observation-smoke.sh",
+  "huabaosi-image-generation-production-observation-smoke.sh",
   "xiaoman-activity-send-request-starter-observation-smoke.sh",
   "operations-group-send-ready-timer-observation-smoke.sh",
 ]) {
@@ -171,6 +173,7 @@ for (const fragment of [
   "Operations evidence timer",
   "Operations visual timer",
   "Xiaoman image request starter timer",
+  "Huabaosi provider disabled state",
   "Xiaoman send request starter timer",
   "Operations group send-ready timer",
   "Secret and external-send scan",

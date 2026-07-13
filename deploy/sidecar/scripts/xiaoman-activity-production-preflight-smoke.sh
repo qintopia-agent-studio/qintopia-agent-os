@@ -46,6 +46,11 @@ run_step \
   "${SCRIPT_DIR}/xiaoman-activity-image-generation-starter-observation-smoke.sh"
 
 run_step \
+  "Huabaosi image provider disabled-state observation" \
+  env QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 \
+  "${SCRIPT_DIR}/huabaosi-image-generation-production-observation-smoke.sh"
+
+run_step \
   "activity send request starter timer observation" \
   env QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 \
   "${SCRIPT_DIR}/xiaoman-activity-send-request-starter-observation-smoke.sh"

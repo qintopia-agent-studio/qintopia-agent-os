@@ -31,6 +31,7 @@ deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh
 | Operations evidence timer           | `qintopia-agentos-operations-evidence-worker.timer` is active and enabled; service command is fixed to `run-evidence-worker --once --apply`                                                | Pass                                                          |
 | Operations visual timer             | `qintopia-agentos-operations-visual-worker.timer` is active and enabled; service command is fixed to `run-collaboration-worker --work-item-type visual_asset_request --once --apply`       | Pass                                                          |
 | Xiaoman image request starter timer | `qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer` is active and enabled; command is fixed to `run-xiaoman-activity-image-generation-starter-worker --once --apply` | Not present in observed `v0.2.6`; required on the next deploy |
+| Huabaosi provider disabled state    | Image generation is disabled; no provider service/timer is installed; preflight and `run-huabaosi-image-generation-worker --once --dry-run` expose no sensitive configuration              | Not present in observed `v0.2.6`; required on the next deploy |
 | Xiaoman send request starter timer  | `qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer` is active and enabled; service command is fixed to `run-xiaoman-activity-send-request-starter-worker --once --apply` | Pass                                                          |
 | Operations group send-ready timer   | `qintopia-agentos-operations-group-send-ready.timer` is active and enabled; service command is fixed to `run-group-message-send-worker --once --apply`                                     | Pass                                                          |
 | Read-only worker previews           | Aggregate smoke finishes with `xiaoman activity production preflight passed`; preview reports are JSON-valid and `safe_for_chat=false` where present                                       | Pass                                                          |
@@ -58,13 +59,14 @@ Record counts only. Do not paste row payloads.
 Reason: `v0.2.6` deployed successfully, the deployed sidecar unit SHA matched the
 release, and all checks in the then-current aggregate read-only preflight passed. The
 image request starter timer was added later and still requires a new observed run. The
-previously observed downstream `dry_run` report mismatch did not recur.
+Huabaosi provider disabled-state check was also added later and requires the same new
+run. The previously observed downstream `dry_run` report mismatch did not recur.
 
 Follow-up owner action: Keep external adapters disabled. Observe the existing internal
 evidence and visual queues. After the next approved deploy, rerun this preflight and
 replace the image request starter result with observed evidence. Do not treat the old
-`v0.2.6` pass as approval for Feishu writeback, QiWe sending, publishing, or real
-external retrieval/generation.
+`v0.2.6` pass as proof of the provider disabled state or approval for Feishu writeback,
+QiWe sending, publishing, or real external retrieval/generation.
 
 ## Boundary Reminder
 

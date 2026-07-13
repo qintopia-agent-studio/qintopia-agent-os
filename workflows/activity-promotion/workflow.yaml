@@ -32,6 +32,8 @@ tags:
   - huabaosi
   - erhua
 next_actions:
+  - Run the Huabaosi image-generation disabled-state production observation after each
+    approved internal-runtime deploy; keep the provider worker unscheduled and disabled.
   - Run huabaosi-image-generation-preflight in staging to validate the local adapter
     configuration without contacting external services, then obtain owner approval for
     the image provider account, isolated media storage, staging smoke, budget, reviewer

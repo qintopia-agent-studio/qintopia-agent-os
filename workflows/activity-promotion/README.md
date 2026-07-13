@@ -73,6 +73,12 @@ or invalid configuration is reported as `success=false` / `adapter_not_configure
 without exposing the failed value, then exits non-zero. Staging automation must treat
 that exit status as a hard stop.
 
+After an owner-approved internal-runtime deploy, the production disabled-state
+observation verifies that image generation remains off and that no provider worker
+service or timer is installed. It runs configuration preflight and the image worker only
+as `--once --dry-run` to inspect the AgentOS queue. This is not a staging adapter smoke
+and cannot create an image.
+
 After the Required Human Gates have owner approval, one controlled staging generation
 may run through `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`. It
 requires an explicit flag, approval phrase, isolated staging env file, matching staging

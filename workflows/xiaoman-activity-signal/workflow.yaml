@@ -35,5 +35,7 @@ next_actions:
     deploy and record the observed queue counts and any blocking point.
   - Observe the image-generation starter timer separately from the disabled image
     provider worker; only run real generation through an owner-approved staging gate.
+  - Require the Huabaosi production disabled-state observation to prove the provider
+    worker remains off and unscheduled after internal-runtime deployments.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.

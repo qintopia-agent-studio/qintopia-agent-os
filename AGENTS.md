@@ -39,6 +39,10 @@
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
+- If the local pnpm version shim cannot verify a registry signature, do not set
+  `pmOnFail=ignore`. Confirm the exact `package.json` script first; when it is a fixed
+  repository-local Node entrypoint, run that entrypoint directly and record the failed
+  pnpm validation attempt.
 - Xiaoman activity signal timer observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh`
 - Xiaoman activity promotion starter timer observation smoke:
@@ -49,6 +53,8 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 - Xiaoman activity image generation starter observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
+- Huabaosi image generation disabled-state production observation smoke:
+  `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
 - Xiaoman activity production preflight smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
@@ -171,6 +177,11 @@ Use `rg` and `rg --files` for search.
   outbound HTTP header name/value must reject control characters before socket
   connection. Each work-item claim must use a unique token; artifact or failure writes
   must lock and match that unexpired token, with exactly one affected work-item row.
+- `huabaosi-image-generation-production-observation-smoke.sh` may only verify that the
+  provider worker remains disabled and unscheduled, run configuration preflight, and run
+  `run-huabaosi-image-generation-worker --once --dry-run` for a read-only queue preview.
+  It must not use `--apply`, contact provider/media endpoints, write Postgres or Feishu,
+  call QiWe, create a generated image, or publish.
 - `huabaosi-image-generation-preflight` may only validate and emit a sanitized summary
   of local image-adapter configuration. It must not open network or database
   connections, reveal configuration values, enable generation, write Feishu, send QiWe,
