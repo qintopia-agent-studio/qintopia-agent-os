@@ -70,11 +70,12 @@ target, or missing final confirmation must stop before sending.
 - Send request construction requires the target group in the reviewed allowlist. Send
   response parsing requires both `code=0` and `isSendSuccess=1`, matching the existing
   QiWe rich-message adapter fixtures; every other value fails closed.
-- Header values reject CR/LF, endpoints require the reviewed HTTPS path, media URLs
-  reject credentials/query/fragment and non-allowlisted hosts, and JPEG MIME/JPG naming
-  are enforced until compatibility is decided.
+- Header and protocol values reject control characters, endpoints require the reviewed
+  HTTPS path, media URLs reject credentials/query/fragment and non-allowlisted hosts,
+  and JPEG MIME/JPG naming are enforced until compatibility is decided.
 - `qiwe-image-send-preflight` checks only local configuration and emits a sanitized
-  report. It opens no network or database connection.
+  report. It opens no network or database connection and fails closed if the send-enable
+  flag is already `1` because this PR does not approve enablement.
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; no worker, callback listener,
   staging smoke, service, or timer is installed.
 

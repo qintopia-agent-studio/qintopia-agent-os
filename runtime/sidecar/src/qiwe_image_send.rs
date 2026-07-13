@@ -211,13 +211,16 @@ fn preflight_report(
     media_allowed_host_count: usize,
     allowed_group_count: usize,
 ) -> QiweImageSendPreflightReport {
+    let success = config_valid && !send_enabled;
     QiweImageSendPreflightReport {
-        success: config_valid,
+        success,
         worker: WORKER_ID,
-        action_status: if config_valid {
-            "adapter_contract_ready"
-        } else {
+        action_status: if !config_valid {
             "adapter_not_configured"
+        } else if send_enabled {
+            "adapter_enablement_not_approved"
+        } else {
+            "adapter_contract_ready"
         },
         send_enabled,
         config_valid,
@@ -407,7 +410,7 @@ pub fn parse_send_image_response(body: &[u8]) -> Result<QiweSendReceipt> {
 }
 
 pub fn validate_header_value(value: &str) -> Result<()> {
-    if value.is_empty() || value.contains(['\r', '\n']) {
+    if value.is_empty() || value.chars().any(char::is_control) {
         bail!("HTTP header value is invalid");
     }
     Ok(())
@@ -477,7 +480,7 @@ fn strict_https_url(value: &str, label: &str) -> Result<Url> {
 }
 
 fn validate_plain_value(value: &str, label: &str) -> Result<()> {
-    if value.trim().is_empty() || value.contains(['\r', '\n']) {
+    if value.trim().is_empty() || value.chars().any(char::is_control) {
         bail!("{label} is invalid");
     }
     Ok(())
@@ -485,6 +488,9 @@ fn validate_plain_value(value: &str, label: &str) -> Result<()> {
 
 fn validate_jpeg_filename(filename: &str) -> Result<()> {
     validate_plain_value(filename, "QiWe image filename")?;
+    if filename.len() > 255 || filename.contains(['/', '\\']) {
+        bail!("QiWe image filename is invalid");
+    }
     let normalized = filename.to_ascii_lowercase();
     if !normalized.ends_with(".jpg") && !normalized.ends_with(".jpeg") {
         bail!("QiWe image filename must use the documented JPG format");
@@ -685,6 +691,8 @@ mod tests {
     #[test]
     fn headers_and_json_bodies_are_bounded() {
         assert!(validate_header_value("token\r\nInjected: true").is_err());
+        assert!(validate_header_value("token\0suffix").is_err());
+        assert!(validate_header_value("token\tsuffix").is_err());
         assert!(validate_header_value("valid-token").is_ok());
         assert!(parse_async_upload_acceptance(&vec![b'x'; MAX_JSON_RESPONSE_BYTES + 1]).is_err());
     }
@@ -729,5 +737,15 @@ mod tests {
         ] {
             assert!(!output.contains(sensitive_value));
         }
+    }
+
+    #[test]
+    fn enabled_preflight_fails_closed() {
+        let report = preflight_report(true, true, true, 1, 1, 1);
+
+        assert!(!report.success);
+        assert!(report.config_valid);
+        assert!(report.send_enabled);
+        assert_eq!(report.action_status, "adapter_enablement_not_approved");
     }
 }

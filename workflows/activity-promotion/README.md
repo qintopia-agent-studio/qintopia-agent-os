@@ -96,7 +96,8 @@ qiwe-image-send-preflight
 
 It fails closed unless the HTTPS API host, generated-image media hosts, target groups,
 credentials, and reviewed Webhook readiness flag are configured. A successful preflight
-still does not authorize upload or sending.
+still does not authorize upload or sending. The command fails when the send-enable flag
+is `1`; staging enablement needs a separate owner-reviewed gate.
 
 Before any staging adapter smoke, run:
 
