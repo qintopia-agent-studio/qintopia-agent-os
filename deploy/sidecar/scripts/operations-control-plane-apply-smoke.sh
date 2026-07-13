@@ -256,6 +256,127 @@ assert_sql_equals \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_signal_work_item_id}'::uuid AND event_type = 'created';"
 
+xiaoman_status_mutation_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_status_mutation_payload="$(
+  python3 - "$xiaoman_signal_id" "$xiaoman_status_mutation_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "status-update",
+    "event_signal_id": sys.argv[1],
+    "mutation_id": sys.argv[2],
+    "status": "处理中",
+}, ensure_ascii=False))
+PY
+)"
+
+xiaoman_status_preview="$(run_json xiaoman_status_preview xiaoman-activity status-update --dry-run --payload-json "$xiaoman_status_mutation_payload")"
+assert_json "$xiaoman_status_preview" "data['success'] is True"
+assert_json "$xiaoman_status_preview" "data['source'] == 'agentos_event_signals'"
+assert_json "$xiaoman_status_preview" "data['action_status'] == 'event_signal_status_preview'"
+assert_json "$xiaoman_status_preview" "data['dry_run'] is True"
+assert_json "$xiaoman_status_preview" "data['mutation_applied'] is False"
+assert_json "$xiaoman_status_preview" "'event_signal_id' not in data and 'mutation_id' not in data"
+assert_json "$xiaoman_status_preview" "data['safe_for_chat'] is False"
+
+xiaoman_status_apply="$(run_json xiaoman_status_apply xiaoman-activity status-update --apply --payload-json "$xiaoman_status_mutation_payload")"
+assert_json "$xiaoman_status_apply" "data['success'] is True"
+assert_json "$xiaoman_status_apply" "data['source'] == 'agentos_event_signals'"
+assert_json "$xiaoman_status_apply" "data['action_status'] == 'event_signal_status_updated'"
+assert_json "$xiaoman_status_apply" "data['dry_run'] is False"
+assert_json "$xiaoman_status_apply" "data['apply_requested'] is True"
+assert_json "$xiaoman_status_apply" "data['mutation_applied'] is True"
+assert_json "$xiaoman_status_apply" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_status_updated_agentos_fact \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signals WHERE id = '${xiaoman_signal_id}'::uuid AND status = '处理中';"
+
+assert_sql_equals \
+  xiaoman_status_mutation_audited_once \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE event_signal_id = '${xiaoman_signal_id}'::uuid AND mutation_id = '${xiaoman_status_mutation_id}'::uuid AND idempotency_key = 'xiaoman_event_signal:${xiaoman_signal_id}:${xiaoman_status_mutation_id}' AND operation = 'status-update' AND actor_agent = 'xiaoman' AND previous_value->>'status' = '待处理' AND new_value->>'status' = '处理中' AND metadata->>'feishu_write_executed' = 'false' AND metadata->>'external_send_executed' = 'false';"
+
+xiaoman_status_again="$(run_json xiaoman_status_again xiaoman-activity status-update --apply --payload-json "$xiaoman_status_mutation_payload")"
+assert_json "$xiaoman_status_again" "data['success'] is True"
+assert_json "$xiaoman_status_again" "data['action_status'] == 'event_signal_mutation_idempotent_existing'"
+assert_json "$xiaoman_status_again" "data['mutation_applied'] is False"
+
+assert_sql_equals \
+  xiaoman_status_mutation_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE mutation_id = '${xiaoman_status_mutation_id}'::uuid;"
+
+xiaoman_conflicting_mutation_payload="$(
+  python3 - "$xiaoman_signal_id" "$xiaoman_status_mutation_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "gap-update",
+    "event_signal_id": sys.argv[1],
+    "mutation_id": sys.argv[2],
+    "gap_summary": "缺少冲突检查",
+}, ensure_ascii=False))
+PY
+)"
+run_expect_failure \
+  xiaoman_conflicting_mutation \
+  "mutation_id was already used for a different event-signal mutation" \
+  xiaoman-activity gap-update --apply --payload-json "$xiaoman_conflicting_mutation_payload"
+
+xiaoman_gap_mutation_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_gap_mutation_payload="$(
+  python3 - "$xiaoman_signal_id" "$xiaoman_gap_mutation_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "gap-update",
+    "event_signal_id": sys.argv[1],
+    "mutation_id": sys.argv[2],
+    "gap_summary": "缺少 报名截止时间",
+}, ensure_ascii=False))
+PY
+)"
+
+xiaoman_gap_apply="$(run_json xiaoman_gap_apply xiaoman-activity gap-update --apply --payload-json "$xiaoman_gap_mutation_payload")"
+assert_json "$xiaoman_gap_apply" "data['success'] is True"
+assert_json "$xiaoman_gap_apply" "data['source'] == 'agentos_event_signals'"
+assert_json "$xiaoman_gap_apply" "data['action_status'] == 'event_signal_gap_updated'"
+assert_json "$xiaoman_gap_apply" "data['mutation_applied'] is True"
+assert_json "$xiaoman_gap_apply" "data['safe_for_chat'] is False"
+
+assert_sql_equals \
+  xiaoman_gap_updated_agentos_fact \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signals WHERE id = '${xiaoman_signal_id}'::uuid AND gap_summary = '缺少 报名截止时间';"
+
+assert_sql_equals \
+  xiaoman_gap_mutation_audited_once \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE event_signal_id = '${xiaoman_signal_id}'::uuid AND mutation_id = '${xiaoman_gap_mutation_id}'::uuid AND operation = 'gap-update' AND previous_value->>'gap_summary' = '' AND new_value->>'gap_summary' = '缺少 报名截止时间';"
+
+xiaoman_gap_again="$(run_json xiaoman_gap_again xiaoman-activity gap-update --apply --payload-json "$xiaoman_gap_mutation_payload")"
+assert_json "$xiaoman_gap_again" "data['success'] is True"
+assert_json "$xiaoman_gap_again" "data['action_status'] == 'event_signal_mutation_idempotent_existing'"
+assert_json "$xiaoman_gap_again" "data['mutation_applied'] is False"
+
+assert_sql_equals \
+  xiaoman_gap_mutation_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE mutation_id = '${xiaoman_gap_mutation_id}'::uuid;"
+
+assert_sql_equals \
+  xiaoman_mutations_do_not_touch_feishu_publish_state \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signals WHERE id = '${xiaoman_signal_id}'::uuid AND feishu_record_id IS NULL AND last_published_at IS NULL;"
+
 xiaoman_worker_signal_id="$(psql_value "SELECT gen_random_uuid();")"
 xiaoman_worker_signal_chat_id="operations-apply-smoke-worker-chat-${smoke_suffix}"
 xiaoman_worker_signal_dedupe_key="operations-apply-smoke:${smoke_suffix}:xiaoman-worker-signal"

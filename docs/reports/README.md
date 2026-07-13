@@ -27,6 +27,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-13-pnpm-registry-signature-unavailable.md`                                | adopt-input | Local pnpm signature-validation interruption and bounded fallback      |
 | `2026-07-13-aliang-production-observation-stderr-remediation.md`                   | adopt-input | Aliang production observation stderr leak remediation                  |
 | `2026-07-13-xiaoman-evidence-local-postgres-integration.md`                        | adopt-input | Xiaoman evidence local pgvector image-pull limitation                  |
+| `2026-07-14-xiaoman-mutation-local-postgres-integration.md`                        | adopt-input | Xiaoman mutation local pgvector image-pull limitation                  |
 
 ## Rules
 

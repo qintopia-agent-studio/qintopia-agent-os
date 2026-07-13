@@ -492,8 +492,12 @@ if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
   for (const requiredFragment of [
     "qintopia_agent_os.work_item_events",
     "qintopia_agent_os.capabilities",
+    "qintopia_agent_os.event_signal_mutations",
+    "gap_summary",
     "2026-06-30.007",
     "2026-07-02.001",
+    "2026-07-13.002",
+    "2026-07-14.001",
     "PGHOST",
     "PGDATABASE",
   ]) {

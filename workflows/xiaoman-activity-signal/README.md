@@ -6,8 +6,8 @@ reviewable Agent OS state.
 ## Responsibility
 
 - Detect activity signals and map them to activity records.
-- Validate status-transition requests without treating Feishu as the system source of
-  truth. `status-update` and `gap-update` apply writes remain intentionally blocked.
+- Apply allowlisted status and gap mutations to Postgres event signals without treating
+  Feishu as the system source of truth.
 - Trigger downstream work requests only when required fields are present.
 - Keep Xiaoman's path read-only or database-scoped until owner-reviewed runtime config
   enables more behavior.
@@ -82,6 +82,24 @@ replays its UUID through `xiaoman-activity signal-ingest --apply`, verifies that
 creates exactly one `xiaoman.create_activity_request` work item, verifies that the work
 item stores `source_event_signal_id`, and verifies that replaying the same signal
 returns the existing work item by idempotency key.
+
+## Event Signal Mutations
+
+`xiaoman-activity status-update` and `xiaoman-activity gap-update` mutate only
+Xiaoman-owned `qintopia_agent_os.event_signals`. Both require an internal UUID
+`event_signal_id` and a caller-supplied UUID `mutation_id`. They reject Feishu
+`record_id` and `table_role` fields.
+
+`status-update` accepts `待处理`, `处理中`, `已完成`, or `已关闭`. Completed and closed
+signals are terminal for this command. `gap-update` writes a normalized, non-sensitive
+`gap_summary` of at most 500 characters without replacing the extracted signal summary.
+
+Apply runs lock the event, validate replay or transition state, update one allowlisted
+field, and append one `event_signal_mutations` audit row in the same transaction. An
+exact replay returns the existing mutation; conflicting reuse of `mutation_id` fails.
+Neither operation reads or writes Feishu, sends QiWe messages, or calls an external
+adapter. Dry-run validates the payload without a database write and never returns the
+gap text.
 
 After an owner-approved deploy, the guarded
 `deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh` checks that
@@ -230,8 +248,8 @@ raw Feishu record ids.
 - Duplicate signal returns the existing work item by idempotency key.
 - Missing required fields produce a review-needed state.
 - Valid signal can request a visual asset workflow without publishing anything.
-- `status-update` and `gap-update` payloads may be validated but cannot apply a state
-  change until their field allowlists, idempotency, and audit behavior are implemented.
+- `status-update` and `gap-update` apply one allowlisted AgentOS event-signal field and
+  one append-only mutation audit; replays do not duplicate either write.
 
 ## Source References
 
