@@ -43,6 +43,11 @@ const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "wenyuange.retrieve_evidence",
     "xiaoman.create_activity_request",
 ];
+const GENERATED_IMAGE_ARTIFACT_TYPE: &str = "generated_image";
+const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
+const GENERATED_IMAGE_WORK_ITEM_TYPE: &str = "image_generation_request";
+const GENERATED_IMAGE_WORKER_ID: &str = "huabaosi-image-generation-worker";
+const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkItemCreateRequest {
@@ -449,6 +454,25 @@ pub struct WorkItemStatusNode {
 #[derive(Debug, Clone)]
 struct WorkItemStatusRow {
     node: WorkItemStatusNode,
+}
+
+#[derive(Debug, Clone)]
+struct ArtifactApprovalContext {
+    work_item_id: Uuid,
+    artifact_type: String,
+    review_status: String,
+    created_by_agent: String,
+    artifact_uri: Option<String>,
+    content_hash: Option<String>,
+    source_ids: Value,
+    risk_labels: Vec<String>,
+    information_class: String,
+    metadata: Value,
+    work_item_type: String,
+    capability_key: String,
+    work_item_status: String,
+    work_item_payload: Value,
+    creation_event_matches: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1929,8 +1953,10 @@ pub async fn record_artifact_review_decision(
             append_review_policy_denial(
                 pool,
                 &request,
+                None,
                 "artifact review decision denied by reviewer allowlist",
                 &err.to_string(),
+                "artifact_review_reviewer_allowlist",
             )
             .await?;
         }
@@ -1947,20 +1973,69 @@ pub async fn record_artifact_review_decision(
         .context("begin artifact review transaction")?;
     let row = sqlx::query(
         r#"
-        SELECT id, work_item_id, review_status
-        FROM qintopia_agent_os.artifacts
-        WHERE id = $1
-        FOR UPDATE
+        SELECT
+            artifact.id,
+            artifact.work_item_id,
+            artifact.artifact_type,
+            artifact.review_status,
+            artifact.created_by_agent,
+            artifact.artifact_uri,
+            artifact.content_hash,
+            artifact.source_ids,
+            artifact.risk_labels,
+            artifact.information_class,
+            artifact.metadata,
+            work_item.work_item_type,
+            work_item.capability_key,
+            work_item.status AS work_item_status,
+            work_item.payload AS work_item_payload,
+            EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_item_events event
+                WHERE event.work_item_id = artifact.work_item_id
+                  AND event.artifact_id = artifact.id
+                  AND event.event_type = 'generated_image_created'
+                  AND event.actor_type = 'worker'
+                  AND event.actor_id = $2
+                  AND event.data->>'content_hash' = artifact.content_hash
+                  AND event.data->>'mime_type' = artifact.metadata->>'mime_type'
+                  AND event.data->>'width' = artifact.metadata->>'width'
+                  AND event.data->>'height' = artifact.metadata->>'height'
+                  AND event.data->>'byte_size' = artifact.metadata->>'byte_size'
+                  AND event.data->>'external_publish_executed' = 'false'
+            ) AS creation_event_matches
+        FROM qintopia_agent_os.artifacts artifact
+        JOIN qintopia_agent_os.work_items work_item ON work_item.id = artifact.work_item_id
+        WHERE artifact.id = $1
+        FOR UPDATE OF artifact, work_item
         "#,
     )
     .bind(request.artifact_id)
+    .bind(GENERATED_IMAGE_WORKER_ID)
     .fetch_optional(&mut *tx)
     .await
     .context("load artifact for review")?
     .ok_or_else(|| anyhow::anyhow!("artifact is not found"))?;
 
-    let work_item_id: Uuid = row.get("work_item_id");
-    let previous_review_status: String = row.get("review_status");
+    let approval_context = artifact_approval_context_from_row(&row)?;
+    if let Err(error) = validate_generated_image_approval(&approval_context, &request.decision) {
+        tx.rollback()
+            .await
+            .context("rollback denied generated image approval")?;
+        append_review_policy_denial(
+            pool,
+            &request,
+            Some(approval_context.work_item_id),
+            "generated image approval denied by integrity policy",
+            "generated_image artifact integrity validation failed",
+            "generated_image_approval_integrity",
+        )
+        .await?;
+        return Err(error);
+    }
+
+    let work_item_id = approval_context.work_item_id;
+    let previous_review_status = approval_context.review_status;
     sqlx::query(
         r#"
         UPDATE qintopia_agent_os.artifacts
@@ -3566,22 +3641,25 @@ async fn append_policy_denial(
 async fn append_review_policy_denial(
     pool: &PgPool,
     request: &ArtifactReviewDecisionRequest,
+    work_item_id: Option<Uuid>,
     message: &str,
     reason: &str,
+    policy: &str,
 ) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO qintopia_agent_os.work_item_events
             (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
-        VALUES (NULL, $1, 'denied_by_policy', 'human', $2, $3, $4)
+        VALUES ($1, $2, 'denied_by_policy', 'human', $3, $4, $5)
         "#,
     )
+    .bind(work_item_id)
     .bind(request.artifact_id)
     .bind(&request.reviewer_id)
     .bind(message)
     .bind(json!({
         "reason": reason,
-        "policy": "artifact_review_reviewer_allowlist",
+        "policy": policy,
         "artifact_id": request.artifact_id,
         "reviewer_id": request.reviewer_id,
         "decision": request.decision,
@@ -4677,6 +4755,188 @@ fn validate_review_request(request: &ArtifactReviewDecisionRequest) -> Result<()
     Ok(())
 }
 
+fn artifact_approval_context_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ArtifactApprovalContext> {
+    Ok(ArtifactApprovalContext {
+        work_item_id: row.try_get("work_item_id")?,
+        artifact_type: row.try_get("artifact_type")?,
+        review_status: row.try_get("review_status")?,
+        created_by_agent: row.try_get("created_by_agent")?,
+        artifact_uri: row.try_get("artifact_uri")?,
+        content_hash: row.try_get("content_hash")?,
+        source_ids: row.try_get("source_ids")?,
+        risk_labels: row.try_get("risk_labels")?,
+        information_class: row.try_get("information_class")?,
+        metadata: row.try_get("metadata")?,
+        work_item_type: row.try_get("work_item_type")?,
+        capability_key: row.try_get("capability_key")?,
+        work_item_status: row.try_get("work_item_status")?,
+        work_item_payload: row.try_get("work_item_payload")?,
+        creation_event_matches: row.try_get("creation_event_matches")?,
+    })
+}
+
+fn validate_generated_image_approval(
+    context: &ArtifactApprovalContext,
+    decision: &str,
+) -> Result<()> {
+    if decision != "approved" || context.artifact_type != GENERATED_IMAGE_ARTIFACT_TYPE {
+        return Ok(());
+    }
+    if context.review_status != "pending" {
+        bail!("generated_image approval requires pending review status");
+    }
+    if context.work_item_type != GENERATED_IMAGE_WORK_ITEM_TYPE
+        || context.capability_key != GENERATED_IMAGE_CAPABILITY_KEY
+        || context.work_item_status != "awaiting_review"
+    {
+        bail!("generated_image approval requires an awaiting-review image request");
+    }
+    if context.created_by_agent != "huabaosi"
+        || context.information_class != "internal_ops"
+        || !context
+            .risk_labels
+            .iter()
+            .any(|label| label == "generated_media")
+        || !context
+            .risk_labels
+            .iter()
+            .any(|label| label == "external_use_review_required")
+    {
+        bail!("generated_image approval requires controlled artifact provenance");
+    }
+
+    validate_generated_image_uri(context.artifact_uri.as_deref().unwrap_or_default())?;
+    validate_canonical_sha256(
+        context.content_hash.as_deref().unwrap_or_default(),
+        "generated_image content_hash",
+    )?;
+
+    for (key, expected) in [
+        ("generated_by", GENERATED_IMAGE_WORKER_ID),
+        ("provider", "openai-compatible"),
+        ("model", "gpt-image-2"),
+        ("mime_type", "image/png"),
+    ] {
+        if json_string(&context.metadata, key) != Some(expected) {
+            bail!("generated_image approval requires canonical worker metadata");
+        }
+    }
+    if json_i64(&context.metadata, "width") != Some(1024)
+        || json_i64(&context.metadata, "height") != Some(1024)
+    {
+        bail!("generated_image approval requires 1024x1024 PNG metadata");
+    }
+    let byte_size = json_i64(&context.metadata, "byte_size").unwrap_or_default();
+    if !(1..=MAX_APPROVABLE_GENERATED_IMAGE_BYTES).contains(&byte_size) {
+        bail!("generated_image approval requires bounded positive byte_size metadata");
+    }
+
+    let brief_id = matching_uuid_field(
+        &context.metadata,
+        &context.work_item_payload,
+        "approved_brief_artifact_id",
+    )?;
+    let brief_hash = matching_string_field(
+        &context.metadata,
+        &context.work_item_payload,
+        "approved_brief_content_hash",
+    )?;
+    validate_canonical_sha256(brief_hash, "approved brief content hash")?;
+    let prompt_hash =
+        matching_string_field(&context.metadata, &context.work_item_payload, "prompt_hash")?;
+    validate_canonical_sha256(prompt_hash, "image prompt hash")?;
+    if json_string(&context.work_item_payload, "image_specification")
+        != Some("community_poster_1024x1024")
+    {
+        bail!("generated_image approval requires the reviewed image specification");
+    }
+    if !source_ids_match_approved_brief(&context.source_ids, brief_id, brief_hash) {
+        bail!("generated_image approval requires matching approved brief source refs");
+    }
+    if !context.creation_event_matches {
+        bail!("generated_image approval requires a matching creation audit");
+    }
+    Ok(())
+}
+
+fn validate_generated_image_uri(value: &str) -> Result<()> {
+    let uri = url::Url::parse(value).context("generated_image artifact_uri must be a valid URL")?;
+    if uri.scheme() != "https"
+        || uri.host_str().is_none()
+        || !uri.username().is_empty()
+        || uri.password().is_some()
+        || uri.query().is_some()
+        || uri.fragment().is_some()
+        || matches!(uri.path(), "" | "/")
+    {
+        bail!("generated_image artifact_uri must be a stable HTTPS media URL");
+    }
+    Ok(())
+}
+
+fn validate_canonical_sha256(value: &str, label: &str) -> Result<()> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        bail!("{label} must be a canonical sha256");
+    };
+    if hex.len() != 64
+        || !hex
+            .chars()
+            .all(|character| matches!(character, '0'..='9' | 'a'..='f'))
+    {
+        bail!("{label} must be a canonical sha256");
+    }
+    Ok(())
+}
+
+fn matching_uuid_field(metadata: &Value, payload: &Value, key: &str) -> Result<Uuid> {
+    let metadata_value = json_string(metadata, key)
+        .ok_or_else(|| anyhow::anyhow!("generated_image metadata is missing {key}"))?;
+    let payload_value = json_string(payload, key)
+        .ok_or_else(|| anyhow::anyhow!("image request payload is missing {key}"))?;
+    if metadata_value != payload_value {
+        bail!("generated_image source metadata does not match its image request");
+    }
+    Uuid::parse_str(metadata_value).with_context(|| format!("{key} must be a uuid"))
+}
+
+fn matching_string_field<'a>(
+    metadata: &'a Value,
+    payload: &'a Value,
+    key: &str,
+) -> Result<&'a str> {
+    let metadata_value = json_string(metadata, key)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("generated_image metadata is missing {key}"))?;
+    let payload_value = json_string(payload, key)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("image request payload is missing {key}"))?;
+    if metadata_value != payload_value {
+        bail!("generated_image source metadata does not match its image request");
+    }
+    Ok(metadata_value)
+}
+
+fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
+fn json_i64(value: &Value, key: &str) -> Option<i64> {
+    value.get(key).and_then(Value::as_i64)
+}
+
+fn source_ids_match_approved_brief(source_ids: &Value, brief_id: Uuid, brief_hash: &str) -> bool {
+    source_ids.as_array().is_some_and(|sources| {
+        sources.iter().any(|source| {
+            json_string(source, "approved_brief_artifact_id")
+                .and_then(|value| Uuid::parse_str(value).ok())
+                == Some(brief_id)
+                && json_string(source, "approved_brief_content_hash") == Some(brief_hash)
+        })
+    })
+}
+
 fn validate_reviewer_authorized(reviewer_id: &str, policy: &OperationsPolicy) -> Result<()> {
     if !policy.reviewer_allowed(reviewer_id) {
         bail!("reviewer_id is not allowed for artifact review decisions");
@@ -5164,6 +5424,7 @@ fn review_report(
         guardrails: vec![
             "only approved, rejected, or changes_requested decisions are accepted".to_string(),
             "rejected and changes_requested decisions require a reason".to_string(),
+            "generated_image approvals revalidate worker provenance and media metadata".to_string(),
             "review decisions are audited through work_item_events".to_string(),
         ],
     }
@@ -6475,6 +6736,104 @@ mod tests {
             .limitations
             .iter()
             .any(|item| item.contains("does not publish")));
+    }
+
+    fn generated_image_approval_context() -> ArtifactApprovalContext {
+        let brief_id = Uuid::new_v4();
+        let brief_hash = format!("sha256:{}", "b".repeat(64));
+        let prompt_hash = format!("sha256:{}", "c".repeat(64));
+        ArtifactApprovalContext {
+            work_item_id: Uuid::new_v4(),
+            artifact_type: GENERATED_IMAGE_ARTIFACT_TYPE.to_string(),
+            review_status: "pending".to_string(),
+            created_by_agent: "huabaosi".to_string(),
+            artifact_uri: Some("https://media.example.test/posters/image.png".to_string()),
+            content_hash: Some(format!("sha256:{}", "a".repeat(64))),
+            source_ids: json!([{
+                "approved_brief_artifact_id": brief_id,
+                "approved_brief_content_hash": brief_hash,
+            }]),
+            risk_labels: vec![
+                "external_use_review_required".to_string(),
+                "generated_media".to_string(),
+            ],
+            information_class: "internal_ops".to_string(),
+            metadata: json!({
+                "generated_by": GENERATED_IMAGE_WORKER_ID,
+                "provider": "openai-compatible",
+                "model": "gpt-image-2",
+                "mime_type": "image/png",
+                "width": 1024,
+                "height": 1024,
+                "byte_size": 4096,
+                "approved_brief_artifact_id": brief_id,
+                "approved_brief_content_hash": brief_hash,
+                "prompt_hash": prompt_hash,
+            }),
+            work_item_type: GENERATED_IMAGE_WORK_ITEM_TYPE.to_string(),
+            capability_key: GENERATED_IMAGE_CAPABILITY_KEY.to_string(),
+            work_item_status: "awaiting_review".to_string(),
+            work_item_payload: json!({
+                "approved_brief_artifact_id": brief_id,
+                "approved_brief_content_hash": brief_hash,
+                "prompt_hash": prompt_hash,
+                "image_specification": "community_poster_1024x1024",
+            }),
+            creation_event_matches: true,
+        }
+    }
+
+    #[test]
+    fn generated_image_approval_accepts_complete_worker_provenance() {
+        validate_generated_image_approval(&generated_image_approval_context(), "approved")
+            .expect("complete generated image should be approvable");
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_missing_creation_audit() {
+        let mut context = generated_image_approval_context();
+        context.creation_event_matches = false;
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("creation audit must be required");
+
+        assert!(error.to_string().contains("matching creation audit"));
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_mismatched_source_brief() {
+        let mut context = generated_image_approval_context();
+        context.metadata["approved_brief_artifact_id"] = json!(Uuid::new_v4());
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("source brief must match the image request");
+
+        assert!(error.to_string().contains("source metadata does not match"));
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_noncanonical_media_identity() {
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some("https://media.example.test/image.png?token=value".to_string());
+        let uri_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("media URL query must be rejected");
+        assert!(uri_error.to_string().contains("stable HTTPS media URL"));
+
+        let mut context = generated_image_approval_context();
+        context.content_hash = Some("sha256:not-a-real-hash".to_string());
+        let hash_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("noncanonical hash must be rejected");
+        assert!(hash_error.to_string().contains("canonical sha256"));
+    }
+
+    #[test]
+    fn generated_image_rejection_does_not_require_complete_provenance() {
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = None;
+        context.creation_event_matches = false;
+
+        validate_generated_image_approval(&context, "rejected")
+            .expect("humans must be able to reject malformed artifacts");
     }
 
     #[test]

@@ -169,6 +169,11 @@ approved `poster_brief` alone cannot unlock this handoff. It does not record fin
 confirmation, move the request to `queued`, run send-ready, publish, call QiWe, write
 Feishu, or call external adapters.
 
+An image can reach `approved` only when the review command confirms its recorded
+Huabaosi worker provenance, stable HTTPS URI, sha256, PNG metadata, source brief/prompt
+refs, and creation audit match the image-generation request. A hand-inserted or
+incomplete image remains pending and cannot unlock this starter.
+
 `deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 checks this handoff after an owner-approved deploy. It verifies that the reviewed timer
 command is fixed to `run-xiaoman-activity-send-request-starter-worker --once --apply`,

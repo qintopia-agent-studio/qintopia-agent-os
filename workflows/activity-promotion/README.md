@@ -47,6 +47,9 @@ to depth 8 and 32 refs and reports explicitly if that bound truncates an abnorma
   without opening network or database connections. Its sanitized `adapter_config_ready`
   result is only a staging prerequisite, not approval to generate or publish.
 - A `generated_image` must remain pending human review before any downstream use.
+- Approving a `generated_image` also requires its recorded worker provenance, HTTPS URI,
+  sha256, PNG metadata, source brief/prompt refs, and creation audit to match the image
+  request. Human review cannot approve a manually inserted or incomplete image record.
 - The send-request starter creates `group_message_request` only from an approved
   `generated_image` whose image-generation request is completed. An approved
   `poster_brief` alone is insufficient.
@@ -115,6 +118,8 @@ timer.
 - A workbench mirror description reports both immediate children and all descendants,
   including the nested image-generation request, while keeping sensitive payload fields
   excluded.
+- An incomplete or forged `generated_image` approval is denied and audited without
+  completing its image request or unlocking the send-request starter.
 - Group-send readiness requires final human confirmation before any external send path
   is considered.
 
