@@ -20,7 +20,7 @@
 
 - Format: `cargo fmt`
 - Check: `cargo check`
-- Test: `cargo test`
+- Test: `RUST_MIN_STACK=33554432 cargo test`
 - Local readiness: `cargo run -- check`
 - Run consumer: `cargo run -- run`
 
@@ -44,6 +44,9 @@ From the monorepo root, prefer:
 - Every database schema migration must have a matching versioned design note under
   `../postgres/docs/data-design/` and must record itself in
   `qintopia_agent_os.schema_change_log` when that table exists.
+- The complete sidecar suite needs a 32 MiB test-thread stack. `pnpm test:sidecar` and
+  CI set `RUST_MIN_STACK=33554432`; this is test-only and must not be copied into the
+  production sidecar service environment.
 - v1 only captures raw/normalized messages and creates pending processing jobs;
   embedding and graph extraction must remain separate workers.
 - Do not adopt files from the server Huabaosi shadow branch until owner review

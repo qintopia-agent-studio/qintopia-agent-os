@@ -14,6 +14,7 @@ mod group_message_send;
 mod health;
 mod identity_backfill;
 mod identity_bootstrap;
+mod image_generation;
 mod knowledge;
 mod mcp_server;
 mod member_profile;
@@ -399,6 +400,23 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::RunXiaomanActivityImageGenerationStarterWorker {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            work_item_id,
+        } => {
+            operations::run_xiaoman_activity_image_generation_starter_worker(
+                &cli,
+                check_only,
+                once,
+                apply,
+                batch_size,
+                work_item_id,
+            )
+            .await
+        }
         Command::OperationsWorkItemCreate {
             payload_json,
             apply,
@@ -482,6 +500,13 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::RunHuabaosiImageGenerationWorker {
+            once,
+            work_item_id,
+            apply,
+            dry_run,
+            fixture_mode,
+        } => image_generation::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
         Command::RunEvidenceWorker {
             once,
             work_item_id,

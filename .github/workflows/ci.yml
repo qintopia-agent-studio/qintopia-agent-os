@@ -14,6 +14,7 @@ env:
   NODE_VERSION: "24"
   RUST_TOOLCHAIN: "1.96.0"
   PNPM_VERSION: "10.29.2"
+  RUST_MIN_STACK: "33554432"
 
 jobs:
   changes:
