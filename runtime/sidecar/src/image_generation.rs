@@ -9,9 +9,13 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use base64ct::{Base64, Encoding};
+use image::{
+    codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, ImageFormat, ImageReader,
+    Limits, RgbaImage,
+};
 use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, Stream};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Row};
 use url::Url;
@@ -24,8 +28,13 @@ const CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const WORK_ITEM_TYPE: &str = "image_generation_request";
 const SPECIFICATION: &str = "community_poster_1024x1024";
 const IMAGE_SIZE: &str = "1024x1024";
-const PNG_MIME_TYPE: &str = "image/png";
+const PROVIDER_SOURCE_MIME_TYPE: &str = "image/png";
+const FINAL_IMAGE_MIME_TYPE: &str = "image/jpeg";
+const MEDIA_TRANSFORM: &str = "png_to_jpeg_white_background_q92_v1";
+const JPEG_QUALITY: u8 = 92;
+const ALPHA_BACKGROUND: &str = "#ffffff";
 const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
+const MAX_IMAGE_DECODER_ALLOC_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_HTTP_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
 const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
@@ -100,6 +109,7 @@ struct AdapterConfig {
 struct GeneratedImage {
     bytes: Vec<u8>,
     content_hash: String,
+    provider_source_content_hash: String,
     width: u32,
     height: u32,
     artifact_uri: String,
@@ -639,13 +649,17 @@ fn validate_media_response(
     config: &AdapterConfig,
     media: &MediaUploadResponse,
     content_hash: &str,
-    metadata: &PngMetadata,
+    metadata: &ImageMetadata,
     byte_size: usize,
     allow_insecure_http: bool,
 ) -> Result<Url> {
     let uri = media_response_url(&media.uri, allow_insecure_http)?;
     if uri.query().is_some() {
         bail!("media response URI must not contain a query");
+    }
+    let path = uri.path().to_ascii_lowercase();
+    if !path.ends_with(".jpg") && !path.ends_with(".jpeg") {
+        bail!("media response URI must reference a JPEG object");
     }
     let host = normalized_url_host(&uri)?;
     if !config.media_allowed_hosts.contains(&host)
@@ -654,7 +668,7 @@ fn validate_media_response(
         bail!("media response URI is outside the configured media boundary");
     }
     if media.content_hash != content_hash
-        || media.mime_type != PNG_MIME_TYPE
+        || media.mime_type != FINAL_IMAGE_MIME_TYPE
         || media.byte_size != byte_size
         || media.width != metadata.width
         || media.height != metadata.height
@@ -689,24 +703,75 @@ fn same_public_base(base: &Url, candidate: &Url) -> bool {
 }
 
 #[derive(Debug)]
-struct PngMetadata {
+struct ImageMetadata {
     width: u32,
     height: u32,
 }
 
-fn inspect_png(bytes: &[u8], max_bytes: usize) -> Result<PngMetadata> {
+fn decode_provider_png(bytes: &[u8], max_bytes: usize) -> Result<RgbaImage> {
     if bytes.is_empty() || bytes.len() > max_bytes {
         bail!("image bytes are outside the configured size limit");
     }
-    if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" || &bytes[12..16] != b"IHDR" {
-        bail!("generated image must be a PNG with an IHDR header");
-    }
-    let width = u32::from_be_bytes(bytes[16..20].try_into().expect("PNG width length"));
-    let height = u32::from_be_bytes(bytes[20..24].try_into().expect("PNG height length"));
+    let image = decode_image_with_limits(bytes, ImageFormat::Png, "decode generated PNG")?;
+    let (width, height) = image.dimensions();
     if width != 1024 || height != 1024 {
         bail!("generated image dimensions must match the requested specification");
     }
-    Ok(PngMetadata { width, height })
+    Ok(image.to_rgba8())
+}
+
+fn encode_final_jpeg(source: &RgbaImage, max_bytes: usize) -> Result<Vec<u8>> {
+    let (width, height) = source.dimensions();
+    if width != 1024 || height != 1024 {
+        bail!("generated image dimensions must match the requested specification");
+    }
+    let rgb = composite_rgba_over_white(source);
+
+    let mut bytes = Vec::new();
+    JpegEncoder::new_with_quality(&mut bytes, JPEG_QUALITY)
+        .encode(&rgb, width, height, ExtendedColorType::Rgb8)
+        .context("encode generated JPEG")?;
+    inspect_final_jpeg(&bytes, max_bytes)?;
+    Ok(bytes)
+}
+
+fn composite_rgba_over_white(source: &RgbaImage) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity(source.width() as usize * source.height() as usize * 3);
+    for pixel in source.pixels() {
+        let alpha = u32::from(pixel[3]);
+        for channel in &pixel.0[..3] {
+            let channel = u32::from(*channel);
+            let composited = (channel * alpha + 255 * (255 - alpha) + 127) / 255;
+            rgb.push(composited as u8);
+        }
+    }
+    rgb
+}
+
+fn inspect_final_jpeg(bytes: &[u8], max_bytes: usize) -> Result<ImageMetadata> {
+    if bytes.is_empty() || bytes.len() > max_bytes {
+        bail!("image bytes are outside the configured size limit");
+    }
+    let image = decode_image_with_limits(bytes, ImageFormat::Jpeg, "decode final JPEG")?;
+    let (width, height) = image.dimensions();
+    if width != 1024 || height != 1024 {
+        bail!("generated image dimensions must match the requested specification");
+    }
+    Ok(ImageMetadata { width, height })
+}
+
+fn decode_image_with_limits(
+    bytes: &[u8],
+    format: ImageFormat,
+    error_context: &'static str,
+) -> Result<image::DynamicImage> {
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(1024);
+    limits.max_image_height = Some(1024);
+    limits.max_alloc = Some(MAX_IMAGE_DECODER_ALLOC_BYTES);
+    let mut reader = ImageReader::with_format(io::Cursor::new(bytes), format);
+    reader.limits(limits);
+    reader.decode().context(error_context)
 }
 
 impl GeneratedImage {
@@ -715,7 +780,7 @@ impl GeneratedImage {
             artifact_type: "generated_image",
             review_status: "pending",
             content_hash: self.content_hash.clone(),
-            mime_type: PNG_MIME_TYPE,
+            mime_type: FINAL_IMAGE_MIME_TYPE,
             width: self.width,
             height: self.height,
             byte_size: self.bytes.len(),
@@ -1258,18 +1323,7 @@ async fn persist_generated_image(
         "approved_brief_artifact_id": work_item.approved_brief_artifact_id,
         "approved_brief_content_hash": work_item.approved_brief_content_hash,
     }]))
-    .bind(json!({
-        "generated_by": WORKER_ID,
-        "provider": "openai-compatible",
-        "model": "gpt-image-2",
-        "mime_type": PNG_MIME_TYPE,
-        "width": generated.width,
-        "height": generated.height,
-        "byte_size": generated.bytes.len(),
-        "approved_brief_artifact_id": work_item.approved_brief_artifact_id,
-        "approved_brief_content_hash": work_item.approved_brief_content_hash,
-        "prompt_hash": work_item.prompt_hash,
-    }))
+    .bind(generated_image_metadata(work_item, generated))
     .fetch_optional(&mut *tx)
     .await
     .context("insert generated image artifact")?;
@@ -1278,7 +1332,7 @@ async fn persist_generated_image(
         None => {
             let row = sqlx::query(
                 r#"
-                SELECT id, review_status
+                SELECT id, review_status, artifact_uri, source_ids, metadata
                 FROM qintopia_agent_os.artifacts
                 WHERE work_item_id = $1
                   AND content_hash = $2
@@ -1294,8 +1348,20 @@ async fn persist_generated_image(
                 anyhow!("generated image content hash conflicts with another artifact")
             })?;
             let review_status: String = row.get("review_status");
-            if !can_reuse_existing_generated_image(&review_status) {
-                bail!("refusing to modify an already reviewed generated image artifact");
+            let artifact_uri: Option<String> = row.try_get("artifact_uri")?;
+            let source_ids: Value = row.try_get("source_ids")?;
+            let metadata: Value = row.try_get("metadata")?;
+            if !existing_generated_image_matches(
+                &review_status,
+                artifact_uri.as_deref(),
+                &source_ids,
+                &metadata,
+                work_item,
+                generated,
+            ) {
+                bail!(
+                    "refusing to reuse a reviewed, stale, or mismatched generated image artifact"
+                );
             }
             (row.get("id"), false)
         }
@@ -1335,14 +1401,7 @@ async fn persist_generated_image(
         .bind(work_item.id)
         .bind(artifact_id)
         .bind(WORKER_ID)
-        .bind(json!({
-            "content_hash": generated.content_hash,
-            "mime_type": PNG_MIME_TYPE,
-            "width": generated.width,
-            "height": generated.height,
-            "byte_size": generated.bytes.len(),
-            "external_publish_executed": false,
-        }))
+        .bind(generated_image_creation_event_data(generated))
         .execute(&mut *tx)
         .await
         .context("append generated image event")?;
@@ -1355,6 +1414,63 @@ async fn persist_generated_image(
 
 fn can_reuse_existing_generated_image(review_status: &str) -> bool {
     review_status == "pending"
+}
+
+fn generated_image_metadata(
+    work_item: &ImageGenerationWorkItem,
+    generated: &GeneratedImage,
+) -> Value {
+    json!({
+        "generated_by": WORKER_ID,
+        "provider": "openai-compatible",
+        "model": "gpt-image-2",
+        "mime_type": FINAL_IMAGE_MIME_TYPE,
+        "provider_source_mime_type": PROVIDER_SOURCE_MIME_TYPE,
+        "provider_source_content_hash": generated.provider_source_content_hash,
+        "media_transform": MEDIA_TRANSFORM,
+        "jpeg_quality": JPEG_QUALITY,
+        "alpha_background": ALPHA_BACKGROUND,
+        "width": generated.width,
+        "height": generated.height,
+        "byte_size": generated.bytes.len(),
+        "approved_brief_artifact_id": work_item.approved_brief_artifact_id,
+        "approved_brief_content_hash": work_item.approved_brief_content_hash,
+        "prompt_hash": work_item.prompt_hash,
+    })
+}
+
+fn generated_image_creation_event_data(generated: &GeneratedImage) -> Value {
+    json!({
+        "content_hash": generated.content_hash,
+        "mime_type": FINAL_IMAGE_MIME_TYPE,
+        "provider_source_mime_type": PROVIDER_SOURCE_MIME_TYPE,
+        "provider_source_content_hash": generated.provider_source_content_hash,
+        "media_transform": MEDIA_TRANSFORM,
+        "jpeg_quality": JPEG_QUALITY,
+        "alpha_background": ALPHA_BACKGROUND,
+        "width": generated.width,
+        "height": generated.height,
+        "byte_size": generated.bytes.len(),
+        "external_publish_executed": false,
+    })
+}
+
+fn existing_generated_image_matches(
+    review_status: &str,
+    artifact_uri: Option<&str>,
+    source_ids: &Value,
+    metadata: &Value,
+    work_item: &ImageGenerationWorkItem,
+    generated: &GeneratedImage,
+) -> bool {
+    can_reuse_existing_generated_image(review_status)
+        && artifact_uri == Some(generated.artifact_uri.as_str())
+        && source_ids
+            == &json!([{
+                "approved_brief_artifact_id": work_item.approved_brief_artifact_id,
+                "approved_brief_content_hash": work_item.approved_brief_content_hash,
+            }])
+        && metadata == &generated_image_metadata(work_item, generated)
 }
 
 async fn record_generation_failure(
@@ -1477,17 +1593,18 @@ fn should_retry_generation(class: GenerationFailureClass, attempts: i32) -> bool
 
 fn image_preview(work_item: &ImageGenerationWorkItem) -> GeneratedImagePreview {
     let content_hash = content_hash_text(&format!(
-        "{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}",
         work_item.approved_brief_artifact_id,
         work_item.approved_brief_content_hash,
         work_item.image_specification,
-        work_item.prompt_hash
+        work_item.prompt_hash,
+        MEDIA_TRANSFORM
     ));
     GeneratedImagePreview {
         artifact_type: "generated_image",
         review_status: "pending",
         content_hash,
-        mime_type: PNG_MIME_TYPE,
+        mime_type: FINAL_IMAGE_MIME_TYPE,
         width: 1024,
         height: 1024,
         byte_size: 0,
@@ -1546,6 +1663,12 @@ fn content_hash_text(value: &str) -> String {
 
 fn content_hash_bytes(value: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(value))
+}
+
+fn media_upload_idempotency_key(prompt_hash: &str, final_content_hash: &str) -> String {
+    content_hash_text(&format!(
+        "{prompt_hash}|{MEDIA_TRANSFORM}|{final_content_hash}"
+    ))
 }
 
 #[cfg(test)]
@@ -1610,26 +1733,33 @@ fn generate_and_store_with(
                 GenerationAttemptError::terminal("provider_response", source)
             }
         })?;
-    let bytes = Base64::decode_vec(&provider_response)
+    let provider_bytes = Base64::decode_vec(&provider_response)
         .map_err(|_| anyhow!("decode image provider b64_json response"))
         .map_err(|source| GenerationAttemptError::terminal("provider_payload", source))?;
-    let metadata = inspect_png(&bytes, config.max_media_bytes)
+    let source_image = decode_provider_png(&provider_bytes, config.max_media_bytes)
         .map_err(|source| GenerationAttemptError::terminal("provider_payload", source))?;
+    let provider_source_content_hash = content_hash_bytes(&provider_bytes);
+    let bytes = encode_final_jpeg(&source_image, config.max_media_bytes)
+        .map_err(|source| GenerationAttemptError::terminal("media_transform", source))?;
+    let metadata = inspect_final_jpeg(&bytes, config.max_media_bytes)
+        .map_err(|source| GenerationAttemptError::terminal("media_transform", source))?;
     let content_hash = content_hash_bytes(&bytes);
+    let upload_idempotency_key =
+        media_upload_idempotency_key(&work_item.prompt_hash, &content_hash);
 
     let upload_response = client
         .request(
             "POST",
             &config.media_upload_endpoint,
             &[
-                ("Content-Type", PNG_MIME_TYPE.to_string()),
+                ("Content-Type", FINAL_IMAGE_MIME_TYPE.to_string()),
                 ("Accept", "application/json".to_string()),
                 ("X-Qintopia-Content-Hash", content_hash.clone()),
                 ("X-Qintopia-Byte-Size", bytes.len().to_string()),
                 ("X-Qintopia-Width", metadata.width.to_string()),
                 ("X-Qintopia-Height", metadata.height.to_string()),
                 ("X-Qintopia-Work-Item-Id", work_item.id.to_string()),
-                ("X-Qintopia-Idempotency-Key", work_item.prompt_hash.clone()),
+                ("X-Qintopia-Idempotency-Key", upload_idempotency_key),
             ],
             &bytes,
             MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
@@ -1657,13 +1787,13 @@ fn generate_and_store_with(
         .get("content-type")
         .map(|value| value.split(';').next().unwrap_or_default().trim())
         .unwrap_or_default();
-    if content_type != PNG_MIME_TYPE {
+    if content_type != FINAL_IMAGE_MIME_TYPE {
         return Err(GenerationAttemptError::terminal(
             "media_readback",
             anyhow!("media readback returned an unexpected MIME type"),
         ));
     }
-    let readback_metadata = inspect_png(&readback.body, config.max_media_bytes)
+    let readback_metadata = inspect_final_jpeg(&readback.body, config.max_media_bytes)
         .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
     if readback.body != bytes
         || content_hash_bytes(&readback.body) != content_hash
@@ -1678,6 +1808,7 @@ fn generate_and_store_with(
     Ok(GeneratedImage {
         bytes,
         content_hash,
+        provider_source_content_hash,
         width: metadata.width,
         height: metadata.height,
         artifact_uri: media.uri,
@@ -1709,6 +1840,7 @@ mod tests {
     };
 
     use super::*;
+    use image::ImageEncoder;
 
     #[test]
     fn fixture_preview_is_pending_and_safe_for_chat_is_false() {
@@ -1919,16 +2051,63 @@ mod tests {
     }
 
     #[test]
+    fn pending_generated_image_reuse_requires_exact_immutable_metadata() {
+        let work_item = fixture_work_item();
+        let generated = GeneratedImage {
+            bytes: vec![1, 2, 3],
+            content_hash: format!("sha256:{}", "a".repeat(64)),
+            provider_source_content_hash: format!("sha256:{}", "b".repeat(64)),
+            width: 1024,
+            height: 1024,
+            artifact_uri: "https://media.example.test/public/image.jpg".to_string(),
+        };
+        let source_ids = json!([{
+            "approved_brief_artifact_id": work_item.approved_brief_artifact_id,
+            "approved_brief_content_hash": work_item.approved_brief_content_hash,
+        }]);
+        let metadata = generated_image_metadata(&work_item, &generated);
+
+        assert!(existing_generated_image_matches(
+            "pending",
+            Some(&generated.artifact_uri),
+            &source_ids,
+            &metadata,
+            &work_item,
+            &generated,
+        ));
+
+        let mut stale_metadata = metadata.clone();
+        stale_metadata["provider_source_content_hash"] =
+            json!(format!("sha256:{}", "c".repeat(64)));
+        assert!(!existing_generated_image_matches(
+            "pending",
+            Some(&generated.artifact_uri),
+            &source_ids,
+            &stale_metadata,
+            &work_item,
+            &generated,
+        ));
+        assert!(!existing_generated_image_matches(
+            "approved",
+            Some(&generated.artifact_uri),
+            &source_ids,
+            &metadata,
+            &work_item,
+            &generated,
+        ));
+    }
+
+    #[test]
     fn media_response_must_stay_within_public_base_and_allowlist() {
         let config = test_config("https://media.example.test/public");
-        let metadata = PngMetadata {
+        let metadata = ImageMetadata {
             width: 1024,
             height: 1024,
         };
         let media = MediaUploadResponse {
-            uri: "https://other.example.test/public/image.png".to_string(),
+            uri: "https://other.example.test/public/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
-            mime_type: PNG_MIME_TYPE.to_string(),
+            mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
             width: 1024,
             height: 1024,
@@ -1941,14 +2120,14 @@ mod tests {
     #[test]
     fn media_response_cannot_escape_public_path_prefix() {
         let config = test_config("https://media.example.test/public");
-        let metadata = PngMetadata {
+        let metadata = ImageMetadata {
             width: 1024,
             height: 1024,
         };
         let media = MediaUploadResponse {
-            uri: "https://media.example.test/publicity/image.png".to_string(),
+            uri: "https://media.example.test/publicity/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
-            mime_type: PNG_MIME_TYPE.to_string(),
+            mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
             width: 1024,
             height: 1024,
@@ -1986,14 +2165,14 @@ mod tests {
     #[test]
     fn media_upload_metadata_must_match_generated_image() {
         let config = test_config("https://media.example.test/public");
-        let metadata = PngMetadata {
+        let metadata = ImageMetadata {
             width: 1024,
             height: 1024,
         };
         let media = MediaUploadResponse {
-            uri: "https://media.example.test/public/image.png".to_string(),
+            uri: "https://media.example.test/public/image.jpg".to_string(),
             content_hash: "sha256:unexpected".to_string(),
-            mime_type: PNG_MIME_TYPE.to_string(),
+            mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
             width: 1024,
             height: 1024,
@@ -2006,18 +2185,108 @@ mod tests {
     }
 
     #[test]
-    fn fake_provider_and_media_server_round_trip_png_bytes() {
-        let image = fixture_png();
+    fn media_upload_uri_must_name_the_final_jpeg_object() {
+        let config = test_config("https://media.example.test/public");
+        let metadata = ImageMetadata {
+            width: 1024,
+            height: 1024,
+        };
+        let media = MediaUploadResponse {
+            uri: "https://media.example.test/public/image.png".to_string(),
+            content_hash: "sha256:expected".to_string(),
+            mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
+            byte_size: 12,
+            width: 1024,
+            height: 1024,
+        };
+
+        let error =
+            validate_media_response(&config, &media, "sha256:expected", &metadata, 12, false)
+                .expect_err("final media URI must use a JPEG suffix");
+
+        assert!(error.to_string().contains("JPEG object"));
+    }
+
+    #[test]
+    fn png_to_jpeg_conversion_is_deterministic_and_bounded() {
+        let source = fixture_png();
+        let decoded =
+            decode_provider_png(&source, DEFAULT_MAX_MEDIA_BYTES).expect("fixture PNG must decode");
+        let first = encode_final_jpeg(&decoded, DEFAULT_MAX_MEDIA_BYTES)
+            .expect("fixture must encode to JPEG");
+        let second = encode_final_jpeg(&decoded, DEFAULT_MAX_MEDIA_BYTES)
+            .expect("same fixture must encode identically");
+        let metadata =
+            inspect_final_jpeg(&first, DEFAULT_MAX_MEDIA_BYTES).expect("final JPEG must decode");
+
+        assert_eq!(first, second);
+        assert!(first.starts_with(&[0xff, 0xd8]));
+        assert!(first.ends_with(&[0xff, 0xd9]));
+        assert_eq!((metadata.width, metadata.height), (1024, 1024));
+        assert!(first.len() <= DEFAULT_MAX_MEDIA_BYTES);
+    }
+
+    #[test]
+    fn alpha_compositing_uses_exact_white_background_integer_rule() {
+        let source = RgbaImage::from_vec(
+            3,
+            1,
+            vec![10, 20, 30, 255, 10, 20, 30, 0, 40, 120, 200, 128],
+        )
+        .expect("fixture dimensions match");
+
+        assert_eq!(
+            composite_rgba_over_white(&source),
+            vec![10, 20, 30, 255, 255, 255, 147, 187, 227]
+        );
+    }
+
+    #[test]
+    fn png_decoder_rejects_header_only_fixture() {
+        let mut bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR".to_vec();
+        bytes.extend_from_slice(&1024_u32.to_be_bytes());
+        bytes.extend_from_slice(&1024_u32.to_be_bytes());
+        bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+
+        assert!(decode_provider_png(&bytes, DEFAULT_MAX_MEDIA_BYTES).is_err());
+    }
+
+    #[test]
+    fn decoder_limits_reject_oversized_dimensions() {
+        let oversized = fixture_png_with_dimensions(1025, 1, [1, 2, 3, 255]);
+
+        let error = decode_provider_png(&oversized, DEFAULT_MAX_MEDIA_BYTES)
+            .expect_err("decoder must reject oversized dimensions before conversion");
+
+        assert!(error.to_string().contains("decode generated PNG"));
+    }
+
+    #[test]
+    fn upload_idempotency_includes_transform_and_final_hash() {
+        let first = media_upload_idempotency_key("sha256:prompt", "sha256:jpeg-a");
+        let repeated = media_upload_idempotency_key("sha256:prompt", "sha256:jpeg-a");
+        let changed = media_upload_idempotency_key("sha256:prompt", "sha256:jpeg-b");
+
+        assert_eq!(first, repeated);
+        assert_ne!(first, changed);
+        assert!(first.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn fake_provider_png_is_converted_before_media_round_trip() {
+        let source_png = fixture_png();
+        let final_jpeg = fixture_jpeg(&source_png);
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake server");
         let port = listener.local_addr().expect("fake server address").port();
-        let image_for_server = image.clone();
+        let source_for_server = source_png.clone();
+        let final_for_server = final_jpeg.clone();
         let handle = thread::spawn(move || {
-            for expected_path in ["/v1/images/generations", "/upload", "/public/image.png"] {
+            for expected_path in ["/v1/images/generations", "/upload", "/public/image.jpg"] {
                 let (mut stream, _) = listener.accept().expect("accept fake request");
                 let request = read_request(&mut stream);
                 assert!(request.headers.starts_with(&format!(
                     "{} ",
-                    if expected_path == "/public/image.png" {
+                    if expected_path == "/public/image.jpg" {
                         "GET"
                     } else {
                         "POST"
@@ -2026,7 +2295,7 @@ mod tests {
                 assert!(request.headers.contains(expected_path));
                 let response = match expected_path {
                     "/v1/images/generations" => {
-                        let encoded = Base64::encode_string(&image_for_server);
+                        let encoded = Base64::encode_string(&source_for_server);
                         json_response(&json!({"data":[{"b64_json": encoded}]}).to_string())
                     }
                     "/upload" => {
@@ -2034,21 +2303,22 @@ mod tests {
                             .headers
                             .to_ascii_lowercase()
                             .contains("x-qintopia-content-hash: sha256:"));
-                        assert_eq!(request.body, image_for_server);
-                        let uri = format!("http://127.0.0.1:{port}/public/image.png");
+                        assert!(request.headers.contains("Content-Type: image/jpeg"));
+                        assert_eq!(request.body, final_for_server);
+                        let uri = format!("http://127.0.0.1:{port}/public/image.jpg");
                         json_response(
                             &json!({
                                 "uri": uri,
-                                "content_hash": content_hash_bytes(&image_for_server),
-                                "mime_type": PNG_MIME_TYPE,
-                                "byte_size": image_for_server.len(),
+                                "content_hash": content_hash_bytes(&final_for_server),
+                                "mime_type": FINAL_IMAGE_MIME_TYPE,
+                                "byte_size": final_for_server.len(),
                                 "width": 1024,
                                 "height": 1024,
                             })
                             .to_string(),
                         )
                     }
-                    _ => binary_response(&image_for_server),
+                    _ => binary_response(&final_for_server, FINAL_IMAGE_MIME_TYPE),
                 };
                 stream.write_all(&response).expect("write fake response");
             }
@@ -2073,44 +2343,49 @@ mod tests {
                 .expect("fake image generation succeeds");
         handle.join().expect("fake server joins");
 
-        assert_eq!(generated.bytes, image);
+        assert_eq!(generated.bytes, final_jpeg);
+        assert_eq!(
+            generated.provider_source_content_hash,
+            content_hash_bytes(&source_png)
+        );
         assert_eq!(generated.width, 1024);
         assert_eq!(generated.height, 1024);
-        assert!(generated.artifact_uri.contains("/public/image.png"));
+        assert!(generated.artifact_uri.contains("/public/image.jpg"));
     }
 
     #[test]
     fn fake_media_readback_must_match_uploaded_bytes() {
-        let image = fixture_png();
-        let mut different_image = image.clone();
-        different_image[24] ^= 1;
+        let source_png = fixture_png();
+        let final_jpeg = fixture_jpeg(&source_png);
+        let different_jpeg = fixture_jpeg(&fixture_png_with_color([1, 2, 3, 255]));
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake server");
         let port = listener.local_addr().expect("fake server address").port();
-        let image_for_server = image.clone();
+        let source_for_server = source_png.clone();
+        let final_for_server = final_jpeg.clone();
         let handle = thread::spawn(move || {
-            for expected_path in ["/v1/images/generations", "/upload", "/public/image.png"] {
+            for expected_path in ["/v1/images/generations", "/upload", "/public/image.jpg"] {
                 let (mut stream, _) = listener.accept().expect("accept fake request");
                 let request = read_request(&mut stream);
                 let response = match expected_path {
                     "/v1/images/generations" => json_response(
-                        &json!({"data":[{"b64_json": Base64::encode_string(&image_for_server)}]})
+                        &json!({"data":[{"b64_json": Base64::encode_string(&source_for_server)}]})
                             .to_string(),
                     ),
                     "/upload" => json_response(
                         &json!({
-                            "uri": format!("http://127.0.0.1:{port}/public/image.png"),
-                            "content_hash": content_hash_bytes(&image_for_server),
-                            "mime_type": PNG_MIME_TYPE,
-                            "byte_size": image_for_server.len(),
+                            "uri": format!("http://127.0.0.1:{port}/public/image.jpg"),
+                            "content_hash": content_hash_bytes(&final_for_server),
+                            "mime_type": FINAL_IMAGE_MIME_TYPE,
+                            "byte_size": final_for_server.len(),
                             "width": 1024,
                             "height": 1024,
                         })
                         .to_string(),
                     ),
-                    _ => binary_response(&different_image),
+                    _ => binary_response(&different_jpeg, FINAL_IMAGE_MIME_TYPE),
                 };
                 if expected_path == "/upload" {
-                    assert_eq!(request.body, image_for_server);
+                    assert_eq!(request.body, final_for_server);
                 }
                 stream.write_all(&response).expect("write fake response");
             }
@@ -2170,11 +2445,26 @@ mod tests {
     }
 
     fn fixture_png() -> Vec<u8> {
-        let mut bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR".to_vec();
-        bytes.extend_from_slice(&1024_u32.to_be_bytes());
-        bytes.extend_from_slice(&1024_u32.to_be_bytes());
-        bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+        fixture_png_with_color([40, 120, 200, 128])
+    }
+
+    fn fixture_png_with_color(color: [u8; 4]) -> Vec<u8> {
+        fixture_png_with_dimensions(1024, 1024, color)
+    }
+
+    fn fixture_png_with_dimensions(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {
+        let image = RgbaImage::from_pixel(width, height, image::Rgba(color));
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut bytes)
+            .write_image(image.as_raw(), width, height, ExtendedColorType::Rgba8)
+            .expect("encode fixture PNG");
         bytes
+    }
+
+    fn fixture_jpeg(source_png: &[u8]) -> Vec<u8> {
+        let source =
+            decode_provider_png(source_png, DEFAULT_MAX_MEDIA_BYTES).expect("fixture PNG decodes");
+        encode_final_jpeg(&source, DEFAULT_MAX_MEDIA_BYTES).expect("fixture JPEG encodes")
     }
 
     struct TestRequest {
@@ -2224,9 +2514,9 @@ mod tests {
         .into_bytes()
     }
 
-    fn binary_response(body: &[u8]) -> Vec<u8> {
+    fn binary_response(body: &[u8], mime_type: &str) -> Vec<u8> {
         let mut response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nContent-Type: {mime_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             body.len()
         )
         .into_bytes();

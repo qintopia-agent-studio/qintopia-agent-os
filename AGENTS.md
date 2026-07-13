@@ -194,21 +194,28 @@ Use `rg` and `rg --files` for search.
   configuration exist, it may only validate and preview requests. It must not create a
   `generated_image` artifact, contact an external service, or be attached to a timer.
 - `operations-artifact-review-decision` may approve a `generated_image` only after its
-  Huabaosi worker provenance, HTTPS URI, sha256, PNG metadata, source brief/prompt refs,
-  and `generated_image_created` audit match its image-generation request. Integrity
-  denial must leave the artifact pending and must not complete the work item or unlock
-  downstream send intake.
+  Huabaosi worker provenance, stable JPEG HTTPS URI, final JPEG sha256/metadata, source
+  PNG sha256, fixed `png_to_jpeg_white_background_q92_v1` transform metadata, source
+  brief/prompt refs, and `generated_image_created` audit match its image-generation
+  request. Human approval applies to the exact final JPEG bytes; the transient provider
+  PNG is never an approvable artifact. Integrity denial must leave the artifact pending
+  and must not complete the work item or unlock downstream send intake.
+- A content-hash conflict may reuse an existing pending `generated_image` only when its
+  stable URI, source refs, and complete immutable worker metadata exactly match the new
+  final JPEG result. Reviewed, stale, or modified artifacts must fail closed and must
+  never be overwritten by retry processing.
 - When the Huabaosi adapter is explicitly enabled in an approved staging boundary, it
   may retry only provider transport failures and HTTP 408, 429, or 5xx responses. It
   must stop after three total attempts, use delayed requeueing, and record only
-  sanitized attempt/stage/outcome metadata. Authentication, payload, PNG, media upload,
-  readback, persistence, and claim failures are terminal and must not be retried. When
-  explicitly enabled in a reviewed staging configuration, every provider, upload, and
-  readback response must be size-capped before parsing, and an already reviewed
-  `generated_image` must never be overwritten or returned to `pending` by a retry. Every
-  outbound HTTP header name/value must reject control characters before socket
-  connection. Each work-item claim must use a unique token; artifact or failure writes
-  must lock and match that unexpired token, with exactly one affected work-item row.
+  sanitized attempt/stage/outcome metadata. Authentication, payload, PNG decode,
+  PNG-to-JPEG conversion, JPEG validation, media upload, readback, persistence, and
+  claim failures are terminal and must not be retried. When explicitly enabled in a
+  reviewed staging configuration, every provider, upload, and readback response must be
+  size-capped before parsing, and an already reviewed `generated_image` must never be
+  overwritten or returned to `pending` by a retry. Every outbound HTTP header name/value
+  must reject control characters before socket connection. Each work-item claim must use
+  a unique token; artifact or failure writes must lock and match that unexpired token,
+  with exactly one affected work-item row.
 - `huabaosi-image-generation-production-observation-smoke.sh` may only verify that the
   provider worker remains disabled and unscheduled, run configuration preflight, and run
   `run-huabaosi-image-generation-worker --once --dry-run` for a read-only queue preview.
@@ -230,8 +237,8 @@ Use `rg` and `rg --files` for search.
   contract from local configuration. It must not open network or database connections,
   emit tokens, device/group ids, media URLs, file credentials, or message identifiers,
   write Feishu, or send externally. Do not add a QiWe send worker or timer until staging
-  proves complete `cmd=20000` callback credentials and resolves the current PNG/JPG
-  compatibility gap. Final request construction must recheck the target group allowlist,
+  proves the deterministic final JPEG media path and complete `cmd=20000` callback
+  credentials. Final request construction must recheck the target group allowlist,
   response parsing must fail closed unless both `code=0` and `isSendSuccess=1`, and this
   disabled-state preflight must fail when the send-enable flag is `1`. All future
   outbound header values must reject every control character before socket connection.

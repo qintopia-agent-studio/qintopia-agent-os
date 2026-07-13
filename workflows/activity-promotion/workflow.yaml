@@ -40,8 +40,8 @@ next_actions:
     allowlist, and rollback owner before enabling the guarded image adapter in staging.
   - After those decisions are recorded, run exactly one
     huabaosi-image-generation-staging-smoke.sh invocation against an approved staging
-    image request. Record only its sanitized result and keep the generated image pending
-    human review.
+    image request. Confirm the final artifact is the transformed 1024x1024 JPEG, record
+    only its sanitized result, and keep the generated image pending human review.
   - Keep image generation and group-send execution out of runtime scheduling until the
     staged adapter observation is reviewed; final confirmation and send-adapter gates
     remain separate.

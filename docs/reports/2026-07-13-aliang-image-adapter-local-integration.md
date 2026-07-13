@@ -62,3 +62,35 @@ first recoverable failure requeues for 60 seconds and the third failure becomes
 terminal. The final PR SHA must not merge unless `Xiaoman PostgreSQL integration` runs
 those assertions successfully on its disposable pgvector service. No production database
 or external provider is an acceptable substitute.
+
+## 2026-07-14 JPEG Final-Artifact Follow-Up
+
+The JPEG final-artifact branch again attempted to run the guarded PostgreSQL apply smoke
+against a disposable local database. OrbStack reached `Running`, but two consecutive
+pulls of the CI-pinned `pgvector/pgvector:pg16` image failed before container creation:
+
+```text
+Error response from daemon: Get "https://registry-1.docker.io/v2/": Bad Gateway
+```
+
+The local Homebrew PostgreSQL 17 installation still has no pgvector extension, so it is
+not an equivalent substitute. No migration or apply-smoke command was run against any
+database in this follow-up, and no production database, provider, media endpoint,
+Feishu, or QiWe service was contacted.
+
+Local evidence completed after PR #111 merged and the JPEG branch was rebased onto its
+merge commit:
+
+- the complete Rust suite passed with 274 tests and no failures;
+- strict all-target/all-feature Clippy and Rust format checks passed;
+- coverage nextest passed with 41.47% total line coverage and 61.39% line / 68.98%
+  region coverage for `image_generation.rs`;
+- fake provider/media tests proved provider PNG decoding, deterministic white-background
+  JPEG conversion, bounded decoder allocation, JPEG upload metadata, and same-byte
+  readback; and
+- shell syntax, workflow/deploy contracts, Markdown lint, and repository pre-commit
+  passed.
+
+The final PR SHA must keep `Xiaoman PostgreSQL integration` green. That disposable CI
+job is the required evidence for the changed approval SQL and JPEG-shaped apply-smoke
+fixture; a merge is forbidden if the job is skipped, cancelled, or fails.
