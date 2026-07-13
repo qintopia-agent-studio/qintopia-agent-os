@@ -45,10 +45,10 @@ printf '%s\n' "$*" >>"${sidecarLog}"
 case "$1" in
   huabaosi-image-generation-preflight)
     if [[ "\${FAKE_CONFIG_VALID:-0}" == "1" ]]; then
-      printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":false,"config_valid":true,"media_allowed_host_count":1,"safe_for_chat":false}'
+      printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":false,"config_valid":true,"media_allowed_host_count":1,"missing_configuration":[],"safe_for_chat":false}'
       exit 0
     fi
-    printf '%s\n' '{"success":false,"worker":"huabaosi-image-generation-worker","action_status":"adapter_not_configured","generation_enabled":false,"config_valid":false,"media_allowed_host_count":0,"safe_for_chat":false}'
+    printf '%s\n' '{"success":false,"worker":"huabaosi-image-generation-worker","action_status":"adapter_not_configured","generation_enabled":false,"config_valid":false,"media_allowed_host_count":0,"missing_configuration":["QINTOPIA_HUABAOSI_IMAGE_API_KEY"],"safe_for_chat":false}'
     printf '%s\n' 'image adapter preflight configuration is invalid' >&2
     exit 1
     ;;

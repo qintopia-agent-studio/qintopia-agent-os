@@ -12,6 +12,14 @@ const IMAGE_FILE_TYPE: u8 = 1;
 const ASYNC_EVENT_COMMAND: i64 = 20_000;
 const SEND_SUCCESS_VALUE: i64 = 1;
 const MAX_JSON_RESPONSE_BYTES: usize = 64 * 1024;
+const REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION: &[&str] = &[
+    "QIWE_API_URL",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+];
 
 #[derive(Debug, Serialize)]
 pub struct QiweImageSendPreflightReport {
@@ -24,6 +32,7 @@ pub struct QiweImageSendPreflightReport {
     pub allowed_host_count: usize,
     pub media_allowed_host_count: usize,
     pub allowed_group_count: usize,
+    pub missing_configuration: Vec<&'static str>,
     pub protocol: &'static str,
     pub safe_for_chat: bool,
     pub limitations: Vec<String>,
@@ -132,8 +141,17 @@ pub fn run_preflight() -> Result<()> {
             config.allowed_hosts.len(),
             config.media_allowed_hosts.len(),
             config.allowed_groups.len(),
+            Vec::new(),
         ),
-        Err(_) => preflight_report(false, send_enabled, false, 0, 0, 0),
+        Err(_) => preflight_report(
+            false,
+            send_enabled,
+            false,
+            0,
+            0,
+            0,
+            missing_qiwe_image_send_configuration(),
+        ),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
     if report.success {
@@ -210,6 +228,7 @@ fn preflight_report(
     allowed_host_count: usize,
     media_allowed_host_count: usize,
     allowed_group_count: usize,
+    missing_configuration: Vec<&'static str>,
 ) -> QiweImageSendPreflightReport {
     let success = config_valid && !send_enabled;
     QiweImageSendPreflightReport {
@@ -228,6 +247,7 @@ fn preflight_report(
         allowed_host_count,
         media_allowed_host_count,
         allowed_group_count,
+        missing_configuration,
         protocol: "qiwe_async_url_upload_then_send_image",
         safe_for_chat: false,
         limitations: vec![
@@ -435,6 +455,30 @@ fn required_env(name: &str) -> Result<String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty() && !is_placeholder(value))
         .ok_or_else(|| anyhow!("required QiWe image-send configuration is missing"))
+}
+
+fn missing_qiwe_image_send_configuration() -> Vec<&'static str> {
+    missing_required_configuration_with(REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION, |name| {
+        std::env::var(name).ok()
+    })
+}
+
+fn missing_required_configuration_with<F>(
+    required: &'static [&'static str],
+    mut read: F,
+) -> Vec<&'static str>
+where
+    F: FnMut(&str) -> Option<String>,
+{
+    required
+        .iter()
+        .copied()
+        .filter(|name| {
+            read(name)
+                .map(|value| value.trim().to_string())
+                .is_none_or(|value| value.is_empty() || is_placeholder(&value))
+        })
+        .collect()
 }
 
 fn env_flag(name: &str) -> Result<bool> {
@@ -720,12 +764,13 @@ mod tests {
 
     #[test]
     fn preflight_report_never_exposes_configuration_values() {
-        let report = preflight_report(true, false, true, 1, 1, 1);
+        let report = preflight_report(true, false, true, 1, 1, 1, Vec::new());
         let output = serde_json::to_string(&report).expect("serialize preflight report");
 
         assert!(report.success);
         assert!(!report.send_enabled);
         assert!(!report.safe_for_chat);
+        assert!(report.missing_configuration.is_empty());
         assert!(output.contains("deterministic final JPEG"));
         assert!(!output.contains("current generated-image artifact is PNG"));
         for sensitive_value in [
@@ -743,11 +788,25 @@ mod tests {
 
     #[test]
     fn enabled_preflight_fails_closed() {
-        let report = preflight_report(true, true, true, 1, 1, 1);
+        let report = preflight_report(true, true, true, 1, 1, 1, Vec::new());
 
         assert!(!report.success);
         assert!(report.config_valid);
         assert!(report.send_enabled);
         assert_eq!(report.action_status, "adapter_enablement_not_approved");
+    }
+
+    #[test]
+    fn qiwe_preflight_missing_configuration_is_public_and_deterministic() {
+        let missing = missing_required_configuration_with(
+            &["PUBLIC_READY", "PUBLIC_PLACEHOLDER", "PUBLIC_ABSENT"],
+            |name| match name {
+                "PUBLIC_READY" => Some("configured".to_string()),
+                "PUBLIC_PLACEHOLDER" => Some("change-me".to_string()),
+                _ => None,
+            },
+        );
+
+        assert_eq!(missing, vec!["PUBLIC_PLACEHOLDER", "PUBLIC_ABSENT"]);
     }
 }

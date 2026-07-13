@@ -133,6 +133,7 @@ assert payload["worker"] == "huabaosi-image-generation-worker"
 assert payload["action_status"] == "adapter_config_ready"
 assert payload["generation_enabled"] is True
 assert payload["config_valid"] is True
+assert payload["missing_configuration"] == []
 assert payload["safe_for_chat"] is False
 PY
 assert_no_sensitive_output "image adapter preflight" "$preflight_output"
