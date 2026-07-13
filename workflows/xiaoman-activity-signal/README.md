@@ -101,9 +101,11 @@ deployment path. `qintopia-agentos-operations-evidence-worker.timer` runs
 `run-evidence-worker --once --apply` to create internal `evidence_summary` artifacts,
 and `qintopia-agentos-operations-visual-worker.timer` runs
 `run-collaboration-worker --work-item-type visual_asset_request --once --apply` to
-create pending `poster_brief` artifacts. These timers still do not call live Wenyuange
-search, Huabaosi production generation, Feishu, QiWe, poster publishing, or external
-send adapters.
+create pending 阿靓（Huabaosi / 画报司）`poster_brief` artifacts. For an
+`activity_promotion` child, the visual worker waits for the sibling completed
+`evidence_summary` before it claims the visual request. These timers still do not call
+live Wenyuange search, Huabaosi production generation, Feishu, QiWe, poster publishing,
+or external send adapters.
 
 `run-xiaoman-activity-send-request-starter-worker` adds the next AgentOS-only handoff:
 after a Xiaoman visual child has a reviewed `approved` `poster_brief`, it creates one
