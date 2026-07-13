@@ -137,18 +137,22 @@ if [[ "$feishu_error" != *"QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN is requir
   exit 1
 fi
 
-write_output="$(
+mutation_preview="$(
   "${BIN_CMD[@]}" xiaoman-activity status-update \
-    --payload-json '{"record_id":"rec_plan_20260628","table_role":"activity_plan","status":"待人工确认","actor_agent":"xiaoman","operation":"status-update","dry_run":false}' \
-    --apply
+    --payload-json '{"event_signal_id":"66666666-6666-4666-8666-666666666666","mutation_id":"77777777-7777-4777-8777-777777777777","status":"处理中","actor_agent":"xiaoman","operation":"status-update"}' \
+    --dry-run
 )"
-WRITE_OUTPUT="$write_output" python3 - <<'PY'
+MUTATION_PREVIEW="$mutation_preview" python3 - <<'PY'
 import json
 import os
 
-payload = json.loads(os.environ["WRITE_OUTPUT"])
+payload = json.loads(os.environ["MUTATION_PREVIEW"])
 assert payload["success"] is True
-assert payload["action_status"] == "apply_not_implemented"
+assert payload["source"] == "agentos_event_signals"
+assert payload["dry_run"] is True
+assert payload["apply_requested"] is False
+assert payload["action_status"] == "event_signal_status_preview"
+assert payload["mutation_applied"] is False
 assert payload["safe_for_chat"] is False
 raw = json.dumps(payload, ensure_ascii=False)
 assert "Dangerous command requires approval" not in raw

@@ -41,3 +41,14 @@ contract failure.
 Direct Node execution is acceptable only when the package script has been inspected and
 is exactly that repository-local entrypoint. It must not become a general bypass for
 lockfile, package-manager, or signature checks.
+
+## 2026-07-14 Recurrence
+
+`pnpm check:light` stopped at the same signed package-manager version lookup before any
+repository check ran. The command still required `pnpm@10.29.2`, and no
+`pmOnFail=ignore` override was used. After re-reading the fixed `check:light` script,
+its repository-local Prettier, Markdownlint, Node, Python, and Bash entrypoints were run
+directly. All formatting, 191 Python tests, registry, MCP, skills, workflow, runtime,
+deploy, CI, agent, policy, secret, preflight, release-model, deploy-runner, and systemd
+checks passed. This does not validate pnpm registry availability; CI must still run the
+normal package-manager path on the final commit.

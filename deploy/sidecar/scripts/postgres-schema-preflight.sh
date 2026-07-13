@@ -190,11 +190,16 @@ required_tables=(
   qintopia_agent_os.raw_message_archives
   qintopia_agent_os.event_signal_candidates
   qintopia_agent_os.event_signals
+  qintopia_agent_os.event_signal_mutations
   qintopia_agent_os.capabilities
   qintopia_agent_os.work_items
   qintopia_agent_os.artifacts
   qintopia_agent_os.work_item_events
   qintopia_agent_os.human_workbench_refs
+)
+
+required_columns=(
+  "qintopia_agent_os.event_signals|gap_summary"
 )
 
 required_functions=(
@@ -211,6 +216,8 @@ required_versions=(
   "2026-06-29.006|202606290006_erhua_training_memory.sql"
   "2026-06-30.007|202606300007_operations_control_plane.sql"
   "2026-07-02.001|202607020001_operations_human_actor_guards.sql"
+  "2026-07-13.002|202607130002_huabaosi_image_generation.sql"
+  "2026-07-14.001|202607140001_xiaoman_event_signal_mutations.sql"
 )
 
 required_capabilities=(
@@ -227,6 +234,16 @@ done
 
 for table in "${required_tables[@]}"; do
   check_query "missing_table|${table}" "SELECT to_regclass('${table}') IS NOT NULL;"
+done
+
+for column_record in "${required_columns[@]}"; do
+  table_name="${column_record%%|*}"
+  column_name="${column_record#*|}"
+  schema_name="${table_name%%.*}"
+  relation_name="${table_name#*.}"
+  check_query \
+    "missing_column|${table_name}|${column_name}" \
+    "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '${schema_name}' AND table_name = '${relation_name}' AND column_name = '${column_name}');"
 done
 
 schema_change_log_exists="$(psql_value "SELECT to_regclass('qintopia_agent_os.schema_change_log') IS NOT NULL;" || true)"

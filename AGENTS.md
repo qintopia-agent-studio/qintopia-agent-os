@@ -110,6 +110,11 @@ Use `rg` and `rg --files` for search.
   matching `qintopia_agent_os.event_signals` row is created first; UUID
   `event_signal_id` values are stored as `source_event_signal_id` and must satisfy the
   Postgres foreign key.
+- Xiaoman `status-update` and `gap-update` may only mutate Xiaoman-owned Postgres
+  `event_signals` by internal `event_signal_id` with an explicit UUID `mutation_id`.
+  Each apply must update one allowlisted field and append one `event_signal_mutations`
+  audit row transactionally. Do not accept Feishu record ids, write Feishu, send QiWe,
+  or reuse these commands for arbitrary metadata updates.
 - `run-xiaoman-activity-signal-worker` only scans eligible Xiaoman `event_signals` and
   submits the existing `xiaoman-activity signal-ingest` work item contract. It must not
   write Feishu, send QiWe messages, create visual assets, or be added to production
