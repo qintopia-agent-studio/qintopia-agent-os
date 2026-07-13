@@ -507,6 +507,7 @@ async fn main() -> Result<()> {
             dry_run,
             fixture_mode,
         } => image_generation::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
+        Command::HuabaosiImageGenerationPreflight => image_generation::run_preflight(),
         Command::RunEvidenceWorker {
             once,
             work_item_id,

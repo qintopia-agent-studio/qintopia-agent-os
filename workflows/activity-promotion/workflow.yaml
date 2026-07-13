@@ -32,9 +32,10 @@ tags:
   - huabaosi
   - erhua
 next_actions:
-  - Obtain owner approval for the image provider account, isolated media storage,
-    staging smoke, budget, reviewer allowlist, and rollback owner before enabling the
-    guarded image adapter in staging.
+  - Run huabaosi-image-generation-preflight in staging to validate the local adapter
+    configuration without contacting external services, then obtain owner approval for
+    the image provider account, isolated media storage, staging smoke, budget, reviewer
+    allowlist, and rollback owner before enabling the guarded image adapter in staging.
   - Keep image generation and group-send execution out of runtime scheduling until the
     staged adapter observation is reviewed; final confirmation and send-adapter gates
     remain separate.

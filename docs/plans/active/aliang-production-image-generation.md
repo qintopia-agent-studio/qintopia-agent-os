@@ -180,6 +180,19 @@ until a real isolated storage service accepts this contract.
   `generated_image`；approved `poster_brief` 不再足以触发群发请求。
 - adapter 默认仍禁用，未加 timer、未做 staging/prod 网络调用、未实现自动重试或真实 staging
   smoke。必须在 Required Owner Decisions 有明确 PR 记录后继续。
+- `huabaosi-image-generation-preflight`
+  可在 staging 环境只读取本地环境变量并输出脱敏配置状态。它不访问 provider、媒体存储、Postgres、飞书或企微；`adapter_config_ready`
+  只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。
+
+运行无网络预检：
+
+```bash
+huabaosi-image-generation-preflight
+```
+
+预检完成后，仍必须先记录 Required Owner
+Decisions，再在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
+smoke；该 smoke 不得发送、发布或写飞书。
 
 ## Explicit Non-Goals
 

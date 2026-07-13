@@ -163,6 +163,10 @@ Use `rg` and `rg --files` for search.
   outbound HTTP header name/value must reject control characters before socket
   connection. Each work-item claim must use a unique token; artifact or failure writes
   must lock and match that unexpired token, with exactly one affected work-item row.
+- `huabaosi-image-generation-preflight` may only validate and emit a sanitized summary
+  of local image-adapter configuration. It must not open network or database
+  connections, reveal configuration values, enable generation, write Feishu, send QiWe,
+  or publish.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

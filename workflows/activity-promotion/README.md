@@ -32,6 +32,9 @@ path.
   recording a pending `generated_image`.
 - The adapter remains disabled until separately owner-reviewed provider, storage,
   staged-smoke, budget, and rollback decisions exist.
+- `huabaosi-image-generation-preflight` can validate the local adapter configuration
+  without opening network or database connections. Its sanitized `adapter_config_ready`
+  result is only a staging prerequisite, not approval to generate or publish.
 - A `generated_image` must remain pending human review before any downstream use.
 - The send-request starter creates `group_message_request` only from an approved
   `generated_image` whose image-generation request is completed. An approved
@@ -57,6 +60,16 @@ rollback notes.
 The image request starter and preview worker are merged on `master`, but they are not in
 the observed production `v0.2.6` release. They remain disabled and have no systemd
 timer.
+
+Before any staging adapter smoke, run:
+
+```bash
+huabaosi-image-generation-preflight
+```
+
+The command neither contacts the provider/media service nor mutates AgentOS. A missing
+or invalid configuration is reported as `adapter_not_configured` without exposing the
+failed value.
 
 ## Acceptance Scenarios
 
