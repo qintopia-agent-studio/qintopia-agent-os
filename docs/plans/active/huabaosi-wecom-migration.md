@@ -1,6 +1,6 @@
 # Huabaosi WeCom Migration Plan
 
-Status: phase 2 read-only observation smoke in progress; no production behavior changed
+Status: phase 3 Rust shadow capture in progress; no production behavior changed
 
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
@@ -111,10 +111,15 @@ Validation:
 
 Deliverables:
 
-- sanitized event schema or reuse of an existing message event schema;
-- Rust sidecar command/consumer path that records only allowed metadata and hashes;
-- shadow mode that never replies, sends, generates, uploads, writes Feishu, or mutates
-  work-item state.
+- `huabaosi-wecom-shadow-capture`, a Rust sidecar preview command that accepts one
+  supplied WeCom event from bounded stdin;
+- sanitized shadow report containing only payload hash/byte count, event/message
+  classification, selected field-presence flags, and hashes/byte counts for private
+  identifiers or text;
+- fixture replay inputs under `runtime/sidecar/fixtures/` for WeCom text, attachment
+  placeholder, busy/fallback text, and unsupported event shapes;
+- shadow mode that never replies, sends, generates, uploads, opens network or database
+  connections, writes Feishu, creates artifacts, or mutates work-item state.
 
 Validation:
 
