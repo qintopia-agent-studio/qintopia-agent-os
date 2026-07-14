@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.9](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.8...v0.2.9) (2026-07-14)
+
+
+### Features
+
+* add qiwe callback shape evidence ([#130](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/130)) ([02ac008](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/02ac008b2b550b2aef5f50e4bf17323619a0db39))
+
+
+### Bug Fixes
+
+* compile-gate huabaosi live adapter ([#124](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/124)) ([f466d72](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f466d72e688454f227b540c7fd56857ef90e4533))
+* release group send-ready claims ([#131](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/131)) ([b47d66b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b47d66bdc3bb93af105553ea61fbe34569957373))
+
+
+### CI / Deployment
+
+* execute staging adapter tests ([#127](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/127)) ([f5828bc](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f5828bc248e11d7012e7d0cb0c604caa3be411b8))
+
+
+### Documentation
+
+* record v0.2.8 release tag drift ([#133](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/133)) ([a8e2051](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a8e2051404c3e6bf1ba58cedcf281f6a32c81bbf))
+
 ## [0.2.8](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.7...v0.2.8) (2026-07-14)
 
 
