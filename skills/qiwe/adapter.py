@@ -140,6 +140,18 @@ _RECENT_QIWE_MESSAGE_CONTEXTS: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]
 _INTERNAL_PROCESS_PATTERNS = (
     re.compile(r"Dangerous command requires approval", re.IGNORECASE),
     re.compile(r"Reply\s+[`'\"]?/approve\b", re.IGNORECASE),
+    re.compile(
+        r"^\s*(?:\(\s*Response\s+formatting\s+failed,\s*plain\s+text:\s*\)\s*)?"
+        r"(?:⚡\s*)?Interrupting\s+current\s+task\.\s*"
+        r"I(?:'|’)ll\s+respond\s+to\s+your\s+message\s+shortly\.\s*$",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"^\s*(?:[（(]\s*响应格式(?:设置)?失败[,，]\s*显示为纯文本[：:]\s*[）)]\s*)?"
+        r"(?:⚡\s*)?(?:我)?(?:正在)?中断当前的?任务[,，]\s*"
+        r"稍后(?:我)?(?:就)?会回复[您你]的消息[。.]?\s*$",
+        re.DOTALL,
+    ),
     re.compile(r"^\s*⏳\s*Working\b", re.IGNORECASE | re.MULTILINE),
     re.compile(r"\bexecute_code\b", re.IGNORECASE),
     re.compile(r"\bskill_view\b", re.IGNORECASE),
