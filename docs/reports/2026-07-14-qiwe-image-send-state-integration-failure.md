@@ -44,6 +44,18 @@ The same repair also addresses the PR Reviewer Guide findings: group allowlists 
 exact case-sensitive matching, and ambiguous sends record an unknown execution outcome
 instead of a definite false.
 
+After synchronizing the branch with `master`, the Reviewer Guide for commit `fd10cac`
+identified two additional convergence gaps. A callback after the ten-minute upload claim
+TTL left its attempt permanently `awaiting_callback`, and terminal send recording still
+depended on the two-minute send TTL even though the external request may already have
+executed. Both paths could retain an active attempt forever.
+
+The follow-up repair atomically marks a late callback attempt `expired`, stores only the
+callback hash, clears the stale claim, and requeues the work item for a new correlation.
+After `sending` is committed, success and failure finalization still lock and require
+the same attempt, work item, artifact, and claim token, but no longer reject the
+terminal write only because the short TTL elapsed.
+
 ## Validation
 
 Run the focused disposable PostgreSQL tests in CI:
@@ -51,6 +63,7 @@ Run the focused disposable PostgreSQL tests in CI:
 ```text
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_is_idempotent_and_redacted -- --ignored --exact
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_rejects_stale_claim -- --ignored --exact
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_recovers_expired_callback_and_terminalizes_ambiguous_send -- --ignored --exact
 ```
 
 Also run the full Rust suite, Clippy with warnings denied, pre-commit checks, CI

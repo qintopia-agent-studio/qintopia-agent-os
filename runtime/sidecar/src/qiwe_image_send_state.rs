@@ -41,6 +41,7 @@ pub struct QiweCallbackSendClaim {
 pub enum CallbackClaimOutcome {
     Ready(QiweCallbackSendClaim),
     Duplicate { status: String },
+    Expired,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,7 +326,7 @@ pub async fn claim_callback_for_send(
         if attempt.callback_payload_sha256.as_deref() == Some(&callback_payload_sha256)
             && matches!(
                 attempt.status.as_str(),
-                "sending" | "sent" | "failed" | "ambiguous"
+                "sending" | "sent" | "failed" | "ambiguous" | "expired"
             )
         {
             tx.commit()
@@ -338,7 +339,20 @@ pub async fn claim_callback_for_send(
         bail!("QiWe callback correlation is no longer awaiting callback");
     }
 
-    let target_group_id = lock_callback_policy(&mut tx, &attempt).await?;
+    let (target_group_id, claim_is_current) = lock_callback_policy(&mut tx, &attempt).await?;
+    if !claim_is_current {
+        expire_callback_attempt(
+            &mut tx,
+            &attempt,
+            &request_id_sha256,
+            &callback_payload_sha256,
+        )
+        .await?;
+        tx.commit()
+            .await
+            .context("commit expired QiWe callback claim")?;
+        return Ok(CallbackClaimOutcome::Expired);
+    }
     let updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.qiwe_image_send_attempts
@@ -373,7 +387,6 @@ pub async fn claim_callback_for_send(
         WHERE id = $1
           AND status = 'processing'
           AND claimed_by = $2
-          AND claim_expires_at > now()
         "#,
     )
     .bind(attempt.work_item_id)
@@ -472,7 +485,6 @@ pub async fn record_send_success(
         WHERE id = $1
           AND status = 'processing'
           AND claimed_by = $2
-          AND claim_expires_at > now()
         "#,
     )
     .bind(claim.work_item_id)
@@ -563,7 +575,6 @@ pub async fn record_send_failure(
         WHERE id = $1
           AND status = 'processing'
           AND claimed_by = $2
-          AND claim_expires_at > now()
         "#,
     )
     .bind(claim.work_item_id)
@@ -620,6 +631,88 @@ fn send_failure_state(
             "unknown",
         ),
     }
+}
+
+async fn expire_callback_attempt(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    attempt: &StoredAttempt,
+    request_id_sha256: &str,
+    callback_payload_sha256: &str,
+) -> Result<()> {
+    let attempt_updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.qiwe_image_send_attempts
+        SET
+            status = 'expired',
+            callback_payload_sha256 = $2,
+            callback_received_at = now(),
+            failure_code = 'claim_expired',
+            completed_at = now(),
+            audit_metadata = audit_metadata || $3,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'awaiting_callback'
+          AND claim_token = $4
+        "#,
+    )
+    .bind(attempt.id)
+    .bind(callback_payload_sha256)
+    .bind(json!({
+        "callback_credentials_persisted": false,
+        "external_send_executed": false,
+        "external_send_outcome": "not_started",
+        "automatic_retry_allowed": true
+    }))
+    .bind(&attempt.claim_token)
+    .execute(&mut **tx)
+    .await
+    .context("expire late QiWe callback attempt")?;
+    if attempt_updated.rows_affected() != 1 {
+        bail!("QiWe callback attempt changed before expiration");
+    }
+    let work_item_updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.work_items
+        SET
+            status = 'queued',
+            claimed_by = NULL,
+            locked_at = NULL,
+            claim_expires_at = NULL,
+            available_at = now(),
+            last_error = 'claim_expired',
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'processing'
+          AND claimed_by = $2
+        "#,
+    )
+    .bind(attempt.work_item_id)
+    .bind(&attempt.claim_token)
+    .execute(&mut **tx)
+    .await
+    .context("requeue work item after late QiWe callback")?;
+    if work_item_updated.rows_affected() != 1 {
+        bail!("QiWe callback work-item claim changed before expiration");
+    }
+    append_event(
+        tx,
+        attempt.work_item_id,
+        Some(attempt.generated_image_artifact_id),
+        "qiwe_image_callback_expired",
+        json!({
+            "attempt_id": attempt.id,
+            "request_id_sha256": request_id_sha256,
+            "callback_payload_sha256": callback_payload_sha256,
+            "failure_code": "claim_expired",
+            "callback_credentials_persisted": false,
+            "external_send_executed": false,
+            "external_send_outcome": "not_started",
+            "automatic_retry_allowed": true,
+            "send_executed": false
+        }),
+    )
+    .await?;
+    Ok(())
 }
 
 fn validate_claim_boundary(
@@ -727,11 +820,12 @@ async fn lock_current_claim(
 async fn lock_callback_policy(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     attempt: &StoredAttempt,
-) -> Result<String> {
+) -> Result<(String, bool)> {
     let row = sqlx::query(
         r#"
         SELECT request.payload->>'target_group_id' AS target_group_id,
-               artifact.artifact_uri
+               artifact.artifact_uri,
+               COALESCE(request.claim_expires_at > now(), false) AS claim_is_current
         FROM qintopia_agent_os.work_items request
         JOIN qintopia_agent_os.artifacts artifact
           ON artifact.id = $3
@@ -745,7 +839,6 @@ async fn lock_callback_policy(
         WHERE request.id = $1
           AND request.status = 'processing'
           AND request.claimed_by = $2
-          AND request.claim_expires_at > now()
           AND request.work_item_type = 'group_message_request'
           AND request.capability_key = 'erhua.send_group_message'
           AND request.requester_agent = 'xiaoman'
@@ -792,12 +885,13 @@ async fn lock_callback_policy(
     .ok_or_else(|| anyhow!("QiWe callback policy or claim is no longer current"))?;
     let target_group_id: String = row.try_get("target_group_id")?;
     let artifact_uri: String = row.try_get("artifact_uri")?;
+    let claim_is_current: bool = row.try_get("claim_is_current")?;
     if sha256_marker(target_group_id.as_bytes()) != attempt.target_group_sha256
         || sha256_marker(artifact_uri.as_bytes()) != attempt.artifact_uri_sha256
     {
         bail!("QiWe callback target or artifact changed after upload acceptance");
     }
-    Ok(target_group_id)
+    Ok((target_group_id, claim_is_current))
 }
 
 async fn lock_sending_claim(
@@ -817,7 +911,6 @@ async fn lock_sending_claim(
           AND attempt.claim_token = $4
           AND request.status = 'processing'
           AND request.claimed_by = $4
-          AND request.claim_expires_at > now()
         FOR UPDATE OF attempt, request
         "#,
     )
@@ -1186,6 +1279,7 @@ mod tests {
         {
             CallbackClaimOutcome::Ready(claim) => claim,
             CallbackClaimOutcome::Duplicate { .. } => panic!("first callback was duplicate"),
+            CallbackClaimOutcome::Expired => panic!("current callback claim expired"),
         };
         assert_eq!(callback_claim.attempt_id, attempt_id);
         assert_eq!(callback_claim.target_group_id, "integration-group-id");
@@ -1198,6 +1292,13 @@ mod tests {
                 status: "sending".to_string()
             }
         );
+        sqlx::query(
+            "UPDATE qintopia_agent_os.work_items SET claim_expires_at = now() - interval '1 second' WHERE id = $1",
+        )
+        .bind(group_id)
+        .execute(&pool)
+        .await
+        .expect("expire sending claim before success finalization");
         record_send_success(
             &pool,
             &callback_claim,
@@ -1261,6 +1362,170 @@ mod tests {
                 status: "sent".to_string()
             }
         );
+        delete_fixture(&pool, image_id, group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_qiwe_send_state_recovers_expired_callback_and_terminalizes_ambiguous_send() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let (image_id, _artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+        let first_claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("claim first send-ready work item")
+            .expect("first work item is claimable");
+        let first_request_id = "late-upload-request-secret";
+        let first_attempt_id = record_upload_acceptance(&pool, &first_claim, first_request_id)
+            .await
+            .expect("record first upload acceptance");
+        sqlx::query(
+            "UPDATE qintopia_agent_os.work_items SET claim_expires_at = now() - interval '1 second' WHERE id = $1",
+        )
+        .bind(group_id)
+        .execute(&pool)
+        .await
+        .expect("expire first callback claim");
+        let late_callback = br#"{
+          "requestId":"late-upload-request-secret",
+          "cmd":20000,
+          "msgData":{"fileAesKey":"late-aes-secret","fileId":"late-file-secret"}
+        }"#;
+        let expired = claim_callback_for_send(&pool, first_request_id, late_callback)
+            .await
+            .expect("late callback reaches expired terminal state");
+        assert_eq!(expired, CallbackClaimOutcome::Expired);
+        let first_state: (
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+            serde_json::Value,
+        ) = sqlx::query_as(
+            r#"
+                SELECT attempt.status, attempt.failure_code, request.status,
+                       request.claimed_by, attempt.callback_payload_sha256, event.data
+                FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+                JOIN qintopia_agent_os.work_items request ON request.id = attempt.work_item_id
+                JOIN qintopia_agent_os.work_item_events event
+                  ON event.work_item_id = request.id
+                 AND event.event_type = 'qiwe_image_callback_expired'
+                WHERE attempt.id = $1
+                "#,
+        )
+        .bind(first_attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read expired callback state");
+        assert_eq!(first_state.0, "expired");
+        assert_eq!(first_state.1.as_deref(), Some("claim_expired"));
+        assert_eq!(first_state.2, "queued");
+        assert_eq!(first_state.3, None);
+        assert!(first_state.4.starts_with("sha256:"));
+        assert_eq!(first_state.5["external_send_executed"], false);
+        assert_eq!(first_state.5["automatic_retry_allowed"], true);
+        let duplicate = claim_callback_for_send(&pool, first_request_id, late_callback)
+            .await
+            .expect("late callback replay is idempotent");
+        assert_eq!(
+            duplicate,
+            CallbackClaimOutcome::Duplicate {
+                status: "expired".to_string()
+            }
+        );
+
+        let retry_claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("reclaim work item after callback expiration")
+            .expect("expired callback releases active attempt");
+        assert_eq!(retry_claim.attempt_number, 2);
+        let retry_request_id = "retry-upload-request-secret";
+        let retry_attempt_id = record_upload_acceptance(&pool, &retry_claim, retry_request_id)
+            .await
+            .expect("record retry upload acceptance");
+        let retry_callback = br#"{
+          "requestId":"retry-upload-request-secret",
+          "cmd":20000,
+          "msgData":{"fileAesKey":"retry-aes-secret","fileId":"retry-file-secret"}
+        }"#;
+        let retry_send_claim =
+            match claim_callback_for_send(&pool, retry_request_id, retry_callback)
+                .await
+                .expect("claim retry callback")
+            {
+                CallbackClaimOutcome::Ready(claim) => claim,
+                CallbackClaimOutcome::Duplicate { .. } => panic!("retry callback was duplicate"),
+                CallbackClaimOutcome::Expired => panic!("retry callback unexpectedly expired"),
+            };
+        sqlx::query(
+            "UPDATE qintopia_agent_os.work_items SET claim_expires_at = now() - interval '1 second' WHERE id = $1",
+        )
+        .bind(group_id)
+        .execute(&pool)
+        .await
+        .expect("expire sending claim before ambiguous finalization");
+        record_send_failure(&pool, &retry_send_claim, SendFailureDisposition::Ambiguous)
+            .await
+            .expect("record ambiguous terminal state after TTL");
+        let terminal: (
+            String,
+            Option<String>,
+            String,
+            serde_json::Value,
+            serde_json::Value,
+        ) = sqlx::query_as(
+            r#"
+                SELECT attempt.status, attempt.failure_code, request.status,
+                       attempt.audit_metadata, event.data
+                FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+                JOIN qintopia_agent_os.work_items request ON request.id = attempt.work_item_id
+                JOIN qintopia_agent_os.work_item_events event
+                  ON event.work_item_id = request.id
+                 AND event.event_type = 'qiwe_image_send_outcome_ambiguous'
+                WHERE attempt.id = $1
+                "#,
+        )
+        .bind(retry_attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read ambiguous terminal state");
+        assert_eq!(terminal.0, "ambiguous");
+        assert_eq!(terminal.1.as_deref(), Some("send_outcome_ambiguous"));
+        assert_eq!(terminal.2, "failed");
+        assert_eq!(
+            terminal.3["external_send_executed"],
+            serde_json::Value::Null
+        );
+        assert_eq!(terminal.3["external_send_outcome"], "unknown");
+        assert_eq!(
+            terminal.4["external_send_executed"],
+            serde_json::Value::Null
+        );
+        let serialized = serde_json::to_string(&(first_state, terminal))
+            .expect("serialize expired and ambiguous states");
+        for sensitive in [
+            first_request_id,
+            retry_request_id,
+            "late-aes-secret",
+            "late-file-secret",
+            "retry-aes-secret",
+            "retry-file-secret",
+            "integration-group-id",
+        ] {
+            assert!(
+                !serialized.contains(sensitive),
+                "terminal state leaked {sensitive}"
+            );
+        }
         delete_fixture(&pool, image_id, group_id).await;
     }
 

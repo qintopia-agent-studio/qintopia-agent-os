@@ -66,5 +66,9 @@ From the monorepo root, prefer:
   never an automatic retry with callback credentials. Treat QiWe target group ids as
   opaque and case-sensitive, and match their allowlist exactly. An ambiguous send audit
   must use `external_send_executed=null` and outcome `unknown`, never a definite false.
+  Late callbacks must atomically expire the awaiting attempt and requeue the same work
+  item before returning. After the send gate commits, terminal writes must still require
+  the exact attempt and claim token but must not fail only because its short TTL
+  elapsed.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

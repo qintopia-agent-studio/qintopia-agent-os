@@ -34,7 +34,9 @@ awaiting_callback -> expired
   reconciliation, records `external_send_executed=null` with outcome `unknown`, and must
   never be retried automatically.
 - `expired` means the callback did not arrive while the original claim was current. A
-  later reviewed retry creates a new attempt and request correlation.
+  callback arriving after that TTL atomically closes the old attempt, stores only its
+  payload hash, and requeues the work item so a new attempt gets a new request
+  correlation.
 
 Only one active attempt and one successful attempt may exist for a work item. Attempt
 numbers remain unique so failed/expired history is retained.
@@ -75,10 +77,17 @@ must match the complete id exactly; lowercase normalization is not permitted at 
 external-send boundary.
 
 The external worker writes a unique claim token to the work item. Recording upload
-acceptance, claiming a callback, and finalizing the send each lock the work item and
-attempt, then require the same unexpired token. They also recheck the approved artifact,
-target group hash, and final-confirmation/send-ready evidence before crossing the next
-boundary.
+acceptance and claiming a callback require that same unexpired token and recheck the
+approved artifact, target group hash, and final-confirmation/send-ready evidence before
+crossing the next boundary. Finalizing a send locks the work item and attempt and still
+requires the exact token that opened the send gate.
+
+The unexpired-token requirement applies through the callback's transition to `sending`.
+After that transition commits, an external request may outlive the short send TTL.
+Recording `sent`, `failed`, or `ambiguous` still requires the exact locked attempt,
+processing work item, artifact, and claim token, but does not reject that terminal write
+solely because wall-clock TTL elapsed. This preserves ownership while ensuring the
+external outcome converges.
 
 ## Idempotency
 
