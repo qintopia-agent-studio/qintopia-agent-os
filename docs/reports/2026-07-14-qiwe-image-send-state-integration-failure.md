@@ -125,10 +125,28 @@ Validation must cover both sides of the boundary:
 cargo check --manifest-path runtime/sidecar/Cargo.toml
 cargo check --manifest-path runtime/sidecar/Cargo.toml --features qiwe-staging-adapter
 cargo test --manifest-path runtime/sidecar/Cargo.toml qiwe_image_send::tests
+cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --no-default-features -- -D warnings
 cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings
 node tools/deploy/preflight.mjs --ci
 sh .husky/pre-commit
 ```
+
+The Reviewer Guide for commit `684ba87` predicted an unused `api_url` binding in the
+default build. The exact warning-denied default-feature Clippy command passed locally:
+the URL is used to enforce the API-host allowlist before its staging-only struct field
+is omitted. The code now explicitly drops that validated URL under the default cfg to
+make the ownership boundary unambiguous. More importantly, CI previously ran Clippy only
+with all features, so a real default-only regression would not have been covered. The
+quality job and its contract now require separate warning-denied default and all-feature
+invocations.
+
+Local replacement-head validation passed warning-denied Clippy for both feature sets,
+`297/297` default-feature sidecar tests, and `295` all-feature tests with the seven
+guarded PostgreSQL tests ignored as designed. Focused QiWe tests passed `23/23` in the
+default build and `21/21` with `qiwe-staging-adapter`. The first restricted staging-test
+attempt could not bind three loopback fake servers; the exact command passed after the
+required loopback-enabled rerun. Deploy preflight, CI contracts, repository pre-commit,
+Markdown lint, secret scanning, formatting, and diff checks also passed.
 
 This does not approve building or running the staging feature. Owner-approved provider
 and media evidence, the exact callback credential shape, an isolated test group, staging

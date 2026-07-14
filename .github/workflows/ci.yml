@@ -313,6 +313,7 @@ jobs:
       - name: Clippy baseline
         run: |
           set -o pipefail
+          cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --no-default-features -- -D warnings 2>&1 | tee coverage/clippy-default.txt
           cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings 2>&1 | tee coverage/clippy.txt
 
       - name: Upload Rust quality baseline

@@ -96,8 +96,8 @@ booleans. They must use `safe_for_chat=false` and must not include:
 
 - Rust unit tests for default-build compile-gate rejection before database/network
   access, disabled/config-invalid/dry-run behavior, and sanitized reports.
-- Default and `qiwe-staging-adapter` feature compilation; Clippy runs with all features
-  so the isolated live path remains type-checked.
+- Warning-denied Clippy runs separately with no default features and with all features,
+  proving both the production compile gate and the isolated live path remain valid.
 - Local fake QiWe server tests for upload acceptance, callback credentials, successful
   send, non-success HTTP/business ambiguity, oversized response, connection timeout, and
   header injection rejection.

@@ -52,6 +52,8 @@ This means the approved commit has passed:
 - CI-safe deployment preflight
 - QiWe package tests
 - sidecar Rust tests
+- warning-denied Clippy for both default production features and all staging/test
+  features
 - no-credential sidecar smoke checks
 
 ## Artifact Retention

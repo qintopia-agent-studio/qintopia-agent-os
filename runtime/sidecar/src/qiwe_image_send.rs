@@ -1002,6 +1002,10 @@ impl AdapterConfig {
             bail!("QiWe async upload webhook must be reviewed and ready");
         }
 
+        // Production still validates the URL and allowlist although it omits the live client.
+        #[cfg(not(any(test, feature = "qiwe-staging-adapter")))]
+        drop(api_url);
+
         Ok(Self {
             #[cfg(any(test, feature = "qiwe-staging-adapter"))]
             api_url,
