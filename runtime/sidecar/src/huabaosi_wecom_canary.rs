@@ -177,11 +177,13 @@ impl CanarySender for BoundedHttpCanarySender {
             MAX_CANARY_RESPONSE_BYTES,
         );
         match response {
-            Ok(response) if response.status == 200 => SendOutcome {
-                success: true,
-                action_status: "canary_send_accepted",
-                external_send_executed: Some(true),
-            },
+            Ok(response) if canary_response_accepted(response.status, &response.body) => {
+                SendOutcome {
+                    success: true,
+                    action_status: "canary_send_accepted",
+                    external_send_executed: Some(true),
+                }
+            }
             Ok(_) => SendOutcome {
                 success: false,
                 action_status: "canary_send_rejected",
@@ -195,6 +197,22 @@ impl CanarySender for BoundedHttpCanarySender {
             Err(_) => SendOutcome::terminal("canary_send_transport_failed_before_send"),
         }
     }
+}
+
+#[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
+#[derive(Debug, Deserialize)]
+struct CanaryResponseBody {
+    success: bool,
+}
+
+#[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
+fn canary_response_accepted(status: u16, body: &[u8]) -> bool {
+    if status != 200 {
+        return false;
+    }
+    serde_json::from_slice::<CanaryResponseBody>(body)
+        .map(|body| body.success)
+        .unwrap_or(false)
 }
 
 impl SendOutcome {
@@ -826,6 +844,15 @@ mod tests {
         assert!(!report.success);
         assert_eq!(report.action_status, "canary_send_outcome_ambiguous");
         assert_eq!(report.external_send_executed, None);
+    }
+
+    #[test]
+    fn canary_response_requires_explicit_business_success() {
+        assert!(canary_response_accepted(200, br#"{"success":true}"#));
+        assert!(!canary_response_accepted(200, br#"{"success":false}"#));
+        assert!(!canary_response_accepted(200, br#"{"code":0}"#));
+        assert!(!canary_response_accepted(204, br#"{"success":true}"#));
+        assert!(!canary_response_accepted(200, b""));
     }
 
     #[test]
