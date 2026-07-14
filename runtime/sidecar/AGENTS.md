@@ -47,6 +47,9 @@ From the monorepo root, prefer:
 - Every database schema migration must have a matching versioned design note under
   `../postgres/docs/data-design/` and must record itself in
   `qintopia_agent_os.schema_change_log` when that table exists.
+- Group-message send-readiness and policy-denial transitions must release the complete
+  claim tuple (`claimed_by`, `locked_at`, and `claim_expires_at`) and require exactly
+  one work-item update before appending the corresponding audit event.
 - The complete sidecar suite needs a 32 MiB test-thread stack. `pnpm test:sidecar` and
   CI set `RUST_MIN_STACK=33554432`; this is test-only and must not be copied into the
   production sidecar service environment.

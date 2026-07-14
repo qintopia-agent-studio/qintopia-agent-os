@@ -177,7 +177,10 @@ items are skipped by checking for an existing `group_message_send_ready_recorded
 with `send_executed=false`, so periodic runs do not duplicate the audit entry. The
 worker increments `work_items.attempts` on claim and stops claiming send-ready requests
 once attempts reach 3, providing a bounded retry guard before the production external
-send adapter exists.
+send adapter exists. A successful send-ready transition and a policy-denied terminal
+transition both clear `claimed_by`, `locked_at`, and `claim_expires_at` in the same
+transaction. The worker must update exactly the row it locked before appending either
+audit event, so persisted claim ownership never outlives the claim lease.
 
 ## Compatibility
 
