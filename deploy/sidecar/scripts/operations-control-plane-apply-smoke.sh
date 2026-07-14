@@ -118,14 +118,6 @@ export QINTOPIA_OPERATIONS_ALLOWED_ATTACHMENT_HOSTS="${QINTOPIA_OPERATIONS_ALLOW
 # database and the explicit loopback adapter configured later in this smoke.
 export QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
 export QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation
-export QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256="$(
-  python3 - <<'PY'
-import hashlib
-import os
-
-print(hashlib.sha256(os.environ["QINTOPIA_SIDECAR_DATABASE_URL"].encode()).hexdigest())
-PY
-)"
 
 "${BIN_CMD[@]}" migrate >/dev/null
 

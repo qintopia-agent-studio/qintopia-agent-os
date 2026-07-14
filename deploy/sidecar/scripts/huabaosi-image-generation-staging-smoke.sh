@@ -12,16 +12,10 @@ if [[ "${QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL:-}" != "approved-staging-image
 fi
 
 ENV_FILE="${QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE:-}"
-EXPECTED_DATABASE_URL_SHA256="${QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256:-}"
 WORK_ITEM_ID="${QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID:-}"
 
 if [[ -z "$ENV_FILE" || ! -f "$ENV_FILE" || "$ENV_FILE" != /* || "$ENV_FILE" != *staging* ]]; then
   echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE must be an existing absolute path containing staging" >&2
-  exit 1
-fi
-
-if [[ ! "$EXPECTED_DATABASE_URL_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
-  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256 must be a lowercase SHA-256 digest" >&2
   exit 1
 fi
 
@@ -54,12 +48,6 @@ fi
 
 if [[ -z "${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]; then
   echo "QINTOPIA_SIDECAR_DATABASE_URL is required in the staging env file" >&2
-  exit 1
-fi
-
-actual_database_url_sha256="$(printf '%s' "$QINTOPIA_SIDECAR_DATABASE_URL" | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
-if [[ "$actual_database_url_sha256" != "$EXPECTED_DATABASE_URL_SHA256" ]]; then
-  echo "staging database URL does not match QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256" >&2
   exit 1
 fi
 

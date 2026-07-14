@@ -267,7 +267,6 @@ if (!exists(aliangStagingSmokePath)) {
     "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL",
     "approved-staging-image-generation",
     "QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE",
-    "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256",
     "QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID",
     "--features huabaosi-staging-adapter",
     'payload["adapter_compiled"] is True',

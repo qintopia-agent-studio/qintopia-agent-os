@@ -192,7 +192,6 @@ for (const fragment of [
   "run-xiaoman-activity-signal-worker --check-only",
   "--features huabaosi-staging-adapter,postgres-integration-tests",
   "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation",
-  "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256",
   "run-xiaoman-activity-signal-worker --once --apply",
   "run-xiaoman-activity-promotion-starter-worker --check-only",
   "run-xiaoman-activity-promotion-starter-worker --once --apply",

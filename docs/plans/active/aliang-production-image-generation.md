@@ -254,8 +254,8 @@ data but are not eligible for the future QiWe JPG send contract.
   `config_valid=false` 表示字段存在但格式或 allowlist 校验失败。
 - `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`
   是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
-  `staging` 的独立 env、匹配的 staging database URL SHA-256，以及一个明确的 image
-  request UUID。它只运行一次 image worker 并断言得到一个
+  `staging` 的独立 env、代码内 reviewed staging database URL hash
+  allowlist，以及一个明确的 image request UUID。它只运行一次 image worker 并断言得到一个
   `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。若将来的 worker
   report 增加 `artifact_uri`，该 URI 只能是无 query/fragment/userinfo 且位于 allowlisted
   public media base 下的 HTTPS 地址；provider/upload
@@ -270,9 +270,9 @@ data but are not eligible for the future QiWe JPG send contract.
   classification while zeroizing request/response buffers on drop.
 - The current compile-gate branch moves live provider/media execution behind a
   non-default `huabaosi-staging-adapter` feature. A staging-feature apply must enforce
-  the exact owner phrase, approved database URL hash, staging database name, and adapter
-  policy in Rust before Postgres or network access. Production artifact and
-  server-source builds must continue to use no Cargo features.
+  the exact owner phrase, repository-reviewed database URL hash allowlist, staging
+  database name, and adapter policy in Rust before Postgres or network access.
+  Production artifact and server-source builds must continue to use no Cargo features.
 
 运行无网络预检：
 
@@ -288,7 +288,6 @@ smoke；该 smoke 不得发送、发布或写飞书。
 QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE=1 \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
-QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID='<approved staging image request UUID>' \
 deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh
 ```
