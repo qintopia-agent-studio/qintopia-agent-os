@@ -1,6 +1,6 @@
 # Huabaosi WeCom Migration Plan
 
-Status: phase 1 planning; no production behavior changed
+Status: phase 2 read-only observation smoke in progress; no production behavior changed
 
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
@@ -80,7 +80,8 @@ Validation:
 
 Deliverables:
 
-- a script under `deploy/sidecar/scripts/` that only inspects:
+- `deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`, which only
+  inspects:
   - `hermes-gateway-huabaosi.service` active state;
   - fixed service command shape;
   - public busy mode keys;
@@ -88,6 +89,8 @@ Deliverables:
     timeout counts;
   - release/current presence;
 - docs describing the smoke and the exact forbidden actions.
+- deploy-bundle and contract checks so the smoke reaches release/current without
+  weakening the boundary.
 
 Forbidden:
 
@@ -101,6 +104,7 @@ Validation:
 
 - shell syntax check;
 - fixture or local dry-run test where possible;
+- deploy contract and runner checks;
 - one owner-approved read-only production run before using results in later PRs.
 
 ### PR 3: Capture Huabaosi WeCom Events Into A Rust Shadow Path
