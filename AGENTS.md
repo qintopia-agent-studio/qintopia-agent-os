@@ -59,8 +59,14 @@
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
 - Huabaosi WeCom gateway read-only observation smoke:
   `QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`
+- Huabaosi WeCom canary disabled-state observation smoke:
+  `QINTOPIA_HUABAOSI_WECOM_CANARY_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh`
 - Huabaosi WeCom shadow capture fixture replay:
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_shadow`
+- Huabaosi WeCom policy preview fixture replay:
+  `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_policy`
+- Huabaosi WeCom canary gateway fixture replay:
+  `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_canary`
 - Xiaoman activity production preflight smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
@@ -281,6 +287,18 @@ Use `rg` and `rg --files` for search.
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
   not Rust sidecar image generation or QiWe image-send state. Diagnose this path through
   Huabaosi Hermes/WeCom runtime first, and do not hot-edit the server.
+- Huabaosi live provider/media helpers may compile only with the non-default
+  `huabaosi-staging-adapter` feature. Default and production apply must fail before
+  Postgres or network access. A staging-feature apply with generation enabled must
+  validate the exact owner phrase, approved database URL hash, staging database name,
+  and adapter configuration in Rust before connecting to Postgres; the smoke shell is
+  not an authorization boundary.
+- The disposable operations apply smoke may exercise the Huabaosi retry state only when
+  both `huabaosi-staging-adapter` and `postgres-integration-tests` are compiled,
+  `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1`, the database is exactly `qintopia_test` on
+  a literal loopback IP with its approved URL hash, and every provider/media endpoint
+  and allowlist host is a literal loopback IP. This exception must never accept an
+  external host or production database.
 - `operations-artifact-review-decision` may approve a `generated_image` only after its
   Huabaosi worker provenance, stable JPEG HTTPS URI, final JPEG sha256/metadata, source
   PNG sha256, fixed `png_to_jpeg_white_background_q92_v1` transform metadata, source
@@ -319,12 +337,35 @@ Use `rg` and `rg --files` for search.
   must not source `.env`, print raw journal lines, print user messages, read tokens,
   restart services, send WeCom messages, run image generation, write Postgres or Feishu,
   call QiWe/provider/media endpoints, or modify live Hermes profile state.
+- `huabaosi-wecom-canary-observation-smoke.sh` may only verify that the canary gateway
+  remains unscheduled and disabled, then run `huabaosi-wecom-canary-preflight` for a
+  sanitized local configuration summary. It must not use `--apply`, read stdin, source
+  `.env`, print endpoint/token/id values, write Postgres or Feishu, call WeCom, QiWe,
+  provider, or media endpoints, run image generation, publish messages, install units,
+  or modify the live Hermes profile.
 - `huabaosi-wecom-shadow-capture` may only preview one supplied WeCom event from bounded
   stdin and emit sanitized metadata, hashes, byte counts, field presence, and fixed
   guardrails. It must not add `--apply`, open Postgres or network connections, write
   artifacts, send WeCom/QiWe messages, call image providers, upload media, write Feishu,
   or emit raw ids, user text, media URLs, filenames, tokens, or callback file
   credentials.
+- `huabaosi-wecom-policy-preview` may only preview one supplied WeCom event from bounded
+  stdin and emit sanitized policy decisions for message classification, busy-session
+  handling, internal-process filtering, formatting fallback, user-safe fallback copy,
+  and idempotency. It must not add `--apply`, open Postgres or network connections,
+  write artifacts, send WeCom/QiWe messages, call image providers, upload media, write
+  Feishu, or emit raw ids, user text, media URLs, filenames, tokens, or callback file
+  credentials. Suppression rules must match narrow complete internal templates; do not
+  block ordinary user requests through broad words such as `plain text` or `纯文本`.
+- `huabaosi-wecom-canary-preflight` must not read stdin, open network or database
+  connections, source env files, reveal configuration values, write Feishu/Postgres, or
+  send WeCom/QiWe messages. `huabaosi-wecom-canary-gateway --apply` is allowed only in
+  an owner-reviewed staging command built with the non-default
+  `huabaosi-wecom-canary-gateway` Cargo feature, explicit enable flag, approval phrase,
+  HTTPS endpoint, token, and exact Bot/chat/user allowlists. Default production builds
+  must fail closed before stdin, network, database, or send access. The command must not
+  change the production Bot route, install timers, broaden sends beyond the allowlist,
+  run image generation, upload media, or write Feishu/Postgres.
 - `huabaosi-image-generation-preflight` may only validate and emit a sanitized summary
   of local image-adapter configuration. It must not open network or database
   connections, reveal configuration values, enable generation, write Feishu, send QiWe,
@@ -333,9 +374,9 @@ Use `rg` and `rg --files` for search.
   or enable flags.
 - `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
   image request after the fail-closed preflight, explicit smoke flag and approval
-  phrase, staging-only env file, matching staging database URL hash, and an explicit
-  UUID work item id. It must leave the image pending review and must not run in
-  production, add a timer, write Feishu, send QiWe, or publish.
+  phrase, staging-only env file, a repository-reviewed database URL hash allowlist, and
+  an explicit UUID work item id. It must leave the image pending review and must not run
+  in production, add a timer, write Feishu, send QiWe, or publish.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

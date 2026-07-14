@@ -1010,4 +1010,81 @@ mod tests {
         );
         assert!(drafts[0].content_text.contains("sha256:evidence"));
     }
+
+    #[test]
+    fn non_activity_visual_brief_does_not_require_evidence() {
+        let work_item = WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: None,
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "社区手作课报名海报".to_string(),
+            source_refs: json!({"source_record_ref": "manual:test"}),
+            payload: json!({"workflow_type": "ad_hoc_visual"}),
+            review_policy: "before_external_use".to_string(),
+        };
+
+        let drafts = build_artifact_drafts(&work_item, None)
+            .expect("non-activity visual brief can be drafted without evidence");
+
+        assert_eq!(drafts.len(), 1);
+        assert!(drafts[0].content_text.contains("未要求活动推广证据摘要"));
+        assert!(drafts[0].evidence_context.is_none());
+    }
+
+    #[test]
+    fn waiting_for_evidence_report_keeps_dry_run_truthful() {
+        let work_item_id = Uuid::new_v4();
+        let preview = waiting_for_evidence_report(false, Some(work_item_id));
+        let apply = waiting_for_evidence_report(true, Some(work_item_id));
+
+        assert_eq!(preview.action_status, "waiting_for_evidence");
+        assert!(preview.dry_run);
+        assert!(!preview.apply_requested);
+        assert_eq!(preview.work_item_id, Some(work_item_id));
+        assert!(apply.apply_requested);
+        assert!(!apply.dry_run);
+        assert!(apply
+            .guardrails
+            .iter()
+            .any(|item| item.contains("no Feishu, QiWe, image-generation")));
+    }
+
+    #[test]
+    fn validation_rejects_wrong_agents_and_capability() {
+        let mut work_item = WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: None,
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "社区活动海报".to_string(),
+            source_refs: json!({}),
+            payload: json!({}),
+            review_policy: "before_external_use".to_string(),
+        };
+
+        work_item.requester_agent = "erhua".to_string();
+        assert!(validate_work_item(&work_item)
+            .expect_err("only Xiaoman may request visual collaboration")
+            .to_string()
+            .contains("requester_agent is not allowed"));
+
+        work_item.requester_agent = "xiaoman".to_string();
+        work_item.target_agent = "wenyuange".to_string();
+        assert!(validate_work_item(&work_item)
+            .expect_err("visual collaboration targets Huabaosi")
+            .to_string()
+            .contains("target_agent must be huabaosi"));
+
+        work_item.target_agent = "huabaosi".to_string();
+        work_item.capability_key = "huabaosi.generate_image_asset".to_string();
+        assert!(validate_work_item(&work_item)
+            .expect_err("poster brief worker must not run image generation")
+            .to_string()
+            .contains("capability is not supported"));
+    }
 }
