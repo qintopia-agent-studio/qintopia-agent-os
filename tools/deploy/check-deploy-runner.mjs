@@ -921,6 +921,11 @@ try {
     ["tools/deploy/test-huabaosi-image-production-observation.mjs"],
     { cwd: repoRoot }
   );
+  execFileSync(
+    "node",
+    ["tools/deploy/test-xiaoman-production-observation-contracts.mjs"],
+    { cwd: repoRoot }
+  );
 } catch (error) {
   addError(`deploy runner shell syntax check failed: ${error.message}`);
 }

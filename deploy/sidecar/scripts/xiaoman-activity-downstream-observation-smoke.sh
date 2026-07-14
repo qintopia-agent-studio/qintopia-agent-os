@@ -89,8 +89,12 @@ assert isinstance(payload["artifact_ids"], list)
 assert isinstance(payload["artifact_previews"], list)
 assert isinstance(payload["limitations"], list)
 assert isinstance(payload["guardrails"], list)
-joined = "\n".join(payload["limitations"] + payload["guardrails"])
-assert "external" in joined.lower() or "外部" in joined
+if payload["action_status"] == "no_claimable_evidence_request":
+    assert payload["artifact_ids"] == []
+    assert payload["artifact_previews"] == []
+else:
+    joined = "\n".join(payload["limitations"] + payload["guardrails"])
+    assert "external" in joined.lower() or "外部" in joined
 PY
 assert_no_sensitive_output "evidence worker check" "$evidence_check"
 
@@ -116,8 +120,12 @@ assert isinstance(payload["artifact_ids"], list)
 assert isinstance(payload["artifact_previews"], list)
 assert isinstance(payload["limitations"], list)
 assert isinstance(payload["guardrails"], list)
-joined = "\n".join(payload["limitations"] + payload["guardrails"])
-assert "external" in joined.lower() or "外部" in joined
+if payload["action_status"] == "no_claimable_work_item":
+    assert payload["artifact_ids"] == []
+    assert payload["artifact_previews"] == []
+else:
+    joined = "\n".join(payload["limitations"] + payload["guardrails"])
+    assert "external" in joined.lower() or "外部" in joined
 PY
 assert_no_sensitive_output "visual worker check" "$visual_check"
 

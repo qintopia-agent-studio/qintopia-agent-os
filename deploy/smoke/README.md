@@ -30,6 +30,13 @@ group send-ready timer. The preflight runs the provider worker only with
 and does not authorize Feishu writes, QiWe sends, poster publishing, or external
 adapters.
 
+An explicit `no_claimable_*` worker result is a valid empty-queue observation only when
+it reports `dry_run=true`, `apply_requested=false`, and empty artifact ids/previews.
+When a worker returns an actual preview, its limitations or guardrails must still state
+the external-adapter boundary. A release that changes the deploy runner's systemd unit
+allowlist needs one owner-approved follow-up deployment for the same SHA because its
+first promotion is processed by the previous release runner.
+
 ## Validation
 
 ```bash

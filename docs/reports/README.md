@@ -38,6 +38,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-orbstack-license-proxy-unavailable.md`                                 | adopt-input | Local OrbStack proxy/license integration interruption                  |
 | `2026-07-14-qiwe-image-send-state-integration-failure.md`                          | adopt-input | QiWe image-send state CI and reviewer remediation                      |
 | `2026-07-14-codex-loopback-test-sandbox.md`                                        | adopt-input | Local fake HTTP test sandbox permission evidence                       |
+| `2026-07-14-xiaoman-v027-production-preflight.md`                                  | adopt-input | v0.2.7 production preflight hold and smoke remediation                 |
 
 ## Rules
 
