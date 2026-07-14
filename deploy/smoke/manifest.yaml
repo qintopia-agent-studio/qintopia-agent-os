@@ -29,7 +29,6 @@ tags:
   - smoke
   - validation
 next_actions:
-  - Run the aggregate Xiaoman production preflight after an owner-approved deploy and
-    fill deploy/smoke/docs/xiaoman-production-preflight-record.md with sanitized
-    evidence.
+  - Keep the Xiaoman production preflight on Hold until the corrected observation
+    contract is released and the aggregate smoke passes with sanitized evidence.
   - Wrap existing sidecar smoke scripts under this package without changing behavior.

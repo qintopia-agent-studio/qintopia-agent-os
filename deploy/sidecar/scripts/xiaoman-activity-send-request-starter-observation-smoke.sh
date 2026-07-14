@@ -131,7 +131,7 @@ assert payload["dry_run"] is True
 assert payload["check_only"] is True
 assert payload["safe_for_chat"] is False
 assert payload["action_status"] in {
-    "no_eligible_approved_visual_artifacts",
+    "no_eligible_approved_generated_images",
     "group_message_requests_preview",
 }
 for field in (
