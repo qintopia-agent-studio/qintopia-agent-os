@@ -1562,7 +1562,7 @@ fn media_upload_idempotency_key(prompt_hash: &str, final_content_hash: &str) -> 
     ))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn generate_and_store_with_client(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
@@ -1576,7 +1576,7 @@ fn generate_and_store(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
 ) -> GenerationAttemptResult<GeneratedImage> {
-    generate_and_store_with(config, work_item, &HttpClient::production())
+    generate_and_store_with_client(config, work_item, HttpClient::production())
 }
 
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
