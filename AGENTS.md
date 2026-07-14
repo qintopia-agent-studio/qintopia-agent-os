@@ -283,6 +283,18 @@ Use `rg` and `rg --files` for search.
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
   not Rust sidecar image generation or QiWe image-send state. Diagnose this path through
   Huabaosi Hermes/WeCom runtime first, and do not hot-edit the server.
+- Huabaosi live provider/media helpers may compile only with the non-default
+  `huabaosi-staging-adapter` feature. Default and production apply must fail before
+  Postgres or network access. A staging-feature apply with generation enabled must
+  validate the exact owner phrase, approved database URL hash, staging database name,
+  and adapter configuration in Rust before connecting to Postgres; the smoke shell is
+  not an authorization boundary.
+- The disposable operations apply smoke may exercise the Huabaosi retry state only when
+  both `huabaosi-staging-adapter` and `postgres-integration-tests` are compiled,
+  `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1`, the database is exactly `qintopia_test` on
+  a literal loopback IP with its approved URL hash, and every provider/media endpoint
+  and allowlist host is a literal loopback IP. This exception must never accept an
+  external host or production database.
 - `operations-artifact-review-decision` may approve a `generated_image` only after its
   Huabaosi worker provenance, stable JPEG HTTPS URI, final JPEG sha256/metadata, source
   PNG sha256, fixed `png_to_jpeg_white_background_q92_v1` transform metadata, source
@@ -358,9 +370,9 @@ Use `rg` and `rg --files` for search.
   or enable flags.
 - `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
   image request after the fail-closed preflight, explicit smoke flag and approval
-  phrase, staging-only env file, matching staging database URL hash, and an explicit
-  UUID work item id. It must leave the image pending review and must not run in
-  production, add a timer, write Feishu, send QiWe, or publish.
+  phrase, staging-only env file, a repository-reviewed database URL hash allowlist, and
+  an explicit UUID work item id. It must leave the image pending review and must not run
+  in production, add a timer, write Feishu, send QiWe, or publish.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.
