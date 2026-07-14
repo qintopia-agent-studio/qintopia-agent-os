@@ -305,6 +305,8 @@ pub async fn claim_ready_work_item(
 pub async fn preview_ready_work_item(
     pool: &PgPool,
     work_item_id: Option<Uuid>,
+    allowed_group_ids: &BTreeSet<String>,
+    media_allowed_hosts: &BTreeSet<String>,
 ) -> Result<Option<QiweUploadPreview>> {
     let row = sqlx::query(
         r#"
@@ -312,7 +314,10 @@ pub async fn preview_ready_work_item(
             request.id,
             artifact.artifact_uri,
             artifact.content_hash AS artifact_content_hash,
-            artifact.metadata->>'mime_type' AS mime_type
+            artifact.metadata->>'mime_type' AS mime_type,
+            artifact.metadata->>'file_md5' AS artifact_file_md5,
+            artifact.metadata->>'byte_size' AS artifact_byte_size,
+            request.payload->>'target_group_id' AS target_group_id
         FROM qintopia_agent_os.work_items request
         JOIN qintopia_agent_os.artifacts artifact
           ON artifact.id::text = request.payload->>'approved_artifact_id'
@@ -382,7 +387,24 @@ pub async fn preview_ready_work_item(
     let artifact_uri: String = row.try_get("artifact_uri")?;
     let artifact_content_hash: String = row.try_get("artifact_content_hash")?;
     let mime_type: String = row.try_get("mime_type")?;
-    validate_preview_boundary(&artifact_uri, &artifact_content_hash, &mime_type)?;
+    let artifact_file_md5: String = row.try_get("artifact_file_md5")?;
+    let artifact_byte_size = parse_positive_byte_size(
+        &row.try_get::<String, _>("artifact_byte_size")?,
+        "approved generated-image byte_size",
+    )?;
+    let target_group_id: String = row.try_get("target_group_id")?;
+    validate_claim_boundary(
+        ArtifactBoundary {
+            uri: &artifact_uri,
+            content_hash: &artifact_content_hash,
+            mime_type: &mime_type,
+            file_md5: &artifact_file_md5,
+            byte_size: artifact_byte_size,
+            target_group_id: &target_group_id,
+        },
+        allowed_group_ids,
+        media_allowed_hosts,
+    )?;
     Ok(Some(QiweUploadPreview {
         work_item_id: row.try_get("id")?,
     }))
@@ -1222,6 +1244,7 @@ fn validate_claim_boundary(
     })
 }
 
+#[cfg(test)]
 fn validate_preview_boundary(
     artifact_uri: &str,
     artifact_content_hash: &str,
@@ -1885,6 +1908,33 @@ mod tests {
         let (image_id, _artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
         let groups = BTreeSet::from(["integration-group-id".to_string()]);
         let hosts = BTreeSet::from(["media.example.test".to_string()]);
+        let preview = preview_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("preview reviewed allowlists")
+            .expect("allowlisted work item is previewable");
+        assert_eq!(preview.work_item_id, group_id);
+        let group_error = preview_ready_work_item(
+            &pool,
+            Some(group_id),
+            &BTreeSet::from(["different-group".to_string()]),
+            &hosts,
+        )
+        .await
+        .expect_err("preview must reject a non-allowlisted group");
+        assert!(group_error
+            .to_string()
+            .contains("group id is not allowlisted"));
+        let host_error = preview_ready_work_item(
+            &pool,
+            Some(group_id),
+            &groups,
+            &BTreeSet::from(["different-media.example.test".to_string()]),
+        )
+        .await
+        .expect_err("preview must reject a non-allowlisted media host");
+        assert!(host_error
+            .to_string()
+            .contains("URI host is not allowlisted"));
         let claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
             .await
             .expect("claim send-ready work item")

@@ -87,6 +87,8 @@ From the monorepo root, prefer:
 - CI must run warning-denied Clippy once with no default features and once with all
   features. The all-feature build type-checks staging code but cannot stand in for the
   production feature set.
+- QiWe upload dry-run must use the same exact group/media allowlists and approved JPEG
+  identity validator as apply. It may skip locks and writes, but not policy checks.
 - External adapter modules must use `bounded_http`; do not add another raw socket HTTP
   implementation. Test-only loopback HTTP is allowed, while production clients require
   HTTPS and the reviewed endpoint/host allowlists.

@@ -78,6 +78,10 @@ Starting an attempt requires all of the following in one reviewed flow:
 - an approved `generated_image` with immutable JPEG URI and content hash; and
 - no active or successful QiWe image-send attempt.
 
+Read-only preview uses the same artifact and current target-group/media-host allowlist
+validator as the claim transaction. It may omit locking and mutation, but it must not
+weaken policy and report a work item that apply would reject.
+
 QiWe target group ids are opaque, case-sensitive values. The configured group allowlist
 must match the complete id exactly; lowercase normalization is not permitted at the
 external-send boundary.

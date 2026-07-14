@@ -292,9 +292,16 @@ pub async fn run_upload_worker(
     }
     let apply_requested = apply && !dry_run;
     if !apply_requested {
+        let (allowed_groups, media_allowed_hosts) = preview_allowlists_from_env()?;
         let database_url = cli.database_url_required()?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
-        let preview = qiwe_image_send_state::preview_ready_work_item(&pool, work_item_id).await?;
+        let preview = qiwe_image_send_state::preview_ready_work_item(
+            &pool,
+            work_item_id,
+            &allowed_groups,
+            &media_allowed_hosts,
+        )
+        .await?;
         let report = match preview {
             Some(preview) => worker_report(WorkerReportState {
                 success: true,
@@ -343,10 +350,16 @@ pub async fn run_upload_worker(
     #[cfg(feature = "qiwe-staging-adapter")]
     {
         if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
+            let (allowed_groups, media_allowed_hosts) = preview_allowlists_from_env()?;
             let database_url = cli.database_url_required()?;
             let pool = db::connect(database_url, cli.db_max_connections).await?;
-            let preview =
-                qiwe_image_send_state::preview_ready_work_item(&pool, work_item_id).await?;
+            let preview = qiwe_image_send_state::preview_ready_work_item(
+                &pool,
+                work_item_id,
+                &allowed_groups,
+                &media_allowed_hosts,
+            )
+            .await?;
             let report = worker_report(WorkerReportState {
                 success: true,
                 dry_run: false,
@@ -1192,6 +1205,20 @@ fn required_env(name: &str) -> Result<String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty() && !is_placeholder(value))
         .ok_or_else(|| anyhow!("required QiWe image-send configuration is missing"))
+}
+
+fn preview_allowlists_from_env() -> Result<(BTreeSet<String>, BTreeSet<String>)> {
+    let allowed_groups =
+        parse_csv_exact_set(&required_env("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS")?);
+    if allowed_groups.is_empty() {
+        bail!("at least one QiWe target group must be allowlisted");
+    }
+    let media_allowed_hosts =
+        parse_csv_set(&required_env("QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")?);
+    if media_allowed_hosts.is_empty() {
+        bail!("at least one generated-image media host must be allowlisted");
+    }
+    Ok((allowed_groups, media_allowed_hosts))
 }
 
 fn missing_qiwe_image_send_configuration() -> Vec<&'static str> {

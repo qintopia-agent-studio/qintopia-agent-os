@@ -30,7 +30,9 @@ contact QiWe.
 `--dry-run`.
 
 - Dry-run reads one eligible AgentOS work item and emits a sanitized preview. It does
-  not claim, write Postgres, or open a network connection.
+  not claim, write Postgres, or open a network connection. Preview and apply share the
+  exact target-group, media-host, JPEG hash, MD5, byte-size, and filename validation, so
+  dry-run cannot report a request that current allowlists would reject.
 - A default build rejects apply as `staging_adapter_not_compiled` before reading adapter
   configuration, connecting to Postgres, claiming work, or opening a socket.
 - A staging-only build additionally requires the non-default `qiwe-staging-adapter`

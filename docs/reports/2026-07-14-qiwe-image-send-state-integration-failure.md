@@ -185,3 +185,20 @@ otherwise noncanonical provider MD5 fails closed rather than being normalized si
 This change does not enable the staging Cargo feature, install a listener/service/timer,
 contact QiWe, write Feishu, or send a message. Production artifacts still exclude the
 live adapter.
+
+## PR #119 Dry-run Allowlist Drift
+
+The Reviewer Guide for commit `bc3fe1d` found that `preview_ready_work_item` validated
+the HTTPS JPEG shape and SHA-256 but did not apply the current exact target-group and
+media-host allowlists. A dry-run could therefore report a request as previewable even
+though apply would reject it.
+
+The repair makes preview load only the two non-secret allowlists needed for this policy
+check and pass them into the state layer. Preview now selects the artifact MD5, byte
+size, and target group and reuses the same `validate_claim_boundary` function as apply.
+It still performs no claim, Postgres write, or network request. The disposable
+PostgreSQL test proves an allowlisted request previews successfully while a different
+group or media host fails before claim.
+
+The production boundary is unchanged: this improves read-only diagnostic fidelity and
+does not compile or enable the live adapter, contact QiWe, or send a message.
