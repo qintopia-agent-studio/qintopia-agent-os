@@ -13,6 +13,7 @@ mod evidence;
 mod graph_projection;
 mod group_message_send;
 mod health;
+mod huabaosi_wecom_canary;
 mod huabaosi_wecom_policy;
 mod huabaosi_wecom_shadow;
 mod identity_backfill;
@@ -516,6 +517,10 @@ async fn main() -> Result<()> {
         Command::HuabaosiImageGenerationPreflight => image_generation::run_preflight(),
         Command::HuabaosiWecomShadowCapture => huabaosi_wecom_shadow::run(),
         Command::HuabaosiWecomPolicyPreview => huabaosi_wecom_policy::run(),
+        Command::HuabaosiWecomCanaryPreflight => huabaosi_wecom_canary::run_preflight(),
+        Command::HuabaosiWecomCanaryGateway { apply, dry_run } => {
+            huabaosi_wecom_canary::run_gateway(apply, dry_run)
+        }
         Command::QiweImageSendPreflight => qiwe_image_send::run_preflight(),
         Command::RunQiweImageSendWorker {
             once,

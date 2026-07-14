@@ -1070,6 +1070,18 @@ pub enum Command {
     HuabaosiWecomShadowCapture,
     /// Preview Huabaosi WeCom gateway policy for one stdin event without writing, sending, or generating assets.
     HuabaosiWecomPolicyPreview,
+    /// Validate the Huabaosi WeCom canary gateway configuration without stdin, network, or database access.
+    HuabaosiWecomCanaryPreflight,
+    /// Preview or run one allowlisted Huabaosi WeCom canary gateway payload from stdin.
+    HuabaosiWecomCanaryGateway {
+        /// Apply the canary sender. Default builds fail closed before reading stdin.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run validation even when --apply is present.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Validate the disabled QiWe async image-upload/send contract without network or database access.
     QiweImageSendPreflight,
     /// Claim one reviewed QiWe image-send request and submit its asynchronous URL upload.

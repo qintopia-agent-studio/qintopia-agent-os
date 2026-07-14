@@ -1,0 +1,7 @@
+{
+  "bot_id": "canary-bot-fixture",
+  "chat_id": "canary-chat-fixture",
+  "user_id": "canary-user-fixture",
+  "message_text": "fixture private canary message",
+  "idempotency_key": "fixture-canary-idempotency"
+}

@@ -25,6 +25,7 @@
 - Run consumer: `cargo run -- run`
 - Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
 - Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
+- Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`
 
 From the monorepo root, prefer:
 
@@ -123,3 +124,11 @@ From the monorepo root, prefer:
   filenames, tokens, or callback credentials. Internal-process suppression must use
   narrow full-template matches with negative fixture coverage for ordinary user text
   containing terms such as `plain text`.
+- `huabaosi-wecom-canary-preflight` is a local configuration preflight only. It must not
+  read stdin, open network or database connections, source env files, or emit
+  endpoint/token/id values. `huabaosi-wecom-canary-gateway --apply` is staging-only,
+  requires the non-default `huabaosi-wecom-canary-gateway` Cargo feature plus explicit
+  enablement, approval phrase, HTTPS endpoint, token, and exact Bot/chat/user
+  allowlists, and must remain unscheduled. Default builds must fail closed before stdin,
+  network, database, or send access. It must not change production routing, run image
+  generation, upload media, write Feishu/Postgres, or send outside the allowlist.
