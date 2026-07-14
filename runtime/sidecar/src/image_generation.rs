@@ -48,7 +48,8 @@ const MAX_GENERATION_ATTEMPTS: i32 = 3;
 const BASE_RETRY_DELAY_SECONDS: i64 = 60;
 const STAGING_APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL";
 const STAGING_APPROVAL_PHRASE: &str = "approved-staging-image-generation";
-const REVIEWED_STAGING_DATABASE_URL_SHA256_ALLOWLIST: &[&str] = &[];
+const REVIEWED_DATABASE_URL_SHA256_ALLOWLIST: &[&str] =
+    &["c6dc2730b2a3fdabf05d88e021340b748c5c5b5d06d8ec24b38feef387d39330"];
 const REQUIRED_IMAGE_CONFIGURATION: &[&str] = &[
     "QINTOPIA_HUABAOSI_IMAGE_PROVIDER",
     "QINTOPIA_HUABAOSI_IMAGE_MODEL",
@@ -555,7 +556,7 @@ fn validate_staging_database_boundary(
     validate_staging_database_boundary_with_allowlist(
         database_url,
         allow_disposable_test,
-        REVIEWED_STAGING_DATABASE_URL_SHA256_ALLOWLIST,
+        REVIEWED_DATABASE_URL_SHA256_ALLOWLIST,
     )
 }
 
@@ -565,6 +566,9 @@ fn validate_staging_database_boundary_with_allowlist(
     reviewed_hashes: &[&str],
 ) -> Result<()> {
     let database_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
+    if !reviewed_hashes.iter().any(|hash| *hash == database_hash) {
+        bail!("database URL hash is not in the reviewed allowlist");
+    }
     let parsed = Url::parse(database_url).context("parse staging database URL")?;
     if !matches!(parsed.scheme(), "postgres" | "postgresql") || parsed.host_str().is_none() {
         bail!("staging database URL must use PostgreSQL and include a host");
@@ -583,9 +587,6 @@ fn validate_staging_database_boundary_with_allowlist(
     }
     if !database_name.to_ascii_lowercase().contains("staging") {
         bail!("database must be staging or the guarded loopback qintopia_test fixture");
-    }
-    if !reviewed_hashes.iter().any(|hash| *hash == database_hash) {
-        bail!("staging database URL hash is not in the reviewed allowlist");
     }
     Ok(())
 }
@@ -1892,14 +1893,39 @@ mod tests {
     #[test]
     fn disposable_database_exception_requires_exact_loopback_test_boundary() {
         let loopback_url = "postgres://user:secret@127.0.0.1:5432/qintopia_test";
-        assert!(validate_staging_database_boundary(loopback_url, true).is_ok());
+        let loopback_hash = format!("{:x}", Sha256::digest(loopback_url.as_bytes()));
+        assert!(validate_staging_database_boundary_with_allowlist(
+            loopback_url,
+            true,
+            &[loopback_hash.as_str()]
+        )
+        .is_ok());
+        assert!(validate_staging_database_boundary(loopback_url, true).is_err());
         assert!(validate_staging_database_boundary(loopback_url, false).is_err());
 
         let named_loopback_url = "postgres://user:secret@localhost:5432/qintopia_test";
-        assert!(validate_staging_database_boundary(named_loopback_url, true).is_err());
+        let named_loopback_hash = format!("{:x}", Sha256::digest(named_loopback_url.as_bytes()));
+        assert!(validate_staging_database_boundary_with_allowlist(
+            named_loopback_url,
+            true,
+            &[named_loopback_hash.as_str()]
+        )
+        .is_err());
 
         let remote_url = "postgres://user:secret@db.example.test:5432/qintopia_test";
-        assert!(validate_staging_database_boundary(remote_url, true).is_err());
+        let remote_hash = format!("{:x}", Sha256::digest(remote_url.as_bytes()));
+        assert!(validate_staging_database_boundary_with_allowlist(
+            remote_url,
+            true,
+            &[remote_hash.as_str()]
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn ci_disposable_database_url_is_reviewed_explicitly() {
+        let ci_loopback_url = "postgres://postgres:postgres@127.0.0.1:5432/qintopia_test";
+        assert!(validate_staging_database_boundary(ci_loopback_url, true).is_ok());
     }
 
     #[test]

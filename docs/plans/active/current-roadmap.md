@@ -63,9 +63,9 @@ unless correcting historical evidence.
      enablement may precede that evidence.
    - The Huabaosi live provider/media entrypoint is being moved behind the non-default
      `huabaosi-staging-adapter` Cargo feature. Its Rust command gate binds an exact
-     owner phrase and repository-reviewed staging database URL hash allowlist before
-     Postgres. This is production misuse prevention, not provider/storage approval or
-     staging evidence.
+     owner phrase and repository-reviewed database URL hash allowlist before Postgres.
+     This is production misuse prevention, not provider/storage approval or staging
+     evidence.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,

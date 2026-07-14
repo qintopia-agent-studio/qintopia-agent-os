@@ -35,8 +35,10 @@ mutation, or network access.
 A staging-feature apply with generation enabled will require, in this order:
 
 1. the exact one-shot owner approval phrase;
-2. a lowercase SHA-256 approval for the exact database URL;
-3. a parsed PostgreSQL URL whose database name contains `staging`; and
+2. a repository-reviewed SHA-256 allowlist entry for the exact database URL;
+3. a parsed PostgreSQL URL whose database name contains `staging`, or the explicit
+   reviewed disposable CI `qintopia_test` loopback URL when the PostgreSQL integration
+   smoke feature and apply-smoke flag are both set; and
 4. the complete provider/media configuration and allowlists.
 
 Only after those checks pass may the command connect to Postgres. Disabled and dry-run
@@ -50,8 +52,9 @@ feature; its preflight must prove the live adapter is compiled before apply.
 
 ## Validation
 
-- Rust unit tests for exact approval, database URL hash/name validation, default-build
-  compile rejection, and gate ordering before Postgres;
+- Rust unit tests for exact approval, reviewed database URL hash allowlisting,
+  database-name validation, default-build compile rejection, and gate ordering before
+  Postgres;
 - default and all-feature complete Rust suites plus warning-denied Clippy;
 - fake provider/media tests under the staging feature;
 - staging-smoke contract tests for the feature build and preflight assertion;
@@ -96,9 +99,10 @@ No database assertion, provider call, or production boundary failed.
 
 The smoke now compiles the Huabaosi staging adapter together with the existing
 `postgres-integration-tests` feature. Rust permits its non-staging database exception
-only when the explicit apply-smoke flag is set, the exact hashed database URL names
-`qintopia_test` on a literal loopback IP without query parameters, and every
-provider/media endpoint and allowlist host is a literal loopback IP. The smoke uses the
-same owner phrase and URL-hash gate as staging, then targets the existing refused
-loopback provider port. A production/default binary, a normal staging-feature binary, an
-external host, or any other database cannot use this path.
+only when the explicit apply-smoke flag is set, the exact database URL hash is present
+in the repository-reviewed allowlist, that URL names `qintopia_test` on a literal
+loopback IP without query parameters, and every provider/media endpoint and allowlist
+host is a literal loopback IP. The smoke uses the same owner phrase and URL-hash gate as
+staging, then targets the existing refused loopback provider port. A production/default
+binary, a normal staging-feature binary, an external host, an unreviewed local
+`qintopia_test` URL, or any other database cannot use this path.

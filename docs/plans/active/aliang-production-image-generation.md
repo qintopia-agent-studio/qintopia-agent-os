@@ -254,7 +254,7 @@ data but are not eligible for the future QiWe JPG send contract.
   `config_valid=false` 表示字段存在但格式或 allowlist 校验失败。
 - `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`
   是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
-  `staging` 的独立 env、代码内 reviewed staging database URL hash
+  `staging` 的独立 env、代码内 reviewed database URL hash
   allowlist，以及一个明确的 image request UUID。它只运行一次 image worker 并断言得到一个
   `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。若将来的 worker
   report 增加 `artifact_uri`，该 URI 只能是无 query/fragment/userinfo 且位于 allowlisted
