@@ -23,6 +23,7 @@
 - Test: `RUST_MIN_STACK=33554432 cargo test`
 - Local readiness: `cargo run -- check`
 - Run consumer: `cargo run -- run`
+- Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
 
 From the monorepo root, prefer:
 
@@ -109,3 +110,9 @@ From the monorepo root, prefer:
   HTTPS and the reviewed endpoint/host allowlists.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.
+- `huabaosi-wecom-shadow-capture` is a preview-only migration command. It may read one
+  event from bounded stdin and emit only sanitized hashes, byte counts, field presence,
+  classification, and fixed guardrails. It must not gain an apply mode, connect to
+  Postgres or external services, send WeCom/QiWe messages, generate or upload media,
+  write Feishu, create artifacts, or print raw ids, user text, media URLs, filenames,
+  tokens, or callback credentials.
