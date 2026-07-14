@@ -69,7 +69,7 @@ provider/media tests attempted to bind loopback and received `PermissionDenied`.
 same commands were rerun with loopback permission and passed; no test was skipped or
 weakened.
 
-The complete default suite passed 306 tests. The all-feature suite passed 302 tests and
+The complete default suite passed 331 tests. The all-feature suite passed 327 tests and
 kept eight guarded disposable-PostgreSQL tests ignored. Warning-denied Clippy passed for
 both no-default-features and all-features builds. The first default Clippy run
 identified a conditional-compilation tail expression with a redundant `return`; the code
