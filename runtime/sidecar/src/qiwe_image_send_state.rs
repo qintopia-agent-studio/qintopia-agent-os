@@ -1668,6 +1668,61 @@ mod tests {
     }
 
     #[test]
+    fn preview_boundary_requires_canonical_jpeg_https_uri() {
+        assert!(validate_preview_boundary(
+            "https://media.example.test/posters/activity.jpeg",
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "image/jpeg",
+        )
+        .is_ok());
+        assert!(validate_preview_boundary(
+            "http://media.example.test/posters/activity.jpeg",
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "image/jpeg",
+        )
+        .is_err());
+        assert!(validate_preview_boundary(
+            "https://user@media.example.test/posters/activity.jpeg",
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "image/jpeg",
+        )
+        .is_err());
+        assert!(validate_preview_boundary(
+            "https://media.example.test/posters/activity.jpeg?token=secret",
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "image/jpeg",
+        )
+        .is_err());
+        assert!(validate_preview_boundary(
+            "https://media.example.test/posters/activity.jpeg#frag",
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "image/jpeg",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn plain_values_and_filenames_reject_secret_shaped_inputs() {
+        assert!(validate_plain_value("safe-value", "test value").is_ok());
+        assert!(validate_plain_value(" \t ", "test value").is_err());
+        assert!(validate_plain_value("line\nbreak", "test value").is_err());
+        assert!(validate_jpeg_filename("poster.jpg").is_ok());
+        assert!(validate_jpeg_filename("poster.JPEG").is_ok());
+        assert!(validate_jpeg_filename("nested/poster.jpg").is_err());
+        assert!(validate_jpeg_filename("poster.png").is_err());
+    }
+
+    #[test]
+    fn sha256_marker_is_canonical_and_stable() {
+        assert_eq!(
+            sha256_marker(b"request-id"),
+            "sha256:730e938abe361240c534ba7bd28251b3a345f3b937e9c97e509878c6a031d037"
+        );
+        validate_canonical_sha256(&sha256_marker(b"request-id"), "request id hash")
+            .expect("marker is canonical");
+    }
+
+    #[test]
     fn ambiguous_failure_audit_preserves_unknown_outcome() {
         let (_, _, _, executed, outcome) = send_failure_state(SendFailureDisposition::Ambiguous);
 
