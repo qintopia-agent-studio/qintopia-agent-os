@@ -1066,6 +1066,8 @@ pub enum Command {
     },
     /// Validate Huabaosi image adapter configuration without opening network or database connections.
     HuabaosiImageGenerationPreflight,
+    /// Preview-sanitize one Huabaosi WeCom event from stdin without writing, sending, or generating assets.
+    HuabaosiWecomShadowCapture,
     /// Validate the disabled QiWe async image-upload/send contract without network or database access.
     QiweImageSendPreflight,
     /// Claim one reviewed QiWe image-send request and submit its asynchronous URL upload.
