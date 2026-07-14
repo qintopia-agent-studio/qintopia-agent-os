@@ -287,7 +287,7 @@ fn gateway_report(
     sender: Option<&dyn CanarySender>,
 ) -> Result<CanaryGatewayReport> {
     let config = CanaryConfig::from_env();
-    if apply && !canary_adapter_compiled() {
+    if apply && !dry_run && !canary_adapter_compiled() {
         return Ok(CanaryGatewayReport::without_payload(
             apply,
             dry_run,
@@ -736,6 +736,23 @@ mod tests {
         ] {
             assert!(!serialized.contains(forbidden), "leaked {forbidden}");
         }
+    }
+
+    #[test]
+    fn apply_dry_run_still_validates_allowlisted_payload_without_sender() {
+        let _guard = configured_canary_env();
+        let raw = include_bytes!("../fixtures/huabaosi_wecom_canary_payload.json");
+
+        let payload: CanaryPayload = serde_json::from_slice(raw).expect("payload");
+        let config = CanaryConfig::from_env();
+        let report = gateway_report_from_parts(true, true, &config, &payload, raw, None)
+            .expect("gateway report");
+
+        assert!(report.success);
+        assert!(report.dry_run);
+        assert!(report.apply_requested);
+        assert_eq!(report.action_status, "canary_dry_run_allowlisted");
+        assert_eq!(report.external_send_executed, Some(false));
     }
 
     #[test]
