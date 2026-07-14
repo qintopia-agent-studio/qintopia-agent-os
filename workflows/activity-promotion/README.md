@@ -160,7 +160,10 @@ local fake server. Before opening the at-most-once send gate, it requires the ca
 filename, canonical MD5, and byte size to match the exact approved final JPEG. It is not
 installed as a listener, service, or timer and remains disabled for production. Its
 read-only upload preview applies the same current group/media allowlists and JPEG
-identity checks as apply, without claiming work or opening a network connection.
+identity checks as apply, without claiming work or opening a network connection. A
+staging-feature apply also requires the exact owner approval phrase before it may
+connect to Postgres or the reviewed endpoint; production binaries still omit the live
+adapter entirely.
 
 ## Validation
 

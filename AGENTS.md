@@ -228,11 +228,13 @@ Use `rg` and `rg --files` for search.
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
   reuse the apply path's exact target-group, media-host, and approved JPEG identity
-  validation; preview must not report policy-ineligible work.
-  `process-qiwe-image-send-callback` must read one bounded callback from stdin, keep
-  file credentials memory-only, require callback filename/MD5/byte size to match the
-  approved final JPEG before committing `sending`, commit that state before one send
-  call, and terminalize every outcome. Neither command may be scheduled or
+  validation; preview must not report policy-ineligible work. Staging-feature apply must
+  additionally require the exact reviewed one-shot owner approval phrase before Postgres
+  or network access; feature compilation, enable flags, or credentials alone are
+  insufficient. `process-qiwe-image-send-callback` must read one bounded callback from
+  stdin, keep file credentials memory-only, require callback filename/MD5/byte size to
+  match the approved final JPEG before committing `sending`, commit that state before
+  one send call, and terminalize every outcome. Neither command may be scheduled or
   production-enabled without approved staging evidence, isolated group allowlists, and
   rollback.
 - Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must

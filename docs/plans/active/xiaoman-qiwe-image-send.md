@@ -86,8 +86,9 @@ target, or missing final confirmation must stop before sending.
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; guarded upload/callback commands
   exist, but default and production binaries compile without the non-default
   `qiwe-staging-adapter` feature. Apply fails before Postgres or network access even if
-  the runtime enable flag is misconfigured. No callback listener, staging smoke,
-  service, or timer is installed.
+  the runtime enable flag is misconfigured. A staging-feature apply also requires the
+  exact owner approval phrase before Postgres or network access. No callback listener,
+  staging smoke, service, or timer is installed.
 - The QiWe capture producer sanitizes any `cmd=20000` event before NATS publication, and
   the Rust sidecar independently repeats the boundary before Postgres persistence. Both
   rebuild the entire callback payload from hashed correlation ids and fixed `msgData`

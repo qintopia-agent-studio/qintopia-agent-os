@@ -29,6 +29,10 @@ const ASYNC_EVENT_COMMAND: i64 = 20_000;
 const SEND_SUCCESS_VALUE: i64 = 1;
 const MAX_JSON_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_CALLBACK_INPUT_BYTES: usize = 64 * 1024;
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+const STAGING_APPROVAL_ENV: &str = "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL";
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+const STAGING_APPROVAL_PHRASE: &str = "approved-staging-qiwe-image-send";
 const REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION: &[&str] = &[
     "QIWE_API_URL",
     "QIWE_TOKEN",
@@ -374,14 +378,13 @@ pub async fn run_upload_worker(
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
+        require_staging_owner_approval()?;
         run_enabled_upload_worker(cli, work_item_id).await
     }
 }
 
 #[cfg(feature = "qiwe-staging-adapter")]
 async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Result<()> {
-    let database_url = cli.database_url_required()?;
-    let pool = db::connect(database_url, cli.db_max_connections).await?;
     let config = match AdapterConfig::from_env() {
         Ok(config) => config,
         Err(_) => {
@@ -400,6 +403,8 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
             bail!("QiWe image-send worker configuration is invalid");
         }
     };
+    let database_url = cli.database_url_required()?;
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
     let Some(claim) = qiwe_image_send_state::claim_ready_work_item(
         &pool,
         work_item_id,
@@ -552,6 +557,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
+        require_staging_owner_approval()?;
         run_enabled_callback_processor(cli, &parsed, &callback).await
     }
 }
@@ -1221,6 +1227,19 @@ fn preview_allowlists_from_env() -> Result<(BTreeSet<String>, BTreeSet<String>)>
     Ok((allowed_groups, media_allowed_hosts))
 }
 
+#[cfg(feature = "qiwe-staging-adapter")]
+fn require_staging_owner_approval() -> Result<()> {
+    validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
+    if value != Some(STAGING_APPROVAL_PHRASE) {
+        bail!("QiWe image send staging owner approval is required");
+    }
+    Ok(())
+}
+
 fn missing_qiwe_image_send_configuration() -> Vec<&'static str> {
     missing_required_configuration_with(REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION, |name| {
         std::env::var(name).ok()
@@ -1605,6 +1624,17 @@ mod tests {
         ] {
             assert!(!output.contains(sensitive_value));
         }
+    }
+
+    #[test]
+    fn staging_owner_approval_requires_exact_phrase() {
+        assert!(validate_staging_owner_approval(Some(STAGING_APPROVAL_PHRASE)).is_ok());
+        assert!(validate_staging_owner_approval(None).is_err());
+        assert!(validate_staging_owner_approval(Some("approved-production-send")).is_err());
+        assert_eq!(
+            STAGING_APPROVAL_ENV,
+            "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL"
+        );
     }
 
     #[test]

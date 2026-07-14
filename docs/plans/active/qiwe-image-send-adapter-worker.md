@@ -37,7 +37,9 @@ contact QiWe.
   configuration, connecting to Postgres, claiming work, or opening a socket.
 - A staging-only build additionally requires the non-default `qiwe-staging-adapter`
   Cargo feature, `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, a valid reviewed adapter config,
-  and `QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1`.
+  `QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1`, and the exact one-shot owner approval
+  phrase `QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send`.
+  Missing approval fails before Postgres or network access.
 - Apply claims exactly one work item, sends one asynchronous URL-upload request, and
   persists only the request id hash through `qiwe_image_send_attempts`.
 - An upload transport or provider failure records a sanitized internal failure and must

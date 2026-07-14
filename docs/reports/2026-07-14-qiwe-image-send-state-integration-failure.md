@@ -202,3 +202,24 @@ group or media host fails before claim.
 
 The production boundary is unchanged: this improves read-only diagnostic fidelity and
 does not compile or enable the live adapter, contact QiWe, or send a message.
+
+## PR #119 Explicit Staging Owner Gate
+
+The Reviewer Guide for commit `da53a7a` correctly treated the new executable upload and
+callback commands as a production-adjacent external-send boundary. The default binary
+already excluded live helpers at compile time, artifact/deploy checks rejected the
+staging feature, and staging code required enablement, Webhook readiness, credentials,
+and exact allowlists. However, a manually built staging-feature binary had no separate
+command-entry proof that the one-shot run had received the owner decision documented by
+the plan.
+
+Both staging apply commands now require the exact
+`QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send` phrase
+after the enable check and before adapter configuration, Postgres access, claim
+mutation, or network access. The phrase is intentionally absent from production
+configuration and is provided only with a reviewed one-shot staging command. Unit tests
+reject missing or different values. This gate reduces accidental execution; it does not
+replace the compile gate, OS access control, secret handling, allowlists, staging
+evidence, or owner review.
+
+No listener, service, timer, production feature build, or real external call is added.
