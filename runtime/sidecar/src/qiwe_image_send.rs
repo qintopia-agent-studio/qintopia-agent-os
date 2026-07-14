@@ -2231,6 +2231,57 @@ mod tests {
     }
 
     #[test]
+    fn contract_self_check_covers_upload_callback_and_send_shapes() {
+        validate_contract().expect("QiWe adapter contract self-check stays valid");
+    }
+
+    #[test]
+    fn single_callback_parser_accepts_one_async_event_with_credential_aliases() {
+        let parsed = parse_single_async_upload_callback(
+            br#"{
+              "code":0,
+              "data":[
+                {"requestId":"ignored-sync-event","cmd":10000,"msgData":{}},
+                {
+                  "requestId":"upload-request-1",
+                  "cmd":20000,
+                  "msgData":{
+                    "fileAeskey":"aes-key",
+                    "fileId":"file-id",
+                    "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
+                    "fileSize":48300,
+                    "fileName":"activity-poster.jpg"
+                  }
+                }
+              ]
+            }"#,
+        )
+        .expect("parse single async upload callback");
+
+        assert_eq!(parsed.request_id, "upload-request-1");
+        assert_eq!(parsed.credentials.file_aes_key, "aes-key");
+        assert_eq!(parsed.credentials.filename, "activity-poster.jpg");
+    }
+
+    #[test]
+    fn single_callback_parser_rejects_inputs_before_send_gate() {
+        let oversized = vec![b'x'; MAX_JSON_RESPONSE_BYTES + 1];
+        for body in [
+            b"".as_slice(),
+            oversized.as_slice(),
+            br#"{"code":0,"data":[{"requestId":"upload-request\nsecret","cmd":20000,"msgData":{}}]}"#,
+            br#"{"code":0,"data":[{"requestId":"upload-request-1","cmd":20000}]}"#,
+            br#"{"code":0,"data":[{"requestId":"upload-request-1","cmd":20000,"msgData":{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.png"}}]}"#,
+        ] {
+            assert!(
+                parse_single_async_upload_callback(body).is_err(),
+                "accepted invalid single callback {:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
     fn worker_reports_encode_send_boundary_states() {
         let upload_preview = worker_report(WorkerReportState {
             success: true,
