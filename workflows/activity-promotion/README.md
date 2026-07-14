@@ -89,11 +89,13 @@ upload, correlates the `cmd=20000` Webhook by `requestId`, and only then permits
 preflight are implemented. An additive Postgres state machine now records hashed upload
 correlation, callback idempotency, claim tokens, and sanitized terminal audit without
 persisting callback file credentials. A guarded upload worker and bounded callback
-command are implemented for fake-server and disposable-Postgres validation, but no
-dedicated callback listener, service, or timer exists and production enablement remains
-off. The current Huabaosi path converts provider PNG into the exact final JPEG artifact
-reviewed by humans. Staging must still verify that JPEG through the isolated media and
-QiWe callback boundaries before either command can be enabled against a real endpoint.
+command are implemented for fake-server and disposable-Postgres validation. Their live
+helpers compile only in a non-default staging feature; production artifacts record no
+Cargo features, so env configuration alone cannot enable a real call. No dedicated
+callback listener, service, or timer exists. The current Huabaosi path converts provider
+PNG into the exact final JPEG artifact reviewed by humans. Staging must still verify
+that JPEG through the isolated media and QiWe callback boundaries before a staging
+feature build can contact a real endpoint.
 
 The no-network configuration check is:
 
@@ -103,8 +105,10 @@ qiwe-image-send-preflight
 
 It fails closed unless the HTTPS API host, generated-image media hosts, target groups,
 credentials, and reviewed Webhook readiness flag are configured. A successful preflight
-still does not authorize upload or sending. The command fails when the send-enable flag
-is `1`; staging enablement needs a separate owner-reviewed gate.
+still does not authorize upload or sending. The command reports `adapter_compiled=false`
+for a production/default binary and fails if the send-enable flag is `1` or the
+staging-only feature is present; staging enablement needs a separate owner-reviewed
+gate.
 
 Before any staging adapter smoke, run:
 

@@ -13,6 +13,7 @@ const binaryName = "qintopia-message-sidecar";
 const targetTriple = process.env.QINTOPIA_ARTIFACT_TARGET ?? "linux-x86_64-gnu";
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactName = `${binaryName}-${targetTriple}`;
+const cargoFeatures = [];
 const artifactDir = path.join(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,
@@ -64,6 +65,13 @@ const ensureFile = (filePath, label) => {
     throw new Error(`${label} not found at ${filePath}`);
   }
 };
+
+const worktreeStatus = gitOutput(["status", "--porcelain"], "unknown");
+if (worktreeStatus) {
+  throw new Error(
+    "refusing to build a release artifact from a dirty or unreadable git worktree"
+  );
+}
 
 const buildStartedAt = new Date().toISOString();
 
@@ -121,6 +129,7 @@ const manifest = {
     },
   ],
   validation: {
+    cargo_features: cargoFeatures,
     required_workflow_jobs: ["check", "sidecar-artifact"],
     server_verification: [
       "download only from a successful CI workflow run for the approved commit SHA",

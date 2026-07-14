@@ -90,3 +90,47 @@ adapter, callback listener, guarded smoke, and owner-reviewed runtime enablement
 Before merging #116, read the Reviewer Guide, reviews, conversation comments, and inline
 threads again for the replacement head SHA. Merge only after every actionable item has a
 recorded disposition and all required checks pass.
+
+## PR #119 Production Compile Gate
+
+The Reviewer Guide for PR #119 commit `f99cb42` found that runtime disablement was not a
+strong enough production boundary. The default release binary contained the real QiWe
+upload and `/msg/sendImage` calls, so changing environment variables could make the
+binary externally executable even though staging had not yet proved the final JPEG path
+or complete `cmd=20000` callback credentials.
+
+The root cause was treating an enable flag, endpoint allowlist, and missing systemd
+timer as equivalent to removing the capability from production. Those controls reduce
+accidental execution but do not prevent a configuration change from activating code that
+is already present.
+
+The repair places all live QiWe apply helpers behind the non-default
+`qiwe-staging-adapter` Cargo feature. Default apply now returns
+`staging_adapter_not_compiled` before adapter configuration, Postgres access, claims,
+state mutation, or network connection. Production artifact builds retain default
+features, record `cargo_features: []` in the artifact manifest, and deployment preflight
+rejects both artifact and server-source builders if they mention the staging feature.
+Fake-server tests still compile the protocol under `cfg(test)`, while Clippy validates
+the staging-feature path with all features enabled.
+
+Local artifact validation also exposed that the builder could compile a dirty worktree
+while recording only `git rev-parse HEAD` as `commit_sha`. The builder now fails before
+compilation unless `git status --porcelain` is empty, and deployment preflight preserves
+that check. This prevents compile-gate changes or any other uncommitted bytes from being
+misattributed to an approved SHA.
+
+Validation must cover both sides of the boundary:
+
+```text
+cargo check --manifest-path runtime/sidecar/Cargo.toml
+cargo check --manifest-path runtime/sidecar/Cargo.toml --features qiwe-staging-adapter
+cargo test --manifest-path runtime/sidecar/Cargo.toml qiwe_image_send::tests
+cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings
+node tools/deploy/preflight.mjs --ci
+sh .husky/pre-commit
+```
+
+This does not approve building or running the staging feature. Owner-approved provider
+and media evidence, the exact callback credential shape, an isolated test group, staging
+secrets, rollback ownership, and a reviewed staging command remain required. Production
+scheduling and enablement remain separate later decisions.

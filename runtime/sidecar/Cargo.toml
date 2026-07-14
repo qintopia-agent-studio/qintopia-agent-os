@@ -6,6 +6,7 @@ rust-version = "1.96"
 
 [features]
 postgres-integration-tests = []
+qiwe-staging-adapter = []
 
 [dependencies]
 anyhow = "=1.0.86"

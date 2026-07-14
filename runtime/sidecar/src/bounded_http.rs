@@ -39,6 +39,7 @@ impl Drop for HttpResponse {
 #[derive(Debug)]
 pub(crate) struct HttpRequestError {
     pub(crate) transport: bool,
+    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
     request_may_have_been_sent: bool,
     source: anyhow::Error,
 }
@@ -49,6 +50,7 @@ impl HttpRequestError {
     fn transport(source: anyhow::Error) -> Self {
         Self {
             transport: true,
+            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
             request_may_have_been_sent: false,
             source,
         }
@@ -57,6 +59,7 @@ impl HttpRequestError {
     fn terminal(source: anyhow::Error) -> Self {
         Self {
             transport: false,
+            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
             request_may_have_been_sent: false,
             source,
         }
@@ -65,6 +68,7 @@ impl HttpRequestError {
     fn after_send(source: anyhow::Error, transport: bool) -> Self {
         Self {
             transport,
+            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
             request_may_have_been_sent: true,
             source,
         }
@@ -74,6 +78,7 @@ impl HttpRequestError {
         self.source
     }
 
+    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
     pub(crate) fn request_may_have_been_sent(&self) -> bool {
         self.request_may_have_been_sent
     }

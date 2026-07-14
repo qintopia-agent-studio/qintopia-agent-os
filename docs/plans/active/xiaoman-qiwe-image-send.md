@@ -84,7 +84,10 @@ target, or missing final confirmation must stop before sending.
   with `config_valid=false` means present configuration failed format, readiness, or
   allowlist validation and must still fail closed.
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; guarded upload/callback commands
-  exist, but no callback listener, staging smoke, service, or timer is installed.
+  exist, but default and production binaries compile without the non-default
+  `qiwe-staging-adapter` feature. Apply fails before Postgres or network access even if
+  the runtime enable flag is misconfigured. No callback listener, staging smoke,
+  service, or timer is installed.
 - The QiWe capture producer sanitizes any `cmd=20000` event before NATS publication, and
   the Rust sidecar independently repeats the boundary before Postgres persistence. Both
   rebuild the entire callback payload from hashed correlation ids and fixed `msgData`
@@ -104,8 +107,9 @@ target, or missing final confirmation must stop before sending.
   upload request, and `process-qiwe-image-send-callback` reads one bounded callback from
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
-  They are code-only capabilities: no listener, service, timer, staging endpoint, or
-  production enablement is installed.
+  The live helpers compile only with the staging-only Cargo feature. Production release
+  artifacts record an empty feature list and cannot execute either external call; no
+  listener, service, timer, staging endpoint, or production enablement is installed.
 
 ## Next Implementation
 
@@ -125,8 +129,9 @@ target, or missing final confirmation must stop before sending.
 
 ## Production Boundary
 
-Default and production execution do not contact QiWe or send messages. The guarded
-commands can write Postgres and contact an allowlisted endpoint only with explicit
-enablement, but this plan does not install or enable them, write Feishu, or change
-production configuration. Rollback is to keep `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no
+Default and production execution do not contain the live QiWe adapter and cannot contact
+QiWe or send messages. A separately built staging-feature binary can write Postgres and
+contact an allowlisted endpoint only with explicit enablement, but this plan does not
+build, install, or enable one, write Feishu, or change production configuration.
+Rollback is to retain default builds and `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no
 current internal Xiaoman timer depends on this adapter.

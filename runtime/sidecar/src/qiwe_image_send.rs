@@ -9,15 +9,15 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{
-    bounded_http::{HttpClient, HttpResponse},
-    config::Cli,
-    db,
-    qiwe_image_send_state::{
-        self, CallbackClaimOutcome, QiweUploadClaim, SendFailureDisposition,
-        UploadFailureDisposition,
-    },
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+use crate::bounded_http::{HttpClient, HttpResponse};
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+use crate::qiwe_image_send_state::QiweUploadClaim;
+#[cfg(feature = "qiwe-staging-adapter")]
+use crate::qiwe_image_send_state::{
+    CallbackClaimOutcome, SendFailureDisposition, UploadFailureDisposition,
 };
+use crate::{config::Cli, db, qiwe_image_send_state};
 use url::Url;
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
@@ -42,6 +42,7 @@ pub struct QiweImageSendPreflightReport {
     pub success: bool,
     pub worker: &'static str,
     pub action_status: &'static str,
+    pub adapter_compiled: bool,
     pub send_enabled: bool,
     pub config_valid: bool,
     pub webhook_ready: bool,
@@ -74,8 +75,11 @@ pub struct QiweImageSendWorkerReport {
 
 #[derive(Clone)]
 struct AdapterConfig {
+    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
     api_url: Url,
+    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
     token: String,
+    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
     guid: String,
     allowed_hosts: BTreeSet<String>,
     media_allowed_hosts: BTreeSet<String>,
@@ -85,8 +89,11 @@ struct AdapterConfig {
 
 impl Drop for AdapterConfig {
     fn drop(&mut self) {
-        self.token.zeroize();
-        self.guid.zeroize();
+        #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+        {
+            self.token.zeroize();
+            self.guid.zeroize();
+        }
     }
 }
 
@@ -145,6 +152,7 @@ struct CallbackEvent {
 
 struct ParsedCallback {
     request_id: String,
+    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
     credentials: QiweImageCredentials,
 }
 
@@ -197,12 +205,14 @@ impl Drop for QiweSendReceipt {
     }
 }
 
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UploadCallFailure {
     Rejected,
     OutcomeUnknown,
 }
 
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SendCallFailure {
     NotSent,
@@ -221,28 +231,42 @@ struct WorkerReportState {
     external_send_executed: Option<bool>,
 }
 
+struct PreflightReportState {
+    config_valid: bool,
+    send_enabled: bool,
+    adapter_compiled: bool,
+    webhook_ready: bool,
+    allowed_host_count: usize,
+    media_allowed_host_count: usize,
+    allowed_group_count: usize,
+    missing_configuration: Vec<&'static str>,
+}
+
 pub fn run_preflight() -> Result<()> {
     validate_contract()?;
     let send_enabled = env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")?;
+    let adapter_compiled = qiwe_staging_adapter_compiled();
     let report = match AdapterConfig::from_env() {
-        Ok(config) => preflight_report(
-            true,
+        Ok(config) => preflight_report(PreflightReportState {
+            config_valid: true,
             send_enabled,
-            config.webhook_ready,
-            config.allowed_hosts.len(),
-            config.media_allowed_hosts.len(),
-            config.allowed_groups.len(),
-            Vec::new(),
-        ),
-        Err(_) => preflight_report(
-            false,
+            adapter_compiled,
+            webhook_ready: config.webhook_ready,
+            allowed_host_count: config.allowed_hosts.len(),
+            media_allowed_host_count: config.media_allowed_hosts.len(),
+            allowed_group_count: config.allowed_groups.len(),
+            missing_configuration: Vec::new(),
+        }),
+        Err(_) => preflight_report(PreflightReportState {
+            config_valid: false,
             send_enabled,
-            false,
-            0,
-            0,
-            0,
-            missing_qiwe_image_send_configuration(),
-        ),
+            adapter_compiled,
+            webhook_ready: false,
+            allowed_host_count: 0,
+            media_allowed_host_count: 0,
+            allowed_group_count: 0,
+            missing_configuration: missing_qiwe_image_send_configuration(),
+        }),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
     if report.success {
@@ -265,10 +289,10 @@ pub async fn run_upload_worker(
     if apply && dry_run {
         bail!("use either --apply or --dry-run, not both");
     }
-    let database_url = cli.database_url_required()?;
-    let pool = db::connect(database_url, cli.db_max_connections).await?;
     let apply_requested = apply && !dry_run;
     if !apply_requested {
+        let database_url = cli.database_url_required()?;
+        let pool = db::connect(database_url, cli.db_max_connections).await?;
         let preview = qiwe_image_send_state::preview_ready_work_item(&pool, work_item_id).await?;
         let report = match preview {
             Some(preview) => worker_report(WorkerReportState {
@@ -298,22 +322,52 @@ pub async fn run_upload_worker(
         return Ok(());
     }
 
-    if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
-        let preview = qiwe_image_send_state::preview_ready_work_item(&pool, work_item_id).await?;
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    {
         let report = worker_report(WorkerReportState {
-            success: true,
+            success: false,
             dry_run: false,
             apply_requested: true,
             phase: "upload",
-            action_status: "image_send_disabled".to_string(),
-            work_item_id: preview.map(|item| item.work_item_id),
+            action_status: "staging_adapter_not_compiled".to_string(),
+            work_item_id,
             external_upload_requested: false,
             callback_received: false,
             external_send_executed: Some(false),
         });
         println!("{}", serde_json::to_string_pretty(&report)?);
-        return Ok(());
+        bail!("QiWe staging adapter is not compiled into this binary");
     }
+
+    #[cfg(feature = "qiwe-staging-adapter")]
+    {
+        if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
+            let database_url = cli.database_url_required()?;
+            let pool = db::connect(database_url, cli.db_max_connections).await?;
+            let preview =
+                qiwe_image_send_state::preview_ready_work_item(&pool, work_item_id).await?;
+            let report = worker_report(WorkerReportState {
+                success: true,
+                dry_run: false,
+                apply_requested: true,
+                phase: "upload",
+                action_status: "image_send_disabled".to_string(),
+                work_item_id: preview.map(|item| item.work_item_id),
+                external_upload_requested: false,
+                callback_received: false,
+                external_send_executed: Some(false),
+            });
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(());
+        }
+        run_enabled_upload_worker(cli, work_item_id).await
+    }
+}
+
+#[cfg(feature = "qiwe-staging-adapter")]
+async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Result<()> {
+    let database_url = cli.database_url_required()?;
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
     let config = match AdapterConfig::from_env() {
         Ok(config) => config,
         Err(_) => {
@@ -448,21 +502,52 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
-    if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    {
+        let _ = cli;
+        drop(parsed);
         let report = worker_report(WorkerReportState {
-            success: true,
+            success: false,
             dry_run: false,
             apply_requested: true,
             phase: "callback",
-            action_status: "image_send_disabled".to_string(),
+            action_status: "staging_adapter_not_compiled".to_string(),
             work_item_id: None,
             external_upload_requested: false,
             callback_received: true,
             external_send_executed: Some(false),
         });
         println!("{}", serde_json::to_string_pretty(&report)?);
-        return Ok(());
+        bail!("QiWe staging adapter is not compiled into this binary");
     }
+
+    #[cfg(feature = "qiwe-staging-adapter")]
+    {
+        if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
+            let report = worker_report(WorkerReportState {
+                success: true,
+                dry_run: false,
+                apply_requested: true,
+                phase: "callback",
+                action_status: "image_send_disabled".to_string(),
+                work_item_id: None,
+                external_upload_requested: false,
+                callback_received: true,
+                external_send_executed: Some(false),
+            });
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(());
+        }
+        run_enabled_callback_processor(cli, &parsed, &callback).await
+    }
+}
+
+#[cfg(feature = "qiwe-staging-adapter")]
+async fn run_enabled_callback_processor(
+    cli: &Cli,
+    parsed: &ParsedCallback,
+    callback: &[u8],
+) -> Result<()> {
     let config = match AdapterConfig::from_env() {
         Ok(config) => config,
         Err(_) => {
@@ -484,8 +569,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
     let database_url = cli.database_url_required()?;
     let pool = db::connect(database_url, cli.db_max_connections).await?;
     let outcome =
-        qiwe_image_send_state::claim_callback_for_send(&pool, &parsed.request_id, &callback)
-            .await?;
+        qiwe_image_send_state::claim_callback_for_send(&pool, &parsed.request_id, callback).await?;
     let send_claim = match outcome {
         CallbackClaimOutcome::Duplicate { status } => {
             let report = worker_report(WorkerReportState {
@@ -604,6 +688,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
     Ok(())
 }
 
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 fn request_async_upload_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
@@ -642,6 +727,7 @@ fn request_async_upload_with(
     parse_upload_acceptance_for_call(&response)
 }
 
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 fn parse_upload_acceptance_for_call(
     response: &HttpResponse,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
@@ -656,6 +742,7 @@ fn parse_upload_acceptance_for_call(
     Ok(Zeroizing::new(response.data.request_id))
 }
 
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 fn request_send_image_with(
     config: &AdapterConfig,
     body: &[u8],
@@ -686,6 +773,7 @@ fn request_send_image_with(
     parse_send_response_for_call(&response)
 }
 
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 fn parse_send_response_for_call(
     response: &HttpResponse,
 ) -> std::result::Result<QiweSendReceipt, SendCallFailure> {
@@ -745,8 +833,11 @@ fn parse_single_async_upload_callback(body: &[u8]) -> Result<ParsedCallback> {
     )
     .context("QiWe async upload callback is missing file credentials")?;
     credentials.validate()?;
+    #[cfg(not(any(test, feature = "qiwe-staging-adapter")))]
+    drop(credentials);
     Ok(ParsedCallback {
         request_id: event.request_id,
+        #[cfg(any(test, feature = "qiwe-staging-adapter"))]
         credentials,
     })
 }
@@ -770,6 +861,7 @@ fn worker_report(state: WorkerReportState) -> QiweImageSendWorkerReport {
         ],
         guardrails: vec![
             "Postgres remains the system source of truth".to_string(),
+            "default production builds exclude the staging-only live QiWe adapter".to_string(),
             "tokens, device ids, group ids, media URLs, request ids, callback credentials, response bodies, and message ids are excluded from reports".to_string(),
             "no Feishu writeback or unrelated external adapter is called".to_string(),
         ],
@@ -836,33 +928,28 @@ fn validate_contract() -> Result<()> {
     Ok(())
 }
 
-fn preflight_report(
-    config_valid: bool,
-    send_enabled: bool,
-    webhook_ready: bool,
-    allowed_host_count: usize,
-    media_allowed_host_count: usize,
-    allowed_group_count: usize,
-    missing_configuration: Vec<&'static str>,
-) -> QiweImageSendPreflightReport {
-    let success = config_valid && !send_enabled;
+fn preflight_report(state: PreflightReportState) -> QiweImageSendPreflightReport {
+    let success = state.config_valid && !state.send_enabled && !state.adapter_compiled;
     QiweImageSendPreflightReport {
         success,
         worker: WORKER_ID,
-        action_status: if !config_valid {
+        action_status: if !state.config_valid {
             "adapter_not_configured"
-        } else if send_enabled {
+        } else if state.adapter_compiled {
+            "staging_adapter_compiled_requires_owner_review"
+        } else if state.send_enabled {
             "adapter_enablement_not_approved"
         } else {
             "adapter_contract_ready"
         },
-        send_enabled,
-        config_valid,
-        webhook_ready,
-        allowed_host_count,
-        media_allowed_host_count,
-        allowed_group_count,
-        missing_configuration,
+        adapter_compiled: state.adapter_compiled,
+        send_enabled: state.send_enabled,
+        config_valid: state.config_valid,
+        webhook_ready: state.webhook_ready,
+        allowed_host_count: state.allowed_host_count,
+        media_allowed_host_count: state.media_allowed_host_count,
+        allowed_group_count: state.allowed_group_count,
+        missing_configuration: state.missing_configuration,
         protocol: "qiwe_async_url_upload_then_send_image",
         safe_for_chat: false,
         limitations: vec![
@@ -871,18 +958,23 @@ fn preflight_report(
             "the generated-image contract requires the deterministic final JPEG; owner-approved staging must still verify isolated media upload and same-byte readback".to_string(),
         ],
         guardrails: vec![
-            "the adapter remains disabled unless its explicit enable flag and separate staging approval exist".to_string(),
+            "production artifacts use default Cargo features and cannot compile the staging-only live adapter".to_string(),
+            "a staging build still requires explicit enablement, owner approval, and exact endpoint and group allowlists".to_string(),
             "tokens, device ids, group ids, media URLs, file credentials, and message identifiers are not emitted".to_string(),
             "no timer, production runtime configuration, Feishu writeback, or external send is installed by this contract".to_string(),
         ],
     }
 }
 
+const fn qiwe_staging_adapter_compiled() -> bool {
+    cfg!(feature = "qiwe-staging-adapter")
+}
+
 impl AdapterConfig {
     fn from_env() -> Result<Self> {
         let api_url = strict_api_url(&required_env("QIWE_API_URL")?)?;
-        let token = required_env("QIWE_TOKEN")?;
-        let guid = required_env("QIWE_GUID")?;
+        let token = Zeroizing::new(required_env("QIWE_TOKEN")?);
+        let guid = Zeroizing::new(required_env("QIWE_GUID")?);
         validate_header_value(&token)?;
         validate_header_value(&guid)?;
 
@@ -911,9 +1003,12 @@ impl AdapterConfig {
         }
 
         Ok(Self {
+            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
             api_url,
-            token,
-            guid,
+            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+            token: token.to_string(),
+            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+            guid: guid.to_string(),
             allowed_hosts,
             media_allowed_hosts,
             allowed_groups,
@@ -1192,7 +1287,27 @@ mod tests {
         time::Duration,
     };
 
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    use clap::Parser;
+
     use super::*;
+
+    fn test_preflight_report(
+        config_valid: bool,
+        send_enabled: bool,
+        adapter_compiled: bool,
+    ) -> QiweImageSendPreflightReport {
+        preflight_report(PreflightReportState {
+            config_valid,
+            send_enabled,
+            adapter_compiled,
+            webhook_ready: true,
+            allowed_host_count: 1,
+            media_allowed_host_count: 1,
+            allowed_group_count: 1,
+            missing_configuration: Vec::new(),
+        })
+    }
 
     #[test]
     fn async_upload_request_matches_official_contract() {
@@ -1416,10 +1531,11 @@ mod tests {
 
     #[test]
     fn preflight_report_never_exposes_configuration_values() {
-        let report = preflight_report(true, false, true, 1, 1, 1, Vec::new());
+        let report = test_preflight_report(true, false, false);
         let output = serde_json::to_string(&report).expect("serialize preflight report");
 
         assert!(report.success);
+        assert!(!report.adapter_compiled);
         assert!(!report.send_enabled);
         assert!(!report.safe_for_chat);
         assert!(report.missing_configuration.is_empty());
@@ -1440,12 +1556,42 @@ mod tests {
 
     #[test]
     fn enabled_preflight_fails_closed() {
-        let report = preflight_report(true, true, true, 1, 1, 1, Vec::new());
+        let report = test_preflight_report(true, true, false);
 
         assert!(!report.success);
         assert!(report.config_valid);
         assert!(report.send_enabled);
         assert_eq!(report.action_status, "adapter_enablement_not_approved");
+    }
+
+    #[test]
+    fn compiled_staging_adapter_fails_production_preflight() {
+        let report = test_preflight_report(true, false, true);
+
+        assert!(!report.success);
+        assert!(report.adapter_compiled);
+        assert_eq!(
+            report.action_status,
+            "staging_adapter_compiled_requires_owner_review"
+        );
+    }
+
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[test]
+    fn default_build_excludes_qiwe_staging_adapter() {
+        assert!(!qiwe_staging_adapter_compiled());
+    }
+
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[tokio::test]
+    async fn default_upload_apply_stops_before_database_and_network() {
+        let cli = Cli::parse_from(["qintopia-message-sidecar", "check"]);
+
+        let error = run_upload_worker(&cli, true, None, true, false)
+            .await
+            .expect_err("default build must reject apply before database access");
+
+        assert!(error.to_string().contains("not compiled"));
     }
 
     #[test]

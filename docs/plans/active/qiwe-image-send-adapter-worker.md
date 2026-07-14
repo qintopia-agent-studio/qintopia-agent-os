@@ -20,8 +20,9 @@ approved generated_image + send-ready work item
   -> sent | failed | ambiguous
 ```
 
-This is the first executable adapter path. It is not production scheduling or approval
-to contact QiWe.
+This is the first staging-only executable adapter path. Default and production builds
+exclude the live adapter at compile time; it is not production scheduling or approval to
+contact QiWe.
 
 ## Commands
 
@@ -30,7 +31,10 @@ to contact QiWe.
 
 - Dry-run reads one eligible AgentOS work item and emits a sanitized preview. It does
   not claim, write Postgres, or open a network connection.
-- Apply requires `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, a valid reviewed adapter config,
+- A default build rejects apply as `staging_adapter_not_compiled` before reading adapter
+  configuration, connecting to Postgres, claiming work, or opening a socket.
+- A staging-only build additionally requires the non-default `qiwe-staging-adapter`
+  Cargo feature, `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, a valid reviewed adapter config,
   and `QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1`.
 - Apply claims exactly one work item, sends one asynchronous URL-upload request, and
   persists only the request id hash through `qiwe_image_send_attempts`.
@@ -42,7 +46,9 @@ callback JSON must never be passed as a CLI argument, environment variable, log 
 report field, NATS payload, or persisted work-item field.
 
 - Dry-run validates one `cmd=20000` callback shape and emits only fixed presence flags.
-- Apply requires the same explicit enablement and reviewed adapter config.
+- A default build validates the bounded callback shape but rejects apply before Postgres
+  correlation or network access. A staging-only build requires the same compile-time
+  feature, explicit enablement, and reviewed adapter config.
 - Apply correlates by raw request id in memory, commits `sending`, then builds and sends
   one `/msg/sendImage` request with memory-only file credentials.
 - A failure proven to occur before the request leaves the process records `failed`.
@@ -88,7 +94,10 @@ booleans. They must use `safe_for_chat=false` and must not include:
 
 ## Test Plan
 
-- Rust unit tests for disabled/config-invalid/dry-run behavior and sanitized reports.
+- Rust unit tests for default-build compile-gate rejection before database/network
+  access, disabled/config-invalid/dry-run behavior, and sanitized reports.
+- Default and `qiwe-staging-adapter` feature compilation; Clippy runs with all features
+  so the isolated live path remains type-checked.
 - Local fake QiWe server tests for upload acceptance, callback credentials, successful
   send, non-success HTTP/business ambiguity, oversized response, connection timeout, and
   header injection rejection.
@@ -101,7 +110,11 @@ booleans. They must use `safe_for_chat=false` and must not include:
 ## Production Boundary
 
 This change must not install a service or timer, modify production runtime
-configuration, enable the send flag, write Feishu, or contact a real QiWe endpoint.
-Rollback is to keep `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and leave both commands
-unscheduled. Owner-approved staging callback evidence and an isolated test group remain
-required before any real smoke or production scheduling.
+configuration, write Feishu, or contact a real QiWe endpoint. Production artifact and
+server-source builders use default Cargo features and are checked to exclude
+`qiwe-staging-adapter`; their manifest records `cargo_features: []`. Setting runtime
+environment variables cannot add the missing executable path. Rollback keeps default
+builds, `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`, and both commands unscheduled.
+Owner-approved staging callback evidence and an isolated test group remain required
+before a staging-feature build may be used, and production enablement remains a later
+separate decision.
