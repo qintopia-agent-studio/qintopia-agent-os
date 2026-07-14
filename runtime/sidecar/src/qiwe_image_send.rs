@@ -1497,6 +1497,38 @@ mod tests {
     }
 
     #[test]
+    fn upload_call_parser_classifies_rejected_and_unknown_outcomes() {
+        let accepted = parse_upload_acceptance_for_call(&http_json_response(
+            200,
+            br#"{"code":0,"data":{"requestId":"upload-request-1"}}"#,
+        ))
+        .expect("accepted upload request id");
+        assert_eq!(accepted.as_str(), "upload-request-1");
+
+        assert_eq!(
+            parse_upload_acceptance_for_call(&http_json_response(
+                200,
+                br#"{"code":1,"data":{"requestId":"upload-request-1"}}"#,
+            ))
+            .expect_err("provider rejection is known"),
+            UploadCallFailure::Rejected
+        );
+        assert_eq!(
+            parse_upload_acceptance_for_call(&http_json_response(200, br#"not-json"#))
+                .expect_err("malformed response is uncertain"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        assert_eq!(
+            parse_upload_acceptance_for_call(&http_json_response(
+                200,
+                br#"{"code":0,"data":{"requestId":"upload-request-1\nsecret"}}"#,
+            ))
+            .expect_err("invalid request id is uncertain"),
+            UploadCallFailure::OutcomeUnknown
+        );
+    }
+
+    #[test]
     fn callback_matches_request_and_extracts_complete_credentials() {
         let callback = br#"{
           "code": 0,
@@ -1599,6 +1631,40 @@ mod tests {
     }
 
     #[test]
+    fn send_call_parser_treats_every_post_send_parse_failure_as_ambiguous() {
+        let receipt = parse_send_response_for_call(&http_json_response(
+            200,
+            br#"{
+              "code":0,
+              "data":{
+                "isSendSuccess":1,
+                "msgUniqueIdentifier":"message-1",
+                "seq":2,
+                "timestamp":3
+              }
+            }"#,
+        ))
+        .expect("parse successful send receipt");
+        assert_eq!(receipt.message_identifier, "message-1");
+
+        for body in [
+            br#"not-json"#.as_slice(),
+            br#"{"code":1,"data":{"isSendSuccess":0,"msgUniqueIdentifier":"message-1","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":0,"msgUniqueIdentifier":"message-1","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":1,"msgUniqueIdentifier":"message-1\nsecret","seq":2,"timestamp":3}}"#,
+        ] {
+            let Err(error) = parse_send_response_for_call(&http_json_response(200, body)) else {
+                panic!("post-send parse failure must be ambiguous");
+            };
+            assert_eq!(
+                error,
+                SendCallFailure::Ambiguous,
+                "post-send parse failure is ambiguous"
+            );
+        }
+    }
+
+    #[test]
     fn send_request_rejects_non_allowlisted_group() {
         let credentials = QiweImageCredentials {
             file_aes_key: "aes-key".to_string(),
@@ -1636,6 +1702,42 @@ mod tests {
             &allowed_group_ids,
         )
         .is_err());
+    }
+
+    #[test]
+    fn send_request_rejects_invalid_memory_only_credentials() {
+        let allowed_group_ids = BTreeSet::from(["group-id".to_string()]);
+        for credentials in [
+            QiweImageCredentials {
+                file_aes_key: "aes-key".to_string(),
+                file_id: "file-id".to_string(),
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+                file_size: 0,
+                filename: "activity-poster.jpg".to_string(),
+            },
+            QiweImageCredentials {
+                file_aes_key: "aes-key\nsecret".to_string(),
+                file_id: "file-id".to_string(),
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+                file_size: 48_300,
+                filename: "activity-poster.jpg".to_string(),
+            },
+            QiweImageCredentials {
+                file_aes_key: "aes-key".to_string(),
+                file_id: "file-id".to_string(),
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+                file_size: 48_300,
+                filename: "activity-poster.png".to_string(),
+            },
+        ] {
+            assert!(build_send_image_request(
+                "device-guid",
+                "group-id",
+                &credentials,
+                &allowed_group_ids,
+            )
+            .is_err());
+        }
     }
 
     #[test]
@@ -2121,6 +2223,14 @@ mod tests {
             body.len()
         )
         .into_bytes()
+    }
+
+    fn http_json_response(status: u16, body: &[u8]) -> HttpResponse {
+        HttpResponse {
+            status,
+            headers: std::collections::BTreeMap::new(),
+            body: body.to_vec(),
+        }
     }
 
     fn test_adapter_config(port: u16) -> AdapterConfig {
