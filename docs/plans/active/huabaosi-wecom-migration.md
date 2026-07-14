@@ -1,6 +1,6 @@
 # Huabaosi WeCom Migration Plan
 
-Status: phase 3 Rust shadow capture in progress; no production behavior changed
+Status: phase 4 Rust gateway policy preview in progress; no production behavior changed
 
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
@@ -132,20 +132,28 @@ Validation:
 
 Deliverables:
 
-- Rust policy preview for:
+- `huabaosi-wecom-policy-preview`, a Rust sidecar preview command that accepts one
+  supplied WeCom event from bounded stdin;
+- sanitized policy report for:
   - message classification;
   - busy-session handling;
   - internal process text filtering;
   - formatting fallback classification;
   - user-safe fallback copy;
   - idempotency and duplicate suppression;
-- preview reports stored as internal artifacts or logs only.
+- fixture replay inputs under `runtime/sidecar/fixtures/` for internal status,
+  formatting fallback, normal user text containing "plain text", duplicate hints, busy
+  session state, attachment placeholders, and unsupported event shapes;
+- preview reports emitted only as sanitized internal JSON for logs/artifacts.
 
 Forbidden:
 
 - no WeCom sends;
 - no image generation;
 - no provider calls.
+- no database writes;
+- no Feishu writes;
+- no raw private chat export.
 
 Validation:
 

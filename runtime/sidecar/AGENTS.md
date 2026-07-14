@@ -24,6 +24,7 @@
 - Local readiness: `cargo run -- check`
 - Run consumer: `cargo run -- run`
 - Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
+- Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
 
 From the monorepo root, prefer:
 
@@ -114,3 +115,11 @@ From the monorepo root, prefer:
   Postgres or external services, send WeCom/QiWe messages, generate or upload media,
   write Feishu, create artifacts, or print raw ids, user text, media URLs, filenames,
   tokens, or callback credentials.
+- `huabaosi-wecom-policy-preview` is a preview-only migration command. It may read one
+  event from bounded stdin and emit only sanitized policy classifications, fixed
+  fallback copy, and hash-based idempotency metadata. It must not gain an apply mode,
+  connect to Postgres or external services, send WeCom/QiWe messages, generate or upload
+  media, write Feishu, create artifacts, or print raw ids, user text, media URLs,
+  filenames, tokens, or callback credentials. Internal-process suppression must use
+  narrow full-template matches with negative fixture coverage for ordinary user text
+  containing terms such as `plain text`.
