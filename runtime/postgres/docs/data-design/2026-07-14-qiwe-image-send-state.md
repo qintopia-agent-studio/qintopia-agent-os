@@ -94,6 +94,11 @@ The timeout scan applies only to `awaiting_callback`. It must never automaticall
 or retry `sending`, because the external send may already have occurred and requires a
 terminal response or `ambiguous` human reconciliation.
 
+Once `/msg/sendImage` may have left the process, a non-2xx response or a business
+response without explicit success is also `ambiguous`. It cannot be recorded as a
+definite rejection or `external_send_executed=false` unless a separately reviewed,
+documented failure-code allowlist proves that QiWe did not send the image.
+
 An upload-worker crash before request correlation is persisted leaves no attempt row.
 The next claim transaction may requeue that expired worker claim only when no attempt
 uses the same claim token. If an HTTP upload call returns a known rejection or an

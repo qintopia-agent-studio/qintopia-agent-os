@@ -205,7 +205,7 @@ enum UploadCallFailure {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SendCallFailure {
-    Rejected,
+    NotSent,
     Ambiguous,
 }
 
@@ -576,7 +576,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         }
         Err(failure) => {
             let disposition = match failure {
-                SendCallFailure::Rejected => SendFailureDisposition::Rejected,
+                SendCallFailure::NotSent => SendFailureDisposition::Rejected,
                 SendCallFailure::Ambiguous => SendFailureDisposition::Ambiguous,
             };
             qiwe_image_send_state::record_send_failure(&pool, &send_claim, disposition).await?;
@@ -586,7 +586,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
                 apply_requested: true,
                 phase: "callback",
                 action_status: match failure {
-                    SendCallFailure::Rejected => "image_send_rejected",
+                    SendCallFailure::NotSent => "image_send_not_sent",
                     SendCallFailure::Ambiguous => "image_send_ambiguous",
                 }
                 .to_string(),
@@ -594,7 +594,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
                 external_upload_requested: false,
                 callback_received: true,
                 external_send_executed: match failure {
-                    SendCallFailure::Rejected => Some(false),
+                    SendCallFailure::NotSent => Some(false),
                     SendCallFailure::Ambiguous => None,
                 },
             });
@@ -677,11 +677,11 @@ fn request_send_image_with(
             if error.request_may_have_been_sent() {
                 SendCallFailure::Ambiguous
             } else {
-                SendCallFailure::Rejected
+                SendCallFailure::NotSent
             }
         })?;
     if !(200..300).contains(&response.status) {
-        return Err(SendCallFailure::Rejected);
+        return Err(SendCallFailure::Ambiguous);
     }
     parse_send_response_for_call(&response)
 }
@@ -693,7 +693,7 @@ fn parse_send_response_for_call(
     let response: ApiResponse<SendImageData> =
         serde_json::from_slice(&response.body).map_err(|_| SendCallFailure::Ambiguous)?;
     if response.code != 0 || response.data.is_send_success != SEND_SUCCESS_VALUE {
-        return Err(SendCallFailure::Rejected);
+        return Err(SendCallFailure::Ambiguous);
     }
     validate_plain_value(
         &response.data.msg_unique_identifier,
@@ -1531,7 +1531,7 @@ mod tests {
     }
 
     #[test]
-    fn oversized_or_slow_send_response_is_ambiguous() {
+    fn post_send_failures_are_ambiguous() {
         let oversized_listener =
             TcpListener::bind("127.0.0.1:0").expect("bind oversized fake server");
         let oversized_port = oversized_listener.local_addr().unwrap().port();
@@ -1575,6 +1575,32 @@ mod tests {
             SendCallFailure::Ambiguous
         );
         slow_server.join().unwrap();
+
+        for response in [
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_vec(),
+            json_response(
+                r#"{"code":1,"data":{"isSendSuccess":0,"msgUniqueIdentifier":"not-confirmed","seq":0,"timestamp":0}}"#,
+            ),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind failure fake server");
+            let port = listener.local_addr().unwrap().port();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let _ = read_test_request(&mut stream);
+                stream.write_all(&response).unwrap();
+            });
+            let result = request_send_image_with(
+                &test_adapter_config(port),
+                &body,
+                &HttpClient::test_only(),
+            );
+            assert_eq!(
+                result.err().expect("non-success response fails closed"),
+                SendCallFailure::Ambiguous
+            );
+            server.join().unwrap();
+        }
     }
 
     #[test]
@@ -1590,7 +1616,7 @@ mod tests {
         );
         assert_eq!(
             result.err().expect("refused connection fails"),
-            SendCallFailure::Rejected
+            SendCallFailure::NotSent
         );
 
         let mut config = test_adapter_config(port);

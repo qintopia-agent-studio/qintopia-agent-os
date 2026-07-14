@@ -45,8 +45,10 @@ report field, NATS payload, or persisted work-item field.
 - Apply requires the same explicit enablement and reviewed adapter config.
 - Apply correlates by raw request id in memory, commits `sending`, then builds and sends
   one `/msg/sendImage` request with memory-only file credentials.
-- Explicit provider rejection records `failed`; transport uncertainty after the send
-  gate records `ambiguous`; explicit success records `sent`.
+- A failure proven to occur before the request leaves the process records `failed`.
+  After the send gate, every non-success HTTP or business response records `ambiguous`
+  unless a separately reviewed failure-code allowlist can prove no send occurred;
+  explicit success records `sent`.
 - Duplicate or expired callbacks never reopen the send gate.
 
 ## HTTP Boundary
@@ -66,8 +68,9 @@ require the reviewed HTTPS QiWe API path and exact host allowlist.
   that stale unrecorded claim.
 - An `awaiting_callback` attempt with no callback is expired and requeued by the next
   claim scan, as defined by the merged state-machine contract.
-- A crash or uncertain transport after `sending` cannot be retried. A later guarded
-  reconciliation marks the attempt `ambiguous` for human review.
+- A crash, HTTP failure, provider non-success, or uncertain transport after `sending`
+  cannot be retried. A later guarded reconciliation marks the attempt `ambiguous` for
+  human review.
 - No automatic recovery path may convert `sending` back to queued.
 
 ## Safe Reports
@@ -87,8 +90,8 @@ booleans. They must use `safe_for_chat=false` and must not include:
 
 - Rust unit tests for disabled/config-invalid/dry-run behavior and sanitized reports.
 - Local fake QiWe server tests for upload acceptance, callback credentials, successful
-  send, explicit rejection, oversized response, connection timeout, and header injection
-  rejection.
+  send, non-success HTTP/business ambiguity, oversized response, connection timeout, and
+  header injection rejection.
 - Disposable PostgreSQL integration proving upload acceptance, duplicate callback, exact
   one send, terminal state, stale claim, missing callback recovery, and no raw
   credentials or identifiers in state/events/reports.

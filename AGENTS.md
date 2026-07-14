@@ -206,14 +206,18 @@ Use `rg` and `rg --files` for search.
   persist QiWe callback file credentials or raw request/callback/message ids. Commit
   `sending` before calling `/msg/sendImage`; an uncertain result becomes `ambiguous` and
   must record `external_send_executed=null` with outcome `unknown` and must not be
-  retried automatically. Treat QiWe target group ids as opaque, case-sensitive values;
+  retried automatically. Non-2xx and non-success business responses after the request
+  may have been sent are also ambiguous unless a reviewed failure-code allowlist proves
+  no send occurred. Treat QiWe target group ids as opaque, case-sensitive values;
   allowlists must use exact matching. A callback arriving after the upload claim TTL
   must terminalize that attempt as `expired` and release the work item for a new
   correlation. Claim scans must also expire an `awaiting_callback` attempt whose
   callback never arrived; an active attempt must not remain solely because no callback
   invoked the callback handler. Once `sending` is committed, the same attempt and claim
-  token may record `sent`, `failed`, or `ambiguous` after the short TTL; wall-clock
-  expiry must not leave an external outcome stuck in `sending`.
+  token may record `sent`, `failed`, or `ambiguous` after the short TTL; HTTP failures
+  or provider non-success after the send gate are ambiguous unless the bounded client
+  proves the request was not sent. Wall-clock expiry must not leave an external outcome
+  stuck in `sending`.
 - `run-qiwe-image-send-worker` may only claim one reviewed send-ready work item, call
   the reviewed asynchronous URL-upload method when explicitly enabled, and persist
   hashed upload correlation. `process-qiwe-image-send-callback` must read one bounded
