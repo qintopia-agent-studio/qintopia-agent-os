@@ -85,14 +85,23 @@ target, or missing final confirmation must stop before sending.
   allowlist validation and must still fail closed.
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; no worker, callback listener,
   staging smoke, service, or timer is installed.
+- The QiWe capture producer sanitizes any `cmd=20000` event before NATS publication, and
+  the Rust sidecar independently repeats the boundary before Postgres persistence. Both
+  rebuild the entire callback payload from hashed correlation ids and fixed `msgData`
+  field-presence metadata, so file credentials, media URLs, filenames, identities,
+  message content, envelope siblings, unknown field values, and callback ids cannot
+  enter JetStream, `raw_events`, or normalized message rows. Invalid dead letters retain
+  only payload byte count and SHA-256. This is a storage safety prerequisite, not
+  callback processing or send enablement.
 
 ## Next Implementation
 
 1. Run one owner-approved staging image generation and verify the final JPEG media
    metadata and same-byte readback without sending.
-2. Capture one owner-approved staging async callback and confirm the exact credential
-   field names and the existing `isSendSuccess=1` success assumption without storing raw
-   credentials in git or logs.
+2. Capture one owner-approved staging async callback through a dedicated callback path
+   before generic raw-event sanitization, and confirm the exact credential field names
+   and the existing `isSendSuccess=1` success assumption without storing raw credentials
+   in git or logs.
 3. Add Postgres upload-correlation state, callback idempotency, claim-token validation,
    and durable sanitized external-send audit.
 4. Add a local fake QiWe server for upload acceptance, callback, send response, timeout,

@@ -47,7 +47,17 @@ From the monorepo root, prefer:
 - The complete sidecar suite needs a 32 MiB test-thread stack. `pnpm test:sidecar` and
   CI set `RUST_MIN_STACK=33554432`; this is test-only and must not be copied into the
   production sidecar service environment.
+- The complete suite includes fake provider/media tests that bind ephemeral loopback
+  sockets. In restricted coding sandboxes, run the same `cargo test` command with
+  loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
+  environment failure and must be confirmed by an unsandboxed rerun, not hidden by
+  skipping tests.
 - v1 only captures raw/normalized messages and creates pending processing jobs;
   embedding and graph extraction must remain separate workers.
+- Sanitize QiWe asynchronous `cmd=20000` callback credentials before raw-event
+  persistence. Dead letters may keep only payload length and digest; malformed payloads
+  must not become a bypass that stores callback credentials or raw private text. Only
+  preserve callback event/message ids matching `qiwe-callback:<64 hex SHA-256>`; hash
+  the complete id again when a prefixed value has any other suffix.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

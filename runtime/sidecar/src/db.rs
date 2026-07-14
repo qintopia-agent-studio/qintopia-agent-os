@@ -134,6 +134,7 @@ pub struct DbCheck {
 }
 
 pub async fn persist_raw_event(pool: &PgPool, subject: &str, event: &RawQiweEvent) -> Result<Uuid> {
+    let event = event.sanitized_for_storage();
     let mut tx = pool.begin().await.context("begin raw event transaction")?;
     let id: (Uuid,) = sqlx::query_as(
         r#"

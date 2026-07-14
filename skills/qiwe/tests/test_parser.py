@@ -356,6 +356,189 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(message_event["trigger_reason"], "mentioned")
         self.assertGreaterEqual(len(message_event["mentions"]), 1)
 
+    def test_nats_capture_redacts_async_callback_before_publish(self) -> None:
+        callback = {
+            "code": 0,
+            "outerUnknown": "outer-callback-secret",
+            "data": [
+                {
+                    "requestId": "callback-request-secret",
+                    "cmd": 20000,
+                    "msgData": {
+                        "fileAesKey": "callback-aes-secret",
+                        "fileId": "callback-file-secret",
+                        "fileMd5": "callback-md5-secret",
+                        "fileSize": 48300,
+                        "filename": "callback-private.jpg",
+                        "cloudUrl": "https://media.example.test/private.jpg?token=secret",
+                        "unknownCredential": "callback-unknown-secret",
+                    },
+                }
+            ],
+        }
+        parsed = type(
+            "CallbackParsed",
+            (),
+            {
+                "message_id": "callback-message-secret",
+                "conversation_type": "direct",
+                "chat_id": "callback-chat-secret",
+                "sender_id": "callback-sender-secret",
+                "sender_name": "callback-name-secret",
+                "text": "callback-text-secret",
+                "content": "callback-content-secret",
+                "message_kind": "image",
+                "is_mentioned": True,
+                "should_trigger": True,
+                "reason": "not_cmd_15000",
+                "timestamp": None,
+                "raw_event": callback["data"][0],
+                "at_list": [{"userId": "callback-mention-secret"}],
+                "attachments": [{"file_id": "callback-attachment-secret"}],
+            },
+        )()
+        identity = adapter_module.QiWeIdentity(
+            user_id="callback-identity-secret",
+            display_name="callback-display-secret",
+            source="room_member",
+        )
+
+        raw_event, message_event, message_id = build_capture_events(
+            parsed,
+            json.dumps(callback).encode("utf-8"),
+            identity=identity,
+        )
+        stored = json.dumps(
+            {"raw_event": raw_event, "message_event": message_event},
+            ensure_ascii=False,
+        )
+
+        self.assertTrue(message_id.startswith("qiwe-callback:"))
+        self.assertEqual(raw_event["event_id"], message_id)
+        self.assertEqual(raw_event["payload"]["callback_event_count"], 1)
+        self.assertIs(raw_event["payload"]["credentials_redacted"], True)
+        self.assertIs(
+            raw_event["payload"]["callback_events"][0]["msg_data_summary"][
+                "required_fields_present"
+            ],
+            True,
+        )
+        self.assertEqual(message_event["message_id"], message_id)
+        self.assertEqual(message_event["raw"], raw_event["payload"])
+        self.assertEqual(message_event["message_kind"], "system")
+        self.assertEqual(message_event["trigger_reason"], "qiwe_async_callback_sanitized")
+        self.assertEqual(message_event["chat_id"], "")
+        self.assertEqual(message_event["sender_id"], "")
+        self.assertEqual(message_event["sender_name"], "")
+        self.assertEqual(message_event["text"], "")
+        self.assertEqual(message_event["mentions"], [])
+        self.assertEqual(message_event["attachments"], [])
+        for sensitive in (
+            "outer-callback-secret",
+            "callback-request-secret",
+            "callback-aes-secret",
+            "callback-file-secret",
+            "callback-md5-secret",
+            "callback-private.jpg",
+            "token=secret",
+            "callback-unknown-secret",
+            "callback-message-secret",
+            "callback-chat-secret",
+            "callback-sender-secret",
+            "callback-name-secret",
+            "callback-text-secret",
+            "callback-content-secret",
+            "callback-mention-secret",
+            "callback-attachment-secret",
+            "callback-identity-secret",
+            "callback-display-secret",
+        ):
+            self.assertNotIn(sensitive, stored)
+
+    def test_nats_capture_rebuilds_spoofed_redaction_marker(self) -> None:
+        callback = {
+            "source": "qiwe_async_callback",
+            "credentials_redacted": True,
+            "outerSecret": "spoofed-outer-secret",
+            "callback_events": [
+                {
+                    "cmd": 20000,
+                    "credentials_redacted": True,
+                    "request_id_sha256": f"sha256:{'A' * 64}",
+                    "eventSecret": "spoofed-event-secret",
+                    "msg_data_summary": {
+                        "field_presence": {
+                            "file_aes_key": True,
+                            "file_id": True,
+                            "file_md5": True,
+                            "file_size": True,
+                            "filename": True,
+                            "cloud_url": True,
+                            "summarySecret": "spoofed-summary-secret",
+                        },
+                        "msg_data_object": True,
+                        "msg_data_present": True,
+                        "required_fields_present": True,
+                        "unknown_field_count": 1,
+                    },
+                }
+            ],
+        }
+        parsed = type(
+            "CallbackParsed",
+            (),
+            {
+                "message_id": "qiwe-callback:spoofed-id-secret",
+                "conversation_type": "direct",
+                "chat_id": "spoofed-chat-secret",
+                "sender_id": "spoofed-sender-secret",
+                "sender_name": "spoofed-name-secret",
+                "text": "spoofed-text-secret",
+                "content": "spoofed-content-secret",
+                "message_kind": "image",
+                "is_mentioned": True,
+                "should_trigger": True,
+                "reason": "spoofed-reason-secret",
+                "timestamp": None,
+                "raw_event": callback,
+                "at_list": [],
+                "attachments": [],
+            },
+        )()
+
+        raw_event, message_event, _ = build_capture_events(
+            parsed,
+            json.dumps(callback).encode("utf-8"),
+        )
+        stored = json.dumps(
+            {"raw_event": raw_event, "message_event": message_event},
+            ensure_ascii=False,
+        )
+
+        self.assertEqual(raw_event["payload"]["callback_event_count"], 1)
+        self.assertNotEqual(raw_event["event_id"], "qiwe-callback:spoofed-id-secret")
+        self.assertEqual(len(raw_event["event_id"]), len("qiwe-callback:") + 64)
+        self.assertEqual(message_event["event_id"], raw_event["event_id"])
+        self.assertEqual(message_event["message_id"], raw_event["event_id"])
+        self.assertEqual(
+            raw_event["payload"]["callback_events"][0]["request_id_sha256"],
+            f"sha256:{'a' * 64}",
+        )
+        self.assertEqual(message_event["raw"], raw_event["payload"])
+        for sensitive in (
+            "spoofed-outer-secret",
+            "spoofed-event-secret",
+            "spoofed-summary-secret",
+            "spoofed-chat-secret",
+            "spoofed-sender-secret",
+            "spoofed-name-secret",
+            "spoofed-text-secret",
+            "spoofed-content-secret",
+            "spoofed-reason-secret",
+            "spoofed-id-secret",
+        ):
+            self.assertNotIn(sensitive, stored)
+
     def test_nats_capture_event_uses_resolved_identity_name(self) -> None:
         payload = load_fixture("group_mention.json")
         parsed = parse_qiwe_payload(payload, bot_names=["二花"], bot_user_id="1688857683805864")
