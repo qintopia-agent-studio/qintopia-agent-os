@@ -45,7 +45,9 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
 - Rebuilds asynchronous `cmd=20000` callback capture into hashed correlation and fixed
   field-presence metadata before publishing to NATS. Callback credentials, URLs,
   filenames, message content, identities, and unknown values are not published; the Rust
-  sidecar independently enforces the same boundary before Postgres writes.
+  sidecar independently enforces the same boundary before Postgres writes. Existing
+  callback ids are preserved only when the suffix is a validated 64-hex SHA-256 digest;
+  a `qiwe-callback:` prefix by itself is not trusted.
 - Supports passive processors such as group-solitaire activity collection when enabled.
 - Keeps Feishu activity writes and reminders behind explicit scoped configuration.
 - Treats Erhua trainer memory as a controlled context-MCP path, not free-form prompt

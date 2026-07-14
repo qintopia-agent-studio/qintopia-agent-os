@@ -193,7 +193,9 @@ Use `rg` and `rg --files` for search.
   correlation and fixed field-presence metadata; never publish or persist callback file
   credentials, media URLs, filenames, identities, message content, unknown values, or an
   unredacted callback event id. Invalid/dead-letter payloads must store only a digest
-  and byte count, never the raw payload.
+  and byte count, never the raw payload. A callback id is already sanitized only when it
+  is exactly `qiwe-callback:` plus a 64-character hexadecimal SHA-256 digest; a prefix
+  alone is untrusted and the complete value must be hashed again.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime

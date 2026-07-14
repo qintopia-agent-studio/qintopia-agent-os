@@ -41,8 +41,8 @@ impl RawQiweEvent {
 
     pub(crate) fn sanitized_for_storage(&self) -> Self {
         let (payload, callback_sanitized) = sanitize_qiwe_raw_payload(self.payload.clone());
-        let event_id = if callback_sanitized && !self.event_id.starts_with("qiwe-callback:") {
-            format!("qiwe-callback:{}", sha256_hex(self.event_id.as_bytes()))
+        let event_id = if callback_sanitized {
+            callback_event_id(&self.event_id)
         } else {
             self.event_id.clone()
         };
@@ -308,11 +308,12 @@ fn sha256_hex(value: &[u8]) -> String {
 }
 
 fn callback_event_id(value: &str) -> String {
-    if value.starts_with("qiwe-callback:") {
-        value.to_string()
-    } else {
-        format!("qiwe-callback:{}", sha256_hex(value.as_bytes()))
+    if let Some(digest) = value.strip_prefix("qiwe-callback:") {
+        if digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return format!("qiwe-callback:{}", digest.to_ascii_lowercase());
+        }
     }
+    format!("qiwe-callback:{}", sha256_hex(value.as_bytes()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -708,7 +709,7 @@ mod tests {
     #[test]
     fn spoofed_redaction_marker_is_rebuilt_without_unknown_values() {
         let event = RawQiweEvent::from_value(json!({
-            "event_id": "qiwe-callback:already-hashed",
+            "event_id": "qiwe-callback:raw-callback-secret",
             "payload": {
                 "source": "qiwe_async_callback",
                 "credentials_redacted": true,
@@ -742,6 +743,8 @@ mod tests {
         let repeated = event.sanitized_for_storage();
 
         assert_eq!(repeated.payload, event.payload);
+        assert_ne!(event.event_id, "qiwe-callback:raw-callback-secret");
+        assert_eq!(event.event_id.len(), "qiwe-callback:".len() + 64);
         assert_eq!(event.payload["callback_event_count"], json!(1));
         assert_eq!(
             event.payload["callback_events"][0]["request_id_sha256"],
@@ -756,6 +759,7 @@ mod tests {
             "event_secret",
             "secret_field",
             "summary_secret",
+            "raw-callback-secret",
         ] {
             assert!(!stored.contains(sensitive));
         }
@@ -879,9 +883,10 @@ mod tests {
 
     #[test]
     fn normalized_callback_accepts_redacted_capture_route() {
+        let callback_id = format!("qiwe-callback:{}", "A".repeat(64));
         let event = NormalizedMessageEvent::from_value(json!({
-            "event_id": "qiwe-callback:already-hashed",
-            "message_id": "qiwe-callback:already-hashed",
+            "event_id": callback_id,
+            "message_id": callback_id,
             "platform": "qiwe",
             "chat_id": "",
             "chat_type": "group",
@@ -921,8 +926,8 @@ mod tests {
         }))
         .expect("redacted producer callback parses");
 
-        assert_eq!(event.event_id, "qiwe-callback:already-hashed");
-        assert_eq!(event.message_id, "qiwe-callback:already-hashed");
+        assert_eq!(event.event_id, format!("qiwe-callback:{}", "a".repeat(64)));
+        assert_eq!(event.message_id, event.event_id);
         assert_eq!(event.chat_id, "qiwe_async_callback");
         assert_eq!(event.chat_type, "system");
         assert_eq!(event.sender_id, "qiwe_callback_system");

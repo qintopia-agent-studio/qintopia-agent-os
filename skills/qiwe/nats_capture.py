@@ -339,8 +339,11 @@ def _normalize_key(value: Any) -> str:
 
 
 def _callback_event_id(value: str) -> str:
-    if value.startswith("qiwe-callback:"):
-        return value
+    prefix = "qiwe-callback:"
+    if value.startswith(prefix):
+        digest = value.removeprefix(prefix)
+        if len(digest) == 64 and all(char in "0123456789abcdefABCDEF" for char in digest):
+            return f"{prefix}{digest.lower()}"
     return f"qiwe-callback:{_sha256(value.encode('utf-8'))}"
 
 

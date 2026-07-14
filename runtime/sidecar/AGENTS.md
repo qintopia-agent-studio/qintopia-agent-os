@@ -56,6 +56,8 @@ From the monorepo root, prefer:
   embedding and graph extraction must remain separate workers.
 - Sanitize QiWe asynchronous `cmd=20000` callback credentials before raw-event
   persistence. Dead letters may keep only payload length and digest; malformed payloads
-  must not become a bypass that stores callback credentials or raw private text.
+  must not become a bypass that stores callback credentials or raw private text. Only
+  preserve callback event/message ids matching `qiwe-callback:<64 hex SHA-256>`; hash
+  the complete id again when a prefixed value has any other suffix.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

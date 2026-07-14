@@ -488,7 +488,7 @@ class QiWeParserTests(unittest.TestCase):
             "CallbackParsed",
             (),
             {
-                "message_id": "qiwe-callback:already-hashed",
+                "message_id": "qiwe-callback:spoofed-id-secret",
                 "conversation_type": "direct",
                 "chat_id": "spoofed-chat-secret",
                 "sender_id": "spoofed-sender-secret",
@@ -516,6 +516,10 @@ class QiWeParserTests(unittest.TestCase):
         )
 
         self.assertEqual(raw_event["payload"]["callback_event_count"], 1)
+        self.assertNotEqual(raw_event["event_id"], "qiwe-callback:spoofed-id-secret")
+        self.assertEqual(len(raw_event["event_id"]), len("qiwe-callback:") + 64)
+        self.assertEqual(message_event["event_id"], raw_event["event_id"])
+        self.assertEqual(message_event["message_id"], raw_event["event_id"])
         self.assertEqual(
             raw_event["payload"]["callback_events"][0]["request_id_sha256"],
             f"sha256:{'a' * 64}",
@@ -531,6 +535,7 @@ class QiWeParserTests(unittest.TestCase):
             "spoofed-text-secret",
             "spoofed-content-secret",
             "spoofed-reason-secret",
+            "spoofed-id-secret",
         ):
             self.assertNotIn(sensitive, stored)
 
