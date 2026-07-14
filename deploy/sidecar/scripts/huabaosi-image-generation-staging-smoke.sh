@@ -12,16 +12,10 @@ if [[ "${QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL:-}" != "approved-staging-image
 fi
 
 ENV_FILE="${QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE:-}"
-EXPECTED_DATABASE_URL_SHA256="${QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256:-}"
 WORK_ITEM_ID="${QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID:-}"
 
 if [[ -z "$ENV_FILE" || ! -f "$ENV_FILE" || "$ENV_FILE" != /* || "$ENV_FILE" != *staging* ]]; then
   echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE must be an existing absolute path containing staging" >&2
-  exit 1
-fi
-
-if [[ ! "$EXPECTED_DATABASE_URL_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
-  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256 must be a lowercase SHA-256 digest" >&2
   exit 1
 fi
 
@@ -57,12 +51,6 @@ if [[ -z "${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-actual_database_url_sha256="$(printf '%s' "$QINTOPIA_SIDECAR_DATABASE_URL" | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
-if [[ "$actual_database_url_sha256" != "$EXPECTED_DATABASE_URL_SHA256" ]]; then
-  echo "staging database URL does not match QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256" >&2
-  exit 1
-fi
-
 database_name="$(printf '%s' "$QINTOPIA_SIDECAR_DATABASE_URL" | python3 -c '
 import sys
 from urllib.parse import unquote, urlparse
@@ -79,7 +67,12 @@ if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
 elif [[ -x "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar" ]]; then
   BIN_CMD=("${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar")
 else
-  BIN_CMD=("${CARGO:-cargo}" run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" --)
+  BIN_CMD=(
+    "${CARGO:-cargo}" run --quiet
+    --manifest-path "$SIDECAR_DIR/Cargo.toml"
+    --features huabaosi-staging-adapter
+    --
+  )
 fi
 
 tmp_dir="$(mktemp -d)"
@@ -132,6 +125,7 @@ assert payload["success"] is True
 assert payload["worker"] == "huabaosi-image-generation-worker"
 assert payload["action_status"] == "adapter_config_ready"
 assert payload["generation_enabled"] is True
+assert payload["adapter_compiled"] is True
 assert payload["config_valid"] is True
 assert payload["missing_configuration"] == []
 assert payload["safe_for_chat"] is False

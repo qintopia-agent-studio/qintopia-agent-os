@@ -23,7 +23,12 @@ cd "$MONOREPO_ROOT"
 if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
   BIN_CMD=("$QINTOPIA_SIDECAR_BIN")
 else
-  BIN_CMD=("${CARGO:-cargo}" run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" --)
+  BIN_CMD=(
+    "${CARGO:-cargo}" run --quiet
+    --manifest-path "$SIDECAR_DIR/Cargo.toml"
+    --features huabaosi-staging-adapter,postgres-integration-tests
+    --
+  )
 fi
 PSQL_CMD=(psql "$QINTOPIA_SIDECAR_DATABASE_URL" -v ON_ERROR_STOP=1 -X -q -t -A)
 
@@ -109,9 +114,10 @@ export QINTOPIA_OPERATIONS_ALLOWED_REVIEWER_IDS="${QINTOPIA_OPERATIONS_ALLOWED_R
 export QINTOPIA_OPERATIONS_ALLOWED_CONFIRMER_IDS="${QINTOPIA_OPERATIONS_ALLOWED_CONFIRMER_IDS:-operations-apply-smoke-confirmer,operations-apply-smoke-reviewer}"
 export QINTOPIA_OPERATIONS_ALLOWED_OWNER_IDS="${QINTOPIA_OPERATIONS_ALLOWED_OWNER_IDS:-operations-apply-smoke-owner}"
 export QINTOPIA_OPERATIONS_ALLOWED_ATTACHMENT_HOSTS="${QINTOPIA_OPERATIONS_ALLOWED_ATTACHMENT_HOSTS:-example.com}"
-# The disposable apply smoke proves the disabled boundary. It must never contact an image
-# provider or media service, even if a caller has unrelated local settings.
+# The dual-feature test binary may open Huabaosi apply only for the exact loopback test
+# database and the explicit loopback adapter configured later in this smoke.
 export QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
+export QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation
 
 "${BIN_CMD[@]}" migrate >/dev/null
 

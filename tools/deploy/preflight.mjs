@@ -57,6 +57,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
@@ -166,6 +167,7 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/github-app-git.sh",
@@ -389,6 +391,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     }
   }
   for (const forbiddenFragment of [
+    "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
     '"--features"',
     '"--all-features"',
@@ -404,6 +407,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
 if (exists("deploy/sidecar/scripts/server-deploy.sh")) {
   const serverDeployScript = readText("deploy/sidecar/scripts/server-deploy.sh");
   for (const forbiddenFragment of [
+    "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
     "--features",
     "--all-features",
@@ -422,6 +426,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "qintopia-agent-os-deploy-bundle",
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
+    "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",
     "skills/qintopia-tools/variants",

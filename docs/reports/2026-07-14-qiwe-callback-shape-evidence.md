@@ -44,11 +44,10 @@ parsing fails closed because the callback shape is ambiguous.
 Rust unit tests cover all four accepted schema ids, ambiguous canonical-plus-alias
 inputs, additional-field counting, and serialized-report leakage checks.
 
-The focused nextest selection passed `4/4`. The final default-feature suite passed
-`337/337`; its first restricted-sandbox run passed 330 tests and failed only the six
-existing fake-server tests that could not bind loopback, then the exact command passed
-with loopback permission. The final all-feature suite passed `334/334`, with eight
-guarded PostgreSQL integration tests skipped by design.
+The focused nextest selection passed `4/4`. After synchronizing the latest `master`, the
+final default-feature suite passed `366/366`. The final all-feature suite passed
+`362/362`, with eight guarded PostgreSQL integration tests skipped by design. Both full
+suites ran with loopback permission because their fake HTTP tests bind local sockets.
 
 Warning-denied Clippy passed for both `--no-default-features` and `--all-features`.
 Pre-commit formatting, Markdown, workflow, deploy, and Xiaoman readiness checks passed,

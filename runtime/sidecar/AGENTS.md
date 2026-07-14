@@ -25,6 +25,7 @@
 - Run consumer: `cargo run -- run`
 - Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
 - Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
+- Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`
 
 From the monorepo root, prefer:
 
@@ -54,6 +55,15 @@ From the monorepo root, prefer:
   loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
   environment failure and must be confirmed by an unsandboxed rerun, not hidden by
   skipping tests.
+- Huabaosi live provider/media execution must compile only with the non-default
+  `huabaosi-staging-adapter` feature. Default apply must reject before Postgres. A
+  staging-feature apply with generation enabled must verify the exact owner phrase,
+  approved database URL hash, staging database name, and adapter policy before Postgres
+  or external I/O; the staging smoke cannot be the only enforcement point.
+- The disposable operations smoke may enter the live retry path only with both the
+  Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
+  literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media
+  configuration.
 - v1 only captures raw/normalized messages and creates pending processing jobs;
   embedding and graph extraction must remain separate workers.
 - Sanitize QiWe asynchronous `cmd=20000` callback credentials before raw-event
@@ -103,9 +113,11 @@ From the monorepo root, prefer:
   `QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send` before
   adapter configuration, stdin, Postgres, or network access. The Cargo feature, enable
   flag, secrets, and allowlists do not substitute for this owner-reviewed one-shot gate.
-- CI must run warning-denied Clippy once with no default features and once with all
-  features. The all-feature build type-checks staging code but cannot stand in for the
-  production feature set.
+- CI must execute the non-ignored sidecar suite with all features so staging-only
+  adapter tests run, then run warning-denied Clippy once with no default features and
+  once with all features. The all-feature test/build is CI-only and cannot stand in for
+  the production feature set; ignored PostgreSQL tests stay in their disposable
+  integration job.
 - QiWe upload dry-run must use the same exact group/media allowlists and approved JPEG
   identity validator as apply. It may skip locks and writes, but not policy checks.
 - External adapter modules must use `bounded_http`; do not add another raw socket HTTP
@@ -127,3 +139,11 @@ From the monorepo root, prefer:
   filenames, tokens, or callback credentials. Internal-process suppression must use
   narrow full-template matches with negative fixture coverage for ordinary user text
   containing terms such as `plain text`.
+- `huabaosi-wecom-canary-preflight` is a local configuration preflight only. It must not
+  read stdin, open network or database connections, source env files, or emit
+  endpoint/token/id values. `huabaosi-wecom-canary-gateway --apply` is staging-only,
+  requires the non-default `huabaosi-wecom-canary-gateway` Cargo feature plus explicit
+  enablement, approval phrase, HTTPS endpoint, token, and exact Bot/chat/user
+  allowlists, and must remain unscheduled. Default builds must fail closed before stdin,
+  network, database, or send access. It must not change production routing, run image
+  generation, upload media, write Feishu/Postgres, or send outside the allowlist.
