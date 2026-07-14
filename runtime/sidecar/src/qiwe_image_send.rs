@@ -1497,6 +1497,23 @@ mod tests {
     }
 
     #[test]
+    fn upload_acceptance_rejects_invalid_payloads_before_state_changes() {
+        for body in [
+            b"".as_slice(),
+            &vec![b'x'; MAX_JSON_RESPONSE_BYTES + 1],
+            br#"{"code":0,"data":{"requestId":""}}"#,
+            br#"{"code":0,"data":{"requestId":"upload-request\nsecret"}}"#,
+            br#"{"code":0,"data":{}}"#,
+        ] {
+            assert!(
+                parse_async_upload_acceptance(body).is_err(),
+                "accepted invalid upload response {:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
     fn upload_call_parser_classifies_rejected_and_unknown_outcomes() {
         let accepted = parse_upload_acceptance_for_call(&http_json_response(
             200,
@@ -1592,6 +1609,31 @@ mod tests {
     }
 
     #[test]
+    fn callback_parser_rejects_failed_or_untrusted_credentials() {
+        assert!(
+            parse_async_upload_callback(br#"{"code":1,"data":[]}"#, "upload-request-1").is_err()
+        );
+        assert!(
+            parse_async_upload_callback(br#"{"code":0,"data":[]}"#, "upload-request\nsecret")
+                .is_err()
+        );
+
+        for msg_data in [
+            r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":0,"filename":"activity-poster.jpg"}"#,
+            r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.png"}"#,
+            r#"{"fileAesKey":"aes-key\nsecret","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.jpg"}"#,
+        ] {
+            let callback = format!(
+                r#"{{"code":0,"data":[{{"requestId":"upload-request-1","cmd":20000,"msgData":{msg_data}}}]}}"#
+            );
+            assert!(
+                parse_async_upload_callback(callback.as_bytes(), "upload-request-1").is_err(),
+                "accepted invalid callback credentials {msg_data}"
+            );
+        }
+    }
+
+    #[test]
     fn send_response_parses_internal_receipt() {
         let receipt = parse_send_image_response(
             br#"{
@@ -1628,6 +1670,23 @@ mod tests {
         }"#;
 
         assert!(parse_send_image_response(response).is_err());
+    }
+
+    #[test]
+    fn send_response_rejects_invalid_payloads_before_receipt_use() {
+        for body in [
+            b"".as_slice(),
+            &vec![b'x'; MAX_JSON_RESPONSE_BYTES + 1],
+            br#"{"code":0,"data":{"isSendSuccess":1,"msgUniqueIdentifier":"","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":1,"msgUniqueIdentifier":"message\nsecret","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":1,"seq":2,"timestamp":3}}"#,
+        ] {
+            assert!(
+                parse_send_image_response(body).is_err(),
+                "accepted invalid send response {:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
     }
 
     #[test]
@@ -1754,6 +1813,11 @@ mod tests {
         assert!(strict_api_url("http://manager.qiweapi.com/qiwe/api/qw/doApi").is_err());
         assert!(strict_api_url("https://manager.qiweapi.com/qiwe/api/qw/doApi").is_ok());
         assert!(strict_api_url("https://manager.qiweapi.com/other").is_err());
+        assert!(strict_api_url("https://user:pass@manager.qiweapi.com/qiwe/api/qw/doApi").is_err());
+        assert!(
+            strict_api_url("https://manager.qiweapi.com/qiwe/api/qw/doApi?token=secret").is_err()
+        );
+        assert!(strict_api_url("https://manager.qiweapi.com/qiwe/api/qw/doApi#fragment").is_err());
     }
 
     #[test]
@@ -1779,6 +1843,29 @@ mod tests {
         assert!(groups.contains("Group-A"));
         assert!(groups.contains("group-a"));
         assert_ne!(groups.len(), 1);
+    }
+
+    #[test]
+    fn configuration_helpers_trim_placeholders_without_exposing_values() {
+        assert!(is_placeholder("change-me"));
+        assert!(is_placeholder("REPLACE-WITH-QIWE-TOKEN"));
+        assert!(is_placeholder("placeholder"));
+        assert!(!is_placeholder("real-looking-value"));
+
+        let missing = missing_required_configuration_with(
+            &["QIWE_TOKEN", "QIWE_GUID", "QIWE_API_URL", "QIWE_GROUP"],
+            |name| match name {
+                "QIWE_TOKEN" => Some("  super-secret-token  ".to_string()),
+                "QIWE_GUID" => Some("replace-with-guid".to_string()),
+                "QIWE_API_URL" => Some(" ".to_string()),
+                _ => None,
+            },
+        );
+
+        assert_eq!(missing, vec!["QIWE_GUID", "QIWE_API_URL", "QIWE_GROUP"]);
+        let serialized = serde_json::to_string(&missing).expect("serialize missing names");
+        assert!(!serialized.contains("super-secret-token"));
+        assert!(!serialized.contains("replace-with-guid"));
     }
 
     #[test]
