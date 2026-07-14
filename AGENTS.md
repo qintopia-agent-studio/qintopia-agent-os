@@ -57,6 +57,8 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
 - Huabaosi image generation disabled-state production observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
+- Huabaosi WeCom gateway read-only observation smoke:
+  `QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`
 - Xiaoman activity production preflight smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
@@ -293,6 +295,12 @@ Use `rg` and `rg --files` for search.
   `run-huabaosi-image-generation-worker --once --dry-run` for a read-only queue preview.
   It must not use `--apply`, contact provider/media endpoints, write Postgres or Feishu,
   call QiWe, create a generated image, or publish.
+- `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
+  Hermes WeCom gateway service active state, fixed service command, public
+  `busy_input_mode`, release/current presence, and sanitized journal marker counts. It
+  must not source `.env`, print raw journal lines, print user messages, read tokens,
+  restart services, send WeCom messages, run image generation, write Postgres or Feishu,
+  call QiWe/provider/media endpoints, or modify live Hermes profile state.
 - `huabaosi-image-generation-preflight` may only validate and emit a sanitized summary
   of local image-adapter configuration. It must not open network or database
   connections, reveal configuration values, enable generation, write Feishu, send QiWe,
