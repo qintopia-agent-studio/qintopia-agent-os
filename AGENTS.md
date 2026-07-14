@@ -103,6 +103,11 @@ Use `rg` and `rg --files` for search.
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
 - PR-Agent must not automatically edit PR descriptions. The completed repository PR
   template is author-owned because CI validates its required sections.
+- Before merging any PR, read the complete PR Reviewer Guide, submitted reviews,
+  conversation comments, and inline review threads for the latest head SHA. A green
+  PR-Agent check is not sufficient. Resolve every security concern and recommended
+  review item in code or record an explicit disposition, then wait for replacement CI
+  and review results before merge.
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
@@ -196,6 +201,19 @@ Use `rg` and `rg --files` for search.
   and byte count, never the raw payload. A callback id is already sanitized only when it
   is exactly `qiwe-callback:` plus a 64-character hexadecimal SHA-256 digest; a prefix
   alone is untrusted and the complete value must be hashed again.
+- `qintopia_agent_os.qiwe_image_send_attempts` may store only canonical hashes, AgentOS
+  UUIDs, claim state, allowlisted failure codes, and sanitized audit metadata. Never
+  persist QiWe callback file credentials or raw request/callback/message ids. Commit
+  `sending` before calling `/msg/sendImage`; an uncertain result becomes `ambiguous` and
+  must record `external_send_executed=null` with outcome `unknown` and must not be
+  retried automatically. Treat QiWe target group ids as opaque, case-sensitive values;
+  allowlists must use exact matching. A callback arriving after the upload claim TTL
+  must terminalize that attempt as `expired` and release the work item for a new
+  correlation. Claim scans must also expire an `awaiting_callback` attempt whose
+  callback never arrived; an active attempt must not remain solely because no callback
+  invoked the callback handler. Once `sending` is committed, the same attempt and claim
+  token may record `sent`, `failed`, or `ambiguous` after the short TTL; wall-clock
+  expiry must not leave an external outcome stuck in `sending`.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime

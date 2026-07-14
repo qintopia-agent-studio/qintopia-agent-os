@@ -21,6 +21,7 @@ mod member_profile;
 mod message_search;
 mod operations;
 mod qiwe_image_send;
+pub mod qiwe_image_send_state;
 mod raw_archive;
 mod smoke;
 mod workbench;

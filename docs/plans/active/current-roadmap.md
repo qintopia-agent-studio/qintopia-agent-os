@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-07-13
+Updated: 2026-07-14
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -43,8 +43,10 @@ unless correcting historical evidence.
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The
      deterministic provider-PNG-to-final-JPEG path resolves the code-level format gap;
-     sending remains disabled until the provider/storage/readback path and callback
-     credential shape are verified in owner-approved staging.
+     the additive Postgres state stores only hashed correlation/idempotency and
+     sanitized claim/audit facts. Sending remains disabled because no network worker,
+     callback listener, or timer exists, and the provider/storage/readback path plus
+     callback credential shape still require owner-approved staging evidence.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,

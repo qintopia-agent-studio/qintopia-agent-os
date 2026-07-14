@@ -26,3 +26,4 @@ Agent OS data layer.
 - `2026-07-02.001`: `2026-07-02-operations-human-actor-guards.md`
 - `2026-07-13.002`: `2026-07-13-huabaosi-image-generation.md`
 - `2026-07-14.001`: `2026-07-14-xiaoman-event-signal-mutations.md`
+- `2026-07-14.002`: `2026-07-14-qiwe-image-send-state.md`

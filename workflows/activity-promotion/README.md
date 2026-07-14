@@ -86,10 +86,13 @@ The final QiWe image-send contract is documented in
 `../../docs/plans/active/xiaoman-qiwe-image-send.md`. It uses the official async URL
 upload, correlates the `cmd=20000` Webhook by `requestId`, and only then permits a
 `/msg/sendImage` request with complete file credentials. The Rust contract and local
-preflight are implemented, but no network worker or timer exists. The current Huabaosi
-path converts provider PNG into the exact final JPEG artifact reviewed by humans.
-Staging must still verify that JPEG through the isolated media and QiWe callback
-boundaries before any external-send implementation can be enabled.
+preflight are implemented. An additive Postgres state machine now records hashed upload
+correlation, callback idempotency, claim tokens, and sanitized terminal audit without
+persisting callback file credentials. No network worker, dedicated callback listener, or
+timer exists. The current Huabaosi path converts provider PNG into the exact final JPEG
+artifact reviewed by humans. Staging must still verify that JPEG through the isolated
+media and QiWe callback boundaries before any external-send implementation can be
+enabled.
 
 The no-network configuration check is:
 

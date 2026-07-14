@@ -59,5 +59,18 @@ From the monorepo root, prefer:
   must not become a bypass that stores callback credentials or raw private text. Only
   preserve callback event/message ids matching `qiwe-callback:<64 hex SHA-256>`; hash
   the complete id again when a prefixed value has any other suffix.
+- QiWe image-send state transitions must lock both the work item and attempt, recheck
+  the same unexpired claim plus approved artifact/target/final-confirmation facts, and
+  store only canonical hashes. The `sending` transition is the at-most-once boundary;
+  crashes or transport uncertainty after it require `ambiguous` human reconciliation,
+  never an automatic retry with callback credentials. Treat QiWe target group ids as
+  opaque and case-sensitive, and match their allowlist exactly. An ambiguous send audit
+  must use `external_send_executed=null` and outcome `unknown`, never a definite false.
+  Late callbacks must atomically expire the awaiting attempt and requeue the same work
+  item before returning. After the send gate commits, terminal writes must still require
+  the exact attempt and claim token but must not fail only because its short TTL
+  elapsed. Before selecting new work, the claim transaction must expire and requeue a
+  stale `awaiting_callback` attempt even when no callback ever arrives; never apply that
+  timeout retry path to `sending`.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.
