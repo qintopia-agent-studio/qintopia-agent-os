@@ -15,6 +15,10 @@ Each external upload attempt is represented by one
 `qintopia_agent_os.qiwe_image_send_attempts` row:
 
 ```text
+uploading
+  -> awaiting_callback
+  -> failed | ambiguous
+
 awaiting_callback
   -> sending
   -> sent
@@ -23,6 +27,9 @@ awaiting_callback
 awaiting_callback -> expired
 ```
 
+- `uploading` is persisted in the work-item claim transaction before external I/O. It
+  snapshots the immutable reviewed JPEG and target facts while the request-id hash is
+  still null.
 - `awaiting_callback` means QiWe accepted one asynchronous URL upload and AgentOS
   durably recorded its hashed request id.
 - `sending` is committed before `/msg/sendImage` is called. It is an at-most-once gate,
@@ -110,12 +117,12 @@ response without explicit success is also `ambiguous`. It cannot be recorded as 
 definite rejection or `external_send_executed=false` unless a separately reviewed,
 documented failure-code allowlist proves that QiWe did not send the image.
 
-An upload-worker crash before request correlation is persisted leaves no attempt row.
-The next claim transaction may requeue that expired worker claim only when no attempt
-uses the same claim token. If an HTTP upload call returns a known rejection or an
-unknown outcome before correlation can be stored, the worker fails the work item with a
-fixed sanitized code; a later callback cannot open a send gate without a persisted
-request-id hash.
+The claim transaction creates `uploading` before a socket can open. A known local or
+provider rejection terminalizes it as `failed`; transport uncertainty, persistence
+uncertainty, or an expired `uploading` claim terminalizes it as `ambiguous`, fails the
+work item, and records `automatic_retry_allowed=false`. A stale legacy claim with no
+attempt row is also terminalized because old state cannot prove that the upload stayed
+local. Neither state may return to `queued` automatically.
 
 A `sending` attempt whose short claim TTL expires is never requeued. The next guarded
 claim scan atomically records `ambiguous`, clears the processing claim, and requires
@@ -138,8 +145,8 @@ excluded from reports and are zeroized from owned in-memory buffers on drop.
 - duplicate delivery of the same callback returns the existing attempt state and never
   opens a second send gate.
 - a different callback for a request already in `sending` or `sent` is rejected.
-- one partial unique index permits only one `awaiting_callback` or `sending` attempt per
-  work item.
+- one partial unique index permits only one `uploading`, `awaiting_callback`, or
+  `sending` attempt per work item.
 - one partial unique index permits only one `sent` attempt per work item.
 
 ## Production Boundary

@@ -3,6 +3,15 @@
 This file is the repository-side history for database design changes. The database-side
 history is `qintopia_agent_os.schema_change_log`.
 
+## `2026-07-14.003`
+
+Migration: `migrations/202607140003_qiwe_upload_attempt_lifecycle.sql` Design note:
+`docs/data-design/2026-07-14-qiwe-upload-attempt-lifecycle.md`
+
+Adds the pre-network `uploading` state and terminalizes stale or legacy unrecorded
+claims when AgentOS cannot prove that QiWe did not accept an upload. Unknown upload
+outcomes cannot be retried automatically.
+
 ## `2026-07-14.002`
 
 Migration: `migrations/202607140002_qiwe_image_send_state.sql` Design note:

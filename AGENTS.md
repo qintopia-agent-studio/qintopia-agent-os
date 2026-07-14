@@ -218,25 +218,35 @@ Use `rg` and `rg --files` for search.
   or provider non-success after the send gate are ambiguous unless the bounded client
   proves the request was not sent. Wall-clock expiry must not leave an external outcome
   stuck in `sending`.
+- The QiWe upload claim transaction must persist an `uploading` attempt before external
+  I/O. A stale `uploading` attempt or legacy unrecorded claim has an unknown external
+  outcome and must become terminal `ambiguous` with `automatic_retry_allowed=false`;
+  never requeue it automatically. Dry-run and disabled previews must enforce the same
+  exact target-group and media-host allowlists as apply.
 - Default and production sidecar builds must not compile the non-default
   `qiwe-staging-adapter` feature. In those builds, QiWe upload/callback apply must fail
   before configuration, Postgres claim/mutation, or network access even if runtime
-  enable flags are misconfigured. Production artifact manifests must record
-  `cargo_features: []`, and both artifact and server-source build checks must reject
-  explicit features, all-features builds, and the staging feature.
+  enable flags are misconfigured; callback apply must also fail before reading stdin.
+  Production artifact manifests must record `cargo_features: []`, and both artifact and
+  server-source build checks must reject explicit features, all-features builds, and the
+  staging feature.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
   reuse the apply path's exact target-group, media-host, and approved JPEG identity
   validation; preview must not report policy-ineligible work. Staging-feature apply must
-  additionally require the exact reviewed one-shot owner approval phrase before Postgres
-  or network access; feature compilation, enable flags, or credentials alone are
-  insufficient. `process-qiwe-image-send-callback` must read one bounded callback from
-  stdin, keep file credentials memory-only, require callback filename/MD5/byte size to
-  match the approved final JPEG before committing `sending`, commit that state before
-  one send call, and terminalize every outcome. Neither command may be scheduled or
+  additionally require the exact reviewed one-shot owner approval phrase before adapter
+  configuration, callback stdin, Postgres, or network access; feature compilation,
+  enable flags, or credentials alone are insufficient.
+  `process-qiwe-image-send-callback` must read one bounded callback from stdin, keep
+  file credentials memory-only, require callback filename/MD5/byte size to match the
+  approved final JPEG before committing `sending`, commit that state before one send
+  call, and terminalize every outcome. Neither command may be scheduled or
   production-enabled without approved staging evidence, isolated group allowlists, and
   rollback.
+- A staging-feature QiWe callback apply must validate explicit enablement, exact
+  API/media/group allowlists, and webhook readiness before reading stdin. Upload apply
+  must validate the same adapter configuration before connecting to Postgres.
 - Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
   reject invalid methods/headers before connect, require HTTPS outside tests, enforce
   header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request

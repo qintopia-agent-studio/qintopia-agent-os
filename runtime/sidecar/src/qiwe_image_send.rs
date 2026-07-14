@@ -92,6 +92,30 @@ struct AdapterConfig {
     webhook_ready: bool,
 }
 
+struct SendBoundaryPolicy {
+    allowed_groups: BTreeSet<String>,
+    media_allowed_hosts: BTreeSet<String>,
+}
+
+impl SendBoundaryPolicy {
+    fn from_env() -> Result<Self> {
+        let media_allowed_hosts =
+            parse_csv_set(&required_env("QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")?);
+        if media_allowed_hosts.is_empty() {
+            bail!("at least one generated-image media host must be allowlisted");
+        }
+        let allowed_groups =
+            parse_csv_exact_set(&required_env("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS")?);
+        if allowed_groups.is_empty() {
+            bail!("at least one QiWe target group must be allowlisted");
+        }
+        Ok(Self {
+            allowed_groups,
+            media_allowed_hosts,
+        })
+    }
+}
+
 impl Drop for AdapterConfig {
     fn drop(&mut self) {
         #[cfg(any(test, feature = "qiwe-staging-adapter"))]
@@ -296,14 +320,31 @@ pub async fn run_upload_worker(
     }
     let apply_requested = apply && !dry_run;
     if !apply_requested {
-        let (allowed_groups, media_allowed_hosts) = preview_allowlists_from_env()?;
+        let policy = match SendBoundaryPolicy::from_env() {
+            Ok(policy) => policy,
+            Err(_) => {
+                let report = worker_report(WorkerReportState {
+                    success: false,
+                    dry_run: true,
+                    apply_requested: false,
+                    phase: "upload",
+                    action_status: "preview_policy_not_configured".to_string(),
+                    work_item_id,
+                    external_upload_requested: false,
+                    callback_received: false,
+                    external_send_executed: Some(false),
+                });
+                println!("{}", serde_json::to_string_pretty(&report)?);
+                bail!("QiWe image-send preview policy is invalid");
+            }
+        };
         let database_url = cli.database_url_required()?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
         let preview = qiwe_image_send_state::preview_ready_work_item(
             &pool,
             work_item_id,
-            &allowed_groups,
-            &media_allowed_hosts,
+            &policy.allowed_groups,
+            &policy.media_allowed_hosts,
         )
         .await?;
         let report = match preview {
@@ -354,14 +395,31 @@ pub async fn run_upload_worker(
     #[cfg(feature = "qiwe-staging-adapter")]
     {
         if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
-            let (allowed_groups, media_allowed_hosts) = preview_allowlists_from_env()?;
+            let policy = match SendBoundaryPolicy::from_env() {
+                Ok(policy) => policy,
+                Err(_) => {
+                    let report = worker_report(WorkerReportState {
+                        success: false,
+                        dry_run: false,
+                        apply_requested: true,
+                        phase: "upload",
+                        action_status: "disabled_preview_policy_not_configured".to_string(),
+                        work_item_id,
+                        external_upload_requested: false,
+                        callback_received: false,
+                        external_send_executed: Some(false),
+                    });
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                    bail!("QiWe image-send disabled preview policy is invalid");
+                }
+            };
             let database_url = cli.database_url_required()?;
             let pool = db::connect(database_url, cli.db_max_connections).await?;
             let preview = qiwe_image_send_state::preview_ready_work_item(
                 &pool,
                 work_item_id,
-                &allowed_groups,
-                &media_allowed_hosts,
+                &policy.allowed_groups,
+                &policy.media_allowed_hosts,
             )
             .await?;
             let report = worker_report(WorkerReportState {
@@ -444,12 +502,24 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
                 .await
                 .is_err()
             {
+                let terminalized = qiwe_image_send_state::record_upload_failure(
+                    &pool,
+                    &claim,
+                    UploadFailureDisposition::OutcomeUnknown,
+                )
+                .await
+                .is_ok();
                 let report = worker_report(WorkerReportState {
                     success: false,
                     dry_run: false,
                     apply_requested: true,
                     phase: "upload",
-                    action_status: "upload_state_persistence_failed".to_string(),
+                    action_status: if terminalized {
+                        "upload_state_persistence_ambiguous"
+                    } else {
+                        "upload_state_persistence_failed"
+                    }
+                    .to_string(),
                     work_item_id: Some(claim_id),
                     external_upload_requested: true,
                     callback_received: false,
@@ -503,9 +573,69 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
     if apply && dry_run {
         bail!("use either --apply or --dry-run, not both");
     }
+    let apply_requested = apply && !dry_run;
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    if apply_requested {
+        let _ = cli;
+        let report = worker_report(WorkerReportState {
+            success: false,
+            dry_run: false,
+            apply_requested: true,
+            phase: "callback",
+            action_status: "staging_adapter_not_compiled".to_string(),
+            work_item_id: None,
+            external_upload_requested: false,
+            callback_received: false,
+            external_send_executed: Some(false),
+        });
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        bail!("QiWe staging adapter is not compiled into this binary");
+    }
+    #[cfg(feature = "qiwe-staging-adapter")]
+    if apply_requested && !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
+        let report = worker_report(WorkerReportState {
+            success: true,
+            dry_run: false,
+            apply_requested: true,
+            phase: "callback",
+            action_status: "image_send_disabled".to_string(),
+            work_item_id: None,
+            external_upload_requested: false,
+            callback_received: false,
+            external_send_executed: Some(false),
+        });
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+    #[cfg(feature = "qiwe-staging-adapter")]
+    if apply_requested {
+        require_staging_owner_approval()?;
+    }
+    #[cfg(feature = "qiwe-staging-adapter")]
+    let config = if apply_requested {
+        match AdapterConfig::from_env() {
+            Ok(config) => Some(config),
+            Err(_) => {
+                let report = worker_report(WorkerReportState {
+                    success: false,
+                    dry_run: false,
+                    apply_requested: true,
+                    phase: "callback",
+                    action_status: "adapter_not_configured".to_string(),
+                    work_item_id: None,
+                    external_upload_requested: false,
+                    callback_received: false,
+                    external_send_executed: Some(false),
+                });
+                println!("{}", serde_json::to_string_pretty(&report)?);
+                bail!("QiWe image-send callback configuration is invalid");
+            }
+        }
+    } else {
+        None
+    };
     let callback = read_callback_stdin()?;
     let parsed = parse_single_async_upload_callback(&callback)?;
-    let apply_requested = apply && !dry_run;
     if !apply_requested {
         let report = worker_report(WorkerReportState {
             success: true,
@@ -521,71 +651,32 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
-    {
-        let _ = cli;
-        drop(parsed);
-        let report = worker_report(WorkerReportState {
-            success: false,
-            dry_run: false,
-            apply_requested: true,
-            phase: "callback",
-            action_status: "staging_adapter_not_compiled".to_string(),
-            work_item_id: None,
-            external_upload_requested: false,
-            callback_received: true,
-            external_send_executed: Some(false),
-        });
-        println!("{}", serde_json::to_string_pretty(&report)?);
-        bail!("QiWe staging adapter is not compiled into this binary");
-    }
 
     #[cfg(feature = "qiwe-staging-adapter")]
     {
-        if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
-            let report = worker_report(WorkerReportState {
-                success: true,
-                dry_run: false,
-                apply_requested: true,
-                phase: "callback",
-                action_status: "image_send_disabled".to_string(),
-                work_item_id: None,
-                external_upload_requested: false,
-                callback_received: true,
-                external_send_executed: Some(false),
-            });
-            println!("{}", serde_json::to_string_pretty(&report)?);
-            return Ok(());
-        }
-        require_staging_owner_approval()?;
-        run_enabled_callback_processor(cli, &parsed, &callback).await
+        run_enabled_callback_processor(
+            cli,
+            config.context("QiWe callback apply configuration is missing")?,
+            &parsed,
+            &callback,
+        )
+        .await
+    }
+
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    {
+        drop(parsed);
+        bail!("QiWe staging adapter is not compiled into this binary")
     }
 }
 
 #[cfg(feature = "qiwe-staging-adapter")]
 async fn run_enabled_callback_processor(
     cli: &Cli,
+    config: AdapterConfig,
     parsed: &ParsedCallback,
     callback: &[u8],
 ) -> Result<()> {
-    let config = match AdapterConfig::from_env() {
-        Ok(config) => config,
-        Err(_) => {
-            let report = worker_report(WorkerReportState {
-                success: false,
-                dry_run: false,
-                apply_requested: true,
-                phase: "callback",
-                action_status: "adapter_not_configured".to_string(),
-                work_item_id: None,
-                external_upload_requested: false,
-                callback_received: true,
-                external_send_executed: Some(false),
-            });
-            println!("{}", serde_json::to_string_pretty(&report)?);
-            bail!("QiWe image-send callback configuration is invalid");
-        }
-    };
     let database_url = cli.database_url_required()?;
     let pool = db::connect(database_url, cli.db_max_connections).await?;
     let callback_file = QiweCallbackFileIdentity {
@@ -1016,17 +1107,7 @@ impl AdapterConfig {
         if !allowed_hosts.contains(&api_host) {
             bail!("QiWe API host is not allowlisted");
         }
-        let media_allowed_hosts =
-            parse_csv_set(&required_env("QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")?);
-        if media_allowed_hosts.is_empty() {
-            bail!("at least one generated-image media host must be allowlisted");
-        }
-
-        let allowed_groups =
-            parse_csv_exact_set(&required_env("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS")?);
-        if allowed_groups.is_empty() {
-            bail!("at least one QiWe target group must be allowlisted");
-        }
+        let boundary_policy = SendBoundaryPolicy::from_env()?;
         let webhook_ready = env_flag("QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY")?;
         if !webhook_ready {
             bail!("QiWe async upload webhook must be reviewed and ready");
@@ -1044,8 +1125,8 @@ impl AdapterConfig {
             #[cfg(any(test, feature = "qiwe-staging-adapter"))]
             guid: guid.to_string(),
             allowed_hosts,
-            media_allowed_hosts,
-            allowed_groups,
+            media_allowed_hosts: boundary_policy.media_allowed_hosts,
+            allowed_groups: boundary_policy.allowed_groups,
             webhook_ready,
         })
     }
@@ -1211,20 +1292,6 @@ fn required_env(name: &str) -> Result<String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty() && !is_placeholder(value))
         .ok_or_else(|| anyhow!("required QiWe image-send configuration is missing"))
-}
-
-fn preview_allowlists_from_env() -> Result<(BTreeSet<String>, BTreeSet<String>)> {
-    let allowed_groups =
-        parse_csv_exact_set(&required_env("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS")?);
-    if allowed_groups.is_empty() {
-        bail!("at least one QiWe target group must be allowlisted");
-    }
-    let media_allowed_hosts =
-        parse_csv_set(&required_env("QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")?);
-    if media_allowed_hosts.is_empty() {
-        bail!("at least one generated-image media host must be allowlisted");
-    }
-    Ok((allowed_groups, media_allowed_hosts))
 }
 
 #[cfg(feature = "qiwe-staging-adapter")]
@@ -1677,6 +1744,18 @@ mod tests {
         assert!(error.to_string().contains("not compiled"));
     }
 
+    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[tokio::test]
+    async fn default_callback_apply_stops_before_stdin_database_and_network() {
+        let cli = Cli::parse_from(["qintopia-message-sidecar", "check"]);
+
+        let error = run_callback_processor(&cli, true, false)
+            .await
+            .expect_err("default build must reject callback apply before stdin");
+
+        assert!(error.to_string().contains("not compiled"));
+    }
+
     #[test]
     fn qiwe_preflight_missing_configuration_is_public_and_deterministic() {
         let missing = missing_required_configuration_with(
@@ -1958,6 +2037,7 @@ mod tests {
 
     fn test_upload_claim() -> QiweUploadClaim {
         QiweUploadClaim {
+            attempt_id: Uuid::new_v4(),
             work_item_id: Uuid::new_v4(),
             generated_image_artifact_id: Uuid::new_v4(),
             attempt_number: 1,

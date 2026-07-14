@@ -105,6 +105,10 @@ target, or missing final confirmation must stop before sending.
   external send can occur, and ambiguous outcomes are terminal/manual rather than
   automatically retried. After that send gate, HTTP failures or provider non-success
   responses remain ambiguous unless the bounded client proves the request was not sent.
+- The upload worker now persists `uploading` in the claim transaction before external
+  I/O. If it cannot prove that an interrupted upload stayed local, that attempt and the
+  work item become terminal ambiguous state with no automatic retry. Dry-run and
+  disabled previews enforce the same exact group and media-host allowlists as apply.
 - `run-qiwe-image-send-worker` connects that state API to one guarded asynchronous
   upload request, and `process-qiwe-image-send-callback` reads one bounded callback from
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP

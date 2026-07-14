@@ -32,16 +32,21 @@ contact QiWe.
 - Dry-run reads one eligible AgentOS work item and emits a sanitized preview. It does
   not claim, write Postgres, or open a network connection. Preview and apply share the
   exact target-group, media-host, JPEG hash, MD5, byte-size, and filename validation, so
-  dry-run cannot report a request that current allowlists would reject.
+  missing policy and ineligible candidates fail closed instead of being reported.
 - A default build rejects apply as `staging_adapter_not_compiled` before reading adapter
-  configuration, connecting to Postgres, claiming work, or opening a socket.
+  configuration, connecting to Postgres, claiming work, or opening a socket. Callback
+  apply also rejects before reading stdin, so production does not ingest callback
+  credentials for an unavailable capability.
 - A staging-only build additionally requires the non-default `qiwe-staging-adapter`
   Cargo feature, `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, a valid reviewed adapter config,
   `QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1`, and the exact one-shot owner approval
   phrase `QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send`.
-  Missing approval fails before Postgres or network access.
-- Apply claims exactly one work item, sends one asynchronous URL-upload request, and
-  persists only the request id hash through `qiwe_image_send_attempts`.
+  Missing approval fails before adapter configuration. Upload validates the remaining
+  configuration before connecting to Postgres; callback apply validates it before
+  reading stdin.
+- Apply claims exactly one work item and creates one `uploading` attempt before opening
+  a socket. A successful asynchronous URL-upload response updates that same attempt and
+  persists only the request id hash.
 - An upload transport or provider failure records a sanitized internal failure and must
   not leave the work item permanently processing.
 
@@ -75,9 +80,11 @@ require the reviewed HTTPS QiWe API path and exact host allowlist.
 
 ## Recovery And Idempotency
 
-- A crash before upload acceptance is persisted may leave an expired processing claim
-  but no active attempt. The next upload-worker claim transaction must safely requeue
-  that stale unrecorded claim.
+- Every new claim persists `uploading` before external I/O. If its claim expires before
+  acceptance is durably correlated, the upload outcome is `ambiguous`, the work item
+  fails, and automatic retry is forbidden.
+- A legacy expired claim with no attempt row is also terminalized as ambiguous because
+  AgentOS cannot prove that older code did not cross the external boundary.
 - An `awaiting_callback` attempt with no callback is expired and requeued by the next
   claim scan, as defined by the merged state-machine contract.
 - A crash, HTTP failure, provider non-success, or uncertain transport after `sending`
@@ -107,10 +114,11 @@ booleans. They must use `safe_for_chat=false` and must not include:
 - Local fake QiWe server tests for upload acceptance, callback credentials, successful
   send, non-success HTTP/business ambiguity, oversized response, connection timeout, and
   header injection rejection.
-- Disposable PostgreSQL integration proving upload acceptance, duplicate callback, exact
-  one send, terminal state, stale claim, missing callback recovery, callback file
-  identity mismatch rejection, and no raw credentials or identifiers in
-  state/events/reports.
+- Disposable PostgreSQL integration proving pre-network attempt persistence, upload
+  acceptance on the same attempt, duplicate callback, exact one send, terminal stale
+  upload/send behavior, legacy unrecorded-claim terminalization, preview allowlist
+  parity, missing callback recovery, callback file identity mismatch rejection, and no
+  raw credentials or identifiers in state/events/reports.
 - Full Rust suite, Clippy with warnings denied, repository pre-commit, CI contracts,
   secret scan, and diff check.
 

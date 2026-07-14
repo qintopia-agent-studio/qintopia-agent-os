@@ -223,3 +223,95 @@ replace the compile gate, OS access control, secret handling, allowlists, stagin
 evidence, or owner review.
 
 No listener, service, timer, production feature build, or real external call is added.
+
+## PR #119 Upload Attempt Lifecycle Gap
+
+### Observed Evidence
+
+The Reviewer Guide for commit `fec272e` found that an upload accepted by QiWe could be
+repeated if the worker stopped before persisting the returned request-id hash, because
+stale claims without an attempt were requeued.
+
+### Root Cause
+
+The attempt lifecycle began after external upload acceptance, so Postgres had no durable
+fact proving that a claimed worker might already have opened the socket.
+
+### Resolution
+
+The claim transaction now creates an `uploading` attempt containing the immutable
+artifact, target, claim, and final JPEG identity before external I/O. Acceptance updates
+that same row with the request-id hash. Known rejection becomes `failed`; transport,
+persistence, crash, and stale-claim uncertainty become terminal `ambiguous` with
+`automatic_retry_allowed=false`. Legacy unrecorded claims are also terminalized rather
+than requeued. Invalid preview policy also emits only a fixed sanitized action status
+before failing, preserving the separately repaired preview boundary.
+
+### Validation
+
+The disposable PostgreSQL CI job runs the existing state tests plus these exact recovery
+tests:
+
+```text
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_terminalizes_stale_upload_and_send -- --ignored --exact
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_terminalizes_legacy_unrecorded_claim -- --ignored --exact
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_rejects_stale_claim -- --ignored --exact
+```
+
+The idempotency integration also asserts that claim creates one `uploading` row with a
+null request hash, acceptance preserves its attempt id, and preview rejects a disallowed
+group or media host. Default and all-feature tests and warning-denied Clippy remain
+required.
+
+### Remaining Boundary
+
+No real provider, media, QiWe, Feishu, production Postgres, service, listener, or timer
+is used or enabled. Production artifacts still exclude `qiwe-staging-adapter`.
+
+### Follow-Up Owner Action
+
+Keep PR #119 draft until its replacement head passes the disposable PostgreSQL job, both
+Rust feature-set checks, and a fresh Reviewer Guide. Staging still requires an
+owner-approved final JPEG, callback evidence, isolated group, secrets, and rollback.
+
+## PR #119 Command Entry Security Review
+
+### Observed Evidence
+
+The review identified both QiWe CLI variants as production-adjacent external-send
+entrypoints and required proof that disablement, allowlists, credential handling, and
+staging approval are enforced by code rather than timer absence or documentation.
+
+### Resolution
+
+Default production artifacts exclude the non-default `qiwe-staging-adapter` feature, and
+deploy preflight rejects explicit or all-feature production builds. Upload apply returns
+`staging_adapter_not_compiled` before configuration, Postgres, claim mutation, or
+network access. Callback apply now returns the same fixed failure before even reading
+stdin. In a staging-feature build, the enable flag is checked before callback intake;
+the exact one-shot owner phrase is required next, then the reviewed API/media/group
+allowlists and webhook-ready gate are validated before callback intake or upload
+database access. Live execution then keeps callback credentials in memory and rechecks
+immutable JPEG identity before the send gate.
+
+### Validation And Boundary
+
+Default-feature tests invoke both apply entry functions without database configuration;
+upload fails before database/network access and callback fails before stdin/database/
+network access. Default and all-feature warning-denied Clippy, production artifact
+feature checks, deploy preflight, fake-server tests, and the disposable PostgreSQL state
+tests remain required. No staging binary is built or deployed, no timer/listener is
+installed, and no real QiWe, media, provider, Feishu, or production Postgres call
+occurs.
+
+Direct CLI entry checks also failed both staging-feature apply commands with the fixed
+owner-approval error when enablement was `1` but the phrase was absent. With the exact
+phrase present but adapter configuration absent, both emitted sanitized
+`adapter_not_configured` reports with no callback received and no external request,
+before stdin or database access.
+
+### Follow-Up Owner Action
+
+Do not build or run the staging feature until the owner approves callback evidence, an
+isolated target group, staging secrets and database, the exact command, and rollback.
+Production enablement remains a separate reviewed release decision.
