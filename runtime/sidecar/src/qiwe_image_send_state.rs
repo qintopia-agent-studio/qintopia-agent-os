@@ -56,6 +56,7 @@ struct StoredAttempt {
     generated_image_artifact_id: Uuid,
     status: String,
     claim_token: String,
+    request_id_sha256: String,
     callback_payload_sha256: Option<String>,
     target_group_sha256: String,
     artifact_content_hash: String,
@@ -73,6 +74,7 @@ pub async fn claim_ready_work_item(
         .begin()
         .await
         .context("begin QiWe image-send claim transaction")?;
+    expire_one_stale_awaiting_callback(&mut tx, work_item_id).await?;
     let row = sqlx::query(
         r#"
         WITH claimable AS (
@@ -307,6 +309,7 @@ pub async fn claim_callback_for_send(
             generated_image_artifact_id,
             status,
             claim_token,
+            request_id_sha256,
             callback_payload_sha256,
             target_group_sha256,
             artifact_content_hash,
@@ -323,11 +326,12 @@ pub async fn claim_callback_for_send(
     .ok_or_else(|| anyhow!("QiWe callback does not match a known upload correlation"))?;
     let attempt = stored_attempt_from_row(row)?;
     if attempt.status != "awaiting_callback" {
-        if attempt.callback_payload_sha256.as_deref() == Some(&callback_payload_sha256)
-            && matches!(
-                attempt.status.as_str(),
-                "sending" | "sent" | "failed" | "ambiguous" | "expired"
-            )
+        if attempt.status == "expired"
+            || (attempt.callback_payload_sha256.as_deref() == Some(&callback_payload_sha256)
+                && matches!(
+                    attempt.status.as_str(),
+                    "sending" | "sent" | "failed" | "ambiguous"
+                ))
         {
             tx.commit()
                 .await
@@ -341,13 +345,7 @@ pub async fn claim_callback_for_send(
 
     let (target_group_id, claim_is_current) = lock_callback_policy(&mut tx, &attempt).await?;
     if !claim_is_current {
-        expire_callback_attempt(
-            &mut tx,
-            &attempt,
-            &request_id_sha256,
-            &callback_payload_sha256,
-        )
-        .await?;
+        expire_awaiting_callback_attempt(&mut tx, &attempt, Some(&callback_payload_sha256)).await?;
         tx.commit()
             .await
             .context("commit expired QiWe callback claim")?;
@@ -633,19 +631,64 @@ fn send_failure_state(
     }
 }
 
-async fn expire_callback_attempt(
+async fn expire_one_stale_awaiting_callback(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    work_item_id: Option<Uuid>,
+) -> Result<()> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            attempt.id,
+            attempt.work_item_id,
+            attempt.generated_image_artifact_id,
+            attempt.status,
+            attempt.claim_token,
+            attempt.request_id_sha256,
+            attempt.callback_payload_sha256,
+            attempt.target_group_sha256,
+            attempt.artifact_content_hash,
+            attempt.artifact_uri_sha256
+        FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+        JOIN qintopia_agent_os.work_items request ON request.id = attempt.work_item_id
+        WHERE attempt.status = 'awaiting_callback'
+          AND request.status = 'processing'
+          AND request.claimed_by = attempt.claim_token
+          AND request.claim_expires_at <= now()
+          AND ($1::uuid IS NULL OR request.id = $1)
+        ORDER BY attempt.created_at ASC
+        LIMIT 1
+        FOR UPDATE OF attempt, request SKIP LOCKED
+        "#,
+    )
+    .bind(work_item_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("lock stale QiWe callback attempt")?;
+    if let Some(row) = row {
+        let attempt = stored_attempt_from_row(row)?;
+        expire_awaiting_callback_attempt(tx, &attempt, None).await?;
+    }
+    Ok(())
+}
+
+async fn expire_awaiting_callback_attempt(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     attempt: &StoredAttempt,
-    request_id_sha256: &str,
-    callback_payload_sha256: &str,
+    callback_payload_sha256: Option<&str>,
 ) -> Result<()> {
+    let callback_received = callback_payload_sha256.is_some();
+    let event_type = if callback_received {
+        "qiwe_image_callback_expired"
+    } else {
+        "qiwe_image_callback_timeout_expired"
+    };
     let attempt_updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.qiwe_image_send_attempts
         SET
             status = 'expired',
-            callback_payload_sha256 = $2,
-            callback_received_at = now(),
+            callback_payload_sha256 = COALESCE($2, callback_payload_sha256),
+            callback_received_at = CASE WHEN $2::text IS NULL THEN callback_received_at ELSE now() END,
             failure_code = 'claim_expired',
             completed_at = now(),
             audit_metadata = audit_metadata || $3,
@@ -658,6 +701,7 @@ async fn expire_callback_attempt(
     .bind(attempt.id)
     .bind(callback_payload_sha256)
     .bind(json!({
+        "callback_received": callback_received,
         "callback_credentials_persisted": false,
         "external_send_executed": false,
         "external_send_outcome": "not_started",
@@ -694,22 +738,26 @@ async fn expire_callback_attempt(
     if work_item_updated.rows_affected() != 1 {
         bail!("QiWe callback work-item claim changed before expiration");
     }
+    let mut event_data = json!({
+        "attempt_id": attempt.id,
+        "request_id_sha256": attempt.request_id_sha256,
+        "failure_code": "claim_expired",
+        "callback_received": callback_received,
+        "callback_credentials_persisted": false,
+        "external_send_executed": false,
+        "external_send_outcome": "not_started",
+        "automatic_retry_allowed": true,
+        "send_executed": false
+    });
+    if let Some(callback_payload_sha256) = callback_payload_sha256 {
+        event_data["callback_payload_sha256"] = json!(callback_payload_sha256);
+    }
     append_event(
         tx,
         attempt.work_item_id,
         Some(attempt.generated_image_artifact_id),
-        "qiwe_image_callback_expired",
-        json!({
-            "attempt_id": attempt.id,
-            "request_id_sha256": request_id_sha256,
-            "callback_payload_sha256": callback_payload_sha256,
-            "failure_code": "claim_expired",
-            "callback_credentials_persisted": false,
-            "external_send_executed": false,
-            "external_send_outcome": "not_started",
-            "automatic_retry_allowed": true,
-            "send_executed": false
-        }),
+        event_type,
+        event_data,
     )
     .await?;
     Ok(())
@@ -959,6 +1007,7 @@ fn stored_attempt_from_row(row: sqlx::postgres::PgRow) -> Result<StoredAttempt> 
         generated_image_artifact_id: row.try_get("generated_image_artifact_id")?,
         status: row.try_get("status")?,
         claim_token: row.try_get("claim_token")?,
+        request_id_sha256: row.try_get("request_id_sha256")?,
         callback_payload_sha256: row.try_get("callback_payload_sha256")?,
         target_group_sha256: row.try_get("target_group_sha256")?,
         artifact_content_hash: row.try_get("artifact_content_hash")?,
@@ -1524,6 +1573,82 @@ mod tests {
             assert!(
                 !serialized.contains(sensitive),
                 "terminal state leaked {sensitive}"
+            );
+        }
+        delete_fixture(&pool, image_id, group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_qiwe_send_state_expires_missing_callback_during_reclaim() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let (image_id, _artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+        let first_claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("claim send-ready work item")
+            .expect("work item is claimable");
+        let request_id = "missing-callback-request-secret";
+        let attempt_id = record_upload_acceptance(&pool, &first_claim, request_id)
+            .await
+            .expect("record upload acceptance without callback");
+        sqlx::query(
+            "UPDATE qintopia_agent_os.work_items SET claim_expires_at = now() - interval '1 second' WHERE id = $1",
+        )
+        .bind(group_id)
+        .execute(&pool)
+        .await
+        .expect("expire missing-callback claim");
+
+        let retry_claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("reclaim scans stale callback attempt")
+            .expect("missing callback releases work item");
+        assert_eq!(retry_claim.attempt_number, 2);
+        assert_ne!(retry_claim.claim_token, first_claim.claim_token);
+        let stored: (
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+            serde_json::Value,
+        ) = sqlx::query_as(
+            r#"
+            SELECT attempt.status, attempt.failure_code, attempt.callback_payload_sha256,
+                   request.status, request.claimed_by, event.data
+            FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+            JOIN qintopia_agent_os.work_items request ON request.id = attempt.work_item_id
+            JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id = request.id
+             AND event.event_type = 'qiwe_image_callback_timeout_expired'
+            WHERE attempt.id = $1
+            "#,
+        )
+        .bind(attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read missing-callback timeout state");
+        assert_eq!(stored.0, "expired");
+        assert_eq!(stored.1.as_deref(), Some("claim_expired"));
+        assert_eq!(stored.2, None);
+        assert_eq!(stored.3, "processing");
+        assert_eq!(stored.4.as_deref(), Some(retry_claim.claim_token.as_str()));
+        assert_eq!(stored.5["callback_received"], false);
+        assert!(stored.5.get("callback_payload_sha256").is_none());
+        let serialized = serde_json::to_string(&stored).expect("serialize timeout state");
+        for sensitive in [request_id, "integration-group-id"] {
+            assert!(
+                !serialized.contains(sensitive),
+                "callback timeout state leaked {sensitive}"
             );
         }
         delete_fixture(&pool, image_id, group_id).await;

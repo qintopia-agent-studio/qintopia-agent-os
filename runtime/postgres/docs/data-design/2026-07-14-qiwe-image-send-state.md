@@ -36,7 +36,8 @@ awaiting_callback -> expired
 - `expired` means the callback did not arrive while the original claim was current. A
   callback arriving after that TTL atomically closes the old attempt, stores only its
   payload hash, and requeues the work item so a new attempt gets a new request
-  correlation.
+  correlation. If the callback never arrives, the next claim scan performs the same
+  expiration and requeue without inventing a callback hash.
 
 Only one active attempt and one successful attempt may exist for a work item. Attempt
 numbers remain unique so failed/expired history is retained.
@@ -88,6 +89,10 @@ Recording `sent`, `failed`, or `ambiguous` still requires the exact locked attem
 processing work item, artifact, and claim token, but does not reject that terminal write
 solely because wall-clock TTL elapsed. This preserves ownership while ensuring the
 external outcome converges.
+
+The timeout scan applies only to `awaiting_callback`. It must never automatically expire
+or retry `sending`, because the external send may already have occurred and requires a
+terminal response or `ambiguous` human reconciliation.
 
 ## Idempotency
 

@@ -209,9 +209,11 @@ Use `rg` and `rg --files` for search.
   retried automatically. Treat QiWe target group ids as opaque, case-sensitive values;
   allowlists must use exact matching. A callback arriving after the upload claim TTL
   must terminalize that attempt as `expired` and release the work item for a new
-  correlation. Once `sending` is committed, the same attempt and claim token may record
-  `sent`, `failed`, or `ambiguous` after the short TTL; wall-clock expiry must not leave
-  an external outcome stuck in `sending`.
+  correlation. Claim scans must also expire an `awaiting_callback` attempt whose
+  callback never arrived; an active attempt must not remain solely because no callback
+  invoked the callback handler. Once `sending` is committed, the same attempt and claim
+  token may record `sent`, `failed`, or `ambiguous` after the short TTL; wall-clock
+  expiry must not leave an external outcome stuck in `sending`.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime

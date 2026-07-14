@@ -69,6 +69,8 @@ From the monorepo root, prefer:
   Late callbacks must atomically expire the awaiting attempt and requeue the same work
   item before returning. After the send gate commits, terminal writes must still require
   the exact attempt and claim token but must not fail only because its short TTL
-  elapsed.
+  elapsed. Before selecting new work, the claim transaction must expire and requeue a
+  stale `awaiting_callback` attempt even when no callback ever arrives; never apply that
+  timeout retry path to `sending`.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

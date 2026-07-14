@@ -56,6 +56,12 @@ After `sending` is committed, success and failure finalization still lock and re
 the same attempt, work item, artifact, and claim token, but no longer reject the
 terminal write only because the short TTL elapsed.
 
+The Reviewer Guide for commit `bcf0b0e` then identified the remaining no-callback case:
+without any callback invocation, an expired `awaiting_callback` attempt still blocked
+reclaim forever. The claim transaction now locks and expires one stale awaiting attempt
+before selecting work, requeues it, and creates a new correlation with the next attempt
+number. It never applies this recovery to `sending`.
+
 ## Validation
 
 Run the focused disposable PostgreSQL tests in CI:
@@ -64,6 +70,7 @@ Run the focused disposable PostgreSQL tests in CI:
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_is_idempotent_and_redacted -- --ignored --exact
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_rejects_stale_claim -- --ignored --exact
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_recovers_expired_callback_and_terminalizes_ambiguous_send -- --ignored --exact
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_expires_missing_callback_during_reclaim -- --ignored --exact
 ```
 
 Also run the full Rust suite, Clippy with warnings denied, pre-commit checks, CI
