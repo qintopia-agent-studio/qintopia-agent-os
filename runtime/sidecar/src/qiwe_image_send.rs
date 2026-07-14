@@ -1669,6 +1669,26 @@ mod tests {
     }
 
     #[test]
+    fn host_parsing_normalizes_hosts_but_preserves_group_ids() {
+        let hosts = parse_csv_set(" Manager.QIWEAPI.com, manager.qiweapi.com ,, ");
+        assert_eq!(hosts, BTreeSet::from(["manager.qiweapi.com".to_string()]));
+
+        let groups = parse_csv_exact_set("Group-A, group-a,, ");
+        assert!(groups.contains("Group-A"));
+        assert!(groups.contains("group-a"));
+        assert_ne!(groups.len(), 1);
+    }
+
+    #[test]
+    fn url_and_filename_boundaries_reject_unstable_inputs() {
+        assert!(strict_media_url("https://media.example.test/poster.jpg").is_ok());
+        assert!(strict_media_url("https://user@media.example.test/poster.jpg").is_err());
+        assert!(strict_media_url("https://media.example.test/poster.jpg?token=secret").is_err());
+        assert!(strict_media_url("https://media.example.test/poster.jpg#fragment").is_err());
+        assert!(validate_jpeg_filename(&format!("{}.jpg", "a".repeat(252))).is_err());
+    }
+
+    #[test]
     fn preflight_report_never_exposes_configuration_values() {
         let report = test_preflight_report(true, false, false);
         let output = serde_json::to_string(&report).expect("serialize preflight report");
@@ -1754,6 +1774,37 @@ mod tests {
             .expect_err("default build must reject callback apply before stdin");
 
         assert!(error.to_string().contains("not compiled"));
+    }
+
+    #[test]
+    fn invalid_preflight_reports_public_missing_names_only() {
+        let report = preflight_report(PreflightReportState {
+            config_valid: false,
+            send_enabled: false,
+            adapter_compiled: false,
+            webhook_ready: false,
+            allowed_host_count: 0,
+            media_allowed_host_count: 0,
+            allowed_group_count: 0,
+            missing_configuration: vec!["QIWE_TOKEN", "QIWE_GUID"],
+        });
+        let output = serde_json::to_string(&report).expect("serialize preflight report");
+
+        assert!(!report.success);
+        assert!(!report.config_valid);
+        assert_eq!(report.action_status, "adapter_not_configured");
+        assert_eq!(
+            report.missing_configuration,
+            vec!["QIWE_TOKEN", "QIWE_GUID"]
+        );
+        for sensitive in [
+            "secret-token-value",
+            "live-device-guid",
+            "group-id",
+            "https://media.example.test/activity-poster.jpg",
+        ] {
+            assert!(!output.contains(sensitive));
+        }
     }
 
     #[test]
@@ -1974,6 +2025,55 @@ mod tests {
         ] {
             assert!(!serialized.contains(sensitive));
         }
+    }
+
+    #[test]
+    fn callback_parser_rejects_non_success_or_unrelated_events() {
+        assert!(parse_single_async_upload_callback(br#"{"code":1,"data":[]}"#).is_err());
+        assert!(parse_single_async_upload_callback(
+            br#"{"code":0,"data":[{"requestId":"one","cmd":1,"msgData":{}}]}"#
+        )
+        .is_err());
+        assert!(parse_async_upload_callback(
+            br#"{"code":0,"data":[{"requestId":"one","cmd":1,"msgData":{}}]}"#,
+            "one",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn worker_reports_encode_send_boundary_states() {
+        let upload_preview = worker_report(WorkerReportState {
+            success: true,
+            dry_run: true,
+            apply_requested: false,
+            phase: "upload",
+            action_status: "image_upload_preview".to_string(),
+            work_item_id: Some(Uuid::nil()),
+            external_upload_requested: false,
+            callback_received: false,
+            external_send_executed: Some(false),
+        });
+        assert!(upload_preview.success);
+        assert!(upload_preview.dry_run);
+        assert_eq!(upload_preview.external_send_executed, Some(false));
+        assert!(!upload_preview.safe_for_chat);
+
+        let ambiguous_callback = worker_report(WorkerReportState {
+            success: false,
+            dry_run: false,
+            apply_requested: true,
+            phase: "callback",
+            action_status: "image_send_ambiguous".to_string(),
+            work_item_id: Some(Uuid::nil()),
+            external_upload_requested: false,
+            callback_received: true,
+            external_send_executed: None,
+        });
+        assert!(!ambiguous_callback.success);
+        assert!(ambiguous_callback.apply_requested);
+        assert!(ambiguous_callback.callback_received);
+        assert_eq!(ambiguous_callback.external_send_executed, None);
     }
 
     struct TestRequest {
