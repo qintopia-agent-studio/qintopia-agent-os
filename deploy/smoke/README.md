@@ -17,6 +17,25 @@ are wrapped here without changing behavior.
 Smoke checks must be safe by default. Real external sends require separate owner review,
 allowlists, and explicit runtime configuration.
 
+## Huabaosi WeCom Gateway Observation
+
+`deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh` is the phase-2
+read-only observation smoke for the 阿亮画报师 WeCom migration. It inspects the active
+Hermes gateway service, fixed command shape, public `busy_input_mode`, release/current
+presence, and sanitized journal marker counts for internal filtering, send fallback, and
+API timeouts.
+
+Run it only after an owner-approved deploy from the immutable release directory:
+
+```bash
+QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 \
+  deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh
+```
+
+It does not source `.env`, restart services, run generation, print raw journal lines,
+send WeCom messages, write Postgres or Feishu, call QiWe/provider/media endpoints, or
+modify live Hermes profile state.
+
 ## Xiaoman Production Preflight
 
 After an owner-approved deploy, run the aggregate Xiaoman production preflight from the
