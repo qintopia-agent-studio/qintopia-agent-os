@@ -63,6 +63,8 @@ From the monorepo root, prefer:
   the same unexpired claim plus approved artifact/target/final-confirmation facts, and
   store only canonical hashes. The `sending` transition is the at-most-once boundary;
   crashes or transport uncertainty after it require `ambiguous` human reconciliation,
-  never an automatic retry with callback credentials.
+  never an automatic retry with callback credentials. Treat QiWe target group ids as
+  opaque and case-sensitive, and match their allowlist exactly. An ambiguous send audit
+  must use `external_send_executed=null` and outcome `unknown`, never a definite false.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

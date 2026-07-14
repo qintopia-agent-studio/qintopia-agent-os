@@ -103,6 +103,11 @@ Use `rg` and `rg --files` for search.
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
 - PR-Agent must not automatically edit PR descriptions. The completed repository PR
   template is author-owned because CI validates its required sections.
+- Before merging any PR, read the complete PR Reviewer Guide, submitted reviews,
+  conversation comments, and inline review threads for the latest head SHA. A green
+  PR-Agent check is not sufficient. Resolve every security concern and recommended
+  review item in code or record an explicit disposition, then wait for replacement CI
+  and review results before merge.
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
@@ -200,7 +205,9 @@ Use `rg` and `rg --files` for search.
   UUIDs, claim state, allowlisted failure codes, and sanitized audit metadata. Never
   persist QiWe callback file credentials or raw request/callback/message ids. Commit
   `sending` before calling `/msg/sendImage`; an uncertain result becomes `ambiguous` and
-  must not be retried automatically.
+  must record `external_send_executed=null` with outcome `unknown` and must not be
+  retried automatically. Treat QiWe target group ids as opaque, case-sensitive values;
+  allowlists must use exact matching.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime

@@ -285,7 +285,8 @@ impl AdapterConfig {
             bail!("at least one generated-image media host must be allowlisted");
         }
 
-        let allowed_groups = parse_csv_set(&required_env("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS")?);
+        let allowed_groups =
+            parse_csv_exact_set(&required_env("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS")?);
         if allowed_groups.is_empty() {
             bail!("at least one QiWe target group must be allowlisted");
         }
@@ -388,7 +389,7 @@ pub fn build_send_image_request(
 ) -> Result<Vec<u8>> {
     validate_plain_value(guid, "QiWe device id")?;
     validate_plain_value(target_group_id, "QiWe target group id")?;
-    if !allowed_group_ids.contains(&target_group_id.to_ascii_lowercase()) {
+    if !allowed_group_ids.contains(target_group_id) {
         bail!("QiWe target group id is not allowlisted");
     }
     credentials.validate()?;
@@ -548,6 +549,15 @@ fn parse_csv_set(value: &str) -> BTreeSet<String> {
         .map(str::trim)
         .filter(|item| !item.is_empty())
         .map(|item| item.to_ascii_lowercase())
+        .collect()
+}
+
+fn parse_csv_exact_set(value: &str) -> BTreeSet<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -726,6 +736,26 @@ mod tests {
         assert!(build_send_image_request(
             "device-guid",
             "unreviewed-group",
+            &credentials,
+            &allowed_group_ids,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn send_request_group_allowlist_is_case_sensitive() {
+        let credentials = QiweImageCredentials {
+            file_aes_key: "aes-key".to_string(),
+            file_id: "file-id".to_string(),
+            file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+            file_size: 48_300,
+            filename: "activity-poster.jpg".to_string(),
+        };
+        let allowed_group_ids = BTreeSet::from(["group-id".to_string()]);
+
+        assert!(build_send_image_request(
+            "device-guid",
+            "GROUP-ID",
             &credentials,
             &allowed_group_ids,
         )

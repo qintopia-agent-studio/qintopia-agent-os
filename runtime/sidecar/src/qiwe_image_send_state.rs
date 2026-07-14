@@ -513,14 +513,8 @@ pub async fn record_send_failure(
     claim: &QiweCallbackSendClaim,
     disposition: SendFailureDisposition,
 ) -> Result<()> {
-    let (status, failure_code, event_type) = match disposition {
-        SendFailureDisposition::Rejected => ("failed", "send_rejected", "qiwe_image_send_rejected"),
-        SendFailureDisposition::Ambiguous => (
-            "ambiguous",
-            "send_outcome_ambiguous",
-            "qiwe_image_send_outcome_ambiguous",
-        ),
-    };
+    let (status, failure_code, event_type, external_send_executed, external_send_outcome) =
+        send_failure_state(disposition);
     let mut tx = pool
         .begin()
         .await
@@ -545,7 +539,8 @@ pub async fn record_send_failure(
     .bind(failure_code)
     .bind(json!({
         "callback_credentials_persisted": false,
-        "external_send_executed": false,
+        "external_send_executed": external_send_executed,
+        "external_send_outcome": external_send_outcome,
         "automatic_retry_allowed": false
     }))
     .bind(&claim.claim_token)
@@ -589,13 +584,42 @@ pub async fn record_send_failure(
             "attempt_id": claim.attempt_id,
             "failure_code": failure_code,
             "callback_credentials_persisted": false,
+            "external_send_executed": external_send_executed,
+            "external_send_outcome": external_send_outcome,
             "automatic_retry_allowed": false,
-            "send_executed": false
+            "send_executed": external_send_executed
         }),
     )
     .await?;
     tx.commit().await.context("commit QiWe send failure")?;
     Ok(())
+}
+
+fn send_failure_state(
+    disposition: SendFailureDisposition,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<bool>,
+    &'static str,
+) {
+    match disposition {
+        SendFailureDisposition::Rejected => (
+            "failed",
+            "send_rejected",
+            "qiwe_image_send_rejected",
+            Some(false),
+            "rejected",
+        ),
+        SendFailureDisposition::Ambiguous => (
+            "ambiguous",
+            "send_outcome_ambiguous",
+            "qiwe_image_send_outcome_ambiguous",
+            None,
+            "unknown",
+        ),
+    }
 }
 
 fn validate_claim_boundary(
@@ -611,7 +635,7 @@ fn validate_claim_boundary(
         bail!("approved generated image must use image/jpeg");
     }
     validate_plain_value(target_group_id, "QiWe target group id")?;
-    if !allowed_group_ids.contains(&target_group_id.to_ascii_lowercase()) {
+    if !allowed_group_ids.contains(target_group_id) {
         bail!("QiWe target group id is not allowlisted");
     }
     let uri = strict_media_url(artifact_uri)?;
@@ -1101,6 +1125,27 @@ mod tests {
             &hosts,
         )
         .is_err());
+        assert!(validate_claim_boundary(
+            "https://media.example.test/posters/activity.jpg",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "image/jpeg",
+            "GROUP-ID",
+            &groups,
+            &hosts,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn ambiguous_failure_audit_preserves_unknown_outcome() {
+        let (_, _, _, executed, outcome) = send_failure_state(SendFailureDisposition::Ambiguous);
+
+        assert_eq!(executed, None);
+        assert_eq!(outcome, "unknown");
+        let (_, _, _, rejected_executed, rejected_outcome) =
+            send_failure_state(SendFailureDisposition::Rejected);
+        assert_eq!(rejected_executed, Some(false));
+        assert_eq!(rejected_outcome, "rejected");
     }
 
     #[tokio::test]
@@ -1172,13 +1217,16 @@ mod tests {
                    attempt.provider_message_id_sha256,
                    jsonb_build_object(
                        'attempt', to_jsonb(attempt),
+                       'request_metadata', request.metadata,
                        'events', COALESCE(jsonb_agg(event.data) FILTER (WHERE event.id IS NOT NULL), '[]'::jsonb)
                    )
             FROM qintopia_agent_os.qiwe_image_send_attempts attempt
             JOIN qintopia_agent_os.work_items request ON request.id = attempt.work_item_id
-            LEFT JOIN qintopia_agent_os.work_item_events event ON event.work_item_id = request.id
+            LEFT JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id = request.id
+             AND event.event_type LIKE 'qiwe\_image\_%' ESCAPE '\'
             WHERE attempt.id = $1
-            GROUP BY attempt.id, request.status
+            GROUP BY attempt.id, request.status, request.metadata
             "#,
         )
         .bind(attempt_id)

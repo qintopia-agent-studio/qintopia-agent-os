@@ -31,7 +31,8 @@ awaiting_callback -> expired
   item.
 - `failed` is a known terminal denial or provider failure before a successful send.
 - `ambiguous` means AgentOS cannot prove whether QiWe sent the image. It requires human
-  reconciliation and must never be retried automatically.
+  reconciliation, records `external_send_executed=null` with outcome `unknown`, and must
+  never be retried automatically.
 - `expired` means the callback did not arrive while the original claim was current. A
   later reviewed retry creates a new attempt and request correlation.
 
@@ -68,6 +69,10 @@ Starting an attempt requires all of the following in one reviewed flow:
 - an existing `group_message_send_ready_recorded` event;
 - an approved `generated_image` with immutable JPEG URI and content hash; and
 - no active or successful QiWe image-send attempt.
+
+QiWe target group ids are opaque, case-sensitive values. The configured group allowlist
+must match the complete id exactly; lowercase normalization is not permitted at the
+external-send boundary.
 
 The external worker writes a unique claim token to the work item. Recording upload
 acceptance, claiming a callback, and finalizing the send each lock the work item and

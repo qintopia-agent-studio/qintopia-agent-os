@@ -36,6 +36,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-qiwe-preflight-jpeg-state-drift.md`                                    | adopt-input | QiWe preflight stale PNG state remediation                             |
 | `2026-07-14-preflight-diagnostic-fixture-drift.md`                                 | adopt-input | Preflight report fixture drift CI remediation                          |
 | `2026-07-14-orbstack-license-proxy-unavailable.md`                                 | adopt-input | Local OrbStack proxy/license integration interruption                  |
+| `2026-07-14-qiwe-image-send-state-integration-failure.md`                          | adopt-input | QiWe image-send state CI and reviewer remediation                      |
 | `2026-07-14-codex-loopback-test-sandbox.md`                                        | adopt-input | Local fake HTTP test sandbox permission evidence                       |
 
 ## Rules
