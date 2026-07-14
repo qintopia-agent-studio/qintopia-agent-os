@@ -85,6 +85,11 @@ prepares the version and creates a draft GitHub Release. It does not deploy prod
 Production deployment still requires manually publishing the draft GitHub Release, which
 triggers the `release.published` deploy workflow.
 
+Release merging is manual-only. Do not use auto-merge for Release Please PRs, and do not
+let bots or programming agents automatically merge release PRs or publish draft GitHub
+Releases. The owner makes the merge and publish decisions after the required exact-head
+validation has passed.
+
 If the Release Please PR stays open while more feature PRs merge, Release Please updates
 the same release PR. Avoid editing root `CHANGELOG.md` or
 `.release-please-manifest.json` from ordinary PRs to keep that release PR conflict-free.

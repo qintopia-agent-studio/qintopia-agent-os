@@ -102,6 +102,12 @@ Use `rg` and `rg --files` for search.
   Please owns routine release changelog updates from merged Conventional Commits.
 - Merging a Release Please PR prepares a version and draft GitHub Release. Production
   deployment still requires the owner to manually publish that draft Release.
+- Release Please PRs and draft GitHub Releases must be merged or published only through
+  an explicit manual owner decision. Do not enable or use auto-merge, automatic release
+  publishing, or bot/agent-driven release merging.
+- Before publishing a draft GitHub Release, confirm its tag points to current
+  `origin/master`. If `master` advanced after the draft was prepared, do not publish or
+  retry the stale tag; validate and publish the next Release Please PR instead.
 - Do not merge a Release Please PR unless the draft GitHub Release will be published or
   intentionally deleted in the same release decision. The repository release manifest
   must track the latest published Release tag; deleted draft-only releases must not

@@ -43,6 +43,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-qiwe-callback-shape-evidence.md`                                       | adopt-input | QiWe callback credential-shape evidence boundary                       |
 | `2026-07-14-staging-adapter-ci-execution-gap.md`                                   | adopt-input | Staging-only Rust tests compiled but not executed in CI                |
 | `2026-07-14-huabaosi-command-entry-staging-gate.md`                                | adopt-input | Huabaosi compile and command-entry staging gate remediation            |
+| `2026-07-14-v028-release-tag-drift.md`                                             | adopt-input | v0.2.8 release tag drift deploy failure                                |
 
 ## Rules
 
