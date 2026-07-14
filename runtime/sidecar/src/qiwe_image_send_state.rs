@@ -1997,6 +1997,7 @@ mod tests {
 
     fn upload_claim_fixture() -> QiweUploadClaim {
         QiweUploadClaim {
+            attempt_id: Uuid::nil(),
             work_item_id: Uuid::nil(),
             generated_image_artifact_id: Uuid::nil(),
             attempt_number: 1,
@@ -2005,8 +2006,18 @@ mod tests {
             artifact_content_hash:
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_string(),
+            artifact_file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+            artifact_byte_size: 48_300,
             filename: "activity.jpg".to_string(),
             target_group_id: "test-group-id".to_string(),
+        }
+    }
+
+    fn callback_file_fixture() -> QiweCallbackFileIdentity<'static> {
+        QiweCallbackFileIdentity {
+            filename: "activity.jpg",
+            file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            file_size: 48_300,
         }
     }
 
@@ -2088,19 +2099,29 @@ mod tests {
         )
         .is_err());
         assert!(validate_claim_boundary(
-            "https://other.example.test/posters/activity.jpg",
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "image/jpeg",
-            "group-id",
+            ArtifactBoundary {
+                uri: "https://other.example.test/posters/activity.jpg",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "group-id",
+            },
             &groups,
             &hosts,
         )
         .is_err());
         assert!(validate_claim_boundary(
-            "https://media.example.test/posters/",
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "image/jpeg",
-            "group-id",
+            ArtifactBoundary {
+                uri: "https://media.example.test/posters/",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "group-id",
+            },
             &groups,
             &hosts,
         )
@@ -2112,22 +2133,32 @@ mod tests {
         let groups = BTreeSet::from(["CaseSensitiveGroup".to_string()]);
         let hosts = BTreeSet::from(["media.example.test".to_string()]);
 
-        let filename = validate_claim_boundary(
-            "https://MEDIA.EXAMPLE.TEST/posters/activity.JPEG",
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "image/jpeg",
-            "CaseSensitiveGroup",
+        let identity = validate_claim_boundary(
+            ArtifactBoundary {
+                uri: "https://MEDIA.EXAMPLE.TEST/posters/activity.JPEG",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "CaseSensitiveGroup",
+            },
             &groups,
             &hosts,
         )
         .expect("host normalization preserves reviewed media boundary");
 
-        assert_eq!(filename, "activity.JPEG");
+        assert_eq!(identity.filename, "activity.JPEG");
         assert!(validate_claim_boundary(
-            "https://MEDIA.EXAMPLE.TEST/posters/activity.JPEG",
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "image/jpeg",
-            "casesensitivegroup",
+            ArtifactBoundary {
+                uri: "https://MEDIA.EXAMPLE.TEST/posters/activity.JPEG",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "casesensitivegroup",
+            },
             &groups,
             &hosts,
         )
@@ -2167,10 +2198,14 @@ mod tests {
         ] {
             assert!(
                 validate_claim_boundary(
-                    artifact_uri,
-                    artifact_content_hash,
-                    mime_type,
-                    target_group_id,
+                    ArtifactBoundary {
+                        uri: artifact_uri,
+                        content_hash: artifact_content_hash,
+                        mime_type,
+                        file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                        byte_size: 48_300,
+                        target_group_id,
+                    },
                     &groups,
                     &hosts,
                 )
@@ -2234,12 +2269,7 @@ mod tests {
             "other-group"
         )
         .is_err());
-        assert!(validate_preview_boundary(
-            "https://media.example.test/posters/activity",
-            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "image/jpeg",
-        )
-        .is_err());
+        assert!(validate("https://media.example.test/posters/activity", "group-id").is_err());
     }
 
     #[test]
@@ -2364,8 +2394,9 @@ mod tests {
     #[tokio::test]
     async fn callback_claim_rejects_invalid_plain_inputs_before_database() {
         let pool = lazy_pool();
+        let callback_file = callback_file_fixture();
 
-        let empty = claim_callback_for_send(&pool, "safe-request-id", b"")
+        let empty = claim_callback_for_send(&pool, "safe-request-id", b"", &callback_file)
             .await
             .expect_err("empty callback payload must be rejected");
         assert!(empty.to_string().contains("payload size"));
@@ -2374,14 +2405,16 @@ mod tests {
             &pool,
             "safe-request-id",
             &vec![b'a'; MAX_CALLBACK_PAYLOAD_BYTES + 1],
+            &callback_file,
         )
         .await
         .expect_err("oversized callback payload must be rejected");
         assert!(oversized.to_string().contains("payload size"));
 
-        let invalid_request_id = claim_callback_for_send(&pool, "line\nbreak", b"{}")
-            .await
-            .expect_err("control-character request ids must be rejected");
+        let invalid_request_id =
+            claim_callback_for_send(&pool, "line\nbreak", b"{}", &callback_file)
+                .await
+                .expect_err("control-character request ids must be rejected");
         assert!(invalid_request_id
             .to_string()
             .contains("QiWe upload request id"));
