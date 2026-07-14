@@ -116,15 +116,22 @@ target, or missing final confirmation must stop before sending.
   The live helpers compile only with the staging-only Cargo feature. Production release
   artifacts record an empty feature list and cannot execute either external call; no
   listener, service, timer, staging endpoint, or production enablement is installed.
+- Callback parsing classifies the raw `msgData` field names into one of four fixed,
+  reviewed credential schema ids before deserializing credential values. Reports expose
+  only that fixed id and an additional-field count. They reject simultaneous canonical
+  and alias spellings and never expose the request id, credential values, filename, MD5,
+  unknown field names, or unknown values. This makes an owner-approved staging callback
+  safe to inspect, but it is instrumentation only and is not staging evidence.
 
 ## Next Implementation
 
 1. Run one owner-approved staging image generation and verify the final JPEG media
    metadata and same-byte readback without sending.
-2. Capture one owner-approved staging async callback through a dedicated callback path
-   before generic raw-event sanitization, and confirm the exact credential field names
-   and the existing `isSendSuccess=1` success assumption without storing raw credentials
-   in git or logs.
+2. Capture one owner-approved staging async callback through the bounded callback
+   processor before generic raw-event sanitization. Record only the fixed credential
+   schema id and additional-field count, then confirm the existing `isSendSuccess=1`
+   success assumption without storing raw credentials, request ids, filenames, unknown
+   field names, or unknown values in git or logs.
 3. Complete CI review of the code-only
    [guarded adapter worker](qiwe-image-send-adapter-worker.md), including local fake
    QiWe upload/send behavior and disposable PostgreSQL crash/timeout recovery. Keep real

@@ -214,6 +214,10 @@ Use `rg` and `rg --files` for search.
   and byte count, never the raw payload. A callback id is already sanitized only when it
   is exactly `qiwe-callback:` plus a 64-character hexadecimal SHA-256 digest; a prefix
   alone is untrusted and the complete value must be hashed again.
+- QiWe callback credential-shape reports may emit only a fixed reviewed schema id and an
+  additional-field count. They must reject simultaneous canonical and alias spellings
+  and must never emit request ids, credential values, filenames, MD5 values, unknown
+  field names, or unknown values.
 - QiWe outbound text filtering may suppress only complete, narrowly recognized Hermes
   internal-process templates. Every added template needs positive and negative tests;
   never block ordinary answers through broad standalone terms such as `plain text` or

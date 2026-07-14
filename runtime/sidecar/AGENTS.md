@@ -61,6 +61,10 @@ From the monorepo root, prefer:
   must not become a bypass that stores callback credentials or raw private text. Only
   preserve callback event/message ids matching `qiwe-callback:<64 hex SHA-256>`; hash
   the complete id again when a prefixed value has any other suffix.
+- Callback credential-shape reports may expose only one fixed reviewed schema id and an
+  additional-field count. Reject canonical and alias spellings that appear together;
+  never report request ids, credential values, filenames, MD5 values, unknown field
+  names, or unknown values.
 - QiWe image-send state transitions must lock both the work item and attempt, recheck
   the same unexpired claim plus approved artifact/target/final-confirmation facts, and
   store only canonical hashes. The `sending` transition is the at-most-once boundary;
