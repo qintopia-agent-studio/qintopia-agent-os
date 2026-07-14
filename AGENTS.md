@@ -61,6 +61,10 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
   `QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh`
+- Sidecar dependency vulnerability audit:
+  `cd runtime/sidecar && cargo deny check advisories bans sources`. A full
+  `cargo deny check` currently fails license checks because the repository has no
+  `deny.toml` license policy; do not treat that as unresolved RustSec advisories.
 
 Use `rg` and `rg --files` for search.
 
