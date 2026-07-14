@@ -377,5 +377,16 @@ jobs:
           event::tests::postgres_callback_storage_redacts_credentials -- --ignored
           --exact
 
+      - name: QiWe image-send state integration
+        run: |
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_is_idempotent_and_redacted \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_rejects_stale_claim \
+            -- --ignored --exact
+
       - name: Xiaoman downstream apply smoke
         run: deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh

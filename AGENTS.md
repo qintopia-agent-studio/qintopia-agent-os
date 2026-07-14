@@ -196,6 +196,11 @@ Use `rg` and `rg --files` for search.
   and byte count, never the raw payload. A callback id is already sanitized only when it
   is exactly `qiwe-callback:` plus a 64-character hexadecimal SHA-256 digest; a prefix
   alone is untrusted and the complete value must be hashed again.
+- `qintopia_agent_os.qiwe_image_send_attempts` may store only canonical hashes, AgentOS
+  UUIDs, claim state, allowlisted failure codes, and sanitized audit metadata. Never
+  persist QiWe callback file credentials or raw request/callback/message ids. Commit
+  `sending` before calling `/msg/sendImage`; an uncertain result becomes `ambiguous` and
+  must not be retried automatically.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime

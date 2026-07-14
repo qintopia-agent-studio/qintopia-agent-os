@@ -59,5 +59,10 @@ From the monorepo root, prefer:
   must not become a bypass that stores callback credentials or raw private text. Only
   preserve callback event/message ids matching `qiwe-callback:<64 hex SHA-256>`; hash
   the complete id again when a prefixed value has any other suffix.
+- QiWe image-send state transitions must lock both the work item and attempt, recheck
+  the same unexpired claim plus approved artifact/target/final-confirmation facts, and
+  store only canonical hashes. The `sending` transition is the at-most-once boundary;
+  crashes or transport uncertainty after it require `ambiguous` human reconciliation,
+  never an automatic retry with callback credentials.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

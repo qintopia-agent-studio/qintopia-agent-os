@@ -3,6 +3,15 @@
 This file is the repository-side history for database design changes. The database-side
 history is `qintopia_agent_os.schema_change_log`.
 
+## `2026-07-14.002`
+
+Migration: `migrations/202607140002_qiwe_image_send_state.sql` Design note:
+`docs/data-design/2026-07-14-qiwe-image-send-state.md`
+
+Adds durable hashed QiWe image-upload correlation, callback idempotency, claim-token
+validation, and sanitized terminal send audit. The migration is additive and does not
+persist callback file credentials, enable the adapter, or send externally.
+
 ## `2026-07-14.001`
 
 Migration: `migrations/202607140001_xiaoman_event_signal_mutations.sql` Design note:

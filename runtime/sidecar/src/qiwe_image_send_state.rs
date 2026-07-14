@@ -1,0 +1,1258 @@
+use std::collections::BTreeSet;
+
+use anyhow::{anyhow, bail, Context, Result};
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use sqlx::{postgres::PgPool, Row};
+use url::Url;
+use uuid::Uuid;
+
+use crate::qiwe_image_send::QiweSendReceipt;
+
+const WORKER_ID: &str = "qiwe-image-send-adapter";
+const WORK_ITEM_TYPE: &str = "group_message_request";
+const CAPABILITY_KEY: &str = "erhua.send_group_message";
+const CLAIM_TTL_MINUTES: i64 = 10;
+const SEND_CLAIM_TTL_MINUTES: i64 = 2;
+const MAX_CALLBACK_PAYLOAD_BYTES: usize = 64 * 1024;
+
+#[derive(Debug, Clone)]
+pub struct QiweUploadClaim {
+    pub work_item_id: Uuid,
+    pub generated_image_artifact_id: Uuid,
+    pub attempt_number: i32,
+    pub claim_token: String,
+    pub artifact_uri: String,
+    pub artifact_content_hash: String,
+    pub filename: String,
+    pub target_group_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QiweCallbackSendClaim {
+    pub attempt_id: Uuid,
+    pub work_item_id: Uuid,
+    pub generated_image_artifact_id: Uuid,
+    pub claim_token: String,
+    pub target_group_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallbackClaimOutcome {
+    Ready(QiweCallbackSendClaim),
+    Duplicate { status: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendFailureDisposition {
+    Rejected,
+    Ambiguous,
+}
+
+struct StoredAttempt {
+    id: Uuid,
+    work_item_id: Uuid,
+    generated_image_artifact_id: Uuid,
+    status: String,
+    claim_token: String,
+    callback_payload_sha256: Option<String>,
+    target_group_sha256: String,
+    artifact_content_hash: String,
+    artifact_uri_sha256: String,
+}
+
+pub async fn claim_ready_work_item(
+    pool: &PgPool,
+    work_item_id: Option<Uuid>,
+    allowed_group_ids: &BTreeSet<String>,
+    media_allowed_hosts: &BTreeSet<String>,
+) -> Result<Option<QiweUploadClaim>> {
+    let claim_token = format!("{WORKER_ID}:{}", Uuid::new_v4());
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe image-send claim transaction")?;
+    let row = sqlx::query(
+        r#"
+        WITH claimable AS (
+            SELECT
+                request.id,
+                artifact.id AS generated_image_artifact_id,
+                artifact.artifact_uri,
+                artifact.content_hash AS artifact_content_hash,
+                artifact.metadata->>'mime_type' AS mime_type,
+                request.payload->>'target_group_id' AS target_group_id,
+                COALESCE((
+                    SELECT max(attempt.attempt_number) + 1
+                    FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+                    WHERE attempt.work_item_id = request.id
+                ), 1) AS attempt_number
+            FROM qintopia_agent_os.work_items request
+            JOIN qintopia_agent_os.artifacts artifact
+              ON artifact.id::text = request.payload->>'approved_artifact_id'
+             AND artifact.artifact_type = 'generated_image'
+             AND artifact.review_status = 'approved'
+             AND artifact.created_by_agent = 'huabaosi'
+            JOIN qintopia_agent_os.work_items image_request
+              ON image_request.id = artifact.work_item_id
+             AND image_request.work_item_type = 'image_generation_request'
+             AND image_request.capability_key = 'huabaosi.generate_image_asset'
+             AND image_request.target_agent = 'huabaosi'
+             AND image_request.status = 'completed'
+            WHERE request.work_item_type = $1
+              AND request.capability_key = $2
+              AND request.requester_agent = 'xiaoman'
+              AND request.target_agent = 'erhua'
+              AND request.review_policy = 'human_final_confirmation'
+              AND request.status = 'queued'
+              AND request.available_at <= now()
+              AND request.payload->>'target_channel' = 'qiwe'
+              AND COALESCE(request.payload->>'target_group_id', '') <> ''
+              AND ($3::uuid IS NULL OR request.id = $3)
+              AND EXISTS (
+                  SELECT 1
+                  FROM qintopia_agent_os.work_item_events confirmation
+                  WHERE confirmation.work_item_id = request.id
+                    AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                    AND confirmation.data->>'decision' = 'confirmed'
+                    AND confirmation.data->>'current_status' = 'queued'
+                    AND confirmation.data->>'send_executed' = 'false'
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM qintopia_agent_os.work_item_events ready
+                  WHERE ready.work_item_id = request.id
+                    AND ready.event_type = 'group_message_send_ready_recorded'
+                    AND ready.data->>'send_executed' = 'false'
+                    AND ready.data->>'target_group_id' = request.payload->>'target_group_id'
+                    AND ready.data->>'approved_artifact_id' = request.payload->>'approved_artifact_id'
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM qintopia_agent_os.work_item_events created
+                  WHERE created.work_item_id = artifact.work_item_id
+                    AND created.artifact_id = artifact.id
+                    AND created.event_type = 'generated_image_created'
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+                  WHERE attempt.work_item_id = request.id
+                    AND attempt.status IN ('awaiting_callback', 'sending', 'sent')
+              )
+            ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
+            LIMIT 1
+            FOR UPDATE OF request, artifact, image_request SKIP LOCKED
+        )
+        UPDATE qintopia_agent_os.work_items request
+        SET
+            status = 'processing',
+            claimed_by = $4,
+            locked_at = now(),
+            claim_expires_at = now() + make_interval(mins => $5),
+            attempts = attempts + 1,
+            updated_at = now()
+        FROM claimable
+        WHERE request.id = claimable.id
+        RETURNING
+            request.id,
+            claimable.generated_image_artifact_id,
+            claimable.attempt_number,
+            request.claimed_by AS claim_token,
+            claimable.artifact_uri,
+            claimable.artifact_content_hash,
+            claimable.mime_type,
+            claimable.target_group_id
+        "#,
+    )
+    .bind(WORK_ITEM_TYPE)
+    .bind(CAPABILITY_KEY)
+    .bind(work_item_id)
+    .bind(&claim_token)
+    .bind(CLAIM_TTL_MINUTES as i32)
+    .fetch_optional(&mut *tx)
+    .await
+    .context("claim send-ready QiWe image work item")?;
+
+    let Some(row) = row else {
+        tx.commit()
+            .await
+            .context("commit empty QiWe image-send claim")?;
+        return Ok(None);
+    };
+    let artifact_uri: String = row
+        .try_get("artifact_uri")
+        .context("approved generated image is missing artifact_uri")?;
+    let artifact_content_hash: String = row
+        .try_get("artifact_content_hash")
+        .context("approved generated image is missing content_hash")?;
+    let mime_type: String = row
+        .try_get("mime_type")
+        .context("approved generated image is missing mime_type")?;
+    let target_group_id: String = row.try_get("target_group_id")?;
+    let filename = validate_claim_boundary(
+        &artifact_uri,
+        &artifact_content_hash,
+        &mime_type,
+        &target_group_id,
+        allowed_group_ids,
+        media_allowed_hosts,
+    )?;
+    let claim = QiweUploadClaim {
+        work_item_id: row.try_get("id")?,
+        generated_image_artifact_id: row.try_get("generated_image_artifact_id")?,
+        attempt_number: row.try_get("attempt_number")?,
+        claim_token: row.try_get("claim_token")?,
+        artifact_uri,
+        artifact_content_hash,
+        filename,
+        target_group_id,
+    };
+    tx.commit().await.context("commit QiWe image-send claim")?;
+    Ok(Some(claim))
+}
+
+pub async fn record_upload_acceptance(
+    pool: &PgPool,
+    claim: &QiweUploadClaim,
+    request_id: &str,
+) -> Result<Uuid> {
+    validate_plain_value(request_id, "QiWe upload request id")?;
+    let request_id_sha256 = sha256_marker(request_id.as_bytes());
+    let target_group_sha256 = sha256_marker(claim.target_group_id.as_bytes());
+    let artifact_uri_sha256 = sha256_marker(claim.artifact_uri.as_bytes());
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe upload-acceptance transaction")?;
+    lock_current_claim(&mut tx, claim).await?;
+    let attempt_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO qintopia_agent_os.qiwe_image_send_attempts
+            (
+                work_item_id,
+                generated_image_artifact_id,
+                attempt_number,
+                status,
+                claim_token,
+                request_id_sha256,
+                target_group_sha256,
+                artifact_content_hash,
+                artifact_uri_sha256,
+                audit_metadata
+            )
+        VALUES
+            ($1, $2, $3, 'awaiting_callback', $4, $5, $6, $7, $8, $9)
+        RETURNING id
+        "#,
+    )
+    .bind(claim.work_item_id)
+    .bind(claim.generated_image_artifact_id)
+    .bind(claim.attempt_number)
+    .bind(&claim.claim_token)
+    .bind(&request_id_sha256)
+    .bind(&target_group_sha256)
+    .bind(&claim.artifact_content_hash)
+    .bind(&artifact_uri_sha256)
+    .bind(json!({
+        "callback_credentials_persisted": false,
+        "external_send_executed": false,
+        "protocol": "qiwe_async_url_upload_then_send_image"
+    }))
+    .fetch_one(&mut *tx)
+    .await
+    .context("record hashed QiWe upload acceptance")?;
+    append_event(
+        &mut tx,
+        claim.work_item_id,
+        Some(claim.generated_image_artifact_id),
+        "qiwe_image_upload_accepted",
+        json!({
+            "attempt_id": attempt_id,
+            "attempt_number": claim.attempt_number,
+            "request_id_sha256": request_id_sha256,
+            "target_group_sha256": target_group_sha256,
+            "artifact_content_hash": claim.artifact_content_hash,
+            "artifact_uri_sha256": artifact_uri_sha256,
+            "callback_credentials_persisted": false,
+            "send_executed": false
+        }),
+    )
+    .await?;
+    tx.commit().await.context("commit QiWe upload acceptance")?;
+    Ok(attempt_id)
+}
+
+pub async fn claim_callback_for_send(
+    pool: &PgPool,
+    request_id: &str,
+    callback_payload: &[u8],
+) -> Result<CallbackClaimOutcome> {
+    validate_plain_value(request_id, "QiWe upload request id")?;
+    if callback_payload.is_empty() || callback_payload.len() > MAX_CALLBACK_PAYLOAD_BYTES {
+        bail!("QiWe callback payload size is invalid");
+    }
+    let request_id_sha256 = sha256_marker(request_id.as_bytes());
+    let callback_payload_sha256 = sha256_marker(callback_payload);
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe callback claim transaction")?;
+    let row = sqlx::query(
+        r#"
+        SELECT
+            id,
+            work_item_id,
+            generated_image_artifact_id,
+            status,
+            claim_token,
+            callback_payload_sha256,
+            target_group_sha256,
+            artifact_content_hash,
+            artifact_uri_sha256
+        FROM qintopia_agent_os.qiwe_image_send_attempts
+        WHERE request_id_sha256 = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(&request_id_sha256)
+    .fetch_optional(&mut *tx)
+    .await
+    .context("load QiWe upload correlation")?
+    .ok_or_else(|| anyhow!("QiWe callback does not match a known upload correlation"))?;
+    let attempt = stored_attempt_from_row(row)?;
+    if attempt.status != "awaiting_callback" {
+        if attempt.callback_payload_sha256.as_deref() == Some(&callback_payload_sha256)
+            && matches!(
+                attempt.status.as_str(),
+                "sending" | "sent" | "failed" | "ambiguous"
+            )
+        {
+            tx.commit()
+                .await
+                .context("commit duplicate QiWe callback check")?;
+            return Ok(CallbackClaimOutcome::Duplicate {
+                status: attempt.status,
+            });
+        }
+        bail!("QiWe callback correlation is no longer awaiting callback");
+    }
+
+    let target_group_id = lock_callback_policy(&mut tx, &attempt).await?;
+    let updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.qiwe_image_send_attempts
+        SET
+            status = 'sending',
+            callback_payload_sha256 = $2,
+            callback_received_at = now(),
+            send_started_at = now(),
+            audit_metadata = audit_metadata || $3,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'awaiting_callback'
+        "#,
+    )
+    .bind(attempt.id)
+    .bind(&callback_payload_sha256)
+    .bind(json!({
+        "callback_credentials_persisted": false,
+        "send_gate_opened": true,
+        "external_send_executed": false
+    }))
+    .execute(&mut *tx)
+    .await
+    .context("open QiWe send gate")?;
+    if updated.rows_affected() != 1 {
+        bail!("QiWe callback send gate changed concurrently");
+    }
+    let claim_extended = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.work_items
+        SET claim_expires_at = now() + make_interval(mins => $3), updated_at = now()
+        WHERE id = $1
+          AND status = 'processing'
+          AND claimed_by = $2
+          AND claim_expires_at > now()
+        "#,
+    )
+    .bind(attempt.work_item_id)
+    .bind(&attempt.claim_token)
+    .bind(SEND_CLAIM_TTL_MINUTES as i32)
+    .execute(&mut *tx)
+    .await
+    .context("extend QiWe send claim")?;
+    if claim_extended.rows_affected() != 1 {
+        bail!("QiWe image-send claim expired before callback processing");
+    }
+    append_event(
+        &mut tx,
+        attempt.work_item_id,
+        Some(attempt.generated_image_artifact_id),
+        "qiwe_image_callback_claimed",
+        json!({
+            "attempt_id": attempt.id,
+            "request_id_sha256": request_id_sha256,
+            "callback_payload_sha256": callback_payload_sha256,
+            "callback_credentials_persisted": false,
+            "send_gate_opened": true,
+            "send_executed": false
+        }),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .context("commit QiWe callback send gate")?;
+    Ok(CallbackClaimOutcome::Ready(QiweCallbackSendClaim {
+        attempt_id: attempt.id,
+        work_item_id: attempt.work_item_id,
+        generated_image_artifact_id: attempt.generated_image_artifact_id,
+        claim_token: attempt.claim_token,
+        target_group_id,
+    }))
+}
+
+pub async fn record_send_success(
+    pool: &PgPool,
+    claim: &QiweCallbackSendClaim,
+    receipt: &QiweSendReceipt,
+) -> Result<()> {
+    if receipt.is_send_success != 1 {
+        bail!("QiWe send receipt does not confirm success");
+    }
+    validate_plain_value(
+        &receipt.message_identifier,
+        "QiWe provider message identifier",
+    )?;
+    let provider_message_id_sha256 = sha256_marker(receipt.message_identifier.as_bytes());
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe send-success transaction")?;
+    lock_sending_claim(&mut tx, claim).await?;
+    let attempt_updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.qiwe_image_send_attempts
+        SET
+            status = 'sent',
+            provider_message_id_sha256 = $2,
+            completed_at = now(),
+            audit_metadata = audit_metadata || $3,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'sending'
+          AND claim_token = $4
+        "#,
+    )
+    .bind(claim.attempt_id)
+    .bind(&provider_message_id_sha256)
+    .bind(json!({
+        "provider_confirmed_success": true,
+        "callback_credentials_persisted": false,
+        "external_send_executed": true
+    }))
+    .bind(&claim.claim_token)
+    .execute(&mut *tx)
+    .await
+    .context("record sanitized QiWe send success")?;
+    if attempt_updated.rows_affected() != 1 {
+        bail!("QiWe send attempt is no longer current");
+    }
+    let work_item_updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.work_items
+        SET
+            status = 'completed',
+            claimed_by = NULL,
+            locked_at = NULL,
+            claim_expires_at = NULL,
+            last_error = NULL,
+            metadata = metadata || $3,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'processing'
+          AND claimed_by = $2
+          AND claim_expires_at > now()
+        "#,
+    )
+    .bind(claim.work_item_id)
+    .bind(&claim.claim_token)
+    .bind(json!({
+        "qiwe_image_send": {
+            "attempt_id": claim.attempt_id,
+            "provider_message_id_sha256": provider_message_id_sha256,
+            "external_send_executed": true
+        }
+    }))
+    .execute(&mut *tx)
+    .await
+    .context("complete QiWe group-message work item")?;
+    if work_item_updated.rows_affected() != 1 {
+        bail!("QiWe work-item claim changed before send success was recorded");
+    }
+    append_event(
+        &mut tx,
+        claim.work_item_id,
+        Some(claim.generated_image_artifact_id),
+        "qiwe_image_send_executed",
+        json!({
+            "attempt_id": claim.attempt_id,
+            "provider_message_id_sha256": provider_message_id_sha256,
+            "provider_confirmed_success": true,
+            "callback_credentials_persisted": false,
+            "send_executed": true
+        }),
+    )
+    .await?;
+    tx.commit().await.context("commit QiWe send success")?;
+    Ok(())
+}
+
+pub async fn record_send_failure(
+    pool: &PgPool,
+    claim: &QiweCallbackSendClaim,
+    disposition: SendFailureDisposition,
+) -> Result<()> {
+    let (status, failure_code, event_type) = match disposition {
+        SendFailureDisposition::Rejected => ("failed", "send_rejected", "qiwe_image_send_rejected"),
+        SendFailureDisposition::Ambiguous => (
+            "ambiguous",
+            "send_outcome_ambiguous",
+            "qiwe_image_send_outcome_ambiguous",
+        ),
+    };
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe send-failure transaction")?;
+    lock_sending_claim(&mut tx, claim).await?;
+    let attempt_updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.qiwe_image_send_attempts
+        SET
+            status = $2,
+            failure_code = $3,
+            completed_at = now(),
+            audit_metadata = audit_metadata || $4,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'sending'
+          AND claim_token = $5
+        "#,
+    )
+    .bind(claim.attempt_id)
+    .bind(status)
+    .bind(failure_code)
+    .bind(json!({
+        "callback_credentials_persisted": false,
+        "external_send_executed": false,
+        "automatic_retry_allowed": false
+    }))
+    .bind(&claim.claim_token)
+    .execute(&mut *tx)
+    .await
+    .context("record sanitized QiWe send failure")?;
+    if attempt_updated.rows_affected() != 1 {
+        bail!("QiWe send attempt is no longer current");
+    }
+    let work_item_updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.work_items
+        SET
+            status = 'failed',
+            claimed_by = NULL,
+            locked_at = NULL,
+            claim_expires_at = NULL,
+            last_error = $3,
+            updated_at = now()
+        WHERE id = $1
+          AND status = 'processing'
+          AND claimed_by = $2
+          AND claim_expires_at > now()
+        "#,
+    )
+    .bind(claim.work_item_id)
+    .bind(&claim.claim_token)
+    .bind(failure_code)
+    .execute(&mut *tx)
+    .await
+    .context("fail QiWe group-message work item")?;
+    if work_item_updated.rows_affected() != 1 {
+        bail!("QiWe work-item claim changed before send failure was recorded");
+    }
+    append_event(
+        &mut tx,
+        claim.work_item_id,
+        Some(claim.generated_image_artifact_id),
+        event_type,
+        json!({
+            "attempt_id": claim.attempt_id,
+            "failure_code": failure_code,
+            "callback_credentials_persisted": false,
+            "automatic_retry_allowed": false,
+            "send_executed": false
+        }),
+    )
+    .await?;
+    tx.commit().await.context("commit QiWe send failure")?;
+    Ok(())
+}
+
+fn validate_claim_boundary(
+    artifact_uri: &str,
+    artifact_content_hash: &str,
+    mime_type: &str,
+    target_group_id: &str,
+    allowed_group_ids: &BTreeSet<String>,
+    media_allowed_hosts: &BTreeSet<String>,
+) -> Result<String> {
+    validate_canonical_sha256(artifact_content_hash, "generated-image content hash")?;
+    if mime_type != "image/jpeg" {
+        bail!("approved generated image must use image/jpeg");
+    }
+    validate_plain_value(target_group_id, "QiWe target group id")?;
+    if !allowed_group_ids.contains(&target_group_id.to_ascii_lowercase()) {
+        bail!("QiWe target group id is not allowlisted");
+    }
+    let uri = strict_media_url(artifact_uri)?;
+    let host = uri
+        .host_str()
+        .context("approved generated-image URI host is missing")?
+        .to_ascii_lowercase();
+    if !media_allowed_hosts.contains(&host) {
+        bail!("approved generated-image URI host is not allowlisted");
+    }
+    let filename = uri
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("approved generated-image URI is missing a filename"))?;
+    validate_jpeg_filename(filename)?;
+    Ok(filename.to_string())
+}
+
+async fn lock_current_claim(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    claim: &QiweUploadClaim,
+) -> Result<()> {
+    let current: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT request.id
+        FROM qintopia_agent_os.work_items request
+        JOIN qintopia_agent_os.artifacts artifact
+          ON artifact.id = $3
+         AND artifact.id::text = request.payload->>'approved_artifact_id'
+        JOIN qintopia_agent_os.work_items image_request
+          ON image_request.id = artifact.work_item_id
+         AND image_request.work_item_type = 'image_generation_request'
+         AND image_request.capability_key = 'huabaosi.generate_image_asset'
+         AND image_request.target_agent = 'huabaosi'
+         AND image_request.status = 'completed'
+        WHERE request.id = $1
+          AND request.status = 'processing'
+          AND request.claimed_by = $2
+          AND request.claim_expires_at > now()
+          AND request.payload->>'target_group_id' = $4
+          AND artifact.artifact_type = 'generated_image'
+          AND artifact.review_status = 'approved'
+          AND artifact.created_by_agent = 'huabaosi'
+          AND artifact.content_hash = $5
+          AND artifact.artifact_uri = $6
+          AND EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events confirmation
+              WHERE confirmation.work_item_id = request.id
+                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                AND confirmation.data->>'decision' = 'confirmed'
+                AND confirmation.data->>'send_executed' = 'false'
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events ready
+              WHERE ready.work_item_id = request.id
+                AND ready.event_type = 'group_message_send_ready_recorded'
+                AND ready.data->>'send_executed' = 'false'
+                AND ready.data->>'target_group_id' = request.payload->>'target_group_id'
+                AND ready.data->>'approved_artifact_id' = request.payload->>'approved_artifact_id'
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events created
+              WHERE created.work_item_id = artifact.work_item_id
+                AND created.artifact_id = artifact.id
+                AND created.event_type = 'generated_image_created'
+          )
+        FOR UPDATE OF request, artifact, image_request
+        "#,
+    )
+    .bind(claim.work_item_id)
+    .bind(&claim.claim_token)
+    .bind(claim.generated_image_artifact_id)
+    .bind(&claim.target_group_id)
+    .bind(&claim.artifact_content_hash)
+    .bind(&claim.artifact_uri)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("recheck current QiWe upload claim")?;
+    if current.is_none() {
+        bail!("QiWe image-send claim or approved artifact is no longer current");
+    }
+    Ok(())
+}
+
+async fn lock_callback_policy(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    attempt: &StoredAttempt,
+) -> Result<String> {
+    let row = sqlx::query(
+        r#"
+        SELECT request.payload->>'target_group_id' AS target_group_id,
+               artifact.artifact_uri
+        FROM qintopia_agent_os.work_items request
+        JOIN qintopia_agent_os.artifacts artifact
+          ON artifact.id = $3
+         AND artifact.id::text = request.payload->>'approved_artifact_id'
+        JOIN qintopia_agent_os.work_items image_request
+          ON image_request.id = artifact.work_item_id
+         AND image_request.work_item_type = 'image_generation_request'
+         AND image_request.capability_key = 'huabaosi.generate_image_asset'
+         AND image_request.target_agent = 'huabaosi'
+         AND image_request.status = 'completed'
+        WHERE request.id = $1
+          AND request.status = 'processing'
+          AND request.claimed_by = $2
+          AND request.claim_expires_at > now()
+          AND request.work_item_type = 'group_message_request'
+          AND request.capability_key = 'erhua.send_group_message'
+          AND request.requester_agent = 'xiaoman'
+          AND request.target_agent = 'erhua'
+          AND request.review_policy = 'human_final_confirmation'
+          AND artifact.artifact_type = 'generated_image'
+          AND artifact.review_status = 'approved'
+          AND artifact.created_by_agent = 'huabaosi'
+          AND artifact.content_hash = $4
+          AND EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events confirmation
+              WHERE confirmation.work_item_id = request.id
+                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                AND confirmation.data->>'decision' = 'confirmed'
+                AND confirmation.data->>'send_executed' = 'false'
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events ready
+              WHERE ready.work_item_id = request.id
+                AND ready.event_type = 'group_message_send_ready_recorded'
+                AND ready.data->>'send_executed' = 'false'
+                AND ready.data->>'target_group_id' = request.payload->>'target_group_id'
+                AND ready.data->>'approved_artifact_id' = request.payload->>'approved_artifact_id'
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events created
+              WHERE created.work_item_id = artifact.work_item_id
+                AND created.artifact_id = artifact.id
+                AND created.event_type = 'generated_image_created'
+          )
+        FOR UPDATE OF request, artifact, image_request
+        "#,
+    )
+    .bind(attempt.work_item_id)
+    .bind(&attempt.claim_token)
+    .bind(attempt.generated_image_artifact_id)
+    .bind(&attempt.artifact_content_hash)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("lock QiWe callback policy facts")?
+    .ok_or_else(|| anyhow!("QiWe callback policy or claim is no longer current"))?;
+    let target_group_id: String = row.try_get("target_group_id")?;
+    let artifact_uri: String = row.try_get("artifact_uri")?;
+    if sha256_marker(target_group_id.as_bytes()) != attempt.target_group_sha256
+        || sha256_marker(artifact_uri.as_bytes()) != attempt.artifact_uri_sha256
+    {
+        bail!("QiWe callback target or artifact changed after upload acceptance");
+    }
+    Ok(target_group_id)
+}
+
+async fn lock_sending_claim(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    claim: &QiweCallbackSendClaim,
+) -> Result<()> {
+    let current: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT attempt.id
+        FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+        JOIN qintopia_agent_os.work_items request
+          ON request.id = attempt.work_item_id
+        WHERE attempt.id = $1
+          AND attempt.work_item_id = $2
+          AND attempt.generated_image_artifact_id = $3
+          AND attempt.status = 'sending'
+          AND attempt.claim_token = $4
+          AND request.status = 'processing'
+          AND request.claimed_by = $4
+          AND request.claim_expires_at > now()
+        FOR UPDATE OF attempt, request
+        "#,
+    )
+    .bind(claim.attempt_id)
+    .bind(claim.work_item_id)
+    .bind(claim.generated_image_artifact_id)
+    .bind(&claim.claim_token)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("lock current QiWe sending claim")?;
+    if current.is_none() {
+        bail!("QiWe sending claim is no longer current");
+    }
+    Ok(())
+}
+
+async fn append_event(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    work_item_id: Uuid,
+    artifact_id: Option<Uuid>,
+    event_type: &str,
+    data: serde_json::Value,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO qintopia_agent_os.work_item_events
+            (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+        VALUES ($1, $2, $3, 'worker', $4, 'QiWe image-send state transition recorded', $5)
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(artifact_id)
+    .bind(event_type)
+    .bind(WORKER_ID)
+    .bind(data)
+    .execute(&mut **tx)
+    .await
+    .context("append QiWe image-send event")?;
+    Ok(())
+}
+
+fn stored_attempt_from_row(row: sqlx::postgres::PgRow) -> Result<StoredAttempt> {
+    Ok(StoredAttempt {
+        id: row.try_get("id")?,
+        work_item_id: row.try_get("work_item_id")?,
+        generated_image_artifact_id: row.try_get("generated_image_artifact_id")?,
+        status: row.try_get("status")?,
+        claim_token: row.try_get("claim_token")?,
+        callback_payload_sha256: row.try_get("callback_payload_sha256")?,
+        target_group_sha256: row.try_get("target_group_sha256")?,
+        artifact_content_hash: row.try_get("artifact_content_hash")?,
+        artifact_uri_sha256: row.try_get("artifact_uri_sha256")?,
+    })
+}
+
+fn sha256_marker(value: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(value))
+}
+
+fn validate_canonical_sha256(value: &str, label: &str) -> Result<()> {
+    let digest = value
+        .strip_prefix("sha256:")
+        .ok_or_else(|| anyhow!("{label} must be canonical sha256"))?;
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        bail!("{label} must be canonical sha256");
+    }
+    Ok(())
+}
+
+fn validate_plain_value(value: &str, label: &str) -> Result<()> {
+    if value.trim().is_empty() || value.len() > 1024 || value.chars().any(char::is_control) {
+        bail!("{label} is invalid");
+    }
+    Ok(())
+}
+
+fn strict_media_url(value: &str) -> Result<Url> {
+    let url = Url::parse(value).context("parse approved generated-image URI")?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        bail!("approved generated-image URI must be stable HTTPS");
+    }
+    Ok(url)
+}
+
+fn validate_jpeg_filename(filename: &str) -> Result<()> {
+    validate_plain_value(filename, "approved generated-image filename")?;
+    if filename.len() > 255 || filename.contains(['/', '\\']) {
+        bail!("approved generated-image filename is invalid");
+    }
+    let filename = filename.to_ascii_lowercase();
+    if !filename.ends_with(".jpg") && !filename.ends_with(".jpeg") {
+        bail!("approved generated-image filename must use JPG");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(feature = "postgres-integration-tests")]
+    use crate::db;
+
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = Url::parse(&database_url).expect("integration database URL must parse");
+        assert!(matches!(
+            parsed.host_str(),
+            Some("127.0.0.1" | "localhost" | "::1")
+        ));
+        assert_eq!(parsed.path().trim_start_matches('/'), "qintopia_test");
+        database_url
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn insert_send_ready_fixture(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
+        let image_work_item_id = Uuid::new_v4();
+        let artifact_id = Uuid::new_v4();
+        let group_work_item_id = Uuid::new_v4();
+        let suffix = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, payload, review_policy)
+            VALUES
+                ($1, 'image_generation_request', 'completed', 'xiaoman', 'huabaosi',
+                 'huabaosi.generate_image_asset', 'QiWe state integration image',
+                 'integration_test', $2, $2, '{}'::jsonb, 'before_external_use')
+            "#,
+        )
+        .bind(image_work_item_id)
+        .bind(format!("qiwe-state-image:{suffix}"))
+        .execute(pool)
+        .await
+        .expect("insert image work item");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, metadata)
+            VALUES
+                ($1, $2, 'generated_image', 'approved', 'huabaosi',
+                 'QiWe state integration JPEG', 'sanitized fixture',
+                 'https://media.example.test/posters/qiwe-state-integration.jpg',
+                 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                 '{"mime_type":"image/jpeg"}'::jsonb)
+            "#,
+        )
+        .bind(artifact_id)
+        .bind(image_work_item_id)
+        .execute(pool)
+        .await
+        .expect("insert approved generated image");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_item_events
+                (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+            VALUES
+                ($1, $2, 'generated_image_created', 'worker',
+                 'huabaosi-image-generation-worker', 'sanitized integration fixture',
+                 '{"external_send_executed":false}'::jsonb)
+            "#,
+        )
+        .bind(image_work_item_id)
+        .bind(artifact_id)
+        .execute(pool)
+        .await
+        .expect("insert generated-image provenance event");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, risk_level, payload, review_policy)
+            VALUES
+                ($1, 'group_message_request', 'queued', 'xiaoman', 'erhua',
+                 'erhua.send_group_message', 'QiWe state integration send',
+                 'integration_test', $2, $2, 'high', $3, 'human_final_confirmation')
+            "#,
+        )
+        .bind(group_work_item_id)
+        .bind(format!("qiwe-state-group:{suffix}"))
+        .bind(json!({
+            "approved_artifact_id": artifact_id,
+            "approved_artifact_type": "generated_image",
+            "workflow_type": "activity_promotion",
+            "target_channel": "qiwe",
+            "target_group_id": "integration-group-id",
+            "message_text": "已审核活动海报"
+        }))
+        .execute(pool)
+        .await
+        .expect("insert group message work item");
+        for (event_type, data) in [
+            (
+                "group_message_final_confirmation_recorded",
+                json!({
+                    "decision": "confirmed",
+                    "current_status": "queued",
+                    "send_executed": false
+                }),
+            ),
+            (
+                "group_message_send_ready_recorded",
+                json!({
+                    "approved_artifact_id": artifact_id,
+                    "target_group_id": "integration-group-id",
+                    "send_executed": false
+                }),
+            ),
+        ] {
+            sqlx::query(
+                r#"
+                INSERT INTO qintopia_agent_os.work_item_events
+                    (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+                VALUES ($1, $2, $3, 'integration_test', 'qiwe-state-test',
+                        'sanitized integration fixture', $4)
+                "#,
+            )
+            .bind(group_work_item_id)
+            .bind(artifact_id)
+            .bind(event_type)
+            .bind(data)
+            .execute(pool)
+            .await
+            .expect("insert send policy event");
+        }
+        (image_work_item_id, artifact_id, group_work_item_id)
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn delete_fixture(pool: &PgPool, image_id: Uuid, group_id: Uuid) {
+        sqlx::query(
+            "DELETE FROM qintopia_agent_os.qiwe_image_send_attempts WHERE work_item_id = $1",
+        )
+        .bind(group_id)
+        .execute(pool)
+        .await
+        .expect("delete QiWe attempts");
+        sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = $1")
+            .bind(group_id)
+            .execute(pool)
+            .await
+            .expect("delete group work item");
+        sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = $1")
+            .bind(image_id)
+            .execute(pool)
+            .await
+            .expect("delete image work item");
+    }
+
+    #[test]
+    fn canonical_hash_validation_rejects_prefixed_raw_values() {
+        assert!(validate_canonical_sha256(
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "test hash"
+        )
+        .is_ok());
+        assert!(validate_canonical_sha256("sha256:raw-secret", "test hash").is_err());
+        assert!(validate_canonical_sha256(
+            "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "test hash"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn claim_boundary_requires_reviewed_jpeg_host_and_group() {
+        let groups = BTreeSet::from(["group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+        let filename = validate_claim_boundary(
+            "https://media.example.test/posters/activity.jpg",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "image/jpeg",
+            "group-id",
+            &groups,
+            &hosts,
+        )
+        .expect("reviewed boundary is valid");
+        assert_eq!(filename, "activity.jpg");
+        assert!(validate_claim_boundary(
+            "https://media.example.test/posters/activity.png",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "image/png",
+            "group-id",
+            &groups,
+            &hosts,
+        )
+        .is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_qiwe_send_state_is_idempotent_and_redacted() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let (image_id, _artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+        let claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("claim send-ready work item")
+            .expect("work item is claimable");
+        let request_id = "raw-upload-request-secret";
+        let attempt_id = record_upload_acceptance(&pool, &claim, request_id)
+            .await
+            .expect("record upload acceptance");
+        let callback = br#"{
+          "requestId":"raw-upload-request-secret",
+          "cmd":20000,
+          "msgData":{
+            "fileAesKey":"raw-aes-secret",
+            "fileId":"raw-file-secret",
+            "fileMd5":"raw-md5-secret",
+            "filename":"raw-private.jpg"
+          }
+        }"#;
+        let callback_claim = match claim_callback_for_send(&pool, request_id, callback)
+            .await
+            .expect("claim callback once")
+        {
+            CallbackClaimOutcome::Ready(claim) => claim,
+            CallbackClaimOutcome::Duplicate { .. } => panic!("first callback was duplicate"),
+        };
+        assert_eq!(callback_claim.attempt_id, attempt_id);
+        assert_eq!(callback_claim.target_group_id, "integration-group-id");
+        let duplicate = claim_callback_for_send(&pool, request_id, callback)
+            .await
+            .expect("duplicate callback is idempotent");
+        assert_eq!(
+            duplicate,
+            CallbackClaimOutcome::Duplicate {
+                status: "sending".to_string()
+            }
+        );
+        record_send_success(
+            &pool,
+            &callback_claim,
+            &QiweSendReceipt {
+                is_send_success: 1,
+                message_identifier: "raw-provider-message-secret".to_string(),
+                sequence: 7,
+                timestamp: 8,
+            },
+        )
+        .await
+        .expect("record send success");
+
+        let stored: (String, String, String, serde_json::Value) = sqlx::query_as(
+            r#"
+            SELECT attempt.status, request.status,
+                   attempt.provider_message_id_sha256,
+                   jsonb_build_object(
+                       'attempt', to_jsonb(attempt),
+                       'events', COALESCE(jsonb_agg(event.data) FILTER (WHERE event.id IS NOT NULL), '[]'::jsonb)
+                   )
+            FROM qintopia_agent_os.qiwe_image_send_attempts attempt
+            JOIN qintopia_agent_os.work_items request ON request.id = attempt.work_item_id
+            LEFT JOIN qintopia_agent_os.work_item_events event ON event.work_item_id = request.id
+            WHERE attempt.id = $1
+            GROUP BY attempt.id, request.status
+            "#,
+        )
+        .bind(attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read sanitized send state");
+        assert_eq!(stored.0, "sent");
+        assert_eq!(stored.1, "completed");
+        assert!(stored.2.starts_with("sha256:"));
+        let serialized = serde_json::to_string(&stored.3).expect("serialize stored state");
+        for sensitive in [
+            request_id,
+            "raw-aes-secret",
+            "raw-file-secret",
+            "raw-md5-secret",
+            "raw-private.jpg",
+            "raw-provider-message-secret",
+            "integration-group-id",
+            "https://media.example.test/posters/qiwe-state-integration.jpg",
+        ] {
+            assert!(
+                !serialized.contains(sensitive),
+                "stored state leaked {sensitive}"
+            );
+        }
+        let duplicate_after_send = claim_callback_for_send(&pool, request_id, callback)
+            .await
+            .expect("delivered callback remains idempotent after send");
+        assert_eq!(
+            duplicate_after_send,
+            CallbackClaimOutcome::Duplicate {
+                status: "sent".to_string()
+            }
+        );
+        delete_fixture(&pool, image_id, group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_qiwe_send_state_rejects_stale_claim() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let (image_id, _artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+        let claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("claim send-ready work item")
+            .expect("work item is claimable");
+        sqlx::query(
+            "UPDATE qintopia_agent_os.work_items SET claim_expires_at = now() - interval '1 second' WHERE id = $1",
+        )
+        .bind(group_id)
+        .execute(&pool)
+        .await
+        .expect("expire test claim");
+        let error = record_upload_acceptance(&pool, &claim, "stale-upload-request")
+            .await
+            .expect_err("stale claim must not record upload acceptance");
+        assert!(error.to_string().contains("no longer current"));
+        let attempt_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM qintopia_agent_os.qiwe_image_send_attempts WHERE work_item_id = $1",
+        )
+        .bind(group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count stale attempts");
+        assert_eq!(attempt_count, 0);
+        delete_fixture(&pool, image_id, group_id).await;
+    }
+}

@@ -93,6 +93,12 @@ target, or missing final confirmation must stop before sending.
   enter JetStream, `raw_events`, or normalized message rows. Invalid dead letters retain
   only payload byte count and SHA-256. This is a storage safety prerequisite, not
   callback processing or send enablement.
+- The additive `qiwe_image_send_attempts` state records hashed upload correlation,
+  callback idempotency, unique per-attempt claims, immutable artifact/target hashes, and
+  sanitized terminal audit. Callback credentials remain memory-only. The callback
+  transition commits `sending` before an external send can occur, and ambiguous outcomes
+  are terminal/manual rather than automatically retried. This state API is not wired to
+  a network worker, callback listener, timer, or production adapter.
 
 ## Next Implementation
 
@@ -102,12 +108,11 @@ target, or missing final confirmation must stop before sending.
    before generic raw-event sanitization, and confirm the exact credential field names
    and the existing `isSendSuccess=1` success assumption without storing raw credentials
    in git or logs.
-3. Add Postgres upload-correlation state, callback idempotency, claim-token validation,
-   and durable sanitized external-send audit.
-4. Add a local fake QiWe server for upload acceptance, callback, send response, timeout,
-   oversized response, duplicate callback, stale claim, and retry tests.
-5. Add one guarded staging smoke with an isolated group and explicit approval phrase.
-6. Add production scheduling only after staging evidence, rollback ownership, and
+3. Add a local fake QiWe server and guarded adapter worker for upload acceptance,
+   callback, send response, timeout, oversized response, duplicate callback, stale
+   claim, and retry tests.
+4. Add one guarded staging smoke with an isolated group and explicit approval phrase.
+5. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
 
 ## Production Boundary
