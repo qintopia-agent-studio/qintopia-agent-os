@@ -6076,6 +6076,35 @@ mod tests {
     }
 
     #[test]
+    fn xiaoman_activity_promotion_starter_builds_no_duplicate_children() {
+        let candidate = xiaoman_promotion_candidate(false, false);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert!(requests.is_empty());
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_evidence_child_preserves_event_signal_scope() {
+        let candidate = xiaoman_promotion_candidate(true, false);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+        let evidence = &requests[0];
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(evidence.target_agent, "wenyuange");
+        assert_eq!(evidence.source_type, "event_signal");
+        assert_eq!(
+            evidence.source_event_signal_id,
+            candidate.source_event_signal_id
+        );
+        assert_eq!(evidence.payload["workflow_type"], "activity_promotion");
+        assert_eq!(evidence.payload["planner_intent"], "retrieve_evidence");
+        assert_eq!(
+            evidence.metadata["parent_activity_request_work_item_id"],
+            candidate.id.to_string()
+        );
+    }
+
+    #[test]
     fn xiaoman_image_generation_request_uses_approved_brief_and_stable_idempotency() {
         let candidate = xiaoman_image_candidate();
         let first = xiaoman_activity_image_generation_request(&candidate);
@@ -6409,6 +6438,29 @@ mod tests {
         assert!(err
             .to_string()
             .contains("message_text contains disallowed sensitive"));
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_rejects_empty_group_alias() {
+        let candidate = xiaoman_send_candidate();
+        let err =
+            xiaoman_activity_send_request(&candidate, "  ", "活动海报已审核，请确认是否发送。")
+                .expect_err("target group alias is required");
+
+        assert!(err.to_string().contains("target_group_alias is required"));
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_rejects_overlong_message_text() {
+        let candidate = xiaoman_send_candidate();
+        let long_message = "活动".repeat(251);
+        let err =
+            xiaoman_activity_send_request(&candidate, "community_activity_group", &long_message)
+                .expect_err("message text length must be bounded");
+
+        assert!(err
+            .to_string()
+            .contains("message_text must be 500 characters or fewer"));
     }
 
     #[test]

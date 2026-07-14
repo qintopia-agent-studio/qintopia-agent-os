@@ -1202,6 +1202,92 @@ mod tests {
     }
 
     #[test]
+    fn source_grounded_draft_fails_when_question_sanitizes_empty() {
+        let work_item = EvidenceWorkItem {
+            id: Uuid::new_v4(),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "wenyuange".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "活动背景".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({}),
+            source_event_signal_id: Some(Uuid::new_v4()),
+            payload: json!({"question": "raw private chat"}),
+            review_policy: "not_required".to_string(),
+        };
+        let source = EvidenceSource {
+            strategy: "exact_source_messages",
+            signal_title: "周末活动".to_string(),
+            signal_summary: "成员报名".to_string(),
+            messages: vec![EvidenceMessage {
+                id: Uuid::new_v4(),
+                snippet: "成员讨论报名时间".to_string(),
+            }],
+        };
+
+        let error = build_evidence_drafts(&work_item, &source)
+            .expect_err("sensitive source question must fail closed");
+        assert!(error
+            .to_string()
+            .contains("cannot be represented without sensitive source text"));
+    }
+
+    #[test]
+    fn evidence_snippet_redacts_links_accounts_numbers_and_long_ids() {
+        let snippet = sanitize_evidence_snippet(
+            "联系 owner@example.com 或访问 https://example.com/path 编号 1234567890 trace abcdefghijklmnopqrstuvwxyzabcdefgh",
+        );
+
+        assert!(snippet.contains("[account]"));
+        assert!(snippet.contains("[link]"));
+        assert!(snippet.contains("[number]"));
+        assert!(snippet.contains("[identifier]"));
+        assert!(!snippet.contains("owner@example.com"));
+        assert!(!snippet.contains("https://example.com"));
+        assert!(!snippet.contains("1234567890"));
+    }
+
+    #[test]
+    fn report_from_source_grounded_drafts_stays_internal_only() {
+        let work_item_id = Uuid::new_v4();
+        let artifact_id = Uuid::new_v4();
+        let draft = EvidenceDraft {
+            artifact_type: "evidence_summary".to_string(),
+            title: "活动证据摘要".to_string(),
+            summary: "基于 2 条已授权消息证据整理的活动背景摘要。".to_string(),
+            content_text: "消息证据已脱敏".to_string(),
+            content_hash: "sha256:evidence".to_string(),
+            review_status: "not_required".to_string(),
+            information_class: "internal_ops".to_string(),
+            source_ids: json!([]),
+            retrieval_strategy: "same_chat_window_keyword".to_string(),
+            source_message_count: 2,
+        };
+
+        let report = report_from_drafts(
+            false,
+            false,
+            "evidence_artifacts_preview",
+            Some(work_item_id),
+            vec![artifact_id],
+            &[draft],
+        );
+
+        assert!(report.dry_run);
+        assert!(!report.apply_requested);
+        assert!(!report.safe_for_chat);
+        assert_eq!(report.work_item_id, Some(work_item_id));
+        assert_eq!(report.artifact_ids, vec![artifact_id]);
+        assert_eq!(report.retrieval_strategy, "same_chat_window_keyword");
+        assert_eq!(report.source_message_count, 2);
+        assert!(report
+            .guardrails
+            .iter()
+            .any(|item| item.contains("does not call embeddings")));
+    }
+
+    #[test]
     fn keyword_terms_split_common_chinese_punctuation() {
         assert_eq!(
             evidence_keyword_terms("周末共创晚餐（浦东）/报名"),
