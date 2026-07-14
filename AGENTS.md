@@ -63,6 +63,10 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
   `QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh`
+- Sidecar dependency vulnerability audit:
+  `cd runtime/sidecar && cargo deny check advisories bans sources`. A full
+  `cargo deny check` currently fails license checks because the repository has no
+  `deny.toml` license policy; do not treat that as unresolved RustSec advisories.
 
 Use `rg` and `rg --files` for search.
 
@@ -206,6 +210,10 @@ Use `rg` and `rg --files` for search.
   and byte count, never the raw payload. A callback id is already sanitized only when it
   is exactly `qiwe-callback:` plus a 64-character hexadecimal SHA-256 digest; a prefix
   alone is untrusted and the complete value must be hashed again.
+- QiWe outbound text filtering may suppress only complete, narrowly recognized Hermes
+  internal-process templates. Every added template needs positive and negative tests;
+  never block ordinary answers through broad standalone terms such as `plain text` or
+  `纯文本`.
 - `qintopia_agent_os.qiwe_image_send_attempts` may store only canonical hashes, AgentOS
   UUIDs, claim state, allowlisted failure codes, and sanitized audit metadata. Never
   persist QiWe callback file credentials or raw request/callback/message ids. Commit
@@ -274,6 +282,10 @@ Use `rg` and `rg --files` for search.
   request. Human approval applies to the exact final JPEG bytes; the transient provider
   PNG is never an approvable artifact. Integrity denial must leave the artifact pending
   and must not complete the work item or unlock downstream send intake.
+- Generated-image media URIs used by Huabaosi artifact creation, operations approval,
+  and QiWe send intake must reject raw backslashes and percent-encoded path separators
+  before URL parsing; parsers or downstream services may normalize them into path
+  separators, which can hide unstable or secret-shaped input from later filename checks.
 - A content-hash conflict may reuse an existing pending `generated_image` only when its
   stable URI, source refs, and complete immutable worker metadata exactly match the new
   final JPEG result. Reviewed, stale, or modified artifacts must fail closed and must

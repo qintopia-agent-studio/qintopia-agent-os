@@ -41,8 +41,10 @@ unless correcting historical evidence.
    - The proposed
      [Aliang image-generation adapter](aliang-production-image-generation.md) uses the
      historically observed OpenAI-compatible `gpt-image-2` path as its implementation
-     target. Real image generation, user-media storage, human review, and publication
-     remain separate gates; the merged request intake is not in production `v0.2.6`.
+     target. The `v0.2.7` production release installed the internal Xiaoman
+     image-generation request starter timer, but real image generation, user-media
+     storage, human review, and publication remain separate gates; Huabaosi provider
+     execution is still disabled and unscheduled.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The

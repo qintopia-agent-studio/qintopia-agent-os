@@ -1438,6 +1438,10 @@ class QiWeParserTests(unittest.TestCase):
         samples = [
             "⚠️ **Dangerous command requires approval:**\n```\nexecute_code <<'PY'\nprint(1)\nPY\n```",
             "Reply `/approve` to execute, `/approve session` to approve this pattern for the session.",
+            "⚡ Interrupting current task. I'll respond to your message shortly.",
+            "(Response formatting failed, plain text:)\n\n⚡ Interrupting current task. I'll respond to your message shortly.",
+            "⚡ 正在中断当前任务，稍后我会回复您的消息。",
+            "（响应格式设置失败，显示为纯文本：）\n\n⚡ 正在中断当前任务，稍后我会回复您的消息。",
             "⏳ Working — 3 min — iteration 2/90, execute_code",
             'Traceback (most recent call last):\n  File "/home/ubuntu/.hermes/hermes-agent/foo.py", line 1',
             "record_id=recABCDEFG123456789 obj_token=secretish",
@@ -1456,6 +1460,39 @@ class QiWeParserTests(unittest.TestCase):
             self.assertIs(result.success, True)
             self.assertEqual(result.raw_response, {"skipped": "internal_process_message"})
             self.assertEqual(adapter.bodies, [])
+
+    def test_send_does_not_skip_normal_plain_text_discussion(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(type("Config", (), {"extra": {"send_enabled": False}})())
+                self.bodies = []
+
+            async def _post_qiwe_body(self, body):
+                self.bodies.append(body)
+                return SendResult(success=True, raw_response={"dryRun": True})
+
+        samples = [
+            "Please return the answer as plain text.",
+            "I will respond to your message shortly after checking the schedule.",
+            "Response formatting failed because the client requested plain text; here is the diagnosis.",
+            "这段内容会显示为纯文本，请保留。",
+            "响应格式设置失败的原因是什么？",
+            "响应格式设置失败时会显示为纯文本，这是客户端的降级策略。",
+        ]
+
+        for sample in samples:
+            adapter = RecordingAdapter()
+            result = asyncio.run(
+                adapter.send(
+                    "10733506388826175",
+                    sample,
+                    metadata={"sender_id": "7881303308049798"},
+                )
+            )
+
+            self.assertIs(result.success, True)
+            self.assertEqual(result.raw_response, {"dryRun": True})
+            self.assertEqual(len(adapter.bodies), 1)
 
     def test_location_body_uses_qiwe_send_location_shape(self) -> None:
         adapter = QiWeAdapter(type("Config", (), {"extra": {"send_enabled": False}})())

@@ -8,7 +8,7 @@ use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
-use crate::qiwe_image_send::QiweSendReceipt;
+use crate::{qiwe_image_send::QiweSendReceipt, url_policy};
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
 const WORK_ITEM_TYPE: &str = "group_message_request";
@@ -564,17 +564,7 @@ pub async fn record_upload_failure(
     disposition: UploadFailureDisposition,
 ) -> Result<()> {
     let (attempt_status, failure_code, external_upload_outcome, request_may_have_been_accepted) =
-        match disposition {
-            UploadFailureDisposition::Rejected => {
-                ("failed", "qiwe_upload_rejected", "rejected", Some(false))
-            }
-            UploadFailureDisposition::OutcomeUnknown => (
-                "ambiguous",
-                "qiwe_upload_outcome_ambiguous",
-                "unknown",
-                None,
-            ),
-        };
+        upload_failure_state(disposition);
     let mut tx = pool
         .begin()
         .await
@@ -983,6 +973,22 @@ pub async fn record_send_failure(
     .await?;
     tx.commit().await.context("commit QiWe send failure")?;
     Ok(())
+}
+
+fn upload_failure_state(
+    disposition: UploadFailureDisposition,
+) -> (&'static str, &'static str, &'static str, Option<bool>) {
+    match disposition {
+        UploadFailureDisposition::Rejected => {
+            ("failed", "qiwe_upload_rejected", "rejected", Some(false))
+        }
+        UploadFailureDisposition::OutcomeUnknown => (
+            "ambiguous",
+            "qiwe_upload_outcome_ambiguous",
+            "unknown",
+            None,
+        ),
+    }
 }
 
 fn send_failure_state(
@@ -1768,6 +1774,7 @@ fn validate_plain_value(value: &str, label: &str) -> Result<()> {
 }
 
 fn strict_media_url(value: &str) -> Result<Url> {
+    url_policy::reject_path_separator_ambiguity(value, "approved generated-image URI")?;
     let url = Url::parse(value).context("parse approved generated-image URI")?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -1972,6 +1979,48 @@ mod tests {
             .expect("delete image work item");
     }
 
+    fn lazy_pool() -> PgPool {
+        sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://postgres:postgres@127.0.0.1/qintopia_test")
+            .expect("lazy test pool URL parses")
+    }
+
+    fn callback_claim_fixture() -> QiweCallbackSendClaim {
+        QiweCallbackSendClaim {
+            attempt_id: Uuid::nil(),
+            work_item_id: Uuid::nil(),
+            generated_image_artifact_id: Uuid::nil(),
+            claim_token: "qiwe-image-send-adapter:test-token".to_string(),
+            target_group_id: "test-group-id".to_string(),
+        }
+    }
+
+    fn upload_claim_fixture() -> QiweUploadClaim {
+        QiweUploadClaim {
+            attempt_id: Uuid::nil(),
+            work_item_id: Uuid::nil(),
+            generated_image_artifact_id: Uuid::nil(),
+            attempt_number: 1,
+            claim_token: "qiwe-image-send-adapter:test-token".to_string(),
+            artifact_uri: "https://media.example.test/posters/activity.jpg".to_string(),
+            artifact_content_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
+            artifact_file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+            artifact_byte_size: 48_300,
+            filename: "activity.jpg".to_string(),
+            target_group_id: "test-group-id".to_string(),
+        }
+    }
+
+    fn callback_file_fixture() -> QiweCallbackFileIdentity<'static> {
+        QiweCallbackFileIdentity {
+            filename: "activity.jpg",
+            file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            file_size: 48_300,
+        }
+    }
+
     #[test]
     fn canonical_hash_validation_rejects_prefixed_raw_values() {
         assert!(validate_canonical_sha256(
@@ -1982,6 +2031,21 @@ mod tests {
         assert!(validate_canonical_sha256("sha256:raw-secret", "test hash").is_err());
         assert!(validate_canonical_sha256(
             "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "test hash"
+        )
+        .is_err());
+        assert!(validate_canonical_sha256(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "test hash"
+        )
+        .is_err());
+        assert!(validate_canonical_sha256(
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "test hash"
+        )
+        .is_err());
+        assert!(validate_canonical_sha256(
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaag",
             "test hash"
         )
         .is_err());
@@ -2034,6 +2098,121 @@ mod tests {
             &hosts,
         )
         .is_err());
+        assert!(validate_claim_boundary(
+            ArtifactBoundary {
+                uri: "https://other.example.test/posters/activity.jpg",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "group-id",
+            },
+            &groups,
+            &hosts,
+        )
+        .is_err());
+        assert!(validate_claim_boundary(
+            ArtifactBoundary {
+                uri: "https://media.example.test/posters/",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "group-id",
+            },
+            &groups,
+            &hosts,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn claim_boundary_normalizes_host_but_not_group_id() {
+        let groups = BTreeSet::from(["CaseSensitiveGroup".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+
+        let identity = validate_claim_boundary(
+            ArtifactBoundary {
+                uri: "https://MEDIA.EXAMPLE.TEST/posters/activity.JPEG",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "CaseSensitiveGroup",
+            },
+            &groups,
+            &hosts,
+        )
+        .expect("host normalization preserves reviewed media boundary");
+
+        assert_eq!(identity.filename, "activity.JPEG");
+        assert!(validate_claim_boundary(
+            ArtifactBoundary {
+                uri: "https://MEDIA.EXAMPLE.TEST/posters/activity.JPEG",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "casesensitivegroup",
+            },
+            &groups,
+            &hosts,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn claim_boundary_rejects_secret_shaped_values_before_claim() {
+        let groups = BTreeSet::from(["group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+
+        for (artifact_uri, artifact_content_hash, mime_type, target_group_id) in [
+            (
+                "https://media.example.test/posters/activity.jpg",
+                "sha256:raw-secret",
+                "image/jpeg",
+                "group-id",
+            ),
+            (
+                "https://media.example.test/posters/activity.jpg",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "image/jpeg",
+                "group-id\nsecret",
+            ),
+            (
+                "https://media.example.test/posters/activity.jpg?token=secret",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "image/jpeg",
+                "group-id",
+            ),
+            (
+                "https://media.example.test/posters/activity\\private.jpg",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "image/jpeg",
+                "group-id",
+            ),
+        ] {
+            assert!(
+                validate_claim_boundary(
+                    ArtifactBoundary {
+                        uri: artifact_uri,
+                        content_hash: artifact_content_hash,
+                        mime_type,
+                        file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                        byte_size: 48_300,
+                        target_group_id,
+                    },
+                    &groups,
+                    &hosts,
+                )
+                .is_err(),
+                "accepted unsafe claim boundary {artifact_uri}"
+            );
+        }
     }
 
     #[test]
@@ -2090,6 +2269,29 @@ mod tests {
             "other-group"
         )
         .is_err());
+        assert!(validate("https://media.example.test/posters/activity", "group-id").is_err());
+    }
+
+    #[test]
+    fn strict_media_url_rejects_unstable_authority_and_components() {
+        for uri in [
+            "https://user:pass@media.example.test/posters/activity.jpg",
+            "https://media.example.test/posters/activity.jpg?download=1",
+            "https://media.example.test/posters/activity.jpg#fragment",
+            "https://media.example.test/posters%2Factivity.jpg",
+            "https://media.example.test/posters/activity%5Cprivate.jpg",
+            "http://media.example.test/posters/activity.jpg",
+            "file:///tmp/activity.jpg",
+        ] {
+            assert!(
+                strict_media_url(uri).is_err(),
+                "accepted unstable URI {uri}"
+            );
+        }
+
+        let stable = strict_media_url("https://media.example.test/posters/activity.jpg")
+            .expect("stable HTTPS media URI is accepted");
+        assert_eq!(stable.host_str(), Some("media.example.test"));
     }
 
     #[test]
@@ -2097,9 +2299,14 @@ mod tests {
         assert!(validate_plain_value("safe-value", "test value").is_ok());
         assert!(validate_plain_value(" \t ", "test value").is_err());
         assert!(validate_plain_value("line\nbreak", "test value").is_err());
+        assert!(validate_plain_value(&"a".repeat(1024), "test value").is_ok());
+        assert!(validate_plain_value(&"a".repeat(1025), "test value").is_err());
         assert!(validate_jpeg_filename("poster.jpg").is_ok());
         assert!(validate_jpeg_filename("poster.JPEG").is_ok());
+        assert!(validate_jpeg_filename("poster\\private.jpg").is_err());
+        assert!(validate_jpeg_filename("poster\nprivate.jpg").is_err());
         assert!(validate_jpeg_filename("nested/poster.jpg").is_err());
+        assert!(validate_jpeg_filename(&format!("{}.jpg", "a".repeat(252))).is_err());
         assert!(validate_jpeg_filename("poster.png").is_err());
     }
 
@@ -2115,14 +2322,150 @@ mod tests {
 
     #[test]
     fn ambiguous_failure_audit_preserves_unknown_outcome() {
-        let (_, _, _, executed, outcome) = send_failure_state(SendFailureDisposition::Ambiguous);
+        let (status, code, event, executed, outcome) =
+            send_failure_state(SendFailureDisposition::Ambiguous);
 
+        assert_eq!(status, "ambiguous");
+        assert_eq!(code, "send_outcome_ambiguous");
+        assert_eq!(event, "qiwe_image_send_outcome_ambiguous");
         assert_eq!(executed, None);
         assert_eq!(outcome, "unknown");
-        let (_, _, _, rejected_executed, rejected_outcome) =
+        let (status, code, event, rejected_executed, rejected_outcome) =
             send_failure_state(SendFailureDisposition::Rejected);
+        assert_eq!(status, "failed");
+        assert_eq!(code, "send_rejected");
+        assert_eq!(event, "qiwe_image_send_rejected");
         assert_eq!(rejected_executed, Some(false));
         assert_eq!(rejected_outcome, "rejected");
+    }
+
+    #[test]
+    fn upload_failure_audit_distinguishes_rejected_from_unknown() {
+        let (status, failure_code, outcome, accepted) =
+            upload_failure_state(UploadFailureDisposition::Rejected);
+        assert_eq!(status, "failed");
+        assert_eq!(failure_code, "qiwe_upload_rejected");
+        assert_eq!(outcome, "rejected");
+        assert_eq!(accepted, Some(false));
+
+        let (status, failure_code, outcome, accepted) =
+            upload_failure_state(UploadFailureDisposition::OutcomeUnknown);
+        assert_eq!(status, "ambiguous");
+        assert_eq!(failure_code, "qiwe_upload_outcome_ambiguous");
+        assert_eq!(outcome, "unknown");
+        assert_eq!(accepted, None);
+    }
+
+    #[test]
+    fn callback_send_claim_debug_redacts_sensitive_fields() {
+        let claim = QiweCallbackSendClaim {
+            attempt_id: Uuid::nil(),
+            work_item_id: Uuid::nil(),
+            generated_image_artifact_id: Uuid::nil(),
+            claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
+            target_group_id: "secret-group-id".to_string(),
+        };
+
+        let debug = format!("{claim:?}");
+
+        assert!(debug.contains("QiweCallbackSendClaim"));
+        assert!(debug.contains("attempt_id"));
+        assert!(!debug.contains("secret-token"));
+        assert!(!debug.contains("secret-group-id"));
+    }
+
+    #[test]
+    fn callback_outcome_debug_redacts_ready_claim() {
+        let outcome = CallbackClaimOutcome::Ready(QiweCallbackSendClaim {
+            attempt_id: Uuid::nil(),
+            work_item_id: Uuid::nil(),
+            generated_image_artifact_id: Uuid::nil(),
+            claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
+            target_group_id: "secret-group-id".to_string(),
+        });
+
+        let debug = format!("{outcome:?}");
+
+        assert!(debug.contains("Ready"));
+        assert!(!debug.contains("secret-token"));
+        assert!(!debug.contains("secret-group-id"));
+    }
+
+    #[tokio::test]
+    async fn callback_claim_rejects_invalid_plain_inputs_before_database() {
+        let pool = lazy_pool();
+        let callback_file = callback_file_fixture();
+
+        let empty = claim_callback_for_send(&pool, "safe-request-id", b"", &callback_file)
+            .await
+            .expect_err("empty callback payload must be rejected");
+        assert!(empty.to_string().contains("payload size"));
+
+        let oversized = claim_callback_for_send(
+            &pool,
+            "safe-request-id",
+            &vec![b'a'; MAX_CALLBACK_PAYLOAD_BYTES + 1],
+            &callback_file,
+        )
+        .await
+        .expect_err("oversized callback payload must be rejected");
+        assert!(oversized.to_string().contains("payload size"));
+
+        let invalid_request_id =
+            claim_callback_for_send(&pool, "line\nbreak", b"{}", &callback_file)
+                .await
+                .expect_err("control-character request ids must be rejected");
+        assert!(invalid_request_id
+            .to_string()
+            .contains("QiWe upload request id"));
+    }
+
+    #[tokio::test]
+    async fn upload_acceptance_rejects_raw_request_ids_before_database() {
+        let pool = lazy_pool();
+        let claim = upload_claim_fixture();
+
+        let error = record_upload_acceptance(&pool, &claim, "\t")
+            .await
+            .expect_err("blank request id must not reach database");
+
+        assert!(error.to_string().contains("QiWe upload request id"));
+    }
+
+    #[tokio::test]
+    async fn send_success_requires_explicit_provider_success_before_database() {
+        let pool = lazy_pool();
+        let claim = callback_claim_fixture();
+
+        let non_success = record_send_success(
+            &pool,
+            &claim,
+            &QiweSendReceipt {
+                is_send_success: 0,
+                message_identifier: "provider-message-id".to_string(),
+                sequence: 1,
+                timestamp: 2,
+            },
+        )
+        .await
+        .expect_err("provider non-success must not be recorded");
+        assert!(non_success.to_string().contains("does not confirm success"));
+
+        let invalid_identifier = record_send_success(
+            &pool,
+            &claim,
+            &QiweSendReceipt {
+                is_send_success: 1,
+                message_identifier: "line\nbreak".to_string(),
+                sequence: 1,
+                timestamp: 2,
+            },
+        )
+        .await
+        .expect_err("provider identifiers with control characters must be rejected");
+        assert!(invalid_identifier
+            .to_string()
+            .contains("QiWe provider message identifier"));
     }
 
     #[tokio::test]

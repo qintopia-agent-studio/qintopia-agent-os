@@ -52,6 +52,9 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
 - Keeps Feishu activity writes and reminders behind explicit scoped configuration.
 - Treats Erhua trainer memory as a controlled context-MCP path, not free-form prompt
   editing.
+- Suppresses narrowly recognized Hermes approval, progress, interruption, formatting
+  failure, and traceback messages before QiWe delivery. Ordinary answers that discuss
+  plain-text formatting are not suppressed.
 
 ## Validation
 

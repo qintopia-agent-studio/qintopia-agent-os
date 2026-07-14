@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
 
-use crate::{config::Cli, db};
+use crate::{config::Cli, db, url_policy};
 
 const ALLOWED_WORK_ITEM_TYPES: &[&str] = &[
     "visual_asset_request",
@@ -4884,6 +4884,7 @@ fn validate_generated_image_approval(
 }
 
 fn validate_generated_image_uri(value: &str) -> Result<()> {
+    url_policy::reject_path_separator_ambiguity(value, "generated_image artifact_uri")?;
     let uri = url::Url::parse(value).context("generated_image artifact_uri must be a valid URL")?;
     if uri.scheme() != "https"
         || uri.host_str().is_none()
@@ -6935,6 +6936,14 @@ mod tests {
         let uri_error = validate_generated_image_approval(&context, "approved")
             .expect_err("media URL query must be rejected");
         assert!(uri_error.to_string().contains("stable HTTPS media URL"));
+
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some("https://media.example.test/posters%2Fimage.jpg".to_string());
+        let encoded_separator_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("encoded path separators must be rejected");
+        assert!(encoded_separator_error
+            .to_string()
+            .contains("ambiguous path separators"));
 
         let mut context = generated_image_approval_context();
         context.content_hash = Some("sha256:not-a-real-hash".to_string());

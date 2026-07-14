@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
-use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, Stream};
+use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, Stream};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::postgres::PgPool;
@@ -684,7 +684,8 @@ fn post_json(
     );
 
     if url.scheme() == "https" {
-        let server_name = ServerName::try_from(host).context("validate QiWe API host")?;
+        let server_name =
+            ServerName::try_from(host.to_string()).context("validate QiWe API host")?;
         let mut connection =
             ClientConnection::new(tls_config, server_name).context("create TLS connection")?;
         let mut socket = TcpStream::connect((host, port)).context("connect QiWe API")?;
@@ -801,16 +802,8 @@ fn header_has_token(headers: &str, name: &str, token: &str) -> bool {
 }
 
 fn tls_config() -> ClientConfig {
-    let mut root_store = RootCertStore::empty();
-    root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor| {
-        OwnedTrustAnchor::from_subject_spki_name_constraints(
-            anchor.subject,
-            anchor.spki,
-            anchor.name_constraints,
-        )
-    }));
+    let root_store = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(root_store)
         .with_no_client_auth()
 }
