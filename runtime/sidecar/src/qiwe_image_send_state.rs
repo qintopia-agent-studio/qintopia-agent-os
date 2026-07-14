@@ -2034,6 +2034,24 @@ mod tests {
             &hosts,
         )
         .is_err());
+        assert!(validate_claim_boundary(
+            "https://other.example.test/posters/activity.jpg",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "image/jpeg",
+            "group-id",
+            &groups,
+            &hosts,
+        )
+        .is_err());
+        assert!(validate_claim_boundary(
+            "https://media.example.test/posters/",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "image/jpeg",
+            "group-id",
+            &groups,
+            &hosts,
+        )
+        .is_err());
     }
 
     #[test]
@@ -2090,6 +2108,12 @@ mod tests {
             "other-group"
         )
         .is_err());
+        assert!(validate_preview_boundary(
+            "https://media.example.test/posters/activity",
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "image/jpeg",
+        )
+        .is_err());
     }
 
     #[test]
@@ -2100,6 +2124,7 @@ mod tests {
         assert!(validate_jpeg_filename("poster.jpg").is_ok());
         assert!(validate_jpeg_filename("poster.JPEG").is_ok());
         assert!(validate_jpeg_filename("nested/poster.jpg").is_err());
+        assert!(validate_jpeg_filename(&format!("{}.jpg", "a".repeat(252))).is_err());
         assert!(validate_jpeg_filename("poster.png").is_err());
     }
 
@@ -2115,14 +2140,39 @@ mod tests {
 
     #[test]
     fn ambiguous_failure_audit_preserves_unknown_outcome() {
-        let (_, _, _, executed, outcome) = send_failure_state(SendFailureDisposition::Ambiguous);
+        let (status, code, event, executed, outcome) =
+            send_failure_state(SendFailureDisposition::Ambiguous);
 
+        assert_eq!(status, "ambiguous");
+        assert_eq!(code, "send_outcome_ambiguous");
+        assert_eq!(event, "qiwe_image_send_outcome_ambiguous");
         assert_eq!(executed, None);
         assert_eq!(outcome, "unknown");
-        let (_, _, _, rejected_executed, rejected_outcome) =
+        let (status, code, event, rejected_executed, rejected_outcome) =
             send_failure_state(SendFailureDisposition::Rejected);
+        assert_eq!(status, "failed");
+        assert_eq!(code, "send_rejected");
+        assert_eq!(event, "qiwe_image_send_rejected");
         assert_eq!(rejected_executed, Some(false));
         assert_eq!(rejected_outcome, "rejected");
+    }
+
+    #[test]
+    fn callback_send_claim_debug_redacts_sensitive_fields() {
+        let claim = QiweCallbackSendClaim {
+            attempt_id: Uuid::nil(),
+            work_item_id: Uuid::nil(),
+            generated_image_artifact_id: Uuid::nil(),
+            claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
+            target_group_id: "secret-group-id".to_string(),
+        };
+
+        let debug = format!("{claim:?}");
+
+        assert!(debug.contains("QiweCallbackSendClaim"));
+        assert!(debug.contains("attempt_id"));
+        assert!(!debug.contains("secret-token"));
+        assert!(!debug.contains("secret-group-id"));
     }
 
     #[tokio::test]
