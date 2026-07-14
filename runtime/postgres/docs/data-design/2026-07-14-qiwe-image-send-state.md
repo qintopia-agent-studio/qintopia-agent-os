@@ -53,9 +53,14 @@ The table stores only canonical `sha256:<64 lowercase hex>` values for:
 - the final QiWe message identifier.
 
 The approved artifact UUID and canonical image content hash remain internal AgentOS
-facts. The raw request id is held only long enough to hash the upload acceptance. The
-callback's `fileAesKey`, `fileId`, `fileMd5`, filename, URL, and any unknown fields are
-never inserted into Postgres, work-item events, logs, or reports.
+facts. The attempt also snapshots the approved final JPEG's canonical MD5 and positive
+byte size so the callback can be matched to the exact reviewed file. These values are
+computed from Huabaosi's final JPEG before review; they are not copied from the
+callback. The raw request id is held only long enough to hash the upload acceptance. The
+callback's `fileAesKey`, `fileId`, raw payload, filename, URL, and unknown fields are
+never inserted into Postgres, work-item events, logs, or reports. Its `fileMd5` and
+`fileSize` are compared in memory with the snapshotted artifact identity before the send
+gate opens.
 
 A dedicated callback handler may parse complete credentials in memory and use them for
 one `/msg/sendImage` request after the database transition to `sending` commits. If the
@@ -79,9 +84,11 @@ external-send boundary.
 
 The external worker writes a unique claim token to the work item. Recording upload
 acceptance and claiming a callback require that same unexpired token and recheck the
-approved artifact, target group hash, and final-confirmation/send-ready evidence before
-crossing the next boundary. Finalizing a send locks the work item and attempt and still
-requires the exact token that opened the send gate.
+approved artifact, target group hash, final-confirmation/send-ready evidence, and final
+JPEG filename, MD5, and byte size before crossing the next boundary. A mismatched
+callback leaves the attempt in `awaiting_callback` and sends nothing. Finalizing a send
+locks the work item and attempt and still requires the exact token that opened the send
+gate.
 
 The unexpired-token requirement applies through the callback's transition to `sending`.
 After that transition commits, an external request may outlive the short send TTL.

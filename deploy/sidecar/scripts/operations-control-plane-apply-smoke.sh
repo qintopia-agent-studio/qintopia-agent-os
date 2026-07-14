@@ -864,6 +864,7 @@ SET
     'provider', 'openai-compatible',
     'model', 'gpt-image-2',
     'mime_type', 'image/jpeg',
+    'file_md5', '98e7c2acf4391f8b4a2bbd39e364c5e3',
     'provider_source_mime_type', 'image/png',
     'provider_source_content_hash', 'sha256:' || repeat('d', 64),
     'media_transform', 'png_to_jpeg_white_background_q92_v1',
@@ -891,6 +892,7 @@ INSERT INTO qintopia_agent_os.work_item_events (
   jsonb_build_object(
     'content_hash', 'sha256:' || repeat('a', 64),
     'mime_type', 'image/jpeg',
+    'file_md5', '98e7c2acf4391f8b4a2bbd39e364c5e3',
     'provider_source_mime_type', 'image/png',
     'provider_source_content_hash', 'sha256:' || repeat('d', 64),
     'media_transform', 'png_to_jpeg_white_background_q92_v1',

@@ -79,9 +79,11 @@ From the monorepo root, prefer:
   apply must return `staging_adapter_not_compiled` before Postgres or network access.
   Runtime env flags are not a substitute for this compile gate. Callback JSON is
   accepted from bounded stdin only, never CLI arguments or environment variables. File
-  credentials, request ids, media URLs, target groups, tokens, device ids, response
-  bodies, and provider message ids must not appear in reports or logs; sensitive
-  in-memory buffers must be zeroized on drop.
+  credentials may open the send gate only when callback filename, canonical MD5, and
+  byte size exactly match the approved final JPEG identity snapshotted at upload.
+  Callback credentials, request ids, media URLs, target groups, tokens, device ids,
+  response bodies, and provider message ids must not appear in reports or logs;
+  sensitive in-memory buffers must be zeroized on drop.
 - CI must run warning-denied Clippy once with no default features and once with all
   features. The all-feature build type-checks staging code but cannot stand in for the
   production feature set.

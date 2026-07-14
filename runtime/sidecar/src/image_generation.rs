@@ -9,6 +9,7 @@ use image::{
     codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, ImageFormat, ImageReader,
     Limits, RgbaImage,
 };
+use md5::Md5;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -123,6 +124,7 @@ struct AdapterConfig {
 struct GeneratedImage {
     bytes: Vec<u8>,
     content_hash: String,
+    file_md5: String,
     provider_source_content_hash: String,
     width: u32,
     height: u32,
@@ -1139,6 +1141,7 @@ fn generated_image_metadata(
         "provider": "openai-compatible",
         "model": "gpt-image-2",
         "mime_type": FINAL_IMAGE_MIME_TYPE,
+        "file_md5": generated.file_md5,
         "provider_source_mime_type": PROVIDER_SOURCE_MIME_TYPE,
         "provider_source_content_hash": generated.provider_source_content_hash,
         "media_transform": MEDIA_TRANSFORM,
@@ -1157,6 +1160,7 @@ fn generated_image_creation_event_data(generated: &GeneratedImage) -> Value {
     json!({
         "content_hash": generated.content_hash,
         "mime_type": FINAL_IMAGE_MIME_TYPE,
+        "file_md5": generated.file_md5,
         "provider_source_mime_type": PROVIDER_SOURCE_MIME_TYPE,
         "provider_source_content_hash": generated.provider_source_content_hash,
         "media_transform": MEDIA_TRANSFORM,
@@ -1379,6 +1383,10 @@ fn content_hash_bytes(value: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(value))
 }
 
+fn md5_hex_bytes(value: &[u8]) -> String {
+    format!("{:x}", Md5::digest(value))
+}
+
 fn media_upload_idempotency_key(prompt_hash: &str, final_content_hash: &str) -> String {
     content_hash_text(&format!(
         "{prompt_hash}|{MEDIA_TRANSFORM}|{final_content_hash}"
@@ -1458,6 +1466,7 @@ fn generate_and_store_with(
     let metadata = inspect_final_jpeg(&bytes, config.max_media_bytes)
         .map_err(|source| GenerationAttemptError::terminal("media_transform", source))?;
     let content_hash = content_hash_bytes(&bytes);
+    let file_md5 = md5_hex_bytes(&bytes);
     let upload_idempotency_key =
         media_upload_idempotency_key(&work_item.prompt_hash, &content_hash);
 
@@ -1522,6 +1531,7 @@ fn generate_and_store_with(
     Ok(GeneratedImage {
         bytes,
         content_hash,
+        file_md5,
         provider_source_content_hash,
         width: metadata.width,
         height: metadata.height,
@@ -1798,6 +1808,7 @@ mod tests {
         let generated = GeneratedImage {
             bytes: vec![1, 2, 3],
             content_hash: format!("sha256:{}", "a".repeat(64)),
+            file_md5: "5289df737df57326fcdd22597afb1fac".to_string(),
             provider_source_content_hash: format!("sha256:{}", "b".repeat(64)),
             width: 1024,
             height: 1024,
@@ -2086,6 +2097,7 @@ mod tests {
         handle.join().expect("fake server joins");
 
         assert_eq!(generated.bytes, final_jpeg);
+        assert_eq!(generated.file_md5, md5_hex_bytes(&generated.bytes));
         assert_eq!(
             generated.provider_source_content_hash,
             content_hash_bytes(&source_png)

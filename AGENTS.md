@@ -228,9 +228,11 @@ Use `rg` and `rg --files` for search.
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation.
   `process-qiwe-image-send-callback` must read one bounded callback from stdin, keep
-  file credentials memory-only, commit `sending` before one send call, and terminalize
-  every outcome. Neither command may be scheduled or production-enabled without approved
-  staging evidence, isolated group allowlists, and rollback.
+  file credentials memory-only, require callback filename/MD5/byte size to match the
+  approved final JPEG before committing `sending`, commit that state before one send
+  call, and terminalize every outcome. Neither command may be scheduled or
+  production-enabled without approved staging evidence, isolated group allowlists, and
+  rollback.
 - Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
   reject invalid methods/headers before connect, require HTTPS outside tests, enforce
   header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request

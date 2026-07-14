@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS qintopia_agent_os.qiwe_image_send_attempts (
     target_group_sha256 text NOT NULL,
     artifact_content_hash text NOT NULL,
     artifact_uri_sha256 text NOT NULL,
+    artifact_file_md5 text NOT NULL,
+    artifact_byte_size bigint NOT NULL,
     provider_message_id_sha256 text,
     failure_code text,
     audit_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -41,6 +43,12 @@ CREATE TABLE IF NOT EXISTS qintopia_agent_os.qiwe_image_send_attempts (
     ),
     CONSTRAINT qiwe_image_send_uri_hash_check CHECK (
         artifact_uri_sha256 ~ '^sha256:[0-9a-f]{64}$'
+    ),
+    CONSTRAINT qiwe_image_send_file_md5_check CHECK (
+        artifact_file_md5 ~ '^[0-9a-f]{32}$'
+    ),
+    CONSTRAINT qiwe_image_send_artifact_byte_size_check CHECK (
+        artifact_byte_size > 0
     ),
     CONSTRAINT qiwe_image_send_message_hash_check CHECK (
         provider_message_id_sha256 IS NULL

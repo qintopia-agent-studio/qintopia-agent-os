@@ -15,7 +15,8 @@ use crate::bounded_http::{HttpClient, HttpResponse};
 use crate::qiwe_image_send_state::QiweUploadClaim;
 #[cfg(feature = "qiwe-staging-adapter")]
 use crate::qiwe_image_send_state::{
-    CallbackClaimOutcome, SendFailureDisposition, UploadFailureDisposition,
+    CallbackClaimOutcome, QiweCallbackFileIdentity, SendFailureDisposition,
+    UploadFailureDisposition,
 };
 use crate::{config::Cli, db, qiwe_image_send_state};
 use url::Url;
@@ -568,8 +569,18 @@ async fn run_enabled_callback_processor(
     };
     let database_url = cli.database_url_required()?;
     let pool = db::connect(database_url, cli.db_max_connections).await?;
-    let outcome =
-        qiwe_image_send_state::claim_callback_for_send(&pool, &parsed.request_id, callback).await?;
+    let callback_file = QiweCallbackFileIdentity {
+        filename: &parsed.credentials.filename,
+        file_md5: &parsed.credentials.file_md5,
+        file_size: parsed.credentials.file_size,
+    };
+    let outcome = qiwe_image_send_state::claim_callback_for_send(
+        &pool,
+        &parsed.request_id,
+        callback,
+        &callback_file,
+    )
+    .await?;
     let send_claim = match outcome {
         CallbackClaimOutcome::Duplicate { status } => {
             let report = worker_report(WorkerReportState {
@@ -1155,13 +1166,24 @@ impl QiweImageCredentials {
     fn validate(&self) -> Result<()> {
         validate_plain_value(&self.file_aes_key, "QiWe file AES key")?;
         validate_plain_value(&self.file_id, "QiWe file id")?;
-        validate_plain_value(&self.file_md5, "QiWe file MD5")?;
+        validate_canonical_md5(&self.file_md5, "QiWe file MD5")?;
         validate_jpeg_filename(&self.filename)?;
         if self.file_size == 0 {
             bail!("QiWe file size must be positive");
         }
         Ok(())
     }
+}
+
+fn validate_canonical_md5(value: &str, label: &str) -> Result<()> {
+    if value.len() != 32
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        bail!("{label} must be canonical md5");
+    }
+    Ok(())
 }
 
 fn required_env(name: &str) -> Result<String> {
@@ -1887,6 +1909,8 @@ mod tests {
             artifact_content_hash:
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_string(),
+            artifact_file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+            artifact_byte_size: 48_300,
             filename: "activity-poster.jpg".to_string(),
             target_group_id: "group-id".to_string(),
         }

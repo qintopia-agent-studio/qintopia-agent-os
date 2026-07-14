@@ -25,6 +25,8 @@ pub struct QiweUploadClaim {
     pub claim_token: String,
     pub artifact_uri: String,
     pub artifact_content_hash: String,
+    pub artifact_file_md5: String,
+    pub artifact_byte_size: u64,
     pub filename: String,
     pub target_group_id: String,
 }
@@ -50,6 +52,12 @@ pub struct QiweCallbackSendClaim {
     pub generated_image_artifact_id: Uuid,
     pub claim_token: String,
     pub target_group_id: String,
+}
+
+pub struct QiweCallbackFileIdentity<'a> {
+    pub filename: &'a str,
+    pub file_md5: &'a str,
+    pub file_size: u64,
 }
 
 impl Drop for QiweCallbackSendClaim {
@@ -103,6 +111,23 @@ struct StoredAttempt {
     target_group_sha256: String,
     artifact_content_hash: String,
     artifact_uri_sha256: String,
+    artifact_file_md5: String,
+    artifact_byte_size: u64,
+}
+
+struct ArtifactBoundary<'a> {
+    uri: &'a str,
+    content_hash: &'a str,
+    mime_type: &'a str,
+    file_md5: &'a str,
+    byte_size: u64,
+    target_group_id: &'a str,
+}
+
+struct ValidatedArtifactIdentity {
+    filename: String,
+    file_md5: String,
+    byte_size: u64,
 }
 
 pub async fn claim_ready_work_item(
@@ -128,6 +153,8 @@ pub async fn claim_ready_work_item(
                 artifact.artifact_uri,
                 artifact.content_hash AS artifact_content_hash,
                 artifact.metadata->>'mime_type' AS mime_type,
+                artifact.metadata->>'file_md5' AS artifact_file_md5,
+                artifact.metadata->>'byte_size' AS artifact_byte_size,
                 request.payload->>'target_group_id' AS target_group_id,
                 COALESCE((
                     SELECT max(attempt.attempt_number) + 1
@@ -209,6 +236,8 @@ pub async fn claim_ready_work_item(
             claimable.artifact_uri,
             claimable.artifact_content_hash,
             claimable.mime_type,
+            claimable.artifact_file_md5,
+            claimable.artifact_byte_size,
             claimable.target_group_id
         "#,
     )
@@ -236,12 +265,24 @@ pub async fn claim_ready_work_item(
     let mime_type: String = row
         .try_get("mime_type")
         .context("approved generated image is missing mime_type")?;
+    let artifact_file_md5: String = row
+        .try_get("artifact_file_md5")
+        .context("approved generated image is missing file_md5")?;
+    let artifact_byte_size = parse_positive_byte_size(
+        &row.try_get::<String, _>("artifact_byte_size")
+            .context("approved generated image is missing byte_size")?,
+        "approved generated-image byte_size",
+    )?;
     let target_group_id: String = row.try_get("target_group_id")?;
-    let filename = validate_claim_boundary(
-        &artifact_uri,
-        &artifact_content_hash,
-        &mime_type,
-        &target_group_id,
+    let identity = validate_claim_boundary(
+        ArtifactBoundary {
+            uri: &artifact_uri,
+            content_hash: &artifact_content_hash,
+            mime_type: &mime_type,
+            file_md5: &artifact_file_md5,
+            byte_size: artifact_byte_size,
+            target_group_id: &target_group_id,
+        },
         allowed_group_ids,
         media_allowed_hosts,
     )?;
@@ -252,7 +293,9 @@ pub async fn claim_ready_work_item(
         claim_token: row.try_get("claim_token")?,
         artifact_uri,
         artifact_content_hash,
-        filename,
+        artifact_file_md5: identity.file_md5,
+        artifact_byte_size: identity.byte_size,
+        filename: identity.filename,
         target_group_id,
     };
     tx.commit().await.context("commit QiWe image-send claim")?;
@@ -372,10 +415,12 @@ pub async fn record_upload_acceptance(
                 target_group_sha256,
                 artifact_content_hash,
                 artifact_uri_sha256,
+                artifact_file_md5,
+                artifact_byte_size,
                 audit_metadata
             )
         VALUES
-            ($1, $2, $3, 'awaiting_callback', $4, $5, $6, $7, $8, $9)
+            ($1, $2, $3, 'awaiting_callback', $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id
         "#,
     )
@@ -387,6 +432,8 @@ pub async fn record_upload_acceptance(
     .bind(&target_group_sha256)
     .bind(&claim.artifact_content_hash)
     .bind(&artifact_uri_sha256)
+    .bind(&claim.artifact_file_md5)
+    .bind(claim.artifact_byte_size as i64)
     .bind(json!({
         "callback_credentials_persisted": false,
         "external_send_executed": false,
@@ -480,8 +527,10 @@ pub async fn claim_callback_for_send(
     pool: &PgPool,
     request_id: &str,
     callback_payload: &[u8],
+    callback_file: &QiweCallbackFileIdentity<'_>,
 ) -> Result<CallbackClaimOutcome> {
     validate_plain_value(request_id, "QiWe upload request id")?;
+    validate_callback_file_identity(callback_file)?;
     if callback_payload.is_empty() || callback_payload.len() > MAX_CALLBACK_PAYLOAD_BYTES {
         bail!("QiWe callback payload size is invalid");
     }
@@ -503,7 +552,9 @@ pub async fn claim_callback_for_send(
             callback_payload_sha256,
             target_group_sha256,
             artifact_content_hash,
-            artifact_uri_sha256
+            artifact_uri_sha256,
+            artifact_file_md5,
+            artifact_byte_size
         FROM qintopia_agent_os.qiwe_image_send_attempts
         WHERE request_id_sha256 = $1
         FOR UPDATE
@@ -533,7 +584,8 @@ pub async fn claim_callback_for_send(
         bail!("QiWe callback correlation is no longer awaiting callback");
     }
 
-    let (target_group_id, claim_is_current) = lock_callback_policy(&mut tx, &attempt).await?;
+    let (target_group_id, claim_is_current) =
+        lock_callback_policy(&mut tx, &attempt, callback_file).await?;
     if !claim_is_current {
         expire_awaiting_callback_attempt(&mut tx, &attempt, Some(&callback_payload_sha256)).await?;
         tx.commit()
@@ -837,7 +889,9 @@ async fn expire_one_stale_awaiting_callback(
             attempt.callback_payload_sha256,
             attempt.target_group_sha256,
             attempt.artifact_content_hash,
-            attempt.artifact_uri_sha256
+            attempt.artifact_uri_sha256,
+            attempt.artifact_file_md5,
+            attempt.artifact_byte_size
         FROM qintopia_agent_os.qiwe_image_send_attempts attempt
         JOIN qintopia_agent_os.work_items request ON request.id = attempt.work_item_id
         WHERE attempt.status = 'awaiting_callback'
@@ -1135,22 +1189,23 @@ async fn expire_awaiting_callback_attempt(
 }
 
 fn validate_claim_boundary(
-    artifact_uri: &str,
-    artifact_content_hash: &str,
-    mime_type: &str,
-    target_group_id: &str,
+    artifact: ArtifactBoundary<'_>,
     allowed_group_ids: &BTreeSet<String>,
     media_allowed_hosts: &BTreeSet<String>,
-) -> Result<String> {
-    validate_canonical_sha256(artifact_content_hash, "generated-image content hash")?;
-    if mime_type != "image/jpeg" {
+) -> Result<ValidatedArtifactIdentity> {
+    validate_canonical_sha256(artifact.content_hash, "generated-image content hash")?;
+    validate_canonical_md5(artifact.file_md5, "generated-image file MD5")?;
+    if artifact.byte_size == 0 {
+        bail!("approved generated-image byte_size must be positive");
+    }
+    if artifact.mime_type != "image/jpeg" {
         bail!("approved generated image must use image/jpeg");
     }
-    validate_plain_value(target_group_id, "QiWe target group id")?;
-    if !allowed_group_ids.contains(target_group_id) {
+    validate_plain_value(artifact.target_group_id, "QiWe target group id")?;
+    if !allowed_group_ids.contains(artifact.target_group_id) {
         bail!("QiWe target group id is not allowlisted");
     }
-    let uri = strict_media_url(artifact_uri)?;
+    let uri = strict_media_url(artifact.uri)?;
     let host = uri
         .host_str()
         .context("approved generated-image URI host is missing")?
@@ -1158,13 +1213,13 @@ fn validate_claim_boundary(
     if !media_allowed_hosts.contains(&host) {
         bail!("approved generated-image URI host is not allowlisted");
     }
-    let filename = uri
-        .path_segments()
-        .and_then(|mut segments| segments.next_back())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow!("approved generated-image URI is missing a filename"))?;
+    let filename = media_filename(&uri)?;
     validate_jpeg_filename(filename)?;
-    Ok(filename.to_string())
+    Ok(ValidatedArtifactIdentity {
+        filename: filename.to_string(),
+        file_md5: artifact.file_md5.to_string(),
+        byte_size: artifact.byte_size,
+    })
 }
 
 fn validate_preview_boundary(
@@ -1177,11 +1232,7 @@ fn validate_preview_boundary(
         bail!("approved generated image must use image/jpeg");
     }
     let uri = strict_media_url(artifact_uri)?;
-    let filename = uri
-        .path_segments()
-        .and_then(|mut segments| segments.next_back())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow!("approved generated-image URI is missing a filename"))?;
+    let filename = media_filename(&uri)?;
     validate_jpeg_filename(filename)
 }
 
@@ -1212,6 +1263,8 @@ async fn lock_current_claim(
           AND artifact.created_by_agent = 'huabaosi'
           AND artifact.content_hash = $5
           AND artifact.artifact_uri = $6
+          AND artifact.metadata->>'file_md5' = $7
+          AND artifact.metadata->>'byte_size' = $8
           AND EXISTS (
               SELECT 1
               FROM qintopia_agent_os.work_item_events confirmation
@@ -1245,6 +1298,8 @@ async fn lock_current_claim(
     .bind(&claim.target_group_id)
     .bind(&claim.artifact_content_hash)
     .bind(&claim.artifact_uri)
+    .bind(&claim.artifact_file_md5)
+    .bind(claim.artifact_byte_size.to_string())
     .fetch_optional(&mut **tx)
     .await
     .context("recheck current QiWe upload claim")?;
@@ -1257,11 +1312,14 @@ async fn lock_current_claim(
 async fn lock_callback_policy(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     attempt: &StoredAttempt,
+    callback_file: &QiweCallbackFileIdentity<'_>,
 ) -> Result<(String, bool)> {
     let row = sqlx::query(
         r#"
         SELECT request.payload->>'target_group_id' AS target_group_id,
                artifact.artifact_uri,
+               artifact.metadata->>'file_md5' AS artifact_file_md5,
+               artifact.metadata->>'byte_size' AS artifact_byte_size,
                COALESCE(request.claim_expires_at > now(), false) AS claim_is_current
         FROM qintopia_agent_os.work_items request
         JOIN qintopia_agent_os.artifacts artifact
@@ -1322,11 +1380,26 @@ async fn lock_callback_policy(
     .ok_or_else(|| anyhow!("QiWe callback policy or claim is no longer current"))?;
     let target_group_id: String = row.try_get("target_group_id")?;
     let artifact_uri: String = row.try_get("artifact_uri")?;
+    let artifact_file_md5: String = row.try_get("artifact_file_md5")?;
+    let artifact_byte_size = parse_positive_byte_size(
+        &row.try_get::<String, _>("artifact_byte_size")?,
+        "approved generated-image byte_size",
+    )?;
+    let artifact_url = strict_media_url(&artifact_uri)?;
+    let artifact_filename = media_filename(&artifact_url)?;
     let claim_is_current: bool = row.try_get("claim_is_current")?;
     if sha256_marker(target_group_id.as_bytes()) != attempt.target_group_sha256
         || sha256_marker(artifact_uri.as_bytes()) != attempt.artifact_uri_sha256
+        || artifact_file_md5 != attempt.artifact_file_md5
+        || artifact_byte_size != attempt.artifact_byte_size
     {
         bail!("QiWe callback target or artifact changed after upload acceptance");
+    }
+    if callback_file.filename != artifact_filename
+        || callback_file.file_md5 != attempt.artifact_file_md5
+        || callback_file.file_size != attempt.artifact_byte_size
+    {
+        bail!("QiWe callback file identity does not match the approved generated image");
     }
     Ok((target_group_id, claim_is_current))
 }
@@ -1401,6 +1474,9 @@ fn stored_attempt_from_row(row: sqlx::postgres::PgRow) -> Result<StoredAttempt> 
         target_group_sha256: row.try_get("target_group_sha256")?,
         artifact_content_hash: row.try_get("artifact_content_hash")?,
         artifact_uri_sha256: row.try_get("artifact_uri_sha256")?,
+        artifact_file_md5: row.try_get("artifact_file_md5")?,
+        artifact_byte_size: u64::try_from(row.try_get::<i64, _>("artifact_byte_size")?)
+            .context("stored QiWe artifact byte size is invalid")?,
     })
 }
 
@@ -1422,6 +1498,36 @@ fn validate_canonical_sha256(value: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_canonical_md5(value: &str, label: &str) -> Result<()> {
+    if value.len() != 32
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        bail!("{label} must be canonical md5");
+    }
+    Ok(())
+}
+
+fn validate_callback_file_identity(callback: &QiweCallbackFileIdentity<'_>) -> Result<()> {
+    validate_jpeg_filename(callback.filename)?;
+    validate_canonical_md5(callback.file_md5, "QiWe callback file MD5")?;
+    if callback.file_size == 0 {
+        bail!("QiWe callback file size must be positive");
+    }
+    Ok(())
+}
+
+fn parse_positive_byte_size(value: &str, label: &str) -> Result<u64> {
+    let byte_size = value
+        .parse::<u64>()
+        .with_context(|| format!("{label} is invalid"))?;
+    if byte_size == 0 || byte_size > i64::MAX as u64 {
+        bail!("{label} is invalid");
+    }
+    Ok(byte_size)
+}
+
 fn validate_plain_value(value: &str, label: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 1024 || value.chars().any(char::is_control) {
         bail!("{label} is invalid");
@@ -1441,6 +1547,13 @@ fn strict_media_url(value: &str) -> Result<Url> {
         bail!("approved generated-image URI must be stable HTTPS");
     }
     Ok(url)
+}
+
+fn media_filename(url: &Url) -> Result<&str> {
+    url.path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("approved generated-image URI is missing a filename"))
 }
 
 fn validate_jpeg_filename(filename: &str) -> Result<()> {
@@ -1480,6 +1593,15 @@ mod tests {
     }
 
     #[cfg(feature = "postgres-integration-tests")]
+    fn integration_callback_file_identity() -> QiweCallbackFileIdentity<'static> {
+        QiweCallbackFileIdentity {
+            filename: "qiwe-state-integration.jpg",
+            file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            file_size: 48_300,
+        }
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
     async fn insert_send_ready_fixture(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
         let image_work_item_id = Uuid::new_v4();
         let artifact_id = Uuid::new_v4();
@@ -1512,7 +1634,7 @@ mod tests {
                  'QiWe state integration JPEG', 'sanitized fixture',
                  'https://media.example.test/posters/qiwe-state-integration.jpg',
                  'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-                 '{"mime_type":"image/jpeg"}'::jsonb)
+                 '{"mime_type":"image/jpeg","file_md5":"98e7c2acf4391f8b4a2bbd39e364c5e3","byte_size":48300}'::jsonb)
             "#,
         )
         .bind(artifact_id)
@@ -1637,30 +1759,45 @@ mod tests {
     fn claim_boundary_requires_reviewed_jpeg_host_and_group() {
         let groups = BTreeSet::from(["group-id".to_string()]);
         let hosts = BTreeSet::from(["media.example.test".to_string()]);
-        let filename = validate_claim_boundary(
-            "https://media.example.test/posters/activity.jpg",
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "image/jpeg",
-            "group-id",
+        let identity = validate_claim_boundary(
+            ArtifactBoundary {
+                uri: "https://media.example.test/posters/activity.jpg",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "group-id",
+            },
             &groups,
             &hosts,
         )
         .expect("reviewed boundary is valid");
-        assert_eq!(filename, "activity.jpg");
+        assert_eq!(identity.filename, "activity.jpg");
         assert!(validate_claim_boundary(
-            "https://media.example.test/posters/activity.png",
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "image/png",
-            "group-id",
+            ArtifactBoundary {
+                uri: "https://media.example.test/posters/activity.png",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/png",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "group-id",
+            },
             &groups,
             &hosts,
         )
         .is_err());
         assert!(validate_claim_boundary(
-            "https://media.example.test/posters/activity.jpg",
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "image/jpeg",
-            "GROUP-ID",
+            ArtifactBoundary {
+                uri: "https://media.example.test/posters/activity.jpg",
+                content_hash:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                mime_type: "image/jpeg",
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                byte_size: 48_300,
+                target_group_id: "GROUP-ID",
+            },
             &groups,
             &hosts,
         )
@@ -1762,13 +1899,29 @@ mod tests {
           "msgData":{
             "fileAesKey":"raw-aes-secret",
             "fileId":"raw-file-secret",
-            "fileMd5":"raw-md5-secret",
-            "filename":"raw-private.jpg"
+            "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
+            "fileSize":48300,
+            "filename":"qiwe-state-integration.jpg"
           }
         }"#;
-        let callback_claim = match claim_callback_for_send(&pool, request_id, callback)
+        let mismatched_file = QiweCallbackFileIdentity {
+            filename: "different-image.jpg",
+            ..integration_callback_file_identity()
+        };
+        let mismatch_error = claim_callback_for_send(&pool, request_id, callback, &mismatched_file)
             .await
-            .expect("claim callback once")
+            .expect_err("callback file identity must match the approved JPEG");
+        assert!(mismatch_error
+            .to_string()
+            .contains("file identity does not match"));
+        let callback_claim = match claim_callback_for_send(
+            &pool,
+            request_id,
+            callback,
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect("claim callback once")
         {
             CallbackClaimOutcome::Ready(claim) => claim,
             CallbackClaimOutcome::Duplicate { .. } => panic!("first callback was duplicate"),
@@ -1776,9 +1929,14 @@ mod tests {
         };
         assert_eq!(callback_claim.attempt_id, attempt_id);
         assert_eq!(callback_claim.target_group_id, "integration-group-id");
-        let duplicate = claim_callback_for_send(&pool, request_id, callback)
-            .await
-            .expect("duplicate callback is idempotent");
+        let duplicate = claim_callback_for_send(
+            &pool,
+            request_id,
+            callback,
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect("duplicate callback is idempotent");
         assert_eq!(
             duplicate,
             CallbackClaimOutcome::Duplicate {
@@ -1846,9 +2004,14 @@ mod tests {
                 "stored state leaked {sensitive}"
             );
         }
-        let duplicate_after_send = claim_callback_for_send(&pool, request_id, callback)
-            .await
-            .expect("delivered callback remains idempotent after send");
+        let duplicate_after_send = claim_callback_for_send(
+            &pool,
+            request_id,
+            callback,
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect("delivered callback remains idempotent after send");
         assert_eq!(
             duplicate_after_send,
             CallbackClaimOutcome::Duplicate {
@@ -1892,9 +2055,14 @@ mod tests {
           "cmd":20000,
           "msgData":{"fileAesKey":"late-aes-secret","fileId":"late-file-secret"}
         }"#;
-        let expired = claim_callback_for_send(&pool, first_request_id, late_callback)
-            .await
-            .expect("late callback reaches expired terminal state");
+        let expired = claim_callback_for_send(
+            &pool,
+            first_request_id,
+            late_callback,
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect("late callback reaches expired terminal state");
         assert_eq!(expired, CallbackClaimOutcome::Expired);
         let first_state: (
             String,
@@ -1926,9 +2094,14 @@ mod tests {
         assert!(first_state.4.starts_with("sha256:"));
         assert_eq!(first_state.5["external_send_executed"], false);
         assert_eq!(first_state.5["automatic_retry_allowed"], true);
-        let duplicate = claim_callback_for_send(&pool, first_request_id, late_callback)
-            .await
-            .expect("late callback replay is idempotent");
+        let duplicate = claim_callback_for_send(
+            &pool,
+            first_request_id,
+            late_callback,
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect("late callback replay is idempotent");
         assert_eq!(
             duplicate,
             CallbackClaimOutcome::Duplicate {
@@ -1950,15 +2123,19 @@ mod tests {
           "cmd":20000,
           "msgData":{"fileAesKey":"retry-aes-secret","fileId":"retry-file-secret"}
         }"#;
-        let retry_send_claim =
-            match claim_callback_for_send(&pool, retry_request_id, retry_callback)
-                .await
-                .expect("claim retry callback")
-            {
-                CallbackClaimOutcome::Ready(claim) => claim,
-                CallbackClaimOutcome::Duplicate { .. } => panic!("retry callback was duplicate"),
-                CallbackClaimOutcome::Expired => panic!("retry callback unexpectedly expired"),
-            };
+        let retry_send_claim = match claim_callback_for_send(
+            &pool,
+            retry_request_id,
+            retry_callback,
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect("claim retry callback")
+        {
+            CallbackClaimOutcome::Ready(claim) => claim,
+            CallbackClaimOutcome::Duplicate { .. } => panic!("retry callback was duplicate"),
+            CallbackClaimOutcome::Expired => panic!("retry callback unexpectedly expired"),
+        };
         sqlx::query(
             "UPDATE qintopia_agent_os.work_items SET claim_expires_at = now() - interval '1 second' WHERE id = $1",
         )
@@ -2167,9 +2344,14 @@ mod tests {
           "cmd":20000,
           "msgData":{"fileAesKey":"stale-aes-secret","fileId":"stale-file-secret"}
         }"#;
-        let send_claim = match claim_callback_for_send(&pool, request_id, callback)
-            .await
-            .expect("open stale send gate")
+        let send_claim = match claim_callback_for_send(
+            &pool,
+            request_id,
+            callback,
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect("open stale send gate")
         {
             CallbackClaimOutcome::Ready(claim) => claim,
             other => panic!("unexpected callback outcome: {other:?}"),

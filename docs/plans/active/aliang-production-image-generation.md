@@ -156,6 +156,7 @@ SHA-256 is recorded as `provider_source_content_hash`; the final artifact hash i
 SHA-256 of the exact JPEG bytes. Metadata and the creation audit must also match:
 
 - `provider_source_mime_type=image/png`;
+- final JPEG `file_md5` computed from the same bytes as the canonical SHA-256;
 - `media_transform=png_to_jpeg_white_background_q92_v1`;
 - `jpeg_quality=92`;
 - `alpha_background=#ffffff`; and

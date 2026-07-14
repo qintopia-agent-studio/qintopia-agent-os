@@ -98,11 +98,12 @@ target, or missing final confirmation must stop before sending.
   callback processing or send enablement.
 - The additive `qiwe_image_send_attempts` state records hashed upload correlation,
   callback idempotency, unique per-attempt claims, immutable artifact/target hashes, and
-  sanitized terminal audit. Callback credentials remain memory-only. The callback
-  transition commits `sending` before an external send can occur, and ambiguous outcomes
-  are terminal/manual rather than automatically retried. After that send gate, HTTP
-  failures or provider non-success responses remain ambiguous unless the bounded client
-  proves the request was not sent.
+  the approved final JPEG MD5 and byte size. Callback credentials remain memory-only;
+  their filename, MD5, and byte size must match the approved artifact before the
+  callback can open the send gate. The callback transition commits `sending` before an
+  external send can occur, and ambiguous outcomes are terminal/manual rather than
+  automatically retried. After that send gate, HTTP failures or provider non-success
+  responses remain ambiguous unless the bounded client proves the request was not sent.
 - `run-qiwe-image-send-worker` connects that state API to one guarded asynchronous
   upload request, and `process-qiwe-image-send-callback` reads one bounded callback from
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP

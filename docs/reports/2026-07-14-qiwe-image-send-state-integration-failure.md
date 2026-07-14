@@ -152,3 +152,36 @@ This does not approve building or running the staging feature. Owner-approved pr
 and media evidence, the exact callback credential shape, an isolated test group, staging
 secrets, rollback ownership, and a reviewed staging command remain required. Production
 scheduling and enablement remain separate later decisions.
+
+## PR #119 Callback File Identity Gap
+
+The post-CI manual review of commit `684ba87` found a file-integrity gap not reported by
+the Reviewer Guide. The callback parser required a JPG filename, positive size, and all
+credential fields, but the send gate did not compare the callback's filename, `fileMd5`,
+or `fileSize` with the approved `generated_image`. A correctly correlated but misrouted
+or inconsistent callback could therefore provide credentials for a different image.
+
+The root cause was treating `requestId` correlation as sufficient file identity. It
+proves which asynchronous request the callback claims to answer, but it does not prove
+that the returned file credentials describe the immutable JPEG reviewed by AgentOS.
+
+The repair computes a canonical MD5 from the exact final JPEG bytes after deterministic
+PNG-to-JPEG conversion and same-byte media readback. Huabaosi stores that MD5 with the
+existing SHA-256 and byte size in both artifact metadata and the creation event. Human
+approval now requires those facts to match. Upload acceptance snapshots the approved MD5
+and byte size in `qiwe_image_send_attempts`; callback processing compares the callback
+filename, canonical MD5, and byte size with the unchanged artifact and attempt before
+committing `sending`. A mismatch rolls back the callback transaction and makes no
+external send call. Callback AES keys, file ids, raw payloads, and filenames remain out
+of Postgres, events, logs, and reports.
+
+Validation covers the deterministic MD5 metadata, approval denial for malformed MD5,
+state migration constraints, a disposable PostgreSQL callback mismatch that leaves the
+send gate closed, the matching callback/idempotency path, the guarded apply smoke
+fixture, default and staging-feature Clippy, and the full Rust suite. Real callback
+field format still requires owner-approved isolated staging evidence; an uppercase or
+otherwise noncanonical provider MD5 fails closed rather than being normalized silently.
+
+This change does not enable the staging Cargo feature, install a listener/service/timer,
+contact QiWe, write Feishu, or send a message. Production artifacts still exclude the
+live adapter.

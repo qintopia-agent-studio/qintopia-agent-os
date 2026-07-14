@@ -156,8 +156,9 @@ a canonical hash for the exact reviewed bytes.
 
 The guarded QiWe code path is split into an asynchronous upload worker and a bounded
 stdin callback processor. It uses Postgres attempt state and can be exercised against a
-local fake server, but it is not installed as a listener, service, or timer and remains
-disabled for production.
+local fake server. Before opening the at-most-once send gate, it requires the callback
+filename, canonical MD5, and byte size to match the exact approved final JPEG. It is not
+installed as a listener, service, or timer and remains disabled for production.
 
 ## Validation
 

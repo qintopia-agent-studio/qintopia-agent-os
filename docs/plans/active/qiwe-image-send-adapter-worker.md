@@ -50,7 +50,9 @@ report field, NATS payload, or persisted work-item field.
   correlation or network access. A staging-only build requires the same compile-time
   feature, explicit enablement, and reviewed adapter config.
 - Apply correlates by raw request id in memory, commits `sending`, then builds and sends
-  one `/msg/sendImage` request with memory-only file credentials.
+  one `/msg/sendImage` request with memory-only file credentials. Before committing the
+  send gate, callback filename, canonical MD5, and byte size must exactly match the
+  approved final JPEG identity snapshotted at upload acceptance.
 - A failure proven to occur before the request leaves the process records `failed`.
   After the send gate, every non-success HTTP or business response records `ambiguous`
   unless a separately reviewed failure-code allowlist can prove no send occurred;
@@ -102,8 +104,9 @@ booleans. They must use `safe_for_chat=false` and must not include:
   send, non-success HTTP/business ambiguity, oversized response, connection timeout, and
   header injection rejection.
 - Disposable PostgreSQL integration proving upload acceptance, duplicate callback, exact
-  one send, terminal state, stale claim, missing callback recovery, and no raw
-  credentials or identifiers in state/events/reports.
+  one send, terminal state, stale claim, missing callback recovery, callback file
+  identity mismatch rejection, and no raw credentials or identifiers in
+  state/events/reports.
 - Full Rust suite, Clippy with warnings denied, repository pre-commit, CI contracts,
   secret scan, and diff check.
 
