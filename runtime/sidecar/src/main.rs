@@ -31,6 +31,7 @@ mod qiwe_image_send;
 pub mod qiwe_image_send_state;
 mod raw_archive;
 mod smoke;
+mod url_policy;
 mod workbench;
 mod xiaoman_activity;
 

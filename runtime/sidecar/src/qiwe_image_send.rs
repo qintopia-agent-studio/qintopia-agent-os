@@ -18,7 +18,7 @@ use crate::qiwe_image_send_state::{
     CallbackClaimOutcome, QiweCallbackFileIdentity, SendFailureDisposition,
     UploadFailureDisposition,
 };
-use crate::{config::Cli, db, qiwe_image_send_state};
+use crate::{config::Cli, db, qiwe_image_send_state, url_policy};
 use url::Url;
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
@@ -1360,6 +1360,7 @@ fn strict_media_url(value: &str) -> Result<Url> {
 }
 
 fn strict_https_url(value: &str, label: &str) -> Result<Url> {
+    url_policy::reject_path_separator_ambiguity(value, label)?;
     let url = Url::parse(value).with_context(|| format!("parse {label}"))?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -1497,6 +1498,55 @@ mod tests {
     }
 
     #[test]
+    fn upload_acceptance_rejects_invalid_payloads_before_state_changes() {
+        for body in [
+            b"".as_slice(),
+            &vec![b'x'; MAX_JSON_RESPONSE_BYTES + 1],
+            br#"{"code":0,"data":{"requestId":""}}"#,
+            br#"{"code":0,"data":{"requestId":"upload-request\nsecret"}}"#,
+            br#"{"code":0,"data":{}}"#,
+        ] {
+            assert!(
+                parse_async_upload_acceptance(body).is_err(),
+                "accepted invalid upload response {:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
+    fn upload_call_parser_classifies_rejected_and_unknown_outcomes() {
+        let accepted = parse_upload_acceptance_for_call(&http_json_response(
+            200,
+            br#"{"code":0,"data":{"requestId":"upload-request-1"}}"#,
+        ))
+        .expect("accepted upload request id");
+        assert_eq!(accepted.as_str(), "upload-request-1");
+
+        assert_eq!(
+            parse_upload_acceptance_for_call(&http_json_response(
+                200,
+                br#"{"code":1,"data":{"requestId":"upload-request-1"}}"#,
+            ))
+            .expect_err("provider rejection is known"),
+            UploadCallFailure::Rejected
+        );
+        assert_eq!(
+            parse_upload_acceptance_for_call(&http_json_response(200, br#"not-json"#))
+                .expect_err("malformed response is uncertain"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        assert_eq!(
+            parse_upload_acceptance_for_call(&http_json_response(
+                200,
+                br#"{"code":0,"data":{"requestId":"upload-request-1\nsecret"}}"#,
+            ))
+            .expect_err("invalid request id is uncertain"),
+            UploadCallFailure::OutcomeUnknown
+        );
+    }
+
+    #[test]
     fn callback_matches_request_and_extracts_complete_credentials() {
         let callback = br#"{
           "code": 0,
@@ -1560,6 +1610,31 @@ mod tests {
     }
 
     #[test]
+    fn callback_parser_rejects_failed_or_untrusted_credentials() {
+        assert!(
+            parse_async_upload_callback(br#"{"code":1,"data":[]}"#, "upload-request-1").is_err()
+        );
+        assert!(
+            parse_async_upload_callback(br#"{"code":0,"data":[]}"#, "upload-request\nsecret")
+                .is_err()
+        );
+
+        for msg_data in [
+            r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":0,"filename":"activity-poster.jpg"}"#,
+            r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.png"}"#,
+            r#"{"fileAesKey":"aes-key\nsecret","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.jpg"}"#,
+        ] {
+            let callback = format!(
+                r#"{{"code":0,"data":[{{"requestId":"upload-request-1","cmd":20000,"msgData":{msg_data}}}]}}"#
+            );
+            assert!(
+                parse_async_upload_callback(callback.as_bytes(), "upload-request-1").is_err(),
+                "accepted invalid callback credentials {msg_data}"
+            );
+        }
+    }
+
+    #[test]
     fn send_response_parses_internal_receipt() {
         let receipt = parse_send_image_response(
             br#"{
@@ -1596,6 +1671,57 @@ mod tests {
         }"#;
 
         assert!(parse_send_image_response(response).is_err());
+    }
+
+    #[test]
+    fn send_response_rejects_invalid_payloads_before_receipt_use() {
+        for body in [
+            b"".as_slice(),
+            &vec![b'x'; MAX_JSON_RESPONSE_BYTES + 1],
+            br#"{"code":0,"data":{"isSendSuccess":1,"msgUniqueIdentifier":"","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":1,"msgUniqueIdentifier":"message\nsecret","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":1,"seq":2,"timestamp":3}}"#,
+        ] {
+            assert!(
+                parse_send_image_response(body).is_err(),
+                "accepted invalid send response {:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
+    fn send_call_parser_treats_every_post_send_parse_failure_as_ambiguous() {
+        let receipt = parse_send_response_for_call(&http_json_response(
+            200,
+            br#"{
+              "code":0,
+              "data":{
+                "isSendSuccess":1,
+                "msgUniqueIdentifier":"message-1",
+                "seq":2,
+                "timestamp":3
+              }
+            }"#,
+        ))
+        .expect("parse successful send receipt");
+        assert_eq!(receipt.message_identifier, "message-1");
+
+        for body in [
+            br#"not-json"#.as_slice(),
+            br#"{"code":1,"data":{"isSendSuccess":0,"msgUniqueIdentifier":"message-1","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":0,"msgUniqueIdentifier":"message-1","seq":2,"timestamp":3}}"#,
+            br#"{"code":0,"data":{"isSendSuccess":1,"msgUniqueIdentifier":"message-1\nsecret","seq":2,"timestamp":3}}"#,
+        ] {
+            let Err(error) = parse_send_response_for_call(&http_json_response(200, body)) else {
+                panic!("post-send parse failure must be ambiguous");
+            };
+            assert_eq!(
+                error,
+                SendCallFailure::Ambiguous,
+                "post-send parse failure is ambiguous"
+            );
+        }
     }
 
     #[test]
@@ -1639,6 +1765,42 @@ mod tests {
     }
 
     #[test]
+    fn send_request_rejects_invalid_memory_only_credentials() {
+        let allowed_group_ids = BTreeSet::from(["group-id".to_string()]);
+        for credentials in [
+            QiweImageCredentials {
+                file_aes_key: "aes-key".to_string(),
+                file_id: "file-id".to_string(),
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+                file_size: 0,
+                filename: "activity-poster.jpg".to_string(),
+            },
+            QiweImageCredentials {
+                file_aes_key: "aes-key\nsecret".to_string(),
+                file_id: "file-id".to_string(),
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+                file_size: 48_300,
+                filename: "activity-poster.jpg".to_string(),
+            },
+            QiweImageCredentials {
+                file_aes_key: "aes-key".to_string(),
+                file_id: "file-id".to_string(),
+                file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+                file_size: 48_300,
+                filename: "activity-poster.png".to_string(),
+            },
+        ] {
+            assert!(build_send_image_request(
+                "device-guid",
+                "group-id",
+                &credentials,
+                &allowed_group_ids,
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
     fn headers_and_json_bodies_are_bounded() {
         assert!(validate_header_value("token\r\nInjected: true").is_err());
         assert!(validate_header_value("token\0suffix").is_err());
@@ -1652,6 +1814,11 @@ mod tests {
         assert!(strict_api_url("http://manager.qiweapi.com/qiwe/api/qw/doApi").is_err());
         assert!(strict_api_url("https://manager.qiweapi.com/qiwe/api/qw/doApi").is_ok());
         assert!(strict_api_url("https://manager.qiweapi.com/other").is_err());
+        assert!(strict_api_url("https://user:pass@manager.qiweapi.com/qiwe/api/qw/doApi").is_err());
+        assert!(
+            strict_api_url("https://manager.qiweapi.com/qiwe/api/qw/doApi?token=secret").is_err()
+        );
+        assert!(strict_api_url("https://manager.qiweapi.com/qiwe/api/qw/doApi#fragment").is_err());
     }
 
     #[test]
@@ -1666,6 +1833,54 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn host_parsing_normalizes_hosts_but_preserves_group_ids() {
+        let hosts = parse_csv_set(" Manager.QIWEAPI.com, manager.qiweapi.com ,, ");
+        assert_eq!(hosts, BTreeSet::from(["manager.qiweapi.com".to_string()]));
+
+        let groups = parse_csv_exact_set("Group-A, group-a,, ");
+        assert!(groups.contains("Group-A"));
+        assert!(groups.contains("group-a"));
+        assert_ne!(groups.len(), 1);
+    }
+
+    #[test]
+    fn configuration_helpers_trim_placeholders_without_exposing_values() {
+        assert!(is_placeholder("change-me"));
+        assert!(is_placeholder("REPLACE-WITH-QIWE-TOKEN"));
+        assert!(is_placeholder("placeholder"));
+        assert!(!is_placeholder("real-looking-value"));
+
+        let missing = missing_required_configuration_with(
+            &["QIWE_TOKEN", "QIWE_GUID", "QIWE_API_URL", "QIWE_GROUP"],
+            |name| match name {
+                "QIWE_TOKEN" => Some("  super-secret-token  ".to_string()),
+                "QIWE_GUID" => Some("replace-with-guid".to_string()),
+                "QIWE_API_URL" => Some(" ".to_string()),
+                _ => None,
+            },
+        );
+
+        assert_eq!(missing, vec!["QIWE_GUID", "QIWE_API_URL", "QIWE_GROUP"]);
+        let serialized = serde_json::to_string(&missing).expect("serialize missing names");
+        assert!(!serialized.contains("super-secret-token"));
+        assert!(!serialized.contains("replace-with-guid"));
+    }
+
+    #[test]
+    fn url_and_filename_boundaries_reject_unstable_inputs() {
+        assert!(strict_media_url("https://media.example.test/poster.jpg").is_ok());
+        assert!(strict_media_url("https://user@media.example.test/poster.jpg").is_err());
+        assert!(strict_media_url("https://media.example.test/poster.jpg?token=secret").is_err());
+        assert!(strict_media_url("https://media.example.test/poster.jpg#fragment").is_err());
+        assert!(strict_media_url("https://media.example.test/poster\\private.jpg").is_err());
+        assert!(strict_media_url("https://media.example.test/poster%5Cprivate.jpg").is_err());
+        assert!(strict_media_url("https://media.example.test/posters%2Fprivate.jpg").is_err());
+        assert!(strict_api_url("https://manager.qiweapi.com\\private/qiwe/api/qw/doApi").is_err());
+        assert!(strict_api_url("https://manager.qiweapi.com%2Fprivate/qiwe/api/qw/doApi").is_err());
+        assert!(validate_jpeg_filename(&format!("{}.jpg", "a".repeat(252))).is_err());
     }
 
     #[test]
@@ -1754,6 +1969,37 @@ mod tests {
             .expect_err("default build must reject callback apply before stdin");
 
         assert!(error.to_string().contains("not compiled"));
+    }
+
+    #[test]
+    fn invalid_preflight_reports_public_missing_names_only() {
+        let report = preflight_report(PreflightReportState {
+            config_valid: false,
+            send_enabled: false,
+            adapter_compiled: false,
+            webhook_ready: false,
+            allowed_host_count: 0,
+            media_allowed_host_count: 0,
+            allowed_group_count: 0,
+            missing_configuration: vec!["QIWE_TOKEN", "QIWE_GUID"],
+        });
+        let output = serde_json::to_string(&report).expect("serialize preflight report");
+
+        assert!(!report.success);
+        assert!(!report.config_valid);
+        assert_eq!(report.action_status, "adapter_not_configured");
+        assert_eq!(
+            report.missing_configuration,
+            vec!["QIWE_TOKEN", "QIWE_GUID"]
+        );
+        for sensitive in [
+            "secret-token-value",
+            "live-device-guid",
+            "group-id",
+            "https://media.example.test/activity-poster.jpg",
+        ] {
+            assert!(!output.contains(sensitive));
+        }
     }
 
     #[test]
@@ -1976,6 +2222,106 @@ mod tests {
         }
     }
 
+    #[test]
+    fn callback_parser_rejects_non_success_or_unrelated_events() {
+        assert!(parse_single_async_upload_callback(br#"{"code":1,"data":[]}"#).is_err());
+        assert!(parse_single_async_upload_callback(
+            br#"{"code":0,"data":[{"requestId":"one","cmd":1,"msgData":{}}]}"#
+        )
+        .is_err());
+        assert!(parse_async_upload_callback(
+            br#"{"code":0,"data":[{"requestId":"one","cmd":1,"msgData":{}}]}"#,
+            "one",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn contract_self_check_covers_upload_callback_and_send_shapes() {
+        validate_contract().expect("QiWe adapter contract self-check stays valid");
+    }
+
+    #[test]
+    fn single_callback_parser_accepts_one_async_event_with_credential_aliases() {
+        let parsed = parse_single_async_upload_callback(
+            br#"{
+              "code":0,
+              "data":[
+                {"requestId":"ignored-sync-event","cmd":10000,"msgData":{}},
+                {
+                  "requestId":"upload-request-1",
+                  "cmd":20000,
+                  "msgData":{
+                    "fileAeskey":"aes-key",
+                    "fileId":"file-id",
+                    "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
+                    "fileSize":48300,
+                    "fileName":"activity-poster.jpg"
+                  }
+                }
+              ]
+            }"#,
+        )
+        .expect("parse single async upload callback");
+
+        assert_eq!(parsed.request_id, "upload-request-1");
+        assert_eq!(parsed.credentials.file_aes_key, "aes-key");
+        assert_eq!(parsed.credentials.filename, "activity-poster.jpg");
+    }
+
+    #[test]
+    fn single_callback_parser_rejects_inputs_before_send_gate() {
+        let oversized = vec![b'x'; MAX_JSON_RESPONSE_BYTES + 1];
+        for body in [
+            b"".as_slice(),
+            oversized.as_slice(),
+            br#"{"code":0,"data":[{"requestId":"upload-request\nsecret","cmd":20000,"msgData":{}}]}"#,
+            br#"{"code":0,"data":[{"requestId":"upload-request-1","cmd":20000}]}"#,
+            br#"{"code":0,"data":[{"requestId":"upload-request-1","cmd":20000,"msgData":{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.png"}}]}"#,
+        ] {
+            assert!(
+                parse_single_async_upload_callback(body).is_err(),
+                "accepted invalid single callback {:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
+    fn worker_reports_encode_send_boundary_states() {
+        let upload_preview = worker_report(WorkerReportState {
+            success: true,
+            dry_run: true,
+            apply_requested: false,
+            phase: "upload",
+            action_status: "image_upload_preview".to_string(),
+            work_item_id: Some(Uuid::nil()),
+            external_upload_requested: false,
+            callback_received: false,
+            external_send_executed: Some(false),
+        });
+        assert!(upload_preview.success);
+        assert!(upload_preview.dry_run);
+        assert_eq!(upload_preview.external_send_executed, Some(false));
+        assert!(!upload_preview.safe_for_chat);
+
+        let ambiguous_callback = worker_report(WorkerReportState {
+            success: false,
+            dry_run: false,
+            apply_requested: true,
+            phase: "callback",
+            action_status: "image_send_ambiguous".to_string(),
+            work_item_id: Some(Uuid::nil()),
+            external_upload_requested: false,
+            callback_received: true,
+            external_send_executed: None,
+        });
+        assert!(!ambiguous_callback.success);
+        assert!(ambiguous_callback.apply_requested);
+        assert!(ambiguous_callback.callback_received);
+        assert_eq!(ambiguous_callback.external_send_executed, None);
+    }
+
     struct TestRequest {
         headers: String,
         body: Vec<u8>,
@@ -2021,6 +2367,14 @@ mod tests {
             body.len()
         )
         .into_bytes()
+    }
+
+    fn http_json_response(status: u16, body: &[u8]) -> HttpResponse {
+        HttpResponse {
+            status,
+            headers: std::collections::BTreeMap::new(),
+            body: body.to_vec(),
+        }
     }
 
     fn test_adapter_config(port: u16) -> AdapterConfig {

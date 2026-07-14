@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
-use async_nats::jetstream::{self, context::Publish};
+use async_nats::jetstream::{self, message::PublishMessage};
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
@@ -129,7 +129,7 @@ async fn publish_json<T: Serialize>(
     let ack = jetstream
         .send_publish(
             subject.to_string(),
-            Publish::build()
+            PublishMessage::build()
                 .payload(bytes.into())
                 .message_id(message_id),
         )

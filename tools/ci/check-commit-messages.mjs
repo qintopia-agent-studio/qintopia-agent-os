@@ -2,6 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 
 const run = (command, args, options = {}) =>
@@ -158,13 +159,20 @@ if (commits.length === 0) {
 }
 
 let checkedCount = 0;
+const commitlintBin = path.join(
+  process.cwd(),
+  "node_modules",
+  ".bin",
+  process.platform === "win32" ? "commitlint.cmd" : "commitlint"
+);
+
 for (const commit of commits) {
   if (commit.parents.length > 1 || /^Merge /.test(commit.subject)) {
     continue;
   }
 
   try {
-    execFileSync("pnpm", ["exec", "commitlint"], {
+    execFileSync(commitlintBin, [], {
       input: `${commit.subject}\n`,
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],

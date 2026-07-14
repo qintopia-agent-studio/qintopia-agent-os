@@ -32,12 +32,13 @@ allowlist。
 - `run-huabaosi-image-generation-worker` 目前只校验和预览请求；默认开关为
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`，因此不会请求 provider、上传媒体或创建
   `generated_image`。
-- 现有 staging 审批、数据库哈希和 staging 数据库名检查只在 smoke shell 中执行；Rust
-  CLI 可被直接调用，且默认生产二进制仍包含 live
-  adapter。该命令入口缺口必须先通过非默认 Cargo feature 和 Rust 内部 staging
-  gate 修复，不能把 shell 约定当作生产边界。
-- 图片 request intake 于 `#93` 合并到 `master`，但当前生产 `v0.2.6`
-  尚不包含 starter 或 image worker。它不能被表述为已上线图片生成能力。
+- 图片 request intake 于 `#93` 合并到 `master`，并随 `v0.2.7`
+  进入生产内部 intake 边界；image-generation starter
+  timer 已安装、启用并处于 waiting。它仍不能被表述为已上线图片生成能力，因为 Huabaosi
+  provider worker 仍默认 disabled、无 service/timer，不会调用 provider、上传媒体或创建
+  `generated_image`。
+- live adapter 受非默认 Cargo feature 和 Rust 内部 staging gate 约束；不能把 smoke shell
+  约定当作生产边界，默认生产二进制不得编译 live adapter。
 - `qintopia_agent_os.artifacts` 已有
   `artifact_uri`、审核状态、来源引用、风险标签和审计事件。
 - 已有 COS 工具只用于不可变发布构件和部署请求。不得复用发布构件 bucket/prefix 存储用户可见海报。
