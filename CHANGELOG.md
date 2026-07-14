@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.8](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.7...v0.2.8) (2026-07-14)
+
+
+### Features
+
+* add guarded qiwe image send worker ([#119](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/119)) ([df764ad](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/df764ade57d4d81d00ab50fcaecfb5d3dc358401))
+* add huabaosi wecom canary gateway ([#129](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/129)) ([b24f3e2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b24f3e22b3f18e56c3b7b0a04ccb41da8d79b890))
+* add huabaosi wecom observation smoke ([#123](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/123)) ([2a0bad9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2a0bad912b395dbde2c9fd3819fda8ee7d39cee4))
+* add huabaosi wecom policy preview ([#128](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/128)) ([b59582f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b59582f47bea4559cf22368a74cacd47b8d03bc6))
+* add huabaosi wecom shadow capture ([#126](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/126)) ([af8a71e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/af8a71ed8724a924472104fd1df770b6cb706e8e))
+* add qiwe image send state machine ([#116](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/116)) ([f4e83f8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f4e83f89afc8c250d0d45b89c3e0f5c8b4133ecd))
+
+
+### Bug Fixes
+
+* harden qiwe image send boundaries ([#122](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/122)) ([4092ed3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4092ed30973e30d21397cfb2292008ba44a7e3d9))
+* stabilize xiaoman production preflight ([#118](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/118)) ([b3da53c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b3da53c369bd35303d87b61b3a8aed7cb99a85a7))
+
+
+### Documentation
+
+* align qiwe adapter status ([#121](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/121)) ([d9f500f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d9f500fb39335743eb24ae6ff9d76da5f9ea5fb0))
+* define huabaosi wecom migration plan ([#120](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/120)) ([89d3795](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/89d3795d335a26f041db72cebfd714f59edad97f))
+
 ## [0.2.7](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.6...v0.2.7) (2026-07-14)
 
 
