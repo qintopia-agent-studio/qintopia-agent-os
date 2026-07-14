@@ -276,6 +276,9 @@ Use `rg` and `rg --files` for search.
   request. Human approval applies to the exact final JPEG bytes; the transient provider
   PNG is never an approvable artifact. Integrity denial must leave the artifact pending
   and must not complete the work item or unlock downstream send intake.
+- Generated-image media URIs passed into QiWe send intake must reject raw backslashes
+  before URL parsing; parsers may normalize them into path separators, which can hide
+  unstable or secret-shaped input from later filename checks.
 - A content-hash conflict may reuse an existing pending `generated_image` only when its
   stable URI, source refs, and complete immutable worker metadata exactly match the new
   final JPEG result. Reviewed, stale, or modified artifacts must fail closed and must

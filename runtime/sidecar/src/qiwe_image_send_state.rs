@@ -564,17 +564,7 @@ pub async fn record_upload_failure(
     disposition: UploadFailureDisposition,
 ) -> Result<()> {
     let (attempt_status, failure_code, external_upload_outcome, request_may_have_been_accepted) =
-        match disposition {
-            UploadFailureDisposition::Rejected => {
-                ("failed", "qiwe_upload_rejected", "rejected", Some(false))
-            }
-            UploadFailureDisposition::OutcomeUnknown => (
-                "ambiguous",
-                "qiwe_upload_outcome_ambiguous",
-                "unknown",
-                None,
-            ),
-        };
+        upload_failure_state(disposition);
     let mut tx = pool
         .begin()
         .await
@@ -983,6 +973,22 @@ pub async fn record_send_failure(
     .await?;
     tx.commit().await.context("commit QiWe send failure")?;
     Ok(())
+}
+
+fn upload_failure_state(
+    disposition: UploadFailureDisposition,
+) -> (&'static str, &'static str, &'static str, Option<bool>) {
+    match disposition {
+        UploadFailureDisposition::Rejected => {
+            ("failed", "qiwe_upload_rejected", "rejected", Some(false))
+        }
+        UploadFailureDisposition::OutcomeUnknown => (
+            "ambiguous",
+            "qiwe_upload_outcome_ambiguous",
+            "unknown",
+            None,
+        ),
+    }
 }
 
 fn send_failure_state(
@@ -1768,6 +1774,9 @@ fn validate_plain_value(value: &str, label: &str) -> Result<()> {
 }
 
 fn strict_media_url(value: &str) -> Result<Url> {
+    if value.contains('\\') {
+        bail!("approved generated-image URI must be stable HTTPS");
+    }
     let url = Url::parse(value).context("parse approved generated-image URI")?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -2128,6 +2137,52 @@ mod tests {
     }
 
     #[test]
+    fn claim_boundary_rejects_secret_shaped_values_before_claim() {
+        let groups = BTreeSet::from(["group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+
+        for (artifact_uri, artifact_content_hash, mime_type, target_group_id) in [
+            (
+                "https://media.example.test/posters/activity.jpg",
+                "sha256:raw-secret",
+                "image/jpeg",
+                "group-id",
+            ),
+            (
+                "https://media.example.test/posters/activity.jpg",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "image/jpeg",
+                "group-id\nsecret",
+            ),
+            (
+                "https://media.example.test/posters/activity.jpg?token=secret",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "image/jpeg",
+                "group-id",
+            ),
+            (
+                "https://media.example.test/posters/activity\\private.jpg",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "image/jpeg",
+                "group-id",
+            ),
+        ] {
+            assert!(
+                validate_claim_boundary(
+                    artifact_uri,
+                    artifact_content_hash,
+                    mime_type,
+                    target_group_id,
+                    &groups,
+                    &hosts,
+                )
+                .is_err(),
+                "accepted unsafe claim boundary {artifact_uri}"
+            );
+        }
+    }
+
+    #[test]
     fn preview_boundary_requires_canonical_jpeg_https_uri() {
         let groups = BTreeSet::from(["group-id".to_string()]);
         let hosts = BTreeSet::from(["media.example.test".to_string()]);
@@ -2255,6 +2310,23 @@ mod tests {
     }
 
     #[test]
+    fn upload_failure_audit_distinguishes_rejected_from_unknown() {
+        let (status, failure_code, outcome, accepted) =
+            upload_failure_state(UploadFailureDisposition::Rejected);
+        assert_eq!(status, "failed");
+        assert_eq!(failure_code, "qiwe_upload_rejected");
+        assert_eq!(outcome, "rejected");
+        assert_eq!(accepted, Some(false));
+
+        let (status, failure_code, outcome, accepted) =
+            upload_failure_state(UploadFailureDisposition::OutcomeUnknown);
+        assert_eq!(status, "ambiguous");
+        assert_eq!(failure_code, "qiwe_upload_outcome_ambiguous");
+        assert_eq!(outcome, "unknown");
+        assert_eq!(accepted, None);
+    }
+
+    #[test]
     fn callback_send_claim_debug_redacts_sensitive_fields() {
         let claim = QiweCallbackSendClaim {
             attempt_id: Uuid::nil(),
@@ -2268,6 +2340,23 @@ mod tests {
 
         assert!(debug.contains("QiweCallbackSendClaim"));
         assert!(debug.contains("attempt_id"));
+        assert!(!debug.contains("secret-token"));
+        assert!(!debug.contains("secret-group-id"));
+    }
+
+    #[test]
+    fn callback_outcome_debug_redacts_ready_claim() {
+        let outcome = CallbackClaimOutcome::Ready(QiweCallbackSendClaim {
+            attempt_id: Uuid::nil(),
+            work_item_id: Uuid::nil(),
+            generated_image_artifact_id: Uuid::nil(),
+            claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
+            target_group_id: "secret-group-id".to_string(),
+        });
+
+        let debug = format!("{outcome:?}");
+
+        assert!(debug.contains("Ready"));
         assert!(!debug.contains("secret-token"));
         assert!(!debug.contains("secret-group-id"));
     }
