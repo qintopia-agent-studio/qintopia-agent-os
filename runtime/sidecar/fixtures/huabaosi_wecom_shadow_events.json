@@ -1,0 +1,70 @@
+[
+  {
+    "name": "wecom text message",
+    "payload": {
+      "event_type": "message",
+      "msg_type": "text",
+      "message_id": "fixture-message-text",
+      "chat_id": "fixture-chat-text",
+      "sender_id": "fixture-user-text",
+      "content": "fixture private poster request",
+      "timestamp": 1784016000
+    },
+    "expected_event_kind": "message",
+    "expected_message_type": "text",
+    "expected_text_content": true,
+    "expected_media_reference": false,
+    "expected_callback_file_credentials": false
+  },
+  {
+    "name": "wecom attachment placeholder",
+    "payload": {
+      "type": "message",
+      "msg_type": "file",
+      "msgid": "fixture-message-file",
+      "room_id": "fixture-chat-file",
+      "from_user": "fixture-user-file",
+      "file": {
+        "file_id": "callback-secret-file-id",
+        "download_url": "https://fixture.example.invalid/download-token/file.jpg",
+        "filename": "fixture-private-file.jpg"
+      }
+    },
+    "expected_event_kind": "message",
+    "expected_message_type": "file",
+    "expected_text_content": false,
+    "expected_media_reference": true,
+    "expected_callback_file_credentials": true
+  },
+  {
+    "name": "busy fallback text",
+    "payload": {
+      "event": "message",
+      "message_type": "text",
+      "message_id": "fixture-message-busy",
+      "conversation_id": "fixture-chat-busy",
+      "userid": "fixture-user-busy",
+      "text": "busy internal fallback text",
+      "create_time": "1784016060"
+    },
+    "expected_event_kind": "message",
+    "expected_message_type": "text",
+    "expected_text_content": true,
+    "expected_media_reference": false,
+    "expected_callback_file_credentials": false
+  },
+  {
+    "name": "unsupported event shape",
+    "payload": {
+      "event_type": "menu_click",
+      "payload": {
+        "state": "fixture private unsupported state"
+      }
+    },
+    "expected_event_kind": "unknown",
+    "expected_message_type": "unknown",
+    "expected_text_content": false,
+    "expected_media_reference": false,
+    "expected_callback_file_credentials": false
+  }
+]

@@ -41,6 +41,24 @@ reviewers can reason about risk:
 - Runtime profile: no direct Hermes profile mutation.
 - Secrets: uses runtime-only env vars and database URLs; never commit real env files.
 
+## Huabaosi WeCom Migration Entrypoints
+
+The 阿亮画报师 WeCom migration is layered and does not replace the production Hermes Bot
+route from this package yet:
+
+- `huabaosi-wecom-shadow-capture`: read one bounded stdin event and emit sanitized
+  shadow metadata only.
+- `huabaosi-wecom-policy-preview`: read one bounded stdin event and emit sanitized
+  policy decisions only.
+- `huabaosi-wecom-canary-preflight`: validate canary configuration without stdin,
+  network, database, or sends.
+- `huabaosi-wecom-canary-gateway`: dry-run one allowlisted payload by default; real
+  apply requires the non-default `huabaosi-wecom-canary-gateway` Cargo feature plus
+  owner-reviewed staging configuration and exact allowlists.
+
+These commands must not change the production Bot route, install timers, write Feishu,
+call image providers, upload media, or send outside an approved canary allowlist.
+
 ## Imported Contents
 
 - Rust crate: `Cargo.toml`, `Cargo.lock`, and `src/`.

@@ -240,12 +240,47 @@ if (!exists(huabaosiWeComGatewayObservationPath)) {
   }
 }
 
+const huabaosiWeComCanaryObservationPath =
+  "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh";
+if (!exists(huabaosiWeComCanaryObservationPath)) {
+  addError(`${huabaosiWeComCanaryObservationPath}: missing observation smoke`);
+} else {
+  const smoke = readText(huabaosiWeComCanaryObservationPath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_WECOM_CANARY_OBSERVATION_ENABLE",
+    "qintopia-agentos-huabaosi-wecom-canary-gateway.service",
+    "qintopia-agentos-huabaosi-wecom-canary-gateway.timer",
+    "huabaosi-wecom-canary-preflight",
+    "canary_enabled",
+    "staging_adapter_not_compiled",
+    "canary_configuration_not_approved",
+    "QINTOPIA_HUABAOSI_WECOM_CANARY_TOKEN",
+    "contains forbidden sensitive output",
+  ]) {
+    requireFragment(huabaosiWeComCanaryObservationPath, smoke, fragment);
+  }
+  for (const fragment of [
+    "huabaosi-wecom-canary-gateway --apply",
+    "systemctl restart",
+    "systemctl reload",
+    "systemctl start",
+    "systemctl enable",
+    'source "$ENV_FILE"',
+    ". /etc/qintopia/message-sidecar.env",
+    "run-huabaosi-image-generation-worker",
+    "run-group-message-send-worker",
+  ]) {
+    forbidFragment(huabaosiWeComCanaryObservationPath, smoke, fragment);
+  }
+}
+
 for (const observationPath of [
   "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",
