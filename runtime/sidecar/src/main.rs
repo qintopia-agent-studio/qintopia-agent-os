@@ -1,3 +1,8 @@
+#[cfg(any(
+    test,
+    feature = "huabaosi-staging-adapter",
+    feature = "qiwe-staging-adapter"
+))]
 mod bounded_http;
 mod collaboration;
 mod config;
@@ -18,6 +23,7 @@ mod huabaosi_wecom_policy;
 mod huabaosi_wecom_shadow;
 mod identity_backfill;
 mod identity_bootstrap;
+#[cfg_attr(not(feature = "huabaosi-staging-adapter"), allow(dead_code))]
 mod image_generation;
 mod knowledge;
 mod mcp_server;

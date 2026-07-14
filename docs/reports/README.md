@@ -40,6 +40,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-codex-loopback-test-sandbox.md`                                        | adopt-input | Local fake HTTP test sandbox permission evidence                       |
 | `2026-07-14-xiaoman-v027-production-preflight.md`                                  | adopt-input | v0.2.7 production preflight hold and smoke remediation                 |
 | `2026-07-14-huabaosi-wecom-busy-ack-leak.md`                                       | adopt-input | Huabaosi WeCom busy-ack and formatting fallback leak                   |
+| `2026-07-14-huabaosi-command-entry-staging-gate.md`                                | adopt-input | Huabaosi compile and command-entry staging gate remediation            |
 
 ## Rules
 

@@ -7,6 +7,7 @@ rust-version = "1.96"
 [features]
 huabaosi-wecom-canary-gateway = []
 postgres-integration-tests = []
+huabaosi-staging-adapter = []
 qiwe-staging-adapter = []
 
 [dependencies]
