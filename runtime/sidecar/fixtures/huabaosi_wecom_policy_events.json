@@ -1,0 +1,121 @@
+[
+  {
+    "name": "outbound internal status screenshot text",
+    "payload": {
+      "direction": "outbound_candidate",
+      "msg_type": "text",
+      "message_id": "fixture-policy-message-internal",
+      "content": "Interrupting current task to handle new input",
+      "busy_session": true
+    },
+    "expected_message_classification": "internal_process_status",
+    "expected_should_suppress": true,
+    "expected_suppression_reason": "internal_process_status",
+    "expected_busy_session_action": "suppress_internal_status_and_use_safe_fallback",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "process_if_idempotency_key_unseen",
+    "expected_fallback_copy": true
+  },
+  {
+    "name": "outbound formatting fallback",
+    "payload": {
+      "direction": "outbound_candidate",
+      "message_type": "text",
+      "message_id": "fixture-policy-message-formatting",
+      "text": "Response formatting failed; returning plain text fallback"
+    },
+    "expected_message_classification": "formatting_fallback",
+    "expected_should_suppress": true,
+    "expected_suppression_reason": "formatting_fallback",
+    "expected_busy_session_action": "suppress_internal_status",
+    "expected_formatting_fallback": true,
+    "expected_duplicate_action": "process_if_idempotency_key_unseen",
+    "expected_fallback_copy": true
+  },
+  {
+    "name": "inbound plain text user request",
+    "payload": {
+      "direction": "inbound",
+      "msg_type": "text",
+      "message_id": "fixture-policy-message-plain",
+      "content": "fixture policy private request: please make the poster in plain text first"
+    },
+    "expected_message_classification": "user_or_agent_text",
+    "expected_should_suppress": false,
+    "expected_suppression_reason": null,
+    "expected_busy_session_action": "no_busy_session_action",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "process_if_idempotency_key_unseen",
+    "expected_fallback_copy": false
+  },
+  {
+    "name": "duplicate inbound request hint",
+    "payload": {
+      "direction": "inbound",
+      "msg_type": "text",
+      "message_id": "fixture-policy-message-duplicate",
+      "content": "fixture policy private duplicate request",
+      "already_seen": true
+    },
+    "expected_message_classification": "user_or_agent_text",
+    "expected_should_suppress": true,
+    "expected_suppression_reason": "duplicate_hint",
+    "expected_busy_session_action": "no_busy_session_action",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "suppress_duplicate_preview",
+    "expected_fallback_copy": false
+  },
+  {
+    "name": "busy inbound request",
+    "payload": {
+      "direction": "inbound",
+      "msg_type": "text",
+      "message_id": "fixture-policy-message-busy",
+      "content": "fixture policy private request during active generation",
+      "active_generation": true
+    },
+    "expected_message_classification": "user_or_agent_text",
+    "expected_should_suppress": false,
+    "expected_suppression_reason": null,
+    "expected_busy_session_action": "defer_or_queue_user_request_preview",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "process_if_idempotency_key_unseen",
+    "expected_fallback_copy": true
+  },
+  {
+    "name": "attachment placeholder",
+    "payload": {
+      "direction": "inbound",
+      "type": "message",
+      "msg_type": "file",
+      "msgid": "fixture-policy-message-file",
+      "file": {
+        "file_id": "fixture-policy-file-id",
+        "download_url": "https://fixture.example.invalid/download-token/file.jpg"
+      }
+    },
+    "expected_message_classification": "attachment_placeholder",
+    "expected_should_suppress": false,
+    "expected_suppression_reason": null,
+    "expected_busy_session_action": "no_busy_session_action",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "process_if_idempotency_key_unseen",
+    "expected_fallback_copy": false
+  },
+  {
+    "name": "unsupported shape without message id",
+    "payload": {
+      "event_type": "menu_click",
+      "payload": {
+        "state": "fixture policy private unsupported state"
+      }
+    },
+    "expected_message_classification": "unsupported_event_shape",
+    "expected_should_suppress": false,
+    "expected_suppression_reason": null,
+    "expected_busy_session_action": "no_busy_session_action",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "review_without_message_id",
+    "expected_fallback_copy": false
+  }
+]

@@ -23,6 +23,9 @@
 - Test: `RUST_MIN_STACK=33554432 cargo test`
 - Local readiness: `cargo run -- check`
 - Run consumer: `cargo run -- run`
+- Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
+- Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
+- Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`
 
 From the monorepo root, prefer:
 
@@ -107,3 +110,25 @@ From the monorepo root, prefer:
   HTTPS and the reviewed endpoint/host allowlists.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.
+- `huabaosi-wecom-shadow-capture` is a preview-only migration command. It may read one
+  event from bounded stdin and emit only sanitized hashes, byte counts, field presence,
+  classification, and fixed guardrails. It must not gain an apply mode, connect to
+  Postgres or external services, send WeCom/QiWe messages, generate or upload media,
+  write Feishu, create artifacts, or print raw ids, user text, media URLs, filenames,
+  tokens, or callback credentials.
+- `huabaosi-wecom-policy-preview` is a preview-only migration command. It may read one
+  event from bounded stdin and emit only sanitized policy classifications, fixed
+  fallback copy, and hash-based idempotency metadata. It must not gain an apply mode,
+  connect to Postgres or external services, send WeCom/QiWe messages, generate or upload
+  media, write Feishu, create artifacts, or print raw ids, user text, media URLs,
+  filenames, tokens, or callback credentials. Internal-process suppression must use
+  narrow full-template matches with negative fixture coverage for ordinary user text
+  containing terms such as `plain text`.
+- `huabaosi-wecom-canary-preflight` is a local configuration preflight only. It must not
+  read stdin, open network or database connections, source env files, or emit
+  endpoint/token/id values. `huabaosi-wecom-canary-gateway --apply` is staging-only,
+  requires the non-default `huabaosi-wecom-canary-gateway` Cargo feature plus explicit
+  enablement, approval phrase, HTTPS endpoint, token, and exact Bot/chat/user
+  allowlists, and must remain unscheduled. Default builds must fail closed before stdin,
+  network, database, or send access. It must not change production routing, run image
+  generation, upload media, write Feishu/Postgres, or send outside the allowlist.

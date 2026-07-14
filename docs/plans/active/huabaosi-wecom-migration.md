@@ -1,6 +1,6 @@
 # Huabaosi WeCom Migration Plan
 
-Status: phase 2 read-only observation smoke in progress; no production behavior changed
+Status: phase 5 allowlisted canary gateway in progress; no production behavior changed
 
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
@@ -111,10 +111,15 @@ Validation:
 
 Deliverables:
 
-- sanitized event schema or reuse of an existing message event schema;
-- Rust sidecar command/consumer path that records only allowed metadata and hashes;
-- shadow mode that never replies, sends, generates, uploads, writes Feishu, or mutates
-  work-item state.
+- `huabaosi-wecom-shadow-capture`, a Rust sidecar preview command that accepts one
+  supplied WeCom event from bounded stdin;
+- sanitized shadow report containing only payload hash/byte count, event/message
+  classification, selected field-presence flags, and hashes/byte counts for private
+  identifiers or text;
+- fixture replay inputs under `runtime/sidecar/fixtures/` for WeCom text, attachment
+  placeholder, busy/fallback text, and unsupported event shapes;
+- shadow mode that never replies, sends, generates, uploads, opens network or database
+  connections, writes Feishu, creates artifacts, or mutates work-item state.
 
 Validation:
 
@@ -127,20 +132,28 @@ Validation:
 
 Deliverables:
 
-- Rust policy preview for:
+- `huabaosi-wecom-policy-preview`, a Rust sidecar preview command that accepts one
+  supplied WeCom event from bounded stdin;
+- sanitized policy report for:
   - message classification;
   - busy-session handling;
   - internal process text filtering;
   - formatting fallback classification;
   - user-safe fallback copy;
   - idempotency and duplicate suppression;
-- preview reports stored as internal artifacts or logs only.
+- fixture replay inputs under `runtime/sidecar/fixtures/` for internal status,
+  formatting fallback, normal user text containing "plain text", duplicate hints, busy
+  session state, attachment placeholders, and unsupported event shapes;
+- preview reports emitted only as sanitized internal JSON for logs/artifacts.
 
 Forbidden:
 
 - no WeCom sends;
 - no image generation;
 - no provider calls.
+- no database writes;
+- no Feishu writes;
+- no raw private chat export.
 
 Validation:
 
@@ -152,21 +165,50 @@ Validation:
 
 Deliverables:
 
-- canary-only sender path controlled by explicit configuration;
-- allowlist for one test Bot, test chat, or test user;
-- rollback command and observation script.
+- `huabaosi-wecom-canary-preflight`, which validates only sanitized local canary
+  configuration and does not read stdin, open network/database connections, source env
+  files, write state, or send;
+- `huabaosi-wecom-canary-gateway`, which accepts one bounded stdin payload and reports
+  only hashes, byte counts, fixed policy status, allowlist outcome, and rollback
+  command;
+- non-default Cargo feature `huabaosi-wecom-canary-gateway` for the real bounded HTTP
+  sender, so default/production builds fail closed before stdin, network, database, or
+  send access when `--apply` is requested;
+- explicit env gates for canary enablement, owner approval phrase, HTTPS endpoint,
+  token, and exact Bot/chat/user allowlists;
+- deterministic canary fixture payload under `runtime/sidecar/fixtures/`;
+- `huabaosi-wecom-canary-observation-smoke.sh`, which only verifies disabled,
+  unscheduled canary state and sanitized preflight output;
+- deploy-bundle/contract coverage for the observation smoke.
 
 Forbidden:
 
 - no production Bot route change;
 - no broad group sends;
-- no real user traffic outside the allowlist.
+- no real user traffic outside the allowlist;
+- no timers or systemd services for the canary gateway in this PR;
+- no Postgres, Feishu, QiWe, image provider, media upload, or image generation side
+  effects;
+- no raw endpoint, token, Bot id, chat id, user id, message text, response body, prompt,
+  media URL, or file credential in reports/logs.
 
 Validation:
 
-- staging smoke with known test input;
-- timeout and fallback behavior verified;
-- rollback tested before any owner approval request.
+- unit tests for fail-closed default build, exact allowlist matching, sanitized reports,
+  bounded stdin, accepted fake sender, and ambiguous fake sender;
+- fixture replay using `runtime/sidecar/fixtures/huabaosi_wecom_canary_payload.json`;
+- `cargo clippy` with default features and all features;
+- owner-approved staging command, when requested, must use a known test input and one
+  exact allowlisted Bot/chat/user scope;
+- timeout and fallback behavior must produce `external_send_executed=null` when the
+  bounded HTTP client cannot prove whether the request was sent;
+- HTTP 200 alone is not success; the canary response body must parse as
+  `{"success":true}` before the report may use `canary_send_accepted`;
+- when the input omits `idempotency_key`, the payload hash fallback used in the report
+  must also be sent to the canary endpoint;
+- rollback before any owner approval request is:
+  `unset QINTOPIA_HUABAOSI_WECOM_CANARY_ENABLED` and keep
+  `hermes-gateway-huabaosi.service` as the production route.
 
 ### PR 6: Migrate Production Routing
 
