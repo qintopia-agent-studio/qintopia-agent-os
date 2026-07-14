@@ -52,6 +52,11 @@ From the monorepo root, prefer:
   loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
   environment failure and must be confirmed by an unsandboxed rerun, not hidden by
   skipping tests.
+- Huabaosi live provider/media execution must compile only with the non-default
+  `huabaosi-staging-adapter` feature. Default apply must reject before Postgres. A
+  staging-feature apply with generation enabled must verify the exact owner phrase,
+  approved database URL hash, staging database name, and adapter policy before Postgres
+  or external I/O; the staging smoke cannot be the only enforcement point.
 - v1 only captures raw/normalized messages and creates pending processing jobs;
   embedding and graph extraction must remain separate workers.
 - Sanitize QiWe asynchronous `cmd=20000` callback credentials before raw-event

@@ -4,6 +4,7 @@ use std::{collections::BTreeSet, fmt, io};
 use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{anyhow, bail, Context, Result};
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 use base64ct::{Base64, Encoding};
 use image::{
     codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, ImageFormat, ImageReader,
@@ -16,12 +17,12 @@ use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Row};
 use url::Url;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
-use crate::{
-    bounded_http::{HttpClient, HttpResponse},
-    config::Cli,
-    db,
-};
+use crate::{config::Cli, db};
+
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+use crate::bounded_http::{HttpClient, HttpResponse};
 
 #[cfg(test)]
 use crate::bounded_http::{
@@ -45,6 +46,9 @@ const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
 const MAX_GENERATION_ATTEMPTS: i32 = 3;
 const BASE_RETRY_DELAY_SECONDS: i64 = 60;
+const STAGING_APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL";
+const STAGING_APPROVAL_PHRASE: &str = "approved-staging-image-generation";
+const STAGING_DATABASE_URL_SHA256_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256";
 const REQUIRED_IMAGE_CONFIGURATION: &[&str] = &[
     "QINTOPIA_HUABAOSI_IMAGE_PROVIDER",
     "QINTOPIA_HUABAOSI_IMAGE_MODEL",
@@ -77,6 +81,7 @@ pub struct ImageGenerationPreflightReport {
     pub worker: &'static str,
     pub action_status: &'static str,
     pub generation_enabled: bool,
+    pub adapter_compiled: bool,
     pub config_valid: bool,
     pub media_allowed_host_count: usize,
     pub missing_configuration: Vec<&'static str>,
@@ -120,6 +125,12 @@ struct AdapterConfig {
     max_media_bytes: usize,
 }
 
+impl Drop for AdapterConfig {
+    fn drop(&mut self) {
+        self.api_key.zeroize();
+    }
+}
+
 #[derive(Debug)]
 struct GeneratedImage {
     bytes: Vec<u8>,
@@ -131,11 +142,13 @@ struct GeneratedImage {
     artifact_uri: String,
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 #[derive(Debug, Deserialize)]
 struct ProviderResponse {
     data: Vec<ProviderImage>,
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 #[derive(Debug, Deserialize)]
 struct ProviderImage {
     b64_json: Option<String>,
@@ -235,6 +248,21 @@ pub async fn run(
         bail!("Huabaosi image generation worker currently supports --once only");
     }
 
+    let apply_requested = apply && !dry_run;
+    if apply_requested && !huabaosi_staging_adapter_compiled() {
+        let report = report(
+            false,
+            true,
+            false,
+            "staging_adapter_not_compiled",
+            work_item_id,
+            Vec::new(),
+            None,
+        );
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        bail!("Huabaosi staging adapter is not compiled into this binary");
+    }
+
     let report = if fixture_mode {
         if apply {
             bail!("fixture-mode cannot be used with --apply");
@@ -242,8 +270,20 @@ pub async fn run(
         fixture_report()
     } else {
         let database_url = cli.database_url_required()?;
+        let adapter_config = if apply_requested && image_generation_enabled() {
+            #[cfg(feature = "huabaosi-staging-adapter")]
+            {
+                Some(staging_apply_config(database_url)?)
+            }
+            #[cfg(not(feature = "huabaosi-staging-adapter"))]
+            {
+                unreachable!("default apply is rejected before adapter configuration")
+            }
+        } else {
+            None
+        };
         let pool = db::connect(database_url, cli.db_max_connections).await?;
-        run_once(&pool, apply && !dry_run, work_item_id).await?
+        run_once(&pool, apply_requested, work_item_id, adapter_config).await?
     };
 
     println!("{}", serde_json::to_string_pretty(&report)?);
@@ -251,16 +291,19 @@ pub async fn run(
 }
 
 pub fn run_preflight() -> Result<()> {
+    let adapter_compiled = huabaosi_staging_adapter_compiled();
     let report = match AdapterConfig::from_env() {
         Ok(config) => preflight_report(
             true,
             image_generation_enabled(),
+            adapter_compiled,
             config.media_allowed_hosts.len(),
             Vec::new(),
         ),
         Err(_) => preflight_report(
             false,
             image_generation_enabled(),
+            adapter_compiled,
             0,
             missing_image_configuration(),
         ),
@@ -279,18 +322,25 @@ fn ensure_preflight_success(report: &ImageGenerationPreflightReport) -> Result<(
 fn preflight_report(
     config_valid: bool,
     generation_enabled: bool,
+    adapter_compiled: bool,
     media_allowed_host_count: usize,
     missing_configuration: Vec<&'static str>,
 ) -> ImageGenerationPreflightReport {
+    let feature_state_valid = generation_enabled == adapter_compiled;
     ImageGenerationPreflightReport {
-        success: config_valid,
+        success: config_valid && feature_state_valid,
         worker: WORKER_ID,
-        action_status: if config_valid {
-            "adapter_config_ready"
-        } else {
+        action_status: if !config_valid {
             "adapter_not_configured"
+        } else if generation_enabled && !adapter_compiled {
+            "staging_adapter_not_compiled"
+        } else if adapter_compiled && !generation_enabled {
+            "staging_adapter_compiled_requires_owner_review"
+        } else {
+            "adapter_config_ready"
         },
         generation_enabled,
+        adapter_compiled,
         config_valid,
         media_allowed_host_count,
         missing_configuration,
@@ -302,7 +352,7 @@ fn preflight_report(
         guardrails: vec![
             "this command does not open network or database connections".to_string(),
             "credentials, service addresses, hosts, prompts, Feishu identifiers, and QiWe payloads are not emitted".to_string(),
-            "the image-generation worker remains disabled unless its explicit enable flag and separate owner approvals exist".to_string(),
+            "live generation requires the staging-only Cargo feature, explicit enablement, and command-entry owner approval".to_string(),
         ],
     }
 }
@@ -337,6 +387,7 @@ async fn run_once(
     pool: &PgPool,
     apply_requested: bool,
     work_item_id: Option<Uuid>,
+    adapter_config: Option<AdapterConfig>,
 ) -> Result<ImageGenerationWorkerReport> {
     if !apply_requested {
         let Some(work_item) = load_work_item(pool, work_item_id).await? else {
@@ -385,81 +436,140 @@ async fn run_once(
         ));
     }
 
-    let config = match AdapterConfig::from_env() {
-        Ok(config) => config,
-        Err(_) => {
+    let Some(config) = adapter_config else {
+        return Ok(report(
+            false,
+            true,
+            false,
+            "adapter_not_configured",
+            Some(work_item.id),
+            Vec::new(),
+            Some(preview),
+        ));
+    };
+
+    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    {
+        drop(config);
+        Ok(report(
+            false,
+            true,
+            false,
+            "staging_adapter_not_compiled",
+            Some(work_item.id),
+            Vec::new(),
+            Some(preview),
+        ))
+    }
+
+    #[cfg(feature = "huabaosi-staging-adapter")]
+    {
+        let Some(work_item) = claim_work_item(pool, work_item_id).await? else {
             return Ok(report(
                 true,
                 true,
                 false,
-                "adapter_not_configured",
-                Some(work_item.id),
+                "no_claimable_image_request",
+                None,
                 Vec::new(),
-                Some(preview),
+                None,
             ));
-        }
-    };
+        };
+        let work_item_id = work_item.id;
+        let worker_input = work_item.clone();
+        let generated =
+            match tokio::task::spawn_blocking(move || generate_and_store(&config, &worker_input))
+                .await
+            {
+                Ok(generated) => generated,
+                Err(_) => {
+                    return record_generation_failure_report(
+                        pool,
+                        &work_item,
+                        GenerationFailure {
+                            class: GenerationFailureClass::Terminal,
+                            stage: "worker_execution",
+                        },
+                    )
+                    .await
+                }
+            };
 
-    let Some(work_item) = claim_work_item(pool, work_item_id).await? else {
-        return Ok(report(
-            true,
-            true,
-            false,
-            "no_claimable_image_request",
-            None,
-            Vec::new(),
-            None,
-        ));
-    };
-    let work_item_id = work_item.id;
-    let worker_input = work_item.clone();
-    let generated =
-        match tokio::task::spawn_blocking(move || generate_and_store(&config, &worker_input)).await
-        {
+        let generated = match generated {
             Ok(generated) => generated,
+            Err(error) => {
+                return record_generation_failure_report(pool, &work_item, error.failure()).await
+            }
+        };
+
+        let persisted = persist_generated_image(pool, &work_item, &generated).await;
+        match persisted {
+            Ok(artifact_id) => Ok(report(
+                true,
+                true,
+                false,
+                "generated_image_created",
+                Some(work_item_id),
+                vec![artifact_id],
+                Some(generated.preview()),
+            )),
             Err(_) => {
-                return record_generation_failure_report(
+                record_generation_failure_report(
                     pool,
                     &work_item,
                     GenerationFailure {
                         class: GenerationFailureClass::Terminal,
-                        stage: "worker_execution",
+                        stage: "persistence",
                     },
                 )
                 .await
             }
-        };
-
-    let generated = match generated {
-        Ok(generated) => generated,
-        Err(error) => {
-            return record_generation_failure_report(pool, &work_item, error.failure()).await
-        }
-    };
-
-    let persisted = persist_generated_image(pool, &work_item, &generated).await;
-    match persisted {
-        Ok(artifact_id) => Ok(report(
-            true,
-            true,
-            false,
-            "generated_image_created",
-            Some(work_item_id),
-            vec![artifact_id],
-            Some(generated.preview()),
-        )),
-        Err(_) => {
-            record_generation_failure_report(
-                pool,
-                &work_item,
-                GenerationFailure {
-                    class: GenerationFailureClass::Terminal,
-                    stage: "persistence",
-                },
-            )
-            .await
         }
     }
+}
+
+#[cfg(feature = "huabaosi-staging-adapter")]
+fn staging_apply_config(database_url: &str) -> Result<AdapterConfig> {
+    validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
+    let expected_hash = required_env(STAGING_DATABASE_URL_SHA256_ENV)?;
+    validate_staging_database_boundary(database_url, &expected_hash)?;
+    AdapterConfig::from_env().context("Huabaosi staging adapter configuration is invalid")
+}
+
+fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
+    if value != Some(STAGING_APPROVAL_PHRASE) {
+        bail!(
+            "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation is required"
+        );
+    }
+    Ok(())
+}
+
+fn validate_staging_database_boundary(database_url: &str, expected_hash: &str) -> Result<()> {
+    if expected_hash.len() != 64
+        || !expected_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        bail!("approved staging database URL hash must be a lowercase SHA-256 digest");
+    }
+    if format!("{:x}", Sha256::digest(database_url.as_bytes())) != expected_hash {
+        bail!("staging database URL does not match its approved SHA-256 digest");
+    }
+
+    let parsed = Url::parse(database_url).context("parse staging database URL")?;
+    if !matches!(parsed.scheme(), "postgres" | "postgresql") || parsed.host_str().is_none() {
+        bail!("staging database URL must use PostgreSQL and include a host");
+    }
+    let database_name = parsed
+        .path()
+        .strip_prefix('/')
+        .filter(|value| !value.is_empty() && !value.contains('/'))
+        .ok_or_else(|| anyhow!("staging database URL must name exactly one database"))?;
+    if !database_name.to_ascii_lowercase().contains("staging") {
+        bail!("staging database name must contain staging");
+    }
+    Ok(())
 }
 
 async fn record_generation_failure_report(
@@ -628,6 +738,7 @@ fn build_prompt(work_item: &ImageGenerationWorkItem) -> Result<String> {
     ))
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn parse_provider_response(response: &HttpResponse) -> Result<String> {
     ensure_success(response, "image provider")?;
     let payload: ProviderResponse =
@@ -641,6 +752,7 @@ fn parse_provider_response(response: &HttpResponse) -> Result<String> {
         .ok_or_else(|| anyhow!("image provider response did not contain b64_json"))
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn parse_media_upload_response(response: &HttpResponse) -> Result<MediaUploadResponse> {
     ensure_success(response, "media upload")?;
     serde_json::from_slice(&response.body).context("parse media upload response")
@@ -790,6 +902,7 @@ impl GeneratedImage {
     }
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn ensure_success(response: &HttpResponse, service: &str) -> Result<()> {
     if !(200..300).contains(&response.status) {
         bail!("{service} returned HTTP {}", response.status);
@@ -1340,6 +1453,10 @@ fn image_generation_enabled_value(value: &str) -> bool {
     value.trim() == "1"
 }
 
+const fn huabaosi_staging_adapter_compiled() -> bool {
+    cfg!(feature = "huabaosi-staging-adapter")
+}
+
 fn report(
     success: bool,
     apply_requested: bool,
@@ -1402,6 +1519,7 @@ fn generate_and_store_with_client(
     generate_and_store_with(config, work_item, &client)
 }
 
+#[cfg(feature = "huabaosi-staging-adapter")]
 fn generate_and_store(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
@@ -1409,6 +1527,7 @@ fn generate_and_store(
     generate_and_store_with(config, work_item, &HttpClient::production())
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn generate_and_store_with(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
@@ -1564,6 +1683,8 @@ mod tests {
     };
 
     use super::*;
+    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    use clap::Parser;
     use image::ImageEncoder;
 
     #[test]
@@ -1606,13 +1727,14 @@ mod tests {
 
     #[test]
     fn preflight_reports_only_sanitized_configuration_state() {
-        let report = preflight_report(true, false, 2, Vec::new());
+        let report = preflight_report(true, false, false, 2, Vec::new());
         let raw = serde_json::to_string(&report).expect("report serializes");
 
         assert!(report.success);
         assert_eq!(report.worker, WORKER_ID);
         assert_eq!(report.action_status, "adapter_config_ready");
         assert!(!report.generation_enabled);
+        assert!(!report.adapter_compiled);
         assert!(report.config_valid);
         assert_eq!(report.media_allowed_host_count, 2);
         assert!(report.missing_configuration.is_empty());
@@ -1626,12 +1748,19 @@ mod tests {
 
     #[test]
     fn preflight_reports_missing_configuration_without_enabling_generation() {
-        let report = preflight_report(false, false, 0, vec!["QINTOPIA_HUABAOSI_IMAGE_API_KEY"]);
+        let report = preflight_report(
+            false,
+            false,
+            false,
+            0,
+            vec!["QINTOPIA_HUABAOSI_IMAGE_API_KEY"],
+        );
 
         assert!(!report.success);
         assert_eq!(report.action_status, "adapter_not_configured");
         assert!(!report.config_valid);
         assert!(!report.generation_enabled);
+        assert!(!report.adapter_compiled);
         assert_eq!(report.media_allowed_host_count, 0);
         assert_eq!(
             report.missing_configuration,
@@ -1653,6 +1782,85 @@ mod tests {
         );
 
         assert_eq!(missing, vec!["PUBLIC_PLACEHOLDER", "PUBLIC_ABSENT"]);
+    }
+
+    #[test]
+    fn preflight_rejects_feature_and_enablement_mismatches() {
+        let production_misconfigured = preflight_report(true, true, false, 1, Vec::new());
+        assert!(!production_misconfigured.success);
+        assert_eq!(
+            production_misconfigured.action_status,
+            "staging_adapter_not_compiled"
+        );
+
+        let staging_binary_not_enabled = preflight_report(true, false, true, 1, Vec::new());
+        assert!(!staging_binary_not_enabled.success);
+        assert_eq!(
+            staging_binary_not_enabled.action_status,
+            "staging_adapter_compiled_requires_owner_review"
+        );
+
+        let reviewed_staging = preflight_report(true, true, true, 1, Vec::new());
+        assert!(reviewed_staging.success);
+        assert_eq!(reviewed_staging.action_status, "adapter_config_ready");
+    }
+
+    #[test]
+    fn staging_owner_approval_requires_exact_phrase() {
+        assert!(validate_staging_owner_approval(Some(STAGING_APPROVAL_PHRASE)).is_ok());
+        assert!(validate_staging_owner_approval(None).is_err());
+        assert!(validate_staging_owner_approval(Some("approved-production-generation")).is_err());
+        assert!(
+            validate_staging_owner_approval(Some("approved-staging-image-generation\n")).is_err()
+        );
+    }
+
+    #[test]
+    fn staging_database_boundary_binds_exact_url_and_database_name() {
+        let database_url = "postgres://user:secret@127.0.0.1:5432/qintopia_staging";
+        let expected_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
+
+        assert!(validate_staging_database_boundary(database_url, &expected_hash).is_ok());
+        assert!(validate_staging_database_boundary(
+            "postgres://user:secret@127.0.0.1:5432/qintopia_production",
+            &format!(
+                "{:x}",
+                Sha256::digest(b"postgres://user:secret@127.0.0.1:5432/qintopia_production")
+            )
+        )
+        .is_err());
+        assert!(validate_staging_database_boundary(database_url, &"0".repeat(64)).is_err());
+        assert!(validate_staging_database_boundary(database_url, &"A".repeat(64)).is_err());
+    }
+
+    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    #[test]
+    fn default_build_excludes_huabaosi_staging_adapter() {
+        assert!(!huabaosi_staging_adapter_compiled());
+    }
+
+    #[cfg(feature = "huabaosi-staging-adapter")]
+    #[test]
+    fn staging_feature_reports_huabaosi_adapter_compiled() {
+        assert!(huabaosi_staging_adapter_compiled());
+    }
+
+    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    #[tokio::test]
+    async fn default_apply_stops_before_database_and_network() {
+        let cli = Cli::parse_from([
+            "qintopia-message-sidecar",
+            "run-huabaosi-image-generation-worker",
+            "--once",
+            "--apply",
+        ]);
+
+        let error = run(&cli, true, None, true, false, false)
+            .await
+            .expect_err("default apply must fail before requiring a database URL");
+
+        assert!(error.to_string().contains("not compiled"));
+        assert!(!error.to_string().contains("DATABASE_URL"));
     }
 
     #[test]

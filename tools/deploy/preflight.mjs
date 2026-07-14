@@ -387,6 +387,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     }
   }
   for (const forbiddenFragment of [
+    "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
     '"--features"',
     '"--all-features"',
@@ -402,6 +403,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
 if (exists("deploy/sidecar/scripts/server-deploy.sh")) {
   const serverDeployScript = readText("deploy/sidecar/scripts/server-deploy.sh");
   for (const forbiddenFragment of [
+    "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
     "--features",
     "--all-features",

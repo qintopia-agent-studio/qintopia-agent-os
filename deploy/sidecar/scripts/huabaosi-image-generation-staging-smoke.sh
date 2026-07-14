@@ -79,7 +79,12 @@ if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
 elif [[ -x "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar" ]]; then
   BIN_CMD=("${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar")
 else
-  BIN_CMD=("${CARGO:-cargo}" run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" --)
+  BIN_CMD=(
+    "${CARGO:-cargo}" run --quiet
+    --manifest-path "$SIDECAR_DIR/Cargo.toml"
+    --features huabaosi-staging-adapter
+    --
+  )
 fi
 
 tmp_dir="$(mktemp -d)"
@@ -132,6 +137,7 @@ assert payload["success"] is True
 assert payload["worker"] == "huabaosi-image-generation-worker"
 assert payload["action_status"] == "adapter_config_ready"
 assert payload["generation_enabled"] is True
+assert payload["adapter_compiled"] is True
 assert payload["config_valid"] is True
 assert payload["missing_configuration"] == []
 assert payload["safe_for_chat"] is False

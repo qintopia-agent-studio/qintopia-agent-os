@@ -32,6 +32,10 @@ allowlist。
 - `run-huabaosi-image-generation-worker` 目前只校验和预览请求；默认开关为
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`，因此不会请求 provider、上传媒体或创建
   `generated_image`。
+- 现有 staging 审批、数据库哈希和 staging 数据库名检查只在 smoke shell 中执行；Rust
+  CLI 可被直接调用，且默认生产二进制仍包含 live
+  adapter。该命令入口缺口必须先通过非默认 Cargo feature 和 Rust 内部 staging
+  gate 修复，不能把 shell 约定当作生产边界。
 - 图片 request intake 于 `#93` 合并到 `master`，但当前生产 `v0.2.6`
   尚不包含 starter 或 image worker。它不能被表述为已上线图片生成能力。
 - `qintopia_agent_os.artifacts` 已有
@@ -263,6 +267,11 @@ data but are not eligible for the future QiWe JPG send contract.
   by the guarded QiWe adapter. The extraction preserves the existing response caps,
   header validation, chunked limits, TLS policy, fake-server behavior, and timeout
   classification while zeroizing request/response buffers on drop.
+- The current compile-gate branch moves live provider/media execution behind a
+  non-default `huabaosi-staging-adapter` feature. A staging-feature apply must enforce
+  the exact owner phrase, approved database URL hash, staging database name, and adapter
+  policy in Rust before Postgres or network access. Production artifact and
+  server-source builds must continue to use no Cargo features.
 
 运行无网络预检：
 

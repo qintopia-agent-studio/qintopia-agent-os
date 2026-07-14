@@ -6,6 +6,7 @@ rust-version = "1.96"
 
 [features]
 postgres-integration-tests = []
+huabaosi-staging-adapter = []
 qiwe-staging-adapter = []
 
 [dependencies]

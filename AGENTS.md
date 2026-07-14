@@ -265,6 +265,12 @@ Use `rg` and `rg --files` for search.
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
   not Rust sidecar image generation or QiWe image-send state. Diagnose this path through
   Huabaosi Hermes/WeCom runtime first, and do not hot-edit the server.
+- Huabaosi live provider/media helpers may compile only with the non-default
+  `huabaosi-staging-adapter` feature. Default and production apply must fail before
+  Postgres or network access. A staging-feature apply with generation enabled must
+  validate the exact owner phrase, approved database URL hash, staging database name,
+  and adapter configuration in Rust before connecting to Postgres; the smoke shell is
+  not an authorization boundary.
 - `operations-artifact-review-decision` may approve a `generated_image` only after its
   Huabaosi worker provenance, stable JPEG HTTPS URI, final JPEG sha256/metadata, source
   PNG sha256, fixed `png_to_jpeg_white_background_q92_v1` transform metadata, source

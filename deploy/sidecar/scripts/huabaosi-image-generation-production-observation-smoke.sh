@@ -127,6 +127,7 @@ status = int(sys.argv[2])
 
 assert payload["worker"] == "huabaosi-image-generation-worker"
 assert payload["generation_enabled"] is False
+assert payload["adapter_compiled"] is False
 assert payload["safe_for_chat"] is False
 assert isinstance(payload["config_valid"], bool)
 assert isinstance(payload["media_allowed_host_count"], int)

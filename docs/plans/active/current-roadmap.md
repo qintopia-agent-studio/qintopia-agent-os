@@ -53,13 +53,16 @@ unless correcting historical evidence.
      disabled because no listener service or timer exists and the provider/storage/
      readback path plus callback credential shape still require owner-approved staging
      evidence.
-   - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md) is
-     implemented locally with shared bounded Rust HTTP, one upload worker, one bounded
+   - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md)
+     merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration
-     tests. It remains pending CI and Reviewer Guide review. The next boundary is
-     owner-approved isolated staging evidence for the final JPEG and callback credential
-     shape; no listener, service, timer, or production enablement may precede that
-     evidence.
+     tests. The next boundary is owner-approved isolated staging evidence for the final
+     JPEG and callback credential shape; no listener, service, timer, or production
+     enablement may precede that evidence.
+   - The Huabaosi live provider/media entrypoint is being moved behind the non-default
+     `huabaosi-staging-adapter` Cargo feature. Its Rust command gate binds an exact
+     owner phrase and approved staging database URL hash before Postgres. This is
+     production misuse prevention, not provider/storage approval or staging evidence.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,
