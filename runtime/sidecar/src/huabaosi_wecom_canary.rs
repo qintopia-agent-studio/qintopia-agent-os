@@ -31,13 +31,7 @@ const CANARY_ALLOWED_BOT_IDS_ENV: &str = "QINTOPIA_HUABAOSI_WECOM_CANARY_ALLOWED
 const CANARY_ALLOWED_CHAT_IDS_ENV: &str = "QINTOPIA_HUABAOSI_WECOM_CANARY_ALLOWED_CHAT_IDS";
 const CANARY_ALLOWED_USER_IDS_ENV: &str = "QINTOPIA_HUABAOSI_WECOM_CANARY_ALLOWED_USER_IDS";
 
-const REQUIRED_CANARY_CONFIGURATION: &[&str] = &[
-    CANARY_ENDPOINT_ENV,
-    CANARY_TOKEN_ENV,
-    CANARY_ALLOWED_BOT_IDS_ENV,
-    CANARY_ALLOWED_CHAT_IDS_ENV,
-    CANARY_ALLOWED_USER_IDS_ENV,
-];
+const REQUIRED_CANARY_SCALAR_CONFIGURATION: &[&str] = &[CANARY_ENDPOINT_ENV, CANARY_TOKEN_ENV];
 
 #[derive(Debug, Serialize)]
 struct CanaryPreflightReport {
@@ -398,13 +392,22 @@ impl CanaryConfig {
         let allowed_chat_ids = parse_csv_exact_set(&env::var(CANARY_ALLOWED_CHAT_IDS_ENV).ok());
         let allowed_user_ids = parse_csv_exact_set(&env::var(CANARY_ALLOWED_USER_IDS_ENV).ok());
         let mut missing_configuration = Vec::new();
-        for name in REQUIRED_CANARY_CONFIGURATION {
+        for name in REQUIRED_CANARY_SCALAR_CONFIGURATION {
             if env::var(name)
                 .map(|value| value.trim().is_empty())
                 .unwrap_or(true)
             {
                 missing_configuration.push(*name);
             }
+        }
+        if allowed_bot_ids.is_empty() {
+            missing_configuration.push(CANARY_ALLOWED_BOT_IDS_ENV);
+        }
+        if allowed_chat_ids.is_empty() {
+            missing_configuration.push(CANARY_ALLOWED_CHAT_IDS_ENV);
+        }
+        if allowed_user_ids.is_empty() {
+            missing_configuration.push(CANARY_ALLOWED_USER_IDS_ENV);
         }
 
         #[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
@@ -435,9 +438,15 @@ impl CanaryConfig {
     fn is_valid_for_apply(&self) -> bool {
         self.canary_enabled
             && self.approval_present
-            && allowlist_scope_count(self) > 0
+            && self.all_allowlists_configured()
             && self.missing_configuration.is_empty()
             && self.endpoint_valid_for_apply()
+    }
+
+    fn all_allowlists_configured(&self) -> bool {
+        !self.allowed_bot_ids.is_empty()
+            && !self.allowed_chat_ids.is_empty()
+            && !self.allowed_user_ids.is_empty()
     }
 
     #[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
@@ -499,10 +508,9 @@ fn allowlist_decision(config: &CanaryConfig, payload: &CanaryPayload) -> Allowli
 }
 
 fn allowlist_dimension_matches(allowlist: &BTreeSet<String>, value: Option<&str>) -> bool {
-    allowlist.is_empty()
-        || value
-            .map(|value| allowlist.contains(value))
-            .unwrap_or(false)
+    value
+        .map(|value| allowlist.contains(value))
+        .unwrap_or(false)
 }
 
 fn allowlist_scope_count(config: &CanaryConfig) -> usize {
@@ -722,6 +730,43 @@ mod tests {
           "message_text": "fixture private canary message"
         }"#;
 
+        let payload: CanaryPayload = serde_json::from_slice(raw).expect("payload");
+        let config = CanaryConfig::from_env();
+        let report = gateway_report_from_parts(false, true, &config, &payload, raw, None)
+            .expect("gateway report");
+
+        assert!(!report.success);
+        assert!(!report.allowlist_passed);
+        assert_eq!(report.action_status, "canary_chat_not_allowlisted");
+        assert_eq!(report.external_send_executed, Some(false));
+    }
+
+    #[test]
+    fn comma_only_allowlist_env_is_missing_configuration_not_wildcard() {
+        let _guard = EnvGuard::new(canary_env_keys());
+        env::set_var(CANARY_ENABLED_ENV, "1");
+        env::set_var(CANARY_APPROVAL_ENV, CANARY_APPROVAL_PHRASE);
+        env::set_var(CANARY_ENDPOINT_ENV, "https://canary.example.test/wecom");
+        env::set_var(CANARY_TOKEN_ENV, "fake-token");
+        env::set_var(CANARY_ALLOWED_BOT_IDS_ENV, "canary-bot-fixture");
+        env::set_var(CANARY_ALLOWED_CHAT_IDS_ENV, ",");
+        env::set_var(CANARY_ALLOWED_USER_IDS_ENV, "   ");
+
+        let preflight = preflight_report();
+        assert!(!preflight.config_valid);
+        assert!(preflight
+            .missing_configuration
+            .contains(&CANARY_ALLOWED_CHAT_IDS_ENV));
+        assert!(preflight
+            .missing_configuration
+            .contains(&CANARY_ALLOWED_USER_IDS_ENV));
+
+        let raw = br#"{
+          "bot_id": "canary-bot-fixture",
+          "chat_id": "canary-chat-fixture",
+          "user_id": "canary-user-fixture",
+          "message_text": "fixture private canary message"
+        }"#;
         let payload: CanaryPayload = serde_json::from_slice(raw).expect("payload");
         let config = CanaryConfig::from_env();
         let report = gateway_report_from_parts(false, true, &config, &payload, raw, None)
