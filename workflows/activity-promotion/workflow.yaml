@@ -45,6 +45,8 @@ next_actions:
   - Keep image generation and group-send execution out of runtime scheduling until the
     staged adapter observation is reviewed; final confirmation and send-adapter gates
     remain separate.
-  - Resolve the documented QiWe JPG versus current generated PNG compatibility gap, then
-    capture one isolated staging async-upload callback to verify complete file
-    credentials before implementing callback persistence or real image sending.
+  - Validate the guarded QiWe upload/callback worker against its local fake server and
+    disposable PostgreSQL while keeping production scheduling and real send enablement
+    absent.
+  - Capture one owner-approved isolated staging async-upload callback to verify complete
+    file credentials before creating a listener service or allowing a real image send.

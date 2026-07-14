@@ -94,6 +94,27 @@ The timeout scan applies only to `awaiting_callback`. It must never automaticall
 or retry `sending`, because the external send may already have occurred and requires a
 terminal response or `ambiguous` human reconciliation.
 
+An upload-worker crash before request correlation is persisted leaves no attempt row.
+The next claim transaction may requeue that expired worker claim only when no attempt
+uses the same claim token. If an HTTP upload call returns a known rejection or an
+unknown outcome before correlation can be stored, the worker fails the work item with a
+fixed sanitized code; a later callback cannot open a send gate without a persisted
+request-id hash.
+
+A `sending` attempt whose short claim TTL expires is never requeued. The next guarded
+claim scan atomically records `ambiguous`, clears the processing claim, and requires
+human reconciliation. This covers callback-worker crashes after the send gate without
+risking an automatic duplicate send.
+
+## Executable Adapter Boundary
+
+`run-qiwe-image-send-worker` performs one guarded asynchronous upload and
+`process-qiwe-image-send-callback` reads one bounded callback from stdin. Both remain
+disabled and unscheduled in production. They use a shared bounded Rust HTTP client and
+persist only through the state transitions in this document. Raw callback credentials,
+request ids, target group ids, media URLs, response bodies, and provider message ids are
+excluded from reports and are zeroized from owned in-memory buffers on drop.
+
 ## Idempotency
 
 - `request_id_sha256` is globally unique.

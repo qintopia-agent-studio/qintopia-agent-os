@@ -100,6 +100,19 @@ The merge authority remains:
 
 PR-Agent output is evidence for reviewers, not a gate by itself.
 
+Before every merge, inspect the complete review state for the current PR head SHA:
+
+1. Read the full PR Reviewer Guide, not only its check conclusion.
+2. Read submitted reviews, conversation comments, and every inline review thread.
+3. Fix each security concern and recommended review item, or record a concrete
+   disposition explaining why no code change is appropriate.
+4. After any new push, repeat the inspection because findings for an older head SHA do
+   not approve the replacement code.
+5. Wait for replacement CI and review results before merging.
+
+A green CI run, a green PR-Agent check, or an earlier review cannot substitute for this
+latest-head review.
+
 ## Operating Notes
 
 - Treat PR-Agent findings as review candidates, not facts.

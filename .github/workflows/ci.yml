@@ -395,6 +395,10 @@ jobs:
             --features postgres-integration-tests \
             qiwe_image_send_state::tests::postgres_qiwe_send_state_expires_missing_callback_during_reclaim \
             -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_recovers_unrecorded_claim_and_reconciles_stale_send \
+            -- --ignored --exact
 
       - name: Xiaoman downstream apply smoke
         run: deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh

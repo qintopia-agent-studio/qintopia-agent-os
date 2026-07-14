@@ -214,6 +214,18 @@ Use `rg` and `rg --files` for search.
   invoked the callback handler. Once `sending` is committed, the same attempt and claim
   token may record `sent`, `failed`, or `ambiguous` after the short TTL; wall-clock
   expiry must not leave an external outcome stuck in `sending`.
+- `run-qiwe-image-send-worker` may only claim one reviewed send-ready work item, call
+  the reviewed asynchronous URL-upload method when explicitly enabled, and persist
+  hashed upload correlation. `process-qiwe-image-send-callback` must read one bounded
+  callback from stdin, keep file credentials memory-only, commit `sending` before one
+  send call, and terminalize every outcome. Neither command may be scheduled or
+  production-enabled without owner-approved staging evidence, isolated group allowlists,
+  and rollback.
+- Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
+  reject invalid methods/headers before connect, require HTTPS outside tests, enforce
+  header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request
+  and response buffers, and classify whether an error occurred after a request may have
+  been sent.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime

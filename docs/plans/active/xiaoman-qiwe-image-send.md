@@ -83,8 +83,8 @@ target, or missing final confirmation must stop before sending.
   `.env.example`, never values, URLs, hosts, group ids, or enable flags. An empty list
   with `config_valid=false` means present configuration failed format, readiness, or
   allowlist validation and must still fail closed.
-- `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; no worker, callback listener,
-  staging smoke, service, or timer is installed.
+- `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; guarded upload/callback commands
+  exist, but no callback listener, staging smoke, service, or timer is installed.
 - The QiWe capture producer sanitizes any `cmd=20000` event before NATS publication, and
   the Rust sidecar independently repeats the boundary before Postgres persistence. Both
   rebuild the entire callback payload from hashed correlation ids and fixed `msgData`
@@ -97,8 +97,13 @@ target, or missing final confirmation must stop before sending.
   callback idempotency, unique per-attempt claims, immutable artifact/target hashes, and
   sanitized terminal audit. Callback credentials remain memory-only. The callback
   transition commits `sending` before an external send can occur, and ambiguous outcomes
-  are terminal/manual rather than automatically retried. This state API is not wired to
-  a network worker, callback listener, timer, or production adapter.
+  are terminal/manual rather than automatically retried.
+- `run-qiwe-image-send-worker` connects that state API to one guarded asynchronous
+  upload request, and `process-qiwe-image-send-callback` reads one bounded callback from
+  stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
+  client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
+  They are code-only capabilities: no listener, service, timer, staging endpoint, or
+  production enablement is installed.
 
 ## Next Implementation
 
@@ -108,16 +113,18 @@ target, or missing final confirmation must stop before sending.
    before generic raw-event sanitization, and confirm the exact credential field names
    and the existing `isSendSuccess=1` success assumption without storing raw credentials
    in git or logs.
-3. Add a local fake QiWe server and guarded adapter worker for upload acceptance,
-   callback, send response, timeout, oversized response, duplicate callback, stale
-   claim, and retry tests.
+3. Complete CI review of the code-only
+   [guarded adapter worker](qiwe-image-send-adapter-worker.md), including local fake
+   QiWe upload/send behavior and disposable PostgreSQL crash/timeout recovery. Keep real
+   endpoints disabled until steps 1 and 2 have owner-approved evidence.
 4. Add one guarded staging smoke with an isolated group and explicit approval phrase.
 5. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
 
 ## Production Boundary
 
-This plan and contract do not contact QiWe, upload media, send messages, write Postgres
-or Feishu, install services, or change production configuration. Rollback is to keep
-`QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no current internal Xiaoman path depends on this
-adapter.
+Default and production execution do not contact QiWe or send messages. The guarded
+commands can write Postgres and contact an allowlisted endpoint only with explicit
+enablement, but this plan does not install or enable them, write Feishu, or change
+production configuration. Rollback is to keep `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no
+current internal Xiaoman timer depends on this adapter.

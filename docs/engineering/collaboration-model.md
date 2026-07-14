@@ -17,7 +17,12 @@ Claude Code. The collaboration model is intentionally git-first and CI-backed.
    `fix: resolve qintopia-tools skill path`.
 9. Update the current roadmap or package docs when future direction changes.
 10. Open a PR with validation results and production-boundary notes.
-11. Deploy only reviewed commit SHAs through a documented runbook.
+11. Before merge, read the complete Reviewer Guide, reviews, conversation comments, and
+    inline threads for the latest head SHA; resolve or explicitly disposition every
+    security and recommended review item.
+12. Repeat review inspection after every push, then wait for replacement CI and review
+    results before merge.
+13. Deploy only reviewed commit SHAs through a documented runbook.
 
 Do not develop directly on `master`. CI runs on `master` after merge; feature work
 belongs on a branch.

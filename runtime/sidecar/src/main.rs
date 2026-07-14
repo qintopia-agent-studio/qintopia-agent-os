@@ -1,3 +1,4 @@
+mod bounded_http;
 mod collaboration;
 mod config;
 mod consumer;
@@ -511,6 +512,15 @@ async fn main() -> Result<()> {
         } => image_generation::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
         Command::HuabaosiImageGenerationPreflight => image_generation::run_preflight(),
         Command::QiweImageSendPreflight => qiwe_image_send::run_preflight(),
+        Command::RunQiweImageSendWorker {
+            once,
+            work_item_id,
+            apply,
+            dry_run,
+        } => qiwe_image_send::run_upload_worker(&cli, once, work_item_id, apply, dry_run).await,
+        Command::ProcessQiweImageSendCallback { apply, dry_run } => {
+            qiwe_image_send::run_callback_processor(&cli, apply, dry_run).await
+        }
         Command::RunEvidenceWorker {
             once,
             work_item_id,

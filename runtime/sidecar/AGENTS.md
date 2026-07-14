@@ -72,5 +72,13 @@ From the monorepo root, prefer:
   elapsed. Before selecting new work, the claim transaction must expire and requeue a
   stale `awaiting_callback` attempt even when no callback ever arrives; never apply that
   timeout retry path to `sending`.
+- The QiWe upload worker and callback processor remain unscheduled and disabled by
+  default. Callback JSON is accepted from bounded stdin only, never CLI arguments or
+  environment variables. File credentials, request ids, media URLs, target groups,
+  tokens, device ids, response bodies, and provider message ids must not appear in
+  reports or logs; sensitive in-memory buffers must be zeroized on drop.
+- External adapter modules must use `bounded_http`; do not add another raw socket HTTP
+  implementation. Test-only loopback HTTP is allowed, while production clients require
+  HTTPS and the reviewed endpoint/host allowlists.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

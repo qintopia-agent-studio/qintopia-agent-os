@@ -88,11 +88,12 @@ upload, correlates the `cmd=20000` Webhook by `requestId`, and only then permits
 `/msg/sendImage` request with complete file credentials. The Rust contract and local
 preflight are implemented. An additive Postgres state machine now records hashed upload
 correlation, callback idempotency, claim tokens, and sanitized terminal audit without
-persisting callback file credentials. No network worker, dedicated callback listener, or
-timer exists. The current Huabaosi path converts provider PNG into the exact final JPEG
-artifact reviewed by humans. Staging must still verify that JPEG through the isolated
-media and QiWe callback boundaries before any external-send implementation can be
-enabled.
+persisting callback file credentials. A guarded upload worker and bounded callback
+command are implemented for fake-server and disposable-Postgres validation, but no
+dedicated callback listener, service, or timer exists and production enablement remains
+off. The current Huabaosi path converts provider PNG into the exact final JPEG artifact
+reviewed by humans. Staging must still verify that JPEG through the isolated media and
+QiWe callback boundaries before either command can be enabled against a real endpoint.
 
 The no-network configuration check is:
 
@@ -148,6 +149,11 @@ a canonical hash for the exact reviewed bytes.
   completing its image request or unlocking the send-request starter.
 - Group-send readiness requires final human confirmation before any external send path
   is considered.
+
+The guarded QiWe code path is split into an asynchronous upload worker and a bounded
+stdin callback processor. It uses Postgres attempt state and can be exercised against a
+local fake server, but it is not installed as a listener, service, or timer and remains
+disabled for production.
 
 ## Validation
 
