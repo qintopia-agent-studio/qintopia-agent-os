@@ -921,6 +921,9 @@ try {
     ["tools/deploy/test-huabaosi-image-production-observation.mjs"],
     { cwd: repoRoot }
   );
+  execFileSync("node", ["tools/deploy/test-huabaosi-wecom-observation.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync(
     "node",
     ["tools/deploy/test-xiaoman-production-observation-contracts.mjs"],
@@ -954,6 +957,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
     "deploy/sidecar/scripts/install-coscli.sh",
     "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
     "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",

@@ -524,6 +524,21 @@ export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1
 scripts/huabaosi-image-generation-production-observation-smoke.sh
 ```
 
+For the Huabaosi WeCom migration, run the separate gateway observation smoke from the
+release directory. This smoke does not source `.env`. It inspects only the active Hermes
+gateway service, fixed command shape, public `busy_input_mode`, release/current
+presence, and sanitized journal marker counts for internal filtering, send fallback, and
+API timeouts.
+
+```bash
+export QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1
+scripts/huabaosi-wecom-gateway-observation-smoke.sh
+```
+
+It must not restart services, print raw journal lines, print user messages, send WeCom
+messages, run image generation, write Postgres or Feishu, call QiWe/provider/media
+endpoints, or modify live Hermes profile state.
+
 The Xiaoman activity send request starter worker also runs as a systemd timer. It calls
 `run-xiaoman-activity-send-request-starter-worker --once --apply`, scans Xiaoman
 activity promotion parents with completed visual children and approved `poster_brief`
