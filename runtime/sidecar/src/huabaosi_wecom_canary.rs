@@ -125,9 +125,9 @@ impl Drop for CanaryConfig {
         if let Some(token) = &mut self.token {
             token.zeroize();
         }
-        self.allowed_bot_ids.clear();
-        self.allowed_chat_ids.clear();
-        self.allowed_user_ids.clear();
+        zeroize_string_set(&mut self.allowed_bot_ids);
+        zeroize_string_set(&mut self.allowed_chat_ids);
+        zeroize_string_set(&mut self.allowed_user_ids);
     }
 }
 
@@ -614,6 +614,12 @@ fn guardrails() -> Vec<String> {
             .to_string(),
         "apply requires exact allowlist matching and owner-reviewed approval phrase".to_string(),
     ]
+}
+
+fn zeroize_string_set(values: &mut BTreeSet<String>) {
+    for mut value in std::mem::take(values) {
+        value.zeroize();
+    }
 }
 
 fn canary_adapter_compiled() -> bool {

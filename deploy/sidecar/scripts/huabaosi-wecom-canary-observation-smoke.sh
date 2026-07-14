@@ -53,7 +53,23 @@ assert_no_sensitive_output() {
     QIWE_TOKEN \
     QIWE_GUID; do
     if [[ -n "${!value_name:-}" ]]; then
-      forbidden+=("${!value_name}")
+      case "$value_name" in
+        QINTOPIA_HUABAOSI_WECOM_CANARY_ALLOWED_*_IDS)
+          local split_value
+          local split_values=()
+          IFS=',' read -r -a split_values <<<"${!value_name}"
+          for split_value in "${split_values[@]}"; do
+            split_value="${split_value#"${split_value%%[![:space:]]*}"}"
+            split_value="${split_value%"${split_value##*[![:space:]]}"}"
+            if [[ -n "$split_value" ]]; then
+              forbidden+=("$split_value")
+            fi
+          done
+          ;;
+        *)
+          forbidden+=("${!value_name}")
+          ;;
+      esac
     fi
   done
 

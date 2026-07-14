@@ -50,6 +50,10 @@ printf 'sidecar %s\\n' "$*" >>"${commandLog}"
 if [[ "$1" != "huabaosi-wecom-canary-preflight" ]]; then
   exit 64
 fi
+if [[ -n "\${FAKE_PREFLIGHT_LEAK:-}" ]]; then
+  printf '%s\\n' "\${FAKE_PREFLIGHT_LEAK}"
+  exit 0
+fi
 cat <<'JSON'
 {
   "success": false,
@@ -131,6 +135,19 @@ JSON
   }
   if (`${secretEnvIgnored.stdout}\n${secretEnvIgnored.stderr}`.includes(secretValue)) {
     throw new Error("canary observation repeated a configured secret value");
+  }
+
+  const splitAllowlistLeak = runObservation({
+    QINTOPIA_HUABAOSI_WECOM_CANARY_ALLOWED_BOT_IDS: "bot-one,bot-two",
+    FAKE_PREFLIGHT_LEAK: "bot-two",
+  });
+  if (splitAllowlistLeak.status === 0) {
+    throw new Error("expected split allowlist member leak to fail observation");
+  }
+  if (
+    `${splitAllowlistLeak.stdout}\n${splitAllowlistLeak.stderr}`.includes("bot-two")
+  ) {
+    throw new Error("canary observation failure repeated split allowlist member");
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
