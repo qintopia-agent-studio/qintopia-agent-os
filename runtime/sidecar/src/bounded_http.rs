@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, Stream};
+use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, Stream};
 use url::Url;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -157,7 +157,7 @@ impl HttpClient {
 
         let response = match endpoint.scheme() {
             "https" => {
-                let server_name = ServerName::try_from(host)
+                let server_name = ServerName::try_from(host.to_string())
                     .context("validate HTTPS host")
                     .map_err(HttpRequestError::terminal)?;
                 let mut connection =
@@ -250,16 +250,8 @@ fn is_http_header_value_byte(byte: u8) -> bool {
 }
 
 fn tls_config() -> ClientConfig {
-    let mut roots = RootCertStore::empty();
-    roots.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor| {
-        OwnedTrustAnchor::from_subject_spki_name_constraints(
-            anchor.subject,
-            anchor.spki,
-            anchor.name_constraints,
-        )
-    }));
+    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(roots)
         .with_no_client_auth()
 }

@@ -71,6 +71,7 @@ cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integr
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_rejects_stale_claim -- --ignored --exact
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_recovers_expired_callback_and_terminalizes_ambiguous_send -- --ignored --exact
 cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_expires_missing_callback_during_reclaim -- --ignored --exact
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests qiwe_image_send_state::tests::postgres_qiwe_send_state_recovers_unrecorded_claim_and_reconciles_stale_send -- --ignored --exact
 ```
 
 Also run the full Rust suite, Clippy with warnings denied, pre-commit checks, CI
