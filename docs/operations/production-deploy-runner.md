@@ -119,12 +119,22 @@ environment secrets for COS upload and request signing:
 - `DEPLOY_REQUEST_SIGNING_KEY`
 - `DEPLOY_REQUEST_SIGNING_KEY_ID`
 
+Release merge and publication are manual-only operator actions. Do not enable or use
+auto-merge for Release Please PRs, and do not automatically publish draft Releases from
+automation or programming-agent flows. Automation may prepare the PR, draft Release, and
+validation evidence; the owner still performs the merge and publish decisions manually.
+
 For Release-triggered production deployment, the Release tag must point to the current
 `origin/master` HEAD. Pre-releases are rejected. The workflow checks out the reviewed
 `master` workflow code, builds artifacts for the release commit, uploads server-consumed
 artifacts to COS, then signs and uploads a deploy request. It must not check out an
 older target commit and execute that older copy of repository scripts with production
 secrets.
+
+Before publishing a draft Release, compare its tag target with current `origin/master`.
+If `master` has advanced since the draft was prepared, do not publish or retry that
+stale tag; let Release Please create the next release PR and publish the new current
+HEAD tag after validation.
 
 GitHub Release assets are intentionally not uploaded by this production workflow. COS is
 the server-consumed artifact registry, and the GitHub Release page is only the operator
