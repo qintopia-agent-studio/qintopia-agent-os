@@ -1360,7 +1360,8 @@ fn strict_media_url(value: &str) -> Result<Url> {
 }
 
 fn strict_https_url(value: &str, label: &str) -> Result<Url> {
-    if value.contains('\\') {
+    let lowered = value.to_ascii_lowercase();
+    if value.contains('\\') || lowered.contains("%2f") || lowered.contains("%5c") {
         bail!("{label} must be an HTTPS URL without credentials, query, or fragment");
     }
     let url = Url::parse(value).with_context(|| format!("parse {label}"))?;
@@ -1878,7 +1879,10 @@ mod tests {
         assert!(strict_media_url("https://media.example.test/poster.jpg?token=secret").is_err());
         assert!(strict_media_url("https://media.example.test/poster.jpg#fragment").is_err());
         assert!(strict_media_url("https://media.example.test/poster\\private.jpg").is_err());
+        assert!(strict_media_url("https://media.example.test/poster%5Cprivate.jpg").is_err());
+        assert!(strict_media_url("https://media.example.test/posters%2Fprivate.jpg").is_err());
         assert!(strict_api_url("https://manager.qiweapi.com\\private/qiwe/api/qw/doApi").is_err());
+        assert!(strict_api_url("https://manager.qiweapi.com%2Fprivate/qiwe/api/qw/doApi").is_err());
         assert!(validate_jpeg_filename(&format!("{}.jpg", "a".repeat(252))).is_err());
     }
 

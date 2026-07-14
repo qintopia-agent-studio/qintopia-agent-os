@@ -1774,7 +1774,8 @@ fn validate_plain_value(value: &str, label: &str) -> Result<()> {
 }
 
 fn strict_media_url(value: &str) -> Result<Url> {
-    if value.contains('\\') {
+    let lowered = value.to_ascii_lowercase();
+    if value.contains('\\') || lowered.contains("%2f") || lowered.contains("%5c") {
         bail!("approved generated-image URI must be stable HTTPS");
     }
     let url = Url::parse(value).context("parse approved generated-image URI")?;
@@ -2250,6 +2251,8 @@ mod tests {
             "https://user:pass@media.example.test/posters/activity.jpg",
             "https://media.example.test/posters/activity.jpg?download=1",
             "https://media.example.test/posters/activity.jpg#fragment",
+            "https://media.example.test/posters%2Factivity.jpg",
+            "https://media.example.test/posters/activity%5Cprivate.jpg",
             "http://media.example.test/posters/activity.jpg",
             "file:///tmp/activity.jpg",
         ] {
