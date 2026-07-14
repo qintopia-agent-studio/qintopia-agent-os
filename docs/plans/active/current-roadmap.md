@@ -28,6 +28,10 @@ unless correcting historical evidence.
      files.
    - Preserve runtime data and local secrets on the server.
    - Start with one low-risk profile before touching group-facing behavior.
+   - Migrate the live Huabaosi WeCom conversation boundary into the reviewed release
+     flow through [Huabaosi WeCom migration](huabaosi-wecom-migration.md). The
+     production Bot remains on Hermes until observation, Rust shadow capture, policy
+     preview, canary, and rollback evidence are reviewed in separate PRs.
 
 2. External adapter allowlists
    - Keep real external send paths disabled until allowlists, runtime config, smoke, and

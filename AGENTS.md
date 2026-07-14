@@ -101,6 +101,9 @@ Use `rg` and `rg --files` for search.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
+- Do not block PR creation on a standalone `gh auth status` failure in the Codex desktop
+  environment. Try the repository PR creation flow directly and treat only the actual
+  create/push failure as blocking.
 - PR-Agent must not automatically edit PR descriptions. The completed repository PR
   template is author-owned because CI validates its required sections.
 - Before merging any PR, read the complete PR Reviewer Guide, submitted reviews,
@@ -257,6 +260,11 @@ Use `rg` and `rg --files` for search.
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
   configuration exist, it may only validate and preview requests. It must not create a
   `generated_image` artifact, contact an external service, or be attached to a timer.
+- 阿亮画报师生产 WeCom Bot 的 `Interrupting current task` / `Response formatting failed`
+  用户可见中断提示来自 live Hermes gateway busy-ack and platform send fallback
+  (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
+  not Rust sidecar image generation or QiWe image-send state. Diagnose this path through
+  Huabaosi Hermes/WeCom runtime first, and do not hot-edit the server.
 - `operations-artifact-review-decision` may approve a `generated_image` only after its
   Huabaosi worker provenance, stable JPEG HTTPS URI, final JPEG sha256/metadata, source
   PNG sha256, fixed `png_to_jpeg_white_background_q92_v1` transform metadata, source

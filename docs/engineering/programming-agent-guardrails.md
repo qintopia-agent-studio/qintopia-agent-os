@@ -128,6 +128,10 @@ If `gh` is missing, run `pnpm pr:bootstrap` to print supported installation comm
 supported environments, `pnpm pr:bootstrap -- --install` may install GitHub CLI.
 Authentication still requires `gh auth login`.
 
+In the Codex desktop environment, do not use a standalone `gh auth status` failure as a
+reason to stop. Try the repository PR creation flow directly and treat only the actual
+push or PR creation failure as blocking.
+
 ## Hermes Profile Rule
 
 Hermes profile live state is not source code.
