@@ -1068,6 +1068,8 @@ pub enum Command {
     HuabaosiImageGenerationPreflight,
     /// Preview-sanitize one Huabaosi WeCom event from stdin without writing, sending, or generating assets.
     HuabaosiWecomShadowCapture,
+    /// Preview Huabaosi WeCom gateway policy for one stdin event without writing, sending, or generating assets.
+    HuabaosiWecomPolicyPreview,
     /// Validate the disabled QiWe async image-upload/send contract without network or database access.
     QiweImageSendPreflight,
     /// Claim one reviewed QiWe image-send request and submit its asynchronous URL upload.

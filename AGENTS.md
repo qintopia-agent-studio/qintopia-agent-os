@@ -61,6 +61,8 @@
   `QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`
 - Huabaosi WeCom shadow capture fixture replay:
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_shadow`
+- Huabaosi WeCom policy preview fixture replay:
+  `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_policy`
 - Xiaoman activity production preflight smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
@@ -321,6 +323,14 @@ Use `rg` and `rg --files` for search.
   artifacts, send WeCom/QiWe messages, call image providers, upload media, write Feishu,
   or emit raw ids, user text, media URLs, filenames, tokens, or callback file
   credentials.
+- `huabaosi-wecom-policy-preview` may only preview one supplied WeCom event from bounded
+  stdin and emit sanitized policy decisions for message classification, busy-session
+  handling, internal-process filtering, formatting fallback, user-safe fallback copy,
+  and idempotency. It must not add `--apply`, open Postgres or network connections,
+  write artifacts, send WeCom/QiWe messages, call image providers, upload media, write
+  Feishu, or emit raw ids, user text, media URLs, filenames, tokens, or callback file
+  credentials. Suppression rules must match narrow complete internal templates; do not
+  block ordinary user requests through broad words such as `plain text` or `纯文本`.
 - `huabaosi-image-generation-preflight` may only validate and emit a sanitized summary
   of local image-adapter configuration. It must not open network or database
   connections, reveal configuration values, enable generation, write Feishu, send QiWe,
