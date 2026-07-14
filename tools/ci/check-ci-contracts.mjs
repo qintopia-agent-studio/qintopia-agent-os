@@ -319,6 +319,7 @@ if (ciWorkflow) {
       const qualitySteps = qualityJob.steps ?? [];
       for (const requiredStep of [
         "Rust coverage baseline",
+        "All-feature staging adapter tests",
         "Clippy baseline",
         "Upload Rust quality baseline",
       ]) {
@@ -327,6 +328,49 @@ if (ciWorkflow) {
             `.github/workflows/ci.yml: rust-quality-baseline must include ${requiredStep}`
           );
         }
+      }
+      const coverageStepIndex = qualitySteps.findIndex(
+        (step) => step?.name === "Rust coverage baseline"
+      );
+      const allFeatureTestStepIndex = qualitySteps.findIndex(
+        (step) => step?.name === "All-feature staging adapter tests"
+      );
+      const allFeatureTestStep = qualitySteps[allFeatureTestStepIndex];
+      const allFeatureTestCommand = String(allFeatureTestStep?.run ?? "");
+      if (allFeatureTestStep?.["continue-on-error"] === true) {
+        errors.push(
+          ".github/workflows/ci.yml: all-feature staging adapter tests must block on failures"
+        );
+      }
+      for (const requiredFragment of [
+        "cargo nextest run",
+        "--manifest-path runtime/sidecar/Cargo.toml",
+        "--all-features",
+        "--no-fail-fast",
+      ]) {
+        if (!allFeatureTestCommand.includes(requiredFragment)) {
+          errors.push(
+            `.github/workflows/ci.yml: all-feature staging adapter tests must include ${requiredFragment}`
+          );
+        }
+      }
+      if (
+        ["--run-ignored", "--include-ignored", "-- --ignored"].some((fragment) =>
+          allFeatureTestCommand.includes(fragment)
+        )
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: all-feature staging adapter tests must leave ignored PostgreSQL tests to the disposable integration job"
+        );
+      }
+      if (
+        coverageStepIndex !== -1 &&
+        allFeatureTestStepIndex !== -1 &&
+        allFeatureTestStepIndex <= coverageStepIndex
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: all-feature staging adapter tests must run after the default coverage suite"
+        );
       }
       const clippyStep = qualitySteps.find((step) => step?.name === "Clippy baseline");
       if (clippyStep?.["continue-on-error"] === true) {

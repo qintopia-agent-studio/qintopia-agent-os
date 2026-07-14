@@ -36,7 +36,9 @@ changes still add `pnpm check:runtime` through the existing changed-file gate.
 ## Rust Quality And Xiaoman Integration
 
 Runtime-sensitive changes also run a Rust 1.96 quality baseline. It uploads LCOV and a
-coverage summary; strict Clippy runs `--all-targets -- -D warnings` as a blocking gate.
-The Xiaoman downstream integration job runs the guarded apply smoke only against a
-disposable GitHub Actions PostgreSQL service. It must not accept production database
-URLs, secrets, Feishu credentials, QiWe credentials, or external adapters.
+coverage summary, then executes the non-ignored sidecar suite with all features so
+staging-only adapter tests run before strict default/all-feature Clippy. The all-feature
+test is not a production build and must not execute ignored PostgreSQL tests. The
+Xiaoman downstream integration job owns those ignored tests and the guarded apply smoke
+against a disposable GitHub Actions PostgreSQL service. It must not accept production
+database URLs, secrets, Feishu credentials, QiWe credentials, or external adapters.
