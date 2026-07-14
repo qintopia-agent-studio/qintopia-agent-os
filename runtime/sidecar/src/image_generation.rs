@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::{
     bounded_http::{HttpClient, HttpResponse},
     config::Cli,
-    db,
+    db, url_policy,
 };
 
 #[cfg(test)]
@@ -581,6 +581,7 @@ fn image_provider_endpoint(base_url: &str) -> Result<Url> {
 }
 
 fn https_url(value: &str, label: &str) -> Result<Url> {
+    url_policy::reject_path_separator_ambiguity(value, label)?;
     let url = Url::parse(value).with_context(|| format!("parse {label}"))?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -680,6 +681,7 @@ fn validate_media_response(
 }
 
 fn media_response_url(value: &str, allow_insecure_http: bool) -> Result<Url> {
+    url_policy::reject_path_separator_ambiguity(value, "media response URI")?;
     if allow_insecure_http {
         let url = Url::parse(value).context("parse test media response URI")?;
         if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
@@ -1663,6 +1665,8 @@ mod tests {
     #[test]
     fn production_endpoints_reject_query_parameters() {
         assert!(https_url("https://media.example.test/upload?token=secret", "media").is_err());
+        assert!(https_url("https://media.example.test/public%2Fupload", "media").is_err());
+        assert!(https_url("https://media.example.test/public%5Cupload", "media").is_err());
     }
 
     #[test]
@@ -1879,6 +1883,18 @@ mod tests {
         };
         let media = MediaUploadResponse {
             uri: "https://media.example.test/publicity/image.jpg".to_string(),
+            content_hash: "sha256:abc".to_string(),
+            mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
+            byte_size: 12,
+            width: 1024,
+            height: 1024,
+        };
+        assert!(
+            validate_media_response(&config, &media, "sha256:abc", &metadata, 12, false).is_err()
+        );
+
+        let media = MediaUploadResponse {
+            uri: "https://media.example.test/public%2Fprivate/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,

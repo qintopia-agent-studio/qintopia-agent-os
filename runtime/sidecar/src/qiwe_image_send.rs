@@ -18,7 +18,7 @@ use crate::qiwe_image_send_state::{
     CallbackClaimOutcome, QiweCallbackFileIdentity, SendFailureDisposition,
     UploadFailureDisposition,
 };
-use crate::{config::Cli, db, qiwe_image_send_state};
+use crate::{config::Cli, db, qiwe_image_send_state, url_policy};
 use url::Url;
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
@@ -1360,10 +1360,7 @@ fn strict_media_url(value: &str) -> Result<Url> {
 }
 
 fn strict_https_url(value: &str, label: &str) -> Result<Url> {
-    let lowered = value.to_ascii_lowercase();
-    if value.contains('\\') || lowered.contains("%2f") || lowered.contains("%5c") {
-        bail!("{label} must be an HTTPS URL without credentials, query, or fragment");
-    }
+    url_policy::reject_path_separator_ambiguity(value, label)?;
     let url = Url::parse(value).with_context(|| format!("parse {label}"))?;
     if url.scheme() != "https"
         || url.host_str().is_none()

@@ -8,7 +8,7 @@ use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
-use crate::qiwe_image_send::QiweSendReceipt;
+use crate::{qiwe_image_send::QiweSendReceipt, url_policy};
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
 const WORK_ITEM_TYPE: &str = "group_message_request";
@@ -1774,10 +1774,7 @@ fn validate_plain_value(value: &str, label: &str) -> Result<()> {
 }
 
 fn strict_media_url(value: &str) -> Result<Url> {
-    let lowered = value.to_ascii_lowercase();
-    if value.contains('\\') || lowered.contains("%2f") || lowered.contains("%5c") {
-        bail!("approved generated-image URI must be stable HTTPS");
-    }
+    url_policy::reject_path_separator_ambiguity(value, "approved generated-image URI")?;
     let url = Url::parse(value).context("parse approved generated-image URI")?;
     if url.scheme() != "https"
         || url.host_str().is_none()
