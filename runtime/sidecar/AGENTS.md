@@ -97,9 +97,11 @@ From the monorepo root, prefer:
   `QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send` before
   adapter configuration, stdin, Postgres, or network access. The Cargo feature, enable
   flag, secrets, and allowlists do not substitute for this owner-reviewed one-shot gate.
-- CI must run warning-denied Clippy once with no default features and once with all
-  features. The all-feature build type-checks staging code but cannot stand in for the
-  production feature set.
+- CI must execute the non-ignored sidecar suite with all features so staging-only
+  adapter tests run, then run warning-denied Clippy once with no default features and
+  once with all features. The all-feature test/build is CI-only and cannot stand in for
+  the production feature set; ignored PostgreSQL tests stay in their disposable
+  integration job.
 - QiWe upload dry-run must use the same exact group/media allowlists and approved JPEG
   identity validator as apply. It may skip locks and writes, but not policy checks.
 - External adapter modules must use `bounded_http`; do not add another raw socket HTTP

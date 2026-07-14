@@ -243,6 +243,10 @@ Use `rg` and `rg --files` for search.
   Production artifact manifests must record `cargo_features: []`, and both artifact and
   server-source build checks must reject explicit features, all-features builds, and the
   staging feature.
+- CI must execute non-ignored sidecar tests with all Cargo features so staging-only
+  adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
+  remain in the disposable integration job, and production artifacts must still use an
+  empty feature set.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
