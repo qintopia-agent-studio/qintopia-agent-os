@@ -93,6 +93,9 @@ Use `rg` and `rg --files` for search.
   `qintopia_test` on loopback and with the explicit Cargo feature
   `postgres-integration-tests`. It validates internal send-ready state and must never
   call QiWe or an external adapter.
+- A `group_message_send` claim must clear `claimed_by`, `locked_at`, and
+  `claim_expires_at` together when it records send-ready or policy-denied state. The
+  transition must update exactly the locked work item before appending its audit event.
 - Do not develop directly on `master`; create a feature branch first.
 - Document first for new features, behavior changes, migrations, runtime changes, or
   production-adjacent work.

@@ -520,17 +520,21 @@ async fn record_send_ready(
     work_item: &GroupMessageWorkItem,
     plan: &SendPlan,
 ) -> Result<()> {
-    sqlx::query(
+    let updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.work_items
         SET
             status = 'queued',
+            claimed_by = NULL,
             locked_at = NULL,
             claim_expires_at = NULL,
             last_error = NULL,
             metadata = metadata || $2,
             updated_at = now()
         WHERE id = $1
+          AND status = 'queued'
+          AND claimed_by = $3
+          AND claim_expires_at > now()
         "#,
     )
     .bind(work_item.id)
@@ -540,9 +544,13 @@ async fn record_send_ready(
             "send_executed": false
         }
     }))
+    .bind(WORKER_ID)
     .execute(&mut **tx)
     .await
     .context("record group message send-ready metadata")?;
+    if updated.rows_affected() != 1 {
+        bail!("group message send-ready claim changed before state was recorded");
+    }
 
     append_event_in_tx(
         tx,
@@ -573,23 +581,31 @@ async fn mark_work_item_failed(
     error: &str,
 ) -> Result<()> {
     let message = trim_error(error);
-    sqlx::query(
+    let updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.work_items
         SET
             status = 'failed',
+            claimed_by = NULL,
             locked_at = NULL,
             claim_expires_at = NULL,
             last_error = $2,
             updated_at = now()
         WHERE id = $1
+          AND status = 'queued'
+          AND claimed_by = $3
+          AND claim_expires_at > now()
         "#,
     )
     .bind(work_item.id)
     .bind(&message)
+    .bind(WORKER_ID)
     .execute(&mut **tx)
     .await
     .context("mark group message work item failed")?;
+    if updated.rows_affected() != 1 {
+        bail!("group message send-ready claim changed before denial was recorded");
+    }
     append_event_in_tx(
         tx,
         WorkItemEvent {
@@ -1083,7 +1099,7 @@ mod tests {
             allowed_group_ids: Vec::new(),
         };
 
-        let (image_id, _artifact_id, group_id) =
+        let (image_id, artifact_id, group_id) =
             insert_image_and_group_request(&pool, "approved").await;
         let report = run_once(&pool, &policy, true, Some(group_id))
             .await
@@ -1116,6 +1132,50 @@ mod tests {
         .await
         .expect("read send-ready integration state");
         assert_eq!(state, ("queued".to_string(), 1, 1, 0));
+        let claim_released: (bool,) = sqlx::query_as(
+            r#"
+            SELECT claimed_by IS NULL
+               AND locked_at IS NULL
+               AND claim_expires_at IS NULL
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+            "#,
+        )
+        .bind(group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read send-ready claim cleanup");
+        assert!(claim_released.0);
+
+        let stale_work_item = GroupMessageWorkItem {
+            id: group_id,
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "erhua".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            status: "queued".to_string(),
+            review_policy: "human_final_confirmation".to_string(),
+            payload: json!({}),
+        };
+        let stale_plan = SendPlan {
+            target_channel: "qiwe".to_string(),
+            target_group_alias: Some("integration_test_group".to_string()),
+            target_group_id: None,
+            approved_artifact_id: artifact_id,
+            message_text: "sanitized integration message".to_string(),
+        };
+        let mut stale_tx = pool
+            .begin()
+            .await
+            .expect("begin stale send-ready transition");
+        let stale_error = record_send_ready(&mut stale_tx, &stale_work_item, &stale_plan)
+            .await
+            .expect_err("released claim must not append another send-ready event");
+        assert!(stale_error.to_string().contains("claim changed"));
+        stale_tx
+            .rollback()
+            .await
+            .expect("rollback stale send-ready transition");
 
         let second = run_once(&pool, &policy, true, Some(group_id))
             .await
@@ -1169,6 +1229,48 @@ mod tests {
         .await
         .expect("read denied send-ready integration state");
         assert_eq!(denied_state, ("failed".to_string(), 1, 1, 0));
+        let denied_claim_released: (bool,) = sqlx::query_as(
+            r#"
+            SELECT claimed_by IS NULL
+               AND locked_at IS NULL
+               AND claim_expires_at IS NULL
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+            "#,
+        )
+        .bind(pending_group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read denied send-ready claim cleanup");
+        assert!(denied_claim_released.0);
+
+        let stale_denied_work_item = GroupMessageWorkItem {
+            id: pending_group_id,
+            ..stale_work_item
+        };
+        let mut stale_denied_tx = pool.begin().await.expect("begin stale denial transition");
+        let stale_denied_error =
+            mark_work_item_failed(&mut stale_denied_tx, &stale_denied_work_item, "denied")
+                .await
+                .expect_err("released claim must not append another denial event");
+        assert!(stale_denied_error.to_string().contains("claim changed"));
+        stale_denied_tx
+            .rollback()
+            .await
+            .expect("rollback stale denial transition");
+        let denied_event_count: (i64,) = sqlx::query_as(
+            r#"
+            SELECT count(*)
+            FROM qintopia_agent_os.work_item_events
+            WHERE work_item_id = $1
+              AND event_type = 'group_message_send_denied_by_policy'
+            "#,
+        )
+        .bind(pending_group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count idempotent denial events");
+        assert_eq!(denied_event_count.0, 1);
         delete_integration_rows(&pool, pending_image_id, pending_group_id).await;
     }
 }
