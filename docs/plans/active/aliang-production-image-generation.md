@@ -156,6 +156,7 @@ SHA-256 is recorded as `provider_source_content_hash`; the final artifact hash i
 SHA-256 of the exact JPEG bytes. Metadata and the creation audit must also match:
 
 - `provider_source_mime_type=image/png`;
+- final JPEG `file_md5` computed from the same bytes as the canonical SHA-256;
 - `media_transform=png_to_jpeg_white_background_q92_v1`;
 - `jpeg_quality=92`;
 - `alpha_background=#ffffff`; and
@@ -258,6 +259,10 @@ data but are not eligible for the future QiWe JPG send contract.
   只读验证生产开关保持关闭、provider service/timer 未安装，并运行配置预检和
   `run-huabaosi-image-generation-worker --once --dry-run` 队列预览。它不 claim work
   item、不写 artifact、不调用 provider/media、飞书或企微。该 observation 通过只证明 adapter 仍被安全关闭，不代表 staging 或生产生成获批。
+- Huabaosi provider/media calls now use the shared `bounded_http` Rust client also used
+  by the guarded QiWe adapter. The extraction preserves the existing response caps,
+  header validation, chunked limits, TLS policy, fake-server behavior, and timeout
+  classification while zeroizing request/response buffers on drop.
 
 运行无网络预检：
 

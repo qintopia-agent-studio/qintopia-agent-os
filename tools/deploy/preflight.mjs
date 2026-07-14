@@ -373,12 +373,42 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const buildArtifactScript = readText("tools/deploy/build-sidecar-artifact.mjs");
   for (const requiredFragment of [
     "const bundleName = `${binaryName}.tar.gz`",
+    "const cargoFeatures = []",
+    'gitOutput(["status", "--porcelain"], "unknown")',
+    "refusing to build a release artifact from a dirty or unreadable git worktree",
     'run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName])',
     "bundleSha256",
+    "cargo_features: cargoFeatures",
   ]) {
     if (!buildArtifactScript.includes(requiredFragment)) {
       addError(
         `tools/deploy/build-sidecar-artifact.mjs: must include compressed sidecar bundle support (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenFragment of [
+    "qiwe-staging-adapter",
+    '"--features"',
+    '"--all-features"',
+  ]) {
+    if (buildArtifactScript.includes(forbiddenFragment)) {
+      addError(
+        `tools/deploy/build-sidecar-artifact.mjs: production sidecar artifacts must use default Cargo features (${forbiddenFragment})`
+      );
+    }
+  }
+}
+
+if (exists("deploy/sidecar/scripts/server-deploy.sh")) {
+  const serverDeployScript = readText("deploy/sidecar/scripts/server-deploy.sh");
+  for (const forbiddenFragment of [
+    "qiwe-staging-adapter",
+    "--features",
+    "--all-features",
+  ]) {
+    if (serverDeployScript.includes(forbiddenFragment)) {
+      addError(
+        `deploy/sidecar/scripts/server-deploy.sh: production source builds must use default Cargo features (${forbiddenFragment})`
       );
     }
   }

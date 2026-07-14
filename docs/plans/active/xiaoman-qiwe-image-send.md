@@ -83,7 +83,11 @@ target, or missing final confirmation must stop before sending.
   `.env.example`, never values, URLs, hosts, group ids, or enable flags. An empty list
   with `config_valid=false` means present configuration failed format, readiness, or
   allowlist validation and must still fail closed.
-- `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; no worker, callback listener,
+- `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; guarded upload/callback commands
+  exist, but default and production binaries compile without the non-default
+  `qiwe-staging-adapter` feature. Apply fails before Postgres or network access even if
+  the runtime enable flag is misconfigured. A staging-feature apply also requires the
+  exact owner approval phrase before Postgres or network access. No callback listener,
   staging smoke, service, or timer is installed.
 - The QiWe capture producer sanitizes any `cmd=20000` event before NATS publication, and
   the Rust sidecar independently repeats the boundary before Postgres persistence. Both
@@ -95,10 +99,23 @@ target, or missing final confirmation must stop before sending.
   callback processing or send enablement.
 - The additive `qiwe_image_send_attempts` state records hashed upload correlation,
   callback idempotency, unique per-attempt claims, immutable artifact/target hashes, and
-  sanitized terminal audit. Callback credentials remain memory-only. The callback
-  transition commits `sending` before an external send can occur, and ambiguous outcomes
-  are terminal/manual rather than automatically retried. This state API is not wired to
-  a network worker, callback listener, timer, or production adapter.
+  the approved final JPEG MD5 and byte size. Callback credentials remain memory-only;
+  their filename, MD5, and byte size must match the approved artifact before the
+  callback can open the send gate. The callback transition commits `sending` before an
+  external send can occur, and ambiguous outcomes are terminal/manual rather than
+  automatically retried. After that send gate, HTTP failures or provider non-success
+  responses remain ambiguous unless the bounded client proves the request was not sent.
+- The upload worker now persists `uploading` in the claim transaction before external
+  I/O. If it cannot prove that an interrupted upload stayed local, that attempt and the
+  work item become terminal ambiguous state with no automatic retry. Dry-run and
+  disabled previews enforce the same exact group and media-host allowlists as apply.
+- `run-qiwe-image-send-worker` connects that state API to one guarded asynchronous
+  upload request, and `process-qiwe-image-send-callback` reads one bounded callback from
+  stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
+  client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
+  The live helpers compile only with the staging-only Cargo feature. Production release
+  artifacts record an empty feature list and cannot execute either external call; no
+  listener, service, timer, staging endpoint, or production enablement is installed.
 
 ## Next Implementation
 
@@ -108,16 +125,19 @@ target, or missing final confirmation must stop before sending.
    before generic raw-event sanitization, and confirm the exact credential field names
    and the existing `isSendSuccess=1` success assumption without storing raw credentials
    in git or logs.
-3. Add a local fake QiWe server and guarded adapter worker for upload acceptance,
-   callback, send response, timeout, oversized response, duplicate callback, stale
-   claim, and retry tests.
+3. Complete CI review of the code-only
+   [guarded adapter worker](qiwe-image-send-adapter-worker.md), including local fake
+   QiWe upload/send behavior and disposable PostgreSQL crash/timeout recovery. Keep real
+   endpoints disabled until steps 1 and 2 have owner-approved evidence.
 4. Add one guarded staging smoke with an isolated group and explicit approval phrase.
 5. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
 
 ## Production Boundary
 
-This plan and contract do not contact QiWe, upload media, send messages, write Postgres
-or Feishu, install services, or change production configuration. Rollback is to keep
-`QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no current internal Xiaoman path depends on this
-adapter.
+Default and production execution do not contain the live QiWe adapter and cannot contact
+QiWe or send messages. A separately built staging-feature binary can write Postgres and
+contact an allowlisted endpoint only with explicit enablement, but this plan does not
+build, install, or enable one, write Feishu, or change production configuration.
+Rollback is to retain default builds and `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no
+current internal Xiaoman timer depends on this adapter.

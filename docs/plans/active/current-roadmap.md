@@ -44,9 +44,18 @@ unless correcting historical evidence.
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The
      deterministic provider-PNG-to-final-JPEG path resolves the code-level format gap;
      the additive Postgres state stores only hashed correlation/idempotency and
-     sanitized claim/audit facts. Sending remains disabled because no network worker,
-     callback listener, or timer exists, and the provider/storage/readback path plus
-     callback credential shape still require owner-approved staging evidence.
+     sanitized claim/audit facts. A guarded upload worker and bounded callback command
+     now exist for fake-server and disposable-Postgres validation, but sending remains
+     disabled because no listener service or timer exists and the provider/storage/
+     readback path plus callback credential shape still require owner-approved staging
+     evidence.
+   - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md) is
+     implemented locally with shared bounded Rust HTTP, one upload worker, one bounded
+     callback command, fake-server coverage, and disposable PostgreSQL integration
+     tests. It remains pending CI and Reviewer Guide review. The next boundary is
+     owner-approved isolated staging evidence for the final JPEG and callback credential
+     shape; no listener, service, timer, or production enablement may precede that
+     evidence.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,

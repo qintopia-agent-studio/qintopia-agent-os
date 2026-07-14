@@ -313,6 +313,7 @@ jobs:
       - name: Clippy baseline
         run: |
           set -o pipefail
+          cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --no-default-features -- -D warnings 2>&1 | tee coverage/clippy-default.txt
           cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings 2>&1 | tee coverage/clippy.txt
 
       - name: Upload Rust quality baseline
@@ -394,6 +395,14 @@ jobs:
           cargo test --manifest-path runtime/sidecar/Cargo.toml \
             --features postgres-integration-tests \
             qiwe_image_send_state::tests::postgres_qiwe_send_state_expires_missing_callback_during_reclaim \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_terminalizes_stale_upload_and_send \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_terminalizes_legacy_unrecorded_claim \
             -- --ignored --exact
 
       - name: Xiaoman downstream apply smoke

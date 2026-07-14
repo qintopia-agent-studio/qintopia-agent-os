@@ -88,11 +88,14 @@ upload, correlates the `cmd=20000` Webhook by `requestId`, and only then permits
 `/msg/sendImage` request with complete file credentials. The Rust contract and local
 preflight are implemented. An additive Postgres state machine now records hashed upload
 correlation, callback idempotency, claim tokens, and sanitized terminal audit without
-persisting callback file credentials. No network worker, dedicated callback listener, or
-timer exists. The current Huabaosi path converts provider PNG into the exact final JPEG
-artifact reviewed by humans. Staging must still verify that JPEG through the isolated
-media and QiWe callback boundaries before any external-send implementation can be
-enabled.
+persisting callback file credentials. A guarded upload worker and bounded callback
+command are implemented for fake-server and disposable-Postgres validation. Their live
+helpers compile only in a non-default staging feature; production artifacts record no
+Cargo features, so env configuration alone cannot enable a real call. No dedicated
+callback listener, service, or timer exists. The current Huabaosi path converts provider
+PNG into the exact final JPEG artifact reviewed by humans. Staging must still verify
+that JPEG through the isolated media and QiWe callback boundaries before a staging
+feature build can contact a real endpoint.
 
 The no-network configuration check is:
 
@@ -102,8 +105,10 @@ qiwe-image-send-preflight
 
 It fails closed unless the HTTPS API host, generated-image media hosts, target groups,
 credentials, and reviewed Webhook readiness flag are configured. A successful preflight
-still does not authorize upload or sending. The command fails when the send-enable flag
-is `1`; staging enablement needs a separate owner-reviewed gate.
+still does not authorize upload or sending. The command reports `adapter_compiled=false`
+for a production/default binary and fails if the send-enable flag is `1` or the
+staging-only feature is present; staging enablement needs a separate owner-reviewed
+gate.
 
 Before any staging adapter smoke, run:
 
@@ -148,6 +153,17 @@ a canonical hash for the exact reviewed bytes.
   completing its image request or unlocking the send-request starter.
 - Group-send readiness requires final human confirmation before any external send path
   is considered.
+
+The guarded QiWe code path is split into an asynchronous upload worker and a bounded
+stdin callback processor. It uses Postgres attempt state and can be exercised against a
+local fake server. Before opening the at-most-once send gate, it requires the callback
+filename, canonical MD5, and byte size to match the exact approved final JPEG. It is not
+installed as a listener, service, or timer and remains disabled for production. Its
+read-only upload preview applies the same current group/media allowlists and JPEG
+identity checks as apply, without claiming work or opening a network connection. A
+staging-feature apply also requires the exact owner approval phrase before it may
+connect to Postgres or the reviewed endpoint; production binaries still omit the live
+adapter entirely.
 
 ## Validation
 

@@ -63,14 +63,47 @@ From the monorepo root, prefer:
   the same unexpired claim plus approved artifact/target/final-confirmation facts, and
   store only canonical hashes. The `sending` transition is the at-most-once boundary;
   crashes or transport uncertainty after it require `ambiguous` human reconciliation,
-  never an automatic retry with callback credentials. Treat QiWe target group ids as
-  opaque and case-sensitive, and match their allowlist exactly. An ambiguous send audit
-  must use `external_send_executed=null` and outcome `unknown`, never a definite false.
-  Late callbacks must atomically expire the awaiting attempt and requeue the same work
-  item before returning. After the send gate commits, terminal writes must still require
-  the exact attempt and claim token but must not fail only because its short TTL
-  elapsed. Before selecting new work, the claim transaction must expire and requeue a
-  stale `awaiting_callback` attempt even when no callback ever arrives; never apply that
+  never an automatic retry with callback credentials. A non-2xx or non-success business
+  response after the request may have been sent is also ambiguous without a reviewed
+  no-send failure-code allowlist. Treat QiWe target group ids as opaque and
+  case-sensitive, and match their allowlist exactly. An ambiguous send audit must use
+  `external_send_executed=null` and outcome `unknown`, never a definite false. Late
+  callbacks must atomically expire the awaiting attempt and requeue the same work item
+  before returning. After the send gate commits, terminal writes must still require the
+  exact attempt and claim token but must not fail only because its short TTL elapsed.
+  Before selecting new work, the claim transaction must expire and requeue a stale
+  `awaiting_callback` attempt even when no callback ever arrives; never apply that
   timeout retry path to `sending`.
+- Persist an `uploading` attempt in the same transaction that claims the work item,
+  before any external socket can open. Expired `uploading` attempts and legacy claims
+  with no attempt row are unknown external outcomes: terminalize them as `ambiguous`
+  with automatic retry disabled. Worker previews must reuse the exact apply-side group
+  and media-host allowlists.
+- The QiWe upload worker and callback processor remain unscheduled. Their live helpers
+  compile only with the non-default `qiwe-staging-adapter` feature; default/production
+  apply must return `staging_adapter_not_compiled` before Postgres or network access,
+  and callback apply must do so before reading stdin. Runtime env flags are not a
+  substitute for this compile gate. Callback JSON is accepted from bounded stdin only,
+  never CLI arguments or environment variables. File credentials may open the send gate
+  only when callback filename, canonical MD5, and byte size exactly match the approved
+  final JPEG identity snapshotted at upload. Callback credentials, request ids, media
+  URLs, target groups, tokens, device ids, response bodies, and provider message ids
+  must not appear in reports or logs; sensitive in-memory buffers must be zeroized on
+  drop.
+- A staging-feature callback apply must validate explicit enablement, API/media/group
+  allowlists, and webhook readiness before reading stdin. Upload apply must validate the
+  same adapter configuration before connecting to Postgres.
+- A staging-feature QiWe apply must require
+  `QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send` before
+  adapter configuration, stdin, Postgres, or network access. The Cargo feature, enable
+  flag, secrets, and allowlists do not substitute for this owner-reviewed one-shot gate.
+- CI must run warning-denied Clippy once with no default features and once with all
+  features. The all-feature build type-checks staging code but cannot stand in for the
+  production feature set.
+- QiWe upload dry-run must use the same exact group/media allowlists and approved JPEG
+  identity validator as apply. It may skip locks and writes, but not policy checks.
+- External adapter modules must use `bounded_http`; do not add another raw socket HTTP
+  implementation. Test-only loopback HTTP is allowed, while production clients require
+  HTTPS and the reviewed endpoint/host allowlists.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.

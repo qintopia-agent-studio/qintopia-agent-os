@@ -1068,6 +1068,34 @@ pub enum Command {
     HuabaosiImageGenerationPreflight,
     /// Validate the disabled QiWe async image-upload/send contract without network or database access.
     QiweImageSendPreflight,
+    /// Claim one reviewed QiWe image-send request and submit its asynchronous URL upload.
+    RunQiweImageSendWorker {
+        /// Process one work item and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Restrict processing to one group-message work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Apply the external upload adapter. Requires explicit reviewed enablement.
+        #[arg(long)]
+        apply: bool,
+
+        /// Preview one eligible work item without claiming, writing, or networking.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Process one bounded QiWe cmd=20000 callback read from stdin.
+    ProcessQiweImageSendCallback {
+        /// Apply callback correlation and at-most-once external image send.
+        #[arg(long)]
+        apply: bool,
+
+        /// Validate callback shape only; do not open Postgres or network connections.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Claim Wenyuange evidence requests and create internal evidence artifacts.
     RunEvidenceWorker {
         /// Run one batch and exit.

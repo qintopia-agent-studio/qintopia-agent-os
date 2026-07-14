@@ -336,6 +336,15 @@ if (ciWorkflow) {
       }
       if (
         !String(clippyStep?.run ?? "").includes(
+          "cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --no-default-features -- -D warnings"
+        )
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Clippy baseline must deny warnings for the default production feature set"
+        );
+      }
+      if (
+        !String(clippyStep?.run ?? "").includes(
           "cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings"
         )
       ) {

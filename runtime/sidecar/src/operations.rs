@@ -1999,6 +1999,7 @@ pub async fn record_artifact_review_decision(
                   AND event.actor_id = $2
                   AND event.data->>'content_hash' = artifact.content_hash
                   AND event.data->>'mime_type' = artifact.metadata->>'mime_type'
+                  AND event.data->>'file_md5' = artifact.metadata->>'file_md5'
                   AND event.data->>'provider_source_mime_type' = artifact.metadata->>'provider_source_mime_type'
                   AND event.data->>'provider_source_content_hash' = artifact.metadata->>'provider_source_content_hash'
                   AND event.data->>'media_transform' = artifact.metadata->>'media_transform'
@@ -4817,6 +4818,10 @@ fn validate_generated_image_approval(
         context.content_hash.as_deref().unwrap_or_default(),
         "generated_image content_hash",
     )?;
+    validate_canonical_md5(
+        json_string(&context.metadata, "file_md5").unwrap_or_default(),
+        "generated_image file_md5",
+    )?;
 
     for (key, expected) in [
         ("generated_by", GENERATED_IMAGE_WORKER_ID),
@@ -4907,6 +4912,17 @@ fn validate_canonical_sha256(value: &str, label: &str) -> Result<()> {
             .all(|character| matches!(character, '0'..='9' | 'a'..='f'))
     {
         bail!("{label} must be a canonical sha256");
+    }
+    Ok(())
+}
+
+fn validate_canonical_md5(value: &str, label: &str) -> Result<()> {
+    if value.len() != 32
+        || !value
+            .chars()
+            .all(|character| matches!(character, '0'..='9' | 'a'..='f'))
+    {
+        bail!("{label} must be a canonical md5");
     }
     Ok(())
 }
@@ -6784,6 +6800,7 @@ mod tests {
                 "provider": "openai-compatible",
                 "model": "gpt-image-2",
                 "mime_type": "image/jpeg",
+                "file_md5": "e2c865db4162bed963bfaa9ef6ac18f0",
                 "provider_source_mime_type": "image/png",
                 "provider_source_content_hash": format!("sha256:{}", "d".repeat(64)),
                 "media_transform": "png_to_jpeg_white_background_q92_v1",
@@ -6872,6 +6889,12 @@ mod tests {
         let hash_error = validate_generated_image_approval(&context, "approved")
             .expect_err("noncanonical hash must be rejected");
         assert!(hash_error.to_string().contains("canonical sha256"));
+
+        let mut context = generated_image_approval_context();
+        context.metadata["file_md5"] = json!("not-a-canonical-md5");
+        let md5_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("noncanonical QiWe file MD5 must be rejected");
+        assert!(md5_error.to_string().contains("canonical md5"));
 
         let mut context = generated_image_approval_context();
         context.artifact_uri = Some("https://media.example.test/image.png".to_string());

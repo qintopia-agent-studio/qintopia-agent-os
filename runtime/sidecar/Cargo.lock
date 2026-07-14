@@ -1328,6 +1328,7 @@ dependencies = [
  "idna_adapter",
  "image",
  "indexmap",
+ "md-5",
  "rustls 0.21.12",
  "serde",
  "serde_json",

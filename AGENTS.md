@@ -206,14 +206,52 @@ Use `rg` and `rg --files` for search.
   persist QiWe callback file credentials or raw request/callback/message ids. Commit
   `sending` before calling `/msg/sendImage`; an uncertain result becomes `ambiguous` and
   must record `external_send_executed=null` with outcome `unknown` and must not be
-  retried automatically. Treat QiWe target group ids as opaque, case-sensitive values;
+  retried automatically. Non-2xx and non-success business responses after the request
+  may have been sent are also ambiguous unless a reviewed failure-code allowlist proves
+  no send occurred. Treat QiWe target group ids as opaque, case-sensitive values;
   allowlists must use exact matching. A callback arriving after the upload claim TTL
   must terminalize that attempt as `expired` and release the work item for a new
   correlation. Claim scans must also expire an `awaiting_callback` attempt whose
   callback never arrived; an active attempt must not remain solely because no callback
   invoked the callback handler. Once `sending` is committed, the same attempt and claim
-  token may record `sent`, `failed`, or `ambiguous` after the short TTL; wall-clock
-  expiry must not leave an external outcome stuck in `sending`.
+  token may record `sent`, `failed`, or `ambiguous` after the short TTL; HTTP failures
+  or provider non-success after the send gate are ambiguous unless the bounded client
+  proves the request was not sent. Wall-clock expiry must not leave an external outcome
+  stuck in `sending`.
+- The QiWe upload claim transaction must persist an `uploading` attempt before external
+  I/O. A stale `uploading` attempt or legacy unrecorded claim has an unknown external
+  outcome and must become terminal `ambiguous` with `automatic_retry_allowed=false`;
+  never requeue it automatically. Dry-run and disabled previews must enforce the same
+  exact target-group and media-host allowlists as apply.
+- Default and production sidecar builds must not compile the non-default
+  `qiwe-staging-adapter` feature. In those builds, QiWe upload/callback apply must fail
+  before configuration, Postgres claim/mutation, or network access even if runtime
+  enable flags are misconfigured; callback apply must also fail before reading stdin.
+  Production artifact manifests must record `cargo_features: []`, and both artifact and
+  server-source build checks must reject explicit features, all-features builds, and the
+  staging feature.
+- In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
+  only claim one reviewed send-ready work item, call the reviewed asynchronous
+  URL-upload method, and persist hashed upload correlation. Its dry-run preview must
+  reuse the apply path's exact target-group, media-host, and approved JPEG identity
+  validation; preview must not report policy-ineligible work. Staging-feature apply must
+  additionally require the exact reviewed one-shot owner approval phrase before adapter
+  configuration, callback stdin, Postgres, or network access; feature compilation,
+  enable flags, or credentials alone are insufficient.
+  `process-qiwe-image-send-callback` must read one bounded callback from stdin, keep
+  file credentials memory-only, require callback filename/MD5/byte size to match the
+  approved final JPEG before committing `sending`, commit that state before one send
+  call, and terminalize every outcome. Neither command may be scheduled or
+  production-enabled without approved staging evidence, isolated group allowlists, and
+  rollback.
+- A staging-feature QiWe callback apply must validate explicit enablement, exact
+  API/media/group allowlists, and webhook readiness before reading stdin. Upload apply
+  must validate the same adapter configuration before connecting to Postgres.
+- Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
+  reject invalid methods/headers before connect, require HTTPS outside tests, enforce
+  header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request
+  and response buffers, and classify whether an error occurred after a request may have
+  been sent.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
@@ -262,16 +300,18 @@ Use `rg` and `rg --files` for search.
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.
 - `qiwe-image-send-preflight` may only validate the disabled async URL-upload/send-image
-  contract from local configuration. It must not open network or database connections,
-  emit tokens, device/group ids, media URLs, file credentials, or message identifiers,
-  write Feishu, or send externally. Do not add a QiWe send worker or timer until staging
-  proves the deterministic final JPEG media path and complete `cmd=20000` callback
-  credentials. Final request construction must recheck the target group allowlist,
-  response parsing must fail closed unless both `code=0` and `isSendSuccess=1`, and this
-  disabled-state preflight must fail when the send-enable flag is `1`. All future
-  outbound header values must reject every control character before socket connection.
-  Its `missing_configuration` field follows the same public-name-only rule as the image
-  preflight and must never include enable flags or configuration values.
+  contract from local configuration. It must report whether the staging-only adapter was
+  compiled and fail the production preflight when it was. It must not open network or
+  database connections, emit tokens, device/group ids, media URLs, file credentials, or
+  message identifiers, write Feishu, or send externally. Do not compile the live adapter
+  into a production artifact or add a QiWe timer until staging proves the deterministic
+  final JPEG media path and complete `cmd=20000` callback credentials. Final request
+  construction must recheck the target group allowlist, response parsing must fail
+  closed unless both `code=0` and `isSendSuccess=1`, and this disabled-state preflight
+  must fail when the send-enable flag is `1`. All future outbound header values must
+  reject every control character before socket connection. Its `missing_configuration`
+  field follows the same public-name-only rule as the image preflight and must never
+  include enable flags or configuration values.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
   timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
   evidence/visual preview, and the group send-ready timer observation. It must not set
