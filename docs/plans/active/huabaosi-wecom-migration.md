@@ -204,6 +204,8 @@ Validation:
   bounded HTTP client cannot prove whether the request was sent;
 - HTTP 200 alone is not success; the canary response body must parse as
   `{"success":true}` before the report may use `canary_send_accepted`;
+- when the input omits `idempotency_key`, the payload hash fallback used in the report
+  must also be sent to the canary endpoint;
 - rollback before any owner approval request is:
   `unset QINTOPIA_HUABAOSI_WECOM_CANARY_ENABLED` and keep
   `hermes-gateway-huabaosi.service` as the production route.

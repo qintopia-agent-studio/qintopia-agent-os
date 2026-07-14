@@ -6,13 +6,13 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "huabaosi-wecom-canary-gateway")]
+#[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
 use serde_json::json;
 use sha2::{Digest, Sha256};
 #[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
 use url::Url;
 use zeroize::Zeroize;
-#[cfg(feature = "huabaosi-wecom-canary-gateway")]
+#[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
 use zeroize::Zeroizing;
 
 #[cfg(feature = "huabaosi-wecom-canary-gateway")]
@@ -132,7 +132,12 @@ impl Drop for CanaryConfig {
 }
 
 trait CanarySender {
-    fn send(&self, config: &CanaryConfig, payload: &CanaryPayload) -> SendOutcome;
+    fn send(
+        &self,
+        config: &CanaryConfig,
+        payload: &CanaryPayload,
+        idempotency_key: &str,
+    ) -> SendOutcome;
 }
 
 #[derive(Debug, Clone)]
@@ -158,14 +163,19 @@ impl BoundedHttpCanarySender {
 
 #[cfg(feature = "huabaosi-wecom-canary-gateway")]
 impl CanarySender for BoundedHttpCanarySender {
-    fn send(&self, config: &CanaryConfig, payload: &CanaryPayload) -> SendOutcome {
+    fn send(
+        &self,
+        config: &CanaryConfig,
+        payload: &CanaryPayload,
+        idempotency_key: &str,
+    ) -> SendOutcome {
         let Some(endpoint) = &config.endpoint else {
             return SendOutcome::terminal("missing_canary_endpoint");
         };
         let Some(token) = &config.token else {
             return SendOutcome::terminal("missing_canary_token");
         };
-        let body = match canary_request_body(payload) {
+        let body = match canary_request_body(payload, idempotency_key) {
             Ok(body) => body,
             Err(_) => return SendOutcome::terminal("invalid_canary_payload"),
         };
@@ -361,7 +371,7 @@ fn gateway_report(
         return Ok(report);
     };
 
-    let outcome = sender.send(&config, &payload);
+    let outcome = sender.send(&config, &payload, &idempotency_key);
     report.success = outcome.success;
     report.action_status = outcome.action_status.to_string();
     report.external_send_executed = outcome.external_send_executed;
@@ -537,14 +547,17 @@ fn allowlist_scope_count(config: &CanaryConfig) -> usize {
         + usize::from(!config.allowed_user_ids.is_empty())
 }
 
-#[cfg(feature = "huabaosi-wecom-canary-gateway")]
-fn canary_request_body(payload: &CanaryPayload) -> Result<Zeroizing<Vec<u8>>> {
+#[cfg(any(test, feature = "huabaosi-wecom-canary-gateway"))]
+fn canary_request_body(
+    payload: &CanaryPayload,
+    idempotency_key: &str,
+) -> Result<Zeroizing<Vec<u8>>> {
     let value = json!({
         "bot_id": payload.bot_id,
         "chat_id": payload.chat_id,
         "user_id": payload.user_id,
         "message_text": payload.message_text,
-        "idempotency_key": payload.idempotency_key,
+        "idempotency_key": idempotency_key,
     });
     let body = serde_json::to_vec(&value).context("encode canary request")?;
     Ok(Zeroizing::new(body))
@@ -664,7 +677,12 @@ mod tests {
     }
 
     impl CanarySender for FakeSender {
-        fn send(&self, _config: &CanaryConfig, _payload: &CanaryPayload) -> SendOutcome {
+        fn send(
+            &self,
+            _config: &CanaryConfig,
+            _payload: &CanaryPayload,
+            _idempotency_key: &str,
+        ) -> SendOutcome {
             self.outcomes
                 .lock()
                 .expect("fake sender")
@@ -873,6 +891,22 @@ mod tests {
     }
 
     #[test]
+    fn canary_request_body_uses_effective_idempotency_key() {
+        let raw = br#"{
+          "bot_id": "canary-bot-fixture",
+          "chat_id": "canary-chat-fixture",
+          "user_id": "canary-user-fixture",
+          "message_text": "fixture private canary message"
+        }"#;
+        let payload: CanaryPayload = serde_json::from_slice(raw).expect("payload");
+        let effective_key = sha256_marker(raw);
+        let body = canary_request_body(&payload, &effective_key).expect("request body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+
+        assert_eq!(value["idempotency_key"], effective_key);
+    }
+
+    #[test]
     fn bounded_reader_rejects_oversized_payload() {
         let payload = vec![b' '; MAX_CANARY_PAYLOAD_BYTES + 8];
         assert!(read_bounded_payload(payload.as_slice()).is_err());
@@ -928,9 +962,11 @@ mod tests {
             report.action_status = "canary_configuration_not_approved".to_string();
             return Ok(report);
         }
-        let outcome = sender
-            .ok_or_else(|| anyhow!("test sender required"))?
-            .send(config, payload);
+        let outcome = sender.ok_or_else(|| anyhow!("test sender required"))?.send(
+            config,
+            payload,
+            &idempotency_key,
+        );
         report.success = outcome.success;
         report.action_status = outcome.action_status.to_string();
         report.external_send_executed = outcome.external_send_executed;
