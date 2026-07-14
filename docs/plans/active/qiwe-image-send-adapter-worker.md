@@ -1,6 +1,7 @@
 # QiWe Image Send Adapter Worker
 
-Status: implemented locally; CI and review pending; production disabled
+Status: merged on `master` through #119 with CI and review checks passing; not included
+in the deployed `v0.2.7` release; production disabled
 
 Updated: 2026-07-14
 
