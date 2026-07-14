@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, fmt, io};
+use std::{collections::BTreeSet, fmt, io, net::IpAddr};
 
 #[cfg(test)]
 use std::{collections::BTreeMap, time::Duration};
@@ -532,8 +532,14 @@ async fn run_once(
 fn staging_apply_config(database_url: &str) -> Result<AdapterConfig> {
     validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
     let expected_hash = required_env(STAGING_DATABASE_URL_SHA256_ENV)?;
-    validate_staging_database_boundary(database_url, &expected_hash)?;
-    AdapterConfig::from_env().context("Huabaosi staging adapter configuration is invalid")
+    let disposable_test = disposable_postgres_smoke_enabled();
+    validate_staging_database_boundary(database_url, &expected_hash, disposable_test)?;
+    let config =
+        AdapterConfig::from_env().context("Huabaosi staging adapter configuration is invalid")?;
+    if disposable_test {
+        validate_disposable_test_adapter_boundary(&config)?;
+    }
+    Ok(config)
 }
 
 fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
@@ -545,7 +551,11 @@ fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn validate_staging_database_boundary(database_url: &str, expected_hash: &str) -> Result<()> {
+fn validate_staging_database_boundary(
+    database_url: &str,
+    expected_hash: &str,
+    allow_disposable_test: bool,
+) -> Result<()> {
     if expected_hash.len() != 64
         || !expected_hash
             .bytes()
@@ -566,10 +576,48 @@ fn validate_staging_database_boundary(database_url: &str, expected_hash: &str) -
         .strip_prefix('/')
         .filter(|value| !value.is_empty() && !value.contains('/'))
         .ok_or_else(|| anyhow!("staging database URL must name exactly one database"))?;
-    if !database_name.to_ascii_lowercase().contains("staging") {
-        bail!("staging database name must contain staging");
+    if database_name.to_ascii_lowercase().contains("staging") {
+        return Ok(());
+    }
+    if allow_disposable_test
+        && database_name == "qintopia_test"
+        && parsed.query().is_none()
+        && parsed.host_str().is_some_and(is_literal_loopback_host)
+    {
+        return Ok(());
+    }
+    bail!("database must be staging or the guarded loopback qintopia_test fixture")
+}
+
+fn disposable_postgres_smoke_enabled() -> bool {
+    cfg!(feature = "postgres-integration-tests")
+        && std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE")
+            .is_ok_and(|value| value.trim() == "1")
+}
+
+fn validate_disposable_test_adapter_boundary(config: &AdapterConfig) -> Result<()> {
+    for endpoint in [
+        &config.provider_endpoint,
+        &config.media_upload_endpoint,
+        &config.media_public_base_url,
+    ] {
+        if !endpoint.host_str().is_some_and(is_literal_loopback_host) {
+            bail!("disposable image adapter endpoints must be loopback-only");
+        }
+    }
+    if config
+        .media_allowed_hosts
+        .iter()
+        .any(|host| !is_literal_loopback_host(host))
+    {
+        bail!("disposable image media allowlist must be loopback-only");
     }
     Ok(())
+}
+
+fn is_literal_loopback_host(host: &str) -> bool {
+    host.parse::<IpAddr>()
+        .is_ok_and(|address| address.is_loopback())
 }
 
 async fn record_generation_failure_report(
@@ -1820,17 +1868,46 @@ mod tests {
         let database_url = "postgres://user:secret@127.0.0.1:5432/qintopia_staging";
         let expected_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
 
-        assert!(validate_staging_database_boundary(database_url, &expected_hash).is_ok());
+        assert!(validate_staging_database_boundary(database_url, &expected_hash, false).is_ok());
         assert!(validate_staging_database_boundary(
             "postgres://user:secret@127.0.0.1:5432/qintopia_production",
             &format!(
                 "{:x}",
                 Sha256::digest(b"postgres://user:secret@127.0.0.1:5432/qintopia_production")
-            )
+            ),
+            false,
         )
         .is_err());
-        assert!(validate_staging_database_boundary(database_url, &"0".repeat(64)).is_err());
-        assert!(validate_staging_database_boundary(database_url, &"A".repeat(64)).is_err());
+        assert!(validate_staging_database_boundary(database_url, &"0".repeat(64), false).is_err());
+        assert!(validate_staging_database_boundary(database_url, &"A".repeat(64), false).is_err());
+    }
+
+    #[test]
+    fn disposable_database_exception_requires_exact_loopback_test_boundary() {
+        let loopback_url = "postgres://user:secret@127.0.0.1:5432/qintopia_test";
+        let loopback_hash = format!("{:x}", Sha256::digest(loopback_url.as_bytes()));
+        assert!(validate_staging_database_boundary(loopback_url, &loopback_hash, true).is_ok());
+        assert!(validate_staging_database_boundary(loopback_url, &loopback_hash, false).is_err());
+
+        let named_loopback_url = "postgres://user:secret@localhost:5432/qintopia_test";
+        let named_loopback_hash = format!("{:x}", Sha256::digest(named_loopback_url.as_bytes()));
+        assert!(
+            validate_staging_database_boundary(named_loopback_url, &named_loopback_hash, true)
+                .is_err()
+        );
+
+        let remote_url = "postgres://user:secret@db.example.test:5432/qintopia_test";
+        let remote_hash = format!("{:x}", Sha256::digest(remote_url.as_bytes()));
+        assert!(validate_staging_database_boundary(remote_url, &remote_hash, true).is_err());
+    }
+
+    #[test]
+    fn disposable_adapter_exception_rejects_every_external_host() {
+        assert!(validate_disposable_test_adapter_boundary(&test_http_config(1)).is_ok());
+        assert!(validate_disposable_test_adapter_boundary(&test_config(
+            "https://media.example.test/public"
+        ))
+        .is_err());
     }
 
     #[cfg(not(feature = "huabaosi-staging-adapter"))]

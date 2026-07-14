@@ -271,6 +271,12 @@ Use `rg` and `rg --files` for search.
   validate the exact owner phrase, approved database URL hash, staging database name,
   and adapter configuration in Rust before connecting to Postgres; the smoke shell is
   not an authorization boundary.
+- The disposable operations apply smoke may exercise the Huabaosi retry state only when
+  both `huabaosi-staging-adapter` and `postgres-integration-tests` are compiled,
+  `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1`, the database is exactly `qintopia_test` on
+  a literal loopback IP with its approved URL hash, and every provider/media endpoint
+  and allowlist host is a literal loopback IP. This exception must never accept an
+  external host or production database.
 - `operations-artifact-review-decision` may approve a `generated_image` only after its
   Huabaosi worker provenance, stable JPEG HTTPS URI, final JPEG sha256/metadata, source
   PNG sha256, fixed `png_to_jpeg_white_background_q92_v1` transform metadata, source

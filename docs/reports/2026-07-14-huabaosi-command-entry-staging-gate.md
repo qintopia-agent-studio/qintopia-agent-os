@@ -69,7 +69,7 @@ provider/media tests attempted to bind loopback and received `PermissionDenied`.
 same commands were rerun with loopback permission and passed; no test was skipped or
 weakened.
 
-The complete default suite passed 304 tests. The all-feature suite passed 300 tests and
+The complete default suite passed 306 tests. The all-feature suite passed 302 tests and
 kept eight guarded disposable-PostgreSQL tests ignored. Warning-denied Clippy passed for
 both no-default-features and all-features builds. The first default Clippy run
 identified a conditional-compilation tail expression with a redundant `return`; the code
@@ -85,3 +85,20 @@ lint, Prettier, secret scanning, Rust formatting, shell parsing, and `git diff -
 passed. The managed shell refused direct execution of `.husky/pre-commit` even though
 git and the filesystem retain mode `100755`; invoking the same tracked hook body with
 `sh .husky/pre-commit` passed every check.
+
+## PostgreSQL CI Follow-up
+
+The first PR workflow failed in `Xiaoman PostgreSQL integration` because the existing
+operations apply smoke invoked Huabaosi `--apply` with a default binary. The new compile
+gate correctly returned `staging_adapter_not_compiled`, while the smoke still expected
+the former disabled-state success and later expected to exercise provider retry state.
+No database assertion, provider call, or production boundary failed.
+
+The smoke now compiles the Huabaosi staging adapter together with the existing
+`postgres-integration-tests` feature. Rust permits its non-staging database exception
+only when the explicit apply-smoke flag is set, the exact hashed database URL names
+`qintopia_test` on a literal loopback IP without query parameters, and every
+provider/media endpoint and allowlist host is a literal loopback IP. The smoke uses the
+same owner phrase and URL-hash gate as staging, then targets the existing refused
+loopback provider port. A production/default binary, a normal staging-feature binary, an
+external host, or any other database cannot use this path.
