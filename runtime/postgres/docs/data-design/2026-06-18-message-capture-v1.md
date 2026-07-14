@@ -35,6 +35,20 @@ This version is the foundation for later migrations. The sidecar write path uses
 explicit column lists so additive columns in later migrations do not break message
 capture.
 
+## Current Storage Safety Boundary
+
+As of 2026-07-14, the schema remains unchanged but the write path treats QiWe
+asynchronous `cmd=20000` callbacks differently from ordinary raw messages. Callback
+correlation ids are hashed and the entire callback payload is rebuilt from fixed event
+and `msgData` field-presence metadata before `raw_events` persistence. File credentials,
+media URLs, filenames, envelope siblings, unknown field values, and an unredacted
+callback event id are not stored.
+
+Invalid or unparseable dead-letter payloads retain only their byte count and SHA-256 in
+the existing `payload_text` column. The original bytes are not stored, so malformed
+callbacks cannot bypass the callback sanitizer. Ordinary non-callback raw message
+payloads keep the original v1 behavior.
+
 ## Known Gaps
 
 The initial version intentionally left several Agent OS concerns for later migrations:

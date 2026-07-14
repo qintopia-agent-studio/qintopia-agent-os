@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +13,7 @@ DEFAULT_NATS_URL = "nats://127.0.0.1:4222"
 DEFAULT_RAW_SUBJECT = "qintopia.qiwe.raw"
 DEFAULT_MESSAGE_SUBJECT = "qintopia.qiwe.message"
 DEFAULT_TIMEOUT_SECONDS = 0.5
+QIWE_ASYNC_CALLBACK_COMMAND = 20_000
 
 
 @dataclass
@@ -106,6 +108,9 @@ def build_capture_events(parsed: Any, raw_body: bytes, identity: Any = None) -> 
         raise ValueError("parsed QiWe message missing message_id")
 
     raw_payload = json.loads(raw_body.decode("utf-8"))
+    raw_payload, callback_sanitized = _sanitize_qiwe_capture_payload(raw_payload)
+    if callback_sanitized:
+        message_id = _callback_event_id(message_id)
     raw_event = {
         "event_id": message_id,
         "received_at": received_at,
@@ -114,14 +119,17 @@ def build_capture_events(parsed: Any, raw_body: bytes, identity: Any = None) -> 
     }
 
     conversation_type = str(getattr(parsed, "conversation_type", "") or "group")
-    chat_id = str(getattr(parsed, "chat_id", "") or "").strip()
-    if not chat_id:
+    chat_id = "" if callback_sanitized else str(getattr(parsed, "chat_id", "") or "").strip()
+    if not chat_id and not callback_sanitized:
         chat_id = str(getattr(parsed, "group_id", "") or getattr(parsed, "sender_id", "") or "").strip()
 
-    parsed_sender_id = str(getattr(parsed, "sender_id", "") or "").strip()
-    parsed_sender_name = str(getattr(parsed, "sender_name", "") or "").strip()
+    parsed_sender_id = "" if callback_sanitized else str(getattr(parsed, "sender_id", "") or "").strip()
+    parsed_sender_name = "" if callback_sanitized else str(getattr(parsed, "sender_name", "") or "").strip()
     identity_display_name = str(getattr(identity, "display_name", "") or "").strip() if identity is not None else ""
     identity_source = str(getattr(identity, "source", "") or "").strip() if identity is not None else ""
+    if callback_sanitized:
+        identity_display_name = ""
+        identity_source = ""
     if identity_source == "fallback" and identity_display_name == parsed_sender_id:
         identity_display_name = ""
         identity_source = ""
@@ -149,22 +157,195 @@ def build_capture_events(parsed: Any, raw_body: bytes, identity: Any = None) -> 
         "platform": "qiwe",
         "chat_id": chat_id,
         "chat_type": "direct" if conversation_type == "direct" else "group",
-        "sender_id": str(getattr(parsed, "sender_id", "") or ""),
+        "sender_id": parsed_sender_id,
         "sender_name": sender_name,
         "sender_identity": sender_identity,
-        "text": str(getattr(parsed, "text", "") or ""),
-        "message_kind": str(getattr(parsed, "message_kind", "") or "unsupported"),
-        "is_mention_bot": bool(getattr(parsed, "is_mentioned", False)),
-        "should_trigger": bool(getattr(parsed, "should_trigger", False)),
-        "trigger_reason": str(getattr(parsed, "reason", "") or ""),
+        "text": "" if callback_sanitized else str(getattr(parsed, "text", "") or ""),
+        "message_kind": "system" if callback_sanitized else str(getattr(parsed, "message_kind", "") or "unsupported"),
+        "is_mention_bot": False if callback_sanitized else bool(getattr(parsed, "is_mentioned", False)),
+        "should_trigger": False if callback_sanitized else bool(getattr(parsed, "should_trigger", False)),
+        "trigger_reason": "qiwe_async_callback_sanitized" if callback_sanitized else str(getattr(parsed, "reason", "") or ""),
         "sent_at": _datetime_to_iso(getattr(parsed, "timestamp", None)),
         "received_at": received_at,
-        "raw": getattr(parsed, "raw_event", {}) if isinstance(getattr(parsed, "raw_event", {}), dict) else {},
-        "mentions": list(getattr(parsed, "at_list", []) or []),
-        "attachments": list(getattr(parsed, "attachments", []) or []),
-        "content": str(getattr(parsed, "content", "") or ""),
+        "raw": raw_payload if callback_sanitized else (getattr(parsed, "raw_event", {}) if isinstance(getattr(parsed, "raw_event", {}), dict) else {}),
+        "mentions": [] if callback_sanitized else list(getattr(parsed, "at_list", []) or []),
+        "attachments": [] if callback_sanitized else list(getattr(parsed, "attachments", []) or []),
+        "content": "" if callback_sanitized else str(getattr(parsed, "content", "") or ""),
     }
     return raw_event, message_event, message_id
+
+
+def _sanitize_qiwe_capture_payload(value: Any) -> Tuple[Any, bool]:
+    if (
+        isinstance(value, dict)
+        and value.get("source") == "qiwe_async_callback"
+        and value.get("credentials_redacted") is True
+        and isinstance(value.get("callback_events"), list)
+    ):
+        return _canonicalize_sanitized_callback_payload(value), True
+    callback_events: list[Dict[str, Any]] = []
+    _collect_callback_events(value, callback_events)
+    if not callback_events:
+        return value, False
+    return (
+        {
+            "callback_event_count": len(callback_events),
+            "callback_events": callback_events,
+            "credentials_redacted": True,
+            "source": "qiwe_async_callback",
+        },
+        True,
+    )
+
+
+def _canonicalize_sanitized_callback_payload(value: Dict[str, Any]) -> Dict[str, Any]:
+    callback_events = [
+        canonical
+        for event in value.get("callback_events", [])
+        if (canonical := _canonicalize_sanitized_callback_event(event)) is not None
+    ]
+    return {
+        "callback_event_count": len(callback_events),
+        "callback_events": callback_events,
+        "credentials_redacted": True,
+        "source": "qiwe_async_callback",
+    }
+
+
+def _canonicalize_sanitized_callback_event(value: Any) -> Dict[str, Any] | None:
+    if not isinstance(value, dict) or not _is_async_callback_event(value):
+        return None
+    request_id_sha256 = _value_for_key(value, "requestidsha256")
+    if not _is_sha256_marker(request_id_sha256):
+        request_id_sha256 = None
+    else:
+        request_id_sha256 = request_id_sha256.lower()
+    return {
+        "cmd": QIWE_ASYNC_CALLBACK_COMMAND,
+        "credentials_redacted": True,
+        "msg_data_summary": _canonicalize_callback_msg_data_summary(
+            _value_for_key(value, "msgdatasummary")
+        ),
+        "request_id_sha256": request_id_sha256,
+    }
+
+
+def _canonicalize_callback_msg_data_summary(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return _callback_msg_data_summary(None)
+    fields = _value_for_key(value, "fieldpresence")
+    fields = fields if isinstance(fields, dict) else {}
+    presence = {
+        "cloud_url": _value_for_key(fields, "cloudurl") is True,
+        "file_aes_key": _value_for_key(fields, "fileaeskey") is True,
+        "file_id": _value_for_key(fields, "fileid") is True,
+        "file_md5": _value_for_key(fields, "filemd5") is True,
+        "file_size": _value_for_key(fields, "filesize") is True,
+        "filename": _value_for_key(fields, "filename") is True,
+    }
+    unknown_field_count = _value_for_key(value, "unknownfieldcount")
+    if not isinstance(unknown_field_count, int) or isinstance(unknown_field_count, bool):
+        unknown_field_count = 0
+    return {
+        "field_presence": presence,
+        "msg_data_object": _value_for_key(value, "msgdataobject") is True,
+        "msg_data_present": _value_for_key(value, "msgdatapresent") is True,
+        "required_fields_present": all(
+            presence[field]
+            for field in ("file_aes_key", "file_id", "file_md5", "file_size", "filename")
+        ),
+        "unknown_field_count": max(0, unknown_field_count),
+    }
+
+
+def _is_sha256_marker(value: Any) -> bool:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        return False
+    digest = value.removeprefix("sha256:")
+    return len(digest) == 64 and all(char in "0123456789abcdefABCDEF" for char in digest)
+
+
+def _collect_callback_events(value: Any, events: list[Dict[str, Any]]) -> None:
+    if isinstance(value, dict):
+        if _is_async_callback_event(value):
+            events.append(_sanitize_callback_event(value))
+            return
+        for item in value.values():
+            _collect_callback_events(item, events)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_callback_events(item, events)
+
+
+def _is_async_callback_event(value: Dict[str, Any]) -> bool:
+    command = _value_for_key(value, "cmd")
+    try:
+        return int(command) == QIWE_ASYNC_CALLBACK_COMMAND
+    except (TypeError, ValueError):
+        return False
+
+
+def _sanitize_callback_event(value: Dict[str, Any]) -> Dict[str, Any]:
+    request_id = _value_for_key(value, "requestid")
+    request_id_text = str(request_id).strip() if isinstance(request_id, (str, int)) else ""
+    return {
+        "cmd": QIWE_ASYNC_CALLBACK_COMMAND,
+        "credentials_redacted": True,
+        "msg_data_summary": _callback_msg_data_summary(_value_for_key(value, "msgdata")),
+        "request_id_sha256": f"sha256:{_sha256(request_id_text.encode('utf-8'))}" if request_id_text else None,
+    }
+
+
+def _callback_msg_data_summary(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {
+            "field_presence": {},
+            "msg_data_object": False,
+            "msg_data_present": value is not None,
+            "required_fields_present": False,
+            "unknown_field_count": 0,
+        }
+    normalized_keys = {_normalize_key(key) for key in value}
+    known_fields = {"fileaeskey", "fileid", "filemd5", "filesize", "filename", "cloudurl"}
+    presence = {
+        "cloud_url": "cloudurl" in normalized_keys,
+        "file_aes_key": "fileaeskey" in normalized_keys,
+        "file_id": "fileid" in normalized_keys,
+        "file_md5": "filemd5" in normalized_keys,
+        "file_size": "filesize" in normalized_keys,
+        "filename": "filename" in normalized_keys,
+    }
+    return {
+        "field_presence": presence,
+        "msg_data_object": True,
+        "msg_data_present": True,
+        "required_fields_present": all(
+            presence[field]
+            for field in ("file_aes_key", "file_id", "file_md5", "file_size", "filename")
+        ),
+        "unknown_field_count": len(normalized_keys - known_fields),
+    }
+
+
+def _value_for_key(value: Dict[str, Any], expected: str) -> Any:
+    for key, item in value.items():
+        if _normalize_key(key) == expected:
+            return item
+    return None
+
+
+def _normalize_key(value: Any) -> str:
+    return "".join(char.lower() for char in str(value) if char.isascii() and char.isalnum())
+
+
+def _callback_event_id(value: str) -> str:
+    if value.startswith("qiwe-callback:"):
+        return value
+    return f"qiwe-callback:{_sha256(value.encode('utf-8'))}"
+
+
+def _sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
 
 
 def _connect_payload(user: str, password: str) -> bytes:

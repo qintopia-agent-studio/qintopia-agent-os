@@ -370,5 +370,12 @@ jobs:
           group_message_send::tests::postgres_send_ready_is_idempotent_and_fails_closed
           -- --ignored --exact
 
+      - name: QiWe callback capture-storage redaction integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          event::tests::postgres_callback_storage_redacts_credentials -- --ignored
+          --exact
+
       - name: Xiaoman downstream apply smoke
         run: deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh

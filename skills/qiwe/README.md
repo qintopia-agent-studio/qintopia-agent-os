@@ -42,6 +42,10 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
 - Exposes controlled QiWe channel tools for location cards, direct messages,
   rich/media/card sends, revocation, voice-to-text, direct-contact requests, and human
   handoff.
+- Rebuilds asynchronous `cmd=20000` callback capture into hashed correlation and fixed
+  field-presence metadata before publishing to NATS. Callback credentials, URLs,
+  filenames, message content, identities, and unknown values are not published; the Rust
+  sidecar independently enforces the same boundary before Postgres writes.
 - Supports passive processors such as group-solitaire activity collection when enabled.
 - Keeps Feishu activity writes and reminders behind explicit scoped configuration.
 - Treats Erhua trainer memory as a controlled context-MCP path, not free-form prompt

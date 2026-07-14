@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     config::Cli,
     db,
-    event::{NormalizedMessageEvent, RawQiweEvent},
+    event::{dead_letter_payload_summary, NormalizedMessageEvent, RawQiweEvent},
 };
 
 pub async fn run(cli: Cli) -> Result<()> {
@@ -97,7 +97,6 @@ pub async fn run(cli: Cli) -> Result<()> {
 async fn handle_nats_message(pool: &PgPool, cli: &Cli, message: jetstream::Message) -> Result<()> {
     let subject = message.subject.to_string();
     let stream_sequence = message.info().ok().map(|info| info.stream_sequence);
-    let payload_text = String::from_utf8_lossy(&message.payload).to_string();
     let outcome = process_payload(pool, cli, &subject, stream_sequence, &message.payload).await;
 
     match outcome {
@@ -120,7 +119,7 @@ async fn handle_nats_message(pool: &PgPool, cli: &Cli, message: jetstream::Messa
                 &cli.consumer,
                 &kind,
                 &error,
-                &payload_text,
+                &dead_letter_payload_summary(&message.payload),
             )
             .await?;
             ack(&message).await.context("ack dead-lettered message")?;

@@ -188,6 +188,12 @@ Use `rg` and `rg --files` for search.
   `run-xiaoman-activity-image-generation-starter-worker --once --apply` for AgentOS
   image-generation request intake. Do not repurpose it for provider calls, media upload,
   generated-image creation, Feishu writeback, QiWe sends, or publishing.
+- QiWe asynchronous `cmd=20000` callback events must be sanitized before NATS capture
+  publication and independently before the sidecar writes Postgres. Persist only hashed
+  correlation and fixed field-presence metadata; never publish or persist callback file
+  credentials, media URLs, filenames, identities, message content, unknown values, or an
+  unredacted callback event id. Invalid/dead-letter payloads must store only a digest
+  and byte count, never the raw payload.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
   storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
