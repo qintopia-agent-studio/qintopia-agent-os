@@ -72,6 +72,10 @@ pub struct QiweImageSendWorkerReport {
     pub work_item_id: Option<Uuid>,
     pub external_upload_requested: bool,
     pub callback_received: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_credential_schema: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_additional_field_count: Option<usize>,
     pub external_send_executed: Option<bool>,
     pub safe_for_chat: bool,
     pub limitations: Vec<String>,
@@ -181,8 +185,15 @@ struct CallbackEvent {
 
 struct ParsedCallback {
     request_id: String,
+    credential_shape: CallbackCredentialShape,
     #[cfg(any(test, feature = "qiwe-staging-adapter"))]
     credentials: QiweImageCredentials,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CallbackCredentialShape {
+    schema_id: &'static str,
+    additional_field_count: usize,
 }
 
 impl Drop for ParsedCallback {
@@ -637,17 +648,20 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
     let callback = read_callback_stdin()?;
     let parsed = parse_single_async_upload_callback(&callback)?;
     if !apply_requested {
-        let report = worker_report(WorkerReportState {
-            success: true,
-            dry_run: true,
-            apply_requested: false,
-            phase: "callback",
-            action_status: "callback_preview".to_string(),
-            work_item_id: None,
-            external_upload_requested: false,
-            callback_received: true,
-            external_send_executed: None,
-        });
+        let report = callback_worker_report(
+            WorkerReportState {
+                success: true,
+                dry_run: true,
+                apply_requested: false,
+                phase: "callback",
+                action_status: "callback_preview".to_string(),
+                work_item_id: None,
+                external_upload_requested: false,
+                callback_received: true,
+                external_send_executed: None,
+            },
+            parsed.credential_shape,
+        );
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
@@ -693,32 +707,38 @@ async fn run_enabled_callback_processor(
     .await?;
     let send_claim = match outcome {
         CallbackClaimOutcome::Duplicate { status } => {
-            let report = worker_report(WorkerReportState {
-                success: true,
-                dry_run: false,
-                apply_requested: true,
-                phase: "callback",
-                action_status: format!("callback_duplicate_{status}"),
-                work_item_id: None,
-                external_upload_requested: false,
-                callback_received: true,
-                external_send_executed: None,
-            });
+            let report = callback_worker_report(
+                WorkerReportState {
+                    success: true,
+                    dry_run: false,
+                    apply_requested: true,
+                    phase: "callback",
+                    action_status: format!("callback_duplicate_{status}"),
+                    work_item_id: None,
+                    external_upload_requested: false,
+                    callback_received: true,
+                    external_send_executed: None,
+                },
+                parsed.credential_shape,
+            );
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
         CallbackClaimOutcome::Expired => {
-            let report = worker_report(WorkerReportState {
-                success: true,
-                dry_run: false,
-                apply_requested: true,
-                phase: "callback",
-                action_status: "callback_expired".to_string(),
-                work_item_id: None,
-                external_upload_requested: false,
-                callback_received: true,
-                external_send_executed: Some(false),
-            });
+            let report = callback_worker_report(
+                WorkerReportState {
+                    success: true,
+                    dry_run: false,
+                    apply_requested: true,
+                    phase: "callback",
+                    action_status: "callback_expired".to_string(),
+                    work_item_id: None,
+                    external_upload_requested: false,
+                    callback_received: true,
+                    external_send_executed: Some(false),
+                },
+                parsed.credential_shape,
+            );
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
@@ -739,17 +759,20 @@ async fn run_enabled_callback_processor(
                 SendFailureDisposition::Rejected,
             )
             .await?;
-            let report = worker_report(WorkerReportState {
-                success: false,
-                dry_run: false,
-                apply_requested: true,
-                phase: "callback",
-                action_status: "send_request_rejected".to_string(),
-                work_item_id: Some(work_item_id),
-                external_upload_requested: false,
-                callback_received: true,
-                external_send_executed: Some(false),
-            });
+            let report = callback_worker_report(
+                WorkerReportState {
+                    success: false,
+                    dry_run: false,
+                    apply_requested: true,
+                    phase: "callback",
+                    action_status: "send_request_rejected".to_string(),
+                    work_item_id: Some(work_item_id),
+                    external_upload_requested: false,
+                    callback_received: true,
+                    external_send_executed: Some(false),
+                },
+                parsed.credential_shape,
+            );
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
@@ -766,17 +789,20 @@ async fn run_enabled_callback_processor(
     match send_result {
         Ok(receipt) => {
             qiwe_image_send_state::record_send_success(&pool, &send_claim, &receipt).await?;
-            let report = worker_report(WorkerReportState {
-                success: true,
-                dry_run: false,
-                apply_requested: true,
-                phase: "callback",
-                action_status: "image_send_completed".to_string(),
-                work_item_id: Some(work_item_id),
-                external_upload_requested: false,
-                callback_received: true,
-                external_send_executed: Some(true),
-            });
+            let report = callback_worker_report(
+                WorkerReportState {
+                    success: true,
+                    dry_run: false,
+                    apply_requested: true,
+                    phase: "callback",
+                    action_status: "image_send_completed".to_string(),
+                    work_item_id: Some(work_item_id),
+                    external_upload_requested: false,
+                    callback_received: true,
+                    external_send_executed: Some(true),
+                },
+                parsed.credential_shape,
+            );
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Err(failure) => {
@@ -785,24 +811,27 @@ async fn run_enabled_callback_processor(
                 SendCallFailure::Ambiguous => SendFailureDisposition::Ambiguous,
             };
             qiwe_image_send_state::record_send_failure(&pool, &send_claim, disposition).await?;
-            let report = worker_report(WorkerReportState {
-                success: false,
-                dry_run: false,
-                apply_requested: true,
-                phase: "callback",
-                action_status: match failure {
-                    SendCallFailure::NotSent => "image_send_not_sent",
-                    SendCallFailure::Ambiguous => "image_send_ambiguous",
-                }
-                .to_string(),
-                work_item_id: Some(work_item_id),
-                external_upload_requested: false,
-                callback_received: true,
-                external_send_executed: match failure {
-                    SendCallFailure::NotSent => Some(false),
-                    SendCallFailure::Ambiguous => None,
+            let report = callback_worker_report(
+                WorkerReportState {
+                    success: false,
+                    dry_run: false,
+                    apply_requested: true,
+                    phase: "callback",
+                    action_status: match failure {
+                        SendCallFailure::NotSent => "image_send_not_sent",
+                        SendCallFailure::Ambiguous => "image_send_ambiguous",
+                    }
+                    .to_string(),
+                    work_item_id: Some(work_item_id),
+                    external_upload_requested: false,
+                    callback_received: true,
+                    external_send_executed: match failure {
+                        SendCallFailure::NotSent => Some(false),
+                        SendCallFailure::Ambiguous => None,
+                    },
                 },
-            });
+                parsed.credential_shape,
+            );
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
     }
@@ -932,8 +961,8 @@ fn read_callback_stdin() -> Result<Zeroizing<Vec<u8>>> {
 
 fn parse_single_async_upload_callback(body: &[u8]) -> Result<ParsedCallback> {
     validate_json_body_size(body)?;
-    let envelope: CallbackEnvelope =
-        serde_json::from_slice(body).context("parse QiWe async upload callback")?;
+    let envelope: CallbackEnvelope = serde_json::from_slice(body)
+        .map_err(|_| anyhow!("QiWe async upload callback shape is invalid"))?;
     if envelope.code != 0 {
         bail!("QiWe async upload callback reported failure");
     }
@@ -947,19 +976,68 @@ fn parse_single_async_upload_callback(body: &[u8]) -> Result<ParsedCallback> {
     }
     let event = events.pop().expect("single callback event exists");
     validate_plain_value(&event.request_id, "QiWe upload request id")?;
-    let credentials: QiweImageCredentials = serde_json::from_value(
-        event
-            .msg_data
-            .context("QiWe async upload callback is missing msgData")?,
-    )
-    .context("QiWe async upload callback is missing file credentials")?;
+    let msg_data = event
+        .msg_data
+        .context("QiWe async upload callback is missing msgData")?;
+    let credential_shape = classify_callback_credential_shape(&msg_data)?;
+    let credentials: QiweImageCredentials = serde_json::from_value(msg_data)
+        .map_err(|_| anyhow!("QiWe async upload callback credentials are invalid"))?;
     credentials.validate()?;
     #[cfg(not(any(test, feature = "qiwe-staging-adapter")))]
     drop(credentials);
     Ok(ParsedCallback {
         request_id: event.request_id,
+        credential_shape,
         #[cfg(any(test, feature = "qiwe-staging-adapter"))]
         credentials,
+    })
+}
+
+fn classify_callback_credential_shape(msg_data: &Value) -> Result<CallbackCredentialShape> {
+    let fields = msg_data
+        .as_object()
+        .context("QiWe async upload callback msgData must be an object")?;
+    let aes_key_is_canonical = fields.contains_key("fileAesKey");
+    let aes_key_is_alias = fields.contains_key("fileAeskey");
+    if aes_key_is_canonical == aes_key_is_alias {
+        bail!("QiWe callback must contain exactly one file AES key field spelling");
+    }
+    let filename_is_canonical = fields.contains_key("filename");
+    let filename_is_alias = fields.contains_key("fileName");
+    if filename_is_canonical == filename_is_alias {
+        bail!("QiWe callback must contain exactly one filename field spelling");
+    }
+    if !["fileId", "fileMd5", "fileSize"]
+        .into_iter()
+        .all(|field| fields.contains_key(field))
+    {
+        bail!("QiWe callback is missing required credential fields");
+    }
+
+    // Field names are staging evidence; values remain memory-only, so aliases collapse into fixed public schema IDs.
+    let schema_id = match (aes_key_is_canonical, filename_is_canonical) {
+        (true, true) => "fileAesKey+fileId+fileMd5+fileSize+filename",
+        (false, true) => "fileAeskey+fileId+fileMd5+fileSize+filename",
+        (true, false) => "fileAesKey+fileId+fileMd5+fileSize+fileName",
+        (false, false) => "fileAeskey+fileId+fileMd5+fileSize+fileName",
+    };
+    let reviewed_fields = [
+        "fileAesKey",
+        "fileAeskey",
+        "fileId",
+        "fileMd5",
+        "fileSize",
+        "filename",
+        "fileName",
+    ];
+    let additional_field_count = fields
+        .keys()
+        .filter(|field| !reviewed_fields.contains(&field.as_str()))
+        .count();
+
+    Ok(CallbackCredentialShape {
+        schema_id,
+        additional_field_count,
     })
 }
 
@@ -974,6 +1052,8 @@ fn worker_report(state: WorkerReportState) -> QiweImageSendWorkerReport {
         work_item_id: state.work_item_id,
         external_upload_requested: state.external_upload_requested,
         callback_received: state.callback_received,
+        callback_credential_schema: None,
+        callback_additional_field_count: None,
         external_send_executed: state.external_send_executed,
         safe_for_chat: false,
         limitations: vec![
@@ -987,6 +1067,16 @@ fn worker_report(state: WorkerReportState) -> QiweImageSendWorkerReport {
             "no Feishu writeback or unrelated external adapter is called".to_string(),
         ],
     }
+}
+
+fn callback_worker_report(
+    state: WorkerReportState,
+    credential_shape: CallbackCredentialShape,
+) -> QiweImageSendWorkerReport {
+    let mut report = worker_report(state);
+    report.callback_credential_schema = Some(credential_shape.schema_id);
+    report.callback_additional_field_count = Some(credential_shape.additional_field_count);
+    report
 }
 
 fn validate_contract() -> Result<()> {
@@ -1447,6 +1537,47 @@ mod tests {
             allowed_group_count: 1,
             missing_configuration: Vec::new(),
         })
+    }
+
+    fn test_callback_body(
+        aes_key_field: &str,
+        filename_field: &str,
+        additional_fields: &[(&str, Value)],
+    ) -> Vec<u8> {
+        let mut msg_data = serde_json::Map::new();
+        msg_data.insert(
+            aes_key_field.to_string(),
+            Value::String("callback-aes-secret".to_string()),
+        );
+        msg_data.insert(
+            "fileId".to_string(),
+            Value::String("callback-file-secret".to_string()),
+        );
+        msg_data.insert(
+            "fileMd5".to_string(),
+            Value::String("98e7c2acf4391f8b4a2bbd39e364c5e3".to_string()),
+        );
+        msg_data.insert("fileSize".to_string(), Value::from(48_301));
+        msg_data.insert(
+            filename_field.to_string(),
+            Value::String("private-activity-poster.jpg".to_string()),
+        );
+        for (name, value) in additional_fields {
+            msg_data.insert((*name).to_string(), value.clone());
+        }
+
+        serde_json::to_vec(&serde_json::json!({
+            "code": 0,
+            "data": [
+                {"requestId": "ignored-sync-event", "cmd": 10000, "msgData": {}},
+                {
+                    "requestId": "callback-request-secret",
+                    "cmd": 20000,
+                    "msgData": msg_data,
+                }
+            ]
+        }))
+        .expect("serialize test callback")
     }
 
     #[test]
@@ -2242,31 +2373,143 @@ mod tests {
     }
 
     #[test]
-    fn single_callback_parser_accepts_one_async_event_with_credential_aliases() {
-        let parsed = parse_single_async_upload_callback(
-            br#"{
-              "code":0,
-              "data":[
-                {"requestId":"ignored-sync-event","cmd":10000,"msgData":{}},
-                {
-                  "requestId":"upload-request-1",
-                  "cmd":20000,
-                  "msgData":{
-                    "fileAeskey":"aes-key",
-                    "fileId":"file-id",
-                    "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
-                    "fileSize":48300,
-                    "fileName":"activity-poster.jpg"
-                  }
-                }
-              ]
-            }"#,
-        )
-        .expect("parse single async upload callback");
+    fn callback_parser_reports_each_reviewed_credential_schema() {
+        for (aes_key_field, filename_field, schema_id) in [
+            (
+                "fileAesKey",
+                "filename",
+                "fileAesKey+fileId+fileMd5+fileSize+filename",
+            ),
+            (
+                "fileAeskey",
+                "filename",
+                "fileAeskey+fileId+fileMd5+fileSize+filename",
+            ),
+            (
+                "fileAesKey",
+                "fileName",
+                "fileAesKey+fileId+fileMd5+fileSize+fileName",
+            ),
+            (
+                "fileAeskey",
+                "fileName",
+                "fileAeskey+fileId+fileMd5+fileSize+fileName",
+            ),
+        ] {
+            let body = test_callback_body(aes_key_field, filename_field, &[]);
+            let parsed = parse_single_async_upload_callback(&body)
+                .expect("parse reviewed callback credential schema");
 
-        assert_eq!(parsed.request_id, "upload-request-1");
-        assert_eq!(parsed.credentials.file_aes_key, "aes-key");
-        assert_eq!(parsed.credentials.filename, "activity-poster.jpg");
+            assert_eq!(parsed.request_id, "callback-request-secret");
+            assert_eq!(parsed.credentials.file_aes_key, "callback-aes-secret");
+            assert_eq!(parsed.credentials.filename, "private-activity-poster.jpg");
+            assert_eq!(parsed.credential_shape.schema_id, schema_id);
+            assert_eq!(parsed.credential_shape.additional_field_count, 0);
+        }
+    }
+
+    #[test]
+    fn callback_parser_rejects_ambiguous_credential_spellings() {
+        for body in [
+            test_callback_body(
+                "fileAesKey",
+                "filename",
+                &[("fileAeskey", Value::String("alias-secret".to_string()))],
+            ),
+            test_callback_body(
+                "fileAesKey",
+                "filename",
+                &[(
+                    "fileName",
+                    Value::String("alias-private-poster.jpg".to_string()),
+                )],
+            ),
+        ] {
+            assert!(parse_single_async_upload_callback(&body).is_err());
+        }
+    }
+
+    #[test]
+    fn callback_shape_report_counts_additional_fields_without_leaking_input() {
+        let body = test_callback_body(
+            "fileAesKey",
+            "filename",
+            &[
+                (
+                    "providerOpaqueCredential",
+                    Value::String("unknown-provider-secret".to_string()),
+                ),
+                (
+                    "cloudUrl",
+                    Value::String("https://private.example.test/file.jpg".to_string()),
+                ),
+            ],
+        );
+        let parsed = parse_single_async_upload_callback(&body)
+            .expect("parse callback with additional provider fields");
+        let report = callback_worker_report(
+            WorkerReportState {
+                success: true,
+                dry_run: true,
+                apply_requested: false,
+                phase: "callback",
+                action_status: "callback_preview".to_string(),
+                work_item_id: None,
+                external_upload_requested: false,
+                callback_received: true,
+                external_send_executed: None,
+            },
+            parsed.credential_shape,
+        );
+        let serialized = serde_json::to_string(&report).expect("serialize callback report");
+        let value: Value = serde_json::from_str(&serialized).expect("parse callback report");
+
+        assert_eq!(
+            value["callback_credential_schema"],
+            "fileAesKey+fileId+fileMd5+fileSize+filename"
+        );
+        assert_eq!(value["callback_additional_field_count"], 2);
+        for sensitive in [
+            "callback-request-secret",
+            "callback-aes-secret",
+            "callback-file-secret",
+            "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            "48301",
+            "private-activity-poster.jpg",
+            "providerOpaqueCredential",
+            "unknown-provider-secret",
+            "cloudUrl",
+            "https://private.example.test/file.jpg",
+        ] {
+            assert!(!serialized.contains(sensitive));
+        }
+    }
+
+    #[test]
+    fn callback_parse_errors_do_not_echo_malformed_values() {
+        let invalid_credentials = test_callback_body(
+            "fileAesKey",
+            "filename",
+            &[("fileSize", Value::String("private-size-secret".to_string()))],
+        );
+        let invalid_envelope = br#"{
+          "code":0,
+          "data":[{
+            "requestId":"private-request-secret",
+            "cmd":"private-command-secret",
+            "msgData":{}
+          }]
+        }"#;
+
+        for (body, sensitive) in [
+            (invalid_credentials.as_slice(), "private-size-secret"),
+            (invalid_envelope.as_slice(), "private-command-secret"),
+        ] {
+            let Err(error) = parse_single_async_upload_callback(body) else {
+                panic!("malformed callback must fail closed");
+            };
+            assert!(!format!("{error:#}").contains(sensitive));
+        }
     }
 
     #[test]
