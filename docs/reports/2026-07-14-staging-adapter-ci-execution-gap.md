@@ -54,7 +54,7 @@ QiWe, write Feishu, install units, or change runtime configuration.
 ## Local Validation Evidence
 
 Rust 1.96.0 and cargo-nextest 0.9.138 matched the versions pinned by CI. The default
-suite passed 324 tests. The new all-feature command passed 321 tests and skipped the
+suite passed 329 tests. The new all-feature command passed 326 tests and skipped the
 eight guarded disposable-PostgreSQL tests. Both warning-denied Clippy configurations
 passed.
 
