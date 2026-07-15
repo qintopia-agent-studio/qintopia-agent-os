@@ -438,6 +438,57 @@ if (!exists(qiweImageStagingSmokePath)) {
   }
 }
 
+const qiweImageStagingRunbookPath =
+  "docs/operations/qiwe-image-send-staging-runbook.md";
+if (!exists(qiweImageStagingRunbookPath)) {
+  addError(`${qiweImageStagingRunbookPath}: missing QiWe staging runbook`);
+} else {
+  const runbook = readText(qiweImageStagingRunbookPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1",
+    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
+    "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env",
+    "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>'",
+    "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>'",
+    "trusted-staging-callback-source |",
+    "callback credential schema id",
+    "external_send_executed",
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
+    "Do not add production listener, service, timer, or release activation",
+  ]) {
+    requireFragment(qiweImageStagingRunbookPath, runbook, fragment);
+  }
+  for (const fragment of [
+    'source "$ENV_FILE"',
+    ". /etc/qintopia/message-sidecar-staging.env",
+    "callback.json",
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(qiweImageStagingRunbookPath, runbook, fragment);
+  }
+}
+
+for (const relativePath of [
+  "deploy/sidecar/README.md",
+  "docs/plans/active/xiaoman-qiwe-image-send.md",
+]) {
+  const text = readText(relativePath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
+    "trusted-staging-callback-source |",
+  ]) {
+    requireFragment(relativePath, text, fragment);
+  }
+}
+
 if (errors.length > 0) {
   console.error("Deploy contract check failed:");
   for (const error of errors) {

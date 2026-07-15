@@ -163,6 +163,7 @@ asynchronous:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
@@ -171,6 +172,7 @@ deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 
 trusted-staging-callback-source | \
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<same approved staging database URL sha256>' \
@@ -185,7 +187,8 @@ callback processor inherits the stream. The staging env file is parsed as a fixe
 allowlist of literal assignments and is never evaluated as shell. The smoke stores only
 subprocess output in shell memory and validates the fixed report schema through an
 anonymous pipe. It never writes successful, failed, or sensitive subprocess output to a
-file.
+file. The operator checklist and sanitized evidence template live in
+`docs/operations/qiwe-image-send-staging-runbook.md`.
 
 ## Production Boundary
 
