@@ -41,6 +41,15 @@ bundle, installs a fixed allowlist under `/etc/systemd/system`, and enables only
 internal AgentOS worker timers. Those timers may write AgentOS/Postgres state, but they
 do not enable Feishu writeback, QiWe sends, or external adapters.
 
+The deploy artifact may carry the observation-only Xiaoman profile bundle and parity
+smoke. The runner does not render it, read its server-local values, create profile
+symlinks, or restart Xiaoman on the bundle's behalf. Activation requires a later
+reviewed runner change with first-cutover rollback evidence.
+
+A Release containing only observation bundle inputs still follows the workflow's minimum
+internal system-service restart because a deploy artifact is promoted. The observation
+bundle paths themselves are no-restart paths for the Xiaoman gateway.
+
 `workflow_dispatch` remains available as an emergency or diagnostic path, but normal
 operators should publish a GitHub Release instead of manually running deploy Actions.
 Publishing a non-prerelease GitHub Release is the production release entrypoint; the

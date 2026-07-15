@@ -38,6 +38,10 @@ no_restart_paths:
   - "tools/inventory/**"
   - "tools/policy/**"
   - "tools/security/**"
+  - "agents/xiaoman/agent.yaml"
+  - "agents/xiaoman/profile.template.yaml"
+  - "agents/xiaoman/profile-bundle/**"
+  - "runtime/hermes/manifest.yaml"
 
 production_adjacent_paths:
   - "agents/**"

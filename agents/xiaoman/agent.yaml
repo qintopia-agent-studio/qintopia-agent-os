@@ -24,15 +24,19 @@ validation:
     - pnpm smoke:sidecar
     - pnpm registry:check
     - pnpm policy:check
+    - pnpm agents:profile-bundles:check
 dependencies:
   - workflows/activity-promotion
+  - runtime/hermes
   - runtime/sidecar
 tags:
   - agent
   - activity-ops
   - hermes-profile
 next_actions:
-  - Render and release-manage approved SOUL, config, profile, webhook, channel, and cron
-    declarations without copying runtime secrets or state.
+  - Provision the four declared profile bundle values through an owner-approved
+    server-local configuration path, then record byte-for-byte SOUL and profile parity.
+  - Add live profile symlinks only in a later PR with first-cutover backup and rollback
+    evidence; keep config, webhook, channel, cron, secrets, and state runtime-local.
   - Keep the production workflow on internal send-ready until Huabaosi generation and
     QiWe delivery pass isolated owner-approved staging evidence.

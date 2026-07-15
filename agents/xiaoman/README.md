@@ -25,7 +25,9 @@ activity signals and human-confirmed inputs into governed work items.
 - The active `qintopia-tools` plugin and AgentOS workers run from the immutable
   `release/current` artifact.
 - `SOUL.md`, `config.yaml`, `profile.yaml`, webhook/channel declarations, and cron
-  declarations remain runtime-local pending a reviewed profile bundle migration.
+  declarations remain runtime-local. The observation-only bundle under `profile-bundle/`
+  templates `SOUL.md` and `profile.yaml` for strict fixture rendering and future
+  production parity; it does not activate or replace either live file.
 - Runtime `.env`, webhook state, memories, caches, locks, logs, and databases are
   excluded from this package.
 
@@ -35,4 +37,5 @@ activity signals and human-confirmed inputs into governed work items.
 pnpm smoke:sidecar
 pnpm registry:check
 pnpm policy:check
+pnpm agents:profile-bundles:check
 ```

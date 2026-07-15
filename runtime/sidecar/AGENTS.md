@@ -132,6 +132,10 @@ From the monorepo root, prefer:
   HTTPS and the reviewed endpoint/host allowlists.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.
+- `xiaoman-profile-bundle-observation-smoke.sh` may only verify reviewed source hashes
+  and byte parity after rendering into a temporary directory. It must not print
+  server-local identity values, create symlinks, edit live profile files, restart
+  Hermes, write Postgres/Feishu, use external adapters, or send.
 - `huabaosi-wecom-shadow-capture` is a preview-only migration command. It may read one
   event from bounded stdin and emit only sanitized hashes, byte counts, field presence,
   classification, and fixed guardrails. It must not gain an apply mode, connect to

@@ -146,6 +146,13 @@ Use `rg` and `rg --files` for search.
 - Postgres/AgentOS is the system fact source. Feishu is a human workbench and mirror,
   not the source of truth.
 - Hermes remains the Agent runtime. It should not become the business database.
+- `agents/xiaoman/profile-bundle` is observation-only. It may package the reviewed
+  `SOUL.md`/`profile.yaml` templates, strict renderer, fake fixtures, and read-only
+  parity smoke, but the deploy runner must not render it, read its server-local values,
+  create live profile symlinks, or restart Xiaoman for it until a separate cutover PR
+  records production parity and first-cutover rollback. Keep Xiaoman `config.yaml`,
+  webhook secrets, channel identifiers, cron state, `.env`, sessions, auth, messages,
+  memories, logs, cache, locks, and databases out of the bundle.
 - Xiaoman activity signal intake uses `xiaoman-activity signal-ingest` to create
   `xiaoman.create_activity_request` through the operations control plane with
   `requester_agent=default` and `target_agent=xiaoman`; do not bypass capability policy

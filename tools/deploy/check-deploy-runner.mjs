@@ -75,6 +75,8 @@ const requiredFiles = [
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
+  "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
+  "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
 ];
 
 for (const file of requiredFiles) {
@@ -935,6 +937,9 @@ try {
     ["tools/deploy/test-xiaoman-production-observation-contracts.mjs"],
     { cwd: repoRoot }
   );
+  execFileSync("node", ["tools/deploy/test-xiaoman-profile-bundle-observation.mjs"], {
+    cwd: repoRoot,
+  });
 } catch (error) {
   addError(`deploy runner shell syntax check failed: ${error.message}`);
 }
@@ -975,6 +980,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",
     "deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh",
+    "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
+    "agents/xiaoman/profile-bundle",
   ]) {
     if (!builder.includes(fragment)) {
       addError(`tools/deploy/build-deploy-bundle.mjs: must package ${fragment}`);

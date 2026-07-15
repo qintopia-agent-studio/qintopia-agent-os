@@ -34,6 +34,14 @@ Profile bundles should render into immutable release directories under
 Do not replace a live Hermes profile `SOUL.md` or `config.yaml` directly from a feature
 branch.
 
+## Initial Bundle
+
+`agents/xiaoman/profile-bundle` is the first concrete observation-only bundle. It owns a
+strict `SOUL.md` and `profile.yaml` renderer with fake fixtures, but it is not installed
+or rendered by the deploy runner. Production identities remain in a server-local values
+file. The bundle may be used only for read-only parity until a separate cutover PR adds
+backup and rollback behavior.
+
 ## Validation
 
 ```bash

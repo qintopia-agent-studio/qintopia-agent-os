@@ -17,6 +17,23 @@ are wrapped here without changing behavior.
 Smoke checks must be safe by default. Real external sends require separate owner review,
 allowlists, and explicit runtime configuration.
 
+## Xiaoman Profile Bundle Observation
+
+`deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh` renders the
+observation-only Xiaoman bundle into a temporary directory, verifies the reviewed live
+source hashes, and requires byte-for-byte `SOUL.md` and `profile.yaml` parity.
+
+```bash
+sudo env QINTOPIA_XIAOMAN_PROFILE_BUNDLE_OBSERVATION_ENABLE=1 \
+  /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh
+```
+
+The default production values JSON must be root-owned and inaccessible to group/world,
+and the smoke must run as root. A custom fixture path used by local tests must instead
+be owned by that test process. The smoke does not print values, create symlinks, edit
+the live profile, restart Hermes, write a database, use the network, or send externally.
+It is not a cutover approval.
+
 ## Huabaosi WeCom Gateway Observation
 
 `deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh` is the phase-2

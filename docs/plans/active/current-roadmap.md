@@ -32,6 +32,10 @@ unless correcting historical evidence.
      files.
    - Preserve runtime data and local secrets on the server.
    - Start with one low-risk profile before touching group-facing behavior.
+   - Migrate Xiaoman's reviewed non-secret profile behavior through the phased
+     [Xiaoman profile bundle migration](xiaoman-profile-bundle-migration.md). The first
+     PR packages a strict renderer and read-only parity smoke only; live profile
+     symlinks require later parity and rollback evidence.
    - Migrate the live Huabaosi WeCom conversation boundary into the reviewed release
      flow through [Huabaosi WeCom migration](huabaosi-wecom-migration.md). The
      production Bot remains on Hermes until observation, Rust shadow capture, policy
