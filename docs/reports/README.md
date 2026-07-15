@@ -45,6 +45,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-huabaosi-command-entry-staging-gate.md`                                | adopt-input | Huabaosi compile and command-entry staging gate remediation            |
 | `2026-07-14-v028-release-tag-drift.md`                                             | adopt-input | v0.2.8 release tag drift deploy failure                                |
 | `2026-07-14-group-send-ready-claim-cleanup.md`                                     | adopt-input | Group send-ready complete claim release remediation                    |
+| `2026-07-15-huabaosi-wecom-v029-production-observation.md`                         | adopt-input | v0.2.9 Huabaosi WeCom observation and runtime-layout remediation       |
 
 ## Rules
 

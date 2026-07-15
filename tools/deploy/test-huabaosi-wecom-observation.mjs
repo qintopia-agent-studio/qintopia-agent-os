@@ -36,6 +36,10 @@ try {
     `#!/usr/bin/env bash
 set -euo pipefail
 printf 'systemctl %s\\n' "$*" >>"${commandLog}"
+if [[ "$1" != "--user" ]]; then
+  exit 65
+fi
+shift
 case "$1" in
   is-active)
     printf 'active\\n'
@@ -59,6 +63,10 @@ esac
     `#!/usr/bin/env bash
 set -euo pipefail
 printf 'journalctl %s\\n' "$*" >>"${commandLog}"
+if [[ "$1" != "--user" ]]; then
+  exit 65
+fi
+shift
 if [[ -n "\${FAKE_JOURNAL_LEAK:-}" ]]; then
   printf '%s\\n' "\${FAKE_JOURNAL_LEAK}"
   exit 0
@@ -113,6 +121,15 @@ JOURNAL
   }
 
   const commands = fs.readFileSync(commandLog, "utf8");
+  for (const required of [
+    "systemctl --user is-active hermes-gateway-huabaosi.service",
+    "systemctl --user show hermes-gateway-huabaosi.service",
+    "journalctl --user -u hermes-gateway-huabaosi.service",
+  ]) {
+    if (!commands.includes(required)) {
+      throw new Error(`observation did not query the user unit: ${required}`);
+    }
+  }
   for (const forbidden of ["restart", "reload", "start ", "enable ", "disable "]) {
     if (commands.includes(forbidden)) {
       throw new Error(`observation ran forbidden systemctl action: ${forbidden}`);

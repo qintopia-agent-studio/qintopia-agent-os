@@ -17,6 +17,8 @@ cd "$MONOREPO_ROOT"
 
 if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
   BIN_CMD=("$QINTOPIA_SIDECAR_BIN")
+elif [[ -x "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar" ]]; then
+  BIN_CMD=("${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar")
 else
   BIN_CMD=("${CARGO:-cargo}" run --quiet --manifest-path "$SIDECAR_DIR/Cargo.toml" --)
 fi
