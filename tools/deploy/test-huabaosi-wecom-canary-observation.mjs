@@ -23,8 +23,14 @@ const writeExecutable = (filePath, content) => {
 
 try {
   const commandLog = path.join(tmpRoot, "commands.log");
+  const releaseRoot = path.join(tmpRoot, "release");
+  const releaseScript = path.join(
+    releaseRoot,
+    "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh"
+  );
   const systemctl = path.join(tmpRoot, "bin", "systemctl");
   const sidecar = path.join(tmpRoot, "bin", "qintopia-message-sidecar");
+  const releaseSidecar = path.join(releaseRoot, "sidecar/qintopia-message-sidecar");
 
   writeExecutable(
     systemctl,
@@ -79,9 +85,11 @@ cat <<'JSON'
 JSON
 `
   );
+  writeExecutable(releaseSidecar, fs.readFileSync(sidecar, "utf8"));
+  writeExecutable(releaseScript, fs.readFileSync(script, "utf8"));
 
-  const runObservation = (extraEnv = {}) =>
-    spawnSync("bash", [script], {
+  const runObservation = (extraEnv = {}, scriptPath = script) =>
+    spawnSync("bash", [scriptPath], {
       cwd: repoRoot,
       env: {
         ...process.env,
@@ -104,6 +112,26 @@ JSON
     throw new Error("canary observation stdout is missing pass marker");
   }
 
+  fs.writeFileSync(commandLog, "", "utf8");
+  const releaseLayout = runObservation({ QINTOPIA_SIDECAR_BIN: "" }, releaseScript);
+  if (releaseLayout.status !== 0) {
+    throw new Error(
+      `expected release-layout observation to pass\nstdout:\n${releaseLayout.stdout}\nstderr:\n${releaseLayout.stderr}`
+    );
+  }
+  if (
+    !fs
+      .readFileSync(commandLog, "utf8")
+      .includes("sidecar huabaosi-wecom-canary-preflight")
+  ) {
+    throw new Error("release-layout observation did not discover the sidecar binary");
+  }
+
+  fs.writeFileSync(commandLog, "", "utf8");
+  const okWithConfiguredBinary = runObservation();
+  if (okWithConfiguredBinary.status !== 0) {
+    throw new Error("configured sidecar observation must remain supported");
+  }
   const commands = fs.readFileSync(commandLog, "utf8");
   for (const fragment of [
     "huabaosi-wecom-canary-preflight",

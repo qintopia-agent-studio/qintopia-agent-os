@@ -21,9 +21,9 @@ allowlists, and explicit runtime configuration.
 
 `deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh` is the phase-2
 read-only observation smoke for the 阿亮画报师 WeCom migration. It inspects the active
-Hermes gateway service, fixed command shape, public `busy_input_mode`, release/current
-presence, and sanitized journal marker counts for internal filtering, send fallback, and
-API timeouts.
+Hermes user gateway service through `systemctl --user`, its fixed command shape, public
+`busy_input_mode`, release/current presence, and sanitized user-journal marker counts
+for internal filtering, send fallback, and API timeouts.
 
 Run it only after an owner-approved deploy from the immutable release directory:
 
@@ -52,6 +52,9 @@ It does not source `.env`, read stdin, run `--apply`, send WeCom messages, write
 Postgres or Feishu, call QiWe/provider/media endpoints, install units, run image
 generation, or modify live Hermes profile state. A real canary send requires a separate
 owner-reviewed staging command with exact allowlists and the non-default Cargo feature.
+When invoked from an immutable release, it automatically uses
+`release/current/sidecar/qintopia-message-sidecar`; source checkouts continue to use the
+local Cargo fallback unless `QINTOPIA_SIDECAR_BIN` is set explicitly.
 
 ## Xiaoman Production Preflight
 

@@ -210,7 +210,9 @@ if (!exists(huabaosiWeComGatewayObservationPath)) {
   for (const fragment of [
     "QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE",
     "hermes-gateway-huabaosi.service",
-    'show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths',
+    '--user is-active "$SERVICE_NAME"',
+    '--user show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths',
+    '--user -u "$SERVICE_NAME"',
     "WorkingDirectory=${PROFILE_DIR}",
     "--profile huabaosi gateway run --replace",
     "DropInPaths=",
@@ -255,6 +257,7 @@ if (!exists(huabaosiWeComCanaryObservationPath)) {
     "staging_adapter_not_compiled",
     "canary_configuration_not_approved",
     "QINTOPIA_HUABAOSI_WECOM_CANARY_TOKEN",
+    "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar",
     "contains forbidden sensitive output",
   ]) {
     requireFragment(huabaosiWeComCanaryObservationPath, smoke, fragment);

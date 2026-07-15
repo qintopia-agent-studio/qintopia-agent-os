@@ -345,17 +345,20 @@ Use `rg` and `rg --files` for search.
   It must not use `--apply`, contact provider/media endpoints, write Postgres or Feishu,
   call QiWe, create a generated image, or publish.
 - `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
-  Hermes WeCom gateway service active state, fixed service command, public
-  `busy_input_mode`, release/current presence, and sanitized journal marker counts. It
-  must not source `.env`, print raw journal lines, print user messages, read tokens,
-  restart services, send WeCom messages, run image generation, write Postgres or Feishu,
-  call QiWe/provider/media endpoints, or modify live Hermes profile state.
+  Hermes WeCom user-service active state through `systemctl --user`, fixed service
+  command, public `busy_input_mode`, release/current presence, and sanitized
+  user-journal marker counts. It must not source `.env`, print raw journal lines, print
+  user messages, read tokens, restart services, send WeCom messages, run image
+  generation, write Postgres or Feishu, call QiWe/provider/media endpoints, or modify
+  live Hermes profile state.
 - `huabaosi-wecom-canary-observation-smoke.sh` may only verify that the canary gateway
   remains unscheduled and disabled, then run `huabaosi-wecom-canary-preflight` for a
-  sanitized local configuration summary. It must not use `--apply`, read stdin, source
-  `.env`, print endpoint/token/id values, write Postgres or Feishu, call WeCom, QiWe,
-  provider, or media endpoints, run image generation, publish messages, install units,
-  or modify the live Hermes profile.
+  sanitized local configuration summary. From release/current it must discover the
+  immutable `sidecar/qintopia-message-sidecar` binary rather than fall back to source
+  Cargo execution. It must not use `--apply`, read stdin, source `.env`, print
+  endpoint/token/id values, write Postgres or Feishu, call WeCom, QiWe, provider, or
+  media endpoints, run image generation, publish messages, install units, or modify the
+  live Hermes profile.
 - `huabaosi-wecom-shadow-capture` may only preview one supplied WeCom event from bounded
   stdin and emit sanitized metadata, hashes, byte counts, field presence, and fixed
   guardrails. It must not add `--apply`, open Postgres or network connections, write
@@ -484,6 +487,11 @@ Allowed server activity:
 - smoke checks
 - deploying an approved commit SHA through a runbook
 - emergency rollback with a follow-up patch and owner record
+
+On an approved operator workstation, use its configured SSH host alias for these
+activities. Connecting to the inventory address directly may bypass the approved
+identity selection. An authentication failure is not authorization to inspect, copy, or
+change private keys.
 
 Disallowed server activity:
 

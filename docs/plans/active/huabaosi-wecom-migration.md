@@ -1,6 +1,6 @@
 # Huabaosi WeCom Migration Plan
 
-Status: phase 5 allowlisted canary gateway in progress; no production behavior changed
+Status: phase 5 deployed for observation; production route unchanged
 
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
@@ -244,6 +244,16 @@ Rollback:
 
 These decisions should be resolved in the PR that first needs them, not bundled into
 this planning PR.
+
+## 2026-07-15 Observation Checkpoint
+
+- `v0.2.9` deployed successfully at `7553f92b3205dc7e8632894212380630c139a111`;
+  `release/current` resolves to that immutable release.
+- The disabled and unscheduled canary observation passed from the release sidecar.
+- The live Hermes gateway remains active as a user systemd service. The phase-2 smoke
+  needs the reviewed user-scope query fix deployed before its production evidence can be
+  accepted.
+- No canary send or production route change has been approved or executed.
 
 ## Success Criteria
 

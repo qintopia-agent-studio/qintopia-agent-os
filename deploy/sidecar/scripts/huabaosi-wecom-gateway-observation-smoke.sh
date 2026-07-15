@@ -69,12 +69,12 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 service_status="$tmp_dir/service-status.txt"
-"$SYSTEMCTL" is-active "$SERVICE_NAME" >"$service_status"
+"$SYSTEMCTL" --user is-active "$SERVICE_NAME" >"$service_status"
 grep -Fx active "$service_status" >/dev/null
 assert_no_sensitive_output "service status" "$service_status"
 
 service_properties="$tmp_dir/service-properties.txt"
-"$SYSTEMCTL" show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths >"$service_properties"
+"$SYSTEMCTL" --user show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths >"$service_properties"
 grep -Fx "WorkingDirectory=${PROFILE_DIR}" "$service_properties" >/dev/null
 grep -E "^ExecStart=.*/home/ubuntu/\\.hermes/hermes-agent/.+ -m hermes_cli\\.main --profile huabaosi gateway run --replace.*$" "$service_properties" >/dev/null
 if ! grep -Fx "DropInPaths=" "$service_properties" >/dev/null; then
@@ -111,7 +111,7 @@ if [[ ! -e "$RELEASE_CURRENT" ]]; then
 fi
 
 journal="$tmp_dir/journal.txt"
-"$JOURNALCTL" -u "$SERVICE_NAME" -n "$JOURNAL_LINES" --no-pager -o cat >"$journal" || true
+"$JOURNALCTL" --user -u "$SERVICE_NAME" -n "$JOURNAL_LINES" --no-pager -o cat >"$journal" || true
 assert_no_sensitive_output "service journal" "$journal"
 
 internal_filter_count="$(count_matches 'internal[- ]process|process filter|filtered internal|skip(ped|ping) internal' "$journal")"
