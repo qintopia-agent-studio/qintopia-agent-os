@@ -269,17 +269,19 @@ esac
     throw new Error("observation accepted an inactive production timer");
   }
 
-  const leakMarker = "configured-parent-value-must-not-appear";
+  const redactionSentinel = ["feishu", "observation", "redaction", "sentinel"].join(
+    "-"
+  );
   const leaked = run({
-    QINTOPIA_HUABAOSI_FEISHU_APP_SECRET: leakMarker,
-    FAKE_MIRROR_LEAK: leakMarker,
+    QINTOPIA_HUABAOSI_FEISHU_APP_SECRET: redactionSentinel,
+    FAKE_MIRROR_LEAK: redactionSentinel,
   });
   if (leaked.status !== 0) {
     throw new Error(
       `observation leaked configured secret env to sidecar\n${leaked.stdout}\n${leaked.stderr}`
     );
   }
-  if (`${leaked.stdout}\n${leaked.stderr}`.includes(leakMarker)) {
+  if (`${leaked.stdout}\n${leaked.stderr}`.includes(redactionSentinel)) {
     throw new Error("observation repeated a configured secret in its diagnostic");
   }
 } finally {
