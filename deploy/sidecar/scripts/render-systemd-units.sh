@@ -471,10 +471,6 @@ render_all() {
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service" \
     "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Production Preflight" \
     "huabaosi-feishu-artifact-mirror-preflight"
-  render_oneshot_service \
-    "qintopia-agentos-huabaosi-feishu-artifact-mirror-observation.service" \
-    "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Read-Only Observation" \
-    "run-huabaosi-feishu-artifact-mirror-worker --once --dry-run"
   render_guarded_oneshot_service \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service" \
     "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Worker" \
@@ -531,7 +527,6 @@ validate_output() {
     "qintopia-agentos-huabaosi-image-generation-worker.service"
     "qintopia-agentos-huabaosi-image-generation-worker.timer"
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service"
-    "qintopia-agentos-huabaosi-feishu-artifact-mirror-observation.service"
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service"
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"

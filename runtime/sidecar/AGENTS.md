@@ -78,9 +78,11 @@ From the monorepo root, prefer:
   non-secret release SHA to the immutable binary without sourcing shell, importing
   secrets into the shell, or writing a secret-bearing temporary file. It may run only
   the non-secret mirror observation preflight, not full configuration preflight or
-  worker dry-run. Timer rollback must stop external work immediately and fail closed
-  until persistent mirror enablement is confirmed present exactly once and exactly `0`
-  in the reviewed environment file.
+  worker dry-run. Non-allowlisted env values must be ignored before mirror-flag value
+  validation. Activation must fail before preflight or timer mutation until persistent
+  mirror enablement is present exactly once and exactly `1`; timer rollback must stop
+  external work immediately and fail closed until it is present exactly once and exactly
+  `0` in the reviewed environment file.
 - The disposable operations smoke may enter the live retry path only with both the
   Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
   literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media

@@ -24,9 +24,9 @@ const envLine = (key, value) => `${key}=${value}`;
 
 try {
   const fixtureSecrets = [
-    "postgres://fixture-user:fixture-password@127.0.0.1:55432/qintopia_observation_fixture",
-    "bascn_observation_fixture_base_token",
-    "tbl_observation_fixture_artifact_table",
+    "postgres://fixture-user:fixture&password@127.0.0.1:55432/qintopia_observation_fixture",
+    "bascn_observation_fixture;base_token",
+    "tbl_observation_fixture\\artifact_table",
     "fixture-feishu-tenant-access-token",
     "fixture-feishu-app-secret",
   ];
@@ -210,11 +210,13 @@ esac
     }
   }
 
-  const malicious = run({
+  const ignoredCommandSubstitution = run({
     QINTOPIA_SIDECAR_ENV_FILE: maliciousEnv,
   });
-  if (malicious.status === 0) {
-    throw new Error("observation accepted command substitution in the env file");
+  if (ignoredCommandSubstitution.status !== 0) {
+    throw new Error(
+      `observation rejected an ignored non-allowlisted value\n${ignoredCommandSubstitution.stdout}\n${ignoredCommandSubstitution.stderr}`
+    );
   }
   if (fs.existsSync(commandSubstitutionMarker)) {
     throw new Error("observation executed command substitution from malicious env");

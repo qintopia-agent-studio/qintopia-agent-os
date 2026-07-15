@@ -20,10 +20,12 @@ action, and ordinary release deployment must not activate the external write tim
 - Bind mirror preflight and apply to the exact deployed 40-character commit SHA in
   addition to the existing owner phrase, database hash, Base/table exact allowlists,
   fixed schema, profile path, and media host policy.
-- Render and install fixed mirror preflight, read-only observation, worker, and timer
-  units from the immutable release while leaving the timer disabled.
-- Add explicit owner-approved activation and rollback commands. Activation runs
-  preflight before enabling the timer.
+- Render and install fixed mirror preflight, worker, and timer units from the immutable
+  release while leaving the timer disabled. Ship the read-only observation script and
+  non-secret observation preflight command in the same release.
+- Add explicit owner-approved activation and rollback commands. Activation confirms the
+  persistent mirror flag is present exactly once and set to `1`, then runs preflight
+  before enabling the timer.
 - Add a read-only production observation that verifies timer state and runs a non-secret
   mirror observation preflight only. It discovers the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, accepts an explicit binary
@@ -33,7 +35,8 @@ action, and ordinary release deployment must not activate the external write tim
   that flag and the non-secret release SHA to the immutable binary through a child
   launcher. The script does not source or eval the env file, execute command
   substitution, import Feishu/Postgres secrets, or create a secret-bearing temporary
-  file.
+  file. Non-allowlisted env values are ignored before mirror-flag value validation, so
+  punctuation in unrelated credentials cannot break observation.
 - Reviewer Guide disposition: the observation no longer runs the full Feishu mirror
   preflight or worker dry-run because those paths require database/Base/table/Feishu
   runtime configuration. Full configuration validation remains in activation and apply;

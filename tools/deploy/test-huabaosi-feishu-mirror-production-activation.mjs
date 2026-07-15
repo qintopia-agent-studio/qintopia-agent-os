@@ -23,7 +23,7 @@ try {
   const logPath = path.join(tmpRoot, "systemctl.log");
   const envPath = path.join(tmpRoot, "message-sidecar.env");
   const systemctl = path.join(tmpRoot, "systemctl");
-  fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0\n", "utf8");
+  fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n", "utf8");
   fs.writeFileSync(
     systemctl,
     `#!/usr/bin/env bash
@@ -59,6 +59,28 @@ fi
     }
   }
 
+  for (const invalidEnablement of [
+    "# mirror flag omitted\n",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0\n",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1;\n",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\nQINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n",
+  ]) {
+    fs.writeFileSync(envPath, invalidEnablement, "utf8");
+    fs.writeFileSync(logPath, "", "utf8");
+    const rejectedEnablement = run(activationScript, {
+      QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
+        "approved-production-huabaosi-feishu-artifact-mirror",
+    });
+    if (rejectedEnablement.status === 0 || fs.readFileSync(logPath, "utf8") !== "") {
+      throw new Error("activation accepted missing, disabled, or duplicate enablement");
+    }
+  }
+
+  fs.writeFileSync(
+    envPath,
+    "QINTOPIA_SIDECAR_DATABASE_URL=postgres://fixture:password&option@127.0.0.1/db\nQINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n",
+    "utf8"
+  );
   fs.writeFileSync(logPath, "", "utf8");
   const activated = run(activationScript, {
     QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
@@ -79,6 +101,7 @@ fi
     }
   }
 
+  fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n", "utf8");
   fs.writeFileSync(logPath, "", "utf8");
   const rejectedPreflight = run(activationScript, {
     QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
@@ -97,6 +120,7 @@ fi
     );
   }
 
+  fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0\n", "utf8");
   fs.writeFileSync(logPath, "", "utf8");
   const rolledBack = run(rollbackScript, {
     QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK:

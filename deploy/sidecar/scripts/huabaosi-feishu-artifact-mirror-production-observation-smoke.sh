@@ -92,10 +92,10 @@ with open(path, encoding="utf-8") as fh:
         if not match:
             raise SystemExit(f"invalid observation env line {lineno}")
         key, value = match.groups()
-        if any(token in value for token in ("$(", "`", "\\", ";", "|", "&", "<", ">", "(", ")")):
-            raise SystemExit(f"unsafe observation env value for {key}")
         if key not in allowed:
             continue
+        if any(token in value for token in ("$(", "`", "\\", ";", "|", "&", "<", ">", "(", ")")):
+            raise SystemExit(f"unsafe observation env value for {key}")
         if key in values:
             raise SystemExit(f"duplicate observation env key {key}")
         if (value.startswith('"') and value.endswith('"')) or (

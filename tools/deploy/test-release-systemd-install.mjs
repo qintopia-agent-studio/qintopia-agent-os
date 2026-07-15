@@ -92,22 +92,6 @@ esac
       throw new Error(`sidecar unit is missing ${required}`);
     }
   }
-  const mirrorObservationUnit = fs.readFileSync(
-    path.join(
-      unitDir,
-      "qintopia-agentos-huabaosi-feishu-artifact-mirror-observation.service"
-    ),
-    "utf8"
-  );
-  for (const required of [
-    "EnvironmentFile=/etc/qintopia/message-sidecar.env",
-    `Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`,
-    `ExecStart=${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run-huabaosi-feishu-artifact-mirror-worker --once --dry-run`,
-  ]) {
-    if (!mirrorObservationUnit.includes(required)) {
-      throw new Error(`mirror observation unit is missing ${required}`);
-    }
-  }
   for (const timer of [
     "qintopia-agentos-xiaoman-activity-signal-worker.timer",
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",

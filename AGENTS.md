@@ -180,9 +180,11 @@ Use `rg` and `rg --files` for search.
   the immutable binary, without `source`, `eval`, command substitution, shell secret
   import, or a secret-bearing temporary file. It must not pass database URL, Base token,
   table id, Feishu token, profile env path, or allowlist values to the child process.
-  Rollback must stop the timer first and may report completion only after the persistent
-  mirror enable flag is present exactly once and exactly `0` in the reviewed sidecar
-  environment file.
+  Ignore non-allowlisted env values before applying mirror-flag value validation.
+  Activation must fail before preflight or timer changes unless the persistent mirror
+  enable flag is present exactly once and exactly `1`. Rollback must stop the timer
+  first and may report completion only after that flag is present exactly once and
+  exactly `0` in the reviewed sidecar environment file.
 - Hermes remains the Agent runtime. It should not become the business database.
 - `agents/xiaoman/profile-bundle` is observation-only. It may package the reviewed
   `SOUL.md`/`profile.yaml` templates, strict renderer, fake fixtures, and read-only

@@ -118,7 +118,6 @@ unit_files=(
   qintopia-agentos-huabaosi-image-generation-worker.service
   qintopia-agentos-huabaosi-image-generation-worker.timer
   qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service
-  qintopia-agentos-huabaosi-feishu-artifact-mirror-observation.service
   qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service
   qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.service
