@@ -67,3 +67,14 @@ package, and `pnpm@10.29.2` could not be fetched and verified. The repository-lo
 Prettier binary and the inspected fixed Node, Python, Bash, and Cargo entrypoints were
 run directly. Signature enforcement was not bypassed, and the PR still requires the
 normal GitHub `check` job.
+
+## 2026-07-15 Recurrence
+
+The Xiaoman production-baseline documentation PR reproduced the same failure when
+running `pnpm check:light`. The shim stopped before any repository check and reported
+that the signed `pnpm@10.29.2`, `@pnpm/exe`, and macOS arm64 packages could not be
+fetched or verified. No `pmOnFail=ignore` override was used. After inspecting the
+unchanged `check:light` mapping, the installed lockfile-resolved Prettier and
+Markdownlint binaries plus the affected repository-local Node entrypoints were run
+directly. GitHub CI remains responsible for validating the normal pnpm path on the final
+commit.

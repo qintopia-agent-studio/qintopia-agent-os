@@ -47,6 +47,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-group-send-ready-claim-cleanup.md`                                     | adopt-input | Group send-ready complete claim release remediation                    |
 | `2026-07-15-huabaosi-wecom-v029-production-observation.md`                         | adopt-input | v0.2.9 Huabaosi WeCom observation and runtime-layout remediation       |
 | `2026-07-15-huabaosi-stale-claim-ambiguity.md`                                     | adopt-input | Huabaosi expired image-generation claim remediation                    |
+| `2026-07-15-xiaoman-production-path-audit.md`                                      | adopt-input | Xiaoman v0.2.9 production execution and remaining ownership gaps       |
 
 ## Rules
 
