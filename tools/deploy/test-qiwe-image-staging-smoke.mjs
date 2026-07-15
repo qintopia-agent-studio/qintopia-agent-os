@@ -178,9 +178,11 @@ esac
     throw new Error("callback validation failure repeated the leaked value");
   }
 
+  const reportDir = path.join(tmpRoot, "callback-reports");
+  fs.mkdirSync(reportDir);
   const rawCallbackLeak = runSmoke(
     "callback",
-    { FAKE_CALLBACK_ECHO_RAW: "1" },
+    { FAKE_CALLBACK_ECHO_RAW: "1", TMPDIR: reportDir },
     callbackPayload
   );
   if (rawCallbackLeak.status === 0) {
@@ -195,6 +197,9 @@ esac
     if (`${rawCallbackLeak.stdout}\n${rawCallbackLeak.stderr}`.includes(sensitive)) {
       throw new Error("raw callback failure escaped protected smoke output");
     }
+  }
+  if (fs.readdirSync(reportDir).length !== 0) {
+    throw new Error("raw callback failure wrote subprocess output to disk");
   }
 
   const commandMarker = path.join(tmpRoot, "env-command-executed");

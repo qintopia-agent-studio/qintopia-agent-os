@@ -153,12 +153,9 @@ else
   )
 fi
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
-
-assert_no_sensitive_output() {
+assert_no_sensitive_text() {
   local label="$1"
-  local file="$2"
+  local text="$2"
   local forbidden=(
     '"request_id"'
     '"requestId"'
@@ -194,41 +191,41 @@ assert_no_sensitive_output() {
 
   local value
   for value in "${forbidden[@]}"; do
-    if [[ -n "$value" ]] && grep -Fq -- "$value" "$file"; then
+    if [[ -n "$value" && "$text" == *"$value"* ]]; then
       echo "${label} contains forbidden sensitive output" >&2
       exit 1
     fi
   done
 }
 
+SANITIZED_OUTPUT=""
+
 run_sanitized() {
   local label="$1"
-  local stdout_file="$2"
-  local stderr_file="$3"
-  shift 3
-  if ! "$@" >"$stdout_file" 2>"$stderr_file"; then
-    assert_no_sensitive_output "$label stdout" "$stdout_file"
-    assert_no_sensitive_output "$label stderr" "$stderr_file"
+  local output=""
+  local status=0
+  shift
+
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+  assert_no_sensitive_text "$label output" "$output"
+  if [[ $status -ne 0 ]]; then
     echo "${label} failed; inspect the protected staging runner locally" >&2
     exit 1
   fi
-  assert_no_sensitive_output "$label stdout" "$stdout_file"
-  assert_no_sensitive_output "$label stderr" "$stderr_file"
+  SANITIZED_OUTPUT="$output"
 }
 
-preflight_output="$tmp_dir/preflight.json"
-preflight_stderr="$tmp_dir/preflight.stderr"
 run_sanitized \
   "QiWe staging preflight" \
-  "$preflight_output" \
-  "$preflight_stderr" \
   "${BIN_CMD[@]}" qiwe-image-send-staging-preflight </dev/null
-python3 - "$preflight_output" <<'PY'
+printf '%s\n' "$SANITIZED_OUTPUT" | python3 -c '
 import json
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as fh:
-    payload = json.load(fh)
+payload = json.load(sys.stdin)
 
 assert set(payload) == {
     "success", "worker", "action_status", "adapter_compiled", "send_enabled",
@@ -251,22 +248,17 @@ assert payload["media_allowed_host_count"] > 0
 assert payload["allowed_group_count"] == 1
 assert payload["missing_configuration"] == []
 assert payload["safe_for_chat"] is False
-PY
+'
 
-phase_output="$tmp_dir/${PHASE}.json"
-phase_stderr="$tmp_dir/${PHASE}.stderr"
 if [[ "$PHASE" == "upload" ]]; then
   run_sanitized \
     "QiWe staging upload" \
-    "$phase_output" \
-    "$phase_stderr" \
     "${BIN_CMD[@]}" run-qiwe-image-send-worker --once --work-item-id "$WORK_ITEM_ID" --apply </dev/null
-  python3 - "$phase_output" "$WORK_ITEM_ID" <<'PY'
+  printf '%s\n' "$SANITIZED_OUTPUT" | python3 -c '
 import json
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as fh:
-    payload = json.load(fh)
+payload = json.load(sys.stdin)
 
 assert payload["success"] is True
 assert payload["worker"] == "qiwe-image-send-adapter"
@@ -274,27 +266,24 @@ assert payload["phase"] == "upload"
 assert payload["dry_run"] is False
 assert payload["apply_requested"] is True
 assert payload["action_status"] == "image_upload_accepted"
-assert payload["work_item_id"] == sys.argv[2]
+assert payload["work_item_id"] == sys.argv[1]
 assert payload["external_upload_requested"] is True
 assert payload["callback_received"] is False
 assert payload["external_send_executed"] is False
 assert payload["safe_for_chat"] is False
-PY
+' "$WORK_ITEM_ID"
   echo "QiWe image-send staging upload passed: awaiting one bounded owner-approved callback; no image send was executed"
   exit 0
 fi
 
 run_sanitized \
   "QiWe staging callback" \
-  "$phase_output" \
-  "$phase_stderr" \
   "${BIN_CMD[@]}" process-qiwe-image-send-callback --apply
-python3 - "$phase_output" "$WORK_ITEM_ID" <<'PY'
+printf '%s\n' "$SANITIZED_OUTPUT" | python3 -c '
 import json
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as fh:
-    payload = json.load(fh)
+payload = json.load(sys.stdin)
 
 assert set(payload) == {
     "success", "dry_run", "apply_requested", "worker", "phase", "action_status",
@@ -308,7 +297,7 @@ assert payload["phase"] == "callback"
 assert payload["dry_run"] is False
 assert payload["apply_requested"] is True
 assert payload["action_status"] == "image_send_completed"
-assert payload["work_item_id"] == sys.argv[2]
+assert payload["work_item_id"] == sys.argv[1]
 assert payload["external_upload_requested"] is False
 assert payload["callback_received"] is True
 assert payload["callback_credential_schema"] in {
@@ -321,6 +310,6 @@ assert isinstance(payload["callback_additional_field_count"], int)
 assert payload["callback_additional_field_count"] >= 0
 assert payload["external_send_executed"] is True
 assert payload["safe_for_chat"] is False
-PY
+' "$WORK_ITEM_ID"
 
 echo "QiWe image-send staging callback passed: one reviewed image send completed for the isolated allowlisted group"

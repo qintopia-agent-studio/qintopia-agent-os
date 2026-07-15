@@ -354,6 +354,10 @@ if (!exists(qiweImageStagingSmokePath)) {
     'payload["external_send_executed"] is True',
     "callback_credential_schema",
     "contains forbidden sensitive output",
+    'output="$("$@" 2>&1)"',
+    'assert_no_sensitive_text "$label output" "$output"',
+    "SANITIZED_OUTPUT",
+    "payload = json.load(sys.stdin)",
     "fileAesKey",
     "fileAeskey",
     "fileId",
@@ -374,6 +378,12 @@ if (!exists(qiweImageStagingSmokePath)) {
     "operations-group-message-confirm",
     "--use-feishu-base",
     'source "$ENV_FILE"',
+    '>"$stdout_file"',
+    '2>"$stderr_file"',
+    "mktemp",
+    "report_file",
+    "preflight_output",
+    "phase_output",
   ]) {
     forbidFragment(qiweImageStagingSmokePath, smoke, fragment);
   }

@@ -292,9 +292,10 @@ Use `rg` and `rg --files` for search.
   stdin to the callback processor and memory-only send request; never store them in a
   file, environment variable, CLI argument, NATS event, report, or log. The smoke must
   attach `/dev/null` to preflight and upload subprocesses and parse only the fixed
-  staging env key allowlist without evaluating the env file as shell. It must not
-  install a listener, service, timer, production feature build, Feishu write, or broad
-  group send.
+  staging env key allowlist without evaluating the env file as shell. Subprocess output
+  must be captured, scanned, and schema-validated through memory and anonymous pipes; no
+  subprocess output may be written to a file. It must not install a listener, service,
+  timer, production feature build, Feishu write, or broad group send.
 - Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
   reject invalid methods/headers before connect, require HTTPS outside tests, enforce
   header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request

@@ -180,7 +180,9 @@ callback file, environment variable, CLI argument, NATS event, or log record con
 the raw credentials. Preflight and upload subprocesses receive `/dev/null`; only the
 callback processor inherits the stream. The staging env file is parsed as a fixed
 allowlist of literal assignments and is never evaluated as shell. The smoke stores only
-sanitized command reports in a temporary directory that is deleted on exit.
+subprocess output in shell memory and validates the fixed report schema through an
+anonymous pipe. It never writes successful, failed, or sensitive subprocess output to a
+file.
 
 ## Production Boundary
 
