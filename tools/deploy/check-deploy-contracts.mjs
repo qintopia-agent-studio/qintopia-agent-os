@@ -298,6 +298,52 @@ const aliangStagingSmokePath =
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh";
 const aliangStagingReadinessPath =
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh";
+const stagingRuntimePrerequisiteObservationPath =
+  "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh";
+if (!exists(stagingRuntimePrerequisiteObservationPath)) {
+  addError(
+    `${stagingRuntimePrerequisiteObservationPath}: missing staging runtime prerequisite observation smoke`
+  );
+} else {
+  const observation = readText(stagingRuntimePrerequisiteObservationPath);
+  for (const fragment of [
+    "QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE",
+    "QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_TEST_MODE",
+    "/etc/qintopia/message-sidecar-staging.env",
+    "/home/ubuntu/qintopia-agent-os-staging-releases",
+    "QINTOPIA_STAGING_RUNTIME_PREREQUISITE_RELEASE_SHA",
+    "QINTOPIA_STAGING_RUNTIME_PREREQUISITE_SIDECAR_SHA256",
+    "staging_runtime_prerequisite_observation=",
+    "ready_for_staging_readiness_smokes",
+    "staging env file contents are not read",
+    "sidecar binary is not executed",
+    "no Postgres, Huabaosi, Feishu, QiWe, provider, media, service, timer, release, or network action",
+    "path_is_secure",
+    "reject_owner_writable",
+    "path_owner_group_or_world_writable",
+    "path_group_or_world_writable",
+    "path_is_symlink",
+    "sidecar_hash_mismatch",
+  ]) {
+    requireFragment(stagingRuntimePrerequisiteObservationPath, observation, fragment);
+  }
+  for (const fragment of [
+    "systemctl",
+    "source ",
+    'source "$',
+    ". /etc/qintopia",
+    "env -i",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+    "QIWE_TOKEN",
+    "run-huabaosi-image-generation-worker",
+    "huabaosi-image-generation-preflight",
+    "curl ",
+    "psql ",
+  ]) {
+    forbidFragment(stagingRuntimePrerequisiteObservationPath, observation, fragment);
+  }
+}
 if (!exists(aliangStagingReadinessPath)) {
   addError(`${aliangStagingReadinessPath}: missing Huabaosi staging readiness smoke`);
 } else {
@@ -480,6 +526,8 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
   for (const fragment of [
     "/etc/qintopia/message-sidecar-staging.env",
     "/home/ubuntu/qintopia-agent-os-staging-releases/<40-hex-sha>/sidecar/qintopia-message-sidecar",
+    "QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE=1",
+    "staging-runtime-prerequisite-observation-smoke.sh",
     "docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md",
     "staging release SHA",
     "packaged staging sidecar SHA-256",
@@ -519,6 +567,25 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
 const aliangStagingSmokeTestPath = "tools/deploy/test-huabaosi-image-staging-smoke.mjs";
 const aliangStagingReadinessTestPath =
   "tools/deploy/test-huabaosi-image-staging-readiness.mjs";
+const stagingRuntimePrerequisiteObservationTestPath =
+  "tools/deploy/test-staging-runtime-prerequisite-observation.mjs";
+if (!exists(stagingRuntimePrerequisiteObservationTestPath)) {
+  addError(
+    `${stagingRuntimePrerequisiteObservationTestPath}: missing staging runtime prerequisite observation test`
+  );
+} else {
+  const test = readText(stagingRuntimePrerequisiteObservationTestPath);
+  for (const fragment of [
+    "staging-runtime-prerequisite-observation-smoke.sh",
+    "staging_runtime_prerequisite_observation=",
+    "ready_for_staging_readiness_smokes",
+    "Staging runtime prerequisite observation smoke test passed.",
+    "staging-prereq-secret-must-not-appear",
+    "sidecar_hash_mismatch",
+  ]) {
+    requireFragment(stagingRuntimePrerequisiteObservationTestPath, test, fragment);
+  }
+}
 if (!exists(aliangStagingReadinessTestPath)) {
   addError(
     `${aliangStagingReadinessTestPath}: missing Huabaosi staging readiness test`

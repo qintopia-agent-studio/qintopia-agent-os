@@ -88,11 +88,13 @@ The staging release root must be immutable for the staging exercise:
 Run the validations in this order after provisioning. Retain only sanitized stdout
 records and checker results.
 
-1. Huabaosi staging readiness smoke with the approved release SHA and sidecar SHA-256.
-2. Huabaosi staging smoke for exactly one approved image request work item.
-3. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
-4. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
-5. After the QiWe staging PR is present on the staged release, run QiWe readiness,
+1. `QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh`
+   with the approved release SHA and packaged staging sidecar SHA-256.
+2. Huabaosi staging readiness smoke with the approved release SHA and sidecar SHA-256.
+3. Huabaosi staging smoke for exactly one approved image request work item.
+4. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
+5. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
+6. After the QiWe staging PR is present on the staged release, run QiWe readiness,
    preflight, upload, callback, QiWe evidence check, and cross-flow hash check.
 
 Hold immediately if any readiness report says the env file is missing, the release root
