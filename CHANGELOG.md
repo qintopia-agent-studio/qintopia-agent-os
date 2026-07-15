@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.11](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.10...v0.2.11) (2026-07-15)
+
+
+### Features
+
+* add guarded huabaosi feishu artifact mirror ([#149](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/149)) ([12b1e10](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/12b1e109b0820bd460f092ab00f9010dc4ebc6ee))
+
+
+### Bug Fixes
+
+* align xiaoman activity mutation wrapper ([#146](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/146)) ([7e40f24](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7e40f246f5b363cc060df7a3fde6c8569ba73d38))
+* tighten production readiness blockers ([#145](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/145)) ([23c4317](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/23c431708fb33f93b9e4b09aeb5b77f11d5ae040))
+
+
+### Documentation
+
+* record v0.2.10 follow-up deploy evidence ([#148](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/148)) ([aef01c0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/aef01c023ba1073d3b68e25d8131496ffb71a0ba))
+
 ## [0.2.10](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.9...v0.2.10) (2026-07-15)
 
 
