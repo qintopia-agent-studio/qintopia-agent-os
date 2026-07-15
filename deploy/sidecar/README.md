@@ -60,6 +60,25 @@ deploy/sidecar/scripts/render-systemd-units.sh
 Production is release/current based. Treat Huabaosi shadow/Rust material as review-pool
 until the owner explicitly approves it as product direction.
 
+## QiWe Image-Send Staging
+
+The two-phase staging smoke is the only reviewed shell entrypoint for a real
+`qiwe-staging-adapter` upload and callback send exercise:
+
+```bash
+QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
+QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>' \
+scripts/qiwe-image-send-staging-smoke.sh
+```
+
+Run the `callback` phase only by streaming one owner-approved callback directly to
+stdin. Never persist the callback body or credentials in a file, environment variable,
+argument, shell history, report, or log. This smoke does not install a listener,
+service, timer, or production feature build.
+
 ## Validation
 
 Before any cutover from this monorepo, the deploy package needs:

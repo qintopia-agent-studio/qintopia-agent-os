@@ -1,9 +1,9 @@
 # QiWe Image Send Adapter Worker
 
-Status: merged on `master` through #119 with CI and review checks passing; not included
-in the deployed `v0.2.7` release; production disabled
+Status: worker and state machine deployed in the default-feature `v0.2.9` artifact;
+guarded staging smoke in progress; production disabled
 
-Updated: 2026-07-14
+Updated: 2026-07-15
 
 ## Goal
 
@@ -26,6 +26,11 @@ exclude the live adapter at compile time; it is not production scheduling or app
 contact QiWe.
 
 ## Commands
+
+`qiwe-image-send-staging-preflight` validates the staging-only compile feature, exact
+owner phrase, enablement, webhook readiness, API/media/group allowlists, and the exact
+staging database URL hash from the owner-reviewed one-shot command. It does not connect
+to Postgres, read a callback, or open a network connection.
 
 `run-qiwe-image-send-worker` supports `--once`, `--work-item-id`, `--apply`, and
 `--dry-run`.
@@ -122,6 +127,27 @@ booleans. They must use `safe_for_chat=false` and must not include:
   raw credentials or identifiers in state/events/reports.
 - Full Rust suite, Clippy with warnings denied, repository pre-commit, CI contracts,
   secret scan, and diff check.
+
+## Local Validation Evidence
+
+- Default Rust suite: 368 passed with `RUST_MIN_STACK=33554432`.
+- All-feature nextest: 364 passed; 8 guarded PostgreSQL tests skipped because no
+  disposable `qintopia_test` database was configured.
+- Default and all-feature Clippy passed with warnings denied. Default and all-feature
+  staging-gate tests each passed 3 tests.
+- Rust line coverage was 46.66% overall, up from the 46.53% baseline;
+  `qiwe_image_send.rs` reached 85.50% line coverage.
+- Fake two-phase staging smoke, deploy contracts, deploy runner contracts, sidecar
+  smokes, systemd rendering, pre-commit, format, Markdown, registry, MCP, skills,
+  workflow, runtime, CI, policy, secret, and release-model checks passed. The QiWe
+  parser suite passed 159 tests; the weather, knowledge-retrieval, and operations-intake
+  suites passed 18, 10, and 7 tests.
+- `pnpm check` could not start because the repository pnpm shim could not verify the
+  `pnpm@10.29.2` registry signature. Per repository policy, `pmOnFail=ignore` was not
+  used; the fixed repository-local Node, Python, shell, and Rust entrypoints were run
+  directly instead.
+- No validation command contacted a real QiWe endpoint, connected to staging or
+  production Postgres, wrote Feishu, changed systemd, or modified production runtime.
 
 ## Production Boundary
 

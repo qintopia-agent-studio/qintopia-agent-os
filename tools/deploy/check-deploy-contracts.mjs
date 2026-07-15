@@ -331,6 +331,43 @@ if (!exists(aliangStagingSmokePath)) {
   }
 }
 
+const qiweImageStagingSmokePath =
+  "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh";
+if (!exists(qiweImageStagingSmokePath)) {
+  addError(`${qiweImageStagingSmokePath}: missing QiWe image-send staging smoke`);
+} else {
+  const smoke = readText(qiweImageStagingSmokePath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE",
+    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL",
+    "approved-staging-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE",
+    "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256",
+    "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE",
+    "--features qiwe-staging-adapter",
+    "qiwe-image-send-staging-preflight",
+    "run-qiwe-image-send-worker",
+    "process-qiwe-image-send-callback",
+    "image_upload_accepted",
+    "image_send_completed",
+    'payload["external_send_executed"] is True',
+    "callback_credential_schema",
+    "contains forbidden sensitive output",
+  ]) {
+    requireFragment(qiweImageStagingSmokePath, smoke, fragment);
+  }
+  for (const fragment of [
+    "systemctl",
+    "callback.json",
+    "run-group-message-send-worker",
+    "operations-group-message-confirm",
+    "--use-feishu-base",
+  ]) {
+    forbidFragment(qiweImageStagingSmokePath, smoke, fragment);
+  }
+}
+
 if (errors.length > 0) {
   console.error("Deploy contract check failed:");
   for (const error of errors) {

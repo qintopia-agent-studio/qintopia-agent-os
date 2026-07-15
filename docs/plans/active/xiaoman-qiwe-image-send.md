@@ -132,13 +132,53 @@ target, or missing final confirmation must stop before sending.
    schema id and additional-field count, then confirm the existing `isSendSuccess=1`
    success assumption without storing raw credentials, request ids, filenames, unknown
    field names, or unknown values in git or logs.
-3. Complete CI review of the code-only
-   [guarded adapter worker](qiwe-image-send-adapter-worker.md), including local fake
-   QiWe upload/send behavior and disposable PostgreSQL crash/timeout recovery. Keep real
-   endpoints disabled until steps 1 and 2 have owner-approved evidence.
-4. Add one guarded staging smoke with an isolated group and explicit approval phrase.
+3. Use the guarded two-phase staging smoke for one explicit send-ready work item. The
+   `upload` phase may stop only after the asynchronous upload acceptance is durably
+   recorded. The `callback` phase accepts one bounded callback from stdin, never from a
+   file or command argument, and passes only when the exact approved JPEG is sent to the
+   isolated allowlisted group.
+4. Commit only the staging database URL SHA-256, sanitized callback schema id, fixed
+   outcome labels, and reviewed rollback evidence. Do not commit the database URL,
+   callback body, request id, credentials, group id, media URL, or provider response.
 5. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
+
+## Guarded Staging Smoke Contract
+
+`qiwe-image-send-staging-preflight` is a local-only staging readiness check. Before any
+database connection, callback read, or network request it requires:
+
+- a binary compiled with only the reviewed `qiwe-staging-adapter` live feature;
+- `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1` and webhook readiness;
+- the exact one-shot owner approval phrase;
+- complete API, media-host, and case-sensitive target-group allowlists; and
+- a staging database whose exact URL hash is supplied in the owner-reviewed one-shot
+  command and matches the sourced database URL.
+
+The smoke runs as two explicit invocations because the QiWe upload callback is
+asynchronous:
+
+```bash
+QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
+QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>' \
+deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
+
+trusted-staging-callback-source | \
+QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback \
+QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<same approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<same approved send-ready UUID>' \
+deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
+```
+
+The callback source must stream one callback directly to stdin. It must not create a
+callback file, environment variable, CLI argument, NATS event, or log record containing
+the raw credentials. The smoke stores only sanitized command reports in a temporary
+directory that is deleted on exit.
 
 ## Production Boundary
 

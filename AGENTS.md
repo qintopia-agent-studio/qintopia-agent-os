@@ -285,6 +285,14 @@ Use `rg` and `rg --files` for search.
 - A staging-feature QiWe callback apply must validate explicit enablement, exact
   API/media/group allowlists, and webhook readiness before reading stdin. Upload apply
   must validate the same adapter configuration before connecting to Postgres.
+- `qiwe-image-send-staging-smoke.sh` is the only reviewed one-shot staging entrypoint
+  for the async upload and callback send exercise. It requires an exact work item UUID,
+  owner phrase, staging env path, exact owner-reviewed staging database URL hash, and
+  explicit `upload` or `callback` phase. Callback credentials may flow only from bounded
+  stdin to the callback processor and memory-only send request; never store them in a
+  file, environment variable, CLI argument, NATS event, report, or log. The smoke must
+  not install a listener, service, timer, production feature build, Feishu write, or
+  broad group send.
 - Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
   reject invalid methods/headers before connect, require HTTPS outside tests, enforce
   header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request

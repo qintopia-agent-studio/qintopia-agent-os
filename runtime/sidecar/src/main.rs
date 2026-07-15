@@ -528,6 +528,7 @@ async fn main() -> Result<()> {
             huabaosi_wecom_canary::run_gateway(apply, dry_run)
         }
         Command::QiweImageSendPreflight => qiwe_image_send::run_preflight(),
+        Command::QiweImageSendStagingPreflight => qiwe_image_send::run_staging_preflight(&cli),
         Command::RunQiweImageSendWorker {
             once,
             work_item_id,

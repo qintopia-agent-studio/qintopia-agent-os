@@ -1084,6 +1084,8 @@ pub enum Command {
     },
     /// Validate the disabled QiWe async image-upload/send contract without network or database access.
     QiweImageSendPreflight,
+    /// Validate the enabled QiWe staging adapter without stdin, network, or database access.
+    QiweImageSendStagingPreflight,
     /// Claim one reviewed QiWe image-send request and submit its asynchronous URL upload.
     RunQiweImageSendWorker {
         /// Process one work item and exit.
