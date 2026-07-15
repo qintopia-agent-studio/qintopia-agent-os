@@ -699,16 +699,26 @@ QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA = {
 
 QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA = {
     "description": (
-        "Update Xiaoman-owned activity status fields through the Agent OS "
-        "activity worker boundary. It mutates Postgres event_signals, not Feishu/Base."
+        "Update one Xiaoman-owned Agent OS event signal status through the activity "
+        "worker boundary. It requires internal event and mutation UUIDs and never "
+        "writes Feishu/Base records."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "event_signal_id": {"type": "string", "description": "Internal AgentOS event signal UUID."},
-            "mutation_id": {"type": "string", "description": "Caller-supplied UUID for idempotent mutation audit."},
-            "status": {"type": "string", "description": "New Xiaoman-owned activity status."},
-            "status_note": {"type": "string", "description": "Short note explaining the status change."},
+            "event_signal_id": {
+                "type": "string",
+                "description": "Internal qintopia_agent_os.event_signals UUID.",
+            },
+            "mutation_id": {
+                "type": "string",
+                "description": "Caller-supplied UUID retained across exact retries.",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["待处理", "处理中", "已完成", "已关闭"],
+                "description": "New Xiaoman-owned Agent OS event-signal status.",
+            },
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
         "required": ["event_signal_id", "mutation_id", "status"],
@@ -719,19 +729,25 @@ QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA = {
 
 QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA = {
     "description": (
-        "Update Xiaoman-owned activity gap/supplement fields through the Agent OS "
-        "activity worker boundary. It mutates Postgres event_signals, not Feishu/Base."
+        "Update one Xiaoman-owned Agent OS event signal gap summary through the "
+        "activity worker boundary. It requires internal event and mutation UUIDs "
+        "and never writes Feishu/Base records."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "event_signal_id": {"type": "string", "description": "Internal AgentOS event signal UUID."},
-            "mutation_id": {"type": "string", "description": "Caller-supplied UUID for idempotent mutation audit."},
-            "gap_summary": {"type": "string", "description": "Short summary of missing information or material gaps."},
-            "missing_fields": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Optional missing field names from the approved Xiaoman field set.",
+            "event_signal_id": {
+                "type": "string",
+                "description": "Internal qintopia_agent_os.event_signals UUID.",
+            },
+            "mutation_id": {
+                "type": "string",
+                "description": "Caller-supplied UUID retained across exact retries.",
+            },
+            "gap_summary": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Non-sensitive missing-information summary of at most 500 characters.",
             },
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
@@ -3068,18 +3084,6 @@ def _xiaoman_activity_actor(args: dict[str, Any]) -> str:
     return _clean_text(args.get("actor_agent"), max_len=80) or _qintopia_profile_id() or "xiaoman"
 
 
-def _clean_string_list(value: Any, *, max_items: int = 20, max_len: int = 120) -> list[str]:
-    if value is None:
-        return []
-    raw_items = value if isinstance(value, list) else [value]
-    cleaned: list[str] = []
-    for item in raw_items[:max_items]:
-        text = _clean_text(item, max_len=max_len)
-        if text:
-            cleaned.append(text)
-    return cleaned
-
-
 def _xiaoman_activity_error(skill: str, error: str, **extra: Any) -> str:
     payload: dict[str, Any] = {
         "success": False,
@@ -3121,7 +3125,6 @@ def _xiaoman_activity_is_connectivity_probe(args: dict[str, Any], payload: dict[
         _clean_text(payload.get("source_record_id"), max_len=200),
         _clean_text(args.get("idempotency_key"), max_len=240),
         _clean_text(payload.get("status"), max_len=120),
-        _clean_text(payload.get("status_note"), max_len=500),
         _clean_text(payload.get("material_notes"), max_len=500),
         _clean_text(payload.get("brief_summary"), max_len=500),
     ]
@@ -3271,10 +3274,9 @@ def handle_qintopia_xiaoman_activity_list_by_date(args: dict[str, Any], **_: Any
 
 def handle_qintopia_xiaoman_activity_status_update(args: dict[str, Any], **_: Any) -> str:
     payload = {
-        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=160),
-        "mutation_id": _clean_text(args.get("mutation_id"), max_len=160),
+        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=64),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=64),
         "status": _clean_text(args.get("status"), max_len=120),
-        "status_note": _body_text(args.get("status_note"), max_len=800),
     }
     return _xiaoman_activity_command(
         skill="qintopia_xiaoman_activity_status_update",
@@ -3287,11 +3289,17 @@ def handle_qintopia_xiaoman_activity_status_update(args: dict[str, Any], **_: An
 
 
 def handle_qintopia_xiaoman_activity_gap_update(args: dict[str, Any], **_: Any) -> str:
+    gap_summary = _body_text(args.get("gap_summary"), max_len=501)
+    if len(gap_summary) > 500:
+        return _xiaoman_activity_error(
+            "qintopia_xiaoman_activity_gap_update",
+            "gap_summary must be 500 characters or fewer",
+            actor_agent=_xiaoman_activity_actor(args),
+        )
     payload = {
-        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=160),
-        "mutation_id": _clean_text(args.get("mutation_id"), max_len=160),
-        "gap_summary": _body_text(args.get("gap_summary"), max_len=1000),
-        "missing_fields": _clean_string_list(args.get("missing_fields")),
+        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=64),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=64),
+        "gap_summary": gap_summary,
     }
     return _xiaoman_activity_command(
         skill="qintopia_xiaoman_activity_gap_update",

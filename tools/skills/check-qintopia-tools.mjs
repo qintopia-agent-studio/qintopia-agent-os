@@ -19,6 +19,12 @@ const requiredRegisteredTools = {
     "qintopia_wenyuange_lookup",
     "qintopia_weather_lookup",
     "qintopia_daily_digest_publish",
+    "qintopia_xiaoman_activity_record_get",
+    "qintopia_xiaoman_activity_list_by_date",
+    "qintopia_xiaoman_activity_status_update",
+    "qintopia_xiaoman_activity_gap_update",
+    "qintopia_xiaoman_activity_handoff_create",
+    "qintopia_xiaoman_activity_material_summary",
   ],
   wenyuange: ["qintopia_wenyuange_lookup"],
 };

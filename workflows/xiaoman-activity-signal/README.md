@@ -91,6 +91,10 @@ Xiaoman-owned `qintopia_agent_os.event_signals`. Both require an internal UUID
 `event_signal_id` and a caller-supplied UUID `mutation_id`. They reject Feishu
 `record_id` and `table_role` fields.
 
+The release-managed Xiaoman `qintopia-tools` wrappers expose the same UUID-only mutation
+contract. Wrapper tests assert the exact sidecar payload and command mode so the Hermes
+tool schema cannot drift back to the legacy Feishu-record write shape.
+
 `status-update` accepts `待处理`, `处理中`, `已完成`, or `已关闭`. Completed and closed
 signals are terminal for this command. `gap-update` writes a normalized, non-sensitive
 `gap_summary` of at most 500 characters without replacing the extracted signal summary.
