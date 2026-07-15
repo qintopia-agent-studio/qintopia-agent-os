@@ -396,7 +396,6 @@ if artifact_type == "sidecar":
     required_path = "qintopia-message-sidecar"
     if manifest.get("validation", {}).get("cargo_features") != [
         "huabaosi-production-adapter",
-        "huabaosi-feishu-mirror-adapter",
     ]:
         raise SystemExit("artifact manifest Cargo features are not approved for production")
 else:

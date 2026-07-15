@@ -7169,6 +7169,17 @@ mod tests {
         assert!(uri_error.to_string().contains("stable HTTPS media URL"));
 
         let mut context = generated_image_approval_context();
+        context.artifact_uri = Some(
+            "feishu-base://huabaosi-generated-image/00000000-0000-0000-0000-000000000000"
+                .to_string(),
+        );
+        let feishu_canary_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("Feishu-backed canary must remain pending");
+        assert!(feishu_canary_error
+            .to_string()
+            .contains("stable HTTPS media URL"));
+
+        let mut context = generated_image_approval_context();
         context.artifact_uri = Some("https://media.example.test/posters%2Fimage.jpg".to_string());
         let encoded_separator_error = validate_generated_image_approval(&context, "approved")
             .expect_err("encoded path separators must be rejected");

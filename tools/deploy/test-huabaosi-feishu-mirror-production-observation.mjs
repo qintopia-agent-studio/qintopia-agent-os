@@ -84,10 +84,10 @@ fi
 case "$1" in
   huabaosi-feishu-artifact-mirror-observation-preflight)
     if [[ "\${QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED:-0}" == "1" ]]; then
-      printf '%s\\n' '{"success":true,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"observation_enabled_boundary_ready","adapter_compiled":true,"mirror_enabled":true,"config_valid":false,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":0,"missing_configuration":[],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
+      printf '%s\\n' '{"success":true,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"observation_enabled_boundary_ready","adapter_compiled":false,"mirror_enabled":true,"config_valid":false,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":0,"missing_configuration":[],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
       exit 0
     fi
-    printf '%s\\n' '{"success":true,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"observation_disabled_boundary_ready","adapter_compiled":true,"mirror_enabled":false,"config_valid":false,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":0,"missing_configuration":[],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"observation_disabled_boundary_ready","adapter_compiled":false,"mirror_enabled":false,"config_valid":false,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":0,"missing_configuration":[],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
     exit 0
     ;;
   run-huabaosi-feishu-artifact-mirror-worker)
@@ -104,10 +104,7 @@ esac
       {
         commit_sha: releaseSha,
         validation: {
-          cargo_features: [
-            "huabaosi-production-adapter",
-            "huabaosi-feishu-mirror-adapter",
-          ],
+          cargo_features: ["huabaosi-production-adapter"],
         },
       },
       null,
@@ -243,14 +240,12 @@ esac
     FAKE_MIRROR_TIMER_ENABLED: "1",
     FAKE_MIRROR_TIMER_ACTIVE: "1",
   });
-  if (enabled.status !== 0) {
-    throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
+  if (enabled.status === 0) {
+    throw new Error("observation accepted enabled Feishu mirror production state");
   }
   const sidecarCommands = fs.readFileSync(sidecarLog, "utf8");
-  if (
-    !sidecarCommands.includes("huabaosi-feishu-artifact-mirror-observation-preflight")
-  ) {
-    throw new Error("observation did not run mirror observation preflight");
+  if (sidecarCommands !== "") {
+    throw new Error("enabled mirror observation must fail before sidecar execution");
   }
   if (
     sidecarCommands.includes("run-huabaosi-feishu-artifact-mirror-worker") ||
@@ -269,17 +264,19 @@ esac
     throw new Error("observation accepted an inactive production timer");
   }
 
-  const leakMarker = "configured-parent-value-must-not-appear";
+  const redactionSentinel = ["feishu", "observation", "redaction", "sentinel"].join(
+    "-"
+  );
   const leaked = run({
-    QINTOPIA_HUABAOSI_FEISHU_APP_SECRET: leakMarker,
-    FAKE_MIRROR_LEAK: leakMarker,
+    QINTOPIA_HUABAOSI_FEISHU_APP_SECRET: redactionSentinel,
+    FAKE_MIRROR_LEAK: redactionSentinel,
   });
   if (leaked.status !== 0) {
     throw new Error(
       `observation leaked configured secret env to sidecar\n${leaked.stdout}\n${leaked.stderr}`
     );
   }
-  if (`${leaked.stdout}\n${leaked.stderr}`.includes(leakMarker)) {
+  if (`${leaked.stdout}\n${leaked.stderr}`.includes(redactionSentinel)) {
     throw new Error("observation repeated a configured secret in its diagnostic");
   }
 } finally {

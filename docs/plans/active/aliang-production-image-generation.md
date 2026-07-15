@@ -107,7 +107,12 @@ key、完整 prompt、私有原始素材、Base id、message id 或 provider 原
 
 ## Storage Boundary
 
-生成图片必须写入独立的媒体存储边界，例如专用的媒体 bucket/prefix 和受控 HTTPS 下载域名。发布构件 COS 路径只服务 release/deploy，不能承载海报。
+生产 canary 的首存储边界是“画报司 | 设计产出库”的固定“阿靓图片产物版本表”。worker把最终 JPEG 上传到
+`最终JPEG` 附件字段，通过鉴权飞书媒体 API 回读精确字节并校验完整 identity，再创建
+`pending generated_image`。Postgres/AgentOS 仍是工作流和审核事实源；飞书是附件保存和人工协作面。发布构件 COS 路径只服务 release/deploy，不能承载海报。
+
+HTTP media upload/public URL backend 只保留给隔离 staging 和 loopback
+fixture；生产飞书 canary 不要求 owner 提供独立 media endpoint。
 
 运行时只接收以下形式的配置，不提交真实值：
 
@@ -116,15 +121,23 @@ QINTOPIA_HUABAOSI_IMAGE_PROVIDER
 QINTOPIA_HUABAOSI_IMAGE_MODEL
 QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL
 QINTOPIA_HUABAOSI_IMAGE_API_KEY
-QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT
-QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL
-QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS
+QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base
+QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0
+QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL
+QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA
+QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256
+QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN
+QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS
+QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID
+QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS
+QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH
+QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1
 QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
 ```
 
-启用开关默认 `0`。适配器只接受 allowlisted HTTPS media
-host；上传前验证文件类型、尺寸、字节数和 hash，上传后再次读取/校验对象元数据。任何失败都不得留下
-`approved` 或 `completed` 产物状态。
+启用开关默认 `0`。Base token 和 table
+id 必须精确 allowlist；上传前验证文件类型、尺寸、字节数和 hash，上传后通过官方 HTTPS
+API 鉴权回读并逐字节校验。任何失败都不得留下 `approved` 或 `completed` 产物状态。
 
 ## Adapter Protocol
 
@@ -138,17 +151,16 @@ only an approved `poster_brief`-derived prompt and requires a response shaped as
 It intentionally does not fetch provider-hosted image URLs, so provider URLs, temporary
 download tokens, and redirect behavior cannot become an unreviewed storage boundary.
 
-The dedicated media upload endpoint receives image bytes with the SHA-256, MIME type,
-pixel dimensions, and work-item id as metadata. It must return an allowlisted HTTPS URI
-and the same metadata. The worker then performs a readback from that URI and verifies:
+The production Feishu storage adapter uploads the final JPEG to the fixed attachment
+field, downloads it through the authenticated media API, and verifies:
 
 1. final JPEG MIME type and dimensions match the transformed bytes;
 2. byte size stays within the configured limit;
 3. SHA-256 matches before upload, upload response, and readback; and
-4. the returned URI is under the configured media public base URL and allowed host.
+4. the Base row is unique by the deterministic AgentOS artifact id.
 
-Provider JSON, media-upload JSON, and readback bytes are size-capped while being read;
-the HTTP `Content-Length` and chunked-decoding paths use the same cap. A retry may reuse
+Provider JSON, Feishu API JSON, and readback bytes are size-capped while being read; the
+HTTP `Content-Length` and chunked-decoding paths use the same cap. A retry may reuse
 only an existing pending artifact with the same content hash. It must never update a
 reviewed artifact URI, metadata, or review status.
 

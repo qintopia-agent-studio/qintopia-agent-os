@@ -4,13 +4,14 @@ Status: adapter and production enablement implemented on separate PRs; merge, ma
 Release publication, production configuration, activation, and first-record evidence
 remain
 
-Scope: 将 AgentOS `generated_image`
-单向镜像到“画报司 | 设计产出库”的图片产物版本表，不改变图片生成、人工审核、企微发送或 Release 发布边界
+Scope: 将已有 HTTPS 媒体的 AgentOS `generated_image`
+单向镜像到“画报司 | 设计产出库”的图片产物版本表；生产飞书首存储 canary 由
+`huabaosi-feishu-primary-storage.md` 定义
 
 ## Goal
 
-阿靓生成的最终 JPEG 已由独立媒体存储和 Postgres `artifacts`
-保存，但飞书设计产出库目前只有人工维护的任务字段，没有 AgentOS 写回。目标路径是：
+本 worker 保留给已有独立 HTTPS 媒体的 artifact 及审核状态再同步。生产 canary 直接写飞书附件并登记脱敏 workbench
+ref，不再由本 worker 重复上传初始版本。历史镜像路径是：
 
 ```text
 generated_image artifact
@@ -77,12 +78,10 @@ review decision。
    `QINTOPIA_DEPLOYED_COMMIT_SHA` 完全一致；
 7. profile env path、媒体 host allowlist 和固定 schema version 校验通过。
 
-生产 artifact 固定编译 `huabaosi-production-adapter` 和
-`huabaosi-feishu-mirror-adapter`，不编译 staging 或 QiWe
-adapter。仅编译 feature 不会启用写入；普通 release
-installer 安装固定 preflight/worker/timer unit，但不自动启用 timer。release
-bundle 提供 read-only observation 脚本和 non-secret observation preflight
-command。`--dry-run`
+生产 artifact 固定只编译 `huabaosi-production-adapter`，不编译
+`huabaosi-feishu-mirror-adapter`、staging 或 QiWe adapter。普通 release
+installer 不安装 mirror preflight/worker/timer unit。release bundle 提供 read-only
+disabled observation 脚本和 non-secret observation preflight command。 `--dry-run`
 可读取 Postgres 并生成脱敏 preview，但不读取媒体、不请求飞书、不写数据库。`--fixture-mode`
 只验证本地映射。
 

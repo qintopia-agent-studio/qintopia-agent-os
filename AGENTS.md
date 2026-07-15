@@ -59,8 +59,8 @@
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
 - Huabaosi generated-image Feishu mirror production observation smoke:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh`
-- Huabaosi generated-image Feishu mirror activation after manual Release publish:
-  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION=approved-production-huabaosi-feishu-artifact-mirror deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh`
+- Huabaosi generated-image Feishu mirror activation is intentionally fail-closed until a
+  separate owner-reviewed release boundary adds the mirror adapter artifact and timer.
 - Huabaosi generated-image Feishu mirror immediate timer rollback:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK=approved-production-huabaosi-feishu-artifact-mirror-rollback deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh`
 - Huabaosi image generation production activation after manual Release publish:
@@ -155,22 +155,41 @@ Use `rg` and `rg --files` for search.
   workflows on Hermes Kanban.
 - Postgres/AgentOS is the system fact source. Feishu is a human workbench and mirror,
   not the source of truth.
+- For the Huabaosi production image canary, the owner-selected first storage boundary is
+  the fixed Feishu Base `huabaosi-generated-image-v1` table. The image worker may upload
+  the exact final JPEG attachment and idempotently upsert one row by
+  `generated_image_artifact_id`; it must read the uploaded bytes back through the
+  authenticated Feishu media API and verify the complete JPEG identity before creating a
+  pending AgentOS artifact. Do not require a separate media upload/public URL service
+  for this Feishu-backed canary. Feishu automation may notify reviewers or mirror
+  reviewed status after the row exists, but it must not generate images, approve
+  artifacts, become the fact source, call QiWe, or publish.
 - Huabaosi generated-image Feishu mirroring must use the fixed
   `huabaosi-generated-image-v1` artifact-version schema and key idempotency by
   `generated_image_artifact_id`. It may mirror only a fully revalidated immutable final
   JPEG and sanitized review metadata. It must not update the legacy poster task summary
   without a stable AgentOS workflow id, treat Feishu state as approval, call QiWe, or
-  publish. Production artifacts compile `huabaosi-production-adapter` and
-  `huabaosi-feishu-mirror-adapter` only; staging and QiWe adapter features remain
-  forbidden. The release installer may install the dedicated mirror timer but must leave
-  it disabled until the owner runs the reviewed activation command after a successful
-  production preflight.
+  publish. Production artifacts compile only `huabaosi-production-adapter`; staging,
+  QiWe, and Feishu mirror adapter features remain forbidden. The ordinary release
+  installer must not install a dedicated mirror preflight, worker, or timer until a
+  separate owner-reviewed production boundary adds them.
 - Huabaosi Feishu mirror apply must validate the exact owner phrase, production release
   SHA binding, database URL hash, Base and table exact allowlists, fixed schema version,
   Huabaosi profile path, and media host allowlist before Postgres or external I/O. The
   production observation may run only the non-secret mirror observation preflight; it
   must not run full configuration preflight, preview the queue, upload media, write
   Feishu/Postgres, approve, publish, call QiWe, or send.
+- Huabaosi Feishu primary-storage apply must reuse the bounded Rust Feishu client and
+  the same exact Base/table allowlists, schema version, profile path, production release
+  SHA, and database URL hash gates as the reviewed mirror. Feishu attachment tokens and
+  credentials are memory-only and must not appear in Postgres metadata, reports, logs,
+  CLI arguments, or environment-derived output. A failed or ambiguous Feishu write must
+  not create a pending artifact or be retried automatically as if no external write
+  occurred.
+- The first Feishu-backed image canary must remain `pending`. Existing generated-image
+  approval and QiWe intake accept only the reviewed immutable HTTPS JPEG contract; they
+  must fail closed for `feishu-base://` artifacts until a separate PR adds authenticated
+  Feishu attachment revalidation to approval and a reviewed delivery path.
 - Huabaosi Feishu production observation must discover the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with
@@ -323,15 +342,14 @@ Use `rg` and `rg --files` for search.
   before configuration, Postgres claim/mutation, or network access even if runtime
   enable flags are misconfigured; callback apply must also fail before reading stdin.
   Production artifact manifests must record only
-  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`; both
-  artifact and server-source build checks must reject the QiWe staging feature and
-  all-features builds. The Huabaosi production features must not make QiWe live helpers
-  available.
+  `cargo_features: [huabaosi-production-adapter]`; artifact and server-source build
+  checks must reject QiWe staging, Feishu mirror, and all-features builds. The Huabaosi
+  production feature must not make QiWe live helpers available.
 - CI must execute non-ignored sidecar tests with all Cargo features so staging-only
   adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
   remain in the disposable integration job. Production artifacts must still use exactly
-  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`; an
-  all-features CI build must never be promoted or treated as a production artifact.
+  `cargo_features: [huabaosi-production-adapter]`; an all-features CI build must never
+  be promoted or treated as a production artifact.
 - As of 2026-07-15, QiWe final image sending is not on production. Staging smoke,
   callback bridge, and the Postgres state machine are implementation evidence only; do
   not add a production listener, service, timer, live-adapter production build, or
