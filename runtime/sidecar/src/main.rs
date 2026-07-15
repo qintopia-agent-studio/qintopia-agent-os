@@ -1,5 +1,6 @@
 #[cfg(any(
     test,
+    feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
     feature = "qiwe-staging-adapter"
 ))]
@@ -23,7 +24,13 @@ mod huabaosi_wecom_policy;
 mod huabaosi_wecom_shadow;
 mod identity_backfill;
 mod identity_bootstrap;
-#[cfg_attr(not(feature = "huabaosi-staging-adapter"), allow(dead_code))]
+#[cfg_attr(
+    not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter"
+    )),
+    allow(dead_code)
+)]
 mod image_generation;
 mod knowledge;
 mod mcp_server;

@@ -33,6 +33,12 @@ printf '%s\n' "$*" >>"${systemctlLog}"
 if [[ "\${FAKE_PROVIDER_UNIT_PRESENT:-0}" == "1" && "$1" == "cat" ]]; then
   exit 0
 fi
+if [[ "\${FAKE_PROVIDER_TIMER_ACTIVE:-0}" == "1" && "$1" == "is-active" ]]; then
+  exit 0
+fi
+if [[ "\${FAKE_PROVIDER_TIMER_ENABLED:-0}" == "1" && "$1" == "is-enabled" ]]; then
+  exit 0
+fi
 exit 1
 `
   );
@@ -44,11 +50,15 @@ set -euo pipefail
 printf '%s\n' "$*" >>"${sidecarLog}"
 case "$1" in
   huabaosi-image-generation-preflight)
-    if [[ "\${FAKE_CONFIG_VALID:-0}" == "1" ]]; then
-      printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":false,"adapter_compiled":false,"config_valid":true,"media_allowed_host_count":1,"missing_configuration":[],"safe_for_chat":false}'
+    if [[ "\${FAKE_PRODUCTION_MODE:-0}" == "1" ]]; then
+      printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"adapter_mode":"production","config_valid":true,"media_allowed_host_count":1,"missing_configuration":[],"safe_for_chat":false}'
       exit 0
     fi
-    printf '%s\n' '{"success":false,"worker":"huabaosi-image-generation-worker","action_status":"adapter_not_configured","generation_enabled":false,"adapter_compiled":false,"config_valid":false,"media_allowed_host_count":0,"missing_configuration":["QINTOPIA_HUABAOSI_IMAGE_API_KEY"],"safe_for_chat":false}'
+    if [[ "\${FAKE_CONFIG_VALID:-0}" == "1" ]]; then
+      printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":false,"adapter_compiled":false,"adapter_mode":"disabled","config_valid":true,"media_allowed_host_count":1,"missing_configuration":[],"safe_for_chat":false}'
+      exit 0
+    fi
+    printf '%s\n' '{"success":false,"worker":"huabaosi-image-generation-worker","action_status":"adapter_not_configured","generation_enabled":false,"adapter_compiled":false,"adapter_mode":"disabled","config_valid":false,"media_allowed_host_count":0,"missing_configuration":["QINTOPIA_HUABAOSI_IMAGE_API_KEY"],"safe_for_chat":false}'
     printf '%s\n' 'image adapter preflight configuration is invalid' >&2
     exit 1
     ;;
@@ -124,9 +134,32 @@ esac
     }
   }
 
-  const installed = runObservation({ FAKE_PROVIDER_UNIT_PRESENT: "1" });
-  if (installed.status === 0) {
-    throw new Error("expected installed provider unit to fail production observation");
+  const enabled = runObservation({
+    QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED: "1",
+    FAKE_PRODUCTION_MODE: "1",
+    FAKE_PROVIDER_UNIT_PRESENT: "1",
+    FAKE_PROVIDER_TIMER_ACTIVE: "1",
+    FAKE_PROVIDER_TIMER_ENABLED: "1",
+  });
+  if (enabled.status !== 0) {
+    throw new Error(
+      `expected enabled production observation to pass\nstdout:\n${enabled.stdout}\nstderr:\n${enabled.stderr}`
+    );
+  }
+
+  for (const missingState of [
+    { FAKE_PROVIDER_TIMER_ACTIVE: "0", FAKE_PROVIDER_TIMER_ENABLED: "1" },
+    { FAKE_PROVIDER_TIMER_ACTIVE: "1", FAKE_PROVIDER_TIMER_ENABLED: "0" },
+  ]) {
+    const invalidEnabled = runObservation({
+      QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED: "1",
+      FAKE_PRODUCTION_MODE: "1",
+      FAKE_PROVIDER_UNIT_PRESENT: "1",
+      ...missingState,
+    });
+    if (invalidEnabled.status === 0) {
+      throw new Error("expected incomplete production timer state to fail observation");
+    }
   }
 
   const leakedValue = "configured-secret-must-be-redacted";

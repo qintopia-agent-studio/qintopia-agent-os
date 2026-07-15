@@ -58,11 +58,13 @@ From the monorepo root, prefer:
   loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
   environment failure and must be confirmed by an unsandboxed rerun, not hidden by
   skipping tests.
-- Huabaosi live provider/media execution must compile only with the non-default
-  `huabaosi-staging-adapter` feature. Default apply must reject before Postgres. A
-  staging-feature apply with generation enabled must verify the exact owner phrase,
-  approved database URL hash, staging database name, and adapter policy before Postgres
-  or external I/O; the staging smoke cannot be the only enforcement point.
+- Huabaosi live provider/media execution must compile with exactly one non-default live
+  feature: `huabaosi-staging-adapter` or `huabaosi-production-adapter`. A build with
+  neither or both must reject apply before Postgres. Staging keeps the exact owner
+  phrase and reviewed staging database hash. Production must verify the exact production
+  approval phrase, deployed release SHA binding, database URL hash binding, and adapter
+  policy before Postgres or external I/O; shell scripts cannot be the only enforcement
+  point.
 - The disposable operations smoke may enter the live retry path only with both the
   Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
   literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media

@@ -57,6 +57,8 @@ const requiredDocs = [
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -174,6 +176,8 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -243,6 +247,7 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
     "/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens",
     "openssl",
     "jwt_path",
+    "huabaosi-production-adapter",
   ]) {
     if (!artifactFetchScript.includes(requiredFragment)) {
       addError(
@@ -345,6 +350,7 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     "qintopia-message-sidecar.tar.gz",
     'tar -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir"',
     "qintopia-message-sidecar",
+    "huabaosi-production-adapter",
     "sha256sum -c SHA256SUMS",
   ]) {
     if (!cosFetchScript.includes(requiredFragment)) {
@@ -385,12 +391,14 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const buildArtifactScript = readText("tools/deploy/build-sidecar-artifact.mjs");
   for (const requiredFragment of [
     "const bundleName = `${binaryName}.tar.gz`",
-    "const cargoFeatures = []",
+    'const cargoFeatures = ["huabaosi-production-adapter"]',
     'gitOutput(["status", "--porcelain"], "unknown")',
     "refusing to build a release artifact from a dirty or unreadable git worktree",
     'run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName])',
     "bundleSha256",
     "cargo_features: cargoFeatures",
+    '"--features"',
+    'cargoFeatures.join(",")',
   ]) {
     if (!buildArtifactScript.includes(requiredFragment)) {
       addError(
@@ -401,12 +409,11 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   for (const forbiddenFragment of [
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
-    '"--features"',
     '"--all-features"',
   ]) {
     if (buildArtifactScript.includes(forbiddenFragment)) {
       addError(
-        `tools/deploy/build-sidecar-artifact.mjs: production sidecar artifacts must use default Cargo features (${forbiddenFragment})`
+        `tools/deploy/build-sidecar-artifact.mjs: production sidecar artifacts must use only the reviewed production feature (${forbiddenFragment})`
       );
     }
   }
@@ -434,6 +441,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "qintopia-agent-os-deploy-bundle",
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
+    "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
+    "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",

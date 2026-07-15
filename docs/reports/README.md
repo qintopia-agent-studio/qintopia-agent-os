@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-07-15 Aliang image generation production enablement](2026-07-15-aliang-production-enablement.md)
+
 This directory links internal sync reports and generated reports that are useful for
 team onboarding, architecture review, or migration decisions.
 

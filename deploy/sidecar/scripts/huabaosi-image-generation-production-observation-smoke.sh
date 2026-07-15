@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ "${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE:-}" != "1" ]]; then
-  echo "Huabaosi image generation production observation skipped: set QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 to inspect disabled runtime state" >&2
+  echo "Huabaosi image generation production observation skipped: set QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 to inspect runtime state" >&2
   exit 0
 fi
 
@@ -12,7 +12,9 @@ SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
 ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
 PROVIDER_SERVICE_NAME="qintopia-agentos-huabaosi-image-generation-worker.service"
 PROVIDER_TIMER_NAME="qintopia-agentos-huabaosi-image-generation-worker.timer"
+PROVIDER_PREFLIGHT_NAME="qintopia-agentos-huabaosi-image-generation-preflight.service"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+EXPECTED_STATE="${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_EXPECTED_STATE:-auto}"
 
 cd "$MONOREPO_ROOT"
 
@@ -72,44 +74,70 @@ assert_no_sensitive_output() {
   done
 }
 
-assert_generation_disabled() {
+assert_generation_state() {
   local generation_flag="${QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED:-0}"
   generation_flag="${generation_flag//[[:space:]]/}"
-  if [[ "$generation_flag" == "1" ]]; then
-    echo "Huabaosi image generation must remain disabled during production observation" >&2
+  if [[ "$EXPECTED_STATE" == "auto" ]]; then
+    if [[ "$generation_flag" == "1" ]]; then
+      EXPECTED_STATE="enabled"
+    else
+      EXPECTED_STATE="disabled"
+    fi
+  fi
+  if [[ "$EXPECTED_STATE" != "disabled" && "$EXPECTED_STATE" != "enabled" ]]; then
+    echo "Huabaosi production expected state must be disabled, enabled, or auto" >&2
+    exit 1
+  fi
+  if [[ "$EXPECTED_STATE" == "enabled" && "$generation_flag" != "1" ]]; then
+    echo "Huabaosi image generation enablement does not match expected state" >&2
+    exit 1
+  fi
+  if [[ "$EXPECTED_STATE" == "disabled" && "$generation_flag" == "1" ]]; then
+    echo "Huabaosi image generation disablement does not match expected state" >&2
     exit 1
   fi
 }
 
-assert_provider_unscheduled() {
+assert_provider_state() {
   if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
     echo "systemctl is required for Huabaosi image generation production observation" >&2
     exit 1
   fi
 
-  local unit
-  for unit in "$PROVIDER_SERVICE_NAME" "$PROVIDER_TIMER_NAME"; do
-    if "$SYSTEMCTL" cat "$unit" >/dev/null 2>&1; then
-      echo "Huabaosi provider worker unit must not be installed" >&2
+  if [[ "$EXPECTED_STATE" == "enabled" ]]; then
+    local unit
+    for unit in "$PROVIDER_PREFLIGHT_NAME" "$PROVIDER_SERVICE_NAME" "$PROVIDER_TIMER_NAME"; do
+      if ! "$SYSTEMCTL" cat "$unit" >/dev/null 2>&1; then
+        echo "Huabaosi production unit is missing" >&2
+        exit 1
+      fi
+    done
+    if ! "$SYSTEMCTL" is-active --quiet "$PROVIDER_TIMER_NAME" >/dev/null 2>&1; then
+      echo "Huabaosi provider timer must be active" >&2
       exit 1
     fi
-    if "$SYSTEMCTL" is-active --quiet "$unit" >/dev/null 2>&1; then
-      echo "Huabaosi provider worker unit must not be active" >&2
+    if ! "$SYSTEMCTL" is-enabled --quiet "$PROVIDER_TIMER_NAME" >/dev/null 2>&1; then
+      echo "Huabaosi provider timer must be enabled" >&2
       exit 1
     fi
-    if "$SYSTEMCTL" is-enabled --quiet "$unit" >/dev/null 2>&1; then
-      echo "Huabaosi provider worker unit must not be enabled" >&2
+  else
+    if "$SYSTEMCTL" is-active --quiet "$PROVIDER_TIMER_NAME" >/dev/null 2>&1; then
+      echo "Huabaosi provider timer must not be active" >&2
       exit 1
     fi
-  done
+    if "$SYSTEMCTL" is-enabled --quiet "$PROVIDER_TIMER_NAME" >/dev/null 2>&1; then
+      echo "Huabaosi provider timer must not be enabled" >&2
+      exit 1
+    fi
+  fi
 }
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 source_env_if_present
-assert_generation_disabled
-assert_provider_unscheduled
+assert_generation_state
+assert_provider_state
 
 preflight="$tmp_dir/preflight.json"
 preflight_stderr="$tmp_dir/preflight.stderr"
@@ -117,17 +145,17 @@ set +e
 "${BIN_CMD[@]}" huabaosi-image-generation-preflight >"$preflight" 2>"$preflight_stderr"
 preflight_status=$?
 set -e
-python3 - "$preflight" "$preflight_status" <<'PY'
+python3 - "$preflight" "$preflight_status" "$EXPECTED_STATE" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as fh:
     payload = json.load(fh)
 status = int(sys.argv[2])
+expected_state = sys.argv[3]
 
 assert payload["worker"] == "huabaosi-image-generation-worker"
-assert payload["generation_enabled"] is False
-assert payload["adapter_compiled"] is False
+assert payload["generation_enabled"] is (expected_state == "enabled")
 assert payload["safe_for_chat"] is False
 assert isinstance(payload["config_valid"], bool)
 assert isinstance(payload["media_allowed_host_count"], int)
@@ -144,11 +172,23 @@ allowed_missing = {
 assert isinstance(missing, list)
 assert len(missing) == len(set(missing))
 assert set(missing).issubset(allowed_missing)
-if payload["config_valid"]:
+if expected_state == "enabled":
+    assert payload["adapter_compiled"] is True
+    assert payload.get("adapter_mode") == "production"
+    assert payload["config_valid"] is True
     assert payload["success"] is True
     assert payload["action_status"] == "adapter_config_ready"
     assert missing == []
     assert status == 0
+elif payload["config_valid"] and not payload["adapter_compiled"]:
+    assert payload["success"] is True
+    assert payload["action_status"] == "adapter_config_ready"
+    assert status == 0
+elif payload["config_valid"]:
+    assert payload.get("adapter_mode") == "production"
+    assert payload["success"] is False
+    assert payload["action_status"] == "live_adapter_compiled_requires_owner_review"
+    assert status != 0
 else:
     assert payload["success"] is False
     assert payload["action_status"] == "adapter_not_configured"

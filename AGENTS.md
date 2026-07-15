@@ -55,8 +55,12 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 - Xiaoman activity image generation starter observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
-- Huabaosi image generation disabled-state production observation smoke:
+- Huabaosi image generation production state observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
+- Huabaosi image generation production activation after manual Release publish:
+  `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION=approved-production-image-generation deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh`
+- Huabaosi image generation immediate timer rollback:
+  `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK=approved-production-image-generation-rollback deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh`
 - Huabaosi WeCom gateway read-only observation smoke:
   `QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`
 - Huabaosi WeCom canary disabled-state observation smoke:
@@ -276,9 +280,10 @@ Use `rg` and `rg --files` for search.
   `qiwe-staging-adapter` feature. In those builds, QiWe upload/callback apply must fail
   before configuration, Postgres claim/mutation, or network access even if runtime
   enable flags are misconfigured; callback apply must also fail before reading stdin.
-  Production artifact manifests must record `cargo_features: []`, and both artifact and
-  server-source build checks must reject explicit features, all-features builds, and the
-  staging feature.
+  Production artifact manifests must record only
+  `cargo_features: [huabaosi-production-adapter]`; both artifact and server-source build
+  checks must reject the QiWe staging feature and all-features builds. The unrelated
+  Huabaosi production feature must not make QiWe live helpers available.
 - CI must execute non-ignored sidecar tests with all Cargo features so staging-only
   adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
   remain in the disposable integration job, and production artifacts must still use an
@@ -342,10 +347,12 @@ Use `rg` and `rg --files` for search.
   and response buffers, and classify whether an error occurred after a request may have
   been sent.
 - `run-huabaosi-image-generation-worker` defaults to
-  `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Until a provider, isolated media
-  storage, host allowlist, staged smoke, rollback owner, and owner-reviewed runtime
-  configuration exist, it may only validate and preview requests. It must not create a
-  `generated_image` artifact, contact an external service, or be attached to a timer.
+  `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Production generation may run only
+  from a release artifact compiled with the reviewed `huabaosi-production-adapter`
+  feature, explicit production enablement bound to the deployed release SHA and database
+  URL hash, valid provider/media configuration, and the fixed production timer. It may
+  create only pending `generated_image` artifacts; it must not approve, publish, write
+  Feishu, or send QiWe.
 - 阿亮画报师生产 WeCom Bot 的 `Interrupting current task` / `Response formatting failed`
   用户可见中断提示来自 live Hermes gateway busy-ack and platform send fallback
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
@@ -355,12 +362,21 @@ Use `rg` and `rg --files` for search.
   migration evidence. Do not add them to release bundles or apply them to production;
   migrate each accepted behavior into an owned package with focused tests and a separate
   cutover PR.
-- Huabaosi live provider/media helpers may compile only with the non-default
-  `huabaosi-staging-adapter` feature. Default and production apply must fail before
-  Postgres or network access. A staging-feature apply with generation enabled must
-  validate the exact owner phrase, approved database URL hash, staging database name,
-  and adapter configuration in Rust before connecting to Postgres; the smoke shell is
-  not an authorization boundary.
+- Huabaosi live provider/media helpers may compile only with one reviewed live feature:
+  `huabaosi-staging-adapter` for guarded staging or `huabaosi-production-adapter` for
+  production. A build containing neither or both must reject apply before Postgres or
+  network access. Staging keeps its one-shot owner phrase and reviewed staging database
+  hash gate. Production must bind explicit enablement to the deployed release SHA and
+  production database URL hash before connecting to Postgres. Production artifacts must
+  record exactly `cargo_features: [huabaosi-production-adapter]` and must never contain
+  either staging adapter feature.
+- The Huabaosi production image-generation service and timer may be installed from the
+  immutable release but must not be enabled by the ordinary release installer. After the
+  owner manually publishes the Release, the reviewed activation command must run the
+  no-network preflight from that release and then enable the fixed timer for canary
+  generation. Rollback disables the timer first and turns the generation enable flag off
+  through reviewed runtime configuration. Do not repurpose this timer for artifact
+  approval, Feishu, QiWe, or publishing.
 - The disposable operations apply smoke may exercise the Huabaosi retry state only when
   both `huabaosi-staging-adapter` and `postgres-integration-tests` are compiled,
   `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1`, the database is exactly `qintopia_test` on
@@ -398,11 +414,11 @@ Use `rg` and `rg --files` for search.
   an unknown provider/media outcome. Reconciliation must atomically mark it failed,
   release the complete claim tuple, append one sanitized ambiguous-outcome event, and
   disable automatic retry; it must never reclaim the row for another external attempt.
-- `huabaosi-image-generation-production-observation-smoke.sh` may only verify that the
-  provider worker remains disabled and unscheduled, run configuration preflight, and run
-  `run-huabaosi-image-generation-worker --once --dry-run` for a read-only queue preview.
-  It must not use `--apply`, contact provider/media endpoints, write Postgres or Feishu,
-  call QiWe, create a generated image, or publish.
+- `huabaosi-image-generation-production-observation-smoke.sh` may verify either the
+  disabled pre-activation state or the enabled production timer state, run configuration
+  preflight, and run `run-huabaosi-image-generation-worker --once --dry-run` for a
+  read-only queue preview. It must not use `--apply`, contact provider/media endpoints,
+  write Postgres or Feishu, call QiWe, create a generated image, or publish.
 - `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
   Hermes WeCom user-service active state through `systemctl --user`, fixed service
   command, public `busy_input_mode`, release/current presence, and sanitized

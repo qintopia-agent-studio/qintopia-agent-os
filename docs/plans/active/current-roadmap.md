@@ -52,7 +52,11 @@ unless correcting historical evidence.
      target. The `v0.2.7` production release installed the internal Xiaoman
      image-generation request starter timer, but real image generation, user-media
      storage, human review, and publication remain separate gates; Huabaosi provider
-     execution is still disabled and unscheduled.
+     execution is moving through an owner-approved production enablement PR. The
+     production worker remains inactive until the owner manually publishes the Release,
+     the release binary passes production preflight, and the dedicated timer is
+     explicitly activated for canary generation. Image review and publication remain
+     separate gates.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The

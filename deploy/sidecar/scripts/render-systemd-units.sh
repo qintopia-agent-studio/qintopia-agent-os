@@ -190,6 +190,33 @@ PrivateTmp=true
 EOF
 }
 
+render_guarded_oneshot_service() {
+  local service_name="$1"
+  local description="$2"
+  local preflight_command="$3"
+  local command="$4"
+
+  write_file "$service_name" <<EOF
+[Unit]
+Description=${description}
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${MONOREPO_DIR}
+EnvironmentFile=${ENV_FILE}
+Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
+ExecStartPre=${BIN} ${preflight_command}
+ExecStart=${BIN} ${command}
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+}
+
 render_timer() {
   local timer_name="$1"
   local description="$2"
@@ -425,6 +452,22 @@ render_all() {
     "${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL:-2min}"
 
   render_oneshot_service \
+    "qintopia-agentos-huabaosi-image-generation-preflight.service" \
+    "Qintopia AgentOS Huabaosi Image Generation Production Preflight" \
+    "huabaosi-image-generation-preflight"
+  render_guarded_oneshot_service \
+    "qintopia-agentos-huabaosi-image-generation-worker.service" \
+    "Qintopia AgentOS Huabaosi Image Generation Worker" \
+    "huabaosi-image-generation-preflight" \
+    "run-huabaosi-image-generation-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-huabaosi-image-generation-worker.timer" \
+    "Run Qintopia AgentOS Huabaosi image generation worker" \
+    "qintopia-agentos-huabaosi-image-generation-worker.service" \
+    "11min" \
+    "${QINTOPIA_HUABAOSI_IMAGE_GENERATION_TIMER_INTERVAL:-5min}"
+
+  render_oneshot_service \
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
     "Qintopia AgentOS Xiaoman Activity Send Request Starter Worker" \
     "run-xiaoman-activity-send-request-starter-worker --once --apply"
@@ -464,6 +507,9 @@ validate_output() {
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer"
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer"
+    "qintopia-agentos-huabaosi-image-generation-preflight.service"
+    "qintopia-agentos-huabaosi-image-generation-worker.service"
+    "qintopia-agentos-huabaosi-image-generation-worker.timer"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
   )

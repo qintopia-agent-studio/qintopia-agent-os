@@ -120,7 +120,7 @@ if (!exists(xiaomanPreflightRecordPath)) {
     "run-collaboration-worker --work-item-type visual_asset_request --once --apply",
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
     "run-xiaoman-activity-image-generation-starter-worker --once --apply",
-    "Huabaosi provider disabled state",
+    "Huabaosi provider runtime state",
     "run-huabaosi-image-generation-worker --once --dry-run",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "run-xiaoman-activity-send-request-starter-worker --once --apply",
@@ -130,7 +130,7 @@ if (!exists(xiaomanPreflightRecordPath)) {
     "Eligible Xiaoman `event_signals` preview count",
     "Eligible image-generation request preview count",
     "Eligible awaiting publish group message request count",
-    "Pass: production observation can continue without enabling external adapters",
+    "Pass: production observation can continue without executing external adapters",
     "Hold: one or more timers, commands, previews, or boundary checks failed",
     "Passing this preflight does not approve publishing",
   ]) {
@@ -328,6 +328,55 @@ if (!exists(aliangStagingSmokePath)) {
     "operations-group-message-confirm",
   ]) {
     forbidFragment(aliangStagingSmokePath, smoke, fragment);
+  }
+}
+
+const aliangProductionActivationPath =
+  "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh";
+if (!exists(aliangProductionActivationPath)) {
+  addError(`${aliangProductionActivationPath}: missing production activation command`);
+} else {
+  const activation = readText(aliangProductionActivationPath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION",
+    "approved-production-image-generation",
+    "qintopia-agentos-huabaosi-image-generation-preflight.service",
+    "qintopia-agentos-huabaosi-image-generation-worker.timer",
+    '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
+    '"$SYSTEMCTL" enable --now "$WORKER_TIMER"',
+    '"$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"',
+    '"$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"',
+  ]) {
+    requireFragment(aliangProductionActivationPath, activation, fragment);
+  }
+  for (const fragment of [
+    "run-huabaosi-image-generation-worker",
+    "--apply",
+    "source ",
+    "QIWE_",
+    "FEISHU_",
+  ]) {
+    forbidFragment(aliangProductionActivationPath, activation, fragment);
+  }
+}
+
+const aliangProductionRollbackPath =
+  "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh";
+if (!exists(aliangProductionRollbackPath)) {
+  addError(`${aliangProductionRollbackPath}: missing production rollback command`);
+} else {
+  const rollback = readText(aliangProductionRollbackPath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK",
+    "approved-production-image-generation-rollback",
+    "qintopia-agentos-huabaosi-image-generation-worker.service",
+    "qintopia-agentos-huabaosi-image-generation-worker.timer",
+    '"$SYSTEMCTL" disable --now "$WORKER_TIMER"',
+  ]) {
+    requireFragment(aliangProductionRollbackPath, rollback, fragment);
+  }
+  for (const fragment of ["rm -", "source ", "QIWE_", "FEISHU_"]) {
+    forbidFragment(aliangProductionRollbackPath, rollback, fragment);
   }
 }
 

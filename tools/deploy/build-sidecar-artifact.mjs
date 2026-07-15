@@ -13,7 +13,7 @@ const binaryName = "qintopia-message-sidecar";
 const targetTriple = process.env.QINTOPIA_ARTIFACT_TARGET ?? "linux-x86_64-gnu";
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactName = `${binaryName}-${targetTriple}`;
-const cargoFeatures = [];
+const cargoFeatures = ["huabaosi-production-adapter"];
 const artifactDir = path.join(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,
@@ -77,7 +77,15 @@ const buildStartedAt = new Date().toISOString();
 
 run(
   "cargo",
-  ["build", "--release", "--locked", "--manifest-path", "runtime/sidecar/Cargo.toml"],
+  [
+    "build",
+    "--release",
+    "--locked",
+    "--manifest-path",
+    "runtime/sidecar/Cargo.toml",
+    "--features",
+    cargoFeatures.join(","),
+  ],
   { stdio: "inherit" }
 );
 ensureFile(binaryPath, "release binary");

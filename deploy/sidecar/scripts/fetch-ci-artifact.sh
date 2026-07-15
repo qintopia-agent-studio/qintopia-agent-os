@@ -253,6 +253,7 @@ unzip -o -q "$zip_path" -d "$output_dir"
   manifest_commit="$(jq -r '.commit_sha // empty' artifact-manifest.json)"
   manifest_artifact="$(jq -r '.artifact_name // empty' artifact-manifest.json)"
   manifest_target="$(jq -r '.target // empty' artifact-manifest.json)"
+  manifest_cargo_features="$(jq -c '.validation.cargo_features // null' artifact-manifest.json)"
   manifest_binary_sha="$(
     jq -r \
       '.files[]? | select(.path == "qintopia-message-sidecar") | .sha256 // empty' \
@@ -269,6 +270,10 @@ unzip -o -q "$zip_path" -d "$output_dir"
   fi
   if [[ "$manifest_target" != "$artifact_target" ]]; then
     echo "artifact manifest target mismatch: got ${manifest_target}, expected ${artifact_target}" >&2
+    exit 1
+  fi
+  if [[ "$manifest_cargo_features" != '["huabaosi-production-adapter"]' ]]; then
+    echo "artifact manifest Cargo features are not approved for production" >&2
     exit 1
   fi
   if [[ -z "$manifest_binary_sha" || "$manifest_binary_sha" != "$checksum_binary_sha" ]]; then

@@ -114,9 +114,10 @@ target, or missing final confirmation must stop before sending.
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
   The live helpers compile only with the staging-only Cargo feature. Production release
-  artifacts record an empty feature list and cannot execute either external call; no
-  service, timer, staging endpoint, or production enablement is installed. The guarded
-  staging smoke exists only as an owner-approved one-shot operator entrypoint.
+  artifacts record only the unrelated `huabaosi-production-adapter` feature and cannot
+  execute either QiWe external call; no service, timer, staging endpoint, or production
+  enablement is installed. The guarded staging smoke exists only as an owner-approved
+  one-shot operator entrypoint.
 - Callback parsing classifies the raw `msgData` field names into one of four fixed,
   reviewed credential schema ids before deserializing credential values. Reports expose
   only that fixed id and an additional-field count. They reject simultaneous canonical

@@ -512,8 +512,12 @@ export QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1
 scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
 ```
 
-Separately verify that the real Huabaosi provider worker remains disabled and has no
-systemd service or timer. This observation runs configuration preflight and a read-only
+The release installer installs the Huabaosi production preflight, worker, and timer
+units but leaves the timer disabled. Before activation, apply the reviewed non-secret
+release SHA and database URL hash plus provider/media secrets through the production
+configuration channel. Do not edit the server checkout or commit those values.
+
+Run the read-only observation before activation. It runs configuration preflight and a
 queue preview only; it does not claim requests or contact provider/media endpoints.
 
 ```bash
@@ -523,6 +527,35 @@ set +a
 export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1
 scripts/huabaosi-image-generation-production-observation-smoke.sh
 ```
+
+After the owner manually publishes the Release and confirms the exact release SHA,
+confirm the new units were installed. The first release containing this installer change
+is processed by the previous deploy runner, so run the reviewed same-SHA follow-up
+deployment with the original release scope and `qintopia-system-services` restart target
+before activation. Do not repair a missing unit with a server edit.
+
+Then activate the canary timer. The activation command first starts the fixed no-network
+preflight service and stops without enabling the timer if any production gate is
+invalid.
+
+```bash
+export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION=approved-production-image-generation
+scripts/activate-huabaosi-image-generation-production.sh
+unset QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION
+```
+
+Observe the first pending `generated_image`; do not approve it automatically. Confirm
+the timer and sanitized worker outcome with the same observation smoke. Immediate
+rollback stops scheduling before runtime configuration is changed through the reviewed
+configuration channel:
+
+```bash
+export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK=approved-production-image-generation-rollback
+scripts/rollback-huabaosi-image-generation-production.sh
+unset QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK
+```
+
+Rollback does not delete generated artifacts or audit rows and does not enable QiWe.
 
 For the Huabaosi WeCom migration, run the separate gateway observation smoke from the
 release directory. This smoke does not source `.env`. It inspects only the active Hermes
