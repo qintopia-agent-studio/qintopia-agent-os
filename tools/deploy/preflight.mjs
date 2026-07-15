@@ -71,6 +71,7 @@ const requiredDocs = [
   "tools/skills/check-feishu-base.mjs",
   "tools/agents/check-profile-bundles.mjs",
   "agents/xiaoman/profile-bundle/bundle.json",
+  "agents/xiaoman/profile-bundle/migrate_values.py",
   "agents/xiaoman/profile-bundle/render.py",
   "agents/xiaoman/profile-bundle/templates/SOUL.md.template",
   "agents/xiaoman/profile-bundle/templates/profile.yaml.template",

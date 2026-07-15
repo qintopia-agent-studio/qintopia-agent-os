@@ -27,7 +27,9 @@ activity signals and human-confirmed inputs into governed work items.
 - `SOUL.md`, `config.yaml`, `profile.yaml`, webhook/channel declarations, and cron
   declarations remain runtime-local. The observation-only bundle under `profile-bundle/`
   templates `SOUL.md` and `profile.yaml` for strict fixture rendering and future
-  production parity; it does not activate or replace either live file.
+  production parity. Its root-only one-time migration command may prepare the fixed
+  server-local values JSON after owner approval; it does not activate or replace either
+  live file.
 - Runtime `.env`, webhook state, memories, caches, locks, logs, and databases are
   excluded from this package.
 

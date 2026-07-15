@@ -153,6 +153,14 @@ Use `rg` and `rg --files` for search.
   records production parity and first-cutover rollback. Keep Xiaoman `config.yaml`,
   webhook secrets, channel identifiers, cron state, `.env`, sessions, auth, messages,
   memories, logs, cache, locks, and databases out of the bundle.
+- `agents/xiaoman/profile-bundle/migrate_values.py --apply` is a one-time manual
+  observation prerequisite. It must require root and the exact owner approval before
+  reading the fixed live files, lock both reviewed source hashes, validate exactly four
+  values, prove complete rendered parity, and no-clobber create only the root-owned mode
+  `0600` `/etc/qintopia/xiaoman-profile-bundle-values.json`. It must not accept path
+  overrides, print values, edit the live profile, create symlinks, restart Hermes, use
+  the network, write Postgres/Feishu, call external adapters, publish, or send. The
+  deploy runner must never invoke it automatically.
 - Xiaoman activity signal intake uses `xiaoman-activity signal-ingest` to create
   `xiaoman.create_activity_request` through the operations control plane with
   `requester_agent=default` and `target_agent=xiaoman`; do not bypass capability policy

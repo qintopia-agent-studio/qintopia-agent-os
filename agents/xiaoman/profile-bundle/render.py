@@ -58,7 +58,7 @@ def sha256(data: bytes) -> str:
 
 
 def validate_manifest(
-    manifest: dict[str, Any],
+    manifest: dict[str, Any], bundle_root: Path = ROOT
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if manifest.get("schema_version") != 1:
         raise BundleError("bundle.json schema_version must be 1")
@@ -106,8 +106,11 @@ def validate_manifest(
         source_sha = item.get("production_source_sha256")
         if not isinstance(template, str) or not template.startswith("templates/"):
             raise BundleError("bundle.json template path must stay under templates/")
-        template_path = (ROOT / template).resolve()
-        if ROOT not in template_path.parents or not template_path.is_file():
+        template_path = (bundle_root / template).resolve()
+        if (
+            bundle_root.resolve() not in template_path.parents
+            or not template_path.is_file()
+        ):
             raise BundleError(f"bundle template is missing: {template}")
         if not isinstance(target, str) or Path(target).name != target:
             raise BundleError(f"bundle target must be a file name: {target}")
@@ -147,6 +150,8 @@ def validate_manifest(
         boundary.get(key) is not False for key in boundary_keys
     ):
         raise BundleError("bundle.json production boundary must remain observation-only")
+    if boundary.get("server_config_write") != "manual-root-only":
+        raise BundleError("bundle.json server config write must remain manual-root-only")
 
     return inputs, files
 
@@ -166,9 +171,9 @@ def validate_value(item: dict[str, Any], value: Any) -> str:
     return value
 
 
-def render(values_path: Path, output_dir: Path) -> None:
-    manifest = load_json(MANIFEST_PATH)
-    inputs, files = validate_manifest(manifest)
+def render(values_path: Path, output_dir: Path, bundle_root: Path = ROOT) -> None:
+    manifest = load_json(bundle_root / "bundle.json")
+    inputs, files = validate_manifest(manifest, bundle_root)
     values = load_json(values_path)
     declared_names = {item["name"] for item in inputs}
     missing = declared_names - set(values)
@@ -190,7 +195,7 @@ def render(values_path: Path, output_dir: Path) -> None:
     rendered_files = []
     try:
         for item in files:
-            source = ROOT / item["template"]
+            source = bundle_root / item["template"]
             text = source.read_text(encoding="utf-8")
             rendered = PLACEHOLDER.sub(lambda match: validated[match.group(1)], text)
             if PLACEHOLDER.search(rendered):

@@ -14,3 +14,5 @@ webhook subscriptions are runtime configuration, not the long-term workflow sour
 `profile-bundle/` is observation-only. Its strict renderer uses four server-local
 identity inputs and writes only to a new directory. Do not link its output into the live
 profile until a later PR records production parity and first-cutover rollback evidence.
+The values migration command is manual, root-only, source-hash locked, no-clobber, and
+may create only `/etc/qintopia/xiaoman-profile-bundle-values.json`.

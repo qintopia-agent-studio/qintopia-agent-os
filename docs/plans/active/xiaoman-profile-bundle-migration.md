@@ -64,6 +64,28 @@ state databases, server backups, or Hermes core patches.
 Each step is a separate PR and must not include image-provider, QiWe-send, Hermes-core,
 or unrelated workflow changes.
 
+## Values Migration Command
+
+The second PR adds one fixed, manual command that prepares the server-local values file
+for production parity observation. It must:
+
+- require root and the exact one-shot approval phrase before reading the live profile;
+- read only the fixed live `SOUL.md` and `profile.yaml` paths and require their reviewed
+  SHA-256 values;
+- extract exactly the four declared identity values in memory without printing them;
+- validate those values through the bundle's existing allowlist;
+- render into a temporary directory and require byte-for-byte parity before writing;
+- create `/etc/qintopia/xiaoman-profile-bundle-values.json` only when it does not
+  already exist, with root ownership and mode `0600`;
+- write the complete JSON atomically without replacing an existing file;
+- emit only fixed status, input names, source hashes, and boolean boundary fields.
+
+It must not accept arbitrary paths, source shell files, edit the live profile, create a
+symlink, restart Hermes, use the network, write Postgres or Feishu, call an external
+adapter, publish, or send. Failure before the final no-clobber write leaves no values
+file. Because Hermes does not read this file, rollback before profile activation is to
+leave it unused; owner-approved removal may happen later without urgency.
+
 ## Validation
 
 - In-memory source-template parity reproduced the observed production `SOUL.md` and
