@@ -157,6 +157,24 @@ esac
       `expected preflight evidence check to pass\nstdout:\n${preflightEvidenceCheck.stdout}\nstderr:\n${preflightEvidenceCheck.stderr}`
     );
   }
+  const missingPreflightBinary = runSmoke(
+    "preflight",
+    {
+      QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: "",
+      QINTOPIA_SIDECAR_BIN: "",
+    },
+    "callback-stream-must-not-be-read"
+  );
+  if (missingPreflightBinary.status === 0) {
+    throw new Error("expected preflight without an immutable sidecar binary to fail");
+  }
+  if (
+    `${missingPreflightBinary.stdout}\n${missingPreflightBinary.stderr}`.includes(
+      "callback-stream-must-not-be-read"
+    )
+  ) {
+    throw new Error("missing preflight binary consumed stdin");
+  }
 
   const upload = runSmoke("upload");
   if (upload.status !== 0 || !upload.stdout.includes("awaiting one bounded")) {

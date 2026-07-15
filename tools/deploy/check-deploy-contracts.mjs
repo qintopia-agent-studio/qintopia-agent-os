@@ -396,7 +396,8 @@ if (!exists(qiweImageStagingSmokePath)) {
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE",
     'PHASE" != "preflight"',
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE must be preflight, upload, or callback",
-    "--features qiwe-staging-adapter",
+    "QINTOPIA_SIDECAR_BIN must be an executable absolute path",
+    "QINTOPIA_SIDECAR_BIN or packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke",
     "qiwe-image-send-staging-preflight",
     "run-qiwe-image-send-worker",
     "process-qiwe-image-send-callback",
@@ -437,6 +438,9 @@ if (!exists(qiweImageStagingSmokePath)) {
     "report_file",
     "preflight_output",
     "phase_output",
+    "--features qiwe-staging-adapter",
+    "cargo run",
+    "source_fallback",
   ]) {
     forbidFragment(qiweImageStagingSmokePath, smoke, fragment);
   }

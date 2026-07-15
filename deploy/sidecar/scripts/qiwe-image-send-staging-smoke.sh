@@ -140,28 +140,16 @@ if [[ "${database_facts[1]:-}" != *staging* ]]; then
   exit 1
 fi
 
-BIN_KIND="source_fallback"
 if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
   if [[ "$QINTOPIA_SIDECAR_BIN" != /* || ! -x "$QINTOPIA_SIDECAR_BIN" ]]; then
     echo "QINTOPIA_SIDECAR_BIN must be an executable absolute path" >&2
     exit 1
   fi
   BIN_CMD=("$QINTOPIA_SIDECAR_BIN")
-  BIN_KIND="explicit_binary"
 elif [[ -x "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar" ]]; then
   BIN_CMD=("${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar")
-  BIN_KIND="packaged_binary"
 else
-  BIN_CMD=(
-    "${CARGO:-cargo}" run --quiet
-    --manifest-path "$SIDECAR_DIR/Cargo.toml"
-    --features qiwe-staging-adapter
-    --
-  )
-fi
-
-if [[ "$PHASE" != "preflight" && "$BIN_KIND" == "source_fallback" ]]; then
-  echo "QINTOPIA_SIDECAR_BIN or packaged sidecar/qintopia-message-sidecar is required for upload or callback" >&2
+  echo "QINTOPIA_SIDECAR_BIN or packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke" >&2
   exit 1
 fi
 

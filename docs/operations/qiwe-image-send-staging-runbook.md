@@ -28,9 +28,11 @@ production runtime configuration.
 
 ## Preflight Phase
 
-Run this first on the reviewed staging host. It validates the staging binary, env
-allowlist, owner phrase, database hash, webhook readiness, and allowlist counts without
-claiming a work item, opening a QiWe upload, or reading callback stdin:
+Run this first from the reviewed staging release root. The phase must use either the
+packaged `sidecar/qintopia-message-sidecar` binary or an executable absolute
+`QINTOPIA_SIDECAR_BIN`; it will not fall back to `cargo run`. It validates the staging
+binary, env allowlist, owner phrase, database hash, webhook readiness, and allowlist
+counts without claiming a work item, opening a QiWe upload, or reading callback stdin:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
@@ -46,9 +48,8 @@ does not prove a send-ready work item exists, contact QiWe, or send an image.
 
 ## Upload Phase
 
-Run this from the reviewed staging release root. The phase must use either the packaged
-`sidecar/qintopia-message-sidecar` binary or an executable absolute
-`QINTOPIA_SIDECAR_BIN`; it will not fall back to `cargo run` for upload:
+Run this from the reviewed staging release root. Like preflight, this phase must use the
+reviewed staging binary and will not fall back to `cargo run`:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
