@@ -423,6 +423,52 @@ if (!exists(aliangStagingEvidenceCheckPath)) {
   }
 }
 
+const aliangStagingEvidenceTemplatePath =
+  "docs/reports/templates/huabaosi-image-generation-staging-evidence.md";
+if (!exists(aliangStagingEvidenceTemplatePath)) {
+  addError(
+    `${aliangStagingEvidenceTemplatePath}: missing Huabaosi staging evidence template`
+  );
+} else {
+  const template = readText(aliangStagingEvidenceTemplatePath);
+  for (const fragment of [
+    "node tools/deploy/check-huabaosi-image-staging-evidence.mjs <huabaosi-staging-evidence-output.txt>",
+    "Repository commit SHA",
+    "Packaged sidecar binary SHA-256",
+    "Staging database URL SHA-256",
+    "Image request work item UUID",
+    "Final JPEG `content_hash`",
+    "Review status: `pending`",
+    "`adapter_config_ready`",
+    "`generated_image_created`",
+    "External provider call",
+    "Feishu write",
+    "QiWe send",
+    "`database_url_sha256`",
+    "`content_hash`",
+    "`mime_type`: `image/jpeg`",
+    "Complete Huabaosi evidence checker passed",
+    "QiWe staging send may use this final JPEG hash",
+    "no Feishu write, QiWe send, production timer, service, Release publish",
+    "Do not record provider endpoint, provider response, API key, token, database URL",
+  ]) {
+    requireFragment(aliangStagingEvidenceTemplatePath, template, fragment);
+  }
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY=",
+    "postgres://",
+    "postgresql://",
+    "https://",
+    "artifact_uri",
+    "filename",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(aliangStagingEvidenceTemplatePath, template, fragment);
+  }
+}
+
 const aliangStagingSmokeTestPath = "tools/deploy/test-huabaosi-image-staging-smoke.mjs";
 const aliangStagingReadinessTestPath =
   "tools/deploy/test-huabaosi-image-staging-readiness.mjs";

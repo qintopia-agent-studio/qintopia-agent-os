@@ -307,7 +307,9 @@ data but are not eligible for the future QiWe JPG send contract.
   的 preflight 和 generation 两条脱敏记录，并通过
   `tools/deploy/check-huabaosi-image-staging-evidence.mjs` 校验；记录只可保留 staging
   database URL hash、work item UUID、最终 JPEG SHA-256、尺寸、字节数、MIME 和 pending
-  review 状态，不得包含媒体 URI、文件名、provider 响应、token 或数据库 URL。
+  review 状态，不得包含媒体 URI、文件名、provider 响应、token 或数据库 URL。通过 checker 后，把脱敏结果记录到
+  `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`，再作为 QiWe
+  staging 发送证据的上游 hash 输入。
 - `deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh`
   是真实 staging 生成前的只读 gate。它只检查固定 staging env 文件、staging release
   root、owner-reviewed release SHA 和 packaged sidecar

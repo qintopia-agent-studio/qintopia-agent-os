@@ -566,7 +566,10 @@ Use `rg` and `rg --files` for search.
   timer, write Feishu, send QiWe, or publish. Evidence may include the staging database
   URL hash, work item UUID, final JPEG SHA-256, dimensions, byte count, MIME type, and
   pending review state; it must not include provider/media URLs, filenames, tokens,
-  database URLs, provider responses, Feishu ids, or QiWe credentials.
+  database URLs, provider responses, Feishu ids, or QiWe credentials. Record the
+  retained result in
+  `docs/reports/templates/huabaosi-image-generation-staging-evidence.md` before it is
+  used as input to QiWe staging evidence.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.
