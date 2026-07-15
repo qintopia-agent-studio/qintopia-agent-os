@@ -175,11 +175,14 @@ Use `rg` and `rg --files` for search.
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with
   the approved production features; it must fail closed instead of falling back to
   `cargo run` or a mutable source tree. Its shell may parse only the mirror enable flag;
-  the child launcher may pass only that parsed flag and the non-secret release SHA to
-  the immutable binary, without `source`, `eval`, command substitution, shell secret
-  import, or a secret-bearing temporary file. Rollback must stop the timer first and may
-  report completion only after the persistent mirror enable flag is present exactly once
-  and exactly `0` in the reviewed sidecar environment file.
+  in disabled state, the child launcher may pass only that parsed flag and the
+  non-secret release SHA to the immutable binary. In enabled state, the observation must
+  run the fixed release-installed preflight and dry-run systemd units so systemd loads
+  the production environment without importing secrets into the shell. It must not use
+  `source`, `eval`, command substitution, a secret-bearing temporary file, or `--apply`.
+  Rollback must stop the timer first and may report completion only after the persistent
+  mirror enable flag is present exactly once and exactly `0` in the reviewed sidecar
+  environment file.
 - Hermes remains the Agent runtime. It should not become the business database.
 - `agents/xiaoman/profile-bundle` is observation-only. It may package the reviewed
   `SOUL.md`/`profile.yaml` templates, strict renderer, fake fixtures, and read-only

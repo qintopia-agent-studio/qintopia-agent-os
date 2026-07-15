@@ -11,6 +11,7 @@ MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
 RELEASE_CURRENT_DIR="${QINTOPIA_RELEASE_CURRENT_DIR:-/home/ubuntu/qintopia-agent-os-releases/current}"
 PREFLIGHT_SERVICE="qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service"
+OBSERVATION_SERVICE="qintopia-agentos-huabaosi-feishu-artifact-mirror-observation.service"
 WORKER_SERVICE="qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service"
 WORKER_TIMER="qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
@@ -156,7 +157,7 @@ if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
 fi
 
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then
-  for unit in "$PREFLIGHT_SERVICE" "$WORKER_SERVICE" "$WORKER_TIMER"; do
+  for unit in "$PREFLIGHT_SERVICE" "$OBSERVATION_SERVICE" "$WORKER_SERVICE" "$WORKER_TIMER"; do
     if ! "$SYSTEMCTL" cat "$unit" >/dev/null 2>&1; then
       echo "Huabaosi Feishu mirror production unit is missing" >&2
       exit 1
@@ -164,6 +165,10 @@ if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   done
   "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"
   "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"
+  "$SYSTEMCTL" start "$PREFLIGHT_SERVICE"
+  "$SYSTEMCTL" start "$OBSERVATION_SERVICE"
+  echo "Huabaosi Feishu artifact mirror production observation passed"
+  exit 0
 else
   if "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER" >/dev/null 2>&1; then
     echo "Huabaosi Feishu mirror timer must not be enabled" >&2
@@ -232,56 +237,14 @@ assert payload["mirror_enabled"] is (expected_state == "enabled")
 assert payload["external_calls_executed"] is False
 assert payload["database_writes_executed"] is False
 assert payload["sensitive_fields_redacted"] is True
-if expected_state == "enabled":
-    assert payload["success"] is True
-    assert payload["adapter_compiled"] is True
-    assert payload["config_valid"] is True
-    assert payload["action_status"] == "adapter_config_ready"
-    assert payload["missing_configuration"] == []
-    assert status == 0
-else:
-    assert payload["success"] is False
-    assert payload["action_status"] in {
-        "mirror_disabled",
-        "adapter_not_configured",
-        "adapter_not_compiled",
-    }
-    assert status != 0
-PY
-
-preview="$tmp_dir/preview.json"
-preview_stderr="$tmp_dir/preview.stderr"
-set +e
-run_sidecar_with_observation_env run-huabaosi-feishu-artifact-mirror-worker --once --dry-run >"$preview" 2>"$preview_stderr"
-preview_status=$?
-set -e
-assert_no_sensitive_output "Huabaosi Feishu mirror dry-run" "$preview"
-assert_no_sensitive_output "Huabaosi Feishu mirror dry-run stderr" "$preview_stderr"
-if [[ "$preview_status" != "0" ]]; then
-  echo "Huabaosi Feishu mirror dry-run failed" >&2
-  exit 1
-fi
-python3 - "$preview" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as fh:
-    payload = json.load(fh)
-
-assert payload["success"] is True
-assert payload["worker"] == "huabaosi-feishu-artifact-mirror-worker"
-assert payload["dry_run"] is True
-assert payload["apply_requested"] is False
-assert payload["fixture_mode"] is False
-assert payload["schema_version"] == "huabaosi-generated-image-v1"
-assert payload["external_calls_executed"] is False
-assert payload["database_writes_executed"] is False
-assert payload["sensitive_fields_redacted"] is True
+assert expected_state == "disabled"
+assert payload["success"] is False
 assert payload["action_status"] in {
-    "no_mirrorable_generated_images",
-    "already_synced",
-    "mirror_preview_ready",
+    "mirror_disabled",
+    "adapter_not_configured",
+    "adapter_not_compiled",
 }
+assert status != 0
 PY
 
 echo "Huabaosi Feishu artifact mirror production observation passed"

@@ -74,11 +74,13 @@ From the monorepo root, prefer:
   `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
   only when it resolves to that same immutable binary with the approved production
   features; source-tree `cargo run` fallback is forbidden. Its shell may parse only the
-  mirror enable flag; a direct child launcher may pass only that parsed flag and the
-  non-secret release SHA to the immutable binary without sourcing shell, importing
-  secrets into the shell, or writing a secret-bearing temporary file. Timer rollback
-  must stop external work immediately and fail closed until persistent mirror enablement
-  is confirmed present exactly once and exactly `0` in the reviewed environment file.
+  mirror enable flag. Disabled-state checks may pass only that flag and the non-secret
+  release SHA directly; enabled-state checks must use the fixed preflight and dry-run
+  systemd units so the shell never imports the production environment. Neither path may
+  source shell, write a secret-bearing temporary file, or execute `--apply`. Timer
+  rollback must stop external work immediately and fail closed until persistent mirror
+  enablement is confirmed present exactly once and exactly `0` in the reviewed
+  environment file.
 - The disposable operations smoke may enter the live retry path only with both the
   Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
   literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media

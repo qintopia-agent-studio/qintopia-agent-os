@@ -37,7 +37,7 @@ try {
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >>"${systemctlLog}"
-if [[ "\${FAKE_MIRROR_UNIT_PRESENT:-0}" == "1" && "$1" == "cat" ]]; then exit 0; fi
+if [[ "\${FAKE_MIRROR_UNIT_PRESENT:-0}" == "1" && ( "$1" == "cat" || "$1" == "start" ) ]]; then exit 0; fi
 if [[ "\${FAKE_MIRROR_TIMER_ENABLED:-0}" == "1" && "$1" == "is-enabled" ]]; then exit 0; fi
 if [[ "\${FAKE_MIRROR_TIMER_ACTIVE:-0}" == "1" && "$1" == "is-active" ]]; then exit 0; fi
 exit 1
@@ -48,8 +48,8 @@ exit 1
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >>"${sidecarLog}"
-if [[ "\${QINTOPIA_SIDECAR_DATABASE_URL:-}" == "postgres://qintopia:change-me@127.0.0.1:55432/qintopia_test" || "\${QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN:-}" == "plain-secret-token" || "\${QINTOPIA_HUABAOSI_FEISHU_APP_SECRET:-}" == "configured-value-must-not-appear" || "\${FAKE_MIRROR_LEAK:-}" == "configured-value-must-not-appear" ]]; then
-  echo "secret env reached fake sidecar" >&2
+if [[ "\${QINTOPIA_SIDECAR_DATABASE_URL:-}" == "postgres://qintopia:change-me@127.0.0.1:55432/qintopia_test" || "\${FAKE_MIRROR_LEAK:-}" == "configured-value-must-not-appear" ]]; then
+  echo "non-observation env reached fake sidecar" >&2
   exit 70
 fi
 case "$1" in
@@ -98,8 +98,6 @@ esac
     [
       "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0",
       "QINTOPIA_SIDECAR_DATABASE_URL=postgres://qintopia:change-me@127.0.0.1:55432/qintopia_test",
-      "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN=plain-secret-token",
-      "QINTOPIA_HUABAOSI_FEISHU_APP_SECRET=configured-value-must-not-appear",
       "FAKE_MIRROR_LEAK=configured-value-must-not-appear",
       "",
     ].join("\n"),
@@ -208,17 +206,21 @@ esac
     throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
   }
   const sidecarCommands = fs.readFileSync(sidecarLog, "utf8");
-  if (!sidecarCommands.includes("huabaosi-feishu-artifact-mirror-preflight")) {
-    throw new Error("observation did not run mirror preflight");
+  if (sidecarCommands !== "") {
+    throw new Error(
+      "enabled observation passed production secrets through a child process"
+    );
   }
-  if (
-    !sidecarCommands.includes(
-      "run-huabaosi-feishu-artifact-mirror-worker --once --dry-run"
-    )
-  ) {
-    throw new Error("observation did not run the read-only mirror preview");
+  const systemctlCommands = fs.readFileSync(systemctlLog, "utf8");
+  for (const required of [
+    "start qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
+    "start qintopia-agentos-huabaosi-feishu-artifact-mirror-observation.service",
+  ]) {
+    if (!systemctlCommands.includes(required)) {
+      throw new Error(`enabled observation did not run ${required}`);
+    }
   }
-  if (sidecarCommands.includes("--apply")) {
+  if (systemctlCommands.includes("--apply")) {
     throw new Error("observation must not execute mirror apply");
   }
 
