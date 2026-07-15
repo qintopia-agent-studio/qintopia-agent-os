@@ -53,9 +53,9 @@ review decision。
 - worker 先按固定字段 `AgentOS产物ID`
   搜索飞书记录；零条时创建，一条时更新，多条时失败关闭。
 - 网络调用成功但本地事务提交前进程退出时，下次运行通过同一搜索恢复，不重复创建记录。
-- 每次需要同步时重新读取并校验稳定媒体 URI 的精确 JPEG，重新上传后覆盖
-  `最终JPEG` 附件。这样飞书中的附件即使被人工替换，也会恢复为 AgentOS
-  已记录的不可变字节；`last_synced_at >= artifact.updated_at` 时不发起重复同步。
+- 每次需要同步时重新读取并校验稳定媒体 URI 的精确 JPEG，重新上传后覆盖 `最终JPEG`
+  附件。这样飞书中的附件即使被人工替换，也会恢复为 AgentOS 已记录的不可变字节；`last_synced_at >= artifact.updated_at`
+  时不发起重复同步。
 - 外部失败只追加脱敏的 `generated_image_feishu_mirror_failed`
   审计；不得改变 artifact 或 work item 状态，不得自动审核、发布或发送。
 - 成功后使用 `human_workbench_refs` 记录 provider、artifact/work
