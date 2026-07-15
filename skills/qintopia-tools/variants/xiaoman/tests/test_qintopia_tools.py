@@ -70,6 +70,10 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_DIFY_LOOKUP_DATASET_ID",
                 "QINTOPIA_PROFILE_ID",
                 "QINTOPIA_DIFY_RAW_TOOLS_ENABLE",
+                "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+                "QINTOPIA_SIDECAR_BIN",
+                "QINTOPIA_XIAOMAN_ACTIVITY_FIXTURE_PATH",
+                "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
             ]
         }
         os.environ["QINTOPIA_DIFY_KB_BASE_URL"] = "http://dify.example.test/v1"
@@ -78,6 +82,10 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_DIFY_LOOKUP_DATASET_ID", None)
         os.environ.pop("QINTOPIA_PROFILE_ID", None)
         os.environ.pop("QINTOPIA_DIFY_RAW_TOOLS_ENABLE", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE", None)
+        os.environ.pop("QINTOPIA_SIDECAR_BIN", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_FIXTURE_PATH", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE", None)
         self.module = load_plugin()
 
     def tearDown(self) -> None:
@@ -91,6 +99,11 @@ class QintopiaToolsTest(unittest.TestCase):
             else:
                 os.environ[name] = value
         self.tmpdir.cleanup()
+
+    def enable_xiaoman_activity_wrappers(self) -> None:
+        os.environ["QINTOPIA_PROFILE_ID"] = "xiaoman"
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"] = "1"
+        os.environ["QINTOPIA_SIDECAR_BIN"] = "/tmp/qintopia-message-sidecar"
 
     def test_gis_lookup_1_building(self):
         payload = json.loads(self.module.handle_qintopia_gis_location_lookup({"query": "1 栋"}))
@@ -110,6 +123,105 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(payload["scope_used"], ["Public"])
         self.assertIn("Member-scoped", payload["not_accessed"])
         self.assertEqual(payload["results"][0]["path"], "gis-locations.md")
+
+    def test_xiaoman_status_update_matches_event_signal_worker_contract(self):
+        self.enable_xiaoman_activity_wrappers()
+        schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA["parameters"]
+
+        self.assertEqual(schema["required"], ["event_signal_id", "mutation_id", "status"])
+        self.assertNotIn("record_id", schema["properties"])
+        self.assertNotIn("table_role", schema["properties"])
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_status_update(
+                {
+                    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+                    "mutation_id": "77777777-7777-4777-8777-777777777777",
+                    "status": "处理中",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["action"]["command"][-1], "--dry-run")
+        command = report["action"]["command"]
+        worker_payload = json.loads(command[command.index("--payload-json") + 1])
+        self.assertEqual(worker_payload, report["payload"])
+        self.assertEqual(
+            set(worker_payload),
+            {
+                "event_signal_id",
+                "mutation_id",
+                "status",
+                "actor_agent",
+                "operation",
+                "dry_run",
+            },
+        )
+
+    def test_xiaoman_gap_update_matches_event_signal_worker_contract(self):
+        self.enable_xiaoman_activity_wrappers()
+        schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA["parameters"]
+
+        self.assertEqual(schema["required"], ["event_signal_id", "mutation_id", "gap_summary"])
+        self.assertNotIn("record_id", schema["properties"])
+        self.assertNotIn("table_role", schema["properties"])
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_gap_update(
+                {
+                    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+                    "mutation_id": "88888888-8888-4888-8888-888888888888",
+                    "gap_summary": "缺少报名截止时间",
+                    "dry_run": False,
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertFalse(report["dry_run"])
+        self.assertEqual(report["action"]["command"][-1], "--apply")
+        command = report["action"]["command"]
+        worker_payload = json.loads(command[command.index("--payload-json") + 1])
+        self.assertEqual(worker_payload, report["payload"])
+        self.assertEqual(
+            set(worker_payload),
+            {
+                "event_signal_id",
+                "mutation_id",
+                "gap_summary",
+                "actor_agent",
+                "operation",
+                "dry_run",
+            },
+        )
+
+    def test_xiaoman_mutations_reject_missing_ids_and_overlong_gap(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        missing_mutation = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_status_update(
+                {
+                    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+                    "status": "处理中",
+                }
+            )
+        )
+        overlong_gap = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_gap_update(
+                {
+                    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+                    "mutation_id": "88888888-8888-4888-8888-888888888888",
+                    "gap_summary": "长" * 501,
+                }
+            )
+        )
+
+        self.assertFalse(missing_mutation["success"])
+        self.assertEqual(missing_mutation["error"], "mutation_id is required")
+        self.assertFalse(overlong_gap["success"])
+        self.assertEqual(overlong_gap["error"], "gap_summary must be 500 characters or fewer")
 
     def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
         payload = json.loads(

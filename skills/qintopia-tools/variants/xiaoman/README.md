@@ -63,6 +63,20 @@ shared `qintopia` toolset.
   `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
   to `huabaosi.create_visual_asset`.
 
+## Xiaoman Activity Mutations
+
+Xiaoman's activity read tools may use allowlisted Feishu `record_id` and `table_role`
+inputs. The status and gap write tools use a different boundary: they mutate only
+Xiaoman-owned AgentOS `event_signals` and require both an internal `event_signal_id`
+UUID and a caller-supplied `mutation_id` UUID. An exact retry must retain the same
+`mutation_id`.
+
+`qintopia_xiaoman_activity_status_update` accepts only `待处理`, `处理中`, `已完成`, or
+`已关闭`. `qintopia_xiaoman_activity_gap_update` accepts one non-sensitive `gap_summary`
+of at most 500 characters. Both wrappers default to dry-run and return a bounded sidecar
+command for the runtime executor. They do not accept Feishu record ids, write Feishu,
+send QiWe messages, or call an external adapter.
+
 Complaint guardrails:
 
 - 二花 must not expose raw `kanban_create` / `kanban_create_task`.
@@ -158,6 +172,7 @@ gateway remains the dispatcher.
 ## Validation
 
 ```bash
-python3 config/hermes/plugins/qintopia-tools/tests/test_qintopia_tools.py
-python3 -m py_compile config/hermes/plugins/qintopia-tools/__init__.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s skills/qintopia-tools/variants/xiaoman/tests -p 'test_*.py'
+node tools/skills/check-qintopia-tools.mjs
 ```

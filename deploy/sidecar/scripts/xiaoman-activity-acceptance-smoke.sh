@@ -162,4 +162,79 @@ assert "terminal" not in raw
 assert "skill_view" not in raw
 PY
 
+wrapper_output="$(
+  env \
+    PYTHONDONTWRITEBYTECODE=1 \
+    QINTOPIA_PROFILE_ID=xiaoman \
+    QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1 \
+    QINTOPIA_SIDECAR_BIN=/contract/qintopia-message-sidecar \
+    python3 - "${MONOREPO_ROOT}/skills/qintopia-tools/variants/xiaoman/__init__.py" <<'PY'
+import importlib.util
+import json
+import pathlib
+import sys
+
+plugin_path = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("xiaoman_activity_wrapper_contract", plugin_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+status = json.loads(module.handle_qintopia_xiaoman_activity_status_update({
+    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+    "mutation_id": "77777777-7777-4777-8777-777777777777",
+    "status": "处理中",
+}))
+gap = json.loads(module.handle_qintopia_xiaoman_activity_gap_update({
+    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+    "mutation_id": "88888888-8888-4888-8888-888888888888",
+    "gap_summary": "缺少报名截止时间",
+}))
+
+for report, operation in ((status, "status-update"), (gap, "gap-update")):
+    assert report["success"] is True
+    assert report["dry_run"] is True
+    assert report["action"]["command"][1:3] == ["xiaoman-activity", operation]
+    assert report["action"]["command"][-1] == "--dry-run"
+    assert "record_id" not in report["payload"]
+    assert "table_role" not in report["payload"]
+
+print(json.dumps({"status": status["payload"], "gap": gap["payload"]}, ensure_ascii=False))
+PY
+)"
+
+wrapper_status_payload="$(
+  WRAPPER_OUTPUT="$wrapper_output" python3 -c \
+    'import json, os; print(json.dumps(json.loads(os.environ["WRAPPER_OUTPUT"])["status"], ensure_ascii=False))'
+)"
+wrapper_gap_payload="$(
+  WRAPPER_OUTPUT="$wrapper_output" python3 -c \
+    'import json, os; print(json.dumps(json.loads(os.environ["WRAPPER_OUTPUT"])["gap"], ensure_ascii=False))'
+)"
+wrapper_status_output="$(
+  "${BIN_CMD[@]}" xiaoman-activity status-update \
+    --payload-json "$wrapper_status_payload" \
+    --dry-run
+)"
+wrapper_gap_output="$(
+  "${BIN_CMD[@]}" xiaoman-activity gap-update \
+    --payload-json "$wrapper_gap_payload" \
+    --dry-run
+)"
+
+WRAPPER_STATUS_OUTPUT="$wrapper_status_output" \
+WRAPPER_GAP_OUTPUT="$wrapper_gap_output" \
+python3 - <<'PY'
+import json
+import os
+
+status = json.loads(os.environ["WRAPPER_STATUS_OUTPUT"])
+gap = json.loads(os.environ["WRAPPER_GAP_OUTPUT"])
+assert status["success"] is True
+assert status["action_status"] == "event_signal_status_preview"
+assert gap["success"] is True
+assert gap["action_status"] == "event_signal_gap_preview"
+assert status["apply_requested"] is False
+assert gap["apply_requested"] is False
+PY
+
 echo "xiaoman activity acceptance smoke passed"
