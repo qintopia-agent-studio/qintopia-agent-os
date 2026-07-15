@@ -362,7 +362,10 @@ Use `rg` and `rg --files` for search.
 - As of 2026-07-15, 阿靓/Huabaosi real image production has not completed final
   activation. Do not treat it as live until the same reviewed release has follow-up
   deploy evidence, the Huabaosi timer is activated, and the first real pending
-  `generated_image` has review evidence.
+  `generated_image` has review evidence. The `v0.2.10` follow-up deploy and systemd
+  installation evidence now exist, but the no-network preflight remains fail-closed
+  because provider/media configuration is not provisioned; the timer must remain
+  disabled until that gate passes.
 - 阿亮画报师生产 WeCom Bot 的 `Interrupting current task` / `Response formatting failed`
   用户可见中断提示来自 live Hermes gateway busy-ack and platform send fallback
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
@@ -518,9 +521,10 @@ Use `rg` and `rg --files` for search.
   previous runner. Use a reviewed follow-up `workflow_dispatch` request for the same
   published SHA to activate the new runner behavior; do not bootstrap it with server
   edits.
-- As of 2026-07-15, `v0.2.10` is the first Release containing the new deploy-runner
-  behavior, but same-SHA follow-up deploy evidence has not been recorded. Do not infer
-  that the new runner behavior is active from the initial `v0.2.10` deploy alone.
+- As of 2026-07-15, the corrected `v0.2.10` same-SHA follow-up deploy installed the new
+  systemd units. A same-SHA request for an existing release must reuse the immutable
+  manifest's exact runtime, bundle, commit, scope, and restart-target fields; narrowing
+  `restart_targets` is rejected before promotion and does not trigger rollback.
 - PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
   live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
   profile symlink without that reviewed cutover, smoke evidence, and rollback note.

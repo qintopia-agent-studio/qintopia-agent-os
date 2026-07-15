@@ -14,6 +14,13 @@ provider worker timer existed, so queued requests stopped before real generation
 The owner approved production enablement on 2026-07-15. Release publishing remains a
 manual owner action.
 
+Release `v0.2.10` was subsequently published and deployed. The required same-SHA
+follow-up deploy installed the three Huabaosi production units from the immutable
+release. The external worker timer remains disabled because the no-network production
+preflight reports that provider and media configuration has not yet been provisioned.
+The failed first follow-up request and corrected deployment are recorded in the
+[follow-up deploy report](2026-07-15-v0210-follow-up-deploy.md).
+
 ## Resolution
 
 - Add the production-only `huabaosi-production-adapter` Cargo feature and build the
@@ -56,15 +63,15 @@ during these validations.
 
 ## Remaining Owner Action
 
-1. Review and merge the dedicated enablement PR.
-2. Manually publish the resulting Release; do not merge or publish Release Please PR
-   `#136` as part of this change.
-3. Apply the production provider/media configuration, exact published release SHA, and
+Completed: the enablement PR was merged, `v0.2.10` was published, and the corrected
+same-SHA follow-up deployment installed all three Huabaosi units. Same-SHA follow-up
+requests must reuse the existing immutable release manifest's exact release scope and
+restart targets; for `v0.2.10`, those targets are
+`qintopia-system-services,hermes-erhua`.
+
+1. Apply the production provider/media configuration, exact published release SHA, and
    database URL hash through the reviewed configuration channel.
-4. Because the first release is processed by the previous deploy runner, run the
-   reviewed same-SHA follow-up deployment with the original release scope and
-   `qintopia-system-services` restart target; confirm all three Huabaosi units exist.
-5. Run the release-local activation command and inspect the first pending generated
+2. Run the release-local activation command and inspect the first pending generated
    image before broadening the timer window.
-6. On any unexpected cost, provider, storage, integrity, or claim outcome, run the timer
+3. On any unexpected cost, provider, storage, integrity, or claim outcome, run the timer
    rollback command first and then turn generation off through configuration.
