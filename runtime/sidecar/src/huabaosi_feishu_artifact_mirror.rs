@@ -11,12 +11,24 @@ use sqlx::{postgres::PgPool, Row};
 use url::Url;
 use uuid::Uuid;
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 use std::fs;
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 use zeroize::{Zeroize, Zeroizing};
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 use crate::bounded_http::HttpClient;
 use crate::{config::Cli, db, url_policy};
 
@@ -150,7 +162,13 @@ struct MirrorConfig {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(not(feature = "huabaosi-feishu-mirror-adapter"), allow(dead_code))]
+#[cfg_attr(
+    not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )),
+    allow(dead_code)
+)]
 pub(crate) struct FeishuPrimaryStorageConfig {
     base_token: String,
     table_id: String,
@@ -159,7 +177,13 @@ pub(crate) struct FeishuPrimaryStorageConfig {
     max_media_bytes: usize,
 }
 
-#[cfg_attr(not(feature = "huabaosi-feishu-mirror-adapter"), allow(dead_code))]
+#[cfg_attr(
+    not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )),
+    allow(dead_code)
+)]
 pub(crate) struct FeishuPrimaryStorageImage<'a> {
     pub artifact_id: Uuid,
     pub workflow_root_id: Uuid,
@@ -185,14 +209,22 @@ struct MirrorFailure {
     automatic_retry_allowed: bool,
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 #[derive(Debug)]
 struct FeishuCredentials {
     app_id: Zeroizing<String>,
     app_secret: Zeroizing<String>,
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 #[derive(Debug)]
 struct FeishuClient {
     tenant_token: Zeroizing<String>,
@@ -200,20 +232,32 @@ struct FeishuClient {
     api_root: Url,
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 #[derive(Debug)]
 struct FeishuRecord {
     record_id: String,
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 #[derive(Serialize)]
 struct FeishuAuthRequest<'a> {
     app_id: &'a str,
     app_secret: &'a str,
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 #[derive(serde::Deserialize)]
 struct FeishuAuthResponse {
     code: i64,
@@ -1158,7 +1202,11 @@ impl MirrorFailure {
         }
     }
 
-    #[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+    #[cfg(any(
+        test,
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
     fn external(
         stage: &'static str,
         code: &'static str,
@@ -1545,13 +1593,19 @@ pub(crate) fn store_primary_generated_image(
     config: &FeishuPrimaryStorageConfig,
     image: &FeishuPrimaryStorageImage<'_>,
 ) -> Result<FeishuPrimaryStorageResult> {
-    #[cfg(not(feature = "huabaosi-feishu-mirror-adapter"))]
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )))]
     {
         let _ = (config, image);
         bail!("Huabaosi Feishu storage adapter is not compiled into this binary");
     }
 
-    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
     {
         validate_primary_storage_image(image, config.max_media_bytes)?;
         let credentials =
@@ -1602,7 +1656,10 @@ pub(crate) fn store_primary_generated_image(
     }
 }
 
-#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn validate_primary_storage_image(
     image: &FeishuPrimaryStorageImage<'_>,
     max_media_bytes: usize,
@@ -1622,7 +1679,10 @@ fn validate_primary_storage_image(
     validate_primary_storage_bytes(image, image.bytes)
 }
 
-#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn validate_primary_storage_bytes(
     image: &FeishuPrimaryStorageImage<'_>,
     bytes: &[u8],
@@ -1640,7 +1700,10 @@ fn validate_primary_storage_bytes(
     Ok(())
 }
 
-#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_token: &str) -> Value {
     let now = Utc::now().timestamp_millis();
     json!({
@@ -1663,7 +1726,10 @@ fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_toke
     })
 }
 
-#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
     anyhow::anyhow!(
         "Huabaosi Feishu storage failed at {} with {}",
@@ -1672,7 +1738,11 @@ fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
     )
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 impl FeishuClient {
     fn authenticate(
         api_root: &Url,
@@ -1934,7 +2004,10 @@ impl FeishuClient {
         Ok(Zeroizing::new(file_token))
     }
 
-    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
     fn download_media(
         &self,
         file_token: &str,
@@ -1998,7 +2071,11 @@ impl FeishuClient {
     }
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn http_client_for(_api_root: &Url) -> HttpClient {
     #[cfg(test)]
     if _api_root.scheme() == "http" {
@@ -2009,14 +2086,22 @@ fn http_client_for(_api_root: &Url) -> HttpClient {
     client
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn api_endpoint(api_root: &Url, path: &str) -> std::result::Result<Url, MirrorFailure> {
     api_root.join(path).map_err(|_| {
         MirrorFailure::external("configuration", "api_endpoint_invalid", Some(false), false)
     })
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn request_json(
     http: &HttpClient,
     method: &str,
@@ -2046,7 +2131,11 @@ fn request_json(
     parse_feishu_response(&mut response, stage, external_write)
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn request_json_bytes(
     http: &HttpClient,
     method: &str,
@@ -2087,7 +2176,11 @@ fn request_json_bytes(
     })
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn parse_feishu_response(
     response: &mut crate::bounded_http::HttpResponse,
     stage: &'static str,
@@ -2120,7 +2213,11 @@ fn parse_feishu_response(
     Ok(parsed)
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn read_feishu_credentials(path: &str) -> std::result::Result<FeishuCredentials, MirrorFailure> {
     validate_profile_env_path(path).map_err(|_| {
         MirrorFailure::external(
@@ -2200,7 +2297,11 @@ fn read_feishu_credentials(path: &str) -> std::result::Result<FeishuCredentials,
     Ok(FeishuCredentials { app_id, app_secret })
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn validate_media_bytes(
     artifact: &MirrorArtifact,
     validated: &ValidatedArtifact,
@@ -2232,7 +2333,11 @@ fn validate_media_bytes(
     Ok(())
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn multipart_image_body(
     boundary: &str,
     base_token: &str,
@@ -2256,7 +2361,11 @@ fn multipart_image_body(
     body
 }
 
-#[cfg(any(test, feature = "huabaosi-feishu-mirror-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 fn append_multipart_text(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(

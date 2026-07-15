@@ -97,7 +97,6 @@ esac
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
     "qintopia-agentos-huabaosi-image-generation-worker.timer",
-    "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "qintopia-agentos-operations-group-send-ready.timer",
   ]) {
@@ -125,13 +124,9 @@ esac
       "release installer must not automatically enable Huabaosi generation"
     );
   }
-  if (
-    log.includes(
-      "enable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
-    )
-  ) {
+  if (log.includes("qintopia-agentos-huabaosi-feishu-artifact-mirror")) {
     throw new Error(
-      "release installer must not automatically enable Huabaosi Feishu mirroring"
+      "release installer must not install or enable Huabaosi Feishu mirroring"
     );
   }
 } finally {

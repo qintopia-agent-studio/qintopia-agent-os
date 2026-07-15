@@ -2244,7 +2244,10 @@ mod tests {
         thread,
     };
 
-    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
     use std::fs;
 
     use super::*;
@@ -2256,7 +2259,10 @@ mod tests {
     )))]
     use clap::Parser;
     use image::ImageEncoder;
-    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
     use tempfile::tempdir;
 
     #[cfg(feature = "postgres-integration-tests")]
@@ -3364,7 +3370,10 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
     fn fake_provider_stores_final_jpeg_in_feishu_before_returning_artifact() {
         let source_png = fixture_png();
         let final_jpeg = fixture_jpeg(&source_png);

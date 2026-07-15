@@ -15,17 +15,17 @@ action, and ordinary release deployment must not activate the external write tim
 
 ## Resolution
 
-- Build production sidecar artifacts with exactly `huabaosi-production-adapter` and
-  `huabaosi-feishu-mirror-adapter`; continue rejecting staging and QiWe features.
+- Build production sidecar artifacts with exactly `huabaosi-production-adapter`;
+  continue rejecting staging, QiWe, and Feishu mirror features.
 - Bind mirror preflight and apply to the exact deployed 40-character commit SHA in
   addition to the existing owner phrase, database hash, Base/table exact allowlists,
   fixed schema, profile path, and media host policy.
-- Render and install fixed mirror preflight, worker, and timer units from the immutable
-  release while leaving the timer disabled. Ship the read-only observation script and
-  non-secret observation preflight command in the same release.
-- Add explicit owner-approved activation and rollback commands. Activation confirms the
-  persistent mirror flag is present exactly once and set to `1`, then runs preflight
-  before enabling the timer.
+- Do not render or install mirror preflight, worker, or timer units from the ordinary
+  immutable release. Ship the read-only disabled-state observation script and non-secret
+  observation preflight command in the same release.
+- Keep activation fail-closed until a separate owner-reviewed release boundary adds the
+  mirror adapter artifact and timer. Keep rollback available to disable any legacy
+  mirror timer first and require persistent disablement confirmation.
 - Add a read-only production observation that verifies timer state and runs a non-secret
   mirror observation preflight only. It discovers the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, accepts an explicit binary

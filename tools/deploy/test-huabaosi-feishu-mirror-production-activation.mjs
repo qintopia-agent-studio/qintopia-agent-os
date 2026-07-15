@@ -76,47 +76,18 @@ fi
     }
   }
 
-  fs.writeFileSync(
-    envPath,
-    "QINTOPIA_SIDECAR_DATABASE_URL=postgres://fixture:password&option@127.0.0.1/db\nQINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n",
-    "utf8"
-  );
   fs.writeFileSync(logPath, "", "utf8");
-  const activated = run(activationScript, {
+  const approvedActivation = run(activationScript, {
     QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
       "approved-production-huabaosi-feishu-artifact-mirror",
   });
-  if (activated.status !== 0) {
-    throw new Error(`activation failed\n${activated.stdout}\n${activated.stderr}`);
-  }
-  const activationLog = fs.readFileSync(logPath, "utf8");
-  for (const command of [
-    "start qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
-    "enable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
-    "is-enabled --quiet qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
-    "is-active --quiet qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
-  ]) {
-    if (!activationLog.includes(command)) {
-      throw new Error(`activation is missing systemctl command: ${command}`);
-    }
-  }
-
-  fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n", "utf8");
-  fs.writeFileSync(logPath, "", "utf8");
-  const rejectedPreflight = run(activationScript, {
-    QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
-      "approved-production-huabaosi-feishu-artifact-mirror",
-    FAKE_PREFLIGHT_FAIL: "1",
-  });
-  const rejectedLog = fs.readFileSync(logPath, "utf8");
   if (
-    rejectedPreflight.status === 0 ||
-    rejectedLog.includes(
-      "enable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
-    )
+    approvedActivation.status === 0 ||
+    fs.readFileSync(logPath, "utf8") !== "" ||
+    !approvedActivation.stderr.includes("separate owner-reviewed release boundary")
   ) {
     throw new Error(
-      "activation must stop before timer enablement when preflight fails"
+      "activation must remain disabled until a separate reviewed release boundary"
     );
   }
 

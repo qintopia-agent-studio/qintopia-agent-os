@@ -68,11 +68,11 @@ From the monorepo root, prefer:
   approval phrase, deployed release SHA binding, database URL hash binding, and adapter
   policy before Postgres or external I/O; shell scripts cannot be the only enforcement
   point.
-- Production sidecar artifacts also compile `huabaosi-feishu-mirror-adapter`. Mirror
-  apply must fail before Postgres or external I/O unless the exact owner approval,
-  deployed release SHA binding, production database hash, Base/table allowlists, fixed
-  schema, profile path, and media host policy all validate. Feishu remains a mirror; the
-  command cannot approve, publish, call QiWe, or change image-generation state.
+- Production sidecar artifacts must not compile `huabaosi-feishu-mirror-adapter`. Mirror
+  apply must fail before Postgres or external I/O in production artifacts, and ordinary
+  release installation must not install a mirror preflight, worker, or timer. Feishu
+  primary storage for the first canary is part of the Huabaosi production adapter path
+  and still creates only pending AgentOS artifacts.
 - Production mirror observation must discover
   `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
   only when it resolves to that same immutable binary with the approved production
