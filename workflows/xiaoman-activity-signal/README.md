@@ -39,11 +39,12 @@ approved poster_brief
 Only the final-confirmation transition is human-operated; all other arrows above are
 AgentOS work-item or internal-artifact operations. The send-ready audit deliberately
 keeps the request queued and records `send_executed=false` because no production send
-adapter is enabled. The `v0.2.6` owner-approved, read-only aggregate preflight has
-passed and is recorded in `deploy/smoke/docs/xiaoman-production-preflight-record.md`.
-Passing that gate requires sanitized observation output with `safe_for_chat=false` where
-present and still does not approve Feishu writeback, QiWe sends, poster publishing, real
-Wenyuange retrieval, or Huabaosi production generation.
+adapter is enabled. The `v0.2.9` owner-approved, read-only aggregate preflight passed on
+2026-07-15 and is recorded in
+`deploy/smoke/docs/xiaoman-production-preflight-record.md`. Passing that gate requires
+sanitized observation output with `safe_for_chat=false` where present and still does not
+approve Feishu writeback, QiWe sends, poster publishing, real Wenyuange retrieval, or
+Huabaosi production generation.
 
 ## Signal Intake Contract
 

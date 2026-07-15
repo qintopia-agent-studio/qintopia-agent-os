@@ -14,6 +14,10 @@ unless correcting historical evidence.
 - The monorepo is the collaboration source of truth.
 - Production Agent OS sidecar, workers, release-managed MCP commands, and reviewed
   Hermes plugins run from `/home/ubuntu/qintopia-agent-os-releases/current`.
+- Xiaoman's AgentOS-only activity workflow passed the `v0.2.9` aggregate production
+  preflight on 2026-07-15. Its plugin and workers are release-managed; its live profile
+  files still require a reviewed bundle migration, and external image generation/send
+  remain disabled.
 - Hermes remains the Agent runtime under `/home/ubuntu/.hermes`.
 - Hermes profile live state, including `.env`, sessions, logs, cache, memory, auth, and
   local config overrides, stays outside git.

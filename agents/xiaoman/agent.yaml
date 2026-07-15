@@ -32,5 +32,7 @@ tags:
   - activity-ops
   - hermes-profile
 next_actions:
-  - Convert approved profile behavior into reviewed templates.
-  - Split reusable event-signal and activity-source behavior into workflow packages.
+  - Render and release-manage approved SOUL, config, profile, webhook, channel, and cron
+    declarations without copying runtime secrets or state.
+  - Keep the production workflow on internal send-ready until Huabaosi generation and
+    QiWe delivery pass isolated owner-approved staging evidence.
