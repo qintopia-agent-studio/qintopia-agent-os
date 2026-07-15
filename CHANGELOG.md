@@ -6,6 +6,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.10](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.9...v0.2.10) (2026-07-15)
+
+
+### Features
+
+* add qiwe image send staging smoke ([#137](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/137)) ([11f8bae](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/11f8bae757b45a50b46722fc35971e76a436424a))
+* add xiaoman profile bundle observation ([#140](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/140)) ([872a860](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/872a860f1165eedbb191b67cbcac6810b6104e64))
+* add xiaoman profile values migration ([#141](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/141)) ([aaafa5e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/aaafa5e3b0cb3cd750dc98ba91b628890ccab859))
+* add xiaoman qiwe callback staging bridge ([#139](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/139)) ([be0239a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/be0239ab5c54511057898ecfb47c0bfd14ca2ef1))
+* enable aliang production image generation ([#143](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/143)) ([269b93e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/269b93ead7caea331ea61f5444bf9687f8d44860))
+
+
+### Bug Fixes
+
+* align huabaosi observation with release runtime ([#134](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/134)) ([1733067](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1733067823fa9002783a9a0eb4a55afa8cdc5963))
+* terminalize stale image generation claims ([#135](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/135)) ([293d61a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/293d61a8479cb09f077ad9d115a04efb8f1512e3))
+
+
+### Documentation
+
+* align aliang production feature guardrail ([#144](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/144)) ([0f45f96](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0f45f96b433db684207861d6ccb5def1913ed145))
+* record xiaoman production path baseline ([#138](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/138)) ([5e12738](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5e12738ea67793c4402fb32ab3a2d7b0ffd71348))
+
+
+### Maintenance
+
+* extract Hermes WeCom server patch ([#142](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/142)) ([a1894d1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a1894d1bebe04af33cf31ad7d792678700f2e2ac))
+
 ## [0.2.9](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.8...v0.2.9) (2026-07-14)
 
 
