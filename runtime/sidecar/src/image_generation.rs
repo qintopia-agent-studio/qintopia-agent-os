@@ -26,7 +26,16 @@ use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
-use crate::{config::Cli, db, url_policy};
+use crate::{
+    config::Cli,
+    db,
+    huabaosi_feishu_artifact_mirror::{
+        primary_storage_missing_configuration, record_primary_storage_workbench_ref,
+        resolve_workflow_root_pool, store_primary_generated_image, FeishuPrimaryStorageConfig,
+        FeishuPrimaryStorageImage,
+    },
+    url_policy,
+};
 
 #[cfg(any(
     test,
@@ -67,6 +76,9 @@ const PRODUCTION_RELEASE_SHA_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_REL
 const PRODUCTION_DATABASE_URL_SHA256_ENV: &str =
     "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_DATABASE_URL_SHA256";
 const DEPLOYED_COMMIT_SHA_ENV: &str = "QINTOPIA_DEPLOYED_COMMIT_SHA";
+const STORAGE_BACKEND_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND";
+const HTTP_STORAGE_BACKEND: &str = "http-media";
+const FEISHU_STORAGE_BACKEND: &str = "feishu-base";
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 const REVIEWED_DATABASE_URL_SHA256_ALLOWLIST: &[&str] =
     &["c6dc2730b2a3fdabf05d88e021340b748c5c5b5d06d8ec24b38feef387d39330"];
@@ -75,6 +87,8 @@ const REQUIRED_IMAGE_CONFIGURATION: &[&str] = &[
     "QINTOPIA_HUABAOSI_IMAGE_MODEL",
     "QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL",
     "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+];
+const REQUIRED_HTTP_MEDIA_CONFIGURATION: &[&str] = &[
     "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
     "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
     "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
@@ -141,10 +155,21 @@ struct AdapterConfig {
     model: String,
     provider_endpoint: Url,
     api_key: String,
+    storage: StorageConfig,
+    max_media_bytes: usize,
+}
+
+#[derive(Debug, Clone)]
+enum StorageConfig {
+    Http(HttpMediaConfig),
+    Feishu(FeishuPrimaryStorageConfig),
+}
+
+#[derive(Debug, Clone)]
+struct HttpMediaConfig {
     media_upload_endpoint: Url,
     media_public_base_url: Url,
     media_allowed_hosts: BTreeSet<String>,
-    max_media_bytes: usize,
 }
 
 impl Drop for AdapterConfig {
@@ -155,6 +180,8 @@ impl Drop for AdapterConfig {
 
 #[derive(Debug)]
 struct GeneratedImage {
+    artifact_id: Uuid,
+    workflow_root_id: Uuid,
     bytes: Vec<u8>,
     content_hash: String,
     file_md5: String,
@@ -162,6 +189,8 @@ struct GeneratedImage {
     width: u32,
     height: u32,
     artifact_uri: String,
+    storage_provider: &'static str,
+    feishu_record_id: Option<String>,
 }
 
 #[cfg(any(
@@ -369,7 +398,7 @@ pub fn run_preflight() -> Result<()> {
             true,
             image_generation_enabled(),
             adapter_mode,
-            config.media_allowed_hosts.len(),
+            config.media_allowed_host_count(),
             Vec::new(),
         ),
         Err(_) => preflight_report(
@@ -385,7 +414,8 @@ pub fn run_preflight() -> Result<()> {
 }
 
 fn preflight_adapter_config(mode: ImageAdapterMode) -> Result<AdapterConfig> {
-    let config = AdapterConfig::from_env()?;
+    let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL").unwrap_or_default();
+    let config = AdapterConfig::from_env(&database_url)?;
     if mode == ImageAdapterMode::Production {
         let database_url = required_env("QINTOPIA_SIDECAR_DATABASE_URL")?;
         validate_production_owner_approval(std::env::var(PRODUCTION_APPROVAL_ENV).ok().as_deref())?;
@@ -442,8 +472,8 @@ fn preflight_report(
         missing_configuration,
         safe_for_chat: false,
         limitations: vec![
-            "this preflight validates local configuration only; it does not prove provider or media service reachability".to_string(),
-            "a ready configuration does not authorize generation, publishing, Feishu writeback, or QiWe sends".to_string(),
+            "this preflight validates local configuration only; it does not prove provider or storage reachability".to_string(),
+            "a ready configuration does not authorize publishing, artifact approval, or QiWe sends".to_string(),
         ],
         guardrails: vec![
             "this command does not open network or database connections".to_string(),
@@ -592,24 +622,26 @@ async fn run_once(
             }
         };
         let work_item_id = work_item.id;
+        let workflow_root_id = resolve_workflow_root_pool(pool, work_item.id).await?;
         let worker_input = work_item.clone();
-        let generated =
-            match tokio::task::spawn_blocking(move || generate_and_store(&config, &worker_input))
+        let generated = match tokio::task::spawn_blocking(move || {
+            generate_and_store(&config, &worker_input, workflow_root_id)
+        })
+        .await
+        {
+            Ok(generated) => generated,
+            Err(_) => {
+                return record_generation_failure_report(
+                    pool,
+                    &work_item,
+                    GenerationFailure {
+                        class: GenerationFailureClass::Terminal,
+                        stage: "worker_execution",
+                    },
+                )
                 .await
-            {
-                Ok(generated) => generated,
-                Err(_) => {
-                    return record_generation_failure_report(
-                        pool,
-                        &work_item,
-                        GenerationFailure {
-                            class: GenerationFailureClass::Terminal,
-                            stage: "worker_execution",
-                        },
-                    )
-                    .await
-                }
-            };
+            }
+        };
 
         let generated = match generated {
             Ok(generated) => generated,
@@ -649,8 +681,8 @@ fn staging_apply_config(database_url: &str) -> Result<AdapterConfig> {
     validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
     let disposable_test = disposable_postgres_smoke_enabled();
     validate_staging_database_boundary(database_url, disposable_test)?;
-    let config =
-        AdapterConfig::from_env().context("Huabaosi staging adapter configuration is invalid")?;
+    let config = AdapterConfig::from_env(database_url)
+        .context("Huabaosi staging adapter configuration is invalid")?;
     if disposable_test {
         validate_disposable_test_adapter_boundary(&config)?;
     }
@@ -670,7 +702,8 @@ fn production_apply_config(database_url: &str) -> Result<AdapterConfig> {
             .ok()
             .as_deref(),
     )?;
-    AdapterConfig::from_env().context("Huabaosi production adapter configuration is invalid")
+    AdapterConfig::from_env(database_url)
+        .context("Huabaosi production adapter configuration is invalid")
 }
 
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
@@ -796,16 +829,19 @@ fn disposable_postgres_smoke_enabled() -> bool {
 
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn validate_disposable_test_adapter_boundary(config: &AdapterConfig) -> Result<()> {
+    let StorageConfig::Http(storage) = &config.storage else {
+        bail!("disposable image adapter requires loopback HTTP media storage");
+    };
     for endpoint in [
         &config.provider_endpoint,
-        &config.media_upload_endpoint,
-        &config.media_public_base_url,
+        &storage.media_upload_endpoint,
+        &storage.media_public_base_url,
     ] {
         if !endpoint.host_str().is_some_and(is_literal_loopback_host) {
             bail!("disposable image adapter endpoints must be loopback-only");
         }
     }
-    if config
+    if storage
         .media_allowed_hosts
         .iter()
         .any(|host| !is_literal_loopback_host(host))
@@ -844,7 +880,7 @@ async fn record_generation_failure_report(
 }
 
 impl AdapterConfig {
-    fn from_env() -> Result<Self> {
+    fn from_env(database_url: &str) -> Result<Self> {
         let provider = required_env("QINTOPIA_HUABAOSI_IMAGE_PROVIDER")?;
         if provider != "openai-compatible" {
             bail!("image provider must be openai-compatible");
@@ -855,22 +891,6 @@ impl AdapterConfig {
         }
         let provider_endpoint =
             image_provider_endpoint(&required_env("QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL")?)?;
-        let media_upload_endpoint = https_url(
-            &required_env("QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT")?,
-            "media upload endpoint",
-        )?;
-        let media_public_base_url = https_url(
-            &required_env("QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL")?,
-            "media public base URL",
-        )?;
-        let media_allowed_hosts =
-            parse_allowed_hosts(&required_env("QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")?)?;
-        for url in [&media_upload_endpoint, &media_public_base_url] {
-            let host = normalized_url_host(url)?;
-            if !media_allowed_hosts.contains(&host) {
-                bail!("media endpoint host is not allowlisted");
-            }
-        }
         let max_media_bytes = std::env::var("QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES")
             .ok()
             .filter(|value| !value.trim().is_empty())
@@ -880,16 +900,56 @@ impl AdapterConfig {
         if max_media_bytes == 0 || max_media_bytes > 25 * 1024 * 1024 {
             bail!("media max bytes must be between 1 and 26214400");
         }
+        let storage_backend =
+            std::env::var(STORAGE_BACKEND_ENV).unwrap_or_else(|_| HTTP_STORAGE_BACKEND.to_string());
+        let storage = match storage_backend.trim() {
+            HTTP_STORAGE_BACKEND => {
+                let media_upload_endpoint = https_url(
+                    &required_env("QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT")?,
+                    "media upload endpoint",
+                )?;
+                let media_public_base_url = https_url(
+                    &required_env("QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL")?,
+                    "media public base URL",
+                )?;
+                let media_allowed_hosts =
+                    parse_allowed_hosts(&required_env("QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")?)?;
+                for url in [&media_upload_endpoint, &media_public_base_url] {
+                    let host = normalized_url_host(url)?;
+                    if !media_allowed_hosts.contains(&host) {
+                        bail!("media endpoint host is not allowlisted");
+                    }
+                }
+                StorageConfig::Http(HttpMediaConfig {
+                    media_upload_endpoint,
+                    media_public_base_url,
+                    media_allowed_hosts,
+                })
+            }
+            FEISHU_STORAGE_BACKEND => {
+                let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
+                if config.max_media_bytes() != max_media_bytes {
+                    bail!("image and Feishu storage byte limits must match");
+                }
+                StorageConfig::Feishu(config)
+            }
+            _ => bail!("image storage backend must be http-media or feishu-base"),
+        };
 
         Ok(Self {
             model,
             provider_endpoint,
             api_key: required_env("QINTOPIA_HUABAOSI_IMAGE_API_KEY")?,
-            media_upload_endpoint,
-            media_public_base_url,
-            media_allowed_hosts,
+            storage,
             max_media_bytes,
         })
+    }
+
+    fn media_allowed_host_count(&self) -> usize {
+        match &self.storage {
+            StorageConfig::Http(config) => config.media_allowed_hosts.len(),
+            StorageConfig::Feishu(_) => 0,
+        }
     }
 }
 
@@ -903,9 +963,17 @@ fn required_env(name: &str) -> Result<String> {
 }
 
 fn missing_image_configuration() -> Vec<&'static str> {
-    missing_required_configuration_with(REQUIRED_IMAGE_CONFIGURATION, |name| {
+    let mut missing = missing_required_configuration_with(REQUIRED_IMAGE_CONFIGURATION, |name| {
         std::env::var(name).ok()
-    })
+    });
+    match std::env::var(STORAGE_BACKEND_ENV).as_deref() {
+        Ok(FEISHU_STORAGE_BACKEND) => missing.extend(primary_storage_missing_configuration()),
+        _ => missing.extend(missing_required_configuration_with(
+            REQUIRED_HTTP_MEDIA_CONFIGURATION,
+            |name| std::env::var(name).ok(),
+        )),
+    }
+    missing
 }
 
 fn missing_required_configuration_with<F>(
@@ -1017,7 +1085,7 @@ fn parse_media_upload_response(response: &HttpResponse) -> Result<MediaUploadRes
 }
 
 fn validate_media_response(
-    config: &AdapterConfig,
+    config: &HttpMediaConfig,
     media: &MediaUploadResponse,
     content_hash: &str,
     metadata: &ImageMetadata,
@@ -1403,6 +1471,19 @@ fn new_claim_token() -> String {
     format!("{WORKER_ID}:{}", Uuid::new_v4())
 }
 
+fn generated_image_artifact_id(work_item_id: Uuid, content_hash: &str) -> Uuid {
+    let mut hasher = Sha256::new();
+    hasher.update(b"qintopia:huabaosi:generated-image:v1\0");
+    hasher.update(work_item_id.as_bytes());
+    hasher.update(content_hash.as_bytes());
+    let digest = hasher.finalize();
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
+}
+
 async fn persist_generated_image(
     pool: &PgPool,
     work_item: &ImageGenerationWorkItem,
@@ -1466,6 +1547,7 @@ async fn persist_generated_image(
         r#"
         INSERT INTO qintopia_agent_os.artifacts
             (
+                id,
                 work_item_id,
                 artifact_type,
                 review_status,
@@ -1483,17 +1565,18 @@ async fn persist_generated_image(
         VALUES
             (
                 $1,
+                $2,
                 'generated_image',
                 'pending',
                 'huabaosi',
                 '活动海报图片（待审核）',
                 '由已审核 poster_brief 生成，等待人工审核后才能被下游引用。',
-                $2,
                 $3,
                 $4,
+                $5,
                 ARRAY['external_use_review_required','generated_media']::text[],
                 'internal_ops',
-                $5,
+                $6,
                 now()
             )
         ON CONFLICT (work_item_id, content_hash) WHERE content_hash IS NOT NULL AND content_hash <> ''
@@ -1501,6 +1584,7 @@ async fn persist_generated_image(
         RETURNING id
         "#,
     )
+    .bind(generated.artifact_id)
     .bind(work_item.id)
     .bind(&generated.artifact_uri)
     .bind(&generated.content_hash)
@@ -1533,23 +1617,41 @@ async fn persist_generated_image(
                 anyhow!("generated image content hash conflicts with another artifact")
             })?;
             let review_status: String = row.get("review_status");
+            let existing_artifact_id: Uuid = row.get("id");
             let artifact_uri: Option<String> = row.try_get("artifact_uri")?;
             let source_ids: Value = row.try_get("source_ids")?;
             let metadata: Value = row.try_get("metadata")?;
-            if !existing_generated_image_matches(
-                &review_status,
-                artifact_uri.as_deref(),
-                &source_ids,
-                &metadata,
-                work_item,
-                generated,
-            ) {
+            if existing_artifact_id != generated.artifact_id
+                || !existing_generated_image_matches(
+                    &review_status,
+                    artifact_uri.as_deref(),
+                    &source_ids,
+                    &metadata,
+                    work_item,
+                    generated,
+                )
+            {
                 bail!(
                     "refusing to reuse a reviewed, stale, or mismatched generated image artifact"
                 );
             }
             (row.get("id"), false)
         }
+    };
+    let workbench_ref_id = match generated.feishu_record_id.as_deref() {
+        Some(record_id) => Some(
+            record_primary_storage_workbench_ref(
+                &mut tx,
+                work_item.id,
+                artifact_id,
+                &generated.content_hash,
+                record_id,
+                generated.workflow_root_id,
+            )
+            .await
+            .context("record Huabaosi Feishu primary storage reference")?,
+        ),
+        None => None,
     };
 
     let updated = sqlx::query(
@@ -1590,6 +1692,33 @@ async fn persist_generated_image(
         .execute(&mut *tx)
         .await
         .context("append generated image event")?;
+        if let Some(ref_id) = workbench_ref_id {
+            sqlx::query(
+                r#"
+                INSERT INTO qintopia_agent_os.work_item_events
+                    (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+                VALUES
+                    ($1, $2, 'generated_image_feishu_stored', 'worker', $3,
+                     'generated image stored in the Feishu artifact workbench', $4)
+                "#,
+            )
+            .bind(work_item.id)
+            .bind(artifact_id)
+            .bind(WORKER_ID)
+            .bind(json!({
+                "workbench_ref_id": ref_id,
+                "schema_version": "huabaosi-generated-image-v1",
+                "content_hash": generated.content_hash,
+                "review_status": "pending",
+                "external_write_executed": true,
+                "external_publish_executed": false,
+                "external_send_executed": false,
+                "sensitive_fields_redacted": true,
+            }))
+            .execute(&mut *tx)
+            .await
+            .context("append Huabaosi Feishu primary storage event")?;
+        }
     }
     tx.commit()
         .await
@@ -1622,6 +1751,7 @@ fn generated_image_metadata(
         "approved_brief_artifact_id": work_item.approved_brief_artifact_id,
         "approved_brief_content_hash": work_item.approved_brief_content_hash,
         "prompt_hash": work_item.prompt_hash,
+        "storage_provider": generated.storage_provider,
     })
 }
 
@@ -1639,6 +1769,7 @@ fn generated_image_creation_event_data(generated: &GeneratedImage) -> Value {
         "height": generated.height,
         "byte_size": generated.bytes.len(),
         "external_publish_executed": false,
+        "storage_provider": generated.storage_provider,
     })
 }
 
@@ -1882,9 +2013,10 @@ fn media_upload_idempotency_key(prompt_hash: &str, final_content_hash: &str) -> 
 fn generate_and_store_with_client(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
+    workflow_root_id: Uuid,
     client: HttpClient,
 ) -> GenerationAttemptResult<GeneratedImage> {
-    generate_and_store_with(config, work_item, &client)
+    generate_and_store_with(config, work_item, workflow_root_id, &client)
 }
 
 #[cfg(any(
@@ -1894,8 +2026,14 @@ fn generate_and_store_with_client(
 fn generate_and_store(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
+    workflow_root_id: Uuid,
 ) -> GenerationAttemptResult<GeneratedImage> {
-    generate_and_store_with_client(config, work_item, HttpClient::production())
+    generate_and_store_with_client(
+        config,
+        work_item,
+        workflow_root_id,
+        HttpClient::production(),
+    )
 }
 
 #[cfg(any(
@@ -1906,6 +2044,7 @@ fn generate_and_store(
 fn generate_and_store_with(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
+    workflow_root_id: Uuid,
     client: &HttpClient,
 ) -> GenerationAttemptResult<GeneratedImage> {
     let prompt = build_prompt(work_item)
@@ -1961,75 +2100,109 @@ fn generate_and_store_with(
         .map_err(|source| GenerationAttemptError::terminal("media_transform", source))?;
     let content_hash = content_hash_bytes(&bytes);
     let file_md5 = md5_hex_bytes(&bytes);
-    let upload_idempotency_key =
-        media_upload_idempotency_key(&work_item.prompt_hash, &content_hash);
-
-    let upload_response = client
-        .request(
-            "POST",
-            &config.media_upload_endpoint,
-            &[
-                ("Content-Type", FINAL_IMAGE_MIME_TYPE.to_string()),
-                ("Accept", "application/json".to_string()),
-                ("X-Qintopia-Content-Hash", content_hash.clone()),
-                ("X-Qintopia-Byte-Size", bytes.len().to_string()),
-                ("X-Qintopia-Width", metadata.width.to_string()),
-                ("X-Qintopia-Height", metadata.height.to_string()),
-                ("X-Qintopia-Work-Item-Id", work_item.id.to_string()),
-                ("X-Qintopia-Idempotency-Key", upload_idempotency_key),
-            ],
-            &bytes,
-            MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
-        )
-        .map_err(|error| GenerationAttemptError::terminal("media_upload", error.into_source()))?;
-    let media = parse_media_upload_response(&upload_response)
-        .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
-    let media_url = validate_media_response(
-        config,
-        &media,
-        &content_hash,
-        &metadata,
-        bytes.len(),
-        client.allows_insecure_http(),
-    )
-    .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
-
-    let readback = client
-        .request("GET", &media_url, &[], &[], config.max_media_bytes)
-        .map_err(|error| GenerationAttemptError::terminal("media_readback", error.into_source()))?;
-    ensure_success(&readback, "media readback")
-        .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
-    let content_type = readback
-        .headers
-        .get("content-type")
-        .map(|value| value.split(';').next().unwrap_or_default().trim())
-        .unwrap_or_default();
-    if content_type != FINAL_IMAGE_MIME_TYPE {
-        return Err(GenerationAttemptError::terminal(
-            "media_readback",
-            anyhow!("media readback returned an unexpected MIME type"),
-        ));
-    }
-    let readback_metadata = inspect_final_jpeg(&readback.body, config.max_media_bytes)
-        .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
-    if readback.body != bytes
-        || content_hash_bytes(&readback.body) != content_hash
-        || readback_metadata.width != metadata.width
-        || readback_metadata.height != metadata.height
-    {
-        return Err(GenerationAttemptError::terminal(
-            "media_readback",
-            anyhow!("media readback did not match uploaded image"),
-        ));
-    }
+    let artifact_id = generated_image_artifact_id(work_item.id, &content_hash);
+    let (artifact_uri, storage_provider, feishu_record_id) = match &config.storage {
+        StorageConfig::Http(storage) => {
+            let upload_idempotency_key =
+                media_upload_idempotency_key(&work_item.prompt_hash, &content_hash);
+            let upload_response = client
+                .request(
+                    "POST",
+                    &storage.media_upload_endpoint,
+                    &[
+                        ("Content-Type", FINAL_IMAGE_MIME_TYPE.to_string()),
+                        ("Accept", "application/json".to_string()),
+                        ("X-Qintopia-Content-Hash", content_hash.clone()),
+                        ("X-Qintopia-Byte-Size", bytes.len().to_string()),
+                        ("X-Qintopia-Width", metadata.width.to_string()),
+                        ("X-Qintopia-Height", metadata.height.to_string()),
+                        ("X-Qintopia-Work-Item-Id", work_item.id.to_string()),
+                        ("X-Qintopia-Idempotency-Key", upload_idempotency_key),
+                    ],
+                    &bytes,
+                    MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
+                )
+                .map_err(|error| {
+                    GenerationAttemptError::terminal("media_upload", error.into_source())
+                })?;
+            let media = parse_media_upload_response(&upload_response)
+                .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
+            let media_url = validate_media_response(
+                storage,
+                &media,
+                &content_hash,
+                &metadata,
+                bytes.len(),
+                client.allows_insecure_http(),
+            )
+            .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
+            let readback = client
+                .request("GET", &media_url, &[], &[], config.max_media_bytes)
+                .map_err(|error| {
+                    GenerationAttemptError::terminal("media_readback", error.into_source())
+                })?;
+            ensure_success(&readback, "media readback")
+                .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
+            let content_type = readback
+                .headers
+                .get("content-type")
+                .map(|value| value.split(';').next().unwrap_or_default().trim())
+                .unwrap_or_default();
+            if content_type != FINAL_IMAGE_MIME_TYPE {
+                return Err(GenerationAttemptError::terminal(
+                    "media_readback",
+                    anyhow!("media readback returned an unexpected MIME type"),
+                ));
+            }
+            let readback_metadata = inspect_final_jpeg(&readback.body, config.max_media_bytes)
+                .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
+            if readback.body != bytes
+                || content_hash_bytes(&readback.body) != content_hash
+                || readback_metadata.width != metadata.width
+                || readback_metadata.height != metadata.height
+            {
+                return Err(GenerationAttemptError::terminal(
+                    "media_readback",
+                    anyhow!("media readback did not match uploaded image"),
+                ));
+            }
+            (media.uri, HTTP_STORAGE_BACKEND, None)
+        }
+        StorageConfig::Feishu(storage) => {
+            let result = store_primary_generated_image(
+                storage,
+                &FeishuPrimaryStorageImage {
+                    artifact_id,
+                    workflow_root_id,
+                    work_item_id: work_item.id,
+                    content_hash: &content_hash,
+                    file_md5: &file_md5,
+                    source_content_hash: &provider_source_content_hash,
+                    bytes: &bytes,
+                    width: metadata.width,
+                    height: metadata.height,
+                },
+            )
+            .map_err(|source| GenerationAttemptError::terminal("feishu_storage", source))?;
+            (
+                result.artifact_uri,
+                FEISHU_STORAGE_BACKEND,
+                Some(result.record_id),
+            )
+        }
+    };
     Ok(GeneratedImage {
+        artifact_id,
+        workflow_root_id,
         bytes,
         content_hash,
         file_md5,
         provider_source_content_hash,
         width: metadata.width,
         height: metadata.height,
-        artifact_uri: media.uri,
+        artifact_uri,
+        storage_provider,
+        feishu_record_id,
     })
 }
 
@@ -2052,6 +2225,7 @@ fn provider_response_limit(max_media_bytes: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use std::{
+        fs,
         io::{Cursor, Read, Write},
         net::TcpListener,
         thread,
@@ -2066,6 +2240,7 @@ mod tests {
     )))]
     use clap::Parser;
     use image::ImageEncoder;
+    use tempfile::tempdir;
 
     #[cfg(feature = "postgres-integration-tests")]
     fn postgres_integration_database_url() -> String {
@@ -2507,9 +2682,13 @@ mod tests {
         let mut config = test_config("https://media.example.test/public");
         config.api_key = "test\r\nX-Injected: true".to_string();
 
-        let error =
-            generate_and_store_with_client(&config, &fixture_work_item(), HttpClient::test_only())
-                .expect_err("invalid header must fail before connecting");
+        let error = generate_and_store_with_client(
+            &config,
+            &fixture_work_item(),
+            Uuid::nil(),
+            HttpClient::test_only(),
+        )
+        .expect_err("invalid header must fail before connecting");
 
         assert_eq!(error.class, GenerationFailureClass::Terminal);
         assert_eq!(error.stage, "provider_request");
@@ -2527,9 +2706,13 @@ mod tests {
             Url::parse(&format!("https://127.0.0.1:{port}/v1/images/generations"))
                 .expect("loopback provider URL");
 
-        let error =
-            generate_and_store_with_client(&config, &fixture_work_item(), HttpClient::production())
-                .expect_err("refused loopback provider must fail");
+        let error = generate_and_store_with_client(
+            &config,
+            &fixture_work_item(),
+            Uuid::nil(),
+            HttpClient::production(),
+        )
+        .expect_err("refused loopback provider must fail");
 
         assert_eq!(error.class, GenerationFailureClass::RetryableProvider);
         assert_eq!(error.stage, "provider_transport");
@@ -2543,6 +2726,18 @@ mod tests {
 
         assert!(first.starts_with(&format!("{WORKER_ID}:")));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn generated_image_artifact_id_is_stable_and_content_bound() {
+        let work_item_id = Uuid::new_v4();
+        let first = generated_image_artifact_id(work_item_id, "sha256:first");
+        let repeated = generated_image_artifact_id(work_item_id, "sha256:first");
+        let changed = generated_image_artifact_id(work_item_id, "sha256:changed");
+
+        assert_eq!(first, repeated);
+        assert_ne!(first, changed);
+        assert_eq!(first.get_version_num(), 8);
     }
 
     #[test]
@@ -2747,6 +2942,8 @@ mod tests {
     fn pending_generated_image_reuse_requires_exact_immutable_metadata() {
         let work_item = fixture_work_item();
         let generated = GeneratedImage {
+            artifact_id: Uuid::new_v4(),
+            workflow_root_id: Uuid::nil(),
             bytes: vec![1, 2, 3],
             content_hash: format!("sha256:{}", "a".repeat(64)),
             file_md5: "5289df737df57326fcdd22597afb1fac".to_string(),
@@ -2754,6 +2951,8 @@ mod tests {
             width: 1024,
             height: 1024,
             artifact_uri: "https://media.example.test/public/image.jpg".to_string(),
+            storage_provider: HTTP_STORAGE_BACKEND,
+            feishu_record_id: None,
         };
         let source_ids = json!([{
             "approved_brief_artifact_id": work_item.approved_brief_artifact_id,
@@ -2806,9 +3005,15 @@ mod tests {
             width: 1024,
             height: 1024,
         };
-        assert!(
-            validate_media_response(&config, &media, "sha256:abc", &metadata, 12, false).is_err()
-        );
+        assert!(validate_media_response(
+            http_storage(&config),
+            &media,
+            "sha256:abc",
+            &metadata,
+            12,
+            false,
+        )
+        .is_err());
     }
 
     #[test]
@@ -2826,9 +3031,15 @@ mod tests {
             width: 1024,
             height: 1024,
         };
-        assert!(
-            validate_media_response(&config, &media, "sha256:abc", &metadata, 12, false).is_err()
-        );
+        assert!(validate_media_response(
+            http_storage(&config),
+            &media,
+            "sha256:abc",
+            &metadata,
+            12,
+            false,
+        )
+        .is_err());
 
         let media = MediaUploadResponse {
             uri: "https://media.example.test/public%2Fprivate/image.jpg".to_string(),
@@ -2838,9 +3049,15 @@ mod tests {
             width: 1024,
             height: 1024,
         };
-        assert!(
-            validate_media_response(&config, &media, "sha256:abc", &metadata, 12, false).is_err()
-        );
+        assert!(validate_media_response(
+            http_storage(&config),
+            &media,
+            "sha256:abc",
+            &metadata,
+            12,
+            false,
+        )
+        .is_err());
     }
 
     #[test]
@@ -2883,9 +3100,15 @@ mod tests {
             width: 1024,
             height: 1024,
         };
-        let error =
-            validate_media_response(&config, &media, "sha256:expected", &metadata, 12, false)
-                .expect_err("upload metadata must match generated image");
+        let error = validate_media_response(
+            http_storage(&config),
+            &media,
+            "sha256:expected",
+            &metadata,
+            12,
+            false,
+        )
+        .expect_err("upload metadata must match generated image");
 
         assert!(error.to_string().contains("metadata did not match"));
     }
@@ -2906,9 +3129,15 @@ mod tests {
             height: 1024,
         };
 
-        let error =
-            validate_media_response(&config, &media, "sha256:expected", &metadata, 12, false)
-                .expect_err("final media URI must use a JPEG suffix");
+        let error = validate_media_response(
+            http_storage(&config),
+            &media,
+            "sha256:expected",
+            &metadata,
+            12,
+            false,
+        )
+        .expect_err("final media URI must use a JPEG suffix");
 
         assert!(error.to_string().contains("JPEG object"));
     }
@@ -3037,16 +3266,22 @@ mod tests {
                 .join("images/generations")
                 .expect("fake provider endpoint"),
             api_key: "test-key".to_string(),
-            media_upload_endpoint: Url::parse(&format!("http://127.0.0.1:{port}/upload"))
-                .expect("fake upload URL"),
-            media_public_base_url: Url::parse(&format!("http://127.0.0.1:{port}/public"))
-                .expect("fake public URL"),
-            media_allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
+            storage: StorageConfig::Http(HttpMediaConfig {
+                media_upload_endpoint: Url::parse(&format!("http://127.0.0.1:{port}/upload"))
+                    .expect("fake upload URL"),
+                media_public_base_url: Url::parse(&format!("http://127.0.0.1:{port}/public"))
+                    .expect("fake public URL"),
+                media_allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
+            }),
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
         };
-        let generated =
-            generate_and_store_with_client(&config, &fixture_work_item(), HttpClient::test_only())
-                .expect("fake image generation succeeds");
+        let generated = generate_and_store_with_client(
+            &config,
+            &fixture_work_item(),
+            Uuid::nil(),
+            HttpClient::test_only(),
+        )
+        .expect("fake image generation succeeds");
         handle.join().expect("fake server joins");
 
         assert_eq!(generated.bytes, final_jpeg);
@@ -3099,12 +3334,125 @@ mod tests {
         });
 
         let config = test_http_config(port);
-        let error =
-            generate_and_store_with_client(&config, &fixture_work_item(), HttpClient::test_only())
-                .expect_err("readback with different bytes must fail");
+        let error = generate_and_store_with_client(
+            &config,
+            &fixture_work_item(),
+            Uuid::nil(),
+            HttpClient::test_only(),
+        )
+        .expect_err("readback with different bytes must fail");
         handle.join().expect("fake server joins");
 
         assert!(error.to_string().contains("did not match uploaded image"));
+    }
+
+    #[test]
+    fn fake_provider_stores_final_jpeg_in_feishu_before_returning_artifact() {
+        let source_png = fixture_png();
+        let final_jpeg = fixture_jpeg(&source_png);
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake server");
+        let port = listener.local_addr().expect("fake server address").port();
+        let source_for_server = source_png.clone();
+        let final_for_server = final_jpeg.clone();
+        let handle = thread::spawn(move || {
+            let expected_paths = [
+                "/v1/images/generations",
+                "/open-apis/auth/v3/tenant_access_token/internal",
+                "/open-apis/bitable/v1/apps/baseTokenFixture/tables/tblFixture/records/search",
+                "/open-apis/drive/v1/medias/upload_all",
+                "/open-apis/drive/v1/medias/fileFixture/download",
+                "/open-apis/bitable/v1/apps/baseTokenFixture/tables/tblFixture/records",
+            ];
+            for path in expected_paths {
+                let (mut stream, _) = listener.accept().expect("accept fake request");
+                let request = read_request(&mut stream);
+                assert!(request
+                    .headers
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .contains(path));
+                let response = match path {
+                    "/v1/images/generations" => json_response(
+                        &json!({"data":[{"b64_json": Base64::encode_string(&source_for_server)}]})
+                            .to_string(),
+                    ),
+                    "/open-apis/auth/v3/tenant_access_token/internal" => json_response(
+                        r#"{"code":0,"tenant_access_token":"tenantFixture"}"#,
+                    ),
+                    "/open-apis/bitable/v1/apps/baseTokenFixture/tables/tblFixture/records/search" => {
+                        assert!(String::from_utf8_lossy(&request.body).contains("AgentOS产物ID"));
+                        json_response(r#"{"code":0,"data":{"items":[]}}"#)
+                    }
+                    "/open-apis/drive/v1/medias/upload_all" => {
+                        assert!(request
+                            .body
+                            .windows(final_for_server.len())
+                            .any(|window| window == final_for_server));
+                        json_response(r#"{"code":0,"data":{"file_token":"fileFixture"}}"#)
+                    }
+                    "/open-apis/drive/v1/medias/fileFixture/download" => {
+                        assert!(request.headers.contains("Authorization: Bearer tenantFixture"));
+                        binary_response(&final_for_server, FINAL_IMAGE_MIME_TYPE)
+                    }
+                    _ => {
+                        let body = String::from_utf8_lossy(&request.body);
+                        assert!(body.contains("fileFixture"));
+                        assert!(body.contains("待审核"));
+                        json_response(
+                            r#"{"code":0,"data":{"record":{"record_id":"recFixture"}}}"#,
+                        )
+                    }
+                };
+                stream.write_all(&response).expect("write fake response");
+            }
+        });
+
+        let temp = tempdir().expect("temp credential root");
+        let profile_dir = temp.path().join(".hermes/profiles/huabaosi");
+        fs::create_dir_all(&profile_dir).expect("create Huabaosi profile dir");
+        let profile_path = profile_dir.join(".env");
+        fs::write(
+            &profile_path,
+            "FEISHU_APP_ID=appFixture\nFEISHU_APP_SECRET=secretFixture\n",
+        )
+        .expect("write fake credentials");
+
+        let config = AdapterConfig {
+            model: "gpt-image-2".to_string(),
+            provider_endpoint: Url::parse(&format!(
+                "http://127.0.0.1:{port}/v1/images/generations"
+            ))
+            .expect("fake provider endpoint"),
+            api_key: "test-key".to_string(),
+            storage: StorageConfig::Feishu(FeishuPrimaryStorageConfig::test_only(
+                Url::parse(&format!("http://127.0.0.1:{port}/open-apis/"))
+                    .expect("fake Feishu API root"),
+                profile_path.to_string_lossy().to_string(),
+                DEFAULT_MAX_MEDIA_BYTES,
+            )),
+            max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
+        };
+        let work_item = fixture_work_item();
+        let generated = generate_and_store_with_client(
+            &config,
+            &work_item,
+            Uuid::nil(),
+            HttpClient::test_only(),
+        )
+        .expect("fake Feishu-backed image generation succeeds");
+        handle.join().expect("fake server joins");
+
+        assert_eq!(generated.bytes, final_jpeg);
+        assert_eq!(generated.storage_provider, FEISHU_STORAGE_BACKEND);
+        assert_eq!(generated.feishu_record_id.as_deref(), Some("recFixture"));
+        assert_eq!(
+            generated.artifact_uri,
+            format!(
+                "feishu-base://huabaosi-generated-image/{}",
+                generated.artifact_id
+            )
+        );
     }
 
     fn fixture_work_item() -> ImageGenerationWorkItem {
@@ -3127,11 +3475,20 @@ mod tests {
             provider_endpoint: Url::parse("https://provider.example.test/v1/images/generations")
                 .unwrap(),
             api_key: "test-key".to_string(),
-            media_upload_endpoint: Url::parse("https://media.example.test/upload").unwrap(),
-            media_public_base_url: Url::parse(public_base).unwrap(),
-            media_allowed_hosts: BTreeSet::from(["media.example.test".to_string()]),
+            storage: StorageConfig::Http(HttpMediaConfig {
+                media_upload_endpoint: Url::parse("https://media.example.test/upload").unwrap(),
+                media_public_base_url: Url::parse(public_base).unwrap(),
+                media_allowed_hosts: BTreeSet::from(["media.example.test".to_string()]),
+            }),
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
         }
+    }
+
+    fn http_storage(config: &AdapterConfig) -> &HttpMediaConfig {
+        let StorageConfig::Http(storage) = &config.storage else {
+            panic!("test requires HTTP media storage");
+        };
+        storage
     }
 
     fn test_http_config(port: u16) -> AdapterConfig {
@@ -3142,11 +3499,13 @@ mod tests {
             ))
             .expect("fake provider endpoint"),
             api_key: "test-key".to_string(),
-            media_upload_endpoint: Url::parse(&format!("http://127.0.0.1:{port}/upload"))
-                .expect("fake upload endpoint"),
-            media_public_base_url: Url::parse(&format!("http://127.0.0.1:{port}/public"))
-                .expect("fake public base"),
-            media_allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
+            storage: StorageConfig::Http(HttpMediaConfig {
+                media_upload_endpoint: Url::parse(&format!("http://127.0.0.1:{port}/upload"))
+                    .expect("fake upload endpoint"),
+                media_public_base_url: Url::parse(&format!("http://127.0.0.1:{port}/public"))
+                    .expect("fake public base"),
+                media_allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
+            }),
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
         }
     }

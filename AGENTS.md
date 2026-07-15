@@ -155,6 +155,15 @@ Use `rg` and `rg --files` for search.
   workflows on Hermes Kanban.
 - Postgres/AgentOS is the system fact source. Feishu is a human workbench and mirror,
   not the source of truth.
+- For the Huabaosi production image canary, the owner-selected first storage boundary is
+  the fixed Feishu Base `huabaosi-generated-image-v1` table. The image worker may upload
+  the exact final JPEG attachment and idempotently upsert one row by
+  `generated_image_artifact_id`; it must read the uploaded bytes back through the
+  authenticated Feishu media API and verify the complete JPEG identity before creating a
+  pending AgentOS artifact. Do not require a separate media upload/public URL service
+  for this Feishu-backed canary. Feishu automation may notify reviewers or mirror
+  reviewed status after the row exists, but it must not generate images, approve
+  artifacts, become the fact source, call QiWe, or publish.
 - Huabaosi generated-image Feishu mirroring must use the fixed
   `huabaosi-generated-image-v1` artifact-version schema and key idempotency by
   `generated_image_artifact_id`. It may mirror only a fully revalidated immutable final
@@ -171,6 +180,17 @@ Use `rg` and `rg --files` for search.
   production observation may run only the non-secret mirror observation preflight; it
   must not run full configuration preflight, preview the queue, upload media, write
   Feishu/Postgres, approve, publish, call QiWe, or send.
+- Huabaosi Feishu primary-storage apply must reuse the bounded Rust Feishu client and
+  the same exact Base/table allowlists, schema version, profile path, production release
+  SHA, and database URL hash gates as the reviewed mirror. Feishu attachment tokens and
+  credentials are memory-only and must not appear in Postgres metadata, reports, logs,
+  CLI arguments, or environment-derived output. A failed or ambiguous Feishu write must
+  not create a pending artifact or be retried automatically as if no external write
+  occurred.
+- The first Feishu-backed image canary must remain `pending`. Existing generated-image
+  approval and QiWe intake accept only the reviewed immutable HTTPS JPEG contract; they
+  must fail closed for `feishu-base://` artifacts until a separate PR adds authenticated
+  Feishu attachment revalidation to approval and a reviewed delivery path.
 - Huabaosi Feishu production observation must discover the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with

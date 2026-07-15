@@ -58,6 +58,12 @@ unless correcting historical evidence.
      adds the feature to immutable release artifacts and installs a dedicated timer
      without auto-enabling it. Remaining work is merge, manual Release publication,
      production configuration, explicit activation, and first-record evidence.
+   - The owner selected the fixed Feishu image-version table as the first production
+     storage boundary for the Huabaosi canary. The
+     [Feishu primary-storage plan](huabaosi-feishu-primary-storage.md) reuses the
+     activity-ledger Base API upsert pattern, requires authenticated attachment readback
+     before a pending AgentOS artifact is created, and leaves Feishu automation limited
+     to later notification/review coordination.
    - The proposed
      [Aliang image-generation adapter](aliang-production-image-generation.md) uses the
      historically observed OpenAI-compatible `gpt-image-2` path as its implementation

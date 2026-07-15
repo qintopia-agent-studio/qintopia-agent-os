@@ -514,11 +514,19 @@ scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
 
 The release installer installs the Huabaosi production preflight, worker, and timer
 units but leaves the timer disabled. Before activation, apply the reviewed non-secret
-release SHA and database URL hash plus provider/media secrets through the production
-configuration channel. Do not edit the server checkout or commit those values.
+release SHA and database URL hash plus provider and fixed Feishu Base/table
+configuration through the production configuration channel. Do not edit the server
+checkout or commit those values.
+
+For the Feishu-backed canary, set `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`,
+exact Base/table allowlists, the fixed `huabaosi-generated-image-v1` schema, the
+Huabaosi profile env path, and both image/Feishu production bindings. Do not configure
+release COS or an ad hoc public media endpoint as poster storage.
 
 Run the read-only observation before activation. It runs configuration preflight and a
-queue preview only; it does not claim requests or contact provider/media endpoints.
+queue preview only; it does not claim requests or contact provider/media endpoints. For
+Feishu-backed storage, it also does not authenticate to Feishu, upload an attachment, or
+write a Base record.
 
 ```bash
 set -a

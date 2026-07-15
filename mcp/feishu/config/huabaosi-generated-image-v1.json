@@ -10,7 +10,7 @@
     { "name": "AgentOS工作项ID", "type": "text", "required": true },
     { "name": "图片请求ID", "type": "text", "required": true },
     { "name": "最终JPEG", "type": "attachment", "required": true },
-    { "name": "稳定媒体URI", "type": "url", "required": true },
+    { "name": "稳定媒体URI", "type": "url" },
     { "name": "JPEG SHA-256", "type": "text", "required": true },
     { "name": "文件MD5", "type": "text", "required": true },
     { "name": "字节数", "type": "number", "required": true },
