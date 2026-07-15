@@ -65,6 +65,20 @@ From the monorepo root, prefer:
   approval phrase, deployed release SHA binding, database URL hash binding, and adapter
   policy before Postgres or external I/O; shell scripts cannot be the only enforcement
   point.
+- Production sidecar artifacts also compile `huabaosi-feishu-mirror-adapter`. Mirror
+  apply must fail before Postgres or external I/O unless the exact owner approval,
+  deployed release SHA binding, production database hash, Base/table allowlists, fixed
+  schema, profile path, and media host policy all validate. Feishu remains a mirror; the
+  command cannot approve, publish, call QiWe, or change image-generation state.
+- Production mirror observation must discover
+  `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
+  only when it resolves to that same immutable binary with the approved production
+  features; source-tree `cargo run` fallback is forbidden. Its shell may parse only the
+  mirror enable flag; a direct child launcher may pass the fixed preflight/dry-run key
+  allowlist to that immutable binary without sourcing shell, importing secrets into the
+  shell, or writing a secret-bearing temporary file. Timer rollback must stop external
+  work immediately and fail closed until persistent mirror enablement is confirmed
+  present exactly once and exactly `0` in the reviewed environment file.
 - The disposable operations smoke may enter the live retry path only with both the
   Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
   literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media

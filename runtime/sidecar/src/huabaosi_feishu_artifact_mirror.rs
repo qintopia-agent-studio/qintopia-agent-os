@@ -40,6 +40,8 @@ const OFFICIAL_FEISHU_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
 
 const ENABLE_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED";
 const APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL";
+const PRODUCTION_RELEASE_SHA_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA";
+const DEPLOYED_COMMIT_SHA_ENV: &str = "QINTOPIA_DEPLOYED_COMMIT_SHA";
 const DATABASE_HASH_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256";
 const BASE_TOKEN_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN";
 const BASE_TOKEN_ALLOWLIST_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS";
@@ -53,6 +55,8 @@ const MEDIA_MAX_BYTES_ENV: &str = "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES";
 const REQUIRED_CONFIGURATION_NAMES: &[&str] = &[
     "QINTOPIA_SIDECAR_DATABASE_URL",
     APPROVAL_ENV,
+    PRODUCTION_RELEASE_SHA_ENV,
+    DEPLOYED_COMMIT_SHA_ENV,
     DATABASE_HASH_ENV,
     BASE_TOKEN_ENV,
     BASE_TOKEN_ALLOWLIST_ENV,
@@ -354,7 +358,7 @@ fn mirror_guardrails() -> Vec<String> {
         "mirror writes cannot approve, publish, or send an artifact".to_string(),
         "Base tokens, table ids, file tokens, credentials, and raw responses are redacted"
             .to_string(),
-        "no service or timer is installed by this adapter".to_string(),
+        "the production timer requires separate explicit owner activation".to_string(),
     ]
 }
 
@@ -400,6 +404,10 @@ impl MirrorConfig {
         if env::var(APPROVAL_ENV).ok().as_deref() != Some(REQUIRED_APPROVAL) {
             bail!("Huabaosi Feishu mirror owner approval is invalid");
         }
+        validate_release_binding(
+            &required_env(PRODUCTION_RELEASE_SHA_ENV)?,
+            &required_env(DEPLOYED_COMMIT_SHA_ENV)?,
+        )?;
         validate_database_hash(database_url, &required_env(DATABASE_HASH_ENV)?)?;
 
         let base_token = required_env(BASE_TOKEN_ENV)?;
@@ -448,6 +456,10 @@ fn validate_local_configuration() -> Result<()> {
     if env::var(APPROVAL_ENV).ok().as_deref() != Some(REQUIRED_APPROVAL) {
         bail!("owner approval is invalid");
     }
+    validate_release_binding(
+        &required_env(PRODUCTION_RELEASE_SHA_ENV)?,
+        &required_env(DEPLOYED_COMMIT_SHA_ENV)?,
+    )?;
     let database_url = required_env("QINTOPIA_SIDECAR_DATABASE_URL")?;
     validate_database_hash(&database_url, &required_env(DATABASE_HASH_ENV)?)?;
     let base_token = required_env(BASE_TOKEN_ENV)?;
@@ -572,6 +584,16 @@ fn validate_database_hash(database_url: &str, expected: &str) -> Result<()> {
     }
     if sha256_hex(database_url.as_bytes()) != expected {
         bail!("Huabaosi Feishu database URL SHA-256 does not match");
+    }
+    Ok(())
+}
+
+fn validate_release_binding(expected: &str, deployed: &str) -> Result<()> {
+    if !is_lower_hex(expected, 40) || !is_lower_hex(deployed, 40) {
+        bail!("Huabaosi Feishu production release SHA must be canonical");
+    }
+    if expected != deployed {
+        bail!("Huabaosi Feishu production release SHA does not match deployed commit");
     }
     Ok(())
 }
@@ -1915,6 +1937,15 @@ mod tests {
                 "fixture report leaked {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn huabaosi_feishu_artifact_mirror_requires_exact_production_release() {
+        let sha = "a".repeat(40);
+        assert!(validate_release_binding(&sha, &sha).is_ok());
+        assert!(validate_release_binding(&sha, &"b".repeat(40)).is_err());
+        assert!(validate_release_binding("release-main", "release-main").is_err());
+        assert!(validate_release_binding(&"A".repeat(40), &"A".repeat(40)).is_err());
     }
 
     #[test]

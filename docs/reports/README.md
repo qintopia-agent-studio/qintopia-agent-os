@@ -1,6 +1,7 @@
 # Reports
 
 - [2026-07-15 Aliang image generation production enablement](2026-07-15-aliang-production-enablement.md)
+- [2026-07-15 Huabaosi Feishu artifact mirror production enablement](2026-07-15-huabaosi-feishu-artifact-mirror-production-enablement.md)
 
 This directory links internal sync reports and generated reports that are useful for
 team onboarding, architecture review, or migration decisions.
@@ -55,6 +56,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-15-v0210-follow-up-deploy.md`                                             | adopt-input | v0.2.10 same-SHA deploy mismatch, recovery, and preflight evidence     |
 | `2026-07-15-xiaoman-activity-wrapper-contract-drift.md`                            | adopt-input | Xiaoman plugin and Rust event-signal mutation contract repair          |
 | `2026-07-15-qiwe-isolated-staging-verification.md`                                 | adopt-input | QiWe isolated staging local verification and remaining owner gate      |
+| `2026-07-15-huabaosi-feishu-artifact-mirror-production-enablement.md`              | adopt-input | Production artifact, timer, activation, rollback, and release boundary |
 
 ## Rules
 

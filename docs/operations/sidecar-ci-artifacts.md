@@ -28,12 +28,15 @@ Linux x86_64, Ubuntu glibc
 ```
 
 Production sidecar artifacts are built with exactly the non-default
-`huabaosi-production-adapter` Cargo feature and record
-`cargo_features: ["huabaosi-production-adapter"]`. Neither `huabaosi-staging-adapter`
+`huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter` Cargo features and
+record both names in that order in `cargo_features`. Neither `huabaosi-staging-adapter`
 nor `qiwe-staging-adapter` may appear in this builder or a server-source production
-build. Runtime environment variables cannot select staging code or bypass the production
-release/database bindings. The builder also refuses a dirty or unreadable git worktree
-so `commit_sha` cannot describe different uncommitted source bytes.
+build. The Feishu mirror feature does not enable writes by itself: runtime apply still
+requires the owner phrase, deployed release SHA, database hash, Base/table allowlists,
+fixed schema, profile path, media host policy, and a separate timer activation. Runtime
+environment variables cannot select staging code or bypass these bindings. The builder
+also refuses a dirty or unreadable git worktree so `commit_sha` cannot describe
+different uncommitted source bytes.
 
 ## CI Requirements
 

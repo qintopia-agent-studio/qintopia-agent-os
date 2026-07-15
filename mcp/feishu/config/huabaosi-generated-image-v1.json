@@ -1,7 +1,7 @@
 {
   "schema_version": "huabaosi-generated-image-v1",
   "table_role": "huabaosi_generated_image_versions",
-  "display_name": "图片产物版本表",
+  "display_name": "阿靓图片产物版本表",
   "idempotency_field": "AgentOS产物ID",
   "attachment_field": "最终JPEG",
   "fields": [

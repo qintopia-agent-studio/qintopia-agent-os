@@ -1,7 +1,8 @@
 # 阿靓图片产物飞书镜像计划
 
-Status: implemented and locally validated on a dedicated PR; production writeback
-remains disabled and unscheduled
+Status: adapter and production enablement implemented on separate PRs; merge, manual
+Release publication, production configuration, activation, and first-record evidence
+remain
 
 Scope: 将 AgentOS `generated_image`
 单向镜像到“画报司 | 设计产出库”的图片产物版本表，不改变图片生成、人工审核、企微发送或 Release 发布边界
@@ -72,22 +73,45 @@ review decision。
    `QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL=approved-huabaosi-feishu-artifact-mirror`；
 4. Base token 和目标 table id 分别在显式 allowlist 中；
 5. AgentOS database URL 的 SHA-256 与 owner-reviewed 值一致；
-6. profile env path、媒体 host allowlist 和固定 schema version 校验通过。
+6. 配置中的 production release SHA 是 40 位小写 commit SHA，且与 systemd 注入的
+   `QINTOPIA_DEPLOYED_COMMIT_SHA` 完全一致；
+7. profile env path、媒体 host allowlist 和固定 schema version 校验通过。
 
-默认和当前生产 artifact 不编译该 feature。`--dry-run`
+生产 artifact 固定编译 `huabaosi-production-adapter` 和
+`huabaosi-feishu-mirror-adapter`，不编译 staging 或 QiWe
+adapter。仅编译 feature 不会启用写入；普通 release
+installer 安装固定 preflight/worker/timer unit，但不自动启用 timer。`--dry-run`
 可读取 Postgres 并生成脱敏 preview，但不读取媒体、不请求飞书、不写数据库。`--fixture-mode`
 只验证本地映射。
 
 ## Production Boundary
 
-本 PR 不增加 systemd service/timer，不修改 deploy
-runner，不启用生产 feature，不读取生产凭据，不写真实飞书，不调用 QiWe，不发送或发布。生产启用需要单独 owner-reviewed
-PR，包含远端 schema preflight、隔离 Base smoke、`base:record:retrieve` /
-`base:record:create` / `base:record:update` / `docs:document.media:upload`
-最小权限清单、目标 Base 明确授权、首条记录证据和立即 rollback。
+生产 enablement 边界是：
 
-Rollback 是禁用镜像开关并停止未来独立 timer；既有 AgentOS
+- PR 增加固定 systemd
+  preflight/worker/timer、构件 feature、只读 observation、显式 activation 和 rollback；
+- 普通 release 部署不自动启用外部写 timer；
+- 只有 owner 手动发布 Release、配置生产门禁并运行 activation 后，worker 才能写入；
+- activation 先执行无网络 preflight，再 enable/start timer；
+- Release Please PR 不自动合并，Release 不自动发布。
+
+目标 Base 已由 owner 在真实飞书工作台中创建“阿靓图片产物版本表”并核对 20 个字段；真实 Base
+token、table
+id 和凭据不进入 git。首条真实记录仍需在生产激活后核对附件、不可变 identity、审核字段和 Postgres 脱敏 sync
+audit。
+
+Rollback 先立即 disable/stop 独立 timer 和 worker，再检查持久化 sidecar
+env 中镜像开关已通过受控配置渠道设为唯一的 `0`。开关缺失、仍为
+`1`、重复、配置文件缺失或无法确认时，脚本必须返回失败且不得宣称回滚完成；修正配置后再次运行 rollback。既有 AgentOS
 artifact 和审计保持不变，飞书镜像记录可保留只读或由 owner 单独归档。
+
+生产 observation 必须从 `release/current` 发现 immutable sidecar；显式
+`QINTOPIA_SIDECAR_BIN` 也必须解析到同一 release-local 文件并通过 manifest
+feature 校验，不得回退到源码树 `cargo run`。shell 只以纯文本读取 enable flag；固定 key
+allowlist 由 child launcher 直接传给 immutable binary，不使用 `source`、`eval`
+或含 secret 临时文件。observation 只检查 unit/timer 状态，运行 mirror
+preflight，并执行 worker `--dry-run`
+队列预览；不得上传媒体、写飞书/Postgres、审核、发送或发布。
 
 ## Validation
 
@@ -98,4 +122,7 @@ cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integr
 cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings
 pnpm mcp:adapters:check
 pnpm workflows:check
+node tools/deploy/test-huabaosi-feishu-mirror-production-observation.mjs
+node tools/deploy/test-huabaosi-feishu-mirror-production-activation.mjs
+pnpm deploy:runner:check
 ```

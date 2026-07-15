@@ -54,8 +54,10 @@ unless correcting historical evidence.
      feature work.
    - Mirror Huabaosi generated images into the design Base through the dedicated
      [artifact mirror plan](huabaosi-feishu-artifact-mirror.md). The first PR defines a
-     fixed image-version schema and a feature-gated, unscheduled writer; production
-     writeback still requires isolated Base evidence and a separate enablement decision.
+     fixed image-version schema and a feature-gated writer. The production enablement PR
+     adds the feature to immutable release artifacts and installs a dedicated timer
+     without auto-enabling it. Remaining work is merge, manual Release publication,
+     production configuration, explicit activation, and first-record evidence.
    - The proposed
      [Aliang image-generation adapter](aliang-production-image-generation.md) uses the
      historically observed OpenAI-compatible `gpt-image-2` path as its implementation

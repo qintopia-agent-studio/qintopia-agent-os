@@ -57,6 +57,12 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
 - Huabaosi image generation production state observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
+- Huabaosi generated-image Feishu mirror production observation smoke:
+  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh`
+- Huabaosi generated-image Feishu mirror activation after manual Release publish:
+  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION=approved-production-huabaosi-feishu-artifact-mirror deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh`
+- Huabaosi generated-image Feishu mirror immediate timer rollback:
+  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK=approved-production-huabaosi-feishu-artifact-mirror-rollback deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh`
 - Huabaosi image generation production activation after manual Release publish:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION=approved-production-image-generation deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh`
 - Huabaosi image generation immediate timer rollback:
@@ -154,9 +160,26 @@ Use `rg` and `rg --files` for search.
   `generated_image_artifact_id`. It may mirror only a fully revalidated immutable final
   JPEG and sanitized review metadata. It must not update the legacy poster task summary
   without a stable AgentOS workflow id, treat Feishu state as approval, call QiWe, or
-  publish. Default/production artifacts must not compile the non-default
-  `huabaosi-feishu-mirror-adapter` feature until a separate owner-reviewed production
-  enablement; no timer is allowed in the initial adapter PR.
+  publish. Production artifacts compile `huabaosi-production-adapter` and
+  `huabaosi-feishu-mirror-adapter` only; staging and QiWe adapter features remain
+  forbidden. The release installer may install the dedicated mirror timer but must leave
+  it disabled until the owner runs the reviewed activation command after a successful
+  production preflight.
+- Huabaosi Feishu mirror apply must validate the exact owner phrase, production release
+  SHA binding, database URL hash, Base and table exact allowlists, fixed schema version,
+  Huabaosi profile path, and media host allowlist before Postgres or external I/O. The
+  production observation may run preflight and a `--dry-run` queue preview only; it must
+  not upload media, write Feishu/Postgres, approve, publish, call QiWe, or send.
+- Huabaosi Feishu production observation must discover the immutable
+  `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
+  `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with
+  the approved production features; it must fail closed instead of falling back to
+  `cargo run` or a mutable source tree. Its shell may parse only the mirror enable flag;
+  the child launcher must pass the fixed preflight/dry-run key allowlist directly to the
+  immutable binary without `source`, `eval`, command substitution, shell secret import,
+  or a secret-bearing temporary file. Rollback must stop the timer first and may report
+  completion only after the persistent mirror enable flag is present exactly once and
+  exactly `0` in the reviewed sidecar environment file.
 - Hermes remains the Agent runtime. It should not become the business database.
 - `agents/xiaoman/profile-bundle` is observation-only. It may package the reviewed
   `SOUL.md`/`profile.yaml` templates, strict renderer, fake fixtures, and read-only
@@ -289,14 +312,15 @@ Use `rg` and `rg --files` for search.
   before configuration, Postgres claim/mutation, or network access even if runtime
   enable flags are misconfigured; callback apply must also fail before reading stdin.
   Production artifact manifests must record only
-  `cargo_features: [huabaosi-production-adapter]`; both artifact and server-source build
-  checks must reject the QiWe staging feature and all-features builds. The unrelated
-  Huabaosi production feature must not make QiWe live helpers available.
+  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`; both
+  artifact and server-source build checks must reject the QiWe staging feature and
+  all-features builds. The Huabaosi production features must not make QiWe live helpers
+  available.
 - CI must execute non-ignored sidecar tests with all Cargo features so staging-only
   adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
   remain in the disposable integration job. Production artifacts must still use exactly
-  `cargo_features: [huabaosi-production-adapter]`; an all-features CI build must never
-  be promoted or treated as a production artifact.
+  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`; an
+  all-features CI build must never be promoted or treated as a production artifact.
 - As of 2026-07-15, QiWe final image sending is not on production. Staging smoke,
   callback bridge, and the Postgres state machine are implementation evidence only; do
   not add a production listener, service, timer, live-adapter production build, or
