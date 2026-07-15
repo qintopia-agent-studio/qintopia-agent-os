@@ -1,6 +1,6 @@
 # Huabaosi WeCom Migration Plan
 
-Status: phase 5 deployed for observation; production route unchanged
+Status: phase 5 code merged; server patch extracted; staging canary and phase 6 pending
 
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
@@ -254,6 +254,13 @@ this planning PR.
   needs the reviewed user-scope query fix deployed before its production evidence can be
   accepted.
 - No canary send or production route change has been approved or executed.
+- The production Hermes checkout has 19 dirty entries: 11 modified tracked files, 7
+  backups, and 1 unrelated nested directory. The exact WeCom subset is now preserved in
+  `docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch/`; it is
+  evidence, not a deployable fork.
+- The extracted Python patch does not recognize the incident's busy/fallback strings.
+  The merged Rust policy does, with negative coverage for ordinary inbound `plain text`
+  requests. Production still needs canary evidence and the phase-6 routing PR.
 
 ## Success Criteria
 

@@ -351,6 +351,10 @@ Use `rg` and `rg --files` for search.
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
   not Rust sidecar image generation or QiWe image-send state. Diagnose this path through
   Huabaosi Hermes/WeCom runtime first, and do not hot-edit the server.
+- Server Hermes patches under `docs/operations/review-pool/hermes/` are non-deployable
+  migration evidence. Do not add them to release bundles or apply them to production;
+  migrate each accepted behavior into an owned package with focused tests and a separate
+  cutover PR.
 - Huabaosi live provider/media helpers may compile only with the non-default
   `huabaosi-staging-adapter` feature. Default and production apply must fail before
   Postgres or network access. A staging-feature apply with generation enabled must
