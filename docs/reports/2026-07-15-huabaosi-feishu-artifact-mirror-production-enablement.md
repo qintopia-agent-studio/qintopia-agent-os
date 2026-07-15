@@ -29,10 +29,10 @@ action, and ordinary release deployment must not activate the external write tim
   `release/current/sidecar/qintopia-message-sidecar` binary, accepts an explicit binary
   only when it resolves to that same release-local file with the approved production
   features, and cannot fall back to a mutable source checkout.
-- Parse the enable flag as literal text in the observation shell, then pass the fixed
-  preflight/dry-run key allowlist directly to the immutable binary through a child
+- Parse only the enable flag as literal text in the observation shell, then pass only
+  that flag and the non-secret release SHA to the immutable binary through a child
   launcher. The script does not source or eval the env file, execute command
-  substitution, import secrets into the shell, or create a secret-bearing temporary
+  substitution, import Feishu/Postgres secrets, or create a secret-bearing temporary
   file.
 - Stop the timer and worker first during rollback, then fail closed until the persistent
   mirror enable flag is confirmed present exactly once and exactly `0` in the reviewed

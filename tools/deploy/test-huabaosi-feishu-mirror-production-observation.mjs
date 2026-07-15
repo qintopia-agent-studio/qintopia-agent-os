@@ -48,8 +48,9 @@ exit 1
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >>"${sidecarLog}"
-if [[ -n "\${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]; then
-  printf '%s\\n' 'allowlisted-config-present' >>"${sidecarLog}"
+if [[ "\${QINTOPIA_SIDECAR_DATABASE_URL:-}" == "postgres://qintopia:change-me@127.0.0.1:55432/qintopia_test" || "\${QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN:-}" == "plain-secret-token" || "\${QINTOPIA_HUABAOSI_FEISHU_APP_SECRET:-}" == "configured-value-must-not-appear" || "\${FAKE_MIRROR_LEAK:-}" == "configured-value-must-not-appear" ]]; then
+  echo "secret env reached fake sidecar" >&2
+  exit 70
 fi
 case "$1" in
   huabaosi-feishu-artifact-mirror-preflight)
@@ -88,17 +89,18 @@ esac
   fs.symlinkSync(releaseDir, currentRelease);
   fs.writeFileSync(sidecarLog, "", "utf8");
 
-  const disabledEnv = path.join(tmpRoot, "disabled.env");
   const enabledEnv = path.join(tmpRoot, "enabled.env");
-  const allowlistedEnv = path.join(tmpRoot, "allowlisted.env");
+  const secretEnv = path.join(tmpRoot, "secret.env");
   const maliciousEnv = path.join(tmpRoot, "malicious.env");
-  fs.writeFileSync(disabledEnv, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0\n", "utf8");
   fs.writeFileSync(enabledEnv, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n", "utf8");
   fs.writeFileSync(
-    allowlistedEnv,
+    secretEnv,
     [
       "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0",
       "QINTOPIA_SIDECAR_DATABASE_URL=postgres://qintopia:change-me@127.0.0.1:55432/qintopia_test",
+      "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN=plain-secret-token",
+      "QINTOPIA_HUABAOSI_FEISHU_APP_SECRET=configured-value-must-not-appear",
+      "FAKE_MIRROR_LEAK=configured-value-must-not-appear",
       "",
     ].join("\n"),
     "utf8"
@@ -121,7 +123,7 @@ esac
         QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE: "1",
         QINTOPIA_RELEASE_CURRENT_DIR: currentRelease,
         QINTOPIA_SIDECAR_BIN: "",
-        QINTOPIA_SIDECAR_ENV_FILE: disabledEnv,
+        QINTOPIA_SIDECAR_ENV_FILE: path.join(tmpRoot, "missing.env"),
         SYSTEMCTL: systemctl,
         ...extraEnv,
       },
@@ -135,7 +137,7 @@ esac
       QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE: "1",
       QINTOPIA_SIDECAR_BIN: "",
       QINTOPIA_RELEASE_CURRENT_DIR: path.join(tmpRoot, "missing-current"),
-      QINTOPIA_SIDECAR_ENV_FILE: disabledEnv,
+      QINTOPIA_SIDECAR_ENV_FILE: path.join(tmpRoot, "missing.env"),
       SYSTEMCTL: systemctl,
     },
     encoding: "utf8",
@@ -162,25 +164,20 @@ esac
   }
 
   fs.writeFileSync(sidecarLog, "", "utf8");
-  const allowlistedConfig = run({
-    QINTOPIA_SIDECAR_ENV_FILE: allowlistedEnv,
+  const secretIgnored = run({
+    QINTOPIA_SIDECAR_ENV_FILE: secretEnv,
   });
-  if (
-    allowlistedConfig.status !== 0 ||
-    !fs.readFileSync(sidecarLog, "utf8").includes("allowlisted-config-present")
-  ) {
+  if (secretIgnored.status !== 0) {
     throw new Error(
-      `observation did not pass allowlisted config to the sidecar\n${allowlistedConfig.stdout}\n${allowlistedConfig.stderr}`
+      `secret-env observation should ignore non-observation secrets\n${secretIgnored.stdout}\n${secretIgnored.stderr}`
     );
   }
 
   const malicious = run({
     QINTOPIA_SIDECAR_ENV_FILE: maliciousEnv,
   });
-  if (malicious.status !== 0) {
-    throw new Error(
-      `literal env parsing failed\n${malicious.stdout}\n${malicious.stderr}`
-    );
+  if (malicious.status === 0) {
+    throw new Error("observation accepted command substitution in the env file");
   }
   if (fs.existsSync(commandSubstitutionMarker)) {
     throw new Error("observation executed command substitution from malicious env");
@@ -192,9 +189,11 @@ esac
     "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0\nQINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n",
     "utf8"
   );
-  const duplicate = run({ QINTOPIA_SIDECAR_ENV_FILE: duplicateEnv });
+  const duplicate = run({
+    QINTOPIA_SIDECAR_ENV_FILE: duplicateEnv,
+  });
   if (duplicate.status === 0) {
-    throw new Error("observation accepted a duplicate enable key");
+    throw new Error("observation accepted a duplicate allowlisted env key");
   }
 
   fs.writeFileSync(systemctlLog, "", "utf8");
@@ -239,7 +238,9 @@ esac
     FAKE_MIRROR_LEAK: leakMarker,
   });
   if (leaked.status !== 0) {
-    throw new Error("observation failed while isolating non-allowlisted parent values");
+    throw new Error(
+      `observation leaked configured secret env to sidecar\n${leaked.stdout}\n${leaked.stderr}`
+    );
   }
   if (`${leaked.stdout}\n${leaked.stderr}`.includes(leakMarker)) {
     throw new Error("observation repeated a configured secret in its diagnostic");

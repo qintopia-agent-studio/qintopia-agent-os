@@ -67,7 +67,7 @@ then
   exit 1
 fi
 
-parse_observation_enablement() {
+parse_observation_env() {
   local path="$1"
   if [[ ! -f "$path" ]]; then
     printf '0\n'
@@ -78,8 +78,8 @@ import re
 import sys
 
 path = sys.argv[1]
-key_name = "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED"
-value = None
+allowed = {"QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED"}
+values = {}
 assignment = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=[ \t]*(.*?)[ \t]*(?:#[^\"']*)?$")
 
 with open(path, encoding="utf-8") as fh:
@@ -91,29 +91,42 @@ with open(path, encoding="utf-8") as fh:
         match = assignment.fullmatch(line)
         if not match:
             raise SystemExit(f"invalid observation env line {lineno}")
-        key, candidate = match.groups()
-        if key != key_name:
+        key, value = match.groups()
+        if any(token in value for token in ("$(", "`", "\\", ";", "|", "&", "<", ">", "(", ")")):
+            raise SystemExit(f"unsafe observation env value for {key}")
+        if key not in allowed:
             continue
-        if value is not None:
-            raise SystemExit("duplicate observation enable key")
-        if any(token in candidate for token in ("$(", "`", "\\", ";", "|", "&", "<", ">", "(", ")")):
-            raise SystemExit("unsafe observation enable value")
-        if (candidate.startswith('"') and candidate.endswith('"')) or (
-            candidate.startswith("'") and candidate.endswith("'")
+        if key in values:
+            raise SystemExit(f"duplicate observation env key {key}")
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
         ):
-            candidate = candidate[1:-1]
-        if candidate not in {"0", "1"}:
-            raise SystemExit("invalid observation enable value")
-        value = candidate
+            value = value[1:-1]
+        if value not in {"0", "1"}:
+            raise SystemExit(f"invalid observation env value for {key}")
+        values[key] = value
 
-print(value or "0")
+print(values.get("QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED", "0"))
 PY
 }
 
-MIRROR_ENABLED="$(parse_observation_enablement "$ENV_FILE")" || {
+MIRROR_ENABLED_OUTPUT="$(parse_observation_env "$ENV_FILE")" || {
   echo "Huabaosi Feishu mirror observation env is invalid" >&2
   exit 1
 }
+IFS= read -r MIRROR_ENABLED <<<"$MIRROR_ENABLED_OUTPUT"
+if [[ "$MIRROR_ENABLED_OUTPUT" != "$MIRROR_ENABLED" ]]; then
+  echo "Huabaosi Feishu mirror observation env parser returned extra data" >&2
+  exit 1
+fi
+case "$MIRROR_ENABLED" in
+  0|1)
+    ;;
+  *)
+    echo "Huabaosi Feishu mirror observation env parser returned invalid data" >&2
+    exit 1
+    ;;
+esac
 
 mirror_flag="$MIRROR_ENABLED"
 mirror_flag="${mirror_flag//[[:space:]]/}"
@@ -163,62 +176,13 @@ else
 fi
 
 run_sidecar_with_observation_env() {
-  python3 - "$ENV_FILE" "$SIDECAR_BIN" "$RELEASE_CURRENT_DIR" "$@" <<'PY'
-import os
-import re
-import sys
-
-env_path, bin_path, current_path, *args = sys.argv[1:]
-allowed = {
-    "QINTOPIA_SIDECAR_DATABASE_URL",
-    "QINTOPIA_SIDECAR_DB_MAX_CONNECTIONS",
-    "QINTOPIA_DEPLOYED_COMMIT_SHA",
-    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
-    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
-    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
-    "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
-    "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
-    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
-    "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
-    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
-    "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
-    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
-    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
-    "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
-}
-assignment = re.compile(r"^(?:export[ \t]+)?([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*(.*)$")
-values = {}
-
-if os.path.exists(env_path):
-    with open(env_path, encoding="utf-8") as fh:
-        for lineno, raw in enumerate(fh, 1):
-            line = raw.rstrip("\r\n")
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            match = assignment.fullmatch(line)
-            if not match:
-                raise SystemExit(f"invalid observation env line {lineno}")
-            key, value = match.groups()
-            if key not in allowed:
-                continue
-            if key in values:
-                raise SystemExit(f"duplicate observation env key {key}")
-            value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-                value = value[1:-1]
-            values[key] = value
-
-child_env = {}
-for key in ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR"):
-    if key in os.environ:
-        child_env[key] = os.environ[key]
-child_env.update(values)
-child_env["QINTOPIA_DEPLOYED_COMMIT_SHA"] = os.path.basename(
-    os.path.realpath(current_path)
-)
-os.execve(bin_path, [bin_path, *args], child_env)
-PY
+  local release_sha
+  release_sha="$(basename "$(realpath "$RELEASE_CURRENT_DIR")")"
+  env -i \
+    PATH="${PATH:-/usr/bin:/bin}" \
+    QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED="$MIRROR_ENABLED" \
+    QINTOPIA_DEPLOYED_COMMIT_SHA="$release_sha" \
+    "$SIDECAR_BIN" "$@"
 }
 
 tmp_dir="$(mktemp -d)"
@@ -236,17 +200,6 @@ assert_no_sensitive_output() {
     "external_calls_executed\": true"
     "database_writes_executed\": true"
   )
-  local value_name
-  for value_name in \
-    QINTOPIA_SIDECAR_DATABASE_URL \
-    QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN \
-    QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID \
-    QINTOPIA_HUABAOSI_FEISHU_APP_ID \
-    QINTOPIA_HUABAOSI_FEISHU_APP_SECRET; do
-    if [[ -n "${!value_name:-}" ]]; then
-      forbidden+=("${!value_name}")
-    fi
-  done
   local token
   for token in "${forbidden[@]}"; do
     if [[ -n "$token" ]] && grep -Fq -- "$token" "$file"; then
