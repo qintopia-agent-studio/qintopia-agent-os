@@ -540,8 +540,16 @@ Use `rg` and `rg --files` for search.
 - `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
   image request after the fail-closed preflight, explicit smoke flag and approval
   phrase, staging-only env file, a repository-reviewed database URL hash allowlist, and
-  an explicit UUID work item id. It must leave the image pending review and must not run
-  in production, add a timer, write Feishu, send QiWe, or publish.
+  an explicit UUID work item id. It must parse the staging env file through a fixed key
+  allowlist without evaluating it as shell, run child sidecar/cargo commands with a
+  minimal explicit environment rather than inheriting ambient operator secrets, keep
+  subprocess output in memory for sensitive-output scanning, emit only sanitized
+  `huabaosi_image_generation_staging_evidence` records for preflight and the pending
+  final JPEG, leave the image pending review, and must not run in production, add a
+  timer, write Feishu, send QiWe, or publish. Evidence may include the staging database
+  URL hash, work item UUID, final JPEG SHA-256, dimensions, byte count, MIME type, and
+  pending review state; it must not include provider/media URLs, filenames, tokens,
+  database URLs, provider responses, Feishu ids, or QiWe credentials.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

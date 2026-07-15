@@ -296,12 +296,18 @@ data but are not eligible for the future QiWe JPG send contract.
   `config_valid=false` 表示字段存在但格式或 allowlist 校验失败。
 - `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`
   是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
-  `staging` 的独立 env、代码内 reviewed database URL hash
-  allowlist，以及一个明确的 image request UUID。它只运行一次 image worker 并断言得到一个
+  `staging` 的独立 env、命令传入的 repository-reviewed staging database URL
+  SHA-256，以及一个明确的 image request UUID。它只按固定 env key allowlist 解析 staging
+  env file，不执行 shell；只运行一次 image worker 并断言得到一个
   `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。若将来的 worker
   report 增加 `artifact_uri`，该 URI 只能是无 query/fragment/userinfo 且位于 allowlisted
   public media base 下的 HTTPS 地址；provider/upload
-  endpoint、密钥和数据库 URL 仍必须拒绝输出。
+  endpoint、密钥和数据库 URL 仍必须拒绝输出。smoke stdout 必须包含
+  `huabaosi_image_generation_staging_evidence=<json>`
+  的 preflight 和 generation 两条脱敏记录，并通过
+  `tools/deploy/check-huabaosi-image-staging-evidence.mjs` 校验；记录只可保留 staging
+  database URL hash、work item UUID、最终 JPEG SHA-256、尺寸、字节数、MIME 和 pending
+  review 状态，不得包含媒体 URI、文件名、provider 响应、token 或数据库 URL。
 - `deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
   只读验证生产开关和 provider timer 状态一致，并运行配置预检和
   `run-huabaosi-image-generation-worker --once --dry-run` 队列预览。它不 claim work
@@ -331,6 +337,7 @@ smoke；该 smoke 不得发送、发布或写飞书。
 QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE=1 \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID='<approved staging image request UUID>' \
 deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh
 ```

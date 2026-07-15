@@ -305,22 +305,46 @@ if (!exists(aliangStagingSmokePath)) {
     "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL",
     "approved-staging-image-generation",
     "QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256",
     "QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID",
     "--features huabaosi-staging-adapter",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256 must be a canonical SHA-256",
+    "STAGING_ENV_KEYS",
+    "load_staging_env",
+    "staging database URL hash does not match the approved command",
+    "CHILD_ENV",
+    "add_child_env",
+    "add_child_env_if_set",
+    "env -i",
+    'output="$(env -i "${CHILD_ENV[@]}" "$@" 2>&1)"',
+    "assert_no_sensitive_text",
     'payload["adapter_compiled"] is True',
     "huabaosi-image-generation-preflight",
     "run-huabaosi-image-generation-worker",
     "generated_image_created",
     "pending",
+    "huabaosi_image_generation_staging_evidence=",
+    "emit_sanitized_evidence",
+    "database_url_sha256",
+    "content_hash",
+    "mime_type",
     "artifact_uri",
     "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
-    "urlparse(sys.stdin.read())",
+    'hashlib.sha256(value.encode("utf-8")).hexdigest()',
+    "urlparse(value).path",
   ]) {
     requireFragment(aliangStagingSmokePath, smoke, fragment);
   }
 
   for (const fragment of [
     "systemctl",
+    'source "$ENV_FILE"',
+    ". /etc/qintopia/message-sidecar-staging.env",
+    "mktemp",
+    "preflight_output",
+    "worker_output",
+    '>"$preflight_output"',
+    '>"$worker_output"',
     'python3 - "$QINTOPIA_SIDECAR_DATABASE_URL"',
     "run-group-message-send-worker",
     "--use-feishu-base",
@@ -328,6 +352,47 @@ if (!exists(aliangStagingSmokePath)) {
     "operations-group-message-confirm",
   ]) {
     forbidFragment(aliangStagingSmokePath, smoke, fragment);
+  }
+}
+
+const aliangStagingEvidenceCheckPath =
+  "tools/deploy/check-huabaosi-image-staging-evidence.mjs";
+if (!exists(aliangStagingEvidenceCheckPath)) {
+  addError(
+    `${aliangStagingEvidenceCheckPath}: missing Huabaosi staging evidence checker`
+  );
+} else {
+  const checker = readText(aliangStagingEvidenceCheckPath);
+  for (const fragment of [
+    "huabaosi_image_generation_staging_evidence=",
+    "Huabaosi image staging evidence check passed.",
+    "expected exactly two Huabaosi staging evidence records",
+    "expected one preflight and one generation evidence record",
+    "generation evidence does not prove one pending final JPEG",
+    "artifact_uri",
+    "https?:",
+  ]) {
+    requireFragment(aliangStagingEvidenceCheckPath, checker, fragment);
+  }
+}
+
+const aliangStagingSmokeTestPath = "tools/deploy/test-huabaosi-image-staging-smoke.mjs";
+if (!exists(aliangStagingSmokeTestPath)) {
+  addError(`${aliangStagingSmokeTestPath}: missing Huabaosi staging smoke test`);
+} else {
+  const test = readText(aliangStagingSmokeTestPath);
+  for (const fragment of [
+    "env file command was executed",
+    "ambient secret reached child process",
+    "staging database URL hash does not match the approved command",
+    "staging env contains an unsupported key",
+    "contains forbidden sensitive output",
+    "check-huabaosi-image-staging-evidence.mjs",
+    "huabaosi_image_generation_staging_evidence=",
+    "raw-huabaosi-staging-evidence.txt",
+    "Huabaosi image staging smoke test passed.",
+  ]) {
+    requireFragment(aliangStagingSmokeTestPath, test, fragment);
   }
 }
 
