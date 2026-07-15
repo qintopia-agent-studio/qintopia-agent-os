@@ -245,6 +245,11 @@ data but are not eligible for the future QiWe JPG send contract.
   408、429、5xx 会按 60/120 秒延迟重新排队；认证、响应 payload、PNG、媒体上传/readback、持久化和 claim 失败都是终态。每次只审计脱敏的 attempt、stage、outcome 和 delay，不保存原始错误或响应。starter
   timer 只负责内部 request intake。必须在 Required Owner
   Decisions 有明确 PR 记录后，才可运行已实现的受保护 staging smoke。
+- A `processing` lease expiring after the worker starts cannot prove whether the image
+  provider or media service accepted a request. The worker therefore reconciles an
+  expired or incomplete claim to one terminal sanitized ambiguous outcome, clears the
+  complete claim tuple, and never automatically reclaims it for another external
+  attempt.
 - `huabaosi-image-generation-preflight`
   可在 staging 环境只读取本地环境变量并输出脱敏配置状态。它不访问 provider、媒体存储、Postgres、飞书或企微；`adapter_config_ready`
   只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。配置无效时它输出

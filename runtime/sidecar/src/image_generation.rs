@@ -14,7 +14,7 @@ use md5::Md5;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::{postgres::PgPool, Row};
+use sqlx::{postgres::PgPool, Postgres, Row, Transaction};
 use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
@@ -234,6 +234,12 @@ enum FailureRecordOutcome {
     StaleClaim,
 }
 
+enum ImageGenerationClaimOutcome {
+    Claimed(ImageGenerationWorkItem),
+    ReconciledAmbiguous(Uuid),
+    Empty,
+}
+
 pub async fn run(
     cli: &Cli,
     once: bool,
@@ -413,19 +419,18 @@ async fn run_once(
         ));
     }
 
-    let Some(work_item) = load_work_item(pool, work_item_id).await? else {
-        return Ok(report(
-            true,
-            true,
-            false,
-            "no_claimable_image_request",
-            None,
-            Vec::new(),
-            None,
-        ));
-    };
-    let preview = image_preview(&work_item);
     if !image_generation_enabled() {
+        let Some(work_item) = load_work_item(pool, work_item_id).await? else {
+            return Ok(report(
+                true,
+                true,
+                false,
+                "no_claimable_image_request",
+                None,
+                Vec::new(),
+                None,
+            ));
+        };
         return Ok(report(
             true,
             true,
@@ -433,19 +438,20 @@ async fn run_once(
             "image_generation_disabled",
             Some(work_item.id),
             Vec::new(),
-            Some(preview),
+            Some(image_preview(&work_item)),
         ));
     }
 
     let Some(config) = adapter_config else {
+        let work_item = load_work_item(pool, work_item_id).await?;
         return Ok(report(
             false,
             true,
             false,
             "adapter_not_configured",
-            Some(work_item.id),
+            work_item.as_ref().map(|item| item.id),
             Vec::new(),
-            Some(preview),
+            work_item.as_ref().map(image_preview),
         ));
     };
 
@@ -457,24 +463,38 @@ async fn run_once(
             true,
             false,
             "staging_adapter_not_compiled",
-            Some(work_item.id),
+            None,
             Vec::new(),
-            Some(preview),
+            None,
         ))
     }
 
     #[cfg(feature = "huabaosi-staging-adapter")]
     {
-        let Some(work_item) = claim_work_item(pool, work_item_id).await? else {
-            return Ok(report(
-                true,
-                true,
-                false,
-                "no_claimable_image_request",
-                None,
-                Vec::new(),
-                None,
-            ));
+        let work_item = match claim_work_item(pool, work_item_id).await? {
+            ImageGenerationClaimOutcome::Claimed(work_item) => work_item,
+            ImageGenerationClaimOutcome::ReconciledAmbiguous(stale_id) => {
+                return Ok(report(
+                    false,
+                    true,
+                    false,
+                    "image_generation_outcome_ambiguous",
+                    Some(stale_id),
+                    Vec::new(),
+                    None,
+                ))
+            }
+            ImageGenerationClaimOutcome::Empty => {
+                return Ok(report(
+                    true,
+                    true,
+                    false,
+                    "no_claimable_image_request",
+                    None,
+                    Vec::new(),
+                    None,
+                ))
+            }
         };
         let work_item_id = work_item.id;
         let worker_input = work_item.clone();
@@ -991,10 +1011,8 @@ async fn load_work_item(
           AND request.payload->>'image_specification' = $3
           AND request.payload->>'prompt_hash' LIKE 'sha256:%'
           AND request.attempts < $4
-          AND (
-              (request.status = 'queued' AND request.available_at <= now())
-              OR (request.status = 'processing' AND request.claim_expires_at <= now())
-          )
+          AND request.status = 'queued'
+          AND request.available_at <= now()
           AND ($5::uuid IS NULL OR request.id = $5)
         ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
         LIMIT 1
@@ -1014,8 +1032,21 @@ async fn load_work_item(
 async fn claim_work_item(
     pool: &PgPool,
     work_item_id: Option<Uuid>,
-) -> Result<Option<ImageGenerationWorkItem>> {
+) -> Result<ImageGenerationClaimOutcome> {
     let claim_token = new_claim_token();
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin Huabaosi image generation claim transaction")?;
+
+    // Lease loss cannot prove whether the provider or media service accepted a request.
+    if let Some(stale_id) = terminalize_one_stale_processing_claim(&mut tx, work_item_id).await? {
+        tx.commit()
+            .await
+            .context("commit stale Huabaosi image generation reconciliation")?;
+        return Ok(ImageGenerationClaimOutcome::ReconciledAmbiguous(stale_id));
+    }
+
     let row = sqlx::query(
         r#"
         WITH claimable AS (
@@ -1040,10 +1071,8 @@ async fn claim_work_item(
               AND request.payload->>'image_specification' = $3
               AND request.payload->>'prompt_hash' LIKE 'sha256:%'
               AND request.attempts < $4
-              AND (
-                  (request.status = 'queued' AND request.available_at <= now())
-                  OR (request.status = 'processing' AND request.claim_expires_at <= now())
-              )
+              AND request.status = 'queued'
+              AND request.available_at <= now()
               AND ($5::uuid IS NULL OR request.id = $5)
             ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
             LIMIT 1
@@ -1076,10 +1105,94 @@ async fn claim_work_item(
     .bind(MAX_GENERATION_ATTEMPTS)
     .bind(work_item_id)
     .bind(&claim_token)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await
     .context("claim Huabaosi image generation request")?;
-    row.map(work_item_from_row).transpose()
+    let work_item = row.map(work_item_from_row).transpose()?;
+    tx.commit()
+        .await
+        .context("commit Huabaosi image generation claim transaction")?;
+    Ok(match work_item {
+        Some(work_item) => ImageGenerationClaimOutcome::Claimed(work_item),
+        None => ImageGenerationClaimOutcome::Empty,
+    })
+}
+
+async fn terminalize_one_stale_processing_claim(
+    tx: &mut Transaction<'_, Postgres>,
+    work_item_id: Option<Uuid>,
+) -> Result<Option<Uuid>> {
+    let stale = sqlx::query(
+        r#"
+        WITH candidate AS (
+            SELECT request.id, request.attempts
+            FROM qintopia_agent_os.work_items request
+            WHERE request.capability_key = $1
+              AND request.work_item_type = $2
+              AND request.requester_agent = 'xiaoman'
+              AND request.target_agent = 'huabaosi'
+              AND request.status = 'processing'
+              AND (
+                  request.claimed_by IS NULL
+                  OR request.locked_at IS NULL
+                  OR request.claim_expires_at IS NULL
+                  OR request.claim_expires_at <= now()
+              )
+              AND ($3::uuid IS NULL OR request.id = $3)
+            ORDER BY request.updated_at ASC, request.created_at ASC
+            LIMIT 1
+            FOR UPDATE OF request SKIP LOCKED
+        )
+        UPDATE qintopia_agent_os.work_items request
+        SET
+            status = 'failed',
+            claimed_by = NULL,
+            locked_at = NULL,
+            claim_expires_at = NULL,
+            last_error = 'image generation external outcome ambiguous after claim loss; automatic retry disabled',
+            updated_at = now()
+        FROM candidate
+        WHERE request.id = candidate.id
+        RETURNING request.id, candidate.attempts
+        "#,
+    )
+    .bind(CAPABILITY_KEY)
+    .bind(WORK_ITEM_TYPE)
+    .bind(work_item_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("terminalize stale Huabaosi image generation claim")?;
+
+    let Some(row) = stale else {
+        return Ok(None);
+    };
+    let stale_id: Uuid = row.try_get("id")?;
+    let attempts: i32 = row.try_get("attempts")?;
+    sqlx::query(
+        r#"
+        INSERT INTO qintopia_agent_os.work_item_events
+            (work_item_id, event_type, actor_type, actor_id, message, data)
+        VALUES
+            ($1, 'image_generation_outcome_ambiguous', 'worker', $2,
+             'lost image generation claim has an unknown external outcome', $3)
+        "#,
+    )
+    .bind(stale_id)
+    .bind(WORKER_ID)
+    .bind(json!({
+        "attempt_number": attempts,
+        "failure_class": "ambiguous",
+        "failure_stage": "claim_lost",
+        "automatic_retry_allowed": false,
+        "external_generation_executed": null,
+        "external_media_upload_executed": null,
+        "external_publish_executed": false,
+        "sensitive_fields_redacted": true,
+    }))
+    .execute(&mut **tx)
+    .await
+    .context("append stale image generation claim event")?;
+    Ok(Some(stale_id))
 }
 
 fn work_item_from_row(row: sqlx::postgres::PgRow) -> Result<ImageGenerationWorkItem> {
@@ -1735,9 +1848,124 @@ mod tests {
     };
 
     use super::*;
+    #[cfg(feature = "postgres-integration-tests")]
+    use crate::db;
     #[cfg(not(feature = "huabaosi-staging-adapter"))]
     use clap::Parser;
     use image::ImageEncoder;
+
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        validate_postgres_integration_database_url(&database_url)
+            .expect("integration database URL must use the guarded test boundary");
+        database_url
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    fn validate_postgres_integration_database_url(database_url: &str) -> Result<()> {
+        let parsed = Url::parse(database_url).context("integration database URL must parse")?;
+        if !matches!(parsed.host_str(), Some("127.0.0.1" | "[::1]")) {
+            bail!("integration database host must be a literal loopback address");
+        }
+        if parsed.path().trim_start_matches('/') != "qintopia_test" {
+            bail!("integration database must be named qintopia_test");
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn insert_processing_claim_fixture(pool: &PgPool) -> (Uuid, Uuid, String) {
+        let parent_id = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+        let brief_id = Uuid::new_v4();
+        let suffix = Uuid::new_v4();
+        let claim_token = format!("{WORKER_ID}:integration-sensitive-{suffix}");
+        let brief_hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, payload, review_policy)
+            VALUES
+                ($1, 'visual_asset_request', 'completed', 'xiaoman', 'huabaosi',
+                 'huabaosi.create_visual_asset', 'stale claim integration parent',
+                 'integration_test', $2, $2, '{}'::jsonb, 'before_external_use')
+            "#,
+        )
+        .bind(parent_id)
+        .bind(format!("huabaosi-stale-parent:{suffix}"))
+        .execute(pool)
+        .await
+        .expect("insert stale claim parent");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, content_text, content_hash)
+            VALUES
+                ($1, $2, 'poster_brief', 'approved', 'huabaosi',
+                 'stale claim integration brief', 'sanitized fixture',
+                 'Sanitized approved poster brief.', $3)
+            "#,
+        )
+        .bind(brief_id)
+        .bind(parent_id)
+        .bind(brief_hash)
+        .execute(pool)
+        .await
+        .expect("insert approved poster brief");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, parent_work_item_id, work_item_type, status, requester_agent,
+                 target_agent, capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, payload, review_policy, attempts, claimed_by,
+                 locked_at, claim_expires_at)
+            VALUES
+                ($1, $2, 'image_generation_request', 'processing', 'xiaoman',
+                 'huabaosi', 'huabaosi.generate_image_asset',
+                 'stale image generation integration request', 'integration_test',
+                 $3, $3, $4, 'before_external_use', 1, $5,
+                 now() - interval '11 minutes', now() - interval '1 minute')
+            "#,
+        )
+        .bind(request_id)
+        .bind(parent_id)
+        .bind(format!("huabaosi-stale-request:{suffix}"))
+        .bind(json!({
+            "approved_brief_artifact_id": brief_id,
+            "approved_brief_content_hash": brief_hash,
+            "image_specification": SPECIFICATION,
+            "prompt_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }))
+        .bind(&claim_token)
+        .execute(pool)
+        .await
+        .expect("insert stale image generation request");
+        (parent_id, request_id, claim_token)
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn delete_processing_claim_fixture(pool: &PgPool, parent_id: Uuid, request_id: Uuid) {
+        sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = $1")
+            .bind(request_id)
+            .execute(pool)
+            .await
+            .expect("delete stale image generation request");
+        sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = $1")
+            .bind(parent_id)
+            .execute(pool)
+            .await
+            .expect("delete stale claim parent");
+    }
 
     #[test]
     fn fixture_preview_is_pending_and_safe_for_chat_is_false() {
@@ -2033,6 +2261,123 @@ mod tests {
 
         assert!(first.starts_with(&format!("{WORKER_ID}:")));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_guard_rejects_hostname_resolution() {
+        assert!(validate_postgres_integration_database_url(
+            "postgres://postgres:postgres@127.0.0.1:5432/qintopia_test"
+        )
+        .is_ok());
+        assert!(validate_postgres_integration_database_url(
+            "postgres://postgres:postgres@[::1]:5432/qintopia_test"
+        )
+        .is_ok());
+        assert!(validate_postgres_integration_database_url(
+            "postgres://postgres:postgres@localhost:5432/qintopia_test"
+        )
+        .is_err());
+        assert!(validate_postgres_integration_database_url(
+            "postgres://postgres:postgres@127.0.0.1:5432/qintopia"
+        )
+        .is_err());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_stale_processing_claim_is_terminal_ambiguous() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 1)
+            .await
+            .expect("connect to guarded integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("run integration migrations");
+        let (parent_id, request_id, prior_claim_token) =
+            insert_processing_claim_fixture(&pool).await;
+
+        let preview = load_work_item(&pool, Some(request_id))
+            .await
+            .expect("preview stale request safely");
+        assert!(preview.is_none());
+        let claimed = claim_work_item(&pool, Some(request_id))
+            .await
+            .expect("reconcile stale request");
+        assert!(matches!(
+            claimed,
+            ImageGenerationClaimOutcome::ReconciledAmbiguous(id) if id == request_id
+        ));
+
+        let state: (String, i32, bool, bool, bool, Option<String>) = sqlx::query_as(
+            r#"
+            SELECT status, attempts, claimed_by IS NULL, locked_at IS NULL,
+                   claim_expires_at IS NULL, last_error
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+            "#,
+        )
+        .bind(request_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read terminal stale request");
+        assert_eq!(state.0, "failed");
+        assert_eq!(state.1, 1);
+        assert!(state.2 && state.3 && state.4);
+        assert_eq!(
+            state.5.as_deref(),
+            Some(
+                "image generation external outcome ambiguous after claim loss; automatic retry disabled"
+            )
+        );
+
+        let events: Vec<(Value,)> = sqlx::query_as(
+            r#"
+            SELECT data
+            FROM qintopia_agent_os.work_item_events
+            WHERE work_item_id = $1
+              AND event_type = 'image_generation_outcome_ambiguous'
+            "#,
+        )
+        .bind(request_id)
+        .fetch_all(&pool)
+        .await
+        .expect("read ambiguous image generation event");
+        assert_eq!(events.len(), 1);
+        let event = &events[0].0;
+        assert_eq!(event["attempt_number"], 1);
+        assert_eq!(event["failure_class"], "ambiguous");
+        assert_eq!(event["failure_stage"], "claim_lost");
+        assert_eq!(event["automatic_retry_allowed"], false);
+        assert_eq!(event["external_generation_executed"], Value::Null);
+        assert_eq!(event["external_media_upload_executed"], Value::Null);
+        assert_eq!(event["external_publish_executed"], false);
+        assert_eq!(event["sensitive_fields_redacted"], true);
+        let serialized = serde_json::to_string(event).expect("serialize sanitized event");
+        assert!(!serialized.contains(&prior_claim_token));
+
+        let duplicate = claim_work_item(&pool, Some(request_id))
+            .await
+            .expect("terminal request remains unclaimable");
+        assert!(matches!(duplicate, ImageGenerationClaimOutcome::Empty));
+        let counts: (i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                (SELECT count(*) FROM qintopia_agent_os.work_item_events
+                 WHERE work_item_id = $1
+                   AND event_type = 'image_generation_outcome_ambiguous'),
+                (SELECT count(*) FROM qintopia_agent_os.artifacts
+                 WHERE work_item_id = $1 AND artifact_type = 'generated_image')
+            "#,
+        )
+        .bind(request_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read idempotent stale claim counts");
+        assert_eq!(counts, (1, 0));
+
+        delete_processing_claim_fixture(&pool, parent_id, request_id).await;
     }
 
     #[test]

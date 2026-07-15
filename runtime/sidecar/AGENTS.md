@@ -67,6 +67,10 @@ From the monorepo root, prefer:
   Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
   literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media
   configuration.
+- Expired or incomplete Huabaosi image-generation `processing` claims must become a
+  sanitized terminal ambiguous outcome before new work is selected. Never infer from a
+  lost lease that provider generation or media upload stayed local, and never reclaim
+  that row for automatic external retry.
 - v1 only captures raw/normalized messages and creates pending processing jobs;
   embedding and graph extraction must remain separate workers.
 - Sanitize QiWe asynchronous `cmd=20000` callback credentials before raw-event
