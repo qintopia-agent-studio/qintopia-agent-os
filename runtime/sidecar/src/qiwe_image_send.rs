@@ -6,6 +6,7 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -29,10 +30,9 @@ const ASYNC_EVENT_COMMAND: i64 = 20_000;
 const SEND_SUCCESS_VALUE: i64 = 1;
 const MAX_JSON_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_CALLBACK_INPUT_BYTES: usize = 64 * 1024;
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 const STAGING_APPROVAL_ENV: &str = "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL";
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 const STAGING_APPROVAL_PHRASE: &str = "approved-staging-qiwe-image-send";
+const STAGING_DATABASE_URL_SHA256_ENV: &str = "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256";
 const REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION: &[&str] = &[
     "QIWE_API_URL",
     "QIWE_TOKEN",
@@ -50,6 +50,27 @@ pub struct QiweImageSendPreflightReport {
     pub adapter_compiled: bool,
     pub send_enabled: bool,
     pub config_valid: bool,
+    pub webhook_ready: bool,
+    pub allowed_host_count: usize,
+    pub media_allowed_host_count: usize,
+    pub allowed_group_count: usize,
+    pub missing_configuration: Vec<&'static str>,
+    pub protocol: &'static str,
+    pub safe_for_chat: bool,
+    pub limitations: Vec<String>,
+    pub guardrails: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QiweImageSendStagingPreflightReport {
+    pub success: bool,
+    pub worker: &'static str,
+    pub action_status: &'static str,
+    pub adapter_compiled: bool,
+    pub send_enabled: bool,
+    pub owner_approval_valid: bool,
+    pub config_valid: bool,
+    pub database_boundary_valid: bool,
     pub webhook_ready: bool,
     pub allowed_host_count: usize,
     pub media_allowed_host_count: usize,
@@ -282,6 +303,19 @@ struct PreflightReportState {
     missing_configuration: Vec<&'static str>,
 }
 
+struct StagingPreflightReportState {
+    adapter_compiled: bool,
+    send_enabled: bool,
+    owner_approval_valid: bool,
+    config_valid: bool,
+    database_boundary_valid: bool,
+    webhook_ready: bool,
+    allowed_host_count: usize,
+    media_allowed_host_count: usize,
+    allowed_group_count: usize,
+    missing_configuration: Vec<&'static str>,
+}
+
 pub fn run_preflight() -> Result<()> {
     validate_contract()?;
     let send_enabled = env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")?;
@@ -313,6 +347,53 @@ pub fn run_preflight() -> Result<()> {
         Ok(())
     } else {
         bail!("QiWe image send adapter preflight configuration is invalid")
+    }
+}
+
+pub fn run_staging_preflight(cli: &Cli) -> Result<()> {
+    validate_contract()?;
+    let adapter_compiled = qiwe_staging_adapter_compiled();
+    let send_enabled = env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED").unwrap_or(false);
+    let owner_approval_valid =
+        validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())
+            .is_ok();
+    let database_boundary_valid = cli
+        .database_url_required()
+        .and_then(validate_staging_database_boundary)
+        .is_ok();
+    let (
+        config_valid,
+        webhook_ready,
+        allowed_host_count,
+        media_allowed_host_count,
+        allowed_group_count,
+    ) = match AdapterConfig::from_env() {
+        Ok(config) => (
+            true,
+            config.webhook_ready,
+            config.allowed_hosts.len(),
+            config.media_allowed_hosts.len(),
+            config.allowed_groups.len(),
+        ),
+        Err(_) => (false, false, 0, 0, 0),
+    };
+    let report = staging_preflight_report(StagingPreflightReportState {
+        adapter_compiled,
+        send_enabled,
+        owner_approval_valid,
+        config_valid,
+        database_boundary_valid,
+        webhook_ready,
+        allowed_host_count,
+        media_allowed_host_count,
+        allowed_group_count,
+        missing_configuration: missing_qiwe_image_staging_configuration(cli),
+    });
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    if report.success {
+        Ok(())
+    } else {
+        bail!("QiWe image send staging preflight is not approved")
     }
 }
 
@@ -447,14 +528,13 @@ pub async fn run_upload_worker(
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
-        require_staging_owner_approval()?;
         run_enabled_upload_worker(cli, work_item_id).await
     }
 }
 
 #[cfg(feature = "qiwe-staging-adapter")]
 async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Result<()> {
-    let config = match AdapterConfig::from_env() {
+    let config = match staging_apply_config(cli) {
         Ok(config) => config,
         Err(_) => {
             let report = worker_report(WorkerReportState {
@@ -462,14 +542,14 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
                 dry_run: false,
                 apply_requested: true,
                 phase: "upload",
-                action_status: "adapter_not_configured".to_string(),
+                action_status: "staging_boundary_not_approved".to_string(),
                 work_item_id,
                 external_upload_requested: false,
                 callback_received: false,
                 external_send_executed: Some(false),
             });
             println!("{}", serde_json::to_string_pretty(&report)?);
-            bail!("QiWe image-send worker configuration is invalid");
+            bail!("QiWe image-send staging boundary is not approved");
         }
     };
     let database_url = cli.database_url_required()?;
@@ -619,12 +699,8 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         return Ok(());
     }
     #[cfg(feature = "qiwe-staging-adapter")]
-    if apply_requested {
-        require_staging_owner_approval()?;
-    }
-    #[cfg(feature = "qiwe-staging-adapter")]
     let config = if apply_requested {
-        match AdapterConfig::from_env() {
+        match staging_apply_config(cli) {
             Ok(config) => Some(config),
             Err(_) => {
                 let report = worker_report(WorkerReportState {
@@ -632,14 +708,14 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
                     dry_run: false,
                     apply_requested: true,
                     phase: "callback",
-                    action_status: "adapter_not_configured".to_string(),
+                    action_status: "staging_boundary_not_approved".to_string(),
                     work_item_id: None,
                     external_upload_requested: false,
                     callback_received: false,
                     external_send_executed: Some(false),
                 });
                 println!("{}", serde_json::to_string_pretty(&report)?);
-                bail!("QiWe image-send callback configuration is invalid");
+                bail!("QiWe image-send callback staging boundary is not approved");
             }
         }
     } else {
@@ -1177,6 +1253,55 @@ fn preflight_report(state: PreflightReportState) -> QiweImageSendPreflightReport
     }
 }
 
+fn staging_preflight_report(
+    state: StagingPreflightReportState,
+) -> QiweImageSendStagingPreflightReport {
+    let success = state.adapter_compiled
+        && state.send_enabled
+        && state.owner_approval_valid
+        && state.config_valid
+        && state.database_boundary_valid
+        && state.webhook_ready;
+    QiweImageSendStagingPreflightReport {
+        success,
+        worker: WORKER_ID,
+        action_status: if !state.adapter_compiled {
+            "staging_adapter_not_compiled"
+        } else if !state.send_enabled {
+            "staging_send_not_enabled"
+        } else if !state.owner_approval_valid {
+            "staging_owner_approval_required"
+        } else if !state.database_boundary_valid {
+            "staging_database_not_approved"
+        } else if !state.config_valid || !state.webhook_ready {
+            "adapter_not_configured"
+        } else {
+            "staging_adapter_ready"
+        },
+        adapter_compiled: state.adapter_compiled,
+        send_enabled: state.send_enabled,
+        owner_approval_valid: state.owner_approval_valid,
+        config_valid: state.config_valid,
+        database_boundary_valid: state.database_boundary_valid,
+        webhook_ready: state.webhook_ready,
+        allowed_host_count: state.allowed_host_count,
+        media_allowed_host_count: state.media_allowed_host_count,
+        allowed_group_count: state.allowed_group_count,
+        missing_configuration: state.missing_configuration,
+        protocol: "qiwe_async_url_upload_then_send_image_staging_v1",
+        safe_for_chat: false,
+        limitations: vec![
+            "staging preflight validates local configuration only; it does not connect to Postgres, read callback stdin, upload media, or send a message".to_string(),
+            "the callback phase must receive one owner-approved callback directly from bounded stdin".to_string(),
+        ],
+        guardrails: vec![
+            "staging apply requires the exact owner phrase and expected database URL hash before Postgres, callback stdin, or network access".to_string(),
+            "API hosts, media hosts, and target group ids use exact reviewed allowlists".to_string(),
+            "production artifacts exclude the staging adapter and no listener, service, or timer is installed".to_string(),
+        ],
+    }
+}
+
 const fn qiwe_staging_adapter_compiled() -> bool {
     cfg!(feature = "qiwe-staging-adapter")
 }
@@ -1385,14 +1510,57 @@ fn required_env(name: &str) -> Result<String> {
 }
 
 #[cfg(feature = "qiwe-staging-adapter")]
-fn require_staging_owner_approval() -> Result<()> {
-    validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())
+fn staging_apply_config(cli: &Cli) -> Result<AdapterConfig> {
+    validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
+    validate_staging_database_boundary(cli.database_url_required()?)?;
+    AdapterConfig::from_env()
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
 fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
     if value != Some(STAGING_APPROVAL_PHRASE) {
         bail!("QiWe image send staging owner approval is required");
+    }
+    Ok(())
+}
+
+fn validate_staging_database_boundary(database_url: &str) -> Result<()> {
+    let expected_hash = std::env::var(STAGING_DATABASE_URL_SHA256_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("QiWe staging database URL hash is required"))?;
+    validate_staging_database_boundary_with_expected_hash(database_url, &expected_hash)
+}
+
+fn validate_staging_database_boundary_with_expected_hash(
+    database_url: &str,
+    expected_hash: &str,
+) -> Result<()> {
+    if database_url.is_empty() || database_url.chars().any(char::is_control) {
+        bail!("QiWe staging database URL is invalid");
+    }
+    if expected_hash.len() != 64
+        || !expected_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        bail!("QiWe staging database URL hash must be canonical SHA-256");
+    }
+    let actual_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
+    if actual_hash != expected_hash {
+        bail!("QiWe staging database URL hash does not match the approved command");
+    }
+    let parsed = Url::parse(database_url).context("parse QiWe staging database URL")?;
+    if !matches!(parsed.scheme(), "postgres" | "postgresql") || parsed.host_str().is_none() {
+        bail!("QiWe staging database URL must use PostgreSQL and include a host");
+    }
+    let database_name = parsed
+        .path()
+        .strip_prefix('/')
+        .filter(|value| !value.is_empty() && !value.contains('/'))
+        .ok_or_else(|| anyhow!("QiWe staging database URL must name exactly one database"))?;
+    if !database_name.to_ascii_lowercase().contains("staging") {
+        bail!("QiWe image send apply requires a staging database");
     }
     Ok(())
 }
@@ -1401,6 +1569,20 @@ fn missing_qiwe_image_send_configuration() -> Vec<&'static str> {
     missing_required_configuration_with(REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION, |name| {
         std::env::var(name).ok()
     })
+}
+
+fn missing_qiwe_image_staging_configuration(cli: &Cli) -> Vec<&'static str> {
+    let mut missing = missing_qiwe_image_send_configuration();
+    if cli.database_url_required().is_err() {
+        missing.push("QINTOPIA_SIDECAR_DATABASE_URL");
+    }
+    if std::env::var(STAGING_DATABASE_URL_SHA256_ENV)
+        .ok()
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        missing.push(STAGING_DATABASE_URL_SHA256_ENV);
+    }
+    missing
 }
 
 fn missing_required_configuration_with<F>(
@@ -1537,6 +1719,21 @@ mod tests {
             allowed_group_count: 1,
             missing_configuration: Vec::new(),
         })
+    }
+
+    fn ready_staging_preflight_state() -> StagingPreflightReportState {
+        StagingPreflightReportState {
+            adapter_compiled: true,
+            send_enabled: true,
+            owner_approval_valid: true,
+            config_valid: true,
+            database_boundary_valid: true,
+            webhook_ready: true,
+            allowed_host_count: 1,
+            media_allowed_host_count: 1,
+            allowed_group_count: 1,
+            missing_configuration: Vec::new(),
+        }
     }
 
     fn test_callback_body(
@@ -2048,6 +2245,90 @@ mod tests {
             STAGING_APPROVAL_ENV,
             "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL"
         );
+    }
+
+    #[test]
+    fn staging_database_boundary_requires_matching_hash_and_staging_name() {
+        let staging_url = "postgres://staging-user:secret@127.0.0.1:5432/qintopia_staging";
+        let staging_hash = format!("{:x}", Sha256::digest(staging_url.as_bytes()));
+        assert!(
+            validate_staging_database_boundary_with_expected_hash(staging_url, &staging_hash)
+                .is_ok()
+        );
+        let uppercase_name_url = "postgres://staging-user:secret@127.0.0.1:5432/QINTOPIA_STAGING";
+        let uppercase_name_hash = format!("{:x}", Sha256::digest(uppercase_name_url.as_bytes()));
+        assert!(validate_staging_database_boundary_with_expected_hash(
+            uppercase_name_url,
+            &uppercase_name_hash
+        )
+        .is_ok());
+        assert!(validate_staging_database_boundary_with_expected_hash(
+            staging_url,
+            &"0".repeat(64)
+        )
+        .is_err());
+        assert!(validate_staging_database_boundary_with_expected_hash(
+            "postgres://user:secret@127.0.0.1:5432/qintopia",
+            &format!(
+                "{:x}",
+                Sha256::digest(b"postgres://user:secret@127.0.0.1:5432/qintopia")
+            )
+        )
+        .is_err());
+        let uppercase_hash = "A".repeat(64);
+        for invalid_hash in ["0", uppercase_hash.as_str()] {
+            assert!(validate_staging_database_boundary_with_expected_hash(
+                staging_url,
+                invalid_hash
+            )
+            .is_err());
+        }
+        let control_url = "postgres://staging-user:secret@127.0.0.1:5432/qintopia_staging\nprivate";
+        let control_hash = format!("{:x}", Sha256::digest(control_url.as_bytes()));
+        assert!(
+            validate_staging_database_boundary_with_expected_hash(control_url, &control_hash)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn staging_preflight_reports_each_gate_without_configuration_values() {
+        let ready = staging_preflight_report(ready_staging_preflight_state());
+        assert!(ready.success);
+        assert_eq!(ready.action_status, "staging_adapter_ready");
+
+        let cases = [
+            ("staging_adapter_not_compiled", 0),
+            ("staging_send_not_enabled", 1),
+            ("staging_owner_approval_required", 2),
+            ("staging_database_not_approved", 3),
+            ("adapter_not_configured", 4),
+        ];
+        for (expected_status, gate) in cases {
+            let mut state = ready_staging_preflight_state();
+            match gate {
+                0 => state.adapter_compiled = false,
+                1 => state.send_enabled = false,
+                2 => state.owner_approval_valid = false,
+                3 => state.database_boundary_valid = false,
+                4 => state.config_valid = false,
+                _ => unreachable!(),
+            }
+            let report = staging_preflight_report(state);
+            assert!(!report.success);
+            assert_eq!(report.action_status, expected_status);
+        }
+
+        let serialized = serde_json::to_string(&ready).expect("serialize staging preflight");
+        for sensitive in [
+            "postgres://staging-user:secret@127.0.0.1/qintopia_staging",
+            "private-token",
+            "private-device-guid",
+            "private-group-id",
+            "https://private-media.example/poster.jpg",
+        ] {
+            assert!(!serialized.contains(sensitive));
+        }
     }
 
     #[test]

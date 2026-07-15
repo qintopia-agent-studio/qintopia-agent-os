@@ -25,6 +25,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/install-coscli.sh",
+  "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
   "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
