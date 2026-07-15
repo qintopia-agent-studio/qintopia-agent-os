@@ -621,6 +621,64 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertTrue(action["requires_approved_resolution"])
         self.assertIn("已安排工作人员检查", action["message"])
 
+    def test_xiaoman_activity_mutations_use_agentos_event_signal_contract(self):
+        old_profile = os.environ.get("QINTOPIA_PROFILE_ID")
+        old_enabled = os.environ.get("QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE")
+        os.environ["QINTOPIA_PROFILE_ID"] = "xiaoman"
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"] = "1"
+        try:
+            payload = json.loads(
+                self.module.handle_qintopia_xiaoman_activity_status_update(
+                    {
+                        "event_signal_id": "66666666-6666-4666-8666-666666666666",
+                        "mutation_id": "77777777-7777-4777-8777-777777777777",
+                        "status": "处理中",
+                    }
+                )
+            )
+            gap_payload = json.loads(
+                self.module.handle_qintopia_xiaoman_activity_gap_update(
+                    {
+                        "event_signal_id": "88888888-8888-4888-888888888888",
+                        "mutation_id": "99999999-9999-4999-8999-999999999999",
+                        "gap_summary": "缺少报名截止时间",
+                    }
+                )
+            )
+        finally:
+            if old_profile is None:
+                os.environ.pop("QINTOPIA_PROFILE_ID", None)
+            else:
+                os.environ["QINTOPIA_PROFILE_ID"] = old_profile
+            if old_enabled is None:
+                os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE", None)
+            else:
+                os.environ["QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"] = old_enabled
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["operation"], "status-update")
+        self.assertEqual(payload["payload"]["event_signal_id"], "66666666-6666-4666-8666-666666666666")
+        self.assertEqual(payload["payload"]["mutation_id"], "77777777-7777-4777-8777-777777777777")
+        self.assertNotIn("record_id", payload["payload"])
+        self.assertNotIn("table_role", payload["payload"])
+        status_payload_arg = json.loads(payload["action"]["command"][4])
+        self.assertEqual(status_payload_arg["event_signal_id"], payload["payload"]["event_signal_id"])
+        self.assertEqual(status_payload_arg["mutation_id"], payload["payload"]["mutation_id"])
+        self.assertTrue(gap_payload["success"])
+        self.assertEqual(gap_payload["operation"], "gap-update")
+        self.assertNotIn("record_id", gap_payload["payload"])
+        self.assertNotIn("table_role", gap_payload["payload"])
+
+    def test_xiaoman_activity_handoff_schema_matches_mapped_rust_boundary(self):
+        handoff_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_HANDOFF_CREATE_SCHEMA["parameters"]
+        self.assertEqual(handoff_schema["properties"]["handoff_type"]["enum"], ["visual_asset_request"])
+        self.assertEqual(handoff_schema["properties"]["target_agent"]["enum"], ["huabaosi"])
+
+        status_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA["parameters"]
+        self.assertEqual(status_schema["required"], ["event_signal_id", "mutation_id", "status"])
+        self.assertNotIn("record_id", status_schema["properties"])
+        self.assertNotIn("table_role", status_schema["properties"])
+
     def test_register_exposes_frontline_tools_without_raw_dify_by_default(self):
         class FakeCtx:
             def __init__(self) -> None:

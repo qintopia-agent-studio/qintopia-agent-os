@@ -41,14 +41,8 @@ const TABLE_ROLES: &[&str] = &["activity_plan", "activity_occurrence"];
 const FEISHU_BASE_API: &str = "https://open.feishu.cn/open-apis/bitable/v1/apps";
 const FEISHU_AUTH_API: &str =
     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
-const HANDOFF_TYPES: &[&str] = &[
-    "visual_asset_request",
-    "ops_followup",
-    "member_notice",
-    "human_confirmation",
-    "activity_recap",
-];
-const HANDOFF_TARGETS: &[&str] = &["huabaosi", "silaoshi", "erhua", "default"];
+const HANDOFF_TYPES: &[&str] = &["visual_asset_request"];
+const HANDOFF_TARGETS: &[&str] = &["huabaosi"];
 const FEISHU_READ_LIMITATION: &str = "Feishu Base read is allowlisted and read-only; write parity, audit, and webhook shadow validation are still required before removing the legacy raw Base read path";
 
 #[derive(Debug, Clone)]
@@ -2816,8 +2810,8 @@ mod tests {
             .contains("rec_activity_1"));
     }
 
-    #[tokio::test]
-    async fn handoff_create_rejects_unmapped_capability_pair() {
+    #[test]
+    fn handoff_create_rejects_unmapped_type_before_execution() {
         let payload = payload(json!({
             "actor_agent": "xiaoman",
             "operation": "handoff-create",
@@ -2827,21 +2821,9 @@ mod tests {
             "brief_summary": "提醒成员报名"
         }));
 
-        validate("handoff-create", &payload).expect("payload shape should be valid");
-        let err = execute_with_config(
-            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
-            "handoff-create".to_string(),
-            payload,
-            false,
-            true,
-            &runtime_without_source(),
-        )
-        .await
-        .expect_err("unmapped handoff should be rejected");
-
-        assert!(err
-            .to_string()
-            .contains("handoff-create is not mapped to an operations capability"));
+        let err = validate("handoff-create", &payload)
+            .expect_err("unmapped handoff should be rejected before execution");
+        assert!(err.to_string().contains("handoff_type is not allowed"));
     }
 
     #[test]

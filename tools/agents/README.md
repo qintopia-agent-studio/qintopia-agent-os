@@ -40,7 +40,9 @@ pnpm pr:bootstrap
 ```
 
 `pnpm pr:bootstrap -- --install` may install GitHub CLI on supported macOS, Windows, or
-Debian/Ubuntu environments. Authentication still requires `gh auth login`.
+Debian/Ubuntu environments. Do not run a separate authentication precheck before PR
+creation; only handle authentication if the actual push or `gh pr create` command
+reports an authentication failure.
 
 PR bodies must start from `.github/PULL_REQUEST_TEMPLATE.md` and must fill Summary,
 Planning, Domain, Validation, Production Boundary, Architecture / Tooling Boundary, and

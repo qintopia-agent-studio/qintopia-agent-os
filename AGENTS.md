@@ -127,10 +127,10 @@ Use `rg` and `rg --files` for search.
   `master`, is not bot-authored, or the checked-out SHA differs from the PR head.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
-  missing, run `pnpm pr:bootstrap` and follow `gh auth login`.
-- Do not block PR creation on a standalone `gh auth status` failure in the Codex desktop
-  environment. Try the repository PR creation flow directly and treat only the actual
-  create/push failure as blocking.
+  missing, run `pnpm pr:bootstrap`.
+- In the Codex desktop environment, do not run extra GitHub authentication checks before
+  creating a PR. Use `pnpm pr:create` directly after PR readiness checks; only handle
+  authentication when the actual push or PR creation command fails.
 - PR-Agent must not automatically edit PR descriptions. The completed repository PR
   template is author-owned because CI validates its required sections.
 - Before merging any PR, read the complete PR Reviewer Guide, submitted reviews,
@@ -289,6 +289,11 @@ Use `rg` and `rg --files` for search.
   remain in the disposable integration job. Production artifacts must still use exactly
   `cargo_features: [huabaosi-production-adapter]`; an all-features CI build must never
   be promoted or treated as a production artifact.
+- As of 2026-07-15, QiWe final image sending is not on production. Staging smoke,
+  callback bridge, and the Postgres state machine are implementation evidence only; do
+  not add a production listener, service, timer, live-adapter production build, or
+  production enablement until isolated staging proves upload, `cmd=20000` callback, and
+  `/msg/sendImage` with the reviewed final JPEG.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
@@ -354,6 +359,10 @@ Use `rg` and `rg --files` for search.
   URL hash, valid provider/media configuration, and the fixed production timer. It may
   create only pending `generated_image` artifacts; it must not approve, publish, write
   Feishu, or send QiWe.
+- As of 2026-07-15, 阿靓/Huabaosi real image production has not completed final
+  activation. Do not treat it as live until the same reviewed release has follow-up
+  deploy evidence, the Huabaosi timer is activated, and the first real pending
+  `generated_image` has review evidence.
 - 阿亮画报师生产 WeCom Bot 的 `Interrupting current task` / `Response formatting failed`
   用户可见中断提示来自 live Hermes gateway busy-ack and platform send fallback
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
@@ -490,6 +499,9 @@ Use `rg` and `rg --files` for search.
   evidence/visual preview, and the group send-ready timer observation. It must not set
   apply-smoke flags, deploy units, publish releases, write Feishu, call QiWe, run the
   send-ready worker, or run external adapters.
+- As of 2026-07-15, real end-to-end acceptance is not complete. Do not claim the Xiaoman
+  activity flow is accepted until one real activity is observed from Xiaoman signal
+  intake through image generation, human approval, and QiWe group-send arrival.
 - `operations-work-item-status` must resolve nested work items to the top-level workflow
   root and report every descendant while preserving each direct `parent_work_item_id`.
   `operations-workflow-sync` may persist that recursive AgentOS summary, but neither
@@ -506,6 +518,12 @@ Use `rg` and `rg --files` for search.
   previous runner. Use a reviewed follow-up `workflow_dispatch` request for the same
   published SHA to activate the new runner behavior; do not bootstrap it with server
   edits.
+- As of 2026-07-15, `v0.2.10` is the first Release containing the new deploy-runner
+  behavior, but same-SHA follow-up deploy evidence has not been recorded. Do not infer
+  that the new runner behavior is active from the initial `v0.2.10` deploy alone.
+- PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
+  live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
+  profile symlink without that reviewed cutover, smoke evidence, and rollback note.
 - `xiaoman-postgres-integration` in GitHub Actions may enable the guarded apply smoke
   only against its disposable `qintopia_test` PostgreSQL service. It must not use a
   production database URL, secrets, Feishu, QiWe, or external adapters.

@@ -55,6 +55,13 @@ shared `qintopia` toolset.
   whether Human Owner approval is required.
 - `qintopia_conversation_summary`: turns a customer conversation into the
   standard 小秦 handoff format.
+- `qintopia_xiaoman_activity_status_update` and `qintopia_xiaoman_activity_gap_update`:
+  create sidecar commands for AgentOS `event_signals` mutations with `event_signal_id`
+  and `mutation_id`; they do not accept Feishu `record_id` / `table_role` as write
+  identifiers.
+- `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
+  `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
+  to `huabaosi.create_visual_asset`.
 
 Complaint guardrails:
 

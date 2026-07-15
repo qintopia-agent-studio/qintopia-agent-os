@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-07-14
+Updated: 2026-07-15
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -21,6 +21,9 @@ unless correcting historical evidence.
 - Hermes remains the Agent runtime under `/home/ubuntu/.hermes`.
 - Hermes profile live state, including `.env`, sessions, logs, cache, memory, auth, and
   local config overrides, stays outside git.
+- `v0.2.10` is the first Release containing the new deploy-runner behavior, but the
+  same-SHA follow-up deploy has not yet been recorded, so the new runner behavior should
+  not be treated as activated.
 - WorkTool, OpenClaw, and the current WorkTool-bound Xiaoqin runtime are archived and
   deprecated. Future Xiaoqin work requires a new non-WorkTool Agent design.
 
@@ -40,6 +43,8 @@ unless correcting historical evidence.
      flow through [Huabaosi WeCom migration](huabaosi-wecom-migration.md). The
      production Bot remains on Hermes until observation, Rust shadow capture, policy
      preview, canary, and rollback evidence are reviewed in separate PRs.
+   - PR #140 and PR #141 completed Xiaoman profile bundle and values migration work, but
+     the live profile symlink cutover still requires a separate reviewed PR.
 
 2. External adapter allowlists
    - Keep real external send paths disabled until allowlists, runtime config, smoke, and
@@ -56,7 +61,9 @@ unless correcting historical evidence.
      production worker remains inactive until the owner manually publishes the Release,
      the release binary passes production preflight, and the dedicated timer is
      explicitly activated for canary generation. Image review and publication remain
-     separate gates.
+     separate gates. As of 2026-07-15, final activation evidence is still open: same-SHA
+     follow-up deploy, Huabaosi timer activation, and the first real pending
+     `generated_image` review evidence.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The
@@ -79,6 +86,9 @@ unless correcting historical evidence.
      owner phrase and repository-reviewed database URL hash allowlist before Postgres.
      This is production misuse prevention, not provider/storage approval or staging
      evidence.
+   - Real end-to-end acceptance is still incomplete. The acceptance bar is one real
+     activity observed from Xiaoman signal intake through image generation, human
+     approval, and QiWe group-send arrival.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,
