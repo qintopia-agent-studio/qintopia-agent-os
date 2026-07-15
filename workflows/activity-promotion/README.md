@@ -34,6 +34,12 @@ makes the same nested image-generation stage visible to human operators without 
 a Feishu API or copying raw payloads into the mirror. The dry-run description is bounded
 to depth 8 and 32 refs and reports explicitly if that bound truncates an abnormal tree.
 
+The separate Huabaosi generated-image Base mirror may copy one immutable final JPEG and
+sanitized artifact metadata into the fixed Feishu artifact-version schema. It does not
+make Feishu the fact source, and it cannot approve an image, update send readiness, call
+QiWe, or publish. The main poster task table is not updated until it has a stable
+AgentOS workflow id and reviewed historical mapping.
+
 ## Required Human Gates
 
 - Visual artifacts need review before use.

@@ -5,14 +5,15 @@ owner: PatrickLiveCool
 status: draft
 risk_level: high
 description:
-  Feishu Base, Doc, approval, and workbench adapter contract for Agent OS packages.
+  Feishu Base, Doc, approval, and workbench adapter contract, including the fixed
+  Huabaosi generated-image version mirror schema.
 source:
   path: skills/feishu-base
   reference: current-monorepo
   disposition: template
 production_boundary:
   external_sends: true
-  database_writes: false
+  database_writes: true
   runtime_profile: false
   secrets: true
 validation:
@@ -25,6 +26,6 @@ tags:
   - feishu
   - workbench
 next_actions:
-  - Split Feishu Base, Doc, and approval capabilities only after permission scopes and
-    write allowlists are documented.
-  - Add adapter tests with non-secret fixture responses before enabling new writes.
+  - Validate the Huabaosi generated-image table schema and write permissions in an
+    isolated owner-approved Base before production enablement.
+  - Keep Base, Doc, and approval capabilities split behind independent write allowlists.

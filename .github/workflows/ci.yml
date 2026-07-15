@@ -383,6 +383,13 @@ jobs:
           image_generation::tests::postgres_stale_processing_claim_is_terminal_ambiguous
           -- --ignored --exact
 
+      - name: Huabaosi Feishu artifact mirror state integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          huabaosi_feishu_artifact_mirror::tests::postgres_mirror_state_is_idempotent_and_redacted
+          -- --ignored --exact
+
       - name: QiWe callback capture-storage redaction integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features
