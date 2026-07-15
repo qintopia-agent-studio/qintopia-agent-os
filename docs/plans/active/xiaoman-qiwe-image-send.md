@@ -177,8 +177,10 @@ deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 
 The callback source must stream one callback directly to stdin. It must not create a
 callback file, environment variable, CLI argument, NATS event, or log record containing
-the raw credentials. The smoke stores only sanitized command reports in a temporary
-directory that is deleted on exit.
+the raw credentials. Preflight and upload subprocesses receive `/dev/null`; only the
+callback processor inherits the stream. The staging env file is parsed as a fixed
+allowlist of literal assignments and is never evaluated as shell. The smoke stores only
+sanitized command reports in a temporary directory that is deleted on exit.
 
 ## Production Boundary
 

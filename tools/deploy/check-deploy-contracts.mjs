@@ -354,6 +354,10 @@ if (!exists(qiweImageStagingSmokePath)) {
     'payload["external_send_executed"] is True',
     "callback_credential_schema",
     "contains forbidden sensitive output",
+    "STAGING_ENV_KEYS",
+    "load_staging_env",
+    "qiwe-image-send-staging-preflight </dev/null",
+    "--apply </dev/null",
   ]) {
     requireFragment(qiweImageStagingSmokePath, smoke, fragment);
   }
@@ -363,6 +367,7 @@ if (!exists(qiweImageStagingSmokePath)) {
     "run-group-message-send-worker",
     "operations-group-message-confirm",
     "--use-feishu-base",
+    'source "$ENV_FILE"',
   ]) {
     forbidFragment(qiweImageStagingSmokePath, smoke, fragment);
   }

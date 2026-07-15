@@ -53,9 +53,15 @@ set -euo pipefail
 printf '%s\n' "$*" >>"${sidecarLog}"
 case "$1" in
   qiwe-image-send-staging-preflight)
+    if IFS= read -r -t 0.1 unexpected_input; then
+      exit 65
+    fi
     printf '%s\n' '{"success":true,"worker":"qiwe-image-send-adapter","action_status":"staging_adapter_ready","adapter_compiled":true,"send_enabled":true,"owner_approval_valid":true,"config_valid":true,"database_boundary_valid":true,"webhook_ready":true,"allowed_host_count":1,"media_allowed_host_count":1,"allowed_group_count":1,"missing_configuration":[],"protocol":"qiwe_async_url_upload_then_send_image_staging_v1","safe_for_chat":false,"limitations":[],"guardrails":[]}'
     ;;
   run-qiwe-image-send-worker)
+    if IFS= read -r -t 0.1 unexpected_input; then
+      exit 65
+    fi
     [[ "$2" == "--once" && "$3" == "--work-item-id" && "$4" == "${workItemId}" && "$5" == "--apply" ]]
     printf '%s\n' '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"upload","action_status":"image_upload_accepted","work_item_id":"${workItemId}","external_upload_requested":true,"callback_received":false,"external_send_executed":false,"safe_for_chat":false,"limitations":[],"guardrails":[]}'
     ;;
@@ -166,6 +172,27 @@ esac
   }
   if (`${leaked.stdout}\n${leaked.stderr}`.includes(callbackSecret)) {
     throw new Error("callback validation failure repeated the leaked value");
+  }
+
+  const commandMarker = path.join(tmpRoot, "env-command-executed");
+  const executableEnvFile = path.join(tmpRoot, "executable-staging.env");
+  fs.writeFileSync(
+    executableEnvFile,
+    `${fs.readFileSync(envFile, "utf8")}touch ${commandMarker}\n`,
+    "utf8"
+  );
+  const executableEnv = runSmoke("upload", {
+    QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE: executableEnvFile,
+  });
+  if (executableEnv.status === 0 || fs.existsSync(commandMarker)) {
+    throw new Error("staging env parser executed shell syntax");
+  }
+  if (
+    `${executableEnv.stdout}\n${executableEnv.stderr}`.includes(
+      "fake-qiwe-token-must-not-appear"
+    )
+  ) {
+    throw new Error("staging env parser failure exposed a secret");
   }
 
   const log = fs.readFileSync(sidecarLog, "utf8");

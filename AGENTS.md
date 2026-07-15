@@ -291,8 +291,10 @@ Use `rg` and `rg --files` for search.
   explicit `upload` or `callback` phase. Callback credentials may flow only from bounded
   stdin to the callback processor and memory-only send request; never store them in a
   file, environment variable, CLI argument, NATS event, report, or log. The smoke must
-  not install a listener, service, timer, production feature build, Feishu write, or
-  broad group send.
+  attach `/dev/null` to preflight and upload subprocesses and parse only the fixed
+  staging env key allowlist without evaluating the env file as shell. It must not
+  install a listener, service, timer, production feature build, Feishu write, or broad
+  group send.
 - Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
   reject invalid methods/headers before connect, require HTTPS outside tests, enforce
   header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request

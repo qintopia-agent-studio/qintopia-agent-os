@@ -76,7 +76,9 @@ scripts/qiwe-image-send-staging-smoke.sh
 
 Run the `callback` phase only by streaming one owner-approved callback directly to
 stdin. Never persist the callback body or credentials in a file, environment variable,
-argument, shell history, report, or log. This smoke does not install a listener,
+argument, shell history, report, or log. The wrapper parses only its fixed staging env
+key allowlist without evaluating shell syntax, and preflight/upload subprocesses receive
+`/dev/null` instead of the callback stream. This smoke does not install a listener,
 service, timer, or production feature build.
 
 ## Validation

@@ -48,10 +48,66 @@ SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
 
 cd "$MONOREPO_ROOT"
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+STAGING_ENV_KEYS=(
+  QINTOPIA_QIWE_IMAGE_SEND_ENABLED
+  QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY
+  QINTOPIA_SIDECAR_DATABASE_URL
+  QIWE_API_URL
+  QIWE_TOKEN
+  QIWE_GUID
+  QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS
+  QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS
+  QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS
+)
+
+for key in "${STAGING_ENV_KEYS[@]}"; do
+  unset "$key"
+done
+
+load_staging_env() {
+  local line=""
+  local line_number=0
+  local key=""
+  local value=""
+  local loaded_keys="|"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    ((line_number += 1))
+    if [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]]; then
+      continue
+    fi
+    if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]]; then
+      echo "staging env contains an invalid assignment at line ${line_number}" >&2
+      return 1
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case " ${STAGING_ENV_KEYS[*]} " in
+      *" ${key} "*) ;;
+      *)
+        echo "staging env contains an unsupported key at line ${line_number}" >&2
+        return 1
+        ;;
+    esac
+    case "$loaded_keys" in
+      *"|${key}|"*)
+        echo "staging env contains a duplicate key at line ${line_number}" >&2
+        return 1
+        ;;
+    esac
+    if [[ ${#value} -ge 2 ]]; then
+      if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+        value="${value:1:${#value}-2}"
+      elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+    fi
+    export "${key}=${value}"
+    loaded_keys+="${key}|"
+  done <"$ENV_FILE"
+}
+
+load_staging_env
 
 export QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send
 export QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256="$EXPECTED_DATABASE_HASH"
@@ -158,7 +214,7 @@ run_sanitized \
   "QiWe staging preflight" \
   "$preflight_output" \
   "$preflight_stderr" \
-  "${BIN_CMD[@]}" qiwe-image-send-staging-preflight
+  "${BIN_CMD[@]}" qiwe-image-send-staging-preflight </dev/null
 python3 - "$preflight_output" <<'PY'
 import json
 import sys
@@ -196,7 +252,7 @@ if [[ "$PHASE" == "upload" ]]; then
     "QiWe staging upload" \
     "$phase_output" \
     "$phase_stderr" \
-    "${BIN_CMD[@]}" run-qiwe-image-send-worker --once --work-item-id "$WORK_ITEM_ID" --apply
+    "${BIN_CMD[@]}" run-qiwe-image-send-worker --once --work-item-id "$WORK_ITEM_ID" --apply </dev/null
   python3 - "$phase_output" "$WORK_ITEM_ID" <<'PY'
 import json
 import sys
