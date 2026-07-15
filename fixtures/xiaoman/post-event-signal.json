@@ -1,0 +1,28 @@
+{
+  "case": "post-event-signal",
+  "input": {
+    "workflow": "workflows/xiaoman-activity-signal",
+    "actor_agent": "xiaoman",
+    "operation": "signal-ingest",
+    "event_signal_id": "55555555-5555-4555-8555-555555555555",
+    "signal_type": "活动/聚会",
+    "activity_phase": "post_event",
+    "activity_title": "社区共创日复盘",
+    "signal_date": "2026-07-15",
+    "brief_summary": "活动已经结束，需要整理结果、反馈和复盘材料"
+  },
+  "expected": {
+    "validation_status": "ok",
+    "action_status": "operations_dry_run_ok",
+    "capability_key": "xiaoman.create_activity_request",
+    "work_item_type": "activity_recap_request",
+    "activity_phase": "post_event",
+    "activity_route": "activity_recap",
+    "requester_agent": "default",
+    "target_agent": "xiaoman",
+    "idempotency_key": "xiaoman_activity_signal:55555555-5555-4555-8555-555555555555:post_event",
+    "review_needed": false,
+    "missing_required_fields": [],
+    "external_sends": false
+  }
+}

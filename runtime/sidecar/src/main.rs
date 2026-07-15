@@ -1,3 +1,4 @@
+mod activity_lifecycle;
 #[cfg(any(
     test,
     feature = "huabaosi-production-adapter",

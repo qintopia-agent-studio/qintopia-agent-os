@@ -5,8 +5,8 @@ owner: PatrickLiveCool
 status: active
 risk_level: medium
 description:
-  Xiaoman workflow for activity signal intake, audited Postgres status/gap mutation, and
-  downstream request triggering.
+  Xiaoman workflow for phase-aware activity signal intake, audited Postgres
+  status/gap/phase mutation, and fixed internal request routing.
 source:
   path: runtime/sidecar/src/xiaoman_activity.rs
   reference: current-monorepo
@@ -31,8 +31,10 @@ tags:
   - activity
   - signal
 next_actions:
-  - Observe audited event-signal status/gap mutations only after the migration is
-    deployed; keep Feishu writeback disabled.
+  - Observe audited event-signal status/gap/phase mutations only after the migration is
+    deployed; keep phase transitions forward-only and Feishu writeback disabled.
+  - Confirm pre-event, in-event, and post-event roots route only to their documented
+    internal child sets after each owner-approved deploy.
   - Observe source-grounded Postgres evidence retrieval against the disposable apply
     smoke before the next owner-approved production release.
   - Re-run the aggregate Xiaoman production preflight smoke after each owner-approved

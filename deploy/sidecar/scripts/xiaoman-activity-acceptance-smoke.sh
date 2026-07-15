@@ -47,6 +47,8 @@ assert payload["success"] is True
 assert payload["source"] == "agentos_event_signal"
 assert payload["validation_status"] == expected["validation_status"]
 assert payload["action_status"] == expected["action_status"]
+assert payload["activity_phase"] == expected["activity_phase"]
+assert payload["activity_route"] == expected["activity_route"]
 
 work_item = payload["operations_work_item"]
 assert work_item["capability_key"] == expected["capability_key"]
@@ -117,6 +119,8 @@ PY
 
 run_signal_fixture_contract activity-signal.json
 run_signal_fixture_contract duplicate-signal.json
+run_signal_fixture_contract in-event-signal.json
+run_signal_fixture_contract post-event-signal.json
 run_signal_fixture_contract missing-fields-signal.json
 
 set +e
@@ -235,6 +239,33 @@ assert gap["success"] is True
 assert gap["action_status"] == "event_signal_gap_preview"
 assert status["apply_requested"] is False
 assert gap["apply_requested"] is False
+PY
+
+phase_preview="$(
+  "${BIN_CMD[@]}" xiaoman-activity phase-update \
+    --payload-json '{"event_signal_id":"66666666-6666-4666-8666-666666666666","mutation_id":"88888888-8888-4888-8888-888888888888","activity_phase":"in_event","actor_agent":"xiaoman","operation":"phase-update"}' \
+    --dry-run
+)"
+PHASE_PREVIEW="$phase_preview" python3 - <<'PY'
+import json
+import os
+
+payload = json.loads(os.environ["PHASE_PREVIEW"])
+assert payload["success"] is True
+assert payload["source"] == "agentos_event_signals"
+assert payload["dry_run"] is True
+assert payload["apply_requested"] is False
+assert payload["action_status"] == "event_signal_phase_preview"
+assert payload["mutation_applied"] is False
+assert payload["activity_phase"] == "in_event"
+assert payload["activity_route"] == "live_support"
+assert payload["safe_for_chat"] is False
+raw = json.dumps(payload, ensure_ascii=False)
+assert "Dangerous command requires approval" not in raw
+assert "Working" not in raw
+assert "execute_code" not in raw
+assert "terminal" not in raw
+assert "skill_view" not in raw
 PY
 
 echo "xiaoman activity acceptance smoke passed"

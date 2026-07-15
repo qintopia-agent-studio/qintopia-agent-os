@@ -177,6 +177,12 @@ Use `rg` and `rg --files` for search.
   `xiaoman.create_activity_request` through the operations control plane with
   `requester_agent=default` and `target_agent=xiaoman`; do not bypass capability policy
   by making Xiaoman call its own provider capability directly.
+- Xiaoman activity lifecycle phase is a Postgres `event_signals` fact. Allowed values
+  are `pre_event`, `in_event`, and `post_event`; transitions are forward-only and each
+  phase maps to its fixed root/child route. Event-signal root creation must lock and
+  match the current phase. Do not accept caller-selected routes, rewrite historical
+  phase roots, add a timer, or extend in/post-event routing into image generation,
+  Feishu writeback, QiWe send, or publishing without a separate reviewed PR.
 - Xiaoman signal apply smokes should use sanitized non-UUID event signal ids unless a
   matching `qintopia_agent_os.event_signals` row is created first; UUID
   `event_signal_id` values are stored as `source_event_signal_id` and must satisfy the

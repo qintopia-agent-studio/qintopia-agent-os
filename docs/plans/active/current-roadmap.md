@@ -107,6 +107,10 @@ unless correcting historical evidence.
      release manifests, rollback, smoke, fixtures, inventory, and CI helpers.
    - `skills/qintopia-tools` remains a compatibility package. Do not add unrelated new
      capabilities there; create or extend a capability package instead.
+   - Xiaoman activity lifecycle routing uses the Postgres-owned `pre_event`, `in_event`,
+     and `post_event` phases. Keep phase transitions forward-only and route only to the
+     fixed internal capability sets documented in
+     [Xiaoman activity lifecycle phases](xiaoman-activity-lifecycle-phases.md).
    - Package scaffolding is not production enablement. Runtime behavior still needs
      package-level tests, replay fixtures, reviewed manifests, and owner approval before
      any server repoint or external adapter change.
