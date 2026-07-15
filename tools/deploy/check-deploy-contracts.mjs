@@ -469,6 +469,53 @@ if (!exists(aliangStagingEvidenceTemplatePath)) {
   }
 }
 
+const stagingRuntimeProvisioningRunbookPath =
+  "docs/operations/staging-runtime-provisioning-runbook.md";
+if (!exists(stagingRuntimeProvisioningRunbookPath)) {
+  addError(
+    `${stagingRuntimeProvisioningRunbookPath}: missing staging runtime provisioning runbook`
+  );
+} else {
+  const runbook = readText(stagingRuntimeProvisioningRunbookPath);
+  for (const fragment of [
+    "/etc/qintopia/message-sidecar-staging.env",
+    "/home/ubuntu/qintopia-agent-os-staging-releases/<40-hex-sha>/sidecar/qintopia-message-sidecar",
+    "docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md",
+    "staging release SHA",
+    "packaged staging sidecar SHA-256",
+    "staging database URL SHA-256",
+    "Huabaosi staging keys",
+    "Downstream QiWe staging keys",
+    "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED",
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
+    "QIWE_TOKEN",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+    "no checked path component is a symlink",
+    "no checked path component is group- or world-writable",
+    "node tools/deploy/check-huabaosi-image-staging-evidence.mjs",
+    "docs/reports/templates/huabaosi-image-generation-staging-evidence.md",
+    "This runbook is not production enablement",
+    "enable a listener",
+  ]) {
+    requireFragment(stagingRuntimeProvisioningRunbookPath, runbook, fragment);
+  }
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY=",
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+    'source "$',
+    ". /etc/qintopia/message-sidecar-staging.env",
+  ]) {
+    forbidFragment(stagingRuntimeProvisioningRunbookPath, runbook, fragment);
+  }
+}
+
 const aliangStagingSmokeTestPath = "tools/deploy/test-huabaosi-image-staging-smoke.mjs";
 const aliangStagingReadinessTestPath =
   "tools/deploy/test-huabaosi-image-staging-readiness.mjs";

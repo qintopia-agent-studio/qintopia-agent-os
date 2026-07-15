@@ -344,7 +344,8 @@ smoke。该 smoke 不得发送、发布或写飞书。
 file 和 immutable staging release root；见
 `docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md`。因此下一步先是 owner-reviewed
 staging provisioning，再运行 readiness/smoke，而不是把本地 fake
-smoke 当成真实 staging 证据。
+smoke 当成真实 staging 证据。Provisioning 步骤见
+`docs/operations/staging-runtime-provisioning-runbook.md`。
 
 ```bash
 QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE=1 \
