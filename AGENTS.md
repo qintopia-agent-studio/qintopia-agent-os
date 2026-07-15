@@ -311,6 +311,31 @@ Use `rg` and `rg --files` for search.
   must be captured, scanned, and schema-validated through memory and anonymous pipes; no
   subprocess output may be written to a file. It must not install a listener, service,
   timer, production feature build, Feishu write, or broad group send.
+- A QiWe webhook bridge for `cmd=20000` may invoke only one explicitly configured
+  staging sidecar with fixed `process-qiwe-image-send-callback --apply` arguments. It
+  must default disabled, require the exact staging owner phrase and canonical approved
+  staging database URL hash before callback stdin, stream the bounded raw callback only
+  through child stdin, discard child stderr, bound and validate the sanitized Rust
+  report, and never persist or log callback bytes, credentials, request ids, filenames,
+  MD5 values, unknown fields, or subprocess output. Ordinary callback capture must still
+  be sanitized independently before NATS publication. If the bridge is explicitly
+  enabled but any gate is invalid, callback handling must return a non-2xx response; it
+  must not silently downgrade to disabled and acknowledge an unprocessed callback.
+  Callback detection must require the reviewed top-level QiWe success envelope, bounded
+  `data` list, request id, `msgData` object, and complete credential-field presence. It
+  must fail closed on excessive JSON depth and must not classify an arbitrary nested
+  `cmd=20000` field as an image callback. The child process may inherit only the fixed
+  staging callback allowlist: sidecar database URL and pool size, approved database
+  hash, send/webhook/owner gates, QiWe API URL/token/guid, API/media host allowlists,
+  and target-group allowlist. It must not inherit Hermes webhook secrets, NATS, Feishu,
+  proxy, or unrelated runtime variables. Any explicit callback-processor enable value
+  other than `0` or `1` is configuration invalid and must also return a non-2xx callback
+  response. The processor path must be exactly
+  `/home/ubuntu/qintopia-agent-os-staging-releases/<40-hex-sha>/sidecar/qintopia-message-sidecar`
+  with the matching configured release root and approved binary SHA-256. The fixed
+  staging root, release directory, sidecar directory, and binary must not be symlinks,
+  owned by an unexpected uid, or group/world-writable. Revalidate the path and digest
+  immediately before spawn; never accept a writable staging-like path such as `/tmp`.
 - Huabaosi and QiWe external HTTP calls must use the shared bounded Rust client. It must
   reject invalid methods/headers before connect, require HTTPS outside tests, enforce
   header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request

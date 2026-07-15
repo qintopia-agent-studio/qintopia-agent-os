@@ -30,6 +30,7 @@ tags:
   - hermes-platform
   - erhua
 next_actions:
-  - Add deploy smoke and rollback notes before production wiring changes.
+  - Run the guarded QiWe image-send smoke against an owner-approved isolated staging
+    group.
   - Decide server cutover from the old plugin checkout to this monorepo package.
   - Preserve server backup review as audit evidence until owner cleanup approval.
