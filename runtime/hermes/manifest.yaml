@@ -40,3 +40,5 @@ next_actions:
   - Keep `.env`, sessions, logs, cache, auth, and state databases out of git and release
     bundles.
   - Promote profile bundles only through reviewed release/current runbooks.
+  - Keep docs/operations/review-pool/hermes patch evidence out of deploy bundles;
+    migrate each accepted behavior into an owned package in an independent PR.

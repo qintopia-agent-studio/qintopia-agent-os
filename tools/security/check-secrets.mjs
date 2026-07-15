@@ -22,6 +22,7 @@ const textExtensions = new Set([
   ".lock",
   ".md",
   ".mjs",
+  ".patch",
   ".py",
   ".rs",
   ".sh",

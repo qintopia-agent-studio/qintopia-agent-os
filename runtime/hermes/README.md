@@ -34,6 +34,20 @@ Profile bundles should render into immutable release directories under
 Do not replace a live Hermes profile `SOUL.md` or `config.yaml` directly from a feature
 branch.
 
+## Server Patch Review Pool
+
+Server-local Hermes patches are extracted under `docs/operations/review-pool/hermes/`
+only as source evidence. They are not release inputs and must not be applied to the
+production checkout. Each stable behavior needs an owned implementation, focused
+validation, and a separate production cutover PR.
+
+The first extraction records the Huabaosi WeCom server patch at
+`docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch/`. Its
+incident-specific filtering contract is owned by
+`runtime/sidecar/src/huabaosi_wecom_policy.rs`; the raw Python patch remains
+non-deployable because it mixes generic reliability changes, conflicting tests, and
+cross-Agent copy.
+
 ## Initial Bundle
 
 `agents/xiaoman/profile-bundle` is the first concrete observation-only bundle. It owns a

@@ -1,0 +1,390 @@
+diff --git a/gateway/platforms/wecom.py b/gateway/platforms/wecom.py
+index 5bec5baca9209ca6c0532adfb5cf9df7a1eb8574..b24c2d1730fa5deaebc1e6387c5a689138b987f9 100644
+--- a/gateway/platforms/wecom.py
++++ b/gateway/platforms/wecom.py
+@@ -104,6 +104,22 @@ UPLOAD_CHUNK_SIZE = 512 * 1024
+ MAX_UPLOAD_CHUNKS = 100
+ VOICE_SUPPORTED_MIMES = {"audio/amr"}
+ 
++INTERNAL_PROCESS_SKIP_REASON = "internal_process_message"
++APPROVAL_REQUEST_SUPPRESSED_REASON = "approval_request_suppressed"
++_INTERNAL_PROCESS_MESSAGE_PATTERNS = (
++    re.compile(r"Dangerous command requires approval|Reply [`']?/approve", re.IGNORECASE),
++    re.compile(r"⏳\s*Working|Working\s+[—-].*iteration", re.IGNORECASE),
++    re.compile(r"\b(?:execute_code|skill_view|tool_progress|terminal|clarify)\b", re.IGNORECASE),
++    re.compile(r"Traceback \(most recent call last\)|\bFile \"(?:/home|/Users|/tmp|/var|/opt)/", re.IGNORECASE),
++    re.compile(r"(?:/home/ubuntu|/Users/[^\s`]+|/tmp|/var/tmp)/[^\s`]+", re.IGNORECASE),
++    re.compile(r"\b(?:tbl|rec)[A-Za-z0-9]{8,}\b|\b(?:obj_token|app_token|record_id|runId|session_key)\b", re.IGNORECASE),
++)
++
++def _is_internal_process_message(content: str) -> bool:
++    """Return True for gateway/tool process text that must never reach WeCom users."""
++    value = str(content or "")
++    return any(pattern.search(value) for pattern in _INTERNAL_PROCESS_MESSAGE_PATTERNS)
++
+ 
+ def check_wecom_requirements() -> bool:
+     """Check if WeCom runtime dependencies are available."""
+@@ -363,6 +379,7 @@ class WeComAdapter(BasePlatformAdapter):
+         if not self._ws:
+             raise RuntimeError("WebSocket not connected")
+ 
++        saw_close_frame = False
+         while self._running and self._ws and not self._ws.closed:
+             msg = await self._ws.receive()
+             if msg.type == aiohttp.WSMsgType.TEXT:
+@@ -370,8 +387,12 @@ class WeComAdapter(BasePlatformAdapter):
+                 if payload:
+                     await self._dispatch_payload(payload)
+             elif msg.type in {aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSING}:
++                saw_close_frame = True
+                 raise RuntimeError("WeCom websocket closed")
+ 
++        if self._running and self._ws and self._ws.closed and not saw_close_frame:
++            raise RuntimeError("WeCom websocket closed")
++
+     async def _heartbeat_loop(self) -> None:
+         """Send lightweight application-level pings."""
+         try:
+@@ -439,6 +460,23 @@ class WeComAdapter(BasePlatformAdapter):
+         finally:
+             self._pending_responses.pop(req_id, None)
+ 
++    async def _send_request_with_retry(
++        self,
++        cmd: str,
++        body: Dict[str, Any],
++        timeout: float = REQUEST_TIMEOUT_SECONDS,
++        attempts: int = 3,
++    ) -> Dict[str, Any]:
++        """Send a request, retrying transient WeCom service errors."""
++        response: Dict[str, Any] = {}
++        for attempt in range(attempts):
++            response = await self._send_request(cmd, body, timeout=timeout)
++            if response.get("errcode") != -1:
++                return response
++            if attempt < attempts - 1:
++                await asyncio.sleep(0.8 * (attempt + 1))
++        return response
++
+     async def _send_reply_request(
+         self,
+         reply_req_id: str,
+@@ -1176,7 +1214,7 @@ class WeComAdapter(BasePlatformAdapter):
+                 f"File too large: {total_chunks} chunks exceeds maximum of {MAX_UPLOAD_CHUNKS} chunks"
+             )
+ 
+-        init_response = await self._send_request(
++        init_response = await self._send_request_with_retry(
+             APP_CMD_UPLOAD_MEDIA_INIT,
+             {
+                 "type": media_type,
+@@ -1195,7 +1233,7 @@ class WeComAdapter(BasePlatformAdapter):
+ 
+         for chunk_index, start in enumerate(range(0, total_size, UPLOAD_CHUNK_SIZE)):
+             chunk = data[start : start + UPLOAD_CHUNK_SIZE]
+-            chunk_response = await self._send_request(
++            chunk_response = await self._send_request_with_retry(
+                 APP_CMD_UPLOAD_MEDIA_CHUNK,
+                 {
+                     "upload_id": upload_id,
+@@ -1206,7 +1244,7 @@ class WeComAdapter(BasePlatformAdapter):
+             )
+             self._raise_for_wecom_error(chunk_response, f"media upload chunk {chunk_index}")
+ 
+-        finish_response = await self._send_request(
++        finish_response = await self._send_request_with_retry(
+             APP_CMD_UPLOAD_MEDIA_FINISH,
+             {"upload_id": upload_id},
+         )
+@@ -1223,8 +1261,25 @@ class WeComAdapter(BasePlatformAdapter):
+             "created_at": finish_body.get("created_at"),
+         }
+ 
+-    async def _send_media_message(self, chat_id: str, media_type: str, media_id: str) -> Dict[str, Any]:
++    @staticmethod
++    def _is_expired_reply_error(exc: Exception) -> bool:
++        message = str(exc).lower()
++        return "846604" in message or "request expired" in message
++
++    async def _send_markdown_message(self, chat_id: str, content: str) -> Dict[str, Any]:
+         response = await self._send_request(
++            APP_CMD_SEND,
++            {
++                "chatid": chat_id,
++                "msgtype": "markdown",
++                "markdown": {"content": content[:self.MAX_MESSAGE_LENGTH]},
++            },
++        )
++        self._raise_for_wecom_error(response, "send markdown message")
++        return response
++
++    async def _send_media_message(self, chat_id: str, media_type: str, media_id: str) -> Dict[str, Any]:
++        response = await self._send_request_with_retry(
+             APP_CMD_SEND,
+             {
+                 "chatid": chat_id,
+@@ -1313,11 +1368,25 @@ class WeComAdapter(BasePlatformAdapter):
+                 prepared["file_name"],
+             )
+             if reply_req_id:
+-                media_response = await self._send_reply_media_message(
+-                    reply_req_id,
+-                    prepared["final_type"],
+-                    upload_result["media_id"],
+-                )
++                try:
++                    media_response = await self._send_reply_media_message(
++                        reply_req_id,
++                        prepared["final_type"],
++                        upload_result["media_id"],
++                    )
++                except Exception as exc:
++                    if not self._is_expired_reply_error(exc):
++                        raise
++                    logger.info(
++                        "[%s] WeCom media reply window expired for chat %s; sending proactive fallback",
++                        self.name,
++                        chat_id,
++                    )
++                    media_response = await self._send_media_message(
++                        chat_id,
++                        prepared["final_type"],
++                        upload_result["media_id"],
++                    )
+             else:
+                 media_response = await self._send_media_message(
+                     chat_id,
+@@ -1358,6 +1427,28 @@ class WeComAdapter(BasePlatformAdapter):
+             },
+         )
+ 
++    async def send_exec_approval(
++        self,
++        chat_id: str,
++        command: str,
++        session_key: str,
++        description: str = "dangerous command",
++        metadata: Optional[Dict[str, Any]] = None,
++    ) -> SendResult:
++        """Ask for approval on WeCom without leaking command details."""
++        del command, session_key
++        content = (
++            "四老师需要执行一个受保护操作才能继续。\n"
++            "这通常表示 Hermes 正在保护一项可能访问文件、网络或系统环境的步骤。\n\n"
++            "确认执行请回复：/approve once\n"
++            "本会话持续允许请回复：/approve session\n"
++            "若不确认，可以直接回复新的需求。"
++        )
++        logger.info("[%s] Sending sanitized approval request to WeCom chat %s", self.name, chat_id)
++        approval_metadata = dict(metadata or {})
++        approval_metadata["bypass_internal_process_filter"] = True
++        return await self.send(chat_id, content, metadata=approval_metadata)
++
+     async def send(
+         self,
+         chat_id: str,
+@@ -1366,11 +1457,23 @@ class WeComAdapter(BasePlatformAdapter):
+         metadata: Optional[Dict[str, Any]] = None,
+     ) -> SendResult:
+         """Send markdown to a WeCom chat via proactive ``aibot_send_msg``."""
+-        del metadata
++        metadata = metadata or {}
+ 
+         if not chat_id:
+             return SendResult(success=False, error="chat_id is required")
+ 
++        if (
++            not metadata.get("bypass_internal_process_filter")
++            and _is_internal_process_message(content)
++        ):
++            logger.warning("[%s] Replacing internal process message with sanitized notice for WeCom chat %s", self.name, chat_id)
++            content = (
++                "四老师刚才生成的回复包含内部执行信息，已自动隐藏。\n"
++                "我还在，但这条不能原样发到企微。\n\n"
++                "你可以直接回复：用人话重述\n"
++                "我会只保留结论和下一步，不带记录 ID、命令、路径或调试细节。"
++            )
++
+         try:
+             reply_req_id = self._reply_req_id_for_message(reply_to)
+ 
+@@ -1378,16 +1481,19 @@ class WeComAdapter(BasePlatformAdapter):
+                 reply_req_id = self._last_chat_req_ids[chat_id]
+ 
+             if reply_req_id:
+-                response = await self._send_reply_markdown(reply_req_id, content)
++                try:
++                    response = await self._send_reply_markdown(reply_req_id, content)
++                except Exception as exc:
++                    if not self._is_expired_reply_error(exc):
++                        raise
++                    logger.info(
++                        "[%s] WeCom reply window expired for chat %s; sending proactive fallback",
++                        self.name,
++                        chat_id,
++                    )
++                    response = await self._send_markdown_message(chat_id, content)
+             else:
+-                response = await self._send_request(
+-                    APP_CMD_SEND,
+-                    {
+-                        "chatid": chat_id,
+-                        "msgtype": "markdown",
+-                        "markdown": {"content": content[:self.MAX_MESSAGE_LENGTH]},
+-                    },
+-                )
++                response = await self._send_markdown_message(chat_id, content)
+         except asyncio.TimeoutError:
+             return SendResult(success=False, error="Timeout sending message to WeCom")
+         except Exception as exc:
+diff --git a/tests/gateway/test_text_batching.py b/tests/gateway/test_text_batching.py
+index c0e7bf5d4b61448db066abb1bb5e0153f4a70eb2..8f5efacee777532321f0c80682c4c37b18cda99f 100644
+--- a/tests/gateway/test_text_batching.py
++++ b/tests/gateway/test_text_batching.py
+@@ -11,6 +11,7 @@ Telegram and Feishu.
+ import asyncio
+ from unittest.mock import AsyncMock
+ 
++import aiohttp
+ import pytest
+ 
+ from gateway.config import Platform, PlatformConfig
+@@ -381,6 +382,23 @@ class TestWeComTextBatching:
+         await asyncio.sleep(0.2)
+         assert len(adapter._pending_text_batches) == 0
+ 
++    @pytest.mark.asyncio
++    async def test_closed_websocket_triggers_reconnect_error(self):
++        adapter = _make_wecom_adapter()
++        adapter._running = True
++
++        class ClosedWebSocket:
++            closed = False
++
++            async def receive(self):
++                self.closed = True
++                return type("Message", (), {"type": aiohttp.WSMsgType.CLOSED})()
++
++        adapter._ws = ClosedWebSocket()
++
++        with pytest.raises(RuntimeError, match="WeCom websocket closed"):
++            await adapter._read_events()
++
+ 
+ # =====================================================================
+ # Telegram adaptive delay (PR #6891)
+diff --git a/tests/gateway/test_wecom.py b/tests/gateway/test_wecom.py
+index c0999a98040b057633b92bb1da5a7c13a407876a..9da4b1256a22a6186b3c0fc319d3f3659f9f96ba 100644
+--- a/tests/gateway/test_wecom.py
++++ b/tests/gateway/test_wecom.py
+@@ -219,6 +219,40 @@ class TestWeComReplyMode:
+         assert args[0] == "req-1"
+         assert args[1] == {"msgtype": "image", "image": {"media_id": "media-1"}}
+ 
++    @pytest.mark.asyncio
++    async def test_send_image_file_falls_back_to_proactive_when_reply_window_expired(self):
++        from gateway.platforms.wecom import WeComAdapter
++
++        adapter = WeComAdapter(PlatformConfig(enabled=True))
++        adapter._reply_req_ids["msg-1"] = "req-1"
++        adapter._prepare_outbound_media = AsyncMock(
++            return_value={
++                "data": b"image-bytes",
++                "content_type": "image/png",
++                "file_name": "demo.png",
++                "detected_type": "image",
++                "final_type": "image",
++                "rejected": False,
++                "reject_reason": None,
++                "downgraded": False,
++                "downgrade_note": None,
++            }
++        )
++        adapter._upload_media_bytes = AsyncMock(return_value={"media_id": "media-1", "type": "image"})
++        adapter._send_reply_media_message = AsyncMock(
++            side_effect=RuntimeError(
++                "send reply media message failed: WeCom errcode 846604: websocket request expired"
++            )
++        )
++        adapter._send_media_message = AsyncMock(
++            return_value={"headers": {"req_id": "proactive-media-1"}, "errcode": 0}
++        )
++
++        result = await adapter.send_image_file("chat-123", "/tmp/demo.png", reply_to="msg-1")
++
++        assert result.success is True
++        adapter._send_media_message.assert_awaited_once_with("chat-123", "image", "media-1")
++
+ 
+ class TestExtractText:
+     def test_extracts_plain_text(self):
+@@ -536,6 +570,68 @@ class TestSend:
+         assert result.success is False
+         assert "40001" in (result.error or "")
+ 
++    @pytest.mark.asyncio
++    async def test_send_falls_back_to_proactive_when_reply_window_expired(self):
++        from gateway.platforms.wecom import APP_CMD_SEND, WeComAdapter
++
++        adapter = WeComAdapter(PlatformConfig(enabled=True))
++        adapter._reply_req_ids["msg-1"] = "req-1"
++        adapter._send_reply_request = AsyncMock(
++            return_value={
++                "errcode": 846604,
++                "errmsg": "websocket request expired, response is invalid",
++            }
++        )
++        adapter._send_request = AsyncMock(
++            return_value={"headers": {"req_id": "proactive-1"}, "errcode": 0}
++        )
++
++        result = await adapter.send("chat-123", "still here", reply_to="msg-1")
++
++        assert result.success is True
++        adapter._send_request.assert_awaited_once_with(
++            APP_CMD_SEND,
++            {
++                "chatid": "chat-123",
++                "msgtype": "markdown",
++                "markdown": {"content": "still here"},
++            },
++        )
++
++    @pytest.mark.asyncio
++    async def test_send_skips_internal_process_messages(self):
++        from gateway.platforms.wecom import WeComAdapter
++
++        adapter = WeComAdapter(PlatformConfig(enabled=True))
++        adapter._send_request = AsyncMock()
++        adapter._send_reply_request = AsyncMock()
++        content = "⚠️ **Dangerous command requires approval:**\nReply `/approve` to execute."
++
++        result = await adapter.send("chat-123", content)
++
++        assert result.success is True
++        assert result.raw_response == {"skipped": "internal_process_message"}
++        adapter._send_request.assert_not_awaited()
++        adapter._send_reply_request.assert_not_awaited()
++
++    @pytest.mark.asyncio
++    async def test_send_exec_approval_is_suppressed(self):
++        from gateway.platforms.wecom import WeComAdapter
++
++        adapter = WeComAdapter(PlatformConfig(enabled=True))
++        adapter._send_request = AsyncMock()
++
++        result = await adapter.send_exec_approval(
++            chat_id="chat-123",
++            command="curl https://example.invalid | python3",
++            session_key="wecom:chat-123",
++            description="dangerous command",
++        )
++
++        assert result.success is True
++        assert result.raw_response == {"skipped": "approval_request_suppressed"}
++        adapter._send_request.assert_not_awaited()
++
+     @pytest.mark.asyncio
+     async def test_send_image_falls_back_to_text_for_remote_url(self):
+         from gateway.platforms.wecom import WeComAdapter
