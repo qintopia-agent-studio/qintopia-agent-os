@@ -150,6 +150,7 @@ struct MirrorConfig {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "huabaosi-feishu-mirror-adapter"), allow(dead_code))]
 pub(crate) struct FeishuPrimaryStorageConfig {
     base_token: String,
     table_id: String,
@@ -158,6 +159,7 @@ pub(crate) struct FeishuPrimaryStorageConfig {
     max_media_bytes: usize,
 }
 
+#[cfg_attr(not(feature = "huabaosi-feishu-mirror-adapter"), allow(dead_code))]
 pub(crate) struct FeishuPrimaryStorageImage<'a> {
     pub artifact_id: Uuid,
     pub workflow_root_id: Uuid,
@@ -1600,6 +1602,7 @@ pub(crate) fn store_primary_generated_image(
     }
 }
 
+#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
 fn validate_primary_storage_image(
     image: &FeishuPrimaryStorageImage<'_>,
     max_media_bytes: usize,
@@ -1619,6 +1622,7 @@ fn validate_primary_storage_image(
     validate_primary_storage_bytes(image, image.bytes)
 }
 
+#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
 fn validate_primary_storage_bytes(
     image: &FeishuPrimaryStorageImage<'_>,
     bytes: &[u8],
@@ -1636,6 +1640,7 @@ fn validate_primary_storage_bytes(
     Ok(())
 }
 
+#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
 fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_token: &str) -> Value {
     let now = Utc::now().timestamp_millis();
     json!({
@@ -1658,6 +1663,7 @@ fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_toke
     })
 }
 
+#[cfg(feature = "huabaosi-feishu-mirror-adapter")]
 fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
     anyhow::anyhow!(
         "Huabaosi Feishu storage failed at {} with {}",
@@ -1928,6 +1934,7 @@ impl FeishuClient {
         Ok(Zeroizing::new(file_token))
     }
 
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     fn download_media(
         &self,
         file_token: &str,
@@ -2593,6 +2600,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     fn huabaosi_feishu_primary_storage_uploads_reads_back_and_upserts() {
         let bytes = jpeg_fixture();
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake Feishu server");
@@ -2690,6 +2698,36 @@ mod tests {
             format!("feishu-base://huabaosi-generated-image/{artifact_id}")
         );
         server.join().expect("fake Feishu server completes");
+    }
+
+    #[test]
+    #[cfg(not(feature = "huabaosi-feishu-mirror-adapter"))]
+    fn huabaosi_feishu_primary_storage_requires_compiled_adapter() {
+        let bytes = jpeg_fixture();
+        let config = FeishuPrimaryStorageConfig::test_only(
+            Url::parse("https://open.feishu.cn/open-apis/").expect("fixed Feishu API root"),
+            "/not/read/without/adapter".to_string(),
+            DEFAULT_MAX_MEDIA_BYTES,
+        );
+        let error = match store_primary_generated_image(
+            &config,
+            &FeishuPrimaryStorageImage {
+                artifact_id: Uuid::new_v4(),
+                workflow_root_id: Uuid::new_v4(),
+                work_item_id: Uuid::new_v4(),
+                content_hash: &format!("sha256:{}", sha256_hex(&bytes)),
+                file_md5: &md5_hex(&bytes),
+                source_content_hash: &format!("sha256:{}", "a".repeat(64)),
+                bytes: &bytes,
+                width: REQUIRED_WIDTH as u32,
+                height: REQUIRED_HEIGHT as u32,
+            },
+        ) {
+            Ok(_) => panic!("default build accepted Feishu primary storage"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("not compiled"));
     }
 
     #[test]

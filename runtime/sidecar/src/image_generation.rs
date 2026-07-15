@@ -31,11 +31,25 @@ use crate::{
     db,
     huabaosi_feishu_artifact_mirror::{
         primary_storage_missing_configuration, record_primary_storage_workbench_ref,
-        resolve_workflow_root_pool, store_primary_generated_image, FeishuPrimaryStorageConfig,
-        FeishuPrimaryStorageImage,
+        FeishuPrimaryStorageConfig,
     },
     url_policy,
 };
+
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
+use crate::huabaosi_feishu_artifact_mirror::{
+    store_primary_generated_image, FeishuPrimaryStorageImage,
+};
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
+use crate::huabaosi_feishu_artifact_mirror::resolve_workflow_root_pool;
 
 #[cfg(any(
     test,
@@ -2225,11 +2239,13 @@ fn provider_response_limit(max_media_bytes: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use std::{
-        fs,
         io::{Cursor, Read, Write},
         net::TcpListener,
         thread,
     };
+
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    use std::fs;
 
     use super::*;
     #[cfg(feature = "postgres-integration-tests")]
@@ -2240,6 +2256,7 @@ mod tests {
     )))]
     use clap::Parser;
     use image::ImageEncoder;
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     use tempfile::tempdir;
 
     #[cfg(feature = "postgres-integration-tests")]
@@ -3347,6 +3364,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     fn fake_provider_stores_final_jpeg_in_feishu_before_returning_artifact() {
         let source_png = fixture_png();
         let final_jpeg = fixture_jpeg(&source_png);
