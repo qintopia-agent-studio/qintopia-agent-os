@@ -283,6 +283,47 @@ pub fn run_preflight() -> Result<()> {
     }
 }
 
+pub fn run_observation_preflight() -> Result<()> {
+    let report = observation_preflight_report();
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    if report.success {
+        Ok(())
+    } else {
+        bail!("Huabaosi Feishu mirror observation boundary is invalid")
+    }
+}
+
+fn observation_preflight_report() -> MirrorPreflightReport {
+    let adapter_compiled = cfg!(feature = "huabaosi-feishu-mirror-adapter");
+    let mirror_enabled = env_flag(ENABLE_ENV);
+    let deployed_sha_valid = required_env(DEPLOYED_COMMIT_SHA_ENV)
+        .map(|sha| is_lower_hex(&sha, 40))
+        .unwrap_or(false);
+    let (success, action_status) = if !adapter_compiled {
+        (false, "adapter_not_compiled")
+    } else if !deployed_sha_valid {
+        (false, "invalid_deployed_release_sha")
+    } else if mirror_enabled {
+        (true, "observation_enabled_boundary_ready")
+    } else {
+        (true, "observation_disabled_boundary_ready")
+    };
+    MirrorPreflightReport {
+        success,
+        worker: WORKER_ID,
+        action_status,
+        adapter_compiled,
+        mirror_enabled,
+        config_valid: false,
+        schema_version: SCHEMA_VERSION,
+        media_allowed_host_count: 0,
+        missing_configuration: Vec::new(),
+        external_calls_executed: false,
+        database_writes_executed: false,
+        sensitive_fields_redacted: true,
+    }
+}
+
 fn fixture_report() -> MirrorReport {
     MirrorReport {
         success: true,
@@ -1882,6 +1923,7 @@ mod tests {
         fs,
         io::{Read, Write},
         net::{TcpListener, TcpStream},
+        sync::{Mutex, MutexGuard, OnceLock},
         thread,
     };
 
@@ -1892,6 +1934,41 @@ mod tests {
     use super::*;
     #[cfg(feature = "postgres-integration-tests")]
     use crate::db;
+
+    struct EnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn new(keys: &[&'static str]) -> Self {
+            static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+            let lock = ENV_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .expect("env lock");
+            let saved = keys
+                .iter()
+                .map(|key| (*key, env::var(key).ok()))
+                .collect::<Vec<_>>();
+            for key in keys {
+                env::remove_var(key);
+            }
+            Self { _lock: lock, saved }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.saved {
+                if let Some(value) = value {
+                    env::set_var(key, value);
+                } else {
+                    env::remove_var(key);
+                }
+            }
+        }
+    }
 
     #[cfg(feature = "postgres-integration-tests")]
     fn postgres_integration_database_url() -> String {
@@ -1936,6 +2013,38 @@ mod tests {
                 !raw.contains(forbidden),
                 "fixture report leaked {forbidden}"
             );
+        }
+    }
+
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    #[test]
+    fn huabaosi_feishu_artifact_mirror_observation_preflight_uses_non_secret_boundary() {
+        let mut keys = REQUIRED_CONFIGURATION_NAMES.to_vec();
+        keys.push(ENABLE_ENV);
+        let _env = EnvGuard::new(&keys);
+        env::set_var(ENABLE_ENV, "1");
+        env::set_var(DEPLOYED_COMMIT_SHA_ENV, "a".repeat(40));
+
+        let report = observation_preflight_report();
+        let serialized = serde_json::to_string(&report).expect("serialize observation preflight");
+
+        assert!(report.success);
+        assert!(report.adapter_compiled);
+        assert!(report.mirror_enabled);
+        assert!(!report.config_valid);
+        assert_eq!(report.action_status, "observation_enabled_boundary_ready");
+        assert!(report.missing_configuration.is_empty());
+        assert_eq!(report.media_allowed_host_count, 0);
+        assert!(!report.external_calls_executed);
+        assert!(!report.database_writes_executed);
+        for forbidden in [
+            "postgres://",
+            "base_token",
+            "table_id",
+            "tenant_access_token",
+            "file_token",
+        ] {
+            assert!(!serialized.contains(forbidden), "leaked {forbidden}");
         }
     }
 

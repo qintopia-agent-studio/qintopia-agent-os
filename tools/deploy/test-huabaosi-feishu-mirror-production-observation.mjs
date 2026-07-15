@@ -20,8 +20,37 @@ const writeExecutable = (filePath, content) => {
   fs.writeFileSync(filePath, content, "utf8");
   fs.chmodSync(filePath, 0o755);
 };
+const envLine = (key, value) => `${key}=${value}`;
 
 try {
+  const fixtureSecrets = [
+    "postgres://fixture-user:fixture-password@127.0.0.1:55432/qintopia_observation_fixture",
+    "bascn_observation_fixture_base_token",
+    "tbl_observation_fixture_artifact_table",
+    "fixture-feishu-tenant-access-token",
+    "fixture-feishu-app-secret",
+  ];
+  const forbiddenChildEnvKeys = [
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+    "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+    "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+    "QINTOPIA_HUABAOSI_FEISHU_TENANT_ACCESS_TOKEN",
+    "FEISHU_APP_SECRET",
+    "LARK_APP_SECRET",
+  ];
+  const scriptText = fs.readFileSync(script, "utf8");
+  const launcherStart = scriptText.indexOf("run_sidecar_with_observation_env()");
+  const launcherEnd = scriptText.indexOf("tmp_dir=", launcherStart);
+  const launcher = scriptText.slice(launcherStart, launcherEnd);
+  for (const key of forbiddenChildEnvKeys) {
+    if (launcher.includes(key)) {
+      throw new Error(`observation child launcher includes forbidden key ${key}`);
+    }
+  }
+
   const systemctlLog = path.join(tmpRoot, "systemctl.log");
   const sidecarLog = path.join(tmpRoot, "sidecar.log");
   const commandSubstitutionMarker = path.join(tmpRoot, "command-substitution-ran");
@@ -48,18 +77,18 @@ exit 1
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >>"${sidecarLog}"
-if [[ "\${QINTOPIA_SIDECAR_DATABASE_URL:-}" == "postgres://qintopia:change-me@127.0.0.1:55432/qintopia_test" || "\${FAKE_MIRROR_LEAK:-}" == "configured-value-must-not-appear" ]]; then
-  echo "non-observation env reached fake sidecar" >&2
+if env | grep -F -e '${fixtureSecrets.join("' -e '")}' >/dev/null; then
+  echo "secret env reached fake sidecar" >&2
   exit 70
 fi
 case "$1" in
-  huabaosi-feishu-artifact-mirror-preflight)
+  huabaosi-feishu-artifact-mirror-observation-preflight)
     if [[ "\${QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED:-0}" == "1" ]]; then
-      printf '%s\\n' '{"success":true,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"adapter_config_ready","adapter_compiled":true,"mirror_enabled":true,"config_valid":true,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":1,"missing_configuration":[],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
+      printf '%s\\n' '{"success":true,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"observation_enabled_boundary_ready","adapter_compiled":true,"mirror_enabled":true,"config_valid":false,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":0,"missing_configuration":[],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
       exit 0
     fi
-    printf '%s\\n' '{"success":false,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"mirror_disabled","adapter_compiled":true,"mirror_enabled":false,"config_valid":false,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":0,"missing_configuration":["QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN"],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
-    exit 1
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-feishu-artifact-mirror-worker","action_status":"observation_disabled_boundary_ready","adapter_compiled":true,"mirror_enabled":false,"config_valid":false,"schema_version":"huabaosi-generated-image-v1","media_allowed_host_count":0,"missing_configuration":[],"external_calls_executed":false,"database_writes_executed":false,"sensitive_fields_redacted":true}'
+    exit 0
     ;;
   run-huabaosi-feishu-artifact-mirror-worker)
     [[ "$2" == "--once" && "$3" == "--dry-run" ]]
@@ -97,8 +126,13 @@ esac
     secretEnv,
     [
       "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0",
-      "QINTOPIA_SIDECAR_DATABASE_URL=postgres://qintopia:change-me@127.0.0.1:55432/qintopia_test",
-      "FAKE_MIRROR_LEAK=configured-value-must-not-appear",
+      envLine("QINTOPIA_SIDECAR_DATABASE_URL", fixtureSecrets[0]),
+      envLine(forbiddenChildEnvKeys[1], fixtureSecrets[1]),
+      envLine(forbiddenChildEnvKeys[2], fixtureSecrets[1]),
+      envLine(forbiddenChildEnvKeys[3], fixtureSecrets[2]),
+      envLine(forbiddenChildEnvKeys[4], fixtureSecrets[2]),
+      envLine(forbiddenChildEnvKeys[6], fixtureSecrets[3]),
+      envLine(forbiddenChildEnvKeys[7], fixtureSecrets[4]),
       "",
     ].join("\n"),
     "utf8"
@@ -170,6 +204,11 @@ esac
       `secret-env observation should ignore non-observation secrets\n${secretIgnored.stdout}\n${secretIgnored.stderr}`
     );
   }
+  for (const secret of fixtureSecrets) {
+    if (`${secretIgnored.stdout}\n${secretIgnored.stderr}`.includes(secret)) {
+      throw new Error("observation repeated a fixture secret in its diagnostic");
+    }
+  }
 
   const malicious = run({
     QINTOPIA_SIDECAR_ENV_FILE: maliciousEnv,
@@ -206,22 +245,16 @@ esac
     throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
   }
   const sidecarCommands = fs.readFileSync(sidecarLog, "utf8");
-  if (sidecarCommands !== "") {
-    throw new Error(
-      "enabled observation passed production secrets through a child process"
-    );
+  if (
+    !sidecarCommands.includes("huabaosi-feishu-artifact-mirror-observation-preflight")
+  ) {
+    throw new Error("observation did not run mirror observation preflight");
   }
-  const systemctlCommands = fs.readFileSync(systemctlLog, "utf8");
-  for (const required of [
-    "start qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
-    "start qintopia-agentos-huabaosi-feishu-artifact-mirror-observation.service",
-  ]) {
-    if (!systemctlCommands.includes(required)) {
-      throw new Error(`enabled observation did not run ${required}`);
-    }
-  }
-  if (systemctlCommands.includes("--apply")) {
-    throw new Error("observation must not execute mirror apply");
+  if (
+    sidecarCommands.includes("run-huabaosi-feishu-artifact-mirror-worker") ||
+    sidecarCommands.includes("--apply")
+  ) {
+    throw new Error("observation must not execute mirror worker apply or dry-run");
   }
 
   const incomplete = run({
@@ -234,7 +267,7 @@ esac
     throw new Error("observation accepted an inactive production timer");
   }
 
-  const leakMarker = "configured-value-must-not-appear";
+  const leakMarker = "configured-parent-value-must-not-appear";
   const leaked = run({
     QINTOPIA_HUABAOSI_FEISHU_APP_SECRET: leakMarker,
     FAKE_MIRROR_LEAK: leakMarker,

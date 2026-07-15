@@ -168,18 +168,18 @@ Use `rg` and `rg --files` for search.
 - Huabaosi Feishu mirror apply must validate the exact owner phrase, production release
   SHA binding, database URL hash, Base and table exact allowlists, fixed schema version,
   Huabaosi profile path, and media host allowlist before Postgres or external I/O. The
-  production observation may run preflight and a `--dry-run` queue preview only; it must
-  not upload media, write Feishu/Postgres, approve, publish, call QiWe, or send.
+  production observation may run only the non-secret mirror observation preflight; it
+  must not run full configuration preflight, preview the queue, upload media, write
+  Feishu/Postgres, approve, publish, call QiWe, or send.
 - Huabaosi Feishu production observation must discover the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with
   the approved production features; it must fail closed instead of falling back to
   `cargo run` or a mutable source tree. Its shell may parse only the mirror enable flag;
-  in disabled state, the child launcher may pass only that parsed flag and the
-  non-secret release SHA to the immutable binary. In enabled state, the observation must
-  run the fixed release-installed preflight and dry-run systemd units so systemd loads
-  the production environment without importing secrets into the shell. It must not use
-  `source`, `eval`, command substitution, a secret-bearing temporary file, or `--apply`.
+  the child launcher may pass only that parsed flag and the non-secret release SHA to
+  the immutable binary, without `source`, `eval`, command substitution, shell secret
+  import, or a secret-bearing temporary file. It must not pass database URL, Base token,
+  table id, Feishu token, profile env path, or allowlist values to the child process.
   Rollback must stop the timer first and may report completion only after the persistent
   mirror enable flag is present exactly once and exactly `0` in the reviewed sidecar
   environment file.

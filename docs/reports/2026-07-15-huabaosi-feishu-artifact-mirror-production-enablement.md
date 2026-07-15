@@ -24,17 +24,21 @@ action, and ordinary release deployment must not activate the external write tim
   units from the immutable release while leaving the timer disabled.
 - Add explicit owner-approved activation and rollback commands. Activation runs
   preflight before enabling the timer.
-- Add a read-only production observation that verifies timer state, runs preflight, and
-  previews the queue with `--dry-run` only. It discovers the immutable
+- Add a read-only production observation that verifies timer state and runs a non-secret
+  mirror observation preflight only. It discovers the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, accepts an explicit binary
   only when it resolves to that same release-local file with the approved production
   features, and cannot fall back to a mutable source checkout.
-- Parse only the enable flag as literal text in the observation shell. Disabled-state
-  checks pass only that flag and the non-secret release SHA to the immutable binary.
-  Enabled-state checks start fixed release-installed preflight and dry-run units so
-  systemd loads the production environment without exposing it to the shell. The script
-  does not source or eval the env file, execute command substitution, import
-  Feishu/Postgres secrets, create a secret-bearing temporary file, or execute `--apply`.
+- Parse only the enable flag as literal text in the observation shell, then pass only
+  that flag and the non-secret release SHA to the immutable binary through a child
+  launcher. The script does not source or eval the env file, execute command
+  substitution, import Feishu/Postgres secrets, or create a secret-bearing temporary
+  file.
+- Reviewer Guide disposition: the observation no longer runs the full Feishu mirror
+  preflight or worker dry-run because those paths require database/Base/table/Feishu
+  runtime configuration. Full configuration validation remains in activation and apply;
+  observation proves the disabled/enabled boundary, immutable artifact contract, adapter
+  compilation, deployed SHA shape, and redaction without passing secret env.
 - Stop the timer and worker first during rollback, then fail closed until the persistent
   mirror enable flag is confirmed present exactly once and exactly `0` in the reviewed
   sidecar env.
