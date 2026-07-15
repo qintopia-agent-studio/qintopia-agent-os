@@ -31,7 +31,7 @@ export QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1
 | Operations evidence timer           | `qintopia-agentos-operations-evidence-worker.timer` is active and enabled; service command is fixed to `run-evidence-worker --once --apply`                                                | Pass   |
 | Operations visual timer             | `qintopia-agentos-operations-visual-worker.timer` is active and enabled; service command is fixed to `run-collaboration-worker --work-item-type visual_asset_request --once --apply`       | Pass   |
 | Xiaoman image request starter timer | `qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer` is active and enabled; command is fixed to `run-xiaoman-activity-image-generation-starter-worker --once --apply` | Pass   |
-| Huabaosi provider disabled state    | Image generation is disabled; no provider service/timer is installed; preflight and `run-huabaosi-image-generation-worker --once --dry-run` expose no sensitive configuration              | Pass   |
+| Huabaosi provider runtime state     | Generation flag, compiled adapter mode, and timer state agree; preflight and `run-huabaosi-image-generation-worker --once --dry-run` expose no sensitive configuration or external calls   | Pass   |
 | Xiaoman send request starter timer  | `qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer` is active and enabled; service command is fixed to `run-xiaoman-activity-send-request-starter-worker --once --apply` | Pass   |
 | Operations group send-ready timer   | `qintopia-agentos-operations-group-send-ready.timer` is active and enabled; service command is fixed to `run-group-message-send-worker --once --apply`                                     | Pass   |
 | Read-only worker previews           | Aggregate smoke finishes with `xiaoman activity production preflight passed`; preview reports are JSON-valid and `safe_for_chat=false` where present                                       | Pass   |
@@ -53,12 +53,12 @@ not export queue counts, row payloads, or create a synthetic production event.
   run
 
 This run therefore does not claim that a real activity traversed every stage; it proves
-that the deployed timers, commands, queue readers, disabled provider boundary, and
+that the deployed timers, commands, queue readers, provider runtime boundary, and
 internal send-ready boundary are operational and safe to observe.
 
 ## Decision
 
-- [x] Pass: production observation can continue without enabling external adapters
+- [x] Pass: production observation can continue without executing external adapters
 - [ ] Hold: one or more timers, commands, previews, or boundary checks failed.
 
 The observation-contract defects recorded for `v0.2.7` were fixed before `v0.2.9`. The

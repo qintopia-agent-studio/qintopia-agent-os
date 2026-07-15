@@ -27,12 +27,13 @@ The initial target is `linux-x86_64-gnu`, matching the current production server
 Linux x86_64, Ubuntu glibc
 ```
 
-Production sidecar artifacts are built with default Cargo features and record
-`cargo_features: []`. The non-default `qiwe-staging-adapter` feature must never appear
-in this builder or in a server-source production build; deployment preflight rejects
-either path if that feature is introduced. Runtime environment variables cannot enable
-code that is absent from the artifact. The builder also refuses a dirty or unreadable
-git worktree so `commit_sha` cannot describe different uncommitted source bytes.
+Production sidecar artifacts are built with exactly the non-default
+`huabaosi-production-adapter` Cargo feature and record
+`cargo_features: ["huabaosi-production-adapter"]`. Neither `huabaosi-staging-adapter`
+nor `qiwe-staging-adapter` may appear in this builder or a server-source production
+build. Runtime environment variables cannot select staging code or bypass the production
+release/database bindings. The builder also refuses a dirty or unreadable git worktree
+so `commit_sha` cannot describe different uncommitted source bytes.
 
 ## CI Requirements
 

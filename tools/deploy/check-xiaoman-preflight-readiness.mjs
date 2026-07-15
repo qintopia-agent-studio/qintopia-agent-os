@@ -124,16 +124,14 @@ for (const fragment of [
   "run-evidence-worker --once --apply",
   "run-collaboration-worker --work-item-type visual_asset_request --once --apply",
   "run-xiaoman-activity-image-generation-starter-worker --once --apply",
+  "huabaosi-image-generation-preflight",
+  "run-huabaosi-image-generation-worker --once --apply",
+  "qintopia-agentos-huabaosi-image-generation-worker.timer",
   "run-xiaoman-activity-send-request-starter-worker --once --apply",
   "run-group-message-send-worker --once --apply",
 ]) {
   requireFragment(renderPath, render, fragment);
 }
-forbidFragment(
-  renderPath,
-  render,
-  "run-huabaosi-image-generation-worker --once --apply"
-);
 
 const preflightPath =
   "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh";
@@ -156,6 +154,7 @@ for (const fragment of [
   "server-deploy.sh",
   "gh release",
   "run-group-message-send-worker",
+  "run-huabaosi-image-generation-worker --once --apply",
   "--use-feishu-base",
   "QIWE_TOKEN",
   "tenant_access_token",
@@ -173,12 +172,12 @@ for (const fragment of [
   "Operations evidence timer",
   "Operations visual timer",
   "Xiaoman image request starter timer",
-  "Huabaosi provider disabled state",
+  "Huabaosi provider runtime state",
   "Xiaoman send request starter timer",
   "Operations group send-ready timer",
   "Secret and external-send scan",
   "Queue Snapshot",
-  "Pass: production observation can continue without enabling external adapters",
+  "Pass: production observation can continue without executing external adapters",
   "Hold: one or more timers, commands, previews, or boundary checks failed",
   "Passing this preflight does not approve publishing",
   "Eligible image-generation request preview count",

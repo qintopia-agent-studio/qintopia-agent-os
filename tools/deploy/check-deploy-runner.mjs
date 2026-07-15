@@ -923,6 +923,9 @@ try {
     ["tools/deploy/test-huabaosi-image-production-observation.mjs"],
     { cwd: repoRoot }
   );
+  execFileSync("node", ["tools/deploy/test-huabaosi-image-production-activation.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync("node", ["tools/deploy/test-huabaosi-wecom-observation.mjs"], {
     cwd: repoRoot,
   });

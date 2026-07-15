@@ -114,6 +114,9 @@ unit_files=(
   qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer
   qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service
   qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer
+  qintopia-agentos-huabaosi-image-generation-preflight.service
+  qintopia-agentos-huabaosi-image-generation-worker.service
+  qintopia-agentos-huabaosi-image-generation-worker.timer
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.service
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer
 )

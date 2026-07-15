@@ -96,6 +96,7 @@ esac
     "qintopia-agentos-xiaoman-activity-signal-worker.timer",
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
+    "qintopia-agentos-huabaosi-image-generation-worker.timer",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "qintopia-agentos-operations-group-send-ready.timer",
   ]) {
@@ -115,6 +116,13 @@ esac
     if (!log.includes(required)) {
       throw new Error(`systemctl log is missing ${required}`);
     }
+  }
+  if (
+    log.includes("enable --now qintopia-agentos-huabaosi-image-generation-worker.timer")
+  ) {
+    throw new Error(
+      "release installer must not automatically enable Huabaosi generation"
+    );
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

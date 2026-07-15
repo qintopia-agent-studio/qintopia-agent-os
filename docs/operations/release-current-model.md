@@ -92,6 +92,13 @@ services that Hermes mounts or executes.
 10. Restart only owner-approved services or Hermes profile processes.
 11. Record the release SHA, previous SHA, checks, and rollback command in git.
 
+The Huabaosi image-generation worker is an external provider boundary, not an internal
+timer. A release may install its preflight, worker, and timer units, but the ordinary
+installer must leave that timer disabled. After the owner manually publishes the
+Release, production configuration must bind the enablement to that exact release SHA and
+database URL hash. Run the release-local activation script to pass preflight and enable
+the timer for canary generation. This does not enable image approval or QiWe.
+
 The release assembly step should be idempotent: if the release directory already exists,
 the operator must verify its manifest and checksum instead of overwriting it blindly.
 

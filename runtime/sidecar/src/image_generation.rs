@@ -1,10 +1,17 @@
-use std::{collections::BTreeSet, fmt, io, net::IpAddr};
+use std::{collections::BTreeSet, fmt, io};
+
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+use std::net::IpAddr;
 
 #[cfg(test)]
 use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{anyhow, bail, Context, Result};
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 use base64ct::{Base64, Encoding};
 use image::{
     codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, ImageFormat, ImageReader,
@@ -21,7 +28,11 @@ use zeroize::Zeroize;
 
 use crate::{config::Cli, db, url_policy};
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 use crate::bounded_http::{HttpClient, HttpResponse};
 
 #[cfg(test)]
@@ -46,8 +57,17 @@ const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
 const MAX_GENERATION_ATTEMPTS: i32 = 3;
 const BASE_RETRY_DELAY_SECONDS: i64 = 60;
+#[cfg(feature = "huabaosi-staging-adapter")]
 const STAGING_APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL";
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 const STAGING_APPROVAL_PHRASE: &str = "approved-staging-image-generation";
+const PRODUCTION_APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_APPROVAL";
+const PRODUCTION_APPROVAL_PHRASE: &str = "approved-production-image-generation";
+const PRODUCTION_RELEASE_SHA_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA";
+const PRODUCTION_DATABASE_URL_SHA256_ENV: &str =
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_DATABASE_URL_SHA256";
+const DEPLOYED_COMMIT_SHA_ENV: &str = "QINTOPIA_DEPLOYED_COMMIT_SHA";
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 const REVIEWED_DATABASE_URL_SHA256_ALLOWLIST: &[&str] =
     &["c6dc2730b2a3fdabf05d88e021340b748c5c5b5d06d8ec24b38feef387d39330"];
 const REQUIRED_IMAGE_CONFIGURATION: &[&str] = &[
@@ -83,6 +103,7 @@ pub struct ImageGenerationPreflightReport {
     pub action_status: &'static str,
     pub generation_enabled: bool,
     pub adapter_compiled: bool,
+    pub adapter_mode: &'static str,
     pub config_valid: bool,
     pub media_allowed_host_count: usize,
     pub missing_configuration: Vec<&'static str>,
@@ -143,13 +164,21 @@ struct GeneratedImage {
     artifact_uri: String,
 }
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 #[derive(Debug, Deserialize)]
 struct ProviderResponse {
     data: Vec<ProviderImage>,
 }
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 #[derive(Debug, Deserialize)]
 struct ProviderImage {
     b64_json: Option<String>,
@@ -240,6 +269,29 @@ enum ImageGenerationClaimOutcome {
     Empty,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImageAdapterMode {
+    Disabled,
+    Staging,
+    Production,
+    Invalid,
+}
+
+impl ImageAdapterMode {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Staging => "staging",
+            Self::Production => "production",
+            Self::Invalid => "invalid",
+        }
+    }
+
+    const fn is_compiled(self) -> bool {
+        matches!(self, Self::Staging | Self::Production)
+    }
+}
+
 pub async fn run(
     cli: &Cli,
     once: bool,
@@ -256,18 +308,27 @@ pub async fn run(
     }
 
     let apply_requested = apply && !dry_run;
-    if apply_requested && !huabaosi_staging_adapter_compiled() {
+    let adapter_mode = huabaosi_adapter_mode();
+    if apply_requested && !adapter_mode.is_compiled() {
+        let action_status = if adapter_mode == ImageAdapterMode::Invalid {
+            "adapter_feature_conflict"
+        } else {
+            "live_adapter_not_compiled"
+        };
         let report = report(
             false,
             true,
             false,
-            "staging_adapter_not_compiled",
+            action_status,
             work_item_id,
             Vec::new(),
             None,
         );
         println!("{}", serde_json::to_string_pretty(&report)?);
-        bail!("Huabaosi staging adapter is not compiled into this binary");
+        if adapter_mode == ImageAdapterMode::Invalid {
+            bail!("Huabaosi live adapter features conflict");
+        }
+        bail!("Huabaosi live adapter is not compiled into this binary");
     }
 
     let report = if fixture_mode {
@@ -278,14 +339,7 @@ pub async fn run(
     } else {
         let database_url = cli.database_url_required()?;
         let adapter_config = if apply_requested && image_generation_enabled() {
-            #[cfg(feature = "huabaosi-staging-adapter")]
-            {
-                Some(staging_apply_config(database_url)?)
-            }
-            #[cfg(not(feature = "huabaosi-staging-adapter"))]
-            {
-                unreachable!("default apply is rejected before adapter configuration")
-            }
+            Some(live_apply_config(adapter_mode, database_url)?)
         } else {
             None
         };
@@ -297,26 +351,56 @@ pub async fn run(
     Ok(())
 }
 
+fn live_apply_config(mode: ImageAdapterMode, _database_url: &str) -> Result<AdapterConfig> {
+    match mode {
+        #[cfg(feature = "huabaosi-staging-adapter")]
+        ImageAdapterMode::Staging => staging_apply_config(_database_url),
+        #[cfg(feature = "huabaosi-production-adapter")]
+        ImageAdapterMode::Production => production_apply_config(_database_url),
+        ImageAdapterMode::Invalid => bail!("Huabaosi live adapter features conflict"),
+        _ => bail!("Huabaosi live adapter is not compiled into this binary"),
+    }
+}
+
 pub fn run_preflight() -> Result<()> {
-    let adapter_compiled = huabaosi_staging_adapter_compiled();
-    let report = match AdapterConfig::from_env() {
+    let adapter_mode = huabaosi_adapter_mode();
+    let report = match preflight_adapter_config(adapter_mode) {
         Ok(config) => preflight_report(
             true,
             image_generation_enabled(),
-            adapter_compiled,
+            adapter_mode,
             config.media_allowed_hosts.len(),
             Vec::new(),
         ),
         Err(_) => preflight_report(
             false,
             image_generation_enabled(),
-            adapter_compiled,
+            adapter_mode,
             0,
             missing_image_configuration(),
         ),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
     ensure_preflight_success(&report)
+}
+
+fn preflight_adapter_config(mode: ImageAdapterMode) -> Result<AdapterConfig> {
+    let config = AdapterConfig::from_env()?;
+    if mode == ImageAdapterMode::Production {
+        let database_url = required_env("QINTOPIA_SIDECAR_DATABASE_URL")?;
+        validate_production_owner_approval(std::env::var(PRODUCTION_APPROVAL_ENV).ok().as_deref())?;
+        validate_production_release_boundary(
+            std::env::var(DEPLOYED_COMMIT_SHA_ENV).ok().as_deref(),
+            std::env::var(PRODUCTION_RELEASE_SHA_ENV).ok().as_deref(),
+        )?;
+        validate_production_database_boundary(
+            &database_url,
+            std::env::var(PRODUCTION_DATABASE_URL_SHA256_ENV)
+                .ok()
+                .as_deref(),
+        )?;
+    }
+    Ok(config)
 }
 
 fn ensure_preflight_success(report: &ImageGenerationPreflightReport) -> Result<()> {
@@ -329,25 +413,30 @@ fn ensure_preflight_success(report: &ImageGenerationPreflightReport) -> Result<(
 fn preflight_report(
     config_valid: bool,
     generation_enabled: bool,
-    adapter_compiled: bool,
+    adapter_mode: ImageAdapterMode,
     media_allowed_host_count: usize,
     missing_configuration: Vec<&'static str>,
 ) -> ImageGenerationPreflightReport {
-    let feature_state_valid = generation_enabled == adapter_compiled;
+    let adapter_compiled = adapter_mode.is_compiled();
+    let feature_state_valid =
+        generation_enabled == adapter_compiled && adapter_mode != ImageAdapterMode::Invalid;
     ImageGenerationPreflightReport {
         success: config_valid && feature_state_valid,
         worker: WORKER_ID,
         action_status: if !config_valid {
             "adapter_not_configured"
+        } else if adapter_mode == ImageAdapterMode::Invalid {
+            "adapter_feature_conflict"
         } else if generation_enabled && !adapter_compiled {
-            "staging_adapter_not_compiled"
+            "live_adapter_not_compiled"
         } else if adapter_compiled && !generation_enabled {
-            "staging_adapter_compiled_requires_owner_review"
+            "live_adapter_compiled_requires_owner_review"
         } else {
             "adapter_config_ready"
         },
         generation_enabled,
         adapter_compiled,
+        adapter_mode: adapter_mode.as_str(),
         config_valid,
         media_allowed_host_count,
         missing_configuration,
@@ -359,7 +448,7 @@ fn preflight_report(
         guardrails: vec![
             "this command does not open network or database connections".to_string(),
             "credentials, service addresses, hosts, prompts, Feishu identifiers, and QiWe payloads are not emitted".to_string(),
-            "live generation requires the staging-only Cargo feature, explicit enablement, and command-entry owner approval".to_string(),
+            "live generation requires exactly one reviewed adapter feature plus explicit environment and command-entry approval".to_string(),
         ],
     }
 }
@@ -455,21 +544,27 @@ async fn run_once(
         ));
     };
 
-    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter"
+    )))]
     {
         drop(config);
         Ok(report(
             false,
             true,
             false,
-            "staging_adapter_not_compiled",
+            "live_adapter_not_compiled",
             None,
             Vec::new(),
             None,
         ))
     }
 
-    #[cfg(feature = "huabaosi-staging-adapter")]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter"
+    ))]
     {
         let work_item = match claim_work_item(pool, work_item_id).await? {
             ImageGenerationClaimOutcome::Claimed(work_item) => work_item,
@@ -562,6 +657,23 @@ fn staging_apply_config(database_url: &str) -> Result<AdapterConfig> {
     Ok(config)
 }
 
+#[cfg(feature = "huabaosi-production-adapter")]
+fn production_apply_config(database_url: &str) -> Result<AdapterConfig> {
+    validate_production_owner_approval(std::env::var(PRODUCTION_APPROVAL_ENV).ok().as_deref())?;
+    validate_production_release_boundary(
+        std::env::var(DEPLOYED_COMMIT_SHA_ENV).ok().as_deref(),
+        std::env::var(PRODUCTION_RELEASE_SHA_ENV).ok().as_deref(),
+    )?;
+    validate_production_database_boundary(
+        database_url,
+        std::env::var(PRODUCTION_DATABASE_URL_SHA256_ENV)
+            .ok()
+            .as_deref(),
+    )?;
+    AdapterConfig::from_env().context("Huabaosi production adapter configuration is invalid")
+}
+
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
     if value != Some(STAGING_APPROVAL_PHRASE) {
         bail!("Huabaosi staging owner approval is required");
@@ -569,6 +681,69 @@ fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+fn validate_production_owner_approval(value: Option<&str>) -> Result<()> {
+    if value != Some(PRODUCTION_APPROVAL_PHRASE) {
+        bail!("Huabaosi production owner approval is required");
+    }
+    Ok(())
+}
+
+fn validate_production_release_boundary(
+    deployed_sha: Option<&str>,
+    approved_sha: Option<&str>,
+) -> Result<()> {
+    let deployed_sha = deployed_sha.context("deployed release SHA is required")?;
+    let approved_sha = approved_sha.context("approved production release SHA is required")?;
+    if !is_lower_hex(deployed_sha, 40) || !is_lower_hex(approved_sha, 40) {
+        bail!("production release SHA must be a 40-character lowercase Git SHA");
+    }
+    if deployed_sha != approved_sha {
+        bail!("production image generation is not approved for the deployed release");
+    }
+    Ok(())
+}
+
+fn validate_production_database_boundary(
+    database_url: &str,
+    approved_hash: Option<&str>,
+) -> Result<()> {
+    let approved_hash =
+        approved_hash.context("approved production database URL hash is required")?;
+    if !is_lower_hex(approved_hash, 64) {
+        bail!("production database URL hash must be lowercase SHA-256");
+    }
+    let actual_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
+    if actual_hash != approved_hash {
+        bail!("production database URL hash does not match the approved boundary");
+    }
+
+    let parsed = Url::parse(database_url).context("parse production database URL")?;
+    if !matches!(parsed.scheme(), "postgres" | "postgresql") || parsed.host_str().is_none() {
+        bail!("production database URL must use PostgreSQL and include a host");
+    }
+    let database_name = parsed
+        .path()
+        .strip_prefix('/')
+        .filter(|value| !value.is_empty() && !value.contains('/'))
+        .ok_or_else(|| anyhow!("production database URL must name exactly one database"))?;
+    let normalized_name = database_name.to_ascii_lowercase();
+    if normalized_name.contains("staging")
+        || normalized_name.contains("test")
+        || normalized_name.contains("dev")
+    {
+        bail!("production image generation rejects non-production database names");
+    }
+    Ok(())
+}
+
+fn is_lower_hex(value: &str, length: usize) -> bool {
+    value.len() == length
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn validate_staging_database_boundary(
     database_url: &str,
     allow_disposable_test: bool,
@@ -580,6 +755,7 @@ fn validate_staging_database_boundary(
     )
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn validate_staging_database_boundary_with_allowlist(
     database_url: &str,
     allow_disposable_test: bool,
@@ -611,12 +787,14 @@ fn validate_staging_database_boundary_with_allowlist(
     Ok(())
 }
 
+#[cfg(feature = "huabaosi-staging-adapter")]
 fn disposable_postgres_smoke_enabled() -> bool {
     cfg!(feature = "postgres-integration-tests")
         && std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE")
             .is_ok_and(|value| value.trim() == "1")
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn validate_disposable_test_adapter_boundary(config: &AdapterConfig) -> Result<()> {
     for endpoint in [
         &config.provider_endpoint,
@@ -637,6 +815,7 @@ fn validate_disposable_test_adapter_boundary(config: &AdapterConfig) -> Result<(
     Ok(())
 }
 
+#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 fn is_literal_loopback_host(host: &str) -> bool {
     host.parse::<IpAddr>()
         .is_ok_and(|address| address.is_loopback())
@@ -809,7 +988,11 @@ fn build_prompt(work_item: &ImageGenerationWorkItem) -> Result<String> {
     ))
 }
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 fn parse_provider_response(response: &HttpResponse) -> Result<String> {
     ensure_success(response, "image provider")?;
     let payload: ProviderResponse =
@@ -823,7 +1006,11 @@ fn parse_provider_response(response: &HttpResponse) -> Result<String> {
         .ok_or_else(|| anyhow!("image provider response did not contain b64_json"))
 }
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 fn parse_media_upload_response(response: &HttpResponse) -> Result<MediaUploadResponse> {
     ensure_success(response, "media upload")?;
     serde_json::from_slice(&response.body).context("parse media upload response")
@@ -974,7 +1161,11 @@ impl GeneratedImage {
     }
 }
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 fn ensure_success(response: &HttpResponse, service: &str) -> Result<()> {
     if !(200..300).contains(&response.status) {
         bail!("{service} returned HTTP {}", response.status);
@@ -1618,8 +1809,16 @@ fn image_generation_enabled_value(value: &str) -> bool {
     value.trim() == "1"
 }
 
-const fn huabaosi_staging_adapter_compiled() -> bool {
-    cfg!(feature = "huabaosi-staging-adapter")
+const fn huabaosi_adapter_mode() -> ImageAdapterMode {
+    match (
+        cfg!(feature = "huabaosi-staging-adapter"),
+        cfg!(feature = "huabaosi-production-adapter"),
+    ) {
+        (false, false) => ImageAdapterMode::Disabled,
+        (true, false) => ImageAdapterMode::Staging,
+        (false, true) => ImageAdapterMode::Production,
+        (true, true) => ImageAdapterMode::Invalid,
+    }
 }
 
 fn report(
@@ -1675,7 +1874,11 @@ fn media_upload_idempotency_key(prompt_hash: &str, final_content_hash: &str) -> 
     ))
 }
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 fn generate_and_store_with_client(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
@@ -1684,7 +1887,10 @@ fn generate_and_store_with_client(
     generate_and_store_with(config, work_item, &client)
 }
 
-#[cfg(feature = "huabaosi-staging-adapter")]
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 fn generate_and_store(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
@@ -1692,7 +1898,11 @@ fn generate_and_store(
     generate_and_store_with_client(config, work_item, HttpClient::production())
 }
 
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
 fn generate_and_store_with(
     config: &AdapterConfig,
     work_item: &ImageGenerationWorkItem,
@@ -1850,7 +2060,10 @@ mod tests {
     use super::*;
     #[cfg(feature = "postgres-integration-tests")]
     use crate::db;
-    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter"
+    )))]
     use clap::Parser;
     use image::ImageEncoder;
 
@@ -2007,7 +2220,7 @@ mod tests {
 
     #[test]
     fn preflight_reports_only_sanitized_configuration_state() {
-        let report = preflight_report(true, false, false, 2, Vec::new());
+        let report = preflight_report(true, false, ImageAdapterMode::Disabled, 2, Vec::new());
         let raw = serde_json::to_string(&report).expect("report serializes");
 
         assert!(report.success);
@@ -2015,6 +2228,7 @@ mod tests {
         assert_eq!(report.action_status, "adapter_config_ready");
         assert!(!report.generation_enabled);
         assert!(!report.adapter_compiled);
+        assert_eq!(report.adapter_mode, "disabled");
         assert!(report.config_valid);
         assert_eq!(report.media_allowed_host_count, 2);
         assert!(report.missing_configuration.is_empty());
@@ -2031,7 +2245,7 @@ mod tests {
         let report = preflight_report(
             false,
             false,
-            false,
+            ImageAdapterMode::Disabled,
             0,
             vec!["QINTOPIA_HUABAOSI_IMAGE_API_KEY"],
         );
@@ -2041,6 +2255,7 @@ mod tests {
         assert!(!report.config_valid);
         assert!(!report.generation_enabled);
         assert!(!report.adapter_compiled);
+        assert_eq!(report.adapter_mode, "disabled");
         assert_eq!(report.media_allowed_host_count, 0);
         assert_eq!(
             report.missing_configuration,
@@ -2066,23 +2281,34 @@ mod tests {
 
     #[test]
     fn preflight_rejects_feature_and_enablement_mismatches() {
-        let production_misconfigured = preflight_report(true, true, false, 1, Vec::new());
+        let production_misconfigured =
+            preflight_report(true, true, ImageAdapterMode::Disabled, 1, Vec::new());
         assert!(!production_misconfigured.success);
         assert_eq!(
             production_misconfigured.action_status,
-            "staging_adapter_not_compiled"
+            "live_adapter_not_compiled"
         );
 
-        let staging_binary_not_enabled = preflight_report(true, false, true, 1, Vec::new());
+        let staging_binary_not_enabled =
+            preflight_report(true, false, ImageAdapterMode::Staging, 1, Vec::new());
         assert!(!staging_binary_not_enabled.success);
         assert_eq!(
             staging_binary_not_enabled.action_status,
-            "staging_adapter_compiled_requires_owner_review"
+            "live_adapter_compiled_requires_owner_review"
         );
 
-        let reviewed_staging = preflight_report(true, true, true, 1, Vec::new());
+        let reviewed_staging =
+            preflight_report(true, true, ImageAdapterMode::Staging, 1, Vec::new());
         assert!(reviewed_staging.success);
         assert_eq!(reviewed_staging.action_status, "adapter_config_ready");
+
+        let conflicting_features =
+            preflight_report(true, true, ImageAdapterMode::Invalid, 1, Vec::new());
+        assert!(!conflicting_features.success);
+        assert_eq!(
+            conflicting_features.action_status,
+            "adapter_feature_conflict"
+        );
     }
 
     #[test]
@@ -2093,6 +2319,44 @@ mod tests {
         assert!(
             validate_staging_owner_approval(Some("approved-staging-image-generation\n")).is_err()
         );
+    }
+
+    #[test]
+    fn production_owner_approval_requires_exact_phrase() {
+        assert!(validate_production_owner_approval(Some(PRODUCTION_APPROVAL_PHRASE)).is_ok());
+        assert!(validate_production_owner_approval(None).is_err());
+        assert!(validate_production_owner_approval(Some(STAGING_APPROVAL_PHRASE)).is_err());
+        assert!(
+            validate_production_owner_approval(Some("approved-production-image-generation\n"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn production_release_boundary_requires_exact_deployed_sha() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert!(validate_production_release_boundary(Some(sha), Some(sha)).is_ok());
+        assert!(validate_production_release_boundary(None, Some(sha)).is_err());
+        assert!(validate_production_release_boundary(Some(sha), Some(&"f".repeat(40))).is_err());
+        assert!(
+            validate_production_release_boundary(Some(&sha.to_uppercase()), Some(sha)).is_err()
+        );
+    }
+
+    #[test]
+    fn production_database_boundary_requires_hash_and_production_name() {
+        let database_url = "postgres://user:secret@127.0.0.1:5432/qintopia";
+        let database_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
+        assert!(validate_production_database_boundary(database_url, Some(&database_hash)).is_ok());
+        assert!(validate_production_database_boundary(database_url, Some("0")).is_err());
+        assert!(validate_production_database_boundary(
+            "postgres://user:secret@127.0.0.1:5432/qintopia_staging",
+            Some(&format!(
+                "{:x}",
+                Sha256::digest("postgres://user:secret@127.0.0.1:5432/qintopia_staging".as_bytes())
+            ))
+        )
+        .is_err());
     }
 
     #[test]
@@ -2165,19 +2429,37 @@ mod tests {
         .is_err());
     }
 
-    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter"
+    )))]
     #[test]
-    fn default_build_excludes_huabaosi_staging_adapter() {
-        assert!(!huabaosi_staging_adapter_compiled());
+    fn default_build_excludes_huabaosi_live_adapter() {
+        assert_eq!(huabaosi_adapter_mode(), ImageAdapterMode::Disabled);
     }
 
-    #[cfg(feature = "huabaosi-staging-adapter")]
+    #[cfg(all(
+        feature = "huabaosi-staging-adapter",
+        not(feature = "huabaosi-production-adapter")
+    ))]
     #[test]
     fn staging_feature_reports_huabaosi_adapter_compiled() {
-        assert!(huabaosi_staging_adapter_compiled());
+        assert_eq!(huabaosi_adapter_mode(), ImageAdapterMode::Staging);
     }
 
-    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    #[cfg(all(
+        feature = "huabaosi-production-adapter",
+        not(feature = "huabaosi-staging-adapter")
+    ))]
+    #[test]
+    fn production_feature_reports_huabaosi_adapter_compiled() {
+        assert_eq!(huabaosi_adapter_mode(), ImageAdapterMode::Production);
+    }
+
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter"
+    )))]
     #[tokio::test]
     async fn default_apply_stops_before_database_and_network() {
         let cli = Cli::parse_from([

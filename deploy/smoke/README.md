@@ -95,9 +95,9 @@ The record captures timer health, fixed service commands, read-only preview coun
 secret-scan results, and the pass/hold decision. This includes read-only observations of
 the image-generation request starter, the disabled Huabaosi provider worker, and the
 group send-ready timer. The preflight runs the provider worker only with
-`--once --dry-run` and does not run the send-ready worker. It is not a release approval
-and does not authorize Feishu writes, QiWe sends, poster publishing, or external
-adapters.
+`--once --dry-run`, verifies the configured Huabaosi production timer state, and does
+not run the send-ready worker. It is not a release approval and does not authorize
+Feishu writes, QiWe sends, poster publishing, or external adapters.
 
 An explicit `no_claimable_*` worker result is a valid empty-queue observation only when
 it reports `dry_run=true`, `apply_requested=false`, and empty artifact ids/previews.

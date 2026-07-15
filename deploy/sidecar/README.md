@@ -57,8 +57,10 @@ deploy/sidecar/scripts/render-systemd-units.sh
 
 ## Server Caveat
 
-Production is release/current based. Treat Huabaosi shadow/Rust material as review-pool
-until the owner explicitly approves it as product direction.
+Production is release/current based. Huabaosi image generation is owner-approved only
+through the fixed production feature, release-bound preflight, and explicit timer
+activation documented in `docs/server-deployment.md`. Huabaosi WeCom shadow/canary
+material remains a separate review boundary.
 
 ## QiWe Image-Send Staging
 

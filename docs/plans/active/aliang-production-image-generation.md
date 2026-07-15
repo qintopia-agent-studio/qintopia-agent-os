@@ -1,8 +1,7 @@
 # 阿靓真实图片生成 Adapter 计划
 
-Status: request intake, guarded adapter, preflight, and staging smoke merged on
-`master`; deterministic JPEG final-artifact conversion implemented and locally validated
-on the current feature branch; external adapter enablement still requires owner decision
+Status: production enablement approved by the owner on 2026-07-15; implementation in
+progress on a dedicated PR
 
 Scope: 阿靓（画报司 / `huabaosi`）受控图片生成，不含飞书写回、企微发送或对外发布
 
@@ -20,6 +19,31 @@ approved poster_brief
 
 生成成功不等于允许发布。任何企微发送、飞书写回、公开发布或群发仍沿用各自独立的人工确认和 adapter
 allowlist。
+
+## Production Enablement Decision
+
+The owner approved production enablement on 2026-07-15. This approval authorizes the
+Huabaosi image-generation worker to consume eligible `image_generation_request` rows,
+call the reviewed provider and media services, and create a pending `generated_image`.
+It does not approve automatic artifact review, Feishu writeback, QiWe sends, or public
+publishing.
+
+Production activation remains a separate, explicit operation after the owner manually
+publishes the Release. The production artifact must contain only the reviewed
+`huabaosi-production-adapter` live feature, never the staging feature. The release
+installer may install the fixed worker service and timer, but it must not enable the
+timer as part of an ordinary promotion. Activation must first pass the no-network
+preflight against the release binary and fixed production environment, then enable the
+timer through the reviewed activation script.
+
+The first production window is a canary: one queued request per timer invocation, one
+pending image per successful request, and all existing retry, claim, immutable-media,
+same-byte readback, and human-review gates remain unchanged. Rollback disables the timer
+immediately and then turns the generation enable flag off through reviewed runtime
+configuration; it does not delete artifacts or audit history.
+
+Implementation and validation evidence are recorded in the
+[production enablement report](../../reports/2026-07-15-aliang-production-enablement.md).
 
 ## Current Baseline
 
@@ -241,7 +265,8 @@ data but are not eligible for the future QiWe JPG send contract.
 - 同一 work item/final JPEG hash 的 pending artifact 只有在 URI、source
   refs 和完整 immutable
   metadata 与本次生成结果逐字段一致时才可复用；reviewed、陈旧或被修改的记录必须失败，不能被重跑覆盖。
-- adapter 默认仍禁用、没有 timer，且未做 staging/prod 网络调用。已实现最多三次的有界 provider 重试：只有连接/读写失败和 HTTP
+- adapter 默认仍禁用；生产 enablement
+  PR 安装但不自动启用固定 timer。仓库尚未执行 staging/prod 网络调用。已实现最多三次的有界 provider 重试：只有连接/读写失败和 HTTP
   408、429、5xx 会按 60/120 秒延迟重新排队；认证、响应 payload、PNG、媒体上传/readback、持久化和 claim 失败都是终态。每次只审计脱敏的 attempt、stage、outcome 和 delay，不保存原始错误或响应。starter
   timer 只负责内部 request intake。必须在 Required Owner
   Decisions 有明确 PR 记录后，才可运行已实现的受保护 staging smoke。
@@ -266,9 +291,10 @@ data but are not eligible for the future QiWe JPG send contract.
   public media base 下的 HTTPS 地址；provider/upload
   endpoint、密钥和数据库 URL 仍必须拒绝输出。
 - `deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
-  只读验证生产开关保持关闭、provider service/timer 未安装，并运行配置预检和
+  只读验证生产开关和 provider timer 状态一致，并运行配置预检和
   `run-huabaosi-image-generation-worker --once --dry-run` 队列预览。它不 claim work
-  item、不写 artifact、不调用 provider/media、飞书或企微。该 observation 通过只证明 adapter 仍被安全关闭，不代表 staging 或生产生成获批。
+  item、不写 artifact、不调用 provider/media、飞书或企微。禁用状态通过只证明 adapter 安全关闭；启用状态通过只证明 production
+  gate 和 timer 已就绪，不替代真实 canary 产物审核。
 - Huabaosi provider/media calls now use the shared `bounded_http` Rust client also used
   by the guarded QiWe adapter. The extraction preserves the existing response caps,
   header validation, chunked limits, TLS policy, fake-server behavior, and timeout
