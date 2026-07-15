@@ -40,6 +40,8 @@ const OFFICIAL_FEISHU_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
 
 const ENABLE_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED";
 const APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL";
+const PRODUCTION_RELEASE_SHA_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA";
+const DEPLOYED_COMMIT_SHA_ENV: &str = "QINTOPIA_DEPLOYED_COMMIT_SHA";
 const DATABASE_HASH_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256";
 const BASE_TOKEN_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN";
 const BASE_TOKEN_ALLOWLIST_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS";
@@ -53,6 +55,8 @@ const MEDIA_MAX_BYTES_ENV: &str = "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES";
 const REQUIRED_CONFIGURATION_NAMES: &[&str] = &[
     "QINTOPIA_SIDECAR_DATABASE_URL",
     APPROVAL_ENV,
+    PRODUCTION_RELEASE_SHA_ENV,
+    DEPLOYED_COMMIT_SHA_ENV,
     DATABASE_HASH_ENV,
     BASE_TOKEN_ENV,
     BASE_TOKEN_ALLOWLIST_ENV,
@@ -279,6 +283,47 @@ pub fn run_preflight() -> Result<()> {
     }
 }
 
+pub fn run_observation_preflight() -> Result<()> {
+    let report = observation_preflight_report();
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    if report.success {
+        Ok(())
+    } else {
+        bail!("Huabaosi Feishu mirror observation boundary is invalid")
+    }
+}
+
+fn observation_preflight_report() -> MirrorPreflightReport {
+    let adapter_compiled = cfg!(feature = "huabaosi-feishu-mirror-adapter");
+    let mirror_enabled = env_flag(ENABLE_ENV);
+    let deployed_sha_valid = required_env(DEPLOYED_COMMIT_SHA_ENV)
+        .map(|sha| is_lower_hex(&sha, 40))
+        .unwrap_or(false);
+    let (success, action_status) = if !adapter_compiled {
+        (false, "adapter_not_compiled")
+    } else if !deployed_sha_valid {
+        (false, "invalid_deployed_release_sha")
+    } else if mirror_enabled {
+        (true, "observation_enabled_boundary_ready")
+    } else {
+        (true, "observation_disabled_boundary_ready")
+    };
+    MirrorPreflightReport {
+        success,
+        worker: WORKER_ID,
+        action_status,
+        adapter_compiled,
+        mirror_enabled,
+        config_valid: false,
+        schema_version: SCHEMA_VERSION,
+        media_allowed_host_count: 0,
+        missing_configuration: Vec::new(),
+        external_calls_executed: false,
+        database_writes_executed: false,
+        sensitive_fields_redacted: true,
+    }
+}
+
 fn fixture_report() -> MirrorReport {
     MirrorReport {
         success: true,
@@ -354,7 +399,7 @@ fn mirror_guardrails() -> Vec<String> {
         "mirror writes cannot approve, publish, or send an artifact".to_string(),
         "Base tokens, table ids, file tokens, credentials, and raw responses are redacted"
             .to_string(),
-        "no service or timer is installed by this adapter".to_string(),
+        "the production timer requires separate explicit owner activation".to_string(),
     ]
 }
 
@@ -400,6 +445,10 @@ impl MirrorConfig {
         if env::var(APPROVAL_ENV).ok().as_deref() != Some(REQUIRED_APPROVAL) {
             bail!("Huabaosi Feishu mirror owner approval is invalid");
         }
+        validate_release_binding(
+            &required_env(PRODUCTION_RELEASE_SHA_ENV)?,
+            &required_env(DEPLOYED_COMMIT_SHA_ENV)?,
+        )?;
         validate_database_hash(database_url, &required_env(DATABASE_HASH_ENV)?)?;
 
         let base_token = required_env(BASE_TOKEN_ENV)?;
@@ -448,6 +497,10 @@ fn validate_local_configuration() -> Result<()> {
     if env::var(APPROVAL_ENV).ok().as_deref() != Some(REQUIRED_APPROVAL) {
         bail!("owner approval is invalid");
     }
+    validate_release_binding(
+        &required_env(PRODUCTION_RELEASE_SHA_ENV)?,
+        &required_env(DEPLOYED_COMMIT_SHA_ENV)?,
+    )?;
     let database_url = required_env("QINTOPIA_SIDECAR_DATABASE_URL")?;
     validate_database_hash(&database_url, &required_env(DATABASE_HASH_ENV)?)?;
     let base_token = required_env(BASE_TOKEN_ENV)?;
@@ -572,6 +625,16 @@ fn validate_database_hash(database_url: &str, expected: &str) -> Result<()> {
     }
     if sha256_hex(database_url.as_bytes()) != expected {
         bail!("Huabaosi Feishu database URL SHA-256 does not match");
+    }
+    Ok(())
+}
+
+fn validate_release_binding(expected: &str, deployed: &str) -> Result<()> {
+    if !is_lower_hex(expected, 40) || !is_lower_hex(deployed, 40) {
+        bail!("Huabaosi Feishu production release SHA must be canonical");
+    }
+    if expected != deployed {
+        bail!("Huabaosi Feishu production release SHA does not match deployed commit");
     }
     Ok(())
 }
@@ -1856,6 +1919,8 @@ fn append_multipart_text(body: &mut Vec<u8>, boundary: &str, name: &str, value: 
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    use std::sync::{Mutex, MutexGuard, OnceLock};
     use std::{
         fs,
         io::{Read, Write},
@@ -1870,6 +1935,44 @@ mod tests {
     use super::*;
     #[cfg(feature = "postgres-integration-tests")]
     use crate::db;
+
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    struct EnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    impl EnvGuard {
+        fn new(keys: &[&'static str]) -> Self {
+            static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+            let lock = ENV_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .expect("env lock");
+            let saved = keys
+                .iter()
+                .map(|key| (*key, env::var(key).ok()))
+                .collect::<Vec<_>>();
+            for key in keys {
+                env::remove_var(key);
+            }
+            Self { _lock: lock, saved }
+        }
+    }
+
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.saved {
+                if let Some(value) = value {
+                    env::set_var(key, value);
+                } else {
+                    env::remove_var(key);
+                }
+            }
+        }
+    }
 
     #[cfg(feature = "postgres-integration-tests")]
     fn postgres_integration_database_url() -> String {
@@ -1915,6 +2018,47 @@ mod tests {
                 "fixture report leaked {forbidden}"
             );
         }
+    }
+
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    #[test]
+    fn huabaosi_feishu_artifact_mirror_observation_preflight_uses_non_secret_boundary() {
+        let mut keys = REQUIRED_CONFIGURATION_NAMES.to_vec();
+        keys.push(ENABLE_ENV);
+        let _env = EnvGuard::new(&keys);
+        env::set_var(ENABLE_ENV, "1");
+        env::set_var(DEPLOYED_COMMIT_SHA_ENV, "a".repeat(40));
+
+        let report = observation_preflight_report();
+        let serialized = serde_json::to_string(&report).expect("serialize observation preflight");
+
+        assert!(report.success);
+        assert!(report.adapter_compiled);
+        assert!(report.mirror_enabled);
+        assert!(!report.config_valid);
+        assert_eq!(report.action_status, "observation_enabled_boundary_ready");
+        assert!(report.missing_configuration.is_empty());
+        assert_eq!(report.media_allowed_host_count, 0);
+        assert!(!report.external_calls_executed);
+        assert!(!report.database_writes_executed);
+        for forbidden in [
+            "postgres://",
+            "base_token",
+            "table_id",
+            "tenant_access_token",
+            "file_token",
+        ] {
+            assert!(!serialized.contains(forbidden), "leaked {forbidden}");
+        }
+    }
+
+    #[test]
+    fn huabaosi_feishu_artifact_mirror_requires_exact_production_release() {
+        let sha = "a".repeat(40);
+        assert!(validate_release_binding(&sha, &sha).is_ok());
+        assert!(validate_release_binding(&sha, &"b".repeat(40)).is_err());
+        assert!(validate_release_binding("release-main", "release-main").is_err());
+        assert!(validate_release_binding(&"A".repeat(40), &"A".repeat(40)).is_err());
     }
 
     #[test]

@@ -1068,6 +1068,8 @@ pub enum Command {
     HuabaosiImageGenerationPreflight,
     /// Validate Huabaosi generated-image Feishu mirror configuration without network or database access.
     HuabaosiFeishuArtifactMirrorPreflight,
+    /// Validate the Huabaosi generated-image Feishu mirror observation boundary without secret configuration.
+    HuabaosiFeishuArtifactMirrorObservationPreflight,
     /// Mirror one immutable Huabaosi generated image into the fixed Feishu Base artifact table.
     RunHuabaosiFeishuArtifactMirrorWorker {
         /// Process one candidate and exit.

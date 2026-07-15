@@ -59,6 +59,9 @@ const requiredDocs = [
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
   "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -178,6 +181,9 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
   "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -389,9 +395,36 @@ if (exists("deploy/sidecar/scripts/prune-cos-artifacts.sh")) {
 
 if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const buildArtifactScript = readText("tools/deploy/build-sidecar-artifact.mjs");
+  const approvedCargoFeatures = [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ];
+  const cargoFeaturesMatch = buildArtifactScript.match(
+    /const cargoFeatures = \[([\s\S]*?)\];/
+  );
+  if (!cargoFeaturesMatch) {
+    addError(
+      "tools/deploy/build-sidecar-artifact.mjs: missing literal production cargoFeatures array"
+    );
+  } else {
+    const cargoFeaturesSource = cargoFeaturesMatch[1];
+    const cargoFeatures = [...cargoFeaturesSource.matchAll(/"([a-z0-9-]+)"/g)].map(
+      (match) => match[1]
+    );
+    const cargoFeaturesResidue = cargoFeaturesSource
+      .replace(/"[a-z0-9-]+"/g, "")
+      .replace(/[\s,]/g, "");
+    if (
+      cargoFeaturesResidue ||
+      JSON.stringify(cargoFeatures) !== JSON.stringify(approvedCargoFeatures)
+    ) {
+      addError(
+        "tools/deploy/build-sidecar-artifact.mjs: production cargoFeatures must exactly match the approved feature list"
+      );
+    }
+  }
   for (const requiredFragment of [
     "const bundleName = `${binaryName}.tar.gz`",
-    'const cargoFeatures = ["huabaosi-production-adapter"]',
     'gitOutput(["status", "--porcelain"], "unknown")',
     "refusing to build a release artifact from a dirty or unreadable git worktree",
     'run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName])',
@@ -413,7 +446,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   ]) {
     if (buildArtifactScript.includes(forbiddenFragment)) {
       addError(
-        `tools/deploy/build-sidecar-artifact.mjs: production sidecar artifacts must use only the reviewed production feature (${forbiddenFragment})`
+        `tools/deploy/build-sidecar-artifact.mjs: production sidecar artifacts must use only the reviewed production features (${forbiddenFragment})`
       );
     }
   }
@@ -443,6 +476,9 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
     "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
+    "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
+    "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",

@@ -538,6 +538,9 @@ async fn main() -> Result<()> {
         Command::HuabaosiFeishuArtifactMirrorPreflight => {
             huabaosi_feishu_artifact_mirror::run_preflight()
         }
+        Command::HuabaosiFeishuArtifactMirrorObservationPreflight => {
+            huabaosi_feishu_artifact_mirror::run_observation_preflight()
+        }
         Command::RunHuabaosiFeishuArtifactMirrorWorker {
             once,
             artifact_id,

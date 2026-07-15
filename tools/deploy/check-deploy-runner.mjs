@@ -926,6 +926,16 @@ try {
   execFileSync("node", ["tools/deploy/test-huabaosi-image-production-activation.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync(
+    "node",
+    ["tools/deploy/test-huabaosi-feishu-mirror-production-observation.mjs"],
+    { cwd: repoRoot }
+  );
+  execFileSync(
+    "node",
+    ["tools/deploy/test-huabaosi-feishu-mirror-production-activation.mjs"],
+    { cwd: repoRoot }
+  );
   execFileSync("node", ["tools/deploy/test-huabaosi-wecom-observation.mjs"], {
     cwd: repoRoot,
   });
@@ -971,6 +981,9 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
+    "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
     "deploy/sidecar/scripts/install-coscli.sh",

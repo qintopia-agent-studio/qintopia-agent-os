@@ -58,6 +58,9 @@ From the monorepo root, prefer:
   loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
   environment failure and must be confirmed by an unsandboxed rerun, not hidden by
   skipping tests.
+- Test helpers used only by a non-default adapter feature must carry the same feature
+  gate on their imports, types, and implementations; default-feature Clippy compiles
+  test targets and rejects otherwise-unused helpers.
 - Huabaosi live provider/media execution must compile with exactly one non-default live
   feature: `huabaosi-staging-adapter` or `huabaosi-production-adapter`. A build with
   neither or both must reject apply before Postgres. Staging keeps the exact owner
@@ -65,6 +68,24 @@ From the monorepo root, prefer:
   approval phrase, deployed release SHA binding, database URL hash binding, and adapter
   policy before Postgres or external I/O; shell scripts cannot be the only enforcement
   point.
+- Production sidecar artifacts also compile `huabaosi-feishu-mirror-adapter`. Mirror
+  apply must fail before Postgres or external I/O unless the exact owner approval,
+  deployed release SHA binding, production database hash, Base/table allowlists, fixed
+  schema, profile path, and media host policy all validate. Feishu remains a mirror; the
+  command cannot approve, publish, call QiWe, or change image-generation state.
+- Production mirror observation must discover
+  `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
+  only when it resolves to that same immutable binary with the approved production
+  features; source-tree `cargo run` fallback is forbidden. Its shell may parse only the
+  mirror enable flag; a direct child launcher may pass only that parsed flag and the
+  non-secret release SHA to the immutable binary without sourcing shell, importing
+  secrets into the shell, or writing a secret-bearing temporary file. It may run only
+  the non-secret mirror observation preflight, not full configuration preflight or
+  worker dry-run. Non-allowlisted env values must be ignored before mirror-flag value
+  validation. Activation must fail before preflight or timer mutation until persistent
+  mirror enablement is present exactly once and exactly `1`; timer rollback must stop
+  external work immediately and fail closed until it is present exactly once and exactly
+  `0` in the reviewed environment file.
 - The disposable operations smoke may enter the live retry path only with both the
   Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
   literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media
