@@ -506,6 +506,7 @@ if (!exists(qiweImageStagingEvidenceCheckPath)) {
     "complete evidence requires preflight, upload, and callback records",
     "upload and callback work_item_id values differ",
     "forbidden sensitive fragment appeared in evidence",
+    "unexpected non-evidence line",
     "callback_credential_schema",
     "sidecar_binary_sha256",
     "external_send_executed",

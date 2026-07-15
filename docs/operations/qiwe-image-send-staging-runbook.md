@@ -112,7 +112,8 @@ node tools/deploy/check-qiwe-image-staging-evidence.mjs --preflight-only <prefli
 The checker requires a ready preflight record plus matching upload/callback work item
 evidence for complete mode. It fails closed if raw callback keys, database URLs, QiWe
 tokens, group ids, media URIs, unexpected fields, duplicate upload/callback records, or
-an incomplete send outcome appear.
+an incomplete send outcome appear. It also rejects any non-empty line that is not a
+fixed smoke pass message or a `qiwe_image_send_staging_evidence=<json>` record.
 
 ## Evidence To Keep
 

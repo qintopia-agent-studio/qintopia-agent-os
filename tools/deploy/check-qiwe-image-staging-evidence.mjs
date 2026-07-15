@@ -22,6 +22,12 @@ if (!filePath) {
 
 const text = fs.readFileSync(path.resolve(filePath), "utf8");
 
+const allowedStatusLines = new Set([
+  "QiWe image-send staging preflight passed: configuration is ready; no work item was claimed and no external upload or send was executed",
+  "QiWe image-send staging upload passed: awaiting one bounded owner-approved callback; no image send was executed",
+  "QiWe image-send staging callback passed: one reviewed image send completed for the isolated allowlisted group",
+]);
+
 const forbiddenPatterns = [
   /"requestId"\s*:/,
   /"request_id"\s*:/,
@@ -48,6 +54,15 @@ for (const pattern of forbiddenPatterns) {
   if (pattern.test(text)) {
     fail(`forbidden sensitive fragment appeared in evidence: ${pattern}`);
   }
+}
+
+const lines = text.split(/\r?\n/);
+for (let index = 0; index < lines.length; index += 1) {
+  const line = lines[index];
+  if (line.trim() === "" || line.startsWith(prefix) || allowedStatusLines.has(line)) {
+    continue;
+  }
+  fail(`unexpected non-evidence line ${index + 1}`);
 }
 
 const parseEvidence = (line, index) => {

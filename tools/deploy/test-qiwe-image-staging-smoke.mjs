@@ -310,7 +310,7 @@ esac
   const rawEvidenceFile = path.join(tmpRoot, "raw-evidence.txt");
   fs.writeFileSync(
     rawEvidenceFile,
-    `${completeEvidenceCheck.stdout}\n{"requestId":"private-request-id-must-not-appear"}\n`,
+    `${upload.stdout}\n${callback.stdout}\n{"requestId":"private-request-id-must-not-appear"}\n`,
     "utf8"
   );
   const rawEvidenceCheck = spawnSync("node", [evidenceChecker, rawEvidenceFile], {
@@ -319,6 +319,23 @@ esac
   });
   if (rawEvidenceCheck.status === 0) {
     throw new Error("expected evidence check to reject raw callback fields");
+  }
+  const unexpectedLineEvidenceFile = path.join(tmpRoot, "unexpected-line-evidence.txt");
+  fs.writeFileSync(
+    unexpectedLineEvidenceFile,
+    `${upload.stdout}\n${callback.stdout}\nhttps://media.example.test/private-poster-name-must-not-appear.jpg\n`,
+    "utf8"
+  );
+  const unexpectedLineEvidenceCheck = spawnSync(
+    "node",
+    [evidenceChecker, unexpectedLineEvidenceFile],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }
+  );
+  if (unexpectedLineEvidenceCheck.status === 0) {
+    throw new Error("expected evidence check to reject non-evidence lines");
   }
 
   const invalidPhase = runSmoke("send");
