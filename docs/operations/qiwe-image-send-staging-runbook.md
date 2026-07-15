@@ -46,7 +46,9 @@ does not prove a send-ready work item exists, contact QiWe, or send an image.
 
 ## Upload Phase
 
-Run this from the repository root on the reviewed staging host:
+Run this from the reviewed staging release root. The phase must use either the packaged
+`sidecar/qintopia-message-sidecar` binary or an executable absolute
+`QINTOPIA_SIDECAR_BIN`; it will not fall back to `cargo run` for upload:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
@@ -66,7 +68,9 @@ evidence JSON objects instead of raw subprocess output.
 ## Callback Phase
 
 Stream the trusted callback directly to the smoke. The callback must not pass through a
-file, environment variable, CLI argument, NATS event, report, log, or shell history.
+file, environment variable, CLI argument, NATS event, report, log, or shell history. As
+with upload, this phase must run the reviewed staging binary and will not fall back to
+`cargo run`.
 
 ```bash
 trusted-staging-callback-source | \

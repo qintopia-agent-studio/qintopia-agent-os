@@ -356,6 +356,20 @@ esac
     throw new Error("staging env parser failure exposed a secret");
   }
 
+  const missingBinary = runSmoke("upload", {
+    QINTOPIA_SIDECAR_BIN: "",
+  });
+  if (missingBinary.status === 0) {
+    throw new Error("expected upload without an immutable sidecar binary to fail");
+  }
+  if (
+    `${missingBinary.stdout}\n${missingBinary.stderr}`.includes(
+      "fake-qiwe-token-must-not-appear"
+    )
+  ) {
+    throw new Error("missing binary failure exposed a secret");
+  }
+
   const log = fs.readFileSync(sidecarLog, "utf8");
   for (const command of [
     "qiwe-image-send-staging-preflight",
