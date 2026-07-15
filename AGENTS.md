@@ -55,6 +55,16 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 - Xiaoman activity image generation starter observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
+- Huabaosi image generation staging readiness smoke:
+
+  ```bash
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE=1 \
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA=<approved-staging-release-sha> \
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256=<approved-staging-sidecar-sha256> \
+  deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh
+  ```
+
 - Huabaosi image generation production state observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
 - Huabaosi generated-image Feishu mirror production observation smoke:
@@ -537,6 +547,13 @@ Use `rg` and `rg --files` for search.
   or publish. Its `missing_configuration` field may contain only fixed public env names
   already documented in `.env.example`; it must never contain values, URLs, hosts, ids,
   or enable flags.
+- `huabaosi-image-generation-staging-readiness-smoke.sh` may only inspect staging env
+  file metadata, immutable staging release root metadata, the exact owner-reviewed
+  release SHA, and packaged sidecar binary SHA-256. It must not read env file contents,
+  execute the sidecar, run Cargo, connect to Postgres, call Huabaosi/provider/media,
+  write Feishu, send QiWe, inspect services, install timers, or reveal paths containing
+  secrets. It is a read-only prerequisite before the owner-approved Huabaosi staging
+  generation smoke.
 - `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
   image request after the fail-closed preflight, explicit smoke flag and approval
   phrase, staging-only env file, a repository-reviewed database URL hash allowlist, and

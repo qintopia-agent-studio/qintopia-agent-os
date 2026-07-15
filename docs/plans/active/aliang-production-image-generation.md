@@ -308,6 +308,11 @@ data but are not eligible for the future QiWe JPG send contract.
   `tools/deploy/check-huabaosi-image-staging-evidence.mjs` 校验；记录只可保留 staging
   database URL hash、work item UUID、最终 JPEG SHA-256、尺寸、字节数、MIME 和 pending
   review 状态，不得包含媒体 URI、文件名、provider 响应、token 或数据库 URL。
+- `deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh`
+  是真实 staging 生成前的只读 gate。它只检查固定 staging env 文件、staging release
+  root、owner-reviewed release SHA 和 packaged sidecar
+  SHA-256；不读取 env 内容、不运行 sidecar/Cargo、不连接 Postgres、不调用 provider/media、飞书或企微。ready 只说明固定 staging
+  release binary 可用于后续 preflight/smoke，不证明 provider endpoint 可达。
 - `deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
   只读验证生产开关和 provider timer 状态一致，并运行配置预检和
   `run-huabaosi-image-generation-worker --once --dry-run` 队列预览。它不 claim work
@@ -329,11 +334,17 @@ data but are not eligible for the future QiWe JPG send contract.
 huabaosi-image-generation-preflight
 ```
 
-预检完成后，仍必须先记录 Required Owner
-Decisions，再在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
-smoke；该 smoke 不得发送、发布或写飞书。
+预检完成后，仍必须先记录 Required Owner Decisions，再运行只读 staging
+readiness；ready 后才可在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
+smoke。该 smoke 不得发送、发布或写飞书。
 
 ```bash
+QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE=1 \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
+deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh
+
 QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE=1 \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \

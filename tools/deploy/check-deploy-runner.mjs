@@ -923,6 +923,9 @@ try {
     ["tools/deploy/test-huabaosi-image-production-observation.mjs"],
     { cwd: repoRoot }
   );
+  execFileSync("node", ["tools/deploy/test-huabaosi-image-staging-readiness.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync("node", ["tools/deploy/test-huabaosi-image-production-activation.mjs"], {
     cwd: repoRoot,
   });
@@ -979,6 +982,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "tools/deploy/resolve-release-restart-targets.mjs",
     "tools/deploy/resolve-restart-targets.mjs",
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",

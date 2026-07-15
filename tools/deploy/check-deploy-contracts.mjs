@@ -296,6 +296,53 @@ for (const observationPath of [
 
 const aliangStagingSmokePath =
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh";
+const aliangStagingReadinessPath =
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh";
+if (!exists(aliangStagingReadinessPath)) {
+  addError(`${aliangStagingReadinessPath}: missing Huabaosi staging readiness smoke`);
+} else {
+  const readiness = readText(aliangStagingReadinessPath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL",
+    "approved-staging-image-generation",
+    "/etc/qintopia/message-sidecar-staging.env",
+    "/home/ubuntu/qintopia-agent-os-staging-releases",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA",
+    "QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256",
+    "huabaosi_image_generation_staging_readiness=",
+    "ready_for_staging_preflight",
+    "staging env file contents are not read",
+    "sidecar binary is not executed",
+    "no Huabaosi, Postgres, Feishu, QiWe, provider, media, service, or timer action",
+    "path_is_secure",
+    "reject_owner_writable",
+    "path_owner_group_or_world_writable",
+    "path_group_or_world_writable",
+    "path_is_symlink",
+    "path_unexpected_owner",
+    "sidecar_hash_mismatch",
+  ]) {
+    requireFragment(aliangStagingReadinessPath, readiness, fragment);
+  }
+  for (const fragment of [
+    "systemctl",
+    "source ",
+    'source "$',
+    ". /etc/qintopia",
+    "env -i",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+    "run-huabaosi-image-generation-worker",
+    "huabaosi-image-generation-preflight",
+    "subprocess",
+    "curl ",
+    "psql ",
+  ]) {
+    forbidFragment(aliangStagingReadinessPath, readiness, fragment);
+  }
+}
+
 if (!exists(aliangStagingSmokePath)) {
   addError(`${aliangStagingSmokePath}: missing Huabaosi staging smoke`);
 } else {
@@ -377,6 +424,26 @@ if (!exists(aliangStagingEvidenceCheckPath)) {
 }
 
 const aliangStagingSmokeTestPath = "tools/deploy/test-huabaosi-image-staging-smoke.mjs";
+const aliangStagingReadinessTestPath =
+  "tools/deploy/test-huabaosi-image-staging-readiness.mjs";
+if (!exists(aliangStagingReadinessTestPath)) {
+  addError(
+    `${aliangStagingReadinessTestPath}: missing Huabaosi staging readiness test`
+  );
+} else {
+  const test = readText(aliangStagingReadinessTestPath);
+  for (const fragment of [
+    "huabaosi-image-generation-staging-readiness-smoke.sh",
+    "huabaosi_image_generation_staging_readiness=",
+    "Huabaosi image staging readiness smoke test passed.",
+    "readiness smoke exposed staging env contents",
+    "expected owner-writable sidecar to fail readiness",
+    "expected sidecar hash mismatch to fail",
+  ]) {
+    requireFragment(aliangStagingReadinessTestPath, test, fragment);
+  }
+}
+
 if (!exists(aliangStagingSmokeTestPath)) {
   addError(`${aliangStagingSmokeTestPath}: missing Huabaosi staging smoke test`);
 } else {
