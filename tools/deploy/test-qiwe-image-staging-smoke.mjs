@@ -13,6 +13,10 @@ const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh"
 );
+const evidenceChecker = path.join(
+  repoRoot,
+  "tools/deploy/check-qiwe-image-staging-evidence.mjs"
+);
 const workItemId = "7cd7d739-cd77-4b38-97f7-dcd57eb9475a";
 const databaseUrl =
   "postgres://staging-user:private-password@127.0.0.1:5432/qintopia_staging";
@@ -141,6 +145,18 @@ esac
   ) {
     throw new Error("preflight phase invoked a command beyond staging preflight");
   }
+  const preflightEvidenceFile = path.join(tmpRoot, "preflight-evidence.txt");
+  fs.writeFileSync(preflightEvidenceFile, preflight.stdout, "utf8");
+  const preflightEvidenceCheck = spawnSync(
+    "node",
+    [evidenceChecker, "--preflight-only", preflightEvidenceFile],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  if (preflightEvidenceCheck.status !== 0) {
+    throw new Error(
+      `expected preflight evidence check to pass\nstdout:\n${preflightEvidenceCheck.stdout}\nstderr:\n${preflightEvidenceCheck.stderr}`
+    );
+  }
 
   const upload = runSmoke("upload");
   if (upload.status !== 0 || !upload.stdout.includes("awaiting one bounded")) {
@@ -210,6 +226,35 @@ esac
     if (`${callback.stdout}\n${callback.stderr}`.includes(sensitive)) {
       throw new Error("callback smoke output exposed a sensitive value");
     }
+  }
+  const completeEvidenceFile = path.join(tmpRoot, "complete-evidence.txt");
+  fs.writeFileSync(
+    completeEvidenceFile,
+    `${upload.stdout}\n${callback.stdout}`,
+    "utf8"
+  );
+  const completeEvidenceCheck = spawnSync(
+    "node",
+    [evidenceChecker, completeEvidenceFile],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  if (completeEvidenceCheck.status !== 0) {
+    throw new Error(
+      `expected complete evidence check to pass\nstdout:\n${completeEvidenceCheck.stdout}\nstderr:\n${completeEvidenceCheck.stderr}`
+    );
+  }
+  const rawEvidenceFile = path.join(tmpRoot, "raw-evidence.txt");
+  fs.writeFileSync(
+    rawEvidenceFile,
+    `${completeEvidenceCheck.stdout}\n{"requestId":"private-request-id-must-not-appear"}\n`,
+    "utf8"
+  );
+  const rawEvidenceCheck = spawnSync("node", [evidenceChecker, rawEvidenceFile], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (rawEvidenceCheck.status === 0) {
+    throw new Error("expected evidence check to reject raw callback fields");
   }
 
   const invalidPhase = runSmoke("send");

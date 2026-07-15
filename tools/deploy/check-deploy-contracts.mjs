@@ -460,6 +460,8 @@ if (!exists(qiweImageStagingRunbookPath)) {
     "trusted-staging-callback-source |",
     "callback credential schema id",
     "qiwe_image_send_staging_evidence=<json>",
+    "node tools/deploy/check-qiwe-image-staging-evidence.mjs <staging-evidence-output.txt>",
+    "node tools/deploy/check-qiwe-image-staging-evidence.mjs --preflight-only <preflight-evidence-output.txt>",
     "external_send_executed",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
     "Do not add production listener, service, timer, or release activation",
@@ -477,6 +479,31 @@ if (!exists(qiweImageStagingRunbookPath)) {
     "gh release",
   ]) {
     forbidFragment(qiweImageStagingRunbookPath, runbook, fragment);
+  }
+}
+
+const qiweImageStagingEvidenceCheckPath =
+  "tools/deploy/check-qiwe-image-staging-evidence.mjs";
+if (!exists(qiweImageStagingEvidenceCheckPath)) {
+  addError(
+    `${qiweImageStagingEvidenceCheckPath}: missing QiWe staging evidence checker`
+  );
+} else {
+  const checker = readText(qiweImageStagingEvidenceCheckPath);
+  for (const fragment of [
+    "qiwe_image_send_staging_evidence=",
+    "--preflight-only",
+    "complete evidence requires preflight, upload, and callback records",
+    "upload and callback work_item_id values differ",
+    "forbidden sensitive fragment appeared in evidence",
+    "callback_credential_schema",
+    "external_send_executed",
+    "image_send_completed",
+  ]) {
+    requireFragment(qiweImageStagingEvidenceCheckPath, checker, fragment);
+  }
+  for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
+    forbidFragment(qiweImageStagingEvidenceCheckPath, checker, fragment);
   }
 }
 

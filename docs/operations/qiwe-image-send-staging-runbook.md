@@ -85,6 +85,26 @@ allowlisted group. Keep the printed `qiwe_image_send_staging_evidence=<json>` ob
 only after confirming no raw callback, request id, credentials, group id, media URI, or
 database URL appears in operator notes.
 
+## Evidence Check
+
+After the real staging run, put only the retained smoke stdout or copied evidence lines
+into an operator-local file and validate it before attaching it to a PR or review note:
+
+```bash
+node tools/deploy/check-qiwe-image-staging-evidence.mjs <staging-evidence-output.txt>
+```
+
+For a preflight-only rehearsal, use:
+
+```bash
+node tools/deploy/check-qiwe-image-staging-evidence.mjs --preflight-only <preflight-evidence-output.txt>
+```
+
+The checker requires a ready preflight record plus matching upload/callback work item
+evidence for complete mode. It fails closed if raw callback keys, database URLs, QiWe
+tokens, group ids, media URIs, unexpected fields, duplicate upload/callback records, or
+an incomplete send outcome appear.
+
 ## Evidence To Keep
 
 Record only these fields:
