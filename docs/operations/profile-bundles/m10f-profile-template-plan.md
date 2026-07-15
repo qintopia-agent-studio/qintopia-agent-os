@@ -1,6 +1,6 @@
 # M10-F Profile Template And Symlink Plan
 
-Updated: 2026-07-05
+Updated: 2026-07-15
 
 M10-F defines how Hermes profile files should move toward the release/current model. It
 does not repoint `SOUL.md`, `config.yaml`, or whole profile directories yet.
@@ -43,6 +43,12 @@ bundle with:
 
 The current `agents/*/profile.template.yaml` files remain package contracts and planning
 inputs. They are not live profile files.
+
+Xiaoman now has the first observation-only implementation under
+`agents/xiaoman/profile-bundle`. It packages a strict renderer, fake fixtures, and a
+read-only parity smoke without creating a live symlink. This does not change the M10-F
+rule: activation requires a later owner-reviewed cutover with production parity and
+rollback evidence.
 
 ## Target Shape
 
@@ -100,7 +106,7 @@ This symlink shape is a future target, not current M10-F execution.
 | Profile   | Current M10-F disposition | Notes                                                                  |
 | --------- | ------------------------- | ---------------------------------------------------------------------- |
 | Erhua     | template only             | External sends and trainer memory make direct config repoint high risk |
-| Xiaoman   | template only             | Activity workflow config depends on runtime `.env` and local state     |
+| Xiaoman   | observation bundle        | Release parity smoke pending; sensitive config and state remain local  |
 | Wenyuange | template only             | Evidence/message-store access must preserve disclosure boundaries      |
 | Huabaosi  | review-pool template      | Visual adapter/Rust/shadow material remains unapproved direction       |
 | Silaoshi  | template only             | Temporary scripts remain separate workflow/script candidates           |

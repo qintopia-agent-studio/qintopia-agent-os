@@ -1,6 +1,6 @@
 # Xiaoman Runtime Notes
 
-Observed read-only on 2026-07-03:
+Observed read-only on 2026-07-15:
 
 - Runtime path: `/home/ubuntu/.hermes/profiles/xiaoman`
 - User service: `hermes-gateway-xiaoman.service`
@@ -10,3 +10,7 @@ Observed read-only on 2026-07-03:
 
 Xiaoman should create Agent OS work items through governed workflow APIs. Profile-local
 webhook subscriptions are runtime configuration, not the long-term workflow source.
+
+`profile-bundle/` is observation-only. Its strict renderer uses four server-local
+identity inputs and writes only to a new directory. Do not link its output into the live
+profile until a later PR records production parity and first-cutover rollback evidence.

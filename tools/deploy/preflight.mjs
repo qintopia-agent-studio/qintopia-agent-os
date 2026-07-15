@@ -60,6 +60,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
@@ -69,7 +70,12 @@ const requiredDocs = [
   "tools/skills/check-postgres-context.mjs",
   "tools/skills/check-feishu-base.mjs",
   "tools/agents/check-profile-bundles.mjs",
+  "agents/xiaoman/profile-bundle/bundle.json",
+  "agents/xiaoman/profile-bundle/render.py",
+  "agents/xiaoman/profile-bundle/templates/SOUL.md.template",
+  "agents/xiaoman/profile-bundle/templates/profile.yaml.template",
   "docs/operations/profile-bundles/m10f-profile-template-plan.md",
+  "docs/plans/active/xiaoman-profile-bundle-migration.md",
 ];
 
 const requiredCheckFragments = ["pnpm check:light", "pnpm check:runtime"];
@@ -170,6 +176,7 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "deploy/sidecar/scripts/github-app-git.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",

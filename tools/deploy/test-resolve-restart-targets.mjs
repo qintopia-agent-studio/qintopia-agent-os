@@ -52,6 +52,17 @@ assertSuccess("docs-only", ["docs/operations/production-deploy-runner.md"], []);
 assertSuccess("nested-readme", ["deploy/runner/README.md"], []);
 assertSuccess("ci-metadata", [".github/workflows/ci.yml", "package.json"], []);
 assertSuccess(
+  "xiaoman-observation-profile-bundle",
+  [
+    "agents/xiaoman/agent.yaml",
+    "agents/xiaoman/profile.template.yaml",
+    "agents/xiaoman/profile-bundle/bundle.json",
+    "agents/xiaoman/profile-bundle/templates/SOUL.md.template",
+    "runtime/hermes/manifest.yaml",
+  ],
+  []
+);
+assertSuccess(
   "erhua-only",
   ["skills/qintopia-tools/variants/erhua/__init__.py"],
   ["hermes-erhua"]

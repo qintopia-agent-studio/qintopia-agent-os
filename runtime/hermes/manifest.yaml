@@ -2,7 +2,7 @@ id: runtime/hermes
 type: runtime
 name: Hermes Profile Bundle Runtime
 owner: PatrickLiveCool
-status: draft
+status: adopting
 risk_level: high
 description:
   Template and validation boundary for reviewed Hermes profile bundle inputs without
@@ -34,7 +34,9 @@ tags:
   - profile-bundle
   - runtime-template
 next_actions:
-  - Add dry-run renderer for one low-risk profile before any production profile repoint.
+  - Record production parity for the observation-only Xiaoman renderer before any live
+    profile repoint.
+  - Add first-cutover backup and rollback behavior in a separate reviewed PR.
   - Keep `.env`, sessions, logs, cache, auth, and state databases out of git and release
     bundles.
   - Promote profile bundles only through reviewed release/current runbooks.

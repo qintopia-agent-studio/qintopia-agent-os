@@ -35,6 +35,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "mcp/qintopia-collab/bin/qintopia-collab-mcp",
   "deploy/sidecar/docs/m9f-legacy-reference-removal.md",
   "deploy/sidecar/docs/systemd-cutover-plan.md",
@@ -86,6 +87,7 @@ const sourceFiles = [
   "skills/feishu-base/plugin.yaml",
 ];
 const sourceDirs = [
+  "agents/xiaoman/profile-bundle",
   "runtime/postgres/migrations",
   "skills/qintopia-tools/variants",
   "skills/qintopia-weather/tests",
@@ -98,6 +100,7 @@ const sourceDirs = [
   "skills/feishu-base/tests",
 ];
 const sourceDirExcludes = [
+  /^agents\/xiaoman\/profile-bundle\/tests(\/|$)/,
   /(^|\/)__pycache__(\/|$)/,
   /\.pyc$/,
   /(^|\/)\.DS_Store$/,
