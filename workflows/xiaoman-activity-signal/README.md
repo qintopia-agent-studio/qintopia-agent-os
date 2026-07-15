@@ -36,6 +36,25 @@ approved poster_brief
   -> awaiting-publish group message request
 ```
 
+## Activity Lifecycle Phases
+
+Activity signals use one Postgres-owned phase and one derived internal route:
+
+| Phase        | Meaning | Route                   | Child capabilities |
+| ------------ | ------- | ----------------------- | ------------------ |
+| `pre_event`  | 事前    | `promotion_preparation` | evidence + visual  |
+| `in_event`   | 事中    | `live_support`          | evidence only      |
+| `post_event` | 事后    | `activity_recap`        | evidence + visual  |
+
+The phase moves forward only. Existing rows without a phase remain compatible as
+`pre_event`. The route is derived by the Rust sidecar; callers cannot provide an
+arbitrary capability or route string.
+
+Each phase has a separate idempotent root work item. The existing promotion starter
+timer performs the allowlisted internal child routing without becoming a general DAG
+executor. In-event work stops at internal evidence. Post-event work stops at a
+reviewable recap brief in this PR; neither route generates or sends an external message.
+
 Only the final-confirmation transition is human-operated; all other arrows above are
 AgentOS work-item or internal-artifact operations. The send-ready audit deliberately
 keeps the request queued and records `send_executed=false` because no production send
@@ -64,7 +83,8 @@ Required payload fields:
 Optional fields:
 
 - `chat_id`, `source_message_ids`, `owner_name`, `priority`, `location`,
-  `brief_summary`, `gap_summary`, and `related_member_names`.
+  `brief_summary`, `gap_summary`, `related_member_names`, and `activity_phase`. A
+  missing phase is interpreted as `pre_event`; an invalid phase fails validation.
 
 The worker builds a stable idempotency key from `event_signal_id` and writes through the
 existing operations control plane. Replays of the same signal must return the existing
@@ -86,8 +106,8 @@ returns the existing work item by idempotency key.
 
 ## Event Signal Mutations
 
-`xiaoman-activity status-update` and `xiaoman-activity gap-update` mutate only
-Xiaoman-owned `qintopia_agent_os.event_signals`. Both require an internal UUID
+`xiaoman-activity status-update`, `gap-update`, and `phase-update` mutate only
+Xiaoman-owned `qintopia_agent_os.event_signals`. All require an internal UUID
 `event_signal_id` and a caller-supplied UUID `mutation_id`. They reject Feishu
 `record_id` and `table_role` fields.
 
@@ -98,6 +118,8 @@ tool schema cannot drift back to the legacy Feishu-record write shape.
 `status-update` accepts `待处理`, `处理中`, `已完成`, or `已关闭`. Completed and closed
 signals are terminal for this command. `gap-update` writes a normalized, non-sensitive
 `gap_summary` of at most 500 characters without replacing the extracted signal summary.
+`phase-update` accepts only the three lifecycle phases, rejects non-activity signals,
+and permits only same-phase replay or a forward transition.
 
 Apply runs lock the event, validate replay or transition state, update one allowlisted
 field, and append one `event_signal_mutations` audit row in the same transaction. An

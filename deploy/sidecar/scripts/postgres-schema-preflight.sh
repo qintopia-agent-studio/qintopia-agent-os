@@ -200,6 +200,7 @@ required_tables=(
 
 required_columns=(
   "qintopia_agent_os.event_signals|gap_summary"
+  "qintopia_agent_os.event_signals|activity_phase"
 )
 
 required_functions=(
@@ -218,6 +219,7 @@ required_versions=(
   "2026-07-02.001|202607020001_operations_human_actor_guards.sql"
   "2026-07-13.002|202607130002_huabaosi_image_generation.sql"
   "2026-07-14.001|202607140001_xiaoman_event_signal_mutations.sql"
+  "2026-07-15.001|202607150001_xiaoman_activity_phases.sql"
 )
 
 required_capabilities=(

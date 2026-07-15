@@ -23,6 +23,20 @@ Huabaosi visual asset work, human review, optional image-generation request inta
 Erhua group-message readiness. It is a control-plane workflow, not an autonomous publish
 path.
 
+## Phase Routing
+
+The workflow accepts Xiaoman roots from the three-phase lifecycle contract. The
+runtime-compatible promotion starter derives the child set from the root phase:
+
+- `pre_event`: evidence plus a promotion visual;
+- `in_event`: evidence only;
+- `post_event`: evidence plus a recap visual.
+
+The route is a fixed allowlist, not a caller-selected capability graph. Existing roots
+without phase metadata remain `pre_event`. Image generation and send-request starters
+continue to consume only the existing `pre_event` promotion path; post-event recap
+briefs require a later reviewed publication decision.
+
 `operations-work-item-status` resolves any nested work item back to the top-level
 activity request and returns every descendant with its direct `parent_work_item_id`.
 This keeps the image-generation request, which is nested under the visual request,
@@ -82,11 +96,11 @@ external publication remain outside the current approved boundary. Any change th
 enables real external sends needs owner review, allowlist evidence, smoke output, and
 rollback notes.
 
-The image request starter and preview worker are merged on `master`, but they are not in
-the observed production `v0.2.6` release. Source-grounded Postgres evidence retrieval is
-also newer than that observed release. The reviewed deployment path installs internal
-timers for evidence artifacts and `image_generation_request` intake. The separate image
-provider worker remains disabled and has no systemd timer.
+The existing pre-event control-plane path is deployed through the observed production
+`v0.2.10` release, including the reviewed internal worker timers. The three-phase
+routing in this PR is not part of that release and requires a later manually published
+Release before production observation. The separate image-provider timer installed by
+`v0.2.10` remains disabled and inactive pending production configuration and preflight.
 
 The final QiWe image-send contract is documented in
 `../../docs/plans/active/xiaoman-qiwe-image-send.md`. It uses the official async URL

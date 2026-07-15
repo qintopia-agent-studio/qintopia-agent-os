@@ -1095,6 +1095,212 @@ assert_sql_equals \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.work_item_events WHERE work_item_id = '${xiaoman_worker_parent_id}'::uuid AND event_type = 'mirror_dry_run_recorded';"
 
+xiaoman_in_event_mutation_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_in_event_mutation_payload="$(
+  python3 - "$xiaoman_worker_signal_id" "$xiaoman_in_event_mutation_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "phase-update",
+    "event_signal_id": sys.argv[1],
+    "mutation_id": sys.argv[2],
+    "activity_phase": "in_event",
+}, ensure_ascii=False))
+PY
+)"
+
+xiaoman_in_event_mutation="$(run_json xiaoman_in_event_mutation xiaoman-activity phase-update --apply --payload-json "$xiaoman_in_event_mutation_payload")"
+assert_json "$xiaoman_in_event_mutation" "data['success'] is True"
+assert_json "$xiaoman_in_event_mutation" "data['action_status'] == 'event_signal_phase_updated'"
+assert_json "$xiaoman_in_event_mutation" "data['activity_phase'] == 'in_event'"
+assert_json "$xiaoman_in_event_mutation" "data['activity_route'] == 'live_support'"
+assert_json "$xiaoman_in_event_mutation" "data['mutation_applied'] is True"
+
+assert_sql_equals \
+  xiaoman_in_event_phase_updated \
+  in_event \
+  "SELECT activity_phase FROM qintopia_agent_os.event_signals WHERE id = '${xiaoman_worker_signal_id}'::uuid;"
+
+assert_sql_equals \
+  xiaoman_in_event_phase_audited_once \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE event_signal_id = '${xiaoman_worker_signal_id}'::uuid AND mutation_id = '${xiaoman_in_event_mutation_id}'::uuid AND operation = 'phase-update' AND previous_value->>'activity_phase' = 'pre_event' AND new_value->>'activity_phase' = 'in_event' AND metadata->>'feishu_write_executed' = 'false' AND metadata->>'external_send_executed' = 'false';"
+
+xiaoman_in_event_mutation_again="$(run_json xiaoman_in_event_mutation_again xiaoman-activity phase-update --apply --payload-json "$xiaoman_in_event_mutation_payload")"
+assert_json "$xiaoman_in_event_mutation_again" "data['success'] is True"
+assert_json "$xiaoman_in_event_mutation_again" "data['action_status'] == 'event_signal_mutation_idempotent_existing'"
+assert_json "$xiaoman_in_event_mutation_again" "data['mutation_applied'] is False"
+
+xiaoman_in_event_worker="$(run_json xiaoman_in_event_worker run-xiaoman-activity-signal-worker --once --apply --batch-size 1)"
+assert_json "$xiaoman_in_event_worker" "data['success'] is True"
+assert_json "$xiaoman_in_event_worker" "data['action_status'] == 'signal_ingest_submitted'"
+assert_json "$xiaoman_in_event_worker" "data['submitted_count'] == 1"
+assert_json "$xiaoman_in_event_worker" "data['work_items'][0]['work_item_type'] == 'activity_live_support_request'"
+assert_json "$xiaoman_in_event_worker" "data['work_items'][0]['idempotency_key'] == 'xiaoman_activity_signal:${xiaoman_worker_signal_id}:in_event'"
+assert_json "$xiaoman_in_event_worker" "data['work_items'][0]['existing'] is False"
+
+xiaoman_in_event_direct_payload="$(
+  python3 - "$xiaoman_worker_signal_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "signal-ingest",
+    "event_signal_id": sys.argv[1],
+    "signal_type": "活动/聚会",
+    "activity_title": "AgentOS worker apply smoke 小满活动",
+    "signal_date": "2001-01-01",
+    "owner_name": "operations-apply-smoke-owner",
+    "brief_summary": "AgentOS apply smoke validates phase-bound direct signal intake",
+}, ensure_ascii=False))
+PY
+)"
+xiaoman_in_event_direct="$(run_json xiaoman_in_event_direct xiaoman-activity signal-ingest --apply --payload-json "$xiaoman_in_event_direct_payload")"
+assert_json "$xiaoman_in_event_direct" "data['success'] is True"
+assert_json "$xiaoman_in_event_direct" "data['activity_phase'] == 'in_event'"
+assert_json "$xiaoman_in_event_direct" "data['activity_route'] == 'live_support'"
+assert_json "$xiaoman_in_event_direct" "data['operations_work_item']['existing'] is True"
+
+xiaoman_stale_phase_payload="$(
+  DIRECT_PAYLOAD="$xiaoman_in_event_direct_payload" python3 - <<'PY'
+import json
+import os
+
+payload = json.loads(os.environ["DIRECT_PAYLOAD"])
+payload["activity_phase"] = "pre_event"
+print(json.dumps(payload, ensure_ascii=False))
+PY
+)"
+run_expect_failure \
+  xiaoman_stale_phase_signal_ingest \
+  "activity_phase does not match the current event signal phase" \
+  xiaoman-activity signal-ingest --apply --payload-json "$xiaoman_stale_phase_payload"
+
+xiaoman_in_event_parent_id="$(
+  psql_value "SELECT id FROM qintopia_agent_os.work_items WHERE idempotency_key = 'xiaoman_activity_signal:${xiaoman_worker_signal_id}:in_event';"
+)"
+
+assert_sql_equals \
+  xiaoman_in_event_root_matches_phase_route \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_in_event_parent_id}'::uuid AND work_item_type = 'activity_live_support_request' AND payload->>'activity_phase' = 'in_event' AND payload->>'activity_route' = 'live_support';"
+
+xiaoman_in_event_children="$(run_json xiaoman_in_event_children run-xiaoman-activity-promotion-starter-worker --once --apply --work-item-id "$xiaoman_in_event_parent_id")"
+assert_json "$xiaoman_in_event_children" "data['success'] is True"
+assert_json "$xiaoman_in_event_children" "data['action_status'] == 'activity_promotion_children_created'"
+assert_json "$xiaoman_in_event_children" "data['created_count'] == 1"
+assert_json "$xiaoman_in_event_children" "data['missing_child_count'] == 1"
+assert_json "$xiaoman_in_event_children" "len(data['work_items']) == 1"
+assert_json "$xiaoman_in_event_children" "data['work_items'][0]['capability_key'] == 'wenyuange.retrieve_evidence'"
+assert_json "$xiaoman_in_event_children" "data['work_items'][0]['work_item_type'] == 'evidence_request'"
+
+assert_sql_equals \
+  xiaoman_in_event_created_evidence_only \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_in_event_parent_id}'::uuid AND capability_key = 'wenyuange.retrieve_evidence' AND payload->>'activity_phase' = 'in_event' AND payload->>'activity_route' = 'live_support';"
+
+assert_sql_equals \
+  xiaoman_in_event_created_no_visual_or_send \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_in_event_parent_id}'::uuid AND capability_key IN ('huabaosi.create_visual_asset','huabaosi.generate_image_asset','erhua.send_group_message');"
+
+xiaoman_in_event_children_again="$(run_json xiaoman_in_event_children_again run-xiaoman-activity-promotion-starter-worker --once --apply --work-item-id "$xiaoman_in_event_parent_id")"
+assert_json "$xiaoman_in_event_children_again" "data['success'] is True"
+assert_json "$xiaoman_in_event_children_again" "data['action_status'] == 'no_eligible_activity_requests'"
+assert_json "$xiaoman_in_event_children_again" "data['scanned_count'] == 0"
+
+xiaoman_post_event_mutation_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_post_event_mutation_payload="$(
+  python3 - "$xiaoman_worker_signal_id" "$xiaoman_post_event_mutation_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "phase-update",
+    "event_signal_id": sys.argv[1],
+    "mutation_id": sys.argv[2],
+    "activity_phase": "post_event",
+}, ensure_ascii=False))
+PY
+)"
+
+xiaoman_post_event_mutation="$(run_json xiaoman_post_event_mutation xiaoman-activity phase-update --apply --payload-json "$xiaoman_post_event_mutation_payload")"
+assert_json "$xiaoman_post_event_mutation" "data['success'] is True"
+assert_json "$xiaoman_post_event_mutation" "data['action_status'] == 'event_signal_phase_updated'"
+assert_json "$xiaoman_post_event_mutation" "data['activity_phase'] == 'post_event'"
+assert_json "$xiaoman_post_event_mutation" "data['activity_route'] == 'activity_recap'"
+assert_json "$xiaoman_post_event_mutation" "data['mutation_applied'] is True"
+
+assert_sql_equals \
+  xiaoman_post_event_phase_audited_once \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE event_signal_id = '${xiaoman_worker_signal_id}'::uuid AND mutation_id = '${xiaoman_post_event_mutation_id}'::uuid AND operation = 'phase-update' AND previous_value->>'activity_phase' = 'in_event' AND new_value->>'activity_phase' = 'post_event';"
+
+xiaoman_post_event_worker="$(run_json xiaoman_post_event_worker run-xiaoman-activity-signal-worker --once --apply --batch-size 1)"
+assert_json "$xiaoman_post_event_worker" "data['success'] is True"
+assert_json "$xiaoman_post_event_worker" "data['action_status'] == 'signal_ingest_submitted'"
+assert_json "$xiaoman_post_event_worker" "data['submitted_count'] == 1"
+assert_json "$xiaoman_post_event_worker" "data['work_items'][0]['work_item_type'] == 'activity_recap_request'"
+assert_json "$xiaoman_post_event_worker" "data['work_items'][0]['idempotency_key'] == 'xiaoman_activity_signal:${xiaoman_worker_signal_id}:post_event'"
+assert_json "$xiaoman_post_event_worker" "data['work_items'][0]['existing'] is False"
+
+xiaoman_post_event_parent_id="$(
+  psql_value "SELECT id FROM qintopia_agent_os.work_items WHERE idempotency_key = 'xiaoman_activity_signal:${xiaoman_worker_signal_id}:post_event';"
+)"
+
+assert_sql_equals \
+  xiaoman_post_event_root_matches_phase_route \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE id = '${xiaoman_post_event_parent_id}'::uuid AND work_item_type = 'activity_recap_request' AND payload->>'activity_phase' = 'post_event' AND payload->>'activity_route' = 'activity_recap';"
+
+xiaoman_post_event_children="$(run_json xiaoman_post_event_children run-xiaoman-activity-promotion-starter-worker --once --apply --work-item-id "$xiaoman_post_event_parent_id")"
+assert_json "$xiaoman_post_event_children" "data['success'] is True"
+assert_json "$xiaoman_post_event_children" "data['action_status'] == 'activity_promotion_children_created'"
+assert_json "$xiaoman_post_event_children" "data['created_count'] == 2"
+assert_json "$xiaoman_post_event_children" "data['missing_child_count'] == 2"
+assert_json "$xiaoman_post_event_children" "len(data['work_items']) == 2"
+assert_json "$xiaoman_post_event_children" "any(item['capability_key'] == 'wenyuange.retrieve_evidence' and item['work_item_type'] == 'evidence_request' for item in data['work_items'])"
+assert_json "$xiaoman_post_event_children" "any(item['capability_key'] == 'huabaosi.create_visual_asset' and item['work_item_type'] == 'visual_asset_request' for item in data['work_items'])"
+
+assert_sql_equals \
+  xiaoman_post_event_created_evidence_and_recap_visual \
+  2 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_post_event_parent_id}'::uuid AND capability_key IN ('wenyuange.retrieve_evidence','huabaosi.create_visual_asset') AND payload->>'activity_phase' = 'post_event' AND payload->>'activity_route' = 'activity_recap';"
+
+assert_sql_equals \
+  xiaoman_post_event_created_no_image_or_send \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_post_event_parent_id}'::uuid AND capability_key IN ('huabaosi.generate_image_asset','erhua.send_group_message');"
+
+assert_sql_equals \
+  xiaoman_lifecycle_keeps_three_distinct_roots \
+  3 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE source_event_signal_id = '${xiaoman_worker_signal_id}'::uuid AND capability_key = 'xiaoman.create_activity_request' AND work_item_type IN ('activity_promotion_request','activity_live_support_request','activity_recap_request');"
+
+xiaoman_backward_phase_mutation_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_backward_phase_mutation_payload="$(
+  python3 - "$xiaoman_worker_signal_id" "$xiaoman_backward_phase_mutation_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "phase-update",
+    "event_signal_id": sys.argv[1],
+    "mutation_id": sys.argv[2],
+    "activity_phase": "in_event",
+}, ensure_ascii=False))
+PY
+)"
+run_expect_failure \
+  xiaoman_backward_phase_mutation \
+  "activity phase transition must not move backward" \
+  xiaoman-activity phase-update --apply --payload-json "$xiaoman_backward_phase_mutation_payload"
+
 planned_submit_payload="$(
   python3 - "$source_ref" <<'PY'
 import json

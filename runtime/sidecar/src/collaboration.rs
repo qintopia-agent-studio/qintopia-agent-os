@@ -251,7 +251,10 @@ async fn peek_next_work_item(pool: &PgPool) -> Result<Option<WorkItem>> {
           AND visual.work_item_type = $1
           AND visual.capability_key = $2
           AND (
-              COALESCE(visual.payload->>'workflow_type', '') <> 'activity_promotion'
+              COALESCE(visual.payload->>'workflow_type', '') NOT IN (
+                  'activity_promotion',
+                  'activity_recap'
+              )
               OR EXISTS (
                   SELECT 1
                   FROM qintopia_agent_os.work_items evidence
@@ -329,7 +332,10 @@ async fn claim_next_work_item(
               AND visual.work_item_type = $1
               AND visual.capability_key = $2
               AND (
-                  COALESCE(visual.payload->>'workflow_type', '') <> 'activity_promotion'
+                  COALESCE(visual.payload->>'workflow_type', '') NOT IN (
+                      'activity_promotion',
+                      'activity_recap'
+                  )
                   OR EXISTS (
                       SELECT 1
                       FROM qintopia_agent_os.work_items evidence
@@ -456,11 +462,13 @@ fn validate_work_item(work_item: &WorkItem) -> Result<()> {
 }
 
 fn evidence_required(work_item: &WorkItem) -> bool {
-    work_item
-        .payload
-        .get("workflow_type")
-        .and_then(Value::as_str)
-        == Some("activity_promotion")
+    matches!(
+        work_item
+            .payload
+            .get("workflow_type")
+            .and_then(Value::as_str),
+        Some("activity_promotion" | "activity_recap")
+    )
 }
 
 async fn load_evidence_context(
@@ -974,6 +982,33 @@ mod tests {
 
         let err = build_artifact_drafts(&work_item, None)
             .expect_err("activity promotion requires evidence before visual brief creation");
+
+        assert!(err
+            .to_string()
+            .contains("requires a completed evidence summary"));
+    }
+
+    #[test]
+    fn activity_recap_brief_requires_evidence() {
+        let work_item = WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: Some(Uuid::new_v4()),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "周末共创晚餐活动复盘".to_string(),
+            source_refs: json!({"source_record_ref": "activity_occurrence:test"}),
+            payload: json!({
+                "workflow_type": "activity_recap",
+                "activity_phase": "post_event",
+                "activity_route": "activity_recap"
+            }),
+            review_policy: "before_external_use".to_string(),
+        };
+
+        let err = build_artifact_drafts(&work_item, None)
+            .expect_err("activity recap requires evidence before visual brief creation");
 
         assert!(err
             .to_string()
