@@ -286,8 +286,9 @@ Use `rg` and `rg --files` for search.
   Huabaosi production feature must not make QiWe live helpers available.
 - CI must execute non-ignored sidecar tests with all Cargo features so staging-only
   adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
-  remain in the disposable integration job, and production artifacts must still use an
-  empty feature set.
+  remain in the disposable integration job. Production artifacts must still use exactly
+  `cargo_features: [huabaosi-production-adapter]`; an all-features CI build must never
+  be promoted or treated as a production artifact.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
