@@ -42,6 +42,7 @@ release activation.
 - `external_upload_requested`:
 - `external_send_executed`:
 - Complete evidence checker mode passed: yes/no.
+- Cross-flow Huabaosi/QiWe hash checker passed: yes/no.
 
 ## Production Follow-Up Decision
 

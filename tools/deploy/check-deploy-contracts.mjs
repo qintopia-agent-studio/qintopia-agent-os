@@ -570,6 +570,7 @@ if (!exists(qiweImageStagingRunbookPath)) {
     "qiwe_image_send_staging_evidence=<json>",
     "node tools/deploy/check-qiwe-image-staging-evidence.mjs <staging-evidence-output.txt>",
     "node tools/deploy/check-qiwe-image-staging-evidence.mjs --preflight-only <preflight-evidence-output.txt>",
+    "node tools/deploy/check-xiaoman-image-send-staging-evidence.mjs <huabaosi-staging-evidence-output.txt> <qiwe-staging-evidence-output.txt>",
     "external_send_executed",
     "artifact_content_hash",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
@@ -621,6 +622,33 @@ if (!exists(qiweImageStagingEvidenceCheckPath)) {
   }
 }
 
+const xiaomanImageSendStagingEvidenceCheckPath =
+  "tools/deploy/check-xiaoman-image-send-staging-evidence.mjs";
+if (!exists(xiaomanImageSendStagingEvidenceCheckPath)) {
+  addError(
+    `${xiaomanImageSendStagingEvidenceCheckPath}: missing Xiaoman image-send staging evidence checker`
+  );
+} else {
+  const checker = readText(xiaomanImageSendStagingEvidenceCheckPath);
+  for (const fragment of [
+    "huabaosi_image_generation_staging_evidence=",
+    "qiwe_image_send_staging_evidence=",
+    "Huabaosi content_hash and QiWe artifact_content_hash values differ",
+    "QiWe upload and callback artifact_content_hash values differ",
+    "QiWe preflight evidence does not prove staging send readiness",
+    "Huabaosi preflight evidence does not prove staging adapter readiness",
+    "forbidden sensitive fragment",
+    "image_send_completed",
+    "generated_image_created",
+    "Xiaoman image-send staging evidence check passed.",
+  ]) {
+    requireFragment(xiaomanImageSendStagingEvidenceCheckPath, checker, fragment);
+  }
+  for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
+    forbidFragment(xiaomanImageSendStagingEvidenceCheckPath, checker, fragment);
+  }
+}
+
 const qiweImageStagingEvidenceTemplatePath =
   "docs/reports/templates/qiwe-image-send-staging-evidence.md";
 if (!exists(qiweImageStagingEvidenceTemplatePath)) {
@@ -646,6 +674,7 @@ if (!exists(qiweImageStagingEvidenceTemplatePath)) {
     "callback_credential_schema",
     "callback_additional_field_count",
     "Complete evidence checker mode passed",
+    "Cross-flow Huabaosi/QiWe hash checker passed",
     "Production enablement PR allowed",
     "Do not record QiWe token, GUID, API secret material, target group id, database URL",
   ]) {
@@ -662,6 +691,25 @@ if (!exists(qiweImageStagingEvidenceTemplatePath)) {
     "gh release",
   ]) {
     forbidFragment(qiweImageStagingEvidenceTemplatePath, template, fragment);
+  }
+}
+
+const xiaomanImageSendStagingEvidenceTestPath =
+  "tools/deploy/test-xiaoman-image-send-staging-evidence.mjs";
+if (!exists(xiaomanImageSendStagingEvidenceTestPath)) {
+  addError(
+    `${xiaomanImageSendStagingEvidenceTestPath}: missing Xiaoman image-send staging evidence checker test`
+  );
+} else {
+  const test = readText(xiaomanImageSendStagingEvidenceTestPath);
+  for (const fragment of [
+    "check-xiaoman-image-send-staging-evidence.mjs",
+    "Huabaosi content_hash and QiWe artifact_content_hash values differ",
+    "expected exactly one QiWe preflight evidence record",
+    "forbidden sensitive fragment",
+    "Xiaoman image-send staging evidence test passed.",
+  ]) {
+    requireFragment(xiaomanImageSendStagingEvidenceTestPath, test, fragment);
   }
 }
 

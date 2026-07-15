@@ -945,6 +945,9 @@ try {
   execFileSync("node", ["tools/deploy/test-qiwe-image-staging-smoke.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync("node", ["tools/deploy/test-xiaoman-image-send-staging-evidence.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync(
     "node",
     ["tools/deploy/test-xiaoman-production-observation-contracts.mjs"],

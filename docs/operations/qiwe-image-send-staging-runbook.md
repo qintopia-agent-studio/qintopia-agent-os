@@ -131,6 +131,13 @@ For a preflight-only rehearsal, use:
 node tools/deploy/check-qiwe-image-staging-evidence.mjs --preflight-only <preflight-evidence-output.txt>
 ```
 
+After Huabaosi staging image generation and QiWe staging send both have complete
+sanitized evidence files, run the cross-flow check:
+
+```bash
+node tools/deploy/check-xiaoman-image-send-staging-evidence.mjs <huabaosi-staging-evidence-output.txt> <qiwe-staging-evidence-output.txt>
+```
+
 The checker requires a ready preflight record plus matching upload/callback work item
 evidence for complete mode. The upload and callback records must also carry the same
 canonical final JPEG `artifact_content_hash`, which can be compared with the Huabaosi
@@ -143,7 +150,7 @@ message or a `qiwe_image_send_staging_evidence=<json>` record.
 After the complete checker passes, copy only the sanitized values into
 `docs/reports/templates/qiwe-image-send-staging-evidence.md` for the production
 follow-up review. Do not attach the original callback payload, raw logs, or any operator
-file that has not passed the checker.
+file that has not passed the QiWe and cross-flow checkers.
 
 ## Evidence To Keep
 
@@ -179,6 +186,8 @@ the complete checker mode and the reviewer can see:
 - one ready preflight record from the same reviewed staging boundary;
 - one upload record and one callback record for the same work item UUID;
 - the same final JPEG `artifact_content_hash` in the upload and callback records;
+- `check-xiaoman-image-send-staging-evidence.mjs` proves Huabaosi `content_hash` equals
+  the QiWe `artifact_content_hash`;
 - `external_upload_requested=true` only in the upload phase;
 - `external_send_executed=true` only in the callback phase;
 - no raw callback fields, database URL, token, GUID, group id, media URI, or provider

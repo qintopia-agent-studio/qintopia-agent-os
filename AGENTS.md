@@ -403,6 +403,12 @@ Use `rg` and `rg --files` for search.
   Huabaosi/QiWe hash matching; it must not retain media URI, filename, MD5 value, file
   size, or callback credentials. It must not install a listener, service, timer,
   production feature build, Feishu write, or broad group send.
+- Before any QiWe production-enablement PR, the retained Huabaosi staging
+  generated-image evidence and QiWe staging send evidence must pass
+  `tools/deploy/check-xiaoman-image-send-staging-evidence.mjs`, proving the Huabaosi
+  final JPEG `content_hash` equals the QiWe `artifact_content_hash` without recording
+  media URI, filename, MD5 value, callback credentials, group id, database URL, or raw
+  provider output.
 - `qiwe-image-send-staging-readiness-smoke.sh` is the read-only gate before the real
   QiWe staging preflight. It may only check metadata for the fixed staging env file,
   fixed immutable staging release root, owner-approved release SHA, and packaged sidecar
