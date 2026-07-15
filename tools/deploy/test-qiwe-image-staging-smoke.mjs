@@ -116,6 +116,32 @@ esac
         JSON.parse(line.slice("qiwe_image_send_staging_evidence=".length))
       );
 
+  const preflight = runSmoke("preflight", {
+    QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: "",
+  });
+  if (preflight.status !== 0 || !preflight.stdout.includes("preflight passed")) {
+    throw new Error(
+      `expected preflight phase to pass\nstdout:\n${preflight.stdout}\nstderr:\n${preflight.stderr}`
+    );
+  }
+  const preflightEvidence = parseEvidence(preflight);
+  if (
+    preflightEvidence.length !== 1 ||
+    preflightEvidence[0].action_status !== "staging_adapter_ready" ||
+    preflightEvidence[0].allowed_group_count !== 1 ||
+    preflightEvidence[0].send_enabled !== true ||
+    preflightEvidence[0].webhook_ready !== true
+  ) {
+    throw new Error(`preflight evidence is invalid\nstdout:\n${preflight.stdout}`);
+  }
+  const preflightLog = fs.readFileSync(sidecarLog, "utf8").trim().split(/\r?\n/);
+  if (
+    preflightLog.length !== 1 ||
+    preflightLog[0] !== "qiwe-image-send-staging-preflight"
+  ) {
+    throw new Error("preflight phase invoked a command beyond staging preflight");
+  }
+
   const upload = runSmoke("upload");
   if (upload.status !== 0 || !upload.stdout.includes("awaiting one bounded")) {
     throw new Error(

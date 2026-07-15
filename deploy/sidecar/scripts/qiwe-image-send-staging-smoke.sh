@@ -21,8 +21,8 @@ if [[ -z "$ENV_FILE" || ! -f "$ENV_FILE" || "$ENV_FILE" != /* || "$ENV_FILE" != 
   exit 1
 fi
 
-if [[ "$PHASE" != "upload" && "$PHASE" != "callback" ]]; then
-  echo "QINTOPIA_QIWE_IMAGE_STAGING_PHASE must be upload or callback" >&2
+if [[ "$PHASE" != "preflight" && "$PHASE" != "upload" && "$PHASE" != "callback" ]]; then
+  echo "QINTOPIA_QIWE_IMAGE_STAGING_PHASE must be preflight, upload, or callback" >&2
   exit 1
 fi
 
@@ -31,14 +31,14 @@ if [[ ! "$EXPECTED_DATABASE_HASH" =~ ^[0-9a-f]{64}$ ]]; then
   exit 1
 fi
 
-if ! python3 - "$WORK_ITEM_ID" <<'PY'
+if [[ "$PHASE" != "preflight" ]] && ! python3 - "$WORK_ITEM_ID" <<'PY'
 import sys
 import uuid
 
 uuid.UUID(sys.argv[1])
 PY
 then
-  echo "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID must be a UUID" >&2
+  echo "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID must be a UUID for upload or callback" >&2
   exit 1
 fi
 
@@ -302,6 +302,11 @@ assert payload["missing_configuration"] == []
 assert payload["safe_for_chat"] is False
 '
 emit_sanitized_evidence "preflight"
+
+if [[ "$PHASE" == "preflight" ]]; then
+  echo "QiWe image-send staging preflight passed: configuration is ready; no work item was claimed and no external upload or send was executed"
+  exit 0
+fi
 
 if [[ "$PHASE" == "upload" ]]; then
   run_sanitized \

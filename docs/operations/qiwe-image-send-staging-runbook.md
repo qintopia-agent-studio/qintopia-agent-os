@@ -26,6 +26,24 @@ production runtime configuration.
 - Confirm the callback source can stream one raw `cmd=20000` callback directly to stdin.
   Do not write the callback body to disk.
 
+## Preflight Phase
+
+Run this first on the reviewed staging host. It validates the staging binary, env
+allowlist, owner phrase, database hash, webhook readiness, and allowlist counts without
+claiming a work item, opening a QiWe upload, or reading callback stdin:
+
+```bash
+QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
+QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight \
+QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
+```
+
+Success means the local staging boundary is ready for an owner-approved upload phase. It
+does not prove a send-ready work item exists, contact QiWe, or send an image.
+
 ## Upload Phase
 
 Run this from the repository root on the reviewed staging host:

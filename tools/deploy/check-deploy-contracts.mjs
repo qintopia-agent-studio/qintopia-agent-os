@@ -394,6 +394,8 @@ if (!exists(qiweImageStagingSmokePath)) {
     "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256",
     "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE",
+    'PHASE" != "preflight"',
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE must be preflight, upload, or callback",
     "--features qiwe-staging-adapter",
     "qiwe-image-send-staging-preflight",
     "run-qiwe-image-send-worker",
@@ -449,6 +451,7 @@ if (!exists(qiweImageStagingRunbookPath)) {
   for (const fragment of [
     "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1",
     "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
     "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env",
@@ -484,6 +487,7 @@ for (const relativePath of [
   const text = readText(relativePath);
   for (const fragment of [
     "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
     "trusted-staging-callback-source |",

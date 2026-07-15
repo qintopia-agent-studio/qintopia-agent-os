@@ -159,9 +159,17 @@ database connection, callback read, or network request it requires:
   command and matches the sourced database URL.
 
 The smoke runs as two explicit invocations because the QiWe upload callback is
-asynchronous:
+asynchronous. A separate `preflight` phase validates the staging boundary without
+claiming work or contacting QiWe:
 
 ```bash
+QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
+QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight \
+QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
+
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
 QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
