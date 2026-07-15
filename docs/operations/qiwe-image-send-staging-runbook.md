@@ -110,7 +110,7 @@ an incomplete send outcome appear.
 Record only these fields:
 
 - repository commit SHA and staging binary SHA-256;
-- exact command phases run: `upload` and `callback`;
+- exact command phases run: `preflight`, `upload`, and `callback`;
 - staging database URL SHA-256, not the URL;
 - work item UUID;
 - fixed action statuses from the smoke;
@@ -128,6 +128,20 @@ Never record:
 - media URI, filename, file id, MD5 value, AES key, file size, or provider response;
 - raw request id, callback body, callback event id, message id, or response body;
 - raw shell output if it includes anything outside the fixed sanitized report fields.
+
+## Production Follow-Up Gate
+
+Do not open a QiWe production-enablement PR until the retained staging evidence passes
+the complete checker mode and the reviewer can see:
+
+- one ready preflight record from the same reviewed staging boundary;
+- one upload record and one callback record for the same work item UUID;
+- `external_upload_requested=true` only in the upload phase;
+- `external_send_executed=true` only in the callback phase;
+- no raw callback fields, database URL, token, GUID, group id, media URI, or provider
+  response in the evidence note; and
+- rollback ownership recorded without adding a production listener, service, timer, or
+  feature build in this PR.
 
 ## Hold Conditions
 

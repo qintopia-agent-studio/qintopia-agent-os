@@ -243,6 +243,33 @@ esac
       `expected complete evidence check to pass\nstdout:\n${completeEvidenceCheck.stdout}\nstderr:\n${completeEvidenceCheck.stderr}`
     );
   }
+  const missingPreflightEvidenceFile = path.join(
+    tmpRoot,
+    "missing-preflight-evidence.txt"
+  );
+  fs.writeFileSync(
+    missingPreflightEvidenceFile,
+    [
+      upload.stdout
+        .split(/\r?\n/)
+        .filter((line) => line.includes('"phase":"upload"'))
+        .join("\n"),
+      callback.stdout
+        .split(/\r?\n/)
+        .filter((line) => line.includes('"phase":"callback"'))
+        .join("\n"),
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const missingPreflightEvidenceCheck = spawnSync(
+    "node",
+    [evidenceChecker, missingPreflightEvidenceFile],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  if (missingPreflightEvidenceCheck.status === 0) {
+    throw new Error("expected complete evidence check to reject missing preflight");
+  }
   const rawEvidenceFile = path.join(tmpRoot, "raw-evidence.txt");
   fs.writeFileSync(
     rawEvidenceFile,
