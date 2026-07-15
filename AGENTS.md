@@ -149,6 +149,14 @@ Use `rg` and `rg --files` for search.
   workflows on Hermes Kanban.
 - Postgres/AgentOS is the system fact source. Feishu is a human workbench and mirror,
   not the source of truth.
+- Huabaosi generated-image Feishu mirroring must use the fixed
+  `huabaosi-generated-image-v1` artifact-version schema and key idempotency by
+  `generated_image_artifact_id`. It may mirror only a fully revalidated immutable final
+  JPEG and sanitized review metadata. It must not update the legacy poster task summary
+  without a stable AgentOS workflow id, treat Feishu state as approval, call QiWe, or
+  publish. Default/production artifacts must not compile the non-default
+  `huabaosi-feishu-mirror-adapter` feature until a separate owner-reviewed production
+  enablement; no timer is allowed in the initial adapter PR.
 - Hermes remains the Agent runtime. It should not become the business database.
 - `agents/xiaoman/profile-bundle` is observation-only. It may package the reviewed
   `SOUL.md`/`profile.yaml` templates, strict renderer, fake fixtures, and read-only

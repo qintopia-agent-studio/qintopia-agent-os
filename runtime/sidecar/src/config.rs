@@ -1066,6 +1066,30 @@ pub enum Command {
     },
     /// Validate Huabaosi image adapter configuration without opening network or database connections.
     HuabaosiImageGenerationPreflight,
+    /// Validate Huabaosi generated-image Feishu mirror configuration without network or database access.
+    HuabaosiFeishuArtifactMirrorPreflight,
+    /// Mirror one immutable Huabaosi generated image into the fixed Feishu Base artifact table.
+    RunHuabaosiFeishuArtifactMirrorWorker {
+        /// Process one candidate and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Restrict processing to one generated-image artifact.
+        #[arg(long)]
+        artifact_id: Option<uuid::Uuid>,
+
+        /// Apply the external Feishu write adapter. Requires explicit reviewed enablement.
+        #[arg(long)]
+        apply: bool,
+
+        /// Preview one eligible artifact without media, Feishu, or database writes.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Use a deterministic local preview without database or network access.
+        #[arg(long)]
+        fixture_mode: bool,
+    },
     /// Preview-sanitize one Huabaosi WeCom event from stdin without writing, sending, or generating assets.
     HuabaosiWecomShadowCapture,
     /// Preview Huabaosi WeCom gateway policy for one stdin event without writing, sending, or generating assets.

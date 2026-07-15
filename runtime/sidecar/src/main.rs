@@ -2,6 +2,7 @@
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter",
     feature = "qiwe-staging-adapter"
 ))]
 mod bounded_http;
@@ -19,6 +20,11 @@ mod evidence;
 mod graph_projection;
 mod group_message_send;
 mod health;
+#[cfg_attr(
+    not(any(test, feature = "huabaosi-feishu-mirror-adapter")),
+    allow(dead_code, unused_imports, unused_variables)
+)]
+mod huabaosi_feishu_artifact_mirror;
 mod huabaosi_wecom_canary;
 mod huabaosi_wecom_policy;
 mod huabaosi_wecom_shadow;
@@ -528,6 +534,26 @@ async fn main() -> Result<()> {
             fixture_mode,
         } => image_generation::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
         Command::HuabaosiImageGenerationPreflight => image_generation::run_preflight(),
+        Command::HuabaosiFeishuArtifactMirrorPreflight => {
+            huabaosi_feishu_artifact_mirror::run_preflight()
+        }
+        Command::RunHuabaosiFeishuArtifactMirrorWorker {
+            once,
+            artifact_id,
+            apply,
+            dry_run,
+            fixture_mode,
+        } => {
+            huabaosi_feishu_artifact_mirror::run(
+                &cli,
+                once,
+                artifact_id,
+                apply,
+                dry_run,
+                fixture_mode,
+            )
+            .await
+        }
         Command::HuabaosiWecomShadowCapture => huabaosi_wecom_shadow::run(),
         Command::HuabaosiWecomPolicyPreview => huabaosi_wecom_policy::run(),
         Command::HuabaosiWecomCanaryPreflight => huabaosi_wecom_canary::run_preflight(),

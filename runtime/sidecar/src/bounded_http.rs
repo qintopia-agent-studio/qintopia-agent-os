@@ -42,7 +42,8 @@ pub(crate) struct HttpRequestError {
     #[cfg(any(
         test,
         feature = "qiwe-staging-adapter",
-        feature = "huabaosi-wecom-canary-gateway"
+        feature = "huabaosi-wecom-canary-gateway",
+        feature = "huabaosi-feishu-mirror-adapter"
     ))]
     request_may_have_been_sent: bool,
     source: anyhow::Error,
@@ -57,7 +58,8 @@ impl HttpRequestError {
             #[cfg(any(
                 test,
                 feature = "qiwe-staging-adapter",
-                feature = "huabaosi-wecom-canary-gateway"
+                feature = "huabaosi-wecom-canary-gateway",
+                feature = "huabaosi-feishu-mirror-adapter"
             ))]
             request_may_have_been_sent: false,
             source,
@@ -70,7 +72,8 @@ impl HttpRequestError {
             #[cfg(any(
                 test,
                 feature = "qiwe-staging-adapter",
-                feature = "huabaosi-wecom-canary-gateway"
+                feature = "huabaosi-wecom-canary-gateway",
+                feature = "huabaosi-feishu-mirror-adapter"
             ))]
             request_may_have_been_sent: false,
             source,
@@ -83,7 +86,8 @@ impl HttpRequestError {
             #[cfg(any(
                 test,
                 feature = "qiwe-staging-adapter",
-                feature = "huabaosi-wecom-canary-gateway"
+                feature = "huabaosi-wecom-canary-gateway",
+                feature = "huabaosi-feishu-mirror-adapter"
             ))]
             request_may_have_been_sent: true,
             source,
@@ -97,7 +101,8 @@ impl HttpRequestError {
     #[cfg(any(
         test,
         feature = "qiwe-staging-adapter",
-        feature = "huabaosi-wecom-canary-gateway"
+        feature = "huabaosi-wecom-canary-gateway",
+        feature = "huabaosi-feishu-mirror-adapter"
     ))]
     pub(crate) fn request_may_have_been_sent(&self) -> bool {
         self.request_may_have_been_sent

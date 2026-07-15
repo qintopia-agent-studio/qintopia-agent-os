@@ -52,6 +52,10 @@ unless correcting historical evidence.
      rollback are reviewed.
    - Do not broaden Feishu, QiWe, or workbench permissions in the same PR as unrelated
      feature work.
+   - Mirror Huabaosi generated images into the design Base through the dedicated
+     [artifact mirror plan](huabaosi-feishu-artifact-mirror.md). The first PR defines a
+     fixed image-version schema and a feature-gated, unscheduled writer; production
+     writeback still requires isolated Base evidence and a separate enablement decision.
    - The proposed
      [Aliang image-generation adapter](aliang-production-image-generation.md) uses the
      historically observed OpenAI-compatible `gpt-image-2` path as its implementation

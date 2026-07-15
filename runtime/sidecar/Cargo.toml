@@ -9,6 +9,7 @@ huabaosi-wecom-canary-gateway = []
 postgres-integration-tests = []
 huabaosi-production-adapter = []
 huabaosi-staging-adapter = []
+huabaosi-feishu-mirror-adapter = []
 qiwe-staging-adapter = []
 
 [dependencies]
