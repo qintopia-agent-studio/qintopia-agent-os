@@ -25,6 +25,23 @@ does not print values, and its output manifest records only input names and file
 The production observation smoke must run as root when it reads the default
 `/etc/qintopia/xiaoman-profile-bundle-values.json` path.
 
+## One-Time Values Migration
+
+After an owner-approved Release deploys this package, prepare the values file once:
+
+```bash
+sudo env \
+  QINTOPIA_XIAOMAN_PROFILE_VALUES_MIGRATION_APPROVAL=approved-xiaoman-profile-values-migration \
+  /home/ubuntu/qintopia-agent-os-releases/current/agents/xiaoman/profile-bundle/migrate_values.py \
+  --apply
+```
+
+The command has no path overrides. It requires root, locks both live source hashes,
+extracts exactly the four declared values in memory, renders and compares both files,
+then creates the root-owned mode-`0600` values JSON without replacing an existing file.
+It prints only sanitized status and hashes. It does not edit the live profile or make
+the bundle active.
+
 ## Excluded State
 
 `config.yaml`, webhook subscriptions, channel directories, cron state, `.env`, sessions,
@@ -35,6 +52,7 @@ part of this bundle.
 
 ```bash
 python3 agents/xiaoman/profile-bundle/render.py --check-only
+python3 agents/xiaoman/profile-bundle/migrate_values.py --check-only
 python3 -m unittest discover -s agents/xiaoman/profile-bundle/tests -p 'test_*.py'
 pnpm agents:profile-bundles:check
 ```
@@ -49,8 +67,10 @@ python3 agents/xiaoman/profile-bundle/render.py \
 
 ## Production Boundary
 
-Rendering writes only to a new output directory. It does not read `.env`, connect to the
-network, restart Hermes, edit the live profile, write a database, or send externally.
+Rendering writes only to a new output directory. The manual migration command may create
+only the fixed server-local values JSON after complete parity. Neither command reads
+`.env`, connects to the network, restarts Hermes, edits the live profile, writes a
+database, or sends externally.
 
-Rollback for this observation-only package is removal of the unused rendered preview.
-The live profile remains unchanged.
+Rollback for this observation-only package is to leave the values file unused; an owner
+may remove it later. The live profile remains unchanged.

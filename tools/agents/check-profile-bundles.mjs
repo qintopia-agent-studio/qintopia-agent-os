@@ -45,10 +45,12 @@ const xiaomanBundleRoot = "agents/xiaoman/profile-bundle";
 const xiaomanBundleFiles = [
   `${xiaomanBundleRoot}/README.md`,
   `${xiaomanBundleRoot}/bundle.json`,
+  `${xiaomanBundleRoot}/migrate_values.py`,
   `${xiaomanBundleRoot}/render.py`,
   `${xiaomanBundleRoot}/templates/SOUL.md.template`,
   `${xiaomanBundleRoot}/templates/profile.yaml.template`,
   `${xiaomanBundleRoot}/tests/fixtures/values.json`,
+  `${xiaomanBundleRoot}/tests/test_migrate_values.py`,
   `${xiaomanBundleRoot}/tests/test_render.py`,
 ];
 for (const file of xiaomanBundleFiles) {
@@ -58,6 +60,7 @@ for (const file of xiaomanBundleFiles) {
 }
 
 for (const file of [
+  `${xiaomanBundleRoot}/migrate_values.py`,
   `${xiaomanBundleRoot}/render.py`,
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
@@ -81,6 +84,20 @@ if (exists(`${xiaomanBundleRoot}/bundle.json`)) {
   if (bundle.status !== "observation-only") {
     addError(`${xiaomanBundleRoot}/bundle.json: status must remain observation-only`);
   }
+  const expectedSourceHashes = new Map([
+    ["SOUL.md", "4b54c777e09102385665554829df7b1665bde57d28b4c5bc5ce34fd1d052801e"],
+    [
+      "profile.yaml",
+      "b34f56b16eac72dc561faef1178d8242705000376561327054e9a15809c2de09",
+    ],
+  ]);
+  for (const item of files) {
+    if (expectedSourceHashes.get(item.target) !== item.production_source_sha256) {
+      addError(
+        `${xiaomanBundleRoot}/bundle.json: source hash mismatch for ${item.target}`
+      );
+    }
+  }
   if (
     actualInputs.size !== expectedInputs.size ||
     [...expectedInputs].some((name) => !actualInputs.has(name))
@@ -98,9 +115,43 @@ if (exists(`${xiaomanBundleRoot}/bundle.json`)) {
     bundle.production_boundary?.live_profile_changes !== false ||
     bundle.production_boundary?.external_sends !== false ||
     bundle.production_boundary?.database_writes !== false ||
-    bundle.production_boundary?.network_access !== false
+    bundle.production_boundary?.network_access !== false ||
+    bundle.production_boundary?.server_config_write !== "manual-root-only"
   ) {
     addError(`${xiaomanBundleRoot}/bundle.json: production boundary must be read-only`);
+  }
+}
+
+if (exists(`${xiaomanBundleRoot}/migrate_values.py`)) {
+  const migration = readText(`${xiaomanBundleRoot}/migrate_values.py`);
+  for (const fragment of [
+    'LIVE_SOUL_PATH = Path("/home/ubuntu/.hermes/profiles/xiaoman/SOUL.md")',
+    'LIVE_PROFILE_PATH = Path("/home/ubuntu/.hermes/profiles/xiaoman/profile.yaml")',
+    'OUTPUT_PATH = Path("/etc/qintopia/xiaoman-profile-bundle-values.json")',
+    'APPROVAL_PHRASE = "approved-xiaoman-profile-values-migration"',
+    "if effective_uid != 0:",
+    "reviewed production source hash mismatch",
+    "rendered SOUL.md parity mismatch",
+    "rendered profile.yaml parity mismatch",
+    "os.link(temporary_path, path, follow_symlinks=False)",
+    '"live_profile_modified": False',
+    '"external_send_executed": False',
+  ]) {
+    if (!migration.includes(fragment)) {
+      addError(`${xiaomanBundleRoot}/migrate_values.py: missing ${fragment}`);
+    }
+  }
+  for (const fragment of [
+    "requests",
+    "urllib",
+    "socket",
+    "subprocess",
+    "--output",
+    "--source",
+  ]) {
+    if (migration.includes(fragment)) {
+      addError(`${xiaomanBundleRoot}/migrate_values.py: must not contain ${fragment}`);
+    }
   }
 }
 

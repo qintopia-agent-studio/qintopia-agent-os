@@ -23,6 +23,19 @@ allowlists, and explicit runtime configuration.
 observation-only Xiaoman bundle into a temporary directory, verifies the reviewed live
 source hashes, and requires byte-for-byte `SOUL.md` and `profile.yaml` parity.
 
+After an owner-approved Release deploy, prepare the fixed values JSON once:
+
+```bash
+sudo env \
+  QINTOPIA_XIAOMAN_PROFILE_VALUES_MIGRATION_APPROVAL=approved-xiaoman-profile-values-migration \
+  /home/ubuntu/qintopia-agent-os-releases/current/agents/xiaoman/profile-bundle/migrate_values.py \
+  --apply
+```
+
+The command fails before reading the live profile without the exact approval, verifies
+both reviewed source hashes and complete rendered parity, and never replaces an existing
+values file. It does not edit the live profile or activate the bundle.
+
 ```bash
 sudo env QINTOPIA_XIAOMAN_PROFILE_BUNDLE_OBSERVATION_ENABLE=1 \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh

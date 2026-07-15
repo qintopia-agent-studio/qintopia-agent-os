@@ -46,6 +46,9 @@ smoke. The runner does not render it, read its server-local values, create profi
 symlinks, or restart Xiaoman on the bundle's behalf. Activation requires a later
 reviewed runner change with first-cutover rollback evidence.
 
+The bundled one-time values migration command also remains manual. The runner must not
+invoke it or create `/etc/qintopia/xiaoman-profile-bundle-values.json` during promotion.
+
 A Release containing only observation bundle inputs still follows the workflow's minimum
 internal system-service restart because a deploy artifact is promoted. The observation
 bundle paths themselves are no-restart paths for the Xiaoman gateway.

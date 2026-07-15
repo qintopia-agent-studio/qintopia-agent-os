@@ -42,6 +42,11 @@ or rendered by the deploy runner. Production identities remain in a server-local
 file. The bundle may be used only for read-only parity until a separate cutover PR adds
 backup and rollback behavior.
 
+Its one-time values migration command is an owner-triggered root operation, not a deploy
+runner step. It may create only the fixed mode-`0600` values JSON after matching both
+reviewed source hashes and complete rendered parity. Hermes does not read that file
+until a future reviewed activation path exists.
+
 ## Validation
 
 ```bash

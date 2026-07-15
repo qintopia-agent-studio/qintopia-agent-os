@@ -34,8 +34,8 @@ tags:
   - profile-bundle
   - runtime-template
 next_actions:
-  - Record production parity for the observation-only Xiaoman renderer before any live
-    profile repoint.
+  - Deploy the observation-only Xiaoman bundle, run the owner-approved one-time values
+    migration, and record production parity before any live profile repoint.
   - Add first-cutover backup and rollback behavior in a separate reviewed PR.
   - Keep `.env`, sessions, logs, cache, auth, and state databases out of git and release
     bundles.

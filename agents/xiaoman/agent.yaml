@@ -34,8 +34,8 @@ tags:
   - activity-ops
   - hermes-profile
 next_actions:
-  - Provision the four declared profile bundle values through an owner-approved
-    server-local configuration path, then record byte-for-byte SOUL and profile parity.
+  - After an owner-approved Release, run the root-only no-clobber values migration and
+    record byte-for-byte SOUL and profile parity from the immutable artifact.
   - Add live profile symlinks only in a later PR with first-cutover backup and rollback
     evidence; keep config, webhook, channel, cron, secrets, and state runtime-local.
   - Keep the production workflow on internal send-ready until Huabaosi generation and

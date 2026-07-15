@@ -4,12 +4,18 @@ import hashlib
 import json
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
 BUNDLE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BUNDLE_ROOT))
+
+import render as bundle_renderer  # noqa: E402
+
+
 RENDERER = BUNDLE_ROOT / "render.py"
 FIXTURE_VALUES = BUNDLE_ROOT / "tests" / "fixtures" / "values.json"
 
@@ -24,6 +30,12 @@ def run_renderer(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 class RenderProfileBundleTest(unittest.TestCase):
+    def test_manifest_requires_manual_server_config_write_boundary(self) -> None:
+        manifest = json.loads((BUNDLE_ROOT / "bundle.json").read_text())
+        manifest["production_boundary"].pop("server_config_write")
+        with self.assertRaisesRegex(bundle_renderer.BundleError, "manual-root-only"):
+            bundle_renderer.validate_manifest(manifest, BUNDLE_ROOT)
+
     def test_check_only_validates_package(self) -> None:
         result = run_renderer("--check-only")
         self.assertEqual(result.returncode, 0, result.stderr)

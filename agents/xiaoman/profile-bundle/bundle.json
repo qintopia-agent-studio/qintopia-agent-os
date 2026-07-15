@@ -61,6 +61,7 @@
   "validation": {
     "commands": [
       "python3 agents/xiaoman/profile-bundle/render.py --check-only",
+      "python3 agents/xiaoman/profile-bundle/migrate_values.py --check-only",
       "python3 -m unittest discover -s agents/xiaoman/profile-bundle/tests -p 'test_*.py'",
       "pnpm agents:profile-bundles:check"
     ]
@@ -69,9 +70,10 @@
     "live_profile_changes": false,
     "external_sends": false,
     "database_writes": false,
-    "network_access": false
+    "network_access": false,
+    "server_config_write": "manual-root-only"
   },
   "rollback": {
-    "strategy": "remove the unused rendered preview; the live profile remains unchanged"
+    "strategy": "leave the values file unused or remove it through an owner-approved operation; the live profile remains unchanged"
   }
 }
