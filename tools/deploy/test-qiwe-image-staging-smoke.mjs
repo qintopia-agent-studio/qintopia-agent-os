@@ -69,6 +69,10 @@ case "$1" in
     [[ "$2" == "--apply" ]]
     callback="$(cat)"
     [[ "$callback" == *"${callbackSecret}"* ]]
+    if [[ -n "\${FAKE_CALLBACK_ECHO_RAW:-}" ]]; then
+      printf '%s\n' "$callback" >&2
+      exit 70
+    fi
     action_status="image_send_completed"
     if [[ -n "\${FAKE_CALLBACK_LEAK_VALUE:-}" ]]; then
       action_status="\${FAKE_CALLBACK_LEAK_VALUE}"
@@ -172,6 +176,25 @@ esac
   }
   if (`${leaked.stdout}\n${leaked.stderr}`.includes(callbackSecret)) {
     throw new Error("callback validation failure repeated the leaked value");
+  }
+
+  const rawCallbackLeak = runSmoke(
+    "callback",
+    { FAKE_CALLBACK_ECHO_RAW: "1" },
+    callbackPayload
+  );
+  if (rawCallbackLeak.status === 0) {
+    throw new Error("expected raw callback stderr to fail the smoke");
+  }
+  for (const sensitive of [
+    callbackSecret,
+    "private-request-id-must-not-appear",
+    "private-file-id-must-not-appear",
+    "private-poster-name-must-not-appear.jpg",
+  ]) {
+    if (`${rawCallbackLeak.stdout}\n${rawCallbackLeak.stderr}`.includes(sensitive)) {
+      throw new Error("raw callback failure escaped protected smoke output");
+    }
   }
 
   const commandMarker = path.join(tmpRoot, "env-command-executed");

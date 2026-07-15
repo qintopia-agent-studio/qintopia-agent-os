@@ -161,10 +161,18 @@ assert_no_sensitive_output() {
   local file="$2"
   local forbidden=(
     '"request_id"'
+    '"requestId"'
     '"file_aes_key"'
+    '"fileAesKey"'
+    '"fileAeskey"'
     '"file_id"'
+    '"fileId"'
     '"file_md5"'
+    '"fileMd5"'
+    '"file_size"'
+    '"fileSize"'
     '"filename"'
+    '"fileName"'
     '"message_identifier"'
     '"target_group_id"'
     '"artifact_uri"'
