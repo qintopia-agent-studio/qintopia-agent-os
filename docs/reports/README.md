@@ -54,6 +54,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-15-hermes-core-server-patch-inventory.md`                                 | adopt-input | Hermes core dirty-state classification and WeCom patch extraction      |
 | `2026-07-15-v0210-follow-up-deploy.md`                                             | adopt-input | v0.2.10 same-SHA deploy mismatch, recovery, and preflight evidence     |
 | `2026-07-15-xiaoman-activity-wrapper-contract-drift.md`                            | adopt-input | Xiaoman plugin and Rust event-signal mutation contract repair          |
+| `2026-07-15-qiwe-isolated-staging-verification.md`                                 | adopt-input | QiWe isolated staging local verification and remaining owner gate      |
 
 ## Rules
 
