@@ -218,6 +218,58 @@ run_sanitized() {
   SANITIZED_OUTPUT="$output"
 }
 
+emit_sanitized_evidence() {
+  local evidence_kind="$1"
+
+  SANITIZED_EVIDENCE_PAYLOAD="$SANITIZED_OUTPUT" python3 - "$evidence_kind" <<'PY'
+import json
+import os
+import sys
+
+payload = json.loads(os.environ["SANITIZED_EVIDENCE_PAYLOAD"])
+evidence_kind = sys.argv[1]
+
+evidence = {
+    "action_status": payload["action_status"],
+    "safe_for_chat": payload["safe_for_chat"],
+    "success": payload["success"],
+    "worker": payload["worker"],
+}
+
+if evidence_kind == "preflight":
+    evidence.update({
+        "adapter_compiled": payload["adapter_compiled"],
+        "allowed_group_count": payload["allowed_group_count"],
+        "allowed_host_count": payload["allowed_host_count"],
+        "config_valid": payload["config_valid"],
+        "database_boundary_valid": payload["database_boundary_valid"],
+        "media_allowed_host_count": payload["media_allowed_host_count"],
+        "send_enabled": payload["send_enabled"],
+        "webhook_ready": payload["webhook_ready"],
+    })
+else:
+    evidence.update({
+        "apply_requested": payload["apply_requested"],
+        "callback_received": payload["callback_received"],
+        "dry_run": payload["dry_run"],
+        "external_send_executed": payload["external_send_executed"],
+        "external_upload_requested": payload["external_upload_requested"],
+        "phase": payload["phase"],
+        "work_item_id": payload["work_item_id"],
+    })
+    if evidence_kind == "callback":
+        evidence.update({
+            "callback_additional_field_count": payload["callback_additional_field_count"],
+            "callback_credential_schema": payload["callback_credential_schema"],
+        })
+
+print(
+    "qiwe_image_send_staging_evidence="
+    + json.dumps(evidence, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+)
+PY
+}
+
 run_sanitized \
   "QiWe staging preflight" \
   "${BIN_CMD[@]}" qiwe-image-send-staging-preflight </dev/null
@@ -249,6 +301,7 @@ assert payload["allowed_group_count"] == 1
 assert payload["missing_configuration"] == []
 assert payload["safe_for_chat"] is False
 '
+emit_sanitized_evidence "preflight"
 
 if [[ "$PHASE" == "upload" ]]; then
   run_sanitized \
@@ -272,6 +325,7 @@ assert payload["callback_received"] is False
 assert payload["external_send_executed"] is False
 assert payload["safe_for_chat"] is False
 ' "$WORK_ITEM_ID"
+  emit_sanitized_evidence "upload"
   echo "QiWe image-send staging upload passed: awaiting one bounded owner-approved callback; no image send was executed"
   exit 0
 fi
@@ -312,4 +366,5 @@ assert payload["external_send_executed"] is True
 assert payload["safe_for_chat"] is False
 ' "$WORK_ITEM_ID"
 
+emit_sanitized_evidence "callback"
 echo "QiWe image-send staging callback passed: one reviewed image send completed for the isolated allowlisted group"

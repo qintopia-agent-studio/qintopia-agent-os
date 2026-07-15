@@ -96,9 +96,10 @@ argument, shell history, report, or log. The wrapper parses only its fixed stagi
 key allowlist without evaluating shell syntax, and preflight/upload subprocesses receive
 `/dev/null` instead of the callback stream. Subprocess output is scanned in memory
 before the fixed report schema is validated through an anonymous pipe; the wrapper never
-writes subprocess output to a file. The full operator checklist is
-`docs/operations/qiwe-image-send-staging-runbook.md`. This smoke does not install a
-listener, service, timer, or production feature build.
+writes subprocess output to a file. Successful phases print only fixed
+`qiwe_image_send_staging_evidence=<json>` lines and the final pass message. The full
+operator checklist is `docs/operations/qiwe-image-send-staging-runbook.md`. This smoke
+does not install a listener, service, timer, or production feature build.
 
 ## Validation
 

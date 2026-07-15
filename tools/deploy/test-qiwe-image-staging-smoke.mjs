@@ -108,11 +108,32 @@ esac
       encoding: "utf8",
     });
 
+  const parseEvidence = (result) =>
+    result.stdout
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("qiwe_image_send_staging_evidence="))
+      .map((line) =>
+        JSON.parse(line.slice("qiwe_image_send_staging_evidence=".length))
+      );
+
   const upload = runSmoke("upload");
   if (upload.status !== 0 || !upload.stdout.includes("awaiting one bounded")) {
     throw new Error(
       `expected upload phase to pass\nstdout:\n${upload.stdout}\nstderr:\n${upload.stderr}`
     );
+  }
+  const uploadEvidence = parseEvidence(upload);
+  if (
+    uploadEvidence.length !== 2 ||
+    uploadEvidence[0].action_status !== "staging_adapter_ready" ||
+    uploadEvidence[0].allowed_group_count !== 1 ||
+    uploadEvidence[1].phase !== "upload" ||
+    uploadEvidence[1].action_status !== "image_upload_accepted" ||
+    uploadEvidence[1].work_item_id !== workItemId ||
+    uploadEvidence[1].external_upload_requested !== true ||
+    uploadEvidence[1].external_send_executed !== false
+  ) {
+    throw new Error(`upload evidence is invalid\nstdout:\n${upload.stdout}`);
   }
 
   const callbackPayload = JSON.stringify({
@@ -136,6 +157,20 @@ esac
     throw new Error(
       `expected callback phase to pass\nstdout:\n${callback.stdout}\nstderr:\n${callback.stderr}`
     );
+  }
+  const callbackEvidence = parseEvidence(callback);
+  if (
+    callbackEvidence.length !== 2 ||
+    callbackEvidence[0].action_status !== "staging_adapter_ready" ||
+    callbackEvidence[1].phase !== "callback" ||
+    callbackEvidence[1].action_status !== "image_send_completed" ||
+    callbackEvidence[1].work_item_id !== workItemId ||
+    callbackEvidence[1].callback_credential_schema !==
+      "fileAesKey+fileId+fileMd5+fileSize+filename" ||
+    callbackEvidence[1].callback_additional_field_count !== 0 ||
+    callbackEvidence[1].external_send_executed !== true
+  ) {
+    throw new Error(`callback evidence is invalid\nstdout:\n${callback.stdout}`);
   }
   for (const sensitive of [
     callbackSecret,

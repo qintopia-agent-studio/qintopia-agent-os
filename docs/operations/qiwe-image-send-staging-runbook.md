@@ -41,7 +41,9 @@ deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
 
 Success means the upload was accepted and the work item is awaiting exactly one bounded
-callback. It does not mean `/msg/sendImage` has run.
+callback. It does not mean `/msg/sendImage` has run. The smoke prints only fixed
+`qiwe_image_send_staging_evidence=<json>` lines plus the final pass message; keep those
+evidence JSON objects instead of raw subprocess output.
 
 ## Callback Phase
 
@@ -61,7 +63,9 @@ deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 
 Success means the callback matched the approved JPEG identity, the send gate committed
 `sending`, and exactly one reviewed staging `/msg/sendImage` completed for the isolated
-allowlisted group.
+allowlisted group. Keep the printed `qiwe_image_send_staging_evidence=<json>` objects
+only after confirming no raw callback, request id, credentials, group id, media URI, or
+database URL appears in operator notes.
 
 ## Evidence To Keep
 

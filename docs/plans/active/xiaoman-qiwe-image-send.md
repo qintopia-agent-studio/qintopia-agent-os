@@ -187,8 +187,9 @@ callback processor inherits the stream. The staging env file is parsed as a fixe
 allowlist of literal assignments and is never evaluated as shell. The smoke stores only
 subprocess output in shell memory and validates the fixed report schema through an
 anonymous pipe. It never writes successful, failed, or sensitive subprocess output to a
-file. The operator checklist and sanitized evidence template live in
-`docs/operations/qiwe-image-send-staging-runbook.md`.
+file. Successful phases print fixed `qiwe_image_send_staging_evidence=<json>` objects
+that contain only the reviewed evidence fields. The operator checklist and sanitized
+evidence template live in `docs/operations/qiwe-image-send-staging-runbook.md`.
 
 ## Production Boundary
 
