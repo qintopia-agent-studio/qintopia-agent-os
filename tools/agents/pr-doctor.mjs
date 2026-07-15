@@ -14,12 +14,6 @@ if (!commandExists("git")) {
 
 if (!commandExists("gh")) {
   errors.push("GitHub CLI is missing; run pnpm pr:bootstrap");
-} else {
-  try {
-    run("gh", ["auth", "status"], { stdio: ["ignore", "pipe", "pipe"] });
-  } catch {
-    errors.push("GitHub CLI is installed but not authenticated; run gh auth login");
-  }
 }
 
 let branch = "";

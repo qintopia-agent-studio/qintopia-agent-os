@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { validatePrBody } from "./pr-body.mjs";
-import { run } from "./run-command.mjs";
+import { commandExists, run } from "./run-command.mjs";
 
 const argValue = (name) => {
   const index = process.argv.indexOf(name);
@@ -45,10 +45,8 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-try {
-  run("gh", ["auth", "status"], { stdio: ["ignore", "pipe", "pipe"] });
-} catch {
-  console.error("GitHub CLI is missing or not authenticated. Run pnpm pr:doctor.");
+if (!commandExists("gh")) {
+  console.error("GitHub CLI is missing. Run pnpm pr:bootstrap.");
   process.exit(1);
 }
 

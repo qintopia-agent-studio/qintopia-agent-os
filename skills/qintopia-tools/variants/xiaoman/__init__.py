@@ -81,14 +81,8 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_material_summary",
 ]
 XIAOMAN_ACTIVITY_TABLE_ROLES = ["activity_plan", "activity_occurrence"]
-XIAOMAN_ACTIVITY_HANDOFF_TYPES = [
-    "visual_asset_request",
-    "ops_followup",
-    "member_notice",
-    "human_confirmation",
-    "activity_recap",
-]
-XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi", "silaoshi", "erhua", "default"]
+XIAOMAN_ACTIVITY_HANDOFF_TYPES = ["visual_asset_request"]
+XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
 QWEATHER_ALLOWED_MCP_TOOLS = {
     "get_weather_now",
     "get_hourly_weather",
@@ -706,18 +700,18 @@ QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA = {
 QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA = {
     "description": (
         "Update Xiaoman-owned activity status fields through the Agent OS "
-        "activity worker boundary. It is not a generic Feishu/Base write tool."
+        "activity worker boundary. It mutates Postgres event_signals, not Feishu/Base."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "record_id": {"type": "string", "description": "Approved activity Base record id."},
-            "table_role": {"type": "string", "enum": XIAOMAN_ACTIVITY_TABLE_ROLES},
+            "event_signal_id": {"type": "string", "description": "Internal AgentOS event signal UUID."},
+            "mutation_id": {"type": "string", "description": "Caller-supplied UUID for idempotent mutation audit."},
             "status": {"type": "string", "description": "New Xiaoman-owned activity status."},
             "status_note": {"type": "string", "description": "Short note explaining the status change."},
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
-        "required": ["record_id", "table_role", "status"],
+        "required": ["event_signal_id", "mutation_id", "status"],
         "additionalProperties": False,
     },
 }
@@ -726,13 +720,13 @@ QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA = {
 QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA = {
     "description": (
         "Update Xiaoman-owned activity gap/supplement fields through the Agent OS "
-        "activity worker boundary. It cannot update arbitrary Base fields."
+        "activity worker boundary. It mutates Postgres event_signals, not Feishu/Base."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "record_id": {"type": "string", "description": "Approved activity Base record id."},
-            "table_role": {"type": "string", "enum": XIAOMAN_ACTIVITY_TABLE_ROLES},
+            "event_signal_id": {"type": "string", "description": "Internal AgentOS event signal UUID."},
+            "mutation_id": {"type": "string", "description": "Caller-supplied UUID for idempotent mutation audit."},
             "gap_summary": {"type": "string", "description": "Short summary of missing information or material gaps."},
             "missing_fields": {
                 "type": "array",
@@ -741,7 +735,7 @@ QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA = {
             },
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
-        "required": ["record_id", "table_role", "gap_summary"],
+        "required": ["event_signal_id", "mutation_id", "gap_summary"],
         "additionalProperties": False,
     },
 }
@@ -3277,8 +3271,8 @@ def handle_qintopia_xiaoman_activity_list_by_date(args: dict[str, Any], **_: Any
 
 def handle_qintopia_xiaoman_activity_status_update(args: dict[str, Any], **_: Any) -> str:
     payload = {
-        "record_id": _clean_text(args.get("record_id"), max_len=160),
-        "table_role": _clean_text(args.get("table_role"), max_len=80),
+        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=160),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=160),
         "status": _clean_text(args.get("status"), max_len=120),
         "status_note": _body_text(args.get("status_note"), max_len=800),
     }
@@ -3287,15 +3281,15 @@ def handle_qintopia_xiaoman_activity_status_update(args: dict[str, Any], **_: An
         operation="status-update",
         args=args,
         payload=payload,
-        required=["record_id", "table_role", "status"],
+        required=["event_signal_id", "mutation_id", "status"],
         writes_business_state=True,
     )
 
 
 def handle_qintopia_xiaoman_activity_gap_update(args: dict[str, Any], **_: Any) -> str:
     payload = {
-        "record_id": _clean_text(args.get("record_id"), max_len=160),
-        "table_role": _clean_text(args.get("table_role"), max_len=80),
+        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=160),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=160),
         "gap_summary": _body_text(args.get("gap_summary"), max_len=1000),
         "missing_fields": _clean_string_list(args.get("missing_fields")),
     }
@@ -3304,7 +3298,7 @@ def handle_qintopia_xiaoman_activity_gap_update(args: dict[str, Any], **_: Any) 
         operation="gap-update",
         args=args,
         payload=payload,
-        required=["record_id", "table_role", "gap_summary"],
+        required=["event_signal_id", "mutation_id", "gap_summary"],
         writes_business_state=True,
     )
 

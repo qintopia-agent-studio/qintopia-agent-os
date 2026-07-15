@@ -6,12 +6,9 @@ import { commandExists, run } from "./run-command.mjs";
 
 if (commandExists("gh")) {
   console.log("GitHub CLI is already installed.");
-  try {
-    run("gh", ["auth", "status"], { stdio: ["ignore", "pipe", "pipe"] });
-    console.log("GitHub CLI is authenticated.");
-  } catch {
-    console.log("Run gh auth login before creating PRs.");
-  }
+  console.log(
+    "Do not run a separate auth precheck; handle authentication only if PR creation fails."
+  );
   process.exit(0);
 }
 
@@ -26,7 +23,10 @@ const printManualInstall = () => {
   console.log(
     "- Debian/Ubuntu: follow https://github.com/cli/cli/blob/trunk/docs/install_linux.md"
   );
-  console.log("Then run: gh auth login");
+  console.log("Then run the repository PR creation flow directly.");
+  console.log(
+    "Only run gh auth login if push or gh pr create reports an auth failure."
+  );
 };
 
 if (!autoInstall) {
@@ -62,4 +62,4 @@ if (platform === "darwin" && commandExists("brew")) {
   process.exit(1);
 }
 
-console.log("GitHub CLI installed. Run gh auth login before creating PRs.");
+console.log("GitHub CLI installed. Run the repository PR creation flow directly.");
