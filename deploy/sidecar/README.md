@@ -73,6 +73,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 scripts/qiwe-image-send-staging-smoke.sh
 ```
 
@@ -84,6 +85,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>' \
 scripts/qiwe-image-send-staging-smoke.sh
 ```
@@ -98,16 +100,18 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<same approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<same approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<same approved send-ready UUID>' \
 scripts/qiwe-image-send-staging-smoke.sh
 ```
 
 Never persist the callback body or credentials in a file, environment variable,
-argument, shell history, report, or log. The wrapper parses only its fixed staging env
-key allowlist without evaluating shell syntax, and preflight/upload subprocesses receive
-`/dev/null` instead of the callback stream. Subprocess output is scanned in memory
-before the fixed report schema is validated through an anonymous pipe; the wrapper never
-writes subprocess output to a file. Successful phases print only fixed
+argument, shell history, report, or log. The wrapper runs only the reviewed packaged
+`sidecar/qintopia-message-sidecar` whose SHA-256 matches the command, parses only its
+fixed staging env key allowlist without evaluating shell syntax, and preflight/upload
+subprocesses receive `/dev/null` instead of the callback stream. Subprocess output is
+scanned in memory before the fixed report schema is validated through an anonymous pipe;
+the wrapper never writes subprocess output to a file. Successful phases print only fixed
 `qiwe_image_send_staging_evidence=<json>` lines and the final pass message. The full
 operator checklist is `docs/operations/qiwe-image-send-staging-runbook.md`. This smoke
 does not install a listener, service, timer, or production feature build.

@@ -77,6 +77,7 @@ const allowedPreflightKeys = new Set([
   "media_allowed_host_count",
   "safe_for_chat",
   "send_enabled",
+  "sidecar_binary_sha256",
   "success",
   "webhook_ready",
   "worker",
@@ -91,6 +92,7 @@ const allowedPhaseKeys = new Set([
   "external_upload_requested",
   "phase",
   "safe_for_chat",
+  "sidecar_binary_sha256",
   "success",
   "worker",
   "work_item_id",
@@ -126,7 +128,8 @@ const assertBase = (entry, label) => {
   if (
     entry.success !== true ||
     entry.worker !== "qiwe-image-send-adapter" ||
-    entry.safe_for_chat !== false
+    entry.safe_for_chat !== false ||
+    !isSha256(entry.sidecar_binary_sha256)
   ) {
     fail(`${label} evidence has invalid base fields`);
   }
@@ -135,9 +138,11 @@ const assertBase = (entry, label) => {
 const preflights = [];
 let upload = null;
 let callback = null;
+const sidecarHashes = new Set();
 
 for (const entry of entries) {
   assertBase(entry, entry.phase ?? "preflight");
+  sidecarHashes.add(entry.sidecar_binary_sha256);
   if (!("phase" in entry)) {
     assertExactKeys(entry, allowedPreflightKeys, "preflight");
     if (
@@ -209,12 +214,18 @@ if (mode === "preflight-only") {
   if (preflights.length !== 1 || upload || callback) {
     fail("preflight-only evidence must contain exactly one preflight record");
   }
+  if (sidecarHashes.size !== 1) {
+    fail("preflight-only evidence must contain one sidecar binary hash");
+  }
 } else {
   if (preflights.length < 1 || !upload || !callback) {
     fail("complete evidence requires preflight, upload, and callback records");
   }
   if (upload.work_item_id !== callback.work_item_id) {
     fail("upload and callback work_item_id values differ");
+  }
+  if (sidecarHashes.size !== 1) {
+    fail("complete evidence records must use the same sidecar binary hash");
   }
 }
 
@@ -224,4 +235,8 @@ function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(value ?? "")
   );
+}
+
+function isSha256(value) {
+  return /^[0-9a-f]{64}$/.test(String(value ?? ""));
 }

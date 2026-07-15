@@ -373,14 +373,18 @@ Use `rg` and `rg --files` for search.
   API/media/group allowlists, and webhook readiness before reading stdin. Upload apply
   must validate the same adapter configuration before connecting to Postgres.
 - `qiwe-image-send-staging-smoke.sh` is the only reviewed one-shot staging entrypoint
-  for the async upload and callback send exercise. It requires an exact work item UUID,
-  owner phrase, staging env path, exact owner-reviewed staging database URL hash, and
-  explicit `upload` or `callback` phase. Callback credentials may flow only from bounded
-  stdin to the callback processor and memory-only send request; never store them in a
-  file, environment variable, CLI argument, NATS event, report, or log. The smoke must
-  attach `/dev/null` to preflight and upload subprocesses and parse only the fixed
-  staging env key allowlist without evaluating the env file as shell. Subprocess output
-  must be captured, scanned, and schema-validated through memory and anonymous pipes; no
+  for the async upload and callback send exercise. It requires an exact work item UUID
+  for upload/callback, owner phrase, staging env path, exact owner-reviewed staging
+  database URL hash, exact owner-reviewed packaged sidecar binary SHA-256, and explicit
+  `preflight`, `upload`, or `callback` phase. It must run only the release-local
+  `sidecar/qintopia-message-sidecar`; do not allow `QINTOPIA_SIDECAR_BIN`, `cargo run`,
+  symlinked binaries, group/world-writable binary paths, or mutable source-tree
+  fallbacks. Callback credentials may flow only from bounded stdin to the callback
+  processor and memory-only send request; never store them in a file, environment
+  variable, CLI argument, NATS event, report, or log. The smoke must attach `/dev/null`
+  to preflight and upload subprocesses and parse only the fixed staging env key
+  allowlist without evaluating the env file as shell. Subprocess output must be
+  captured, scanned, and schema-validated through memory and anonymous pipes; no
   subprocess output may be written to a file. It must not install a listener, service,
   timer, production feature build, Feishu write, or broad group send.
 - A QiWe webhook bridge for `cmd=20000` may invoke only one explicitly configured

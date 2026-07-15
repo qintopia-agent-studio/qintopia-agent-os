@@ -12,8 +12,8 @@ production runtime configuration.
 
 ## Preconditions
 
-- Use an immutable staging sidecar binary compiled with the non-default
-  `qiwe-staging-adapter` feature.
+- Use the immutable `sidecar/qintopia-message-sidecar` packaged in the reviewed staging
+  release root and have its owner-approved SHA-256 ready.
 - Keep production sidecar artifacts on default/production features only; production
   artifacts must not contain `qiwe-staging-adapter`.
 - Prepare one reviewed send-ready work item UUID for the final approved JPEG.
@@ -28,11 +28,12 @@ production runtime configuration.
 
 ## Preflight Phase
 
-Run this first from the reviewed staging release root. The phase must use either the
-packaged `sidecar/qintopia-message-sidecar` binary or an executable absolute
-`QINTOPIA_SIDECAR_BIN`; it will not fall back to `cargo run`. It validates the staging
-binary, env allowlist, owner phrase, database hash, webhook readiness, and allowlist
-counts without claiming a work item, opening a QiWe upload, or reading callback stdin:
+Run this first from the reviewed staging release root. The phase must use the packaged
+`sidecar/qintopia-message-sidecar` binary and match the owner-approved binary SHA-256;
+it will not accept arbitrary binary paths or fall back to `cargo run`. It validates the
+staging binary, env allowlist, owner phrase, database hash, webhook readiness, and
+allowlist counts without claiming a work item, opening a QiWe upload, or reading
+callback stdin:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
@@ -40,6 +41,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
 
@@ -57,6 +59,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
@@ -80,6 +83,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<same approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<same approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<same approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
@@ -117,6 +121,7 @@ Record only these fields:
 - repository commit SHA and staging binary SHA-256;
 - exact command phases run: `preflight`, `upload`, and `callback`;
 - staging database URL SHA-256, not the URL;
+- staging sidecar binary SHA-256;
 - work item UUID;
 - fixed action statuses from the smoke;
 - callback credential schema id;

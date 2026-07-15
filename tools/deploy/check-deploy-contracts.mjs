@@ -392,12 +392,16 @@ if (!exists(qiweImageStagingSmokePath)) {
     "approved-staging-qiwe-image-send",
     "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE",
     "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256",
     "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE",
     'PHASE" != "preflight"',
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE must be preflight, upload, or callback",
-    "QINTOPIA_SIDECAR_BIN must be an executable absolute path",
-    "QINTOPIA_SIDECAR_BIN or packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256 must be a canonical SHA-256",
+    "packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke",
+    "packaged sidecar binary hash does not match the approved command",
+    "packaged sidecar binary and parent directory must not be symlinks",
+    "sidecar_binary_sha256",
     "qiwe-image-send-staging-preflight",
     "run-qiwe-image-send-worker",
     "process-qiwe-image-send-callback",
@@ -441,6 +445,7 @@ if (!exists(qiweImageStagingSmokePath)) {
     "--features qiwe-staging-adapter",
     "cargo run",
     "source_fallback",
+    "QINTOPIA_SIDECAR_BIN",
   ]) {
     forbidFragment(qiweImageStagingSmokePath, smoke, fragment);
   }
@@ -460,6 +465,7 @@ if (!exists(qiweImageStagingRunbookPath)) {
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
     "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env",
     "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>'",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>'",
     "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>'",
     "trusted-staging-callback-source |",
     "callback credential schema id",
@@ -501,8 +507,10 @@ if (!exists(qiweImageStagingEvidenceCheckPath)) {
     "upload and callback work_item_id values differ",
     "forbidden sensitive fragment appeared in evidence",
     "callback_credential_schema",
+    "sidecar_binary_sha256",
     "external_send_executed",
     "image_send_completed",
+    "complete evidence records must use the same sidecar binary hash",
   ]) {
     requireFragment(qiweImageStagingEvidenceCheckPath, checker, fragment);
   }
@@ -521,6 +529,7 @@ for (const relativePath of [
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>'",
     "trusted-staging-callback-source |",
   ]) {
     requireFragment(relativePath, text, fragment);

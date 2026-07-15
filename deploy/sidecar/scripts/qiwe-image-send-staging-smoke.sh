@@ -15,6 +15,7 @@ ENV_FILE="${QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE:-}"
 PHASE="${QINTOPIA_QIWE_IMAGE_STAGING_PHASE:-}"
 WORK_ITEM_ID="${QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID:-}"
 EXPECTED_DATABASE_HASH="${QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256:-}"
+EXPECTED_SIDECAR_HASH="${QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256:-}"
 
 if [[ -z "$ENV_FILE" || ! -f "$ENV_FILE" || "$ENV_FILE" != /* || "$ENV_FILE" != *staging* ]]; then
   echo "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE must be an existing absolute path containing staging" >&2
@@ -31,6 +32,11 @@ if [[ ! "$EXPECTED_DATABASE_HASH" =~ ^[0-9a-f]{64}$ ]]; then
   exit 1
 fi
 
+if [[ ! "$EXPECTED_SIDECAR_HASH" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256 must be a canonical SHA-256" >&2
+  exit 1
+fi
+
 if [[ "$PHASE" != "preflight" ]] && ! python3 - "$WORK_ITEM_ID" <<'PY'
 import sys
 import uuid
@@ -44,7 +50,6 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
 
 cd "$MONOREPO_ROOT"
 
@@ -140,18 +145,53 @@ if [[ "${database_facts[1]:-}" != *staging* ]]; then
   exit 1
 fi
 
-if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
-  if [[ "$QINTOPIA_SIDECAR_BIN" != /* || ! -x "$QINTOPIA_SIDECAR_BIN" ]]; then
-    echo "QINTOPIA_SIDECAR_BIN must be an executable absolute path" >&2
-    exit 1
-  fi
-  BIN_CMD=("$QINTOPIA_SIDECAR_BIN")
-elif [[ -x "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar" ]]; then
-  BIN_CMD=("${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar")
-else
-  echo "QINTOPIA_SIDECAR_BIN or packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke" >&2
+SIDECAR_BIN="${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar"
+if [[ ! -x "$SIDECAR_BIN" ]]; then
+  echo "packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke" >&2
   exit 1
 fi
+readarray -t sidecar_facts < <(python3 - "$SIDECAR_BIN" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+parent = os.path.dirname(path)
+for candidate in (parent, path):
+    if os.path.islink(candidate):
+        print("symlink")
+        sys.exit(0)
+path_stat = os.stat(path)
+parent_stat = os.stat(parent)
+if path_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    print("writable")
+    sys.exit(0)
+if parent_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    print("writable")
+    sys.exit(0)
+digest = hashlib.sha256()
+with open(path, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+print(digest.hexdigest())
+PY
+)
+if [[ "${sidecar_facts[0]:-}" == "symlink" ]]; then
+  echo "packaged sidecar binary and parent directory must not be symlinks" >&2
+  exit 1
+fi
+if [[ "${sidecar_facts[0]:-}" == "writable" ]]; then
+  echo "packaged sidecar binary and parent directory must not be group/world writable" >&2
+  exit 1
+fi
+if [[ "${sidecar_facts[0]:-}" != "$EXPECTED_SIDECAR_HASH" ]]; then
+  echo "packaged sidecar binary hash does not match the approved command" >&2
+  exit 1
+fi
+SIDECAR_BINARY_SHA256="${sidecar_facts[0]}"
+export SIDECAR_BINARY_SHA256
+BIN_CMD=("$SIDECAR_BIN")
 
 assert_no_sensitive_text() {
   local label="$1"
@@ -232,6 +272,7 @@ evidence_kind = sys.argv[1]
 evidence = {
     "action_status": payload["action_status"],
     "safe_for_chat": payload["safe_for_chat"],
+    "sidecar_binary_sha256": os.environ["SIDECAR_BINARY_SHA256"],
     "success": payload["success"],
     "worker": payload["worker"],
 }

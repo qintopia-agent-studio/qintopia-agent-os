@@ -22,6 +22,10 @@ const databaseUrl =
   "postgres://staging-user:private-password@127.0.0.1:5432/qintopia_staging";
 const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex");
 const callbackSecret = "callback-aes-secret-must-not-appear";
+const packagedSidecarDir = path.join(repoRoot, "sidecar");
+const packagedSidecar = path.join(packagedSidecarDir, "qintopia-message-sidecar");
+const createdPackagedSidecarDir = !fs.existsSync(packagedSidecarDir);
+let installedPackagedSidecar = false;
 
 const writeExecutable = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -30,9 +34,11 @@ const writeExecutable = (filePath, content) => {
 };
 
 try {
+  if (!createdPackagedSidecarDir || fs.existsSync(packagedSidecar)) {
+    throw new Error("unexpected packaged sidecar path exists in source checkout");
+  }
   const envFile = path.join(tmpRoot, "message-sidecar-staging.env");
   const sidecarLog = path.join(tmpRoot, "sidecar.log");
-  const sidecar = path.join(tmpRoot, "bin", "qintopia-message-sidecar");
   fs.writeFileSync(
     envFile,
     [
@@ -51,7 +57,7 @@ try {
   );
 
   writeExecutable(
-    sidecar,
+    packagedSidecar,
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${sidecarLog}"
@@ -89,6 +95,11 @@ case "$1" in
 esac
 `
   );
+  installedPackagedSidecar = true;
+  const sidecarHash = crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(packagedSidecar))
+    .digest("hex");
 
   const baseEnv = {
     ...process.env,
@@ -96,8 +107,8 @@ esac
     QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL: "approved-staging-qiwe-image-send",
     QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE: envFile,
     QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256: databaseHash,
+    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
     QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: workItemId,
-    QINTOPIA_SIDECAR_BIN: sidecar,
   };
 
   const runSmoke = (phase, extraEnv = {}, input) =>
@@ -134,7 +145,8 @@ esac
     preflightEvidence[0].action_status !== "staging_adapter_ready" ||
     preflightEvidence[0].allowed_group_count !== 1 ||
     preflightEvidence[0].send_enabled !== true ||
-    preflightEvidence[0].webhook_ready !== true
+    preflightEvidence[0].webhook_ready !== true ||
+    preflightEvidence[0].sidecar_binary_sha256 !== sidecarHash
   ) {
     throw new Error(`preflight evidence is invalid\nstdout:\n${preflight.stdout}`);
   }
@@ -157,23 +169,28 @@ esac
       `expected preflight evidence check to pass\nstdout:\n${preflightEvidenceCheck.stdout}\nstderr:\n${preflightEvidenceCheck.stderr}`
     );
   }
-  const missingPreflightBinary = runSmoke(
-    "preflight",
-    {
-      QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: "",
-      QINTOPIA_SIDECAR_BIN: "",
-    },
-    "callback-stream-must-not-be-read"
-  );
-  if (missingPreflightBinary.status === 0) {
-    throw new Error("expected preflight without an immutable sidecar binary to fail");
-  }
-  if (
-    `${missingPreflightBinary.stdout}\n${missingPreflightBinary.stderr}`.includes(
+  const unavailableSidecar = path.join(tmpRoot, "qintopia-message-sidecar.hidden");
+  fs.renameSync(packagedSidecar, unavailableSidecar);
+  try {
+    const missingPreflightBinary = runSmoke(
+      "preflight",
+      {
+        QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: "",
+      },
       "callback-stream-must-not-be-read"
-    )
-  ) {
-    throw new Error("missing preflight binary consumed stdin");
+    );
+    if (missingPreflightBinary.status === 0) {
+      throw new Error("expected preflight without packaged sidecar to fail");
+    }
+    if (
+      `${missingPreflightBinary.stdout}\n${missingPreflightBinary.stderr}`.includes(
+        "callback-stream-must-not-be-read"
+      )
+    ) {
+      throw new Error("missing preflight binary consumed stdin");
+    }
+  } finally {
+    fs.renameSync(unavailableSidecar, packagedSidecar);
   }
 
   const upload = runSmoke("upload");
@@ -191,7 +208,8 @@ esac
     uploadEvidence[1].action_status !== "image_upload_accepted" ||
     uploadEvidence[1].work_item_id !== workItemId ||
     uploadEvidence[1].external_upload_requested !== true ||
-    uploadEvidence[1].external_send_executed !== false
+    uploadEvidence[1].external_send_executed !== false ||
+    uploadEvidence[1].sidecar_binary_sha256 !== sidecarHash
   ) {
     throw new Error(`upload evidence is invalid\nstdout:\n${upload.stdout}`);
   }
@@ -228,7 +246,8 @@ esac
     callbackEvidence[1].callback_credential_schema !==
       "fileAesKey+fileId+fileMd5+fileSize+filename" ||
     callbackEvidence[1].callback_additional_field_count !== 0 ||
-    callbackEvidence[1].external_send_executed !== true
+    callbackEvidence[1].external_send_executed !== true ||
+    callbackEvidence[1].sidecar_binary_sha256 !== sidecarHash
   ) {
     throw new Error(`callback evidence is invalid\nstdout:\n${callback.stdout}`);
   }
@@ -317,6 +336,17 @@ esac
     throw new Error("database hash failure exposed the database URL");
   }
 
+  const wrongSidecarHash = runSmoke("preflight", {
+    QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: "",
+    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: "0".repeat(64),
+  });
+  if (wrongSidecarHash.status === 0) {
+    throw new Error("expected a mismatched sidecar binary hash to fail");
+  }
+  if (`${wrongSidecarHash.stdout}\n${wrongSidecarHash.stderr}`.includes(sidecarHash)) {
+    throw new Error("sidecar hash failure exposed the computed hash");
+  }
+
   const leaked = runSmoke(
     "callback",
     { FAKE_CALLBACK_LEAK_VALUE: callbackSecret },
@@ -374,20 +404,6 @@ esac
     throw new Error("staging env parser failure exposed a secret");
   }
 
-  const missingBinary = runSmoke("upload", {
-    QINTOPIA_SIDECAR_BIN: "",
-  });
-  if (missingBinary.status === 0) {
-    throw new Error("expected upload without an immutable sidecar binary to fail");
-  }
-  if (
-    `${missingBinary.stdout}\n${missingBinary.stderr}`.includes(
-      "fake-qiwe-token-must-not-appear"
-    )
-  ) {
-    throw new Error("missing binary failure exposed a secret");
-  }
-
   const log = fs.readFileSync(sidecarLog, "utf8");
   for (const command of [
     "qiwe-image-send-staging-preflight",
@@ -402,6 +418,12 @@ esac
     throw new Error("staging smoke invoked an unexpected command");
   }
 } finally {
+  if (installedPackagedSidecar) {
+    fs.rmSync(packagedSidecar, { force: true });
+  }
+  if (createdPackagedSidecarDir) {
+    fs.rmSync(packagedSidecarDir, { recursive: true, force: true });
+  }
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
 

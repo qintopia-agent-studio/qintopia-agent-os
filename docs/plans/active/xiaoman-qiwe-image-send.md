@@ -157,6 +157,8 @@ database connection, callback read, or network request it requires:
 - complete API, media-host, and case-sensitive target-group allowlists; and
 - a staging database whose exact URL hash is supplied in the owner-reviewed one-shot
   command and matches the sourced database URL.
+- the packaged staging sidecar binary whose exact SHA-256 is supplied in the same
+  owner-reviewed command.
 
 The smoke runs as two explicit invocations because the QiWe upload callback is
 asynchronous. A separate `preflight` phase validates the staging boundary without
@@ -168,6 +170,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
@@ -175,6 +178,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 
@@ -184,6 +188,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<same approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<same approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<same approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
