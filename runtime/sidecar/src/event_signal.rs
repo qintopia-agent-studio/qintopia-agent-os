@@ -8,7 +8,7 @@ use sqlx::{postgres::PgPool, Row};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{config::Cli, db};
+use crate::{activity_lifecycle::initial_phase_for_signal, config::Cli, db};
 
 const EXTRACTION_VERSION: &str = "event_signal_v2_rule_20260627";
 const JUDGE_MODEL: &str = "rule_v2";
@@ -59,6 +59,7 @@ struct CandidatePreview {
 #[derive(Debug, Clone, Serialize)]
 struct EventPreview {
     signal_type: String,
+    activity_phase: Option<String>,
     title: String,
     summary: String,
     owner_agent: String,
@@ -605,12 +606,12 @@ async fn upsert_events(
                     confidence, source_candidate_ids, source_message_ids,
                     source_window_start, source_window_end, dedupe_key, judge_model,
                     judge_reason, extraction_version, risk_level, external_publish_status,
-                    metadata
+                    activity_phase, metadata
                 )
             VALUES
                 (
                     'qiwe', $1, $2, $3, $4, $5, $6, $7, $8, $9, '待处理',
-                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
                 )
             ON CONFLICT (platform, chat_id, signal_date, dedupe_key, extraction_version)
             DO UPDATE SET
@@ -654,6 +655,7 @@ async fn upsert_events(
         .bind(EXTRACTION_VERSION)
         .bind(&event.risk_level)
         .bind(&event.external_publish_status)
+        .bind(initial_phase_for_signal(&event.signal_type).map(|phase| phase.as_str()))
         .bind(json!({"source": "event_signal_v2_rule"}))
         .execute(pool)
         .await
@@ -786,6 +788,8 @@ fn candidate_preview(candidate: &Candidate) -> CandidatePreview {
 fn event_preview(event: &AcceptedEvent) -> EventPreview {
     EventPreview {
         signal_type: event.signal_type.clone(),
+        activity_phase: initial_phase_for_signal(&event.signal_type)
+            .map(|phase| phase.as_str().to_string()),
         title: event.title.clone(),
         summary: event.summary.clone(),
         owner_agent: event.owner_agent.clone(),

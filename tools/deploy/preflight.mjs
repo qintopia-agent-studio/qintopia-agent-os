@@ -585,10 +585,12 @@ if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
     "qintopia_agent_os.capabilities",
     "qintopia_agent_os.event_signal_mutations",
     "gap_summary",
+    "activity_phase",
     "2026-06-30.007",
     "2026-07-02.001",
     "2026-07-13.002",
     "2026-07-14.001",
+    "2026-07-15.001",
     "PGHOST",
     "PGDATABASE",
   ]) {

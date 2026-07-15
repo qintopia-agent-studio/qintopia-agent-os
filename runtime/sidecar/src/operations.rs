@@ -5,13 +5,15 @@ use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
 
-use crate::{config::Cli, db, url_policy};
+use crate::{activity_lifecycle::ActivityPhase, config::Cli, db, url_policy};
 
 const ALLOWED_WORK_ITEM_TYPES: &[&str] = &[
     "visual_asset_request",
     "image_generation_request",
     "group_message_request",
     "activity_promotion_request",
+    "activity_live_support_request",
+    "activity_recap_request",
     "evidence_request",
 ];
 
@@ -382,6 +384,7 @@ pub struct XiaomanActivityImageGenerationStarterWorkerReport {
 #[derive(Debug, Clone)]
 struct XiaomanActivityPromotionCandidate {
     id: Uuid,
+    activity_phase: ActivityPhase,
     brief_summary: String,
     source_type: String,
     source_refs: Value,
@@ -1292,8 +1295,32 @@ async fn load_xiaoman_activity_promotion_candidates(
 ) -> Result<Vec<XiaomanActivityPromotionCandidate>> {
     let rows = sqlx::query(
         r#"
+        WITH phase_parents AS (
+            SELECT
+                parent.*,
+                CASE
+                    WHEN parent.payload->>'activity_phase'
+                         IN ('pre_event', 'in_event', 'post_event')
+                        THEN parent.payload->>'activity_phase'
+                    WHEN parent.work_item_type = 'activity_live_support_request'
+                        THEN 'in_event'
+                    WHEN parent.work_item_type = 'activity_recap_request'
+                        THEN 'post_event'
+                    ELSE 'pre_event'
+                END AS activity_phase
+            FROM qintopia_agent_os.work_items parent
+            WHERE parent.capability_key = 'xiaoman.create_activity_request'
+              AND parent.work_item_type IN (
+                  'activity_promotion_request',
+                  'activity_live_support_request',
+                  'activity_recap_request'
+              )
+              AND parent.target_agent = 'xiaoman'
+              AND ($1::uuid IS NULL OR parent.id = $1)
+        )
         SELECT
             parent.id,
+            parent.activity_phase,
             parent.brief_summary,
             parent.source_type,
             parent.source_refs,
@@ -1314,12 +1341,8 @@ async fn load_xiaoman_activity_promotion_candidates(
                   AND child.capability_key = 'huabaosi.create_visual_asset'
                   AND child.work_item_type = 'visual_asset_request'
             ) AS missing_visual_child
-        FROM qintopia_agent_os.work_items parent
-        WHERE parent.capability_key = 'xiaoman.create_activity_request'
-          AND parent.work_item_type = 'activity_promotion_request'
-          AND parent.target_agent = 'xiaoman'
-          AND ($1::uuid IS NULL OR parent.id = $1)
-          AND (
+        FROM phase_parents parent
+        WHERE (
             NOT EXISTS (
                 SELECT 1
                 FROM qintopia_agent_os.work_items child
@@ -1327,12 +1350,15 @@ async fn load_xiaoman_activity_promotion_candidates(
                   AND child.capability_key = 'wenyuange.retrieve_evidence'
                   AND child.work_item_type = 'evidence_request'
             )
-            OR NOT EXISTS (
+            OR (
+              parent.activity_phase <> 'in_event'
+              AND NOT EXISTS (
                 SELECT 1
                 FROM qintopia_agent_os.work_items child
                 WHERE child.parent_work_item_id = parent.id
                   AND child.capability_key = 'huabaosi.create_visual_asset'
                   AND child.work_item_type = 'visual_asset_request'
+              )
             )
           )
         ORDER BY parent.created_at ASC, parent.id ASC
@@ -1347,8 +1373,11 @@ async fn load_xiaoman_activity_promotion_candidates(
 
     rows.into_iter()
         .map(|row| {
+            let activity_phase: String = row.try_get("activity_phase")?;
             Ok(XiaomanActivityPromotionCandidate {
                 id: row.try_get("id")?,
+                activity_phase: ActivityPhase::parse(&activity_phase)
+                    .context("activity request has invalid activity_phase")?,
                 brief_summary: row.try_get("brief_summary")?,
                 source_type: row.try_get("source_type")?,
                 source_refs: row.try_get("source_refs")?,
@@ -3495,6 +3524,7 @@ pub async fn create_work_item(
     }
 
     let mut tx = pool.begin().await.context("begin work item transaction")?;
+    validate_activity_lifecycle_phase_fact(&mut tx, &request).await?;
     let initial_status = initial_status_for(&request, &capability);
     let existing = sqlx::query(
         r#"
@@ -3949,6 +3979,9 @@ fn validate_request(
     if capability.capability_key == "huabaosi.generate_image_asset" {
         validate_image_generation_request(request)?;
     }
+    if capability.capability_key == "xiaoman.create_activity_request" {
+        validate_activity_lifecycle_root(request)?;
+    }
     if contains_sensitive_value(&request.payload)
         || contains_sensitive_value(&request.source_refs)
         || contains_sensitive_value(&request.metadata)
@@ -3957,6 +3990,71 @@ fn validate_request(
         bail!("payload contains disallowed sensitive or raw internal content");
     }
     validate_high_risk_send(request, capability, policy)?;
+    Ok(())
+}
+
+fn validate_activity_lifecycle_root(request: &WorkItemCreateRequest) -> Result<()> {
+    let raw_phase = non_empty_object_text(&request.payload, "activity_phase");
+    let phase = match raw_phase.as_deref() {
+        Some(value) => ActivityPhase::parse(value).context("activity_phase is not allowed")?,
+        None if request.work_item_type == ActivityPhase::Pre.root_work_item_type() => {
+            ActivityPhase::Pre
+        }
+        None => bail!("activity_phase is required for non-pre-event activity work"),
+    };
+    if request.work_item_type != phase.root_work_item_type() {
+        bail!("activity_phase does not match work_item_type");
+    }
+    if phase != ActivityPhase::Pre && request.source_type != "event_signal" {
+        bail!("non-pre-event activity work requires an event_signal phase fact");
+    }
+    if let Some(route) = non_empty_object_text(&request.payload, "activity_route") {
+        if route != phase.route() {
+            bail!("activity_route must be derived from activity_phase");
+        }
+    } else if phase != ActivityPhase::Pre {
+        bail!("activity_route is required for non-pre-event activity work");
+    }
+    Ok(())
+}
+
+async fn validate_activity_lifecycle_phase_fact(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    request: &WorkItemCreateRequest,
+) -> Result<()> {
+    if request.capability_key != "xiaoman.create_activity_request"
+        || request.source_type != "event_signal"
+    {
+        return Ok(());
+    }
+
+    let event_signal_id = request
+        .source_event_signal_id
+        .context("source_event_signal_id is required for event-signal activity roots")?;
+    let current_phase: String = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(activity_phase, 'pre_event')
+        FROM qintopia_agent_os.event_signals
+        WHERE id = $1
+          AND owner_agent = 'xiaoman'
+          AND signal_type = '活动/聚会'
+        FOR SHARE
+        "#,
+    )
+    .bind(event_signal_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("lock activity phase fact for work item creation")?
+    .context("source_event_signal_id does not reference a Xiaoman activity signal")?;
+    let current_phase = ActivityPhase::parse(&current_phase)
+        .context("event signal contains an invalid activity_phase")?;
+    let requested_phase = non_empty_object_text(&request.payload, "activity_phase")
+        .as_deref()
+        .and_then(ActivityPhase::parse)
+        .unwrap_or(ActivityPhase::Pre);
+    if requested_phase != current_phase {
+        bail!("activity_phase does not match the current event signal phase");
+    }
     Ok(())
 }
 
@@ -4309,6 +4407,34 @@ fn workflow_work_item_requests(
 fn xiaoman_activity_promotion_child_requests(
     candidate: &XiaomanActivityPromotionCandidate,
 ) -> Vec<WorkItemCreateRequest> {
+    let phase = candidate.activity_phase;
+    let workflow_type = phase.workflow_type();
+    let (evidence_purpose, evidence_brief, evidence_question) = match phase {
+        ActivityPhase::Pre => (
+            "activity_evidence_request",
+            format!("{} - 活动宣发背景资料", candidate.brief_summary),
+            format!(
+                "请整理活动宣发前需要引用的背景资料和证据：{}",
+                candidate.brief_summary
+            ),
+        ),
+        ActivityPhase::In => (
+            "activity_live_evidence_request",
+            format!("{} - 活动现场信息", candidate.brief_summary),
+            format!(
+                "请整理活动进行中的现场事实、变更和待跟进事项：{}",
+                candidate.brief_summary
+            ),
+        ),
+        ActivityPhase::Post => (
+            "activity_recap_evidence_request",
+            format!("{} - 活动复盘证据", candidate.brief_summary),
+            format!(
+                "请整理活动结束后的结果、反馈和复盘证据：{}",
+                candidate.brief_summary
+            ),
+        ),
+    };
     let mut requests = Vec::new();
     if candidate.missing_evidence_child {
         requests.push(xiaoman_activity_promotion_child_request(
@@ -4316,30 +4442,49 @@ fn xiaoman_activity_promotion_child_requests(
             "wenyuange",
             "wenyuange.retrieve_evidence",
             "evidence_request",
-            "activity_evidence_request",
-            format!("{} - 活动宣发背景资料", candidate.brief_summary),
+            evidence_purpose,
+            evidence_brief,
             "evidence-child",
             json!({
-                "workflow_type": "activity_promotion",
+                "workflow_type": workflow_type,
+                "activity_phase": phase.as_str(),
+                "activity_route": phase.route(),
                 "planner_intent": "retrieve_evidence",
-                "question": format!("请整理活动宣发前需要引用的背景资料和证据：{}", candidate.brief_summary),
+                "question": evidence_question,
                 "request_text": candidate.brief_summary,
             }),
         ));
     }
-    if candidate.missing_visual_child {
+    if phase.needs_visual() && candidate.missing_visual_child {
+        let (purpose, brief_summary, planner_intent, requested_output) = match phase {
+            ActivityPhase::Pre => (
+                "activity_visual_asset_request",
+                candidate.brief_summary.clone(),
+                "create_visual_asset",
+                "poster_or_visual_draft",
+            ),
+            ActivityPhase::Post => (
+                "activity_recap_visual_request",
+                format!("{} - 活动复盘视觉", candidate.brief_summary),
+                "create_recap_visual",
+                "recap_visual_draft",
+            ),
+            ActivityPhase::In => unreachable!("in-event route has no visual child"),
+        };
         requests.push(xiaoman_activity_promotion_child_request(
             candidate,
             "huabaosi",
             "huabaosi.create_visual_asset",
             "visual_asset_request",
-            "activity_visual_asset_request",
-            candidate.brief_summary.clone(),
+            purpose,
+            brief_summary,
             "visual-child",
             json!({
-                "workflow_type": "activity_promotion",
-                "planner_intent": "create_visual_asset",
-                "requested_output": "poster_or_visual_draft",
+                "workflow_type": workflow_type,
+                "activity_phase": phase.as_str(),
+                "activity_route": phase.route(),
+                "planner_intent": planner_intent,
+                "requested_output": requested_output,
                 "request_text": candidate.brief_summary,
             }),
         ));
@@ -4381,7 +4526,9 @@ fn xiaoman_activity_promotion_child_request(
         ),
         dedupe_key: String::new(),
         metadata: json!({
-            "workflow_type": "activity_promotion",
+            "workflow_type": candidate.activity_phase.workflow_type(),
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": candidate.activity_phase.route(),
             "workflow_starter": "run-xiaoman-activity-promotion-starter-worker",
             "workflow_step": idempotency_suffix,
             "parent_activity_request_work_item_id": candidate.id,
@@ -5846,7 +5993,11 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
             display_name: "小满创建活动运营请求".to_string(),
             description: "从活动信号或人工输入创建结构化活动运营请求".to_string(),
             allowed_callers: vec!["default".to_string(), "silaoshi".to_string()],
-            allowed_work_item_types: vec!["activity_promotion_request".to_string()],
+            allowed_work_item_types: vec![
+                "activity_promotion_request".to_string(),
+                "activity_live_support_request".to_string(),
+                "activity_recap_request".to_string(),
+            ],
             risk_level: "medium".to_string(),
             review_policy: "before_external_use".to_string(),
             enabled: true,
@@ -5990,6 +6141,7 @@ mod tests {
     ) -> XiaomanActivityPromotionCandidate {
         XiaomanActivityPromotionCandidate {
             id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            activity_phase: ActivityPhase::Pre,
             brief_summary: "AgentOS 小满活动宣发".to_string(),
             source_type: "event_signal".to_string(),
             source_refs: json!({"event_signal_id": "evt_xiaoman_activity"}),
@@ -6081,6 +6233,85 @@ mod tests {
         let requests = xiaoman_activity_promotion_child_requests(&candidate);
 
         assert!(requests.is_empty());
+    }
+
+    #[test]
+    fn xiaoman_in_event_route_creates_evidence_only() {
+        let mut candidate = xiaoman_promotion_candidate(true, true);
+        candidate.activity_phase = ActivityPhase::In;
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].capability_key, "wenyuange.retrieve_evidence");
+        assert_eq!(requests[0].purpose, "activity_live_evidence_request");
+        assert_eq!(requests[0].payload["activity_phase"], "in_event");
+        assert_eq!(requests[0].payload["activity_route"], "live_support");
+        assert_eq!(
+            requests[0].payload["workflow_type"],
+            "activity_live_support"
+        );
+    }
+
+    #[test]
+    fn xiaoman_post_event_route_creates_evidence_and_recap_visual() {
+        let mut candidate = xiaoman_promotion_candidate(true, true);
+        candidate.activity_phase = ActivityPhase::Post;
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].purpose, "activity_recap_evidence_request");
+        assert_eq!(requests[1].purpose, "activity_recap_visual_request");
+        assert_eq!(requests[1].payload["activity_phase"], "post_event");
+        assert_eq!(requests[1].payload["activity_route"], "activity_recap");
+        assert_eq!(requests[1].payload["workflow_type"], "activity_recap");
+        assert_eq!(
+            requests[1].payload["requested_output"],
+            "recap_visual_draft"
+        );
+    }
+
+    #[test]
+    fn activity_root_phase_and_route_must_match_the_work_item_type() {
+        let event_signal_id = Uuid::new_v4();
+        let valid = request(json!({
+            "requester_agent": "default",
+            "target_agent": "xiaoman",
+            "capability_key": "xiaoman.create_activity_request",
+            "work_item_type": "activity_live_support_request",
+            "brief_summary": "活动现场支持",
+            "priority": "normal",
+            "source_type": "event_signal",
+            "source_event_signal_id": event_signal_id,
+            "source_refs": {"event_signal_id": event_signal_id},
+            "payload": {
+                "activity_phase": "in_event",
+                "activity_route": "live_support"
+            }
+        }));
+        create_work_item_dry_run(valid.clone()).expect("matching phase route should pass");
+
+        let mut wrong_type = valid.clone();
+        wrong_type.work_item_type = "activity_recap_request".to_string();
+        assert!(create_work_item_dry_run(wrong_type)
+            .expect_err("phase and work item type mismatch must fail")
+            .to_string()
+            .contains("does not match work_item_type"));
+
+        let mut manual_phase = valid.clone();
+        manual_phase.source_type = "manual_request".to_string();
+        manual_phase.source_event_signal_id = None;
+        manual_phase.source_refs = json!({"source_record_ref": "activity:test"});
+        assert!(create_work_item_dry_run(manual_phase)
+            .expect_err("non-pre-event phase requires an AgentOS event signal fact")
+            .to_string()
+            .contains("requires an event_signal phase fact"));
+
+        let mut caller_selected_route = valid;
+        caller_selected_route.payload["activity_route"] = json!("activity_recap");
+        assert!(create_work_item_dry_run(caller_selected_route)
+            .expect_err("route must be derived from phase")
+            .to_string()
+            .contains("must be derived"));
     }
 
     #[test]

@@ -18,6 +18,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::{
+    activity_lifecycle::ActivityPhase,
     config::Cli,
     operations::{self, WorkItemCreateReport, WorkItemCreateRequest},
 };
@@ -34,6 +35,7 @@ const READ_ONLY_OPERATIONS: &[&str] = &[
 const WRITE_OPERATIONS: &[&str] = &[
     "status-update",
     "gap-update",
+    "phase-update",
     "handoff-create",
     "signal-ingest",
 ];
@@ -84,6 +86,8 @@ struct ActivityPayload {
     status: String,
     #[serde(default)]
     gap_summary: String,
+    #[serde(default)]
+    activity_phase: String,
     #[serde(default)]
     handoff_type: String,
     #[serde(default)]
@@ -183,6 +187,10 @@ struct ActivityWorkerReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     mutation_applied: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    activity_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity_route: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     feishu_record_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     event_signal_count: Option<usize>,
@@ -232,6 +240,7 @@ struct EventSignalIngestCandidate {
     title: String,
     summary: String,
     signal_date: String,
+    activity_phase: String,
     chat_id: String,
     source_message_ids: Vec<Uuid>,
     owner_name: String,
@@ -334,7 +343,10 @@ async fn execute_with_config(
             "read operation was validated only; use --apply with an approved source for replay"
                 .to_string(),
         );
-    } else if operation == "status-update" || operation == "gap-update" {
+    } else if matches!(
+        operation.as_str(),
+        "status-update" | "gap-update" | "phase-update"
+    ) {
         execute_event_signal_mutation(cli, &mut report, &payload, apply_requested).await?;
     } else if operation == "handoff-create" {
         execute_handoff_create(cli, &mut report, &payload, apply_requested).await?;
@@ -368,6 +380,8 @@ fn base_report(
         summaries: Vec::new(),
         operations_work_item: None,
         mutation_applied: None,
+        activity_phase: None,
+        activity_route: None,
         feishu_record_count: None,
         event_signal_count: None,
         matched_count: None,
@@ -377,7 +391,7 @@ fn base_report(
         guardrails: vec![
             "validates wrapper payload before any data access".to_string(),
             "fixture replay is allowed for local acceptance only".to_string(),
-            "status-update and gap-update write only allowlisted AgentOS event-signal fields with mutation audit".to_string(),
+            "status-update, gap-update, and phase-update write one allowlisted AgentOS event-signal field with mutation audit".to_string(),
             "technical report is for logs, not WeCom users".to_string(),
             "record_ref is hashed; raw Base record ids are not included in records".to_string(),
         ],
@@ -394,6 +408,11 @@ async fn execute_event_signal_mutation(
     report.safe_for_chat = false;
     report.record_count = 1;
     report.mutation_applied = Some(false);
+    if payload.operation == "phase-update" {
+        let phase = activity_phase(&payload.activity_phase)?;
+        report.activity_phase = Some(phase.as_str().to_string());
+        report.activity_route = Some(phase.route().to_string());
+    }
     report
         .guardrails
         .push("event signal mutations never use Feishu record ids or write Feishu".to_string());
@@ -406,6 +425,7 @@ async fn execute_event_signal_mutation(
         report.action_status = match payload.operation.as_str() {
             "status-update" => "event_signal_status_preview",
             "gap-update" => "event_signal_gap_preview",
+            "phase-update" => "event_signal_phase_preview",
             _ => unreachable!("mutation operation validated before execution"),
         }
         .to_string();
@@ -445,7 +465,7 @@ async fn apply_event_signal_mutation(
         .context("begin event signal mutation transaction")?;
     let row = sqlx::query(
         r#"
-        SELECT status, gap_summary
+        SELECT status, gap_summary, signal_type, activity_phase
         FROM qintopia_agent_os.event_signals
         WHERE id = $1
           AND owner_agent = 'xiaoman'
@@ -535,6 +555,36 @@ async fn apply_event_signal_mutation(
             }
             json!({"gap_summary": previous_gap})
         }
+        "phase-update" => {
+            let signal_type: String = row.try_get("signal_type")?;
+            if signal_type != "活动/聚会" {
+                bail!("phase-update requires an activity event signal");
+            }
+            let previous_phase: Option<String> = row.try_get("activity_phase")?;
+            let next_phase = activity_phase(&payload.activity_phase)?;
+            validate_activity_phase_transition(previous_phase.as_deref(), next_phase)?;
+            let result = sqlx::query(
+                r#"
+                UPDATE qintopia_agent_os.event_signals
+                SET activity_phase = $2,
+                    updated_at = now()
+                WHERE id = $1
+                "#,
+            )
+            .bind(event_signal_id)
+            .bind(next_phase.as_str())
+            .execute(&mut *tx)
+            .await
+            .context("update Xiaoman event signal activity phase")?;
+            if result.rows_affected() != 1 {
+                bail!("event signal phase update did not affect exactly one row");
+            }
+            json!({
+                "activity_phase": previous_phase
+                    .as_deref()
+                    .unwrap_or(ActivityPhase::Pre.as_str())
+            })
+        }
         _ => unreachable!("mutation operation validated before execution"),
     };
 
@@ -569,6 +619,7 @@ async fn apply_event_signal_mutation(
         action_status: match payload.operation.as_str() {
             "status-update" => "event_signal_status_updated",
             "gap-update" => "event_signal_gap_updated",
+            "phase-update" => "event_signal_phase_updated",
             _ => unreachable!("mutation operation validated before execution"),
         },
         mutation_applied: true,
@@ -585,6 +636,9 @@ fn event_signal_mutation_value(payload: &ActivityPayload) -> Result<Value> {
         "gap-update" => Ok(json!({
             "gap_summary": normalize_gap_summary(&payload.gap_summary)?
         })),
+        "phase-update" => Ok(json!({
+            "activity_phase": activity_phase(&payload.activity_phase)?.as_str()
+        })),
         _ => bail!("operation is not an event-signal mutation"),
     }
 }
@@ -599,6 +653,26 @@ fn validate_status_transition(previous: &str, next: &str) -> Result<()> {
     );
     if !allowed {
         bail!("event signal status transition is not allowed");
+    }
+    Ok(())
+}
+
+fn activity_phase(value: &str) -> Result<ActivityPhase> {
+    ActivityPhase::parse(value).context("activity_phase must be pre_event, in_event, or post_event")
+}
+
+fn activity_phase_or_pre_event(value: &str) -> Result<ActivityPhase> {
+    ActivityPhase::parse_or_pre_event(value)
+        .context("activity_phase must be pre_event, in_event, or post_event")
+}
+
+fn validate_activity_phase_transition(previous: Option<&str>, next: ActivityPhase) -> Result<()> {
+    let Some(previous) = previous else {
+        return Ok(());
+    };
+    let previous = activity_phase(previous)?;
+    if !previous.can_transition_to(next) {
+        bail!("activity phase transition must not move backward");
     }
     Ok(())
 }
@@ -685,18 +759,26 @@ async fn execute_signal_ingest(
     apply_requested: bool,
 ) -> Result<()> {
     let missing_fields = signal_missing_fields(payload);
-    let request = signal_work_item_request(payload, &missing_fields);
-    let work_item_report = if apply_requested {
+    let (phase, work_item_report) = if apply_requested {
         let database_url = cli.database_url_required()?;
         let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+        let phase = load_signal_activity_phase(&pool, payload).await?;
+        let request = signal_work_item_request_for_phase(payload, &missing_fields, phase);
         let policy = operations::OperationsPolicy::from_cli(cli, true);
-        operations::create_work_item(&pool, request, true, &policy).await?
+        (
+            phase,
+            operations::create_work_item(&pool, request, true, &policy).await?,
+        )
     } else {
-        operations::create_work_item_dry_run(request)?
+        let phase = activity_phase_or_pre_event(&payload.activity_phase)?;
+        let request = signal_work_item_request_for_phase(payload, &missing_fields, phase);
+        (phase, operations::create_work_item_dry_run(request)?)
     };
 
     report.source = "agentos_event_signal".to_string();
     report.safe_for_chat = false;
+    report.activity_phase = Some(phase.as_str().to_string());
+    report.activity_route = Some(phase.route().to_string());
     report.operations_work_item = Some(work_item_report);
     if missing_fields.is_empty() {
         report.action_status = report
@@ -721,6 +803,38 @@ async fn execute_signal_ingest(
     Ok(())
 }
 
+async fn load_signal_activity_phase(
+    pool: &PgPool,
+    payload: &ActivityPayload,
+) -> Result<ActivityPhase> {
+    let event_signal_id = Uuid::parse_str(payload.event_signal_id.trim())
+        .context("signal-ingest --apply requires an event_signal_id UUID")?;
+    let stored_phase: String = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(activity_phase, 'pre_event')
+        FROM qintopia_agent_os.event_signals
+        WHERE id = $1
+          AND owner_agent = 'xiaoman'
+          AND signal_type = '活动/聚会'
+        "#,
+    )
+    .bind(event_signal_id)
+    .fetch_optional(pool)
+    .await
+    .context("load Xiaoman activity signal phase")?
+    .context("event_signal_id does not reference a Xiaoman activity signal")?;
+    let stored_phase = activity_phase(&stored_phase)?;
+    validate_requested_activity_phase(&payload.activity_phase, stored_phase)?;
+    Ok(stored_phase)
+}
+
+fn validate_requested_activity_phase(requested: &str, stored_phase: ActivityPhase) -> Result<()> {
+    if requested.trim().is_empty() || activity_phase(requested)? == stored_phase {
+        return Ok(());
+    }
+    bail!("activity_phase does not match the current event signal phase")
+}
+
 async fn run_signal_worker_batch(
     cli: &Cli,
     options: &SignalWorkerOptions,
@@ -739,7 +853,7 @@ async fn run_signal_worker_batch(
         if !missing_fields.is_empty() {
             review_needed_count += 1;
         }
-        let request = signal_work_item_request(&payload, &missing_fields);
+        let request = signal_work_item_request(&payload, &missing_fields)?;
         let report = if apply_requested {
             operations::create_work_item(&pool, request, true, &policy).await?
         } else {
@@ -799,6 +913,7 @@ async fn load_signal_ingest_candidates(
             signals.title,
             signals.summary,
             signals.signal_date::text AS signal_date,
+            COALESCE(signals.activity_phase, 'pre_event') AS activity_phase,
             signals.chat_id,
             signals.source_message_ids,
             signals.owner_name,
@@ -813,6 +928,10 @@ async fn load_signal_ingest_candidates(
               FROM qintopia_agent_os.work_items work_items
               WHERE work_items.source_event_signal_id = signals.id
                 AND work_items.capability_key = 'xiaoman.create_activity_request'
+                AND COALESCE(
+                    NULLIF(work_items.payload->>'activity_phase', ''),
+                    'pre_event'
+                ) = COALESCE(signals.activity_phase, 'pre_event')
           )
         ORDER BY signals.signal_date ASC, signals.created_at ASC
         LIMIT $2
@@ -898,6 +1017,19 @@ fn apply_shadow_report(report: &mut ActivityWorkerReport, shadow: ActivityShadow
 fn signal_work_item_request(
     payload: &ActivityPayload,
     missing_fields: &[String],
+) -> Result<WorkItemCreateRequest> {
+    let phase = activity_phase_or_pre_event(&payload.activity_phase)?;
+    Ok(signal_work_item_request_for_phase(
+        payload,
+        missing_fields,
+        phase,
+    ))
+}
+
+fn signal_work_item_request_for_phase(
+    payload: &ActivityPayload,
+    missing_fields: &[String],
+    phase: ActivityPhase,
 ) -> WorkItemCreateRequest {
     let source_event_signal_id = signal_uuid(&payload.event_signal_id);
     let source_refs = signal_source_refs(payload, source_event_signal_id);
@@ -912,7 +1044,7 @@ fn signal_work_item_request(
         requester_agent: "default".to_string(),
         target_agent: "xiaoman".to_string(),
         capability_key: "xiaoman.create_activity_request".to_string(),
-        work_item_type: "activity_promotion_request".to_string(),
+        work_item_type: phase.root_work_item_type().to_string(),
         brief_summary,
         purpose: "activity_signal_intake".to_string(),
         human_owner: payload.owner_name.trim().to_string(),
@@ -926,17 +1058,21 @@ fn signal_work_item_request(
             "signal_type": payload.signal_type,
             "activity_title": payload.activity_title,
             "signal_date": payload.signal_date,
+            "activity_phase": phase.as_str(),
+            "activity_route": phase.route(),
             "location": payload.location,
             "gap_summary": payload.gap_summary,
             "review_needed": review_needed,
             "missing_required_fields": missing_fields,
         }),
         payload_redaction_policy: "summary_only".to_string(),
-        idempotency_key: signal_idempotency_key(&payload.event_signal_id),
+        idempotency_key: signal_idempotency_key(&payload.event_signal_id, phase),
         dedupe_key: String::new(),
         metadata: json!({
             "created_by_wrapper": "xiaoman-activity",
             "workflow": "workflows/xiaoman-activity-signal",
+            "activity_phase": phase.as_str(),
+            "activity_route": phase.route(),
             "review_needed": review_needed,
             "missing_required_fields": missing_fields,
             "related_member_names_count": payload.related_member_names.len(),
@@ -986,8 +1122,13 @@ fn signal_uuid(value: &str) -> Option<Uuid> {
     Uuid::parse_str(value.trim()).ok()
 }
 
-fn signal_idempotency_key(event_signal_id: &str) -> String {
-    format!("xiaoman_activity_signal:{}", event_signal_id.trim())
+fn signal_idempotency_key(event_signal_id: &str, phase: ActivityPhase) -> String {
+    let base = format!("xiaoman_activity_signal:{}", event_signal_id.trim());
+    if phase == ActivityPhase::Pre {
+        base
+    } else {
+        format!("{base}:{}", phase.as_str())
+    }
 }
 
 fn signal_priority(value: &str) -> String {
@@ -1369,6 +1510,7 @@ impl EventSignalIngestCandidate {
             title: row.try_get("title")?,
             summary: row.try_get("summary")?,
             signal_date: row.try_get("signal_date")?,
+            activity_phase: row.try_get("activity_phase")?,
             chat_id: row.try_get("chat_id")?,
             source_message_ids: row.try_get("source_message_ids")?,
             owner_name: row.try_get("owner_name")?,
@@ -1387,6 +1529,7 @@ impl EventSignalIngestCandidate {
             table_role: String::new(),
             status: String::new(),
             gap_summary: String::new(),
+            activity_phase: self.activity_phase.clone(),
             handoff_type: String::new(),
             target_agent: String::new(),
             brief_summary: self.summary.clone(),
@@ -2010,6 +2153,14 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
             ])?;
             validate_event_signal_mutation_payload(payload)?;
         }
+        "phase-update" => {
+            require_fields(&[
+                ("event_signal_id", &payload.event_signal_id),
+                ("mutation_id", &payload.mutation_id),
+                ("activity_phase", &payload.activity_phase),
+            ])?;
+            validate_event_signal_mutation_payload(payload)?;
+        }
         "gap-update" => {
             require_fields(&[
                 ("event_signal_id", &payload.event_signal_id),
@@ -2034,6 +2185,7 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
         }
         "signal-ingest" => {
             require_fields(&[("event_signal_id", &payload.event_signal_id)])?;
+            activity_phase_or_pre_event(&payload.activity_phase)?;
         }
         "material-summary" => require_fields(&[
             ("record_id", &payload.record_id),
@@ -2065,6 +2217,9 @@ fn validate_event_signal_mutation_payload(payload: &ActivityPayload) -> Result<(
             if !payload.gap_summary.trim().is_empty() {
                 bail!("status-update must not include gap_summary");
             }
+            if !payload.activity_phase.trim().is_empty() {
+                bail!("status-update must not include activity_phase");
+            }
             if !EVENT_SIGNAL_STATUSES.contains(&payload.status.trim()) {
                 bail!("status is not allowed for event-signal mutation");
             }
@@ -2073,7 +2228,19 @@ fn validate_event_signal_mutation_payload(payload: &ActivityPayload) -> Result<(
             if !payload.status.trim().is_empty() {
                 bail!("gap-update must not include status");
             }
+            if !payload.activity_phase.trim().is_empty() {
+                bail!("gap-update must not include activity_phase");
+            }
             normalize_gap_summary(&payload.gap_summary)?;
+        }
+        "phase-update" => {
+            if !payload.status.trim().is_empty() {
+                bail!("phase-update must not include status");
+            }
+            if !payload.gap_summary.trim().is_empty() {
+                bail!("phase-update must not include gap_summary");
+            }
+            activity_phase(&payload.activity_phase)?;
         }
         _ => bail!("operation is not an event-signal mutation"),
     }
@@ -2235,6 +2402,11 @@ mod tests {
             .expect("signal ingest should create a work item preview");
         assert_eq!(report.action_status, "operations_dry_run_ok");
         assert_eq!(report.source, "agentos_event_signal");
+        assert_eq!(report.activity_phase.as_deref(), Some("pre_event"));
+        assert_eq!(
+            report.activity_route.as_deref(),
+            Some("promotion_preparation")
+        );
         assert_eq!(work_item.capability_key, "xiaoman.create_activity_request");
         assert_eq!(work_item.work_item_type, "activity_promotion_request");
         assert_eq!(work_item.requester_agent, "default");
@@ -2247,6 +2419,81 @@ mod tests {
         assert!(!serde_json::to_string(&work_item)
             .unwrap()
             .contains("22222222-2222-4222-8222-222222222222"));
+    }
+
+    #[test]
+    fn signal_ingest_routes_each_phase_to_a_distinct_root() {
+        let roots = [
+            (
+                "pre_event",
+                "activity_promotion_request",
+                "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111",
+                "promotion_preparation",
+            ),
+            (
+                "in_event",
+                "activity_live_support_request",
+                "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111:in_event",
+                "live_support",
+            ),
+            (
+                "post_event",
+                "activity_recap_request",
+                "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111:post_event",
+                "activity_recap",
+            ),
+        ];
+
+        for (phase, work_item_type, idempotency_key, route) in roots {
+            let payload = payload(json!({
+                "actor_agent": "xiaoman",
+                "operation": "signal-ingest",
+                "event_signal_id": "11111111-1111-4111-8111-111111111111",
+                "signal_type": "活动/聚会",
+                "activity_title": "周日共创晚餐",
+                "signal_date": "2026-06-28",
+                "activity_phase": phase
+            }));
+            let request = signal_work_item_request(&payload, &[])
+                .expect("phase route should produce a valid root request");
+
+            assert_eq!(request.work_item_type, work_item_type);
+            assert_eq!(request.idempotency_key, idempotency_key);
+            assert_eq!(request.payload["activity_phase"], phase);
+            assert_eq!(request.payload["activity_route"], route);
+            operations::create_work_item_dry_run(request)
+                .expect("phase root should pass capability policy");
+        }
+    }
+
+    #[test]
+    fn signal_ingest_rejects_an_unknown_phase() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28",
+            "activity_phase": "during"
+        }));
+
+        assert!(validate("signal-ingest", &payload)
+            .expect_err("unknown activity phase must fail")
+            .to_string()
+            .contains("activity_phase must be"));
+    }
+
+    #[test]
+    fn signal_ingest_apply_phase_must_match_the_agentos_fact() {
+        assert!(validate_requested_activity_phase("", ActivityPhase::In).is_ok());
+        assert!(validate_requested_activity_phase("in_event", ActivityPhase::In).is_ok());
+        assert!(
+            validate_requested_activity_phase("pre_event", ActivityPhase::In)
+                .expect_err("payload must not override the stored phase")
+                .to_string()
+                .contains("does not match the current event signal phase")
+        );
     }
 
     #[tokio::test]
@@ -2343,6 +2590,7 @@ mod tests {
             title: "周末共创晚餐".to_string(),
             summary: "成员在群内讨论周末共创晚餐，需要小满跟进活动宣发。".to_string(),
             signal_date: "2026-07-05".to_string(),
+            activity_phase: "pre_event".to_string(),
             chat_id: "fixture-community-group".to_string(),
             source_message_ids: vec![
                 Uuid::parse_str("55555555-5555-4555-8555-555555555555").unwrap()
@@ -2354,13 +2602,17 @@ mod tests {
 
         let payload = candidate.to_activity_payload();
         let missing_fields = signal_missing_fields(&payload);
-        let request = signal_work_item_request(&payload, &missing_fields);
+        let request = signal_work_item_request(&payload, &missing_fields)
+            .expect("phase-aware signal request should be valid");
         let source_refs_json = serde_json::to_string(&request.source_refs).unwrap();
 
         assert!(missing_fields.is_empty());
         assert_eq!(payload.actor_agent, "xiaoman");
         assert_eq!(payload.operation, "signal-ingest");
         assert_eq!(request.capability_key, "xiaoman.create_activity_request");
+        assert_eq!(request.work_item_type, "activity_promotion_request");
+        assert_eq!(request.payload["activity_phase"], "pre_event");
+        assert_eq!(request.payload["activity_route"], "promotion_preparation");
         assert_eq!(request.source_event_signal_id, Some(candidate.id));
         assert_eq!(
             request.idempotency_key,
@@ -2658,6 +2910,34 @@ mod tests {
             .contains("报名截止时间"));
     }
 
+    #[tokio::test]
+    async fn phase_update_dry_run_reports_the_derived_route() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "phase-update",
+            "event_signal_id": "88888888-8888-4888-8888-888888888888",
+            "mutation_id": "99999999-9999-4999-8999-999999999999",
+            "activity_phase": "in_event"
+        }));
+
+        validate("phase-update", &payload).expect("phase-update payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "phase-update".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("phase update should preview without database access");
+
+        assert_eq!(report.action_status, "event_signal_phase_preview");
+        assert_eq!(report.activity_phase.as_deref(), Some("in_event"));
+        assert_eq!(report.activity_route.as_deref(), Some("live_support"));
+        assert_eq!(report.mutation_applied, Some(false));
+    }
+
     #[test]
     fn event_signal_mutations_reject_feishu_record_identifiers() {
         let payload = payload(json!({
@@ -2731,6 +3011,19 @@ mod tests {
             .expect_err("gap update must reject a second mutable field")
             .to_string()
             .contains("must not include status"));
+
+        let phase_with_gap = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "phase-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "activity_phase": "in_event",
+            "gap_summary": "缺少报名截止时间"
+        }));
+        assert!(validate("phase-update", &phase_with_gap)
+            .expect_err("phase update must reject a second mutable field")
+            .to_string()
+            .contains("must not include gap_summary"));
     }
 
     #[test]
@@ -2745,6 +3038,19 @@ mod tests {
         assert!(ELIGIBLE_SIGNAL_WORKER_STATUSES.contains(&"处理中"));
         assert!(!ELIGIBLE_SIGNAL_WORKER_STATUSES.contains(&"已完成"));
         assert!(!ELIGIBLE_SIGNAL_WORKER_STATUSES.contains(&"已关闭"));
+    }
+
+    #[test]
+    fn event_signal_activity_phase_transitions_are_forward_only() {
+        assert!(validate_activity_phase_transition(None, ActivityPhase::Post).is_ok());
+        assert!(validate_activity_phase_transition(Some("pre_event"), ActivityPhase::In).is_ok());
+        assert!(validate_activity_phase_transition(Some("pre_event"), ActivityPhase::Post).is_ok());
+        assert!(validate_activity_phase_transition(Some("in_event"), ActivityPhase::Post).is_ok());
+        assert!(
+            validate_activity_phase_transition(Some("post_event"), ActivityPhase::Post).is_ok()
+        );
+        assert!(validate_activity_phase_transition(Some("in_event"), ActivityPhase::Pre).is_err());
+        assert!(validate_activity_phase_transition(Some("post_event"), ActivityPhase::In).is_err());
     }
 
     #[test]

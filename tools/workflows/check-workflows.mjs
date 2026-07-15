@@ -20,6 +20,8 @@ const fixtureDirs = ["fixtures/operations", "fixtures/qiwe", "fixtures/xiaoman"]
 const xiaomanSignalFixtures = [
   "activity-signal.json",
   "duplicate-signal.json",
+  "in-event-signal.json",
+  "post-event-signal.json",
   "missing-fields-signal.json",
 ];
 const xiaomanSignalExpectedFields = [
@@ -27,6 +29,8 @@ const xiaomanSignalExpectedFields = [
   "action_status",
   "capability_key",
   "work_item_type",
+  "activity_phase",
+  "activity_route",
   "requester_agent",
   "target_agent",
   "idempotency_key",
@@ -40,6 +44,24 @@ const readText = (relativePath) =>
 
 const addError = (message) => {
   errors.push(message);
+};
+
+const xiaomanActivityRoutes = {
+  pre_event: {
+    route: "promotion_preparation",
+    workItemType: "activity_promotion_request",
+    idempotencySuffix: "",
+  },
+  in_event: {
+    route: "live_support",
+    workItemType: "activity_live_support_request",
+    idempotencySuffix: ":in_event",
+  },
+  post_event: {
+    route: "activity_recap",
+    workItemType: "activity_recap_request",
+    idempotencySuffix: ":post_event",
+  },
 };
 
 for (const workflowPath of workflows) {
@@ -125,7 +147,13 @@ for (const file of xiaomanSignalFixtures) {
       addError(`${fixturePath}: expected.${field} is required`);
     }
   }
-  const expectedIdempotencyKey = `xiaoman_activity_signal:${parsed.input?.event_signal_id}`;
+  const phase = parsed.input?.activity_phase ?? "pre_event";
+  const routeContract = xiaomanActivityRoutes[phase];
+  if (!routeContract) {
+    addError(`${fixturePath}: input.activity_phase is not allowed`);
+    continue;
+  }
+  const expectedIdempotencyKey = `xiaoman_activity_signal:${parsed.input?.event_signal_id}${routeContract.idempotencySuffix}`;
   if (parsed.expected?.idempotency_key !== expectedIdempotencyKey) {
     addError(
       `${fixturePath}: expected.idempotency_key must match input.event_signal_id`
@@ -136,9 +164,15 @@ for (const file of xiaomanSignalFixtures) {
       `${fixturePath}: expected.capability_key must be xiaoman.create_activity_request`
     );
   }
-  if (parsed.expected?.work_item_type !== "activity_promotion_request") {
+  if (parsed.expected?.activity_phase !== phase) {
+    addError(`${fixturePath}: expected.activity_phase must match input.activity_phase`);
+  }
+  if (parsed.expected?.activity_route !== routeContract.route) {
+    addError(`${fixturePath}: expected.activity_route must be ${routeContract.route}`);
+  }
+  if (parsed.expected?.work_item_type !== routeContract.workItemType) {
     addError(
-      `${fixturePath}: expected.work_item_type must be activity_promotion_request`
+      `${fixturePath}: expected.work_item_type must be ${routeContract.workItemType}`
     );
   }
   if (
