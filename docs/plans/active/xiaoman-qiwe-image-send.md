@@ -145,7 +145,9 @@ target, or missing final confirmation must stop before sending.
    The QiWe upload/callback hash must match the Huabaosi generated-image `content_hash`
    and pass `check-xiaoman-image-send-staging-evidence.mjs` before any production
    enablement PR. Do not commit the database URL, callback body, request id,
-   credentials, group id, media URL, or provider response.
+   credentials, group id, media URL, or provider response. Record the full staging
+   sequence with `docs/reports/templates/xiaoman-image-send-staging-evidence.md` only
+   after the Huabaosi, QiWe, and cross-flow evidence checkers pass.
 4. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
 
@@ -204,8 +206,10 @@ allowlist of literal assignments and is never evaluated as shell. The smoke stor
 subprocess output in shell memory and validates the fixed report schema through an
 anonymous pipe. It never writes successful, failed, or sensitive subprocess output to a
 file. Successful phases print fixed `qiwe_image_send_staging_evidence=<json>` objects
-that contain only the reviewed evidence fields. The operator checklist and sanitized
-evidence template live in `docs/operations/qiwe-image-send-staging-runbook.md`.
+that contain only the reviewed evidence fields. The QiWe operator checklist lives in
+`docs/operations/qiwe-image-send-staging-runbook.md`; the full Xiaoman Huabaosi-to-QiWe
+evidence template lives in
+`docs/reports/templates/xiaoman-image-send-staging-evidence.md`.
 
 ## Production Boundary
 

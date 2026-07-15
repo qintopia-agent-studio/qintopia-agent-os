@@ -148,9 +148,10 @@ outcome appear. It also rejects any non-empty line that is not a fixed smoke pas
 message or a `qiwe_image_send_staging_evidence=<json>` record.
 
 After the complete checker passes, copy only the sanitized values into
-`docs/reports/templates/qiwe-image-send-staging-evidence.md` for the production
-follow-up review. Do not attach the original callback payload, raw logs, or any operator
-file that has not passed the QiWe and cross-flow checkers.
+`docs/reports/templates/qiwe-image-send-staging-evidence.md` for QiWe phase evidence and
+`docs/reports/templates/xiaoman-image-send-staging-evidence.md` for the full Xiaoman
+Huabaosi-to-QiWe staging evidence. Do not attach the original callback payload, raw
+logs, or any operator file that has not passed the QiWe and cross-flow checkers.
 
 ## Evidence To Keep
 

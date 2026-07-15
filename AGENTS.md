@@ -408,7 +408,9 @@ Use `rg` and `rg --files` for search.
   `tools/deploy/check-xiaoman-image-send-staging-evidence.mjs`, proving the Huabaosi
   final JPEG `content_hash` equals the QiWe `artifact_content_hash` without recording
   media URI, filename, MD5 value, callback credentials, group id, database URL, or raw
-  provider output.
+  provider output. Record that cross-flow result only in
+  `docs/reports/templates/xiaoman-image-send-staging-evidence.md`; it must remain a
+  staging evidence template, not production enablement.
 - `qiwe-image-send-staging-readiness-smoke.sh` is the read-only gate before the real
   QiWe staging preflight. It may only check metadata for the fixed staging env file,
   fixed immutable staging release root, owner-approved release SHA, and packaged sidecar

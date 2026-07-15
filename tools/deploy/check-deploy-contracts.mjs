@@ -694,6 +694,54 @@ if (!exists(qiweImageStagingEvidenceTemplatePath)) {
   }
 }
 
+const xiaomanImageSendStagingEvidenceTemplatePath =
+  "docs/reports/templates/xiaoman-image-send-staging-evidence.md";
+if (!exists(xiaomanImageSendStagingEvidenceTemplatePath)) {
+  addError(
+    `${xiaomanImageSendStagingEvidenceTemplatePath}: missing Xiaoman image-send staging evidence template`
+  );
+} else {
+  const template = readText(xiaomanImageSendStagingEvidenceTemplatePath);
+  for (const fragment of [
+    "node tools/deploy/check-huabaosi-image-staging-evidence.mjs <huabaosi-staging-evidence-output.txt>",
+    "node tools/deploy/check-qiwe-image-staging-evidence.mjs <qiwe-staging-evidence-output.txt>",
+    "node tools/deploy/check-xiaoman-image-send-staging-evidence.mjs <huabaosi-staging-evidence-output.txt> <qiwe-staging-evidence-output.txt>",
+    "Huabaosi image request work item UUID",
+    "QiWe send-ready work item UUID",
+    "Final JPEG `content_hash`",
+    "QiWe `artifact_content_hash`",
+    "Hash match confirmed by `check-xiaoman-image-send-staging-evidence.mjs`",
+    "Huabaosi staging readiness",
+    "Huabaosi staging smoke",
+    "QiWe staging readiness",
+    "QiWe preflight phase",
+    "QiWe upload phase",
+    "QiWe callback phase",
+    "Xiaoman image-send staging evidence check passed.",
+    "callback_credential_schema",
+    "callback_additional_field_count",
+    "external_upload_requested=true",
+    "external_send_executed=true",
+    "QiWe production enablement PR allowed",
+    "no production listener, service, timer, feature build, Feishu write, Release",
+    "Do not record QiWe token, GUID, API secret material, target group id, database URL",
+  ]) {
+    requireFragment(xiaomanImageSendStagingEvidenceTemplatePath, template, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+    "callback.json",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(xiaomanImageSendStagingEvidenceTemplatePath, template, fragment);
+  }
+}
+
 const xiaomanImageSendStagingEvidenceTestPath =
   "tools/deploy/test-xiaoman-image-send-staging-evidence.mjs";
 if (!exists(xiaomanImageSendStagingEvidenceTestPath)) {
