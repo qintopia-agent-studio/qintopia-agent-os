@@ -26,14 +26,36 @@ production runtime configuration.
 - Confirm the callback source can stream one raw `cmd=20000` callback directly to stdin.
   Do not write the callback body to disk.
 
+## Readiness Phase
+
+Run this first on the staging server after the owner has provisioned the staging env
+file and immutable staging release root. It checks only path metadata and the packaged
+sidecar digest; it does not read the env file contents, execute the sidecar, connect to
+Postgres, call QiWe, or touch services:
+
+```bash
+QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
+QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
+deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh
+```
+
+Success means the fixed staging env path, immutable release root, exact release SHA, and
+packaged sidecar digest are ready for the `preflight` phase. Failure is expected until
+`/etc/qintopia/message-sidecar-staging.env` and
+`/home/ubuntu/qintopia-agent-os-staging-releases/<sha>/sidecar/qintopia-message-sidecar`
+exist with reviewed ownership and permissions.
+
 ## Preflight Phase
 
-Run this first from the reviewed staging release root. The phase must use the packaged
-`sidecar/qintopia-message-sidecar` binary and match the owner-approved binary SHA-256;
-it will not accept arbitrary binary paths or fall back to `cargo run`. It validates the
-staging binary, env allowlist, owner phrase, database hash, webhook readiness, and
-allowlist counts without claiming a work item, opening a QiWe upload, or reading
-callback stdin:
+After readiness passes, run this from the reviewed staging release root. The phase must
+use the packaged `sidecar/qintopia-message-sidecar` binary and match the owner-approved
+binary SHA-256; it will not accept arbitrary binary paths, owner/group/world-writable
+binary paths, symlinks, a changed digest before child process spawn, or fall back to
+`cargo run`. It validates the staging binary, env allowlist, owner phrase, database
+hash, webhook readiness, and allowlist counts without claiming a work item, opening a
+QiWe upload, or reading callback stdin:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
@@ -114,6 +136,11 @@ evidence for complete mode. It fails closed if raw callback keys, database URLs,
 tokens, group ids, media URIs, unexpected fields, duplicate upload/callback records, or
 an incomplete send outcome appear. It also rejects any non-empty line that is not a
 fixed smoke pass message or a `qiwe_image_send_staging_evidence=<json>` record.
+
+After the complete checker passes, copy only the sanitized values into
+`docs/reports/templates/qiwe-image-send-staging-evidence.md` for the production
+follow-up review. Do not attach the original callback payload, raw logs, or any operator
+file that has not passed the checker.
 
 ## Evidence To Keep
 

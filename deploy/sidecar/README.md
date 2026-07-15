@@ -64,6 +64,18 @@ material remains a separate review boundary.
 
 ## QiWe Image-Send Staging
 
+Before the send exercise, run the read-only staging readiness smoke on the staging
+server. It checks only the fixed staging env path, immutable staging release root,
+release SHA, and sidecar digest; it does not read env contents or execute the sidecar:
+
+```bash
+QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
+QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
+scripts/qiwe-image-send-staging-readiness-smoke.sh
+```
+
 The two-phase staging smoke is the only reviewed shell entrypoint for a real
 `qiwe-staging-adapter` upload and callback send exercise:
 

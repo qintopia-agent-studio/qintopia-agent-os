@@ -150,7 +150,10 @@ if [[ ! -x "$SIDECAR_BIN" ]]; then
   echo "packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke" >&2
   exit 1
 fi
-readarray -t sidecar_facts < <(python3 - "$SIDECAR_BIN" <<'PY'
+
+verify_sidecar_binary() {
+  local label="$1"
+  readarray -t sidecar_facts < <(python3 - "$SIDECAR_BIN" <<'PY'
 import hashlib
 import os
 import stat
@@ -159,15 +162,20 @@ import sys
 path = sys.argv[1]
 parent = os.path.dirname(path)
 for candidate in (parent, path):
-    if os.path.islink(candidate):
+    try:
+        candidate_lstat = os.lstat(candidate)
+    except FileNotFoundError:
+        print("missing")
+        sys.exit(0)
+    if stat.S_ISLNK(candidate_lstat.st_mode):
         print("symlink")
         sys.exit(0)
 path_stat = os.stat(path)
 parent_stat = os.stat(parent)
-if path_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+if path_stat.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
     print("writable")
     sys.exit(0)
-if parent_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+if parent_stat.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
     print("writable")
     sys.exit(0)
 digest = hashlib.sha256()
@@ -176,22 +184,56 @@ with open(path, "rb") as handle:
         digest.update(chunk)
 print(digest.hexdigest())
 PY
-)
-if [[ "${sidecar_facts[0]:-}" == "symlink" ]]; then
-  echo "packaged sidecar binary and parent directory must not be symlinks" >&2
-  exit 1
-fi
-if [[ "${sidecar_facts[0]:-}" == "writable" ]]; then
-  echo "packaged sidecar binary and parent directory must not be group/world writable" >&2
-  exit 1
-fi
-if [[ "${sidecar_facts[0]:-}" != "$EXPECTED_SIDECAR_HASH" ]]; then
-  echo "packaged sidecar binary hash does not match the approved command" >&2
-  exit 1
-fi
+  )
+  if [[ "${sidecar_facts[0]:-}" == "missing" ]]; then
+    echo "packaged sidecar binary disappeared before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "symlink" ]]; then
+    echo "packaged sidecar binary and parent directory must not be symlinks before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "writable" ]]; then
+    echo "packaged sidecar binary and parent directory must not be owner/group/world writable before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" != "$EXPECTED_SIDECAR_HASH" ]]; then
+    echo "packaged sidecar binary hash changed before ${label}" >&2
+    exit 1
+  fi
+}
+
+verify_sidecar_binary "initial staging smoke validation"
 SIDECAR_BINARY_SHA256="${sidecar_facts[0]}"
 export SIDECAR_BINARY_SHA256
 BIN_CMD=("$SIDECAR_BIN")
+
+CHILD_ENV=()
+
+add_child_env() {
+  local key="$1"
+  local value="$2"
+  CHILD_ENV+=("${key}=${value}")
+}
+
+add_child_env_if_set() {
+  local key="$1"
+  if [[ -n "${!key:-}" ]]; then
+    CHILD_ENV+=("${key}=${!key}")
+  fi
+}
+
+add_child_env PATH "${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+add_child_env HOME "${HOME:-/tmp}"
+add_child_env TMPDIR "${TMPDIR:-/tmp}"
+add_child_env_if_set SSL_CERT_FILE
+add_child_env_if_set SSL_CERT_DIR
+
+for key in "${STAGING_ENV_KEYS[@]}"; do
+  add_child_env "$key" "${!key:-}"
+done
+add_child_env QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL "$QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL"
+add_child_env QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256 "$QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256"
 
 assert_no_sensitive_text() {
   local label="$1"
@@ -246,8 +288,9 @@ run_sanitized() {
   local status=0
   shift
 
+  verify_sidecar_binary "$label spawn"
   set +e
-  output="$("$@" 2>&1)"
+  output="$(env -i "${CHILD_ENV[@]}" "$@" 2>&1)"
   status=$?
   set -e
   assert_no_sensitive_text "$label output" "$output"

@@ -24,6 +24,9 @@ const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex
 const callbackSecret = "callback-aes-secret-must-not-appear";
 const packagedSidecarDir = path.join(repoRoot, "sidecar");
 const packagedSidecar = path.join(packagedSidecarDir, "qintopia-message-sidecar");
+const callbackEchoRawFlag = path.join(tmpRoot, "callback-echo-raw");
+const callbackLeakValueFlag = path.join(tmpRoot, "callback-leak-value");
+const tamperAfterPreflightFlag = path.join(tmpRoot, "tamper-after-preflight");
 const createdPackagedSidecarDir = !fs.existsSync(packagedSidecarDir);
 let installedPackagedSidecar = false;
 
@@ -56,17 +59,23 @@ try {
     "utf8"
   );
 
-  writeExecutable(
-    packagedSidecar,
-    `#!/usr/bin/env bash
+  const sidecarContent = `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${sidecarLog}"
+if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
+  echo "ambient secret reached child process" >&2
+  exit 23
+fi
 case "$1" in
   qiwe-image-send-staging-preflight)
     if IFS= read -r -t 0.1 unexpected_input; then
       exit 65
     fi
     printf '%s\n' '{"success":true,"worker":"qiwe-image-send-adapter","action_status":"staging_adapter_ready","adapter_compiled":true,"send_enabled":true,"owner_approval_valid":true,"config_valid":true,"database_boundary_valid":true,"webhook_ready":true,"allowed_host_count":1,"media_allowed_host_count":1,"allowed_group_count":1,"missing_configuration":[],"protocol":"qiwe_async_url_upload_then_send_image_staging_v1","safe_for_chat":false,"limitations":[],"guardrails":[]}'
+    if [[ -f "${tamperAfterPreflightFlag}" ]]; then
+      chmod u+w "$0" "$(dirname "$0")"
+      printf '%s\n' '#!/usr/bin/env bash' 'echo tampered sidecar executed >&2' 'exit 99' >"$0"
+    fi
     ;;
   run-qiwe-image-send-worker)
     if IFS= read -r -t 0.1 unexpected_input; then
@@ -79,13 +88,13 @@ case "$1" in
     [[ "$2" == "--apply" ]]
     callback="$(cat)"
     [[ "$callback" == *"${callbackSecret}"* ]]
-    if [[ -n "\${FAKE_CALLBACK_ECHO_RAW:-}" ]]; then
+    if [[ -f "${callbackEchoRawFlag}" ]]; then
       printf '%s\n' "$callback" >&2
       exit 70
     fi
     action_status="image_send_completed"
-    if [[ -n "\${FAKE_CALLBACK_LEAK_VALUE:-}" ]]; then
-      action_status="\${FAKE_CALLBACK_LEAK_VALUE}"
+    if [[ -f "${callbackLeakValueFlag}" ]]; then
+      action_status="${callbackSecret}"
     fi
     printf '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"callback","action_status":"%s","work_item_id":"${workItemId}","external_upload_requested":false,"callback_received":true,"callback_credential_schema":"fileAesKey+fileId+fileMd5+fileSize+filename","callback_additional_field_count":0,"external_send_executed":true,"safe_for_chat":false,"limitations":[],"guardrails":[]}\n' "$action_status"
     ;;
@@ -93,8 +102,16 @@ case "$1" in
     exit 64
     ;;
 esac
-`
-  );
+`;
+  const installPackagedSidecar = () => {
+    if (fs.existsSync(packagedSidecarDir)) {
+      fs.chmodSync(packagedSidecarDir, 0o755);
+    }
+    writeExecutable(packagedSidecar, sidecarContent);
+    fs.chmodSync(packagedSidecar, 0o555);
+    fs.chmodSync(packagedSidecarDir, 0o555);
+  };
+  installPackagedSidecar();
   installedPackagedSidecar = true;
   const sidecarHash = crypto
     .createHash("sha256")
@@ -109,6 +126,7 @@ esac
     QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256: databaseHash,
     QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
     QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: workItemId,
+    QINTOPIA_UNRELATED_RUNTIME_SECRET: "ambient-unrelated-secret",
   };
 
   const runSmoke = (phase, extraEnv = {}, input) =>
@@ -170,6 +188,7 @@ esac
     );
   }
   const unavailableSidecar = path.join(tmpRoot, "qintopia-message-sidecar.hidden");
+  fs.chmodSync(packagedSidecarDir, 0o755);
   fs.renameSync(packagedSidecar, unavailableSidecar);
   try {
     const missingPreflightBinary = runSmoke(
@@ -191,6 +210,8 @@ esac
     }
   } finally {
     fs.renameSync(unavailableSidecar, packagedSidecar);
+    fs.chmodSync(packagedSidecar, 0o555);
+    fs.chmodSync(packagedSidecarDir, 0o555);
   }
 
   const upload = runSmoke("upload");
@@ -364,11 +385,33 @@ esac
     throw new Error("sidecar hash failure exposed the computed hash");
   }
 
-  const leaked = runSmoke(
-    "callback",
-    { FAKE_CALLBACK_LEAK_VALUE: callbackSecret },
-    callbackPayload
-  );
+  fs.writeFileSync(tamperAfterPreflightFlag, "1", "utf8");
+  const tamperedUpload = runSmoke("upload");
+  fs.rmSync(tamperAfterPreflightFlag, { force: true });
+  if (tamperedUpload.status === 0) {
+    throw new Error("expected sidecar tampering before upload spawn to fail");
+  }
+  if (
+    !`${tamperedUpload.stdout}\n${tamperedUpload.stderr}`.includes(
+      "before QiWe staging upload spawn"
+    )
+  ) {
+    throw new Error("sidecar tampering failure did not happen at upload spawn");
+  }
+  for (const sensitive of [
+    databaseUrl,
+    "fake-qiwe-token-must-not-appear",
+    "isolated-group-must-not-appear",
+  ]) {
+    if (`${tamperedUpload.stdout}\n${tamperedUpload.stderr}`.includes(sensitive)) {
+      throw new Error("sidecar tampering failure exposed a sensitive value");
+    }
+  }
+  installPackagedSidecar();
+
+  fs.writeFileSync(callbackLeakValueFlag, "1", "utf8");
+  const leaked = runSmoke("callback", {}, callbackPayload);
+  fs.rmSync(callbackLeakValueFlag, { force: true });
   if (leaked.status === 0) {
     throw new Error("expected a callback report with leaked state to fail validation");
   }
@@ -378,11 +421,9 @@ esac
 
   const reportDir = path.join(tmpRoot, "callback-reports");
   fs.mkdirSync(reportDir);
-  const rawCallbackLeak = runSmoke(
-    "callback",
-    { FAKE_CALLBACK_ECHO_RAW: "1", TMPDIR: reportDir },
-    callbackPayload
-  );
+  fs.writeFileSync(callbackEchoRawFlag, "1", "utf8");
+  const rawCallbackLeak = runSmoke("callback", { TMPDIR: reportDir }, callbackPayload);
+  fs.rmSync(callbackEchoRawFlag, { force: true });
   if (rawCallbackLeak.status === 0) {
     throw new Error("expected raw callback stderr to fail the smoke");
   }
@@ -436,6 +477,12 @@ esac
   }
 } finally {
   if (installedPackagedSidecar) {
+    if (fs.existsSync(packagedSidecarDir)) {
+      fs.chmodSync(packagedSidecarDir, 0o755);
+    }
+    if (fs.existsSync(packagedSidecar)) {
+      fs.chmodSync(packagedSidecar, 0o755);
+    }
     fs.rmSync(packagedSidecar, { force: true });
   }
   if (createdPackagedSidecarDir) {
