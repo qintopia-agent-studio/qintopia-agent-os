@@ -398,8 +398,11 @@ Use `rg` and `rg --files` for search.
   immediately before each child sidecar command, and run child sidecar commands with a
   minimal explicit environment rather than inheriting ambient operator secrets.
   Subprocess output must be captured, scanned, and schema-validated through memory and
-  anonymous pipes; no subprocess output may be written to a file. It must not install a
-  listener, service, timer, production feature build, Feishu write, or broad group send.
+  anonymous pipes; no subprocess output may be written to a file. Upload and callback
+  evidence may retain only the canonical final JPEG `artifact_content_hash` for
+  Huabaosi/QiWe hash matching; it must not retain media URI, filename, MD5 value, file
+  size, or callback credentials. It must not install a listener, service, timer,
+  production feature build, Feishu write, or broad group send.
 - `qiwe-image-send-staging-readiness-smoke.sh` is the read-only gate before the real
   QiWe staging preflight. It may only check metadata for the fixed staging env file,
   fixed immutable staging release root, owner-approved release SHA, and packaged sidecar

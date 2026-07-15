@@ -20,6 +20,7 @@ release activation.
 - Packaged sidecar binary SHA-256:
 - Staging database URL SHA-256:
 - Work item UUID:
+- Final JPEG `artifact_content_hash`:
 - Target group allowlist: isolated single group confirmed, identifier not recorded.
 - Rollback owner:
 - Rollback action:
@@ -35,6 +36,7 @@ release activation.
 ## Sanitized Fields
 
 - `sidecar_binary_sha256`:
+- `artifact_content_hash`:
 - `callback_credential_schema`:
 - `callback_additional_field_count`:
 - `external_upload_requested`:

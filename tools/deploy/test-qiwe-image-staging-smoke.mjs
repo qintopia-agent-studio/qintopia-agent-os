@@ -22,6 +22,8 @@ const databaseUrl =
   "postgres://staging-user:private-password@127.0.0.1:5432/qintopia_staging";
 const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex");
 const callbackSecret = "callback-aes-secret-must-not-appear";
+const artifactContentHash =
+  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const packagedSidecarDir = path.join(repoRoot, "sidecar");
 const packagedSidecar = path.join(packagedSidecarDir, "qintopia-message-sidecar");
 const callbackEchoRawFlag = path.join(tmpRoot, "callback-echo-raw");
@@ -82,7 +84,7 @@ case "$1" in
       exit 65
     fi
     [[ "$2" == "--once" && "$3" == "--work-item-id" && "$4" == "${workItemId}" && "$5" == "--apply" ]]
-    printf '%s\n' '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"upload","action_status":"image_upload_accepted","work_item_id":"${workItemId}","external_upload_requested":true,"callback_received":false,"external_send_executed":false,"safe_for_chat":false,"limitations":[],"guardrails":[]}'
+    printf '%s\n' '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"upload","action_status":"image_upload_accepted","work_item_id":"${workItemId}","artifact_content_hash":"${artifactContentHash}","external_upload_requested":true,"callback_received":false,"external_send_executed":false,"safe_for_chat":false,"limitations":[],"guardrails":[]}'
     ;;
   process-qiwe-image-send-callback)
     [[ "$2" == "--apply" ]]
@@ -96,7 +98,7 @@ case "$1" in
     if [[ -f "${callbackLeakValueFlag}" ]]; then
       action_status="${callbackSecret}"
     fi
-    printf '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"callback","action_status":"%s","work_item_id":"${workItemId}","external_upload_requested":false,"callback_received":true,"callback_credential_schema":"fileAesKey+fileId+fileMd5+fileSize+filename","callback_additional_field_count":0,"external_send_executed":true,"safe_for_chat":false,"limitations":[],"guardrails":[]}\n' "$action_status"
+    printf '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"callback","action_status":"%s","work_item_id":"${workItemId}","artifact_content_hash":"${artifactContentHash}","external_upload_requested":false,"callback_received":true,"callback_credential_schema":"fileAesKey+fileId+fileMd5+fileSize+filename","callback_additional_field_count":0,"external_send_executed":true,"safe_for_chat":false,"limitations":[],"guardrails":[]}\n' "$action_status"
     ;;
   *)
     exit 64
@@ -228,6 +230,7 @@ esac
     uploadEvidence[1].phase !== "upload" ||
     uploadEvidence[1].action_status !== "image_upload_accepted" ||
     uploadEvidence[1].work_item_id !== workItemId ||
+    uploadEvidence[1].artifact_content_hash !== artifactContentHash ||
     uploadEvidence[1].external_upload_requested !== true ||
     uploadEvidence[1].external_send_executed !== false ||
     uploadEvidence[1].sidecar_binary_sha256 !== sidecarHash
@@ -264,6 +267,7 @@ esac
     callbackEvidence[1].phase !== "callback" ||
     callbackEvidence[1].action_status !== "image_send_completed" ||
     callbackEvidence[1].work_item_id !== workItemId ||
+    callbackEvidence[1].artifact_content_hash !== artifactContentHash ||
     callbackEvidence[1].callback_credential_schema !==
       "fileAesKey+fileId+fileMd5+fileSize+filename" ||
     callbackEvidence[1].callback_additional_field_count !== 0 ||
@@ -299,6 +303,25 @@ esac
   if (completeEvidenceCheck.status !== 0) {
     throw new Error(
       `expected complete evidence check to pass\nstdout:\n${completeEvidenceCheck.stdout}\nstderr:\n${completeEvidenceCheck.stderr}`
+    );
+  }
+  const mismatchedHashEvidenceFile = path.join(tmpRoot, "mismatched-hash-evidence.txt");
+  fs.writeFileSync(
+    mismatchedHashEvidenceFile,
+    `${upload.stdout}\n${callback.stdout.replace(
+      artifactContentHash,
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    )}`,
+    "utf8"
+  );
+  const mismatchedHashEvidenceCheck = spawnSync(
+    "node",
+    [evidenceChecker, mismatchedHashEvidenceFile],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  if (mismatchedHashEvidenceCheck.status === 0) {
+    throw new Error(
+      "expected complete evidence check to reject mismatched JPEG hashes"
     );
   }
   const missingPreflightEvidenceFile = path.join(

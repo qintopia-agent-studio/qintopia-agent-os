@@ -101,6 +101,7 @@ const allowedPreflightKeys = new Set([
 const allowedPhaseKeys = new Set([
   "action_status",
   "apply_requested",
+  "artifact_content_hash",
   "callback_received",
   "dry_run",
   "external_send_executed",
@@ -191,6 +192,7 @@ for (const entry of entries) {
       entry.external_upload_requested !== true ||
       entry.callback_received !== false ||
       entry.external_send_executed !== false ||
+      !isCanonicalContentHash(entry.artifact_content_hash) ||
       !isUuid(entry.work_item_id)
     ) {
       fail("upload evidence is invalid");
@@ -212,6 +214,7 @@ for (const entry of entries) {
       entry.callback_received !== true ||
       entry.external_send_executed !== true ||
       !isUuid(entry.work_item_id) ||
+      !isCanonicalContentHash(entry.artifact_content_hash) ||
       !allowedCredentialSchemas.has(entry.callback_credential_schema) ||
       !Number.isInteger(entry.callback_additional_field_count) ||
       entry.callback_additional_field_count < 0
@@ -239,6 +242,9 @@ if (mode === "preflight-only") {
   if (upload.work_item_id !== callback.work_item_id) {
     fail("upload and callback work_item_id values differ");
   }
+  if (upload.artifact_content_hash !== callback.artifact_content_hash) {
+    fail("upload and callback artifact_content_hash values differ");
+  }
   if (sidecarHashes.size !== 1) {
     fail("complete evidence records must use the same sidecar binary hash");
   }
@@ -254,4 +260,8 @@ function isUuid(value) {
 
 function isSha256(value) {
   return /^[0-9a-f]{64}$/.test(String(value ?? ""));
+}
+
+function isCanonicalContentHash(value) {
+  return /^sha256:[0-9a-f]{64}$/.test(String(value ?? ""));
 }

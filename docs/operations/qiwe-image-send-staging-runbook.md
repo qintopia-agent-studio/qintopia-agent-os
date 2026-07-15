@@ -132,10 +132,13 @@ node tools/deploy/check-qiwe-image-staging-evidence.mjs --preflight-only <prefli
 ```
 
 The checker requires a ready preflight record plus matching upload/callback work item
-evidence for complete mode. It fails closed if raw callback keys, database URLs, QiWe
-tokens, group ids, media URIs, unexpected fields, duplicate upload/callback records, or
-an incomplete send outcome appear. It also rejects any non-empty line that is not a
-fixed smoke pass message or a `qiwe_image_send_staging_evidence=<json>` record.
+evidence for complete mode. The upload and callback records must also carry the same
+canonical final JPEG `artifact_content_hash`, which can be compared with the Huabaosi
+staging generated-image `content_hash` without exposing the media URI. It fails closed
+if raw callback keys, database URLs, QiWe tokens, group ids, media URIs, unexpected
+fields, duplicate upload/callback records, hash mismatches, or an incomplete send
+outcome appear. It also rejects any non-empty line that is not a fixed smoke pass
+message or a `qiwe_image_send_staging_evidence=<json>` record.
 
 After the complete checker passes, copy only the sanitized values into
 `docs/reports/templates/qiwe-image-send-staging-evidence.md` for the production
@@ -151,6 +154,7 @@ Record only these fields:
 - staging database URL SHA-256, not the URL;
 - staging sidecar binary SHA-256;
 - work item UUID;
+- final JPEG `artifact_content_hash`;
 - fixed action statuses from the smoke;
 - callback credential schema id;
 - callback additional-field count;
@@ -174,6 +178,7 @@ the complete checker mode and the reviewer can see:
 
 - one ready preflight record from the same reviewed staging boundary;
 - one upload record and one callback record for the same work item UUID;
+- the same final JPEG `artifact_content_hash` in the upload and callback records;
 - `external_upload_requested=true` only in the upload phase;
 - `external_send_executed=true` only in the callback phase;
 - no raw callback fields, database URL, token, GUID, group id, media URI, or provider

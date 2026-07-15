@@ -334,6 +334,7 @@ if evidence_kind == "preflight":
 else:
     evidence.update({
         "apply_requested": payload["apply_requested"],
+        "artifact_content_hash": payload["artifact_content_hash"],
         "callback_received": payload["callback_received"],
         "dry_run": payload["dry_run"],
         "external_send_executed": payload["external_send_executed"],
@@ -409,6 +410,8 @@ assert payload["dry_run"] is False
 assert payload["apply_requested"] is True
 assert payload["action_status"] == "image_upload_accepted"
 assert payload["work_item_id"] == sys.argv[1]
+assert payload["artifact_content_hash"].startswith("sha256:")
+assert len(payload["artifact_content_hash"]) == 71
 assert payload["external_upload_requested"] is True
 assert payload["callback_received"] is False
 assert payload["external_send_executed"] is False
@@ -430,7 +433,7 @@ payload = json.load(sys.stdin)
 
 assert set(payload) == {
     "success", "dry_run", "apply_requested", "worker", "phase", "action_status",
-    "work_item_id", "external_upload_requested", "callback_received",
+    "work_item_id", "artifact_content_hash", "external_upload_requested", "callback_received",
     "callback_credential_schema", "callback_additional_field_count",
     "external_send_executed", "safe_for_chat", "limitations", "guardrails",
 }
@@ -441,6 +444,8 @@ assert payload["dry_run"] is False
 assert payload["apply_requested"] is True
 assert payload["action_status"] == "image_send_completed"
 assert payload["work_item_id"] == sys.argv[1]
+assert payload["artifact_content_hash"].startswith("sha256:")
+assert len(payload["artifact_content_hash"]) == 71
 assert payload["external_upload_requested"] is False
 assert payload["callback_received"] is True
 assert payload["callback_credential_schema"] in {

@@ -140,9 +140,11 @@ target, or missing final confirmation must stop before sending.
    runtime. The existing callback-phase smoke remains the operator-controlled stdin
    entrypoint when the webhook bridge is not used. Neither path may persist callback
    bytes or credential values.
-3. Commit only the staging database URL SHA-256, sanitized callback schema id, fixed
-   outcome labels, and reviewed rollback evidence. Do not commit the database URL,
-   callback body, request id, credentials, group id, media URL, or provider response.
+3. Commit only the staging database URL SHA-256, final JPEG `artifact_content_hash`,
+   sanitized callback schema id, fixed outcome labels, and reviewed rollback evidence.
+   The QiWe upload/callback hash must match the Huabaosi generated-image `content_hash`
+   before any production enablement PR. Do not commit the database URL, callback body,
+   request id, credentials, group id, media URL, or provider response.
 4. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
 
