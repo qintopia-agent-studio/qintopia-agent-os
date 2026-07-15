@@ -636,7 +636,20 @@ async fn run_once(
             }
         };
         let work_item_id = work_item.id;
-        let workflow_root_id = resolve_workflow_root_pool(pool, work_item.id).await?;
+        let workflow_root_id = match resolve_workflow_root_pool(pool, work_item.id).await {
+            Ok(workflow_root_id) => workflow_root_id,
+            Err(_) => {
+                return record_generation_failure_report(
+                    pool,
+                    &work_item,
+                    GenerationFailure {
+                        class: GenerationFailureClass::Terminal,
+                        stage: "workflow_root_resolution",
+                    },
+                )
+                .await
+            }
+        };
         let worker_input = work_item.clone();
         let generated = match tokio::task::spawn_blocking(move || {
             generate_and_store(&config, &worker_input, workflow_root_id)
