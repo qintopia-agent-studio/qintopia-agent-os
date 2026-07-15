@@ -52,6 +52,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-15-xiaoman-production-path-audit.md`                                      | adopt-input | Xiaoman v0.2.9 production execution and remaining ownership gaps       |
 | `2026-07-15-xiaoman-qiwe-callback-ingress-gap.md`                                  | adopt-input | Xiaoman QiWe memory-only callback ingress gap                          |
 | `2026-07-15-hermes-core-server-patch-inventory.md`                                 | adopt-input | Hermes core dirty-state classification and WeCom patch extraction      |
+| `2026-07-15-v0210-follow-up-deploy.md`                                             | adopt-input | v0.2.10 same-SHA deploy mismatch, recovery, and preflight evidence     |
 
 ## Rules
 

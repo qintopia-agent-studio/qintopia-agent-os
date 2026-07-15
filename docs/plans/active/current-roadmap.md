@@ -21,9 +21,10 @@ unless correcting historical evidence.
 - Hermes remains the Agent runtime under `/home/ubuntu/.hermes`.
 - Hermes profile live state, including `.env`, sessions, logs, cache, memory, auth, and
   local config overrides, stays outside git.
-- `v0.2.10` is the first Release containing the new deploy-runner behavior, but the
-  same-SHA follow-up deploy has not yet been recorded, so the new runner behavior should
-  not be treated as activated.
+- `v0.2.10` is the first Release containing the new deploy-runner behavior. Its
+  corrected same-SHA follow-up deploy succeeded and installed the three Huabaosi
+  production image units. The worker timer remains disabled because provider/media
+  configuration has not passed production preflight.
 - WorkTool, OpenClaw, and the current WorkTool-bound Xiaoqin runtime are archived and
   deprecated. Future Xiaoqin work requires a new non-WorkTool Agent design.
 
@@ -61,9 +62,10 @@ unless correcting historical evidence.
      production worker remains inactive until the owner manually publishes the Release,
      the release binary passes production preflight, and the dedicated timer is
      explicitly activated for canary generation. Image review and publication remain
-     separate gates. As of 2026-07-15, final activation evidence is still open: same-SHA
-     follow-up deploy, Huabaosi timer activation, and the first real pending
-     `generated_image` review evidence.
+     separate gates. As of 2026-07-15, the same-SHA follow-up deploy and systemd
+     installation evidence are complete. Final activation still requires reviewed
+     provider/media configuration, a successful production preflight, Huabaosi timer
+     activation, and the first real pending `generated_image` review evidence.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The

@@ -183,6 +183,19 @@ releases must write a normalized `manifest.json` with separate fields:
 
 The runner must not infer one SHA from another.
 
+### Same-SHA Follow-up Requests
+
+A follow-up deployment for an existing immutable `release_sha` must reuse the existing
+manifest's exact `runtime_sha`, `deploy_bundle_sha`, `commit_sha`, `release_scope`, and
+`restart_targets`. The runner intentionally rejects a request that narrows or broadens
+any of those fields, even when the requested release SHA is unchanged. This prevents a
+second request from silently changing the operational identity of an existing release.
+
+Before dispatching a same-SHA follow-up, read only the sanitized manifest fields from
+the promoted release evidence or the prior successful deploy result. Do not guess the
+restart targets from the current diff or from a later runbook summary. A mismatch fails
+before promotion, does not switch `current`, and does not require rollback.
+
 ## Server Units
 
 Install `qintopia-agent-os-deploy-runner.service` and
