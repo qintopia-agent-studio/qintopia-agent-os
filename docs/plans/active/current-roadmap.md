@@ -60,9 +60,10 @@ unless correcting historical evidence.
      the additive Postgres state stores only hashed correlation/idempotency and
      sanitized claim/audit facts. A guarded upload worker and bounded callback command
      now exist for fake-server and disposable-Postgres validation, but sending remains
-     disabled because no listener service or timer exists and the provider/storage/
-     readback path plus callback credential shape still require owner-approved staging
-     evidence.
+     disabled because no listener service or timer exists. The disabled staging webhook
+     bridge accepts only a digest-pinned sidecar under the fixed immutable staging
+     release root; the provider/storage/readback path plus callback credential shape
+     still require owner-approved staging evidence.
    - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md)
      merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration

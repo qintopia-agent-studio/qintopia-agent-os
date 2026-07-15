@@ -1,6 +1,6 @@
 # Xiaoman QiWe Image Send
 
-Updated: 2026-07-14
+Updated: 2026-07-15
 
 ## Goal
 
@@ -115,32 +115,34 @@ target, or missing final confirmation must stop before sending.
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
   The live helpers compile only with the staging-only Cargo feature. Production release
   artifacts record an empty feature list and cannot execute either external call; no
-  listener, service, timer, staging endpoint, or production enablement is installed.
+  service, timer, staging endpoint, or production enablement is installed. The guarded
+  staging smoke exists only as an owner-approved one-shot operator entrypoint.
 - Callback parsing classifies the raw `msgData` field names into one of four fixed,
   reviewed credential schema ids before deserializing credential values. Reports expose
   only that fixed id and an additional-field count. They reject simultaneous canonical
   and alias spellings and never expose the request id, credential values, filename, MD5,
   unknown field names, or unknown values. This makes an owner-approved staging callback
   safe to inspect, but it is instrumentation only and is not staging evidence.
+- The existing Hermes webhook has a disabled-by-default bridge that recognizes
+  `cmd=20000` before ordinary Agent dispatch and streams the bounded callback only to a
+  fixed `process-qiwe-image-send-callback --apply` child over stdin. Enablement requires
+  the exact owner phrase, canonical approved staging database URL hash, explicit send
+  and webhook readiness flags, and an executable staging sidecar path. Stderr is
+  discarded and stdout must match the bounded sanitized Rust report schema.
 
 ## Next Implementation
 
 1. Run one owner-approved staging image generation and verify the final JPEG media
    metadata and same-byte readback without sending.
-2. Capture one owner-approved staging async callback through the bounded callback
-   processor before generic raw-event sanitization. Record only the fixed credential
-   schema id and additional-field count, then confirm the existing `isSendSuccess=1`
-   success assumption without storing raw credentials, request ids, filenames, unknown
-   field names, or unknown values in git or logs.
-3. Use the guarded two-phase staging smoke for one explicit send-ready work item. The
-   `upload` phase may stop only after the asynchronous upload acceptance is durably
-   recorded. The `callback` phase accepts one bounded callback from stdin, never from a
-   file or command argument, and passes only when the exact approved JPEG is sent to the
-   isolated allowlisted group.
-4. Commit only the staging database URL SHA-256, sanitized callback schema id, fixed
+2. Use the guarded upload smoke for one explicit send-ready work item and receive its
+   real callback through the disabled-by-default webhook bridge in the isolated staging
+   runtime. The existing callback-phase smoke remains the operator-controlled stdin
+   entrypoint when the webhook bridge is not used. Neither path may persist callback
+   bytes or credential values.
+3. Commit only the staging database URL SHA-256, sanitized callback schema id, fixed
    outcome labels, and reviewed rollback evidence. Do not commit the database URL,
    callback body, request id, credentials, group id, media URL, or provider response.
-5. Add production scheduling only after staging evidence, rollback ownership, and
+4. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
 
 ## Guarded Staging Smoke Contract

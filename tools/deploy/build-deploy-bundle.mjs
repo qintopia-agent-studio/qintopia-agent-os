@@ -77,6 +77,7 @@ const sourceFiles = [
   "skills/qiwe/README.md",
   "skills/qiwe/__init__.py",
   "skills/qiwe/adapter.py",
+  "skills/qiwe/image_callback_bridge.py",
   "skills/qiwe/nats_capture.py",
   "skills/qiwe/passive_pipeline.py",
   "skills/qiwe/plugin.yaml",

@@ -80,6 +80,10 @@ except ImportError:  # pragma: no cover - local parser tests run outside Hermes
             return None
 
 try:
+    from .image_callback_bridge import (
+        QiWeImageCallbackBridge,
+        is_async_image_callback,
+    )
     from .passive_pipeline import PassiveEventPipeline, PassivePipelineConfig
     from .nats_capture import (
         QiWeNatsCaptureConfig,
@@ -90,6 +94,7 @@ try:
     from .solitaire.llm_parser import parser_from_context
     from .solitaire.reminder import ReminderWorker, ReminderWorkerConfig
 except ImportError:  # pragma: no cover - local tests import adapter.py directly
+    from image_callback_bridge import QiWeImageCallbackBridge, is_async_image_callback
     from nats_capture import (
         QiWeNatsCaptureConfig,
         QiWeNatsPublisher,
@@ -1516,6 +1521,7 @@ class QiWeAdapter(BasePlatformAdapter):
         self._identity_resolver = QiWeIdentityResolver(self)
         self._auditor = QiWeAuditor(self.qiwe.state_dir, self.qiwe.audit_enabled)
         self._nats_capture = self._build_nats_capture()
+        self._image_callback_bridge = self._build_image_callback_bridge(config)
         self._passive_pipeline = PassiveEventPipeline(
             PassivePipelineConfig(
                 enabled=self.qiwe.pipeline_enabled,
@@ -1726,6 +1732,18 @@ class QiWeAdapter(BasePlatformAdapter):
             logger.warning("[qiwe] NATS capture disabled after config error: %s", exc)
             return None
 
+    @staticmethod
+    def _build_image_callback_bridge(config: Any) -> QiWeImageCallbackBridge:
+        extra = getattr(config, "extra", {}) or {}
+        try:
+            bridge = QiWeImageCallbackBridge.from_environment(extra)
+            if bridge.enabled and not bridge.configuration_valid:
+                logger.error("[qiwe] enabled image callback processor configuration is invalid")
+            return bridge
+        except ValueError:
+            logger.warning("[qiwe] image callback processor disabled after config error")
+            return QiWeImageCallbackBridge(enabled=False)
+
     async def connect(self) -> bool:
         if not AIOHTTP_AVAILABLE:
             logger.error("[qiwe] aiohttp is not installed")
@@ -1832,22 +1850,30 @@ class QiWeAdapter(BasePlatformAdapter):
         body = await request.read()
         if len(body) > self.qiwe.max_body_bytes:
             return web.json_response({"ok": False, "reason": "body_too_large"}, status=413)
-        try:
-            parsed = parse_qiwe_payload(
-                body,
-                bot_names=self.qiwe.bot_names,
-                bot_user_id=self.qiwe.bot_user_id,
-                direct_enabled=self.qiwe.direct_enabled,
-                direct_allow_all=self.qiwe.direct_allow_all,
-                direct_allowed_users=self.qiwe.direct_allowed_users,
-                active_attachment_preprocess_enabled=self.qiwe.active_attachment_preprocess_enabled,
+        image_callback = is_async_image_callback(body)
+        if image_callback:
+            parsed = ParsedQiWeMessage(
+                accepted=False,
+                reason="qiwe_async_callback",
+                message_id="qiwe-callback-source:" + hashlib.sha256(body).hexdigest(),
             )
-        except json.JSONDecodeError as exc:
-            logger.warning("[qiwe] invalid JSON webhook body: %s", exc)
-            return web.json_response({"ok": False, "reason": "invalid_json"}, status=400)
-        except Exception as exc:
-            logger.warning("[qiwe] failed to parse webhook body: %s", exc, exc_info=True)
-            return web.json_response({"ok": False, "reason": "parse_failed"}, status=400)
+        else:
+            try:
+                parsed = parse_qiwe_payload(
+                    body,
+                    bot_names=self.qiwe.bot_names,
+                    bot_user_id=self.qiwe.bot_user_id,
+                    direct_enabled=self.qiwe.direct_enabled,
+                    direct_allow_all=self.qiwe.direct_allow_all,
+                    direct_allowed_users=self.qiwe.direct_allowed_users,
+                    active_attachment_preprocess_enabled=self.qiwe.active_attachment_preprocess_enabled,
+                )
+            except json.JSONDecodeError as exc:
+                logger.warning("[qiwe] invalid JSON webhook body: %s", exc)
+                return web.json_response({"ok": False, "reason": "invalid_json"}, status=400)
+            except Exception as exc:
+                logger.warning("[qiwe] failed to parse webhook body: %s", exc, exc_info=True)
+                return web.json_response({"ok": False, "reason": "parse_failed"}, status=400)
 
         if parsed.group_id_mismatch:
             logger.warning(
@@ -1858,6 +1884,47 @@ class QiWeAdapter(BasePlatformAdapter):
             )
 
         self._schedule_nats_capture(parsed, body)
+
+        if image_callback:
+            result = await self._image_callback_bridge.process(body)
+            if not result.enabled:
+                logger.info("[qiwe] image callback processor is disabled")
+                return web.json_response(
+                    {
+                        "ok": True,
+                        "accepted": False,
+                        "triggered": False,
+                        "reason": "qiwe_image_callback_processor_disabled",
+                    }
+                )
+            if not result.processed:
+                logger.warning(
+                    "[qiwe] image callback processor failed reason=%s", result.reason
+                )
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "accepted": False,
+                        "triggered": False,
+                        "reason": "qiwe_image_callback_processor_failed",
+                    },
+                    status=503,
+                )
+            logger.info(
+                "[qiwe] image callback processor completed action_status=%s credential_schema=%s additional_field_count=%s external_send_executed=%s",
+                result.action_status,
+                result.callback_credential_schema,
+                result.callback_additional_field_count,
+                result.external_send_executed,
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "accepted": False,
+                    "triggered": False,
+                    "reason": "qiwe_image_callback_processed",
+                }
+            )
 
         if not parsed.accepted:
             logger.info("[qiwe] ignored webhook reason=%s message_id=%s", parsed.reason, parsed.message_id)

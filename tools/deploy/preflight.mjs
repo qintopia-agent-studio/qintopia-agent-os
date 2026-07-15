@@ -447,6 +447,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "skills/knowledge-retrieval/tests",
     "mcp/weather-provider/manifest.yaml",
     "skills/qiwe/adapter.py",
+    "skills/qiwe/image_callback_bridge.py",
     "skills/qiwe/plugin.yaml",
     "skills/qiwe/solitaire",
     "skills/feishu-base/__init__.py",

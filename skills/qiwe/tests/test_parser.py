@@ -40,6 +40,7 @@ from adapter import (
 )
 from passive_pipeline import PassiveEventPipeline, PassivePipelineConfig
 from nats_capture import build_capture_events
+from image_callback_bridge import CallbackBridgeResult, QiWeImageCallbackBridge
 from qiwe_events import normalized_event_from_parsed
 from solitaire.activity_service import ActivityService
 from solitaire.feishu_writer import FeishuActivityMapping, FeishuActivityWriter
@@ -2068,6 +2069,104 @@ class QiWeParserTests(unittest.TestCase):
             finally:
                 adapter_module.web = old_web
                 adapter_module.logger.disabled = old_disabled
+
+        asyncio.run(run_case())
+
+    def test_webhook_routes_async_callback_without_agent_dispatch(self) -> None:
+        callback = {
+            "code": 0,
+            "data": [
+                {
+                    "requestId": "callback-request-secret",
+                    "cmd": 20000,
+                    "msgData": {
+                        "fileAesKey": "callback-aes-secret",
+                        "fileId": "callback-file-secret",
+                        "fileMd5": "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                        "fileSize": 48300,
+                        "filename": "callback-private.jpg",
+                    },
+                }
+            ],
+        }
+
+        class FakeWeb:
+            @staticmethod
+            def json_response(data, status=200):
+                return type("Response", (), {"status": status, "text": json.dumps(data)})()
+
+        class FakeRequest:
+            async def read(self):
+                return json.dumps(callback).encode("utf-8")
+
+        class FakeBridge:
+            def __init__(self):
+                self.bodies = []
+
+            async def process(self, body):
+                self.bodies.append(body)
+                return CallbackBridgeResult(
+                    detected=True,
+                    enabled=True,
+                    processed=True,
+                    reason="processor_completed",
+                    action_status="image_send_completed",
+                    callback_credential_schema="fileAesKey+fileId+fileMd5+fileSize+filename",
+                    callback_additional_field_count=0,
+                    external_send_executed=True,
+                )
+
+        async def run_case():
+            old_web = adapter_module.web
+            old_parser = adapter_module.parse_qiwe_payload
+            adapter_module.web = FakeWeb
+
+            def reject_parser(*_args, **_kwargs):
+                raise AssertionError(
+                    "async callback must bypass ordinary message parsing"
+                )
+
+            adapter_module.parse_qiwe_payload = reject_parser
+            adapter = QiWeAdapter(
+                type(
+                    "Config",
+                    (),
+                    {"extra": {"send_enabled": False, "identity_lookup_enabled": False}},
+                )()
+            )
+            bridge = FakeBridge()
+            adapter._image_callback_bridge = bridge
+            dispatched = False
+
+            async def dispatch(_event):
+                nonlocal dispatched
+                dispatched = True
+
+            adapter.handle_message = dispatch
+            try:
+                response = await adapter._handle_webhook(FakeRequest())
+                adapter._image_callback_bridge = QiWeImageCallbackBridge(
+                    enabled=True, configuration_valid=False
+                )
+                invalid_response = await adapter._handle_webhook(FakeRequest())
+            finally:
+                adapter_module.web = old_web
+                adapter_module.parse_qiwe_payload = old_parser
+            self.assertEqual(response.status, 200)
+            self.assertIn("qiwe_image_callback_processed", response.text)
+            self.assertFalse(dispatched)
+            self.assertEqual(len(bridge.bodies), 1)
+            for secret in (
+                "callback-request-secret",
+                "callback-aes-secret",
+                "callback-file-secret",
+                "callback-private.jpg",
+            ):
+                self.assertNotIn(secret, response.text)
+
+            self.assertEqual(invalid_response.status, 503)
+            self.assertIn("qiwe_image_callback_processor_failed", invalid_response.text)
+            self.assertFalse(dispatched)
 
         asyncio.run(run_case())
 

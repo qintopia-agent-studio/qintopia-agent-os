@@ -48,6 +48,26 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
   sidecar independently enforces the same boundary before Postgres writes. Existing
   callback ids are preserved only when the suffix is a validated 64-hex SHA-256 digest;
   a `qiwe-callback:` prefix by itself is not trusted.
+- Provides a disabled-by-default staging bridge that recognizes `cmd=20000` before
+  ordinary Agent dispatch and streams the bounded callback only to
+  `process-qiwe-image-send-callback --apply` over child stdin. It requires the exact
+  staging owner phrase, canonical approved staging database URL hash, an executable
+  staging sidecar path, explicit image-send and webhook readiness flags, bounded
+  sanitized stdout, discarded stderr, and a hard timeout. It never places callback
+  credentials in arguments, environment variables, files, NATS, logs, audit records, or
+  HTTP responses. An explicitly enabled but invalid bridge returns HTTP 503 so an
+  unprocessed callback is not acknowledged and silently lost. Callback detection
+  requires the reviewed top-level QiWe success envelope, bounded event list, request id,
+  and complete `msgData` credential-field presence; arbitrary nested `cmd=20000` values
+  do not bypass ordinary message parsing. The child receives only the fixed staging
+  database, QiWe adapter, owner gate, and host/group allowlist environment; unrelated
+  Hermes, NATS, Feishu, proxy, and runtime variables are not inherited. Any explicit
+  invalid enable value also returns HTTP 503. The processor must be the exact
+  `<40-hex-sha>/sidecar/qintopia-message-sidecar` under the fixed owner-reviewed
+  `/home/ubuntu/qintopia-agent-os-staging-releases` root. The root, release directory,
+  sidecar directory, and executable may not be symlinks or group/world-writable, their
+  owners must be root or the gateway effective user, and the approved executable SHA-256
+  is checked during configuration and again immediately before spawn.
 - Supports passive processors such as group-solitaire activity collection when enabled.
 - Keeps Feishu activity writes and reminders behind explicit scoped configuration.
 - Treats Erhua trainer memory as a controlled context-MCP path, not free-form prompt
@@ -62,6 +82,7 @@ Package validation:
 
 ```bash
 pnpm test:qiwe
+node tools/deploy/test-qiwe-image-staging-smoke.mjs
 ```
 
 M4B validation result on 2026-07-03:
