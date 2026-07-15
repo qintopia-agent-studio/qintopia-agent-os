@@ -376,6 +376,13 @@ jobs:
           group_message_send::tests::postgres_send_ready_is_idempotent_and_fails_closed
           -- --ignored --exact
 
+      - name: Huabaosi stale image-generation claim integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          image_generation::tests::postgres_stale_processing_claim_is_terminal_ambiguous
+          -- --ignored --exact
+
       - name: QiWe callback capture-storage redaction integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

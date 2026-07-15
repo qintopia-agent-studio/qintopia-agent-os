@@ -339,6 +339,10 @@ Use `rg` and `rg --files` for search.
   must reject control characters before socket connection. Each work-item claim must use
   a unique token; artifact or failure writes must lock and match that unexpired token,
   with exactly one affected work-item row.
+- An expired or structurally incomplete Huabaosi image-generation `processing` claim is
+  an unknown provider/media outcome. Reconciliation must atomically mark it failed,
+  release the complete claim tuple, append one sanitized ambiguous-outcome event, and
+  disable automatic retry; it must never reclaim the row for another external attempt.
 - `huabaosi-image-generation-production-observation-smoke.sh` may only verify that the
   provider worker remains disabled and unscheduled, run configuration preflight, and run
   `run-huabaosi-image-generation-worker --once --dry-run` for a read-only queue preview.

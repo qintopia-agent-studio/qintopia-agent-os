@@ -36,6 +36,14 @@ provider payloads, invalid images, media upload/readback, persistence, and stale
 failures are never retried. Retry and terminal events store only attempt number, failure
 class/stage, delay, and boundary booleans; raw errors and responses are not persisted.
 
+A `processing` claim that expires or loses a complete claim tuple has an unknown
+external outcome because the provider or media service may already have accepted the
+request. Before selecting queued work, the worker atomically marks one such request
+`failed`, clears `claimed_by`, `locked_at`, and `claim_expires_at`, and appends one
+`image_generation_outcome_ambiguous` event. The event records only the attempt number,
+claim-loss reason, unknown generation/upload booleans, and that automatic retry is
+disabled. The same request is never reclaimed automatically.
+
 For Xiaoman activity promotion, an approved `poster_brief` only authorizes an
 `image_generation_request`. A completed image request with an approved `generated_image`
 is required before the group-message starter can create `group_message_request`.
