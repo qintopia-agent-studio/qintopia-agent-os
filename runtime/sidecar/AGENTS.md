@@ -58,6 +58,9 @@ From the monorepo root, prefer:
   loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
   environment failure and must be confirmed by an unsandboxed rerun, not hidden by
   skipping tests.
+- Test helpers used only by a non-default adapter feature must carry the same feature
+  gate on their imports, types, and implementations; default-feature Clippy compiles
+  test targets and rejects otherwise-unused helpers.
 - Huabaosi live provider/media execution must compile with exactly one non-default live
   feature: `huabaosi-staging-adapter` or `huabaosi-production-adapter`. A build with
   neither or both must reject apply before Postgres. Staging keeps the exact owner

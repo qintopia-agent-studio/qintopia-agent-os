@@ -65,6 +65,11 @@ activation/rollback, read-only observation, deploy bundle contracts, repository 
 and PR body policy. Local validation does not contact production Postgres, media,
 Feishu, QiWe, or a production server.
 
+The first CI run containing the non-secret observation preflight failed default-feature
+Clippy because its feature-only `EnvGuard` test helper was compiled but unused. The
+helper imports, type, and implementations now carry the mirror-adapter feature gate;
+both default-feature and all-feature Clippy pass after the fix.
+
 ## Remaining Owner Action
 
 1. Merge the ordinary production enablement PR after its latest Reviewer Guide, reviews,

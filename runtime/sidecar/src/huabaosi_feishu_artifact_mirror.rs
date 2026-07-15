@@ -1919,11 +1919,12 @@ fn append_multipart_text(body: &mut Vec<u8>, boundary: &str, name: &str, value: 
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
+    use std::sync::{Mutex, MutexGuard, OnceLock};
     use std::{
         fs,
         io::{Read, Write},
         net::{TcpListener, TcpStream},
-        sync::{Mutex, MutexGuard, OnceLock},
         thread,
     };
 
@@ -1935,11 +1936,13 @@ mod tests {
     #[cfg(feature = "postgres-integration-tests")]
     use crate::db;
 
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     struct EnvGuard {
         _lock: MutexGuard<'static, ()>,
         saved: Vec<(&'static str, Option<String>)>,
     }
 
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     impl EnvGuard {
         fn new(keys: &[&'static str]) -> Self {
             static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -1958,6 +1961,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             for (key, value) in &self.saved {
