@@ -67,6 +67,11 @@ Downstream QiWe staging keys, once the QiWe staging PR is present on the staged 
 - `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`
 - `QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS`
 
+The Huabaosi staging smoke reads only the Huabaosi key allowlist above. If the same
+staging env file already contains the downstream QiWe keys, the Huabaosi smoke must
+ignore those keys and must not pass them to its child sidecar process. Unknown keys and
+invalid assignment syntax still fail closed.
+
 The env file must be readable only by the staging operator/root boundary. Readiness
 smokes must verify only file metadata and must not read or print env contents.
 
