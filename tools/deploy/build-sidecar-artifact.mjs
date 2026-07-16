@@ -7,6 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import {
+  assertContainedArtifactDirBoundary,
   resolveApprovedTarget,
   resolveContainedArtifactDir,
 } from "./sidecar-artifact-build-boundary.mjs";
@@ -32,6 +33,8 @@ const bundleName = `${binaryName}.tar.gz`;
 const bundlePath = path.join(artifactDir, bundleName);
 const manifestPath = path.join(artifactDir, "artifact-manifest.json");
 const checksumPath = path.join(artifactDir, "SHA256SUMS");
+const verifyArtifactBoundary = () =>
+  assertContainedArtifactDirBoundary(outputRoot, artifactName, artifactDir);
 
 const run = (command, args, options = {}) =>
   (
@@ -94,10 +97,13 @@ run(
 );
 ensureFile(binaryPath, "release binary");
 
+verifyArtifactBoundary();
 fs.rmSync(artifactDir, { recursive: true, force: true });
 fs.mkdirSync(artifactDir, { recursive: true });
+verifyArtifactBoundary();
 fs.copyFileSync(binaryPath, stagedBinaryPath);
 fs.chmodSync(stagedBinaryPath, 0o755);
+verifyArtifactBoundary();
 run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName]);
 
 const binarySha256 = sha256File(stagedBinaryPath);

@@ -55,6 +55,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
@@ -265,6 +266,48 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
   }
 }
 
+if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
+  const stagingArtifactFetchScript = readText(
+    "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh"
+  );
+  for (const requiredFragment of [
+    "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL",
+    "approved-staging-sidecar-provision",
+    "qintopia-message-sidecar-staging-linux-x86_64-gnu",
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+    "staging_only",
+    "production_eligible",
+    "/home/ubuntu/qintopia-agent-os-staging-releases",
+    "--artifact-zip is test-only",
+    "sha256sum -c SHA256SUMS",
+    "qintopia-message-sidecar.tar.gz",
+    "path component is a symlink",
+    "path component is group/world writable",
+    "path component has unexpected owner",
+    "chmod 0555",
+  ]) {
+    if (!stagingArtifactFetchScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh: must preserve staging artifact provision boundary (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenFragment of [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    if (stagingArtifactFetchScript.includes(forbiddenFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh: must not cross production or release boundaries (${forbiddenFragment})`
+      );
+    }
+  }
+}
+
 for (const cosScriptPath of [
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
@@ -426,6 +469,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     }
   }
   for (const requiredFragment of [
+    "assertContainedArtifactDirBoundary",
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",
     "const bundleName = `${binaryName}.tar.gz`",
@@ -492,6 +536,7 @@ if (exists("tools/deploy/build-staging-sidecar-artifact.mjs")) {
     }
   }
   for (const requiredFragment of [
+    "assertContainedArtifactDirBoundary",
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",
     "staging-${targetTriple}",
@@ -540,8 +585,11 @@ if (exists("tools/deploy/sidecar-artifact-build-boundary.mjs")) {
     'artifactName.split("-").includes("..")',
     "fs.lstatSync(currentPath)",
     "stat.isSymbolicLink()",
+    "fs.mkdirSync(resolvedRoot, { recursive: true })",
     "fs.realpathSync.native(currentPath)",
     "artifact output path must match its real path",
+    "requireTerminalDirectory",
+    "artifact output root must be a directory",
     "path.resolve(outputRoot)",
     "!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)",
   ]) {
@@ -574,6 +622,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
   for (const requiredFragment of [
     "qintopia-agent-os-deploy-bundle",
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+    "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",

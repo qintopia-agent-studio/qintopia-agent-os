@@ -96,6 +96,30 @@ and `production_eligible=false`. Do not use the production
 `qintopia-message-sidecar-linux-x86_64-gnu` artifact for staging evidence, and do not
 install the staging artifact under the production release root.
 
+## Provision Staging Sidecar Artifact
+
+After owner approval, provision the staging-only artifact with the reviewed helper from
+the deploy bundle:
+
+```bash
+QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL=approved-staging-sidecar-provision \
+  deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh \
+  --sha c969b0d1e2f4b635f681e57d6d4d16880b391f76
+```
+
+The helper downloads only the successful `artifacts.yml` GitHub Actions artifact named
+`qintopia-message-sidecar-staging-linux-x86_64-gnu`, verifies `SHA256SUMS`, verifies the
+manifest staging feature boundary, rejects production-eligible manifests, and installs
+only under `/home/ubuntu/qintopia-agent-os-staging-releases/<sha>/sidecar/`.
+
+Current reviewed staging artifact evidence:
+
+- GitHub Actions run:
+  `https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/29489620130`
+- release SHA: `c969b0d1e2f4b635f681e57d6d4d16880b391f76`
+- sidecar SHA-256: `8a04ab44cad0b60cbef499d7a58e0fb8fcac577be537d1418ec3649f38c4fa1f`
+- bundle SHA-256: `3530ff5c2181e8ec20689f0774ae9a121aa8ddd5a9832992aac472c059b6fd41`
+
 ## Validation Sequence
 
 Run the validations in this order after provisioning. Retain only sanitized stdout

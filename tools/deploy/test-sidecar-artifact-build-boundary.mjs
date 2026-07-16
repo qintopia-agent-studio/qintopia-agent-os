@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
+  assertContainedArtifactDirBoundary,
   resolveApprovedTarget,
   resolveContainedArtifactDir,
 } from "./sidecar-artifact-build-boundary.mjs";
@@ -59,6 +60,9 @@ try {
   if (!inside.startsWith(`${path.resolve(root)}${path.sep}`)) {
     throw new Error("contained artifact dir escaped output root");
   }
+  if (!fs.statSync(root).isDirectory()) {
+    throw new Error("output root was not safely created");
+  }
 
   for (const artifactName of [
     "../escape",
@@ -94,6 +98,17 @@ try {
     "symlink output parent must be rejected"
   );
 
+  const fileRoot = path.join(fixtureRoot, "file-root");
+  fs.writeFileSync(fileRoot, "not a directory\n");
+  assertThrows(
+    () =>
+      resolveContainedArtifactDir(
+        fileRoot,
+        "qintopia-message-sidecar-linux-x86_64-gnu"
+      ),
+    "file output root must be rejected"
+  );
+
   const artifactSymlinkRoot = path.join(fixtureRoot, "artifact-symlink-root");
   const artifactSymlinkTarget = path.join(fixtureRoot, "artifact-symlink-target");
   const artifactSymlinkName = "qintopia-message-sidecar-linux-x86_64-gnu";
@@ -107,6 +122,32 @@ try {
   assertThrows(
     () => resolveContainedArtifactDir(artifactSymlinkRoot, artifactSymlinkName),
     "symlink artifact directory must be rejected"
+  );
+
+  const revalidatedRoot = path.join(fixtureRoot, "revalidated-root");
+  const revalidatedDir = resolveContainedArtifactDir(
+    revalidatedRoot,
+    "qintopia-message-sidecar-linux-x86_64-gnu"
+  );
+  fs.rmSync(revalidatedRoot, { recursive: true, force: true });
+  fs.symlinkSync(outsideRoot, revalidatedRoot, "dir");
+  assertThrows(
+    () =>
+      assertContainedArtifactDirBoundary(
+        revalidatedRoot,
+        "qintopia-message-sidecar-linux-x86_64-gnu",
+        revalidatedDir
+      ),
+    "replaced output root symlink must be rejected before writes"
+  );
+  assertThrows(
+    () =>
+      assertContainedArtifactDirBoundary(
+        root,
+        "qintopia-message-sidecar-linux-x86_64-gnu",
+        path.join(fixtureRoot, "outside-artifact-dir")
+      ),
+    "expected artifact directory mismatch must be rejected"
   );
 } finally {
   fs.rmSync(path.join(process.cwd(), "dist", ".test-sidecar-artifact-boundary"), {
