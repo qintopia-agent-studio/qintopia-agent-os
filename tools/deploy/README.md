@@ -112,6 +112,18 @@ The CI artifact job uses Rust 1.96.0 to match `runtime/sidecar/Cargo.toml`
 `rust-version`. Server deployment downloads the uploaded artifact and does not require
 Node.js, pnpm, Rust, or Docker on the production host.
 
+Build the staging-only sidecar artifact layout locally:
+
+```bash
+pnpm artifact:sidecar:staging
+```
+
+This writes `dist/sidecar-artifacts/qintopia-message-sidecar-staging-linux-x86_64-gnu`
+with a manifest compiled only with `huabaosi-staging-adapter` and
+`qiwe-staging-adapter`. It is for owner-approved staging evidence under
+`/home/ubuntu/qintopia-agent-os-staging-releases/<sha>` only; production deployment
+scripts must keep using `pnpm artifact:sidecar`.
+
 ## Artifact Retention
 
 Prune old GitHub Actions sidecar artifacts:

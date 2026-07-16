@@ -812,6 +812,95 @@ if (!exists(qiweImageStagingReadinessPath)) {
   }
 }
 
+const stagingSidecarArtifactBuilderPath =
+  "tools/deploy/build-staging-sidecar-artifact.mjs";
+if (!exists(stagingSidecarArtifactBuilderPath)) {
+  addError(
+    `${stagingSidecarArtifactBuilderPath}: missing staging-only sidecar artifact builder`
+  );
+} else {
+  const builder = readText(stagingSidecarArtifactBuilderPath);
+  for (const fragment of [
+    "qintopia-message-sidecar",
+    "resolveApprovedTarget",
+    "resolveContainedArtifactDir",
+    "staging-${targetTriple}",
+    '"huabaosi-staging-adapter"',
+    '"qiwe-staging-adapter"',
+    '"--no-default-features"',
+    '"--features"',
+    'cargoFeatures.join(",")',
+    "staging_only: true",
+    "production_eligible: false",
+    "staging-sidecar-artifact",
+    "refusing to build a staging artifact from a dirty or unreadable git worktree",
+    "/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>",
+  ]) {
+    requireFragment(stagingSidecarArtifactBuilderPath, builder, fragment);
+  }
+  for (const fragment of [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    '"--all-features"',
+  ]) {
+    forbidFragment(stagingSidecarArtifactBuilderPath, builder, fragment);
+  }
+}
+
+const productionSidecarArtifactBuilderPath = "tools/deploy/build-sidecar-artifact.mjs";
+if (exists(productionSidecarArtifactBuilderPath)) {
+  const builder = readText(productionSidecarArtifactBuilderPath);
+  for (const fragment of ["resolveApprovedTarget", "resolveContainedArtifactDir"]) {
+    requireFragment(productionSidecarArtifactBuilderPath, builder, fragment);
+  }
+}
+
+const sidecarArtifactBoundaryHelperPath =
+  "tools/deploy/sidecar-artifact-build-boundary.mjs";
+if (!exists(sidecarArtifactBoundaryHelperPath)) {
+  addError(`${sidecarArtifactBoundaryHelperPath}: missing artifact path safety helper`);
+} else {
+  const helper = readText(sidecarArtifactBoundaryHelperPath);
+  for (const fragment of [
+    'const approvedTarget = "linux-x86_64-gnu"',
+    "QINTOPIA_ARTIFACT_TARGET must be",
+    'process.platform !== "linux"',
+    'process.arch !== "x64"',
+    'artifactName.includes("/")',
+    'artifactName.includes("\\\\")',
+    'artifactName.split("-").includes("..")',
+    "path.resolve(outputRoot)",
+    "!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)",
+  ]) {
+    requireFragment(sidecarArtifactBoundaryHelperPath, helper, fragment);
+  }
+}
+
+const artifactsWorkflowPath = ".github/workflows/artifacts.yml";
+if (exists(artifactsWorkflowPath)) {
+  const workflow = readText(artifactsWorkflowPath);
+  for (const fragment of [
+    "build_staging_sidecar",
+    "build-staging-sidecar",
+    "staging-sidecar-artifact:",
+    "github.event_name == 'workflow_dispatch'",
+    "node tools/deploy/build-staging-sidecar-artifact.mjs",
+    "qintopia-message-sidecar-staging-linux-x86_64-gnu",
+    "dist/sidecar-artifacts/qintopia-message-sidecar-staging-linux-x86_64-gnu",
+    "Prune old staging sidecar artifacts",
+  ]) {
+    requireFragment(artifactsWorkflowPath, workflow, fragment);
+  }
+  const stagingJobStart = workflow.indexOf("  staging-sidecar-artifact:");
+  const stagingJobEnd = workflow.indexOf("  deploy-bundle-artifact:", stagingJobStart);
+  const stagingJob = workflow.slice(stagingJobStart, stagingJobEnd);
+  if (stagingJob.includes("upload-cos-artifact.sh")) {
+    addError(
+      `${artifactsWorkflowPath}: staging sidecar artifact job must not upload to COS`
+    );
+  }
+}
+
 if (!exists(qiweImageStagingSmokePath)) {
   addError(`${qiweImageStagingSmokePath}: missing QiWe image-send staging smoke`);
 } else {

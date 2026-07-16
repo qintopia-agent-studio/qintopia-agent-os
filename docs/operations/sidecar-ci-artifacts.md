@@ -40,6 +40,21 @@ explicit activation. Runtime environment variables cannot select staging code or
 these bindings. The builder also refuses a dirty or unreadable git worktree so
 `commit_sha` cannot describe different uncommitted source bytes.
 
+The staging-only sidecar artifact name is:
+
+```text
+qintopia-message-sidecar-staging-linux-x86_64-gnu
+```
+
+It is built only by the manually dispatched Artifacts workflow when
+`build_staging_sidecar=true`. It compiles exactly `huabaosi-staging-adapter` and
+`qiwe-staging-adapter`, records `staging_only=true` and `production_eligible=false` in
+the manifest, is retained only as a GitHub Actions artifact, and must be installed only
+under `/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` for
+owner-approved Huabaosi/QiWe staging evidence. It is never uploaded to COS, never
+included in the production release build, and must not be fetched or promoted by
+production deployment scripts.
+
 ## CI Requirements
 
 The `sidecar-artifact` job runs on `master` pushes. It runs in parallel with the `check`
@@ -74,6 +89,9 @@ The `Artifacts` workflow publishes release artifacts. It is opt-in:
 - run it manually through `workflow_dispatch`, or
 - include `[publish-artifacts]` in the `master` commit message when an automatic
   publication is intentional.
+
+The staging-only artifact is stricter: it is never built from the push path and can be
+published only by a manual `workflow_dispatch` with `build_staging_sidecar=true`.
 
 The `sidecar-artifact` job uploads the new artifact first, then runs
 `pnpm artifact:prune:sidecar` with `actions: write` permission to delete older same-name

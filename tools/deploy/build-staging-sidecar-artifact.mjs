@@ -16,8 +16,8 @@ const packageName = "qintopia-message-sidecar";
 const binaryName = "qintopia-message-sidecar";
 const targetTriple = resolveApprovedTarget();
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
-const artifactName = `${binaryName}-${targetTriple}`;
-const cargoFeatures = ["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"];
+const artifactName = `${binaryName}-staging-${targetTriple}`;
+const cargoFeatures = ["huabaosi-staging-adapter", "qiwe-staging-adapter"];
 const artifactDir = resolveContainedArtifactDir(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,
@@ -73,7 +73,7 @@ const ensureFile = (filePath, label) => {
 const worktreeStatus = gitOutput(["status", "--porcelain"], "unknown");
 if (worktreeStatus) {
   throw new Error(
-    "refusing to build a release artifact from a dirty or unreadable git worktree"
+    "refusing to build a staging artifact from a dirty or unreadable git worktree"
   );
 }
 
@@ -87,6 +87,7 @@ run(
     "--locked",
     "--manifest-path",
     "runtime/sidecar/Cargo.toml",
+    "--no-default-features",
     "--features",
     cargoFeatures.join(","),
   ],
@@ -142,11 +143,14 @@ const manifest = {
   ],
   validation: {
     cargo_features: cargoFeatures,
-    required_workflow_jobs: ["check", "sidecar-artifact"],
+    staging_only: true,
+    production_eligible: false,
+    required_workflow_jobs: ["check", "staging-sidecar-artifact"],
     server_verification: [
-      "download only from a successful CI workflow run for the approved commit SHA",
+      "download only from a successful CI workflow run for the approved staging commit SHA",
       "sha256sum -c SHA256SUMS",
       "./qintopia-message-sidecar check",
+      "install only under /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>",
     ],
   },
 };
