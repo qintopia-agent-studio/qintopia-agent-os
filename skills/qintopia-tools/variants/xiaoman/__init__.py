@@ -3421,7 +3421,7 @@ def _xiaoman_activity_run_read_through(
     sanitized.update(
         {
             "skill": skill,
-            "payload": payload,
+            "query": _xiaoman_activity_read_through_query_summary(operation, payload),
             "action": {
                 "tool": "agentos_worker_read_through",
                 "requires_local_execution": False,
@@ -3431,6 +3431,18 @@ def _xiaoman_activity_run_read_through(
         }
     )
     return _json(sanitized)
+
+
+def _xiaoman_activity_read_through_query_summary(operation: str, payload: dict[str, Any]) -> dict[str, str]:
+    summary = {
+        "operation": _clean_text(operation, max_len=80),
+        "table_role": _clean_text(payload.get("table_role"), max_len=80),
+    }
+    if payload.get("date"):
+        summary["date"] = _clean_text(payload.get("date"), max_len=40)
+    if payload.get("timezone"):
+        summary["timezone"] = _clean_text(payload.get("timezone"), max_len=80)
+    return {key: value for key, value in summary.items() if value}
 
 
 def _xiaoman_activity_read_through_env() -> dict[str, str]:

@@ -424,6 +424,46 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("tbl_secret", rendered)
         self.assertNotIn("postgres://secret", rendered)
 
+    def test_xiaoman_activity_read_through_does_not_return_raw_payload(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_occurrence",
+                        "record_ref": "activity_occurrence:abc123def456",
+                        "title": "今日共创晚餐",
+                        "activity_date": "2026-07-16",
+                        "location": "秦托邦共享厨房",
+                        "status": "待宣传",
+                    }
+                ],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_record_get(
+                {
+                    "record_id": "rec_secret_raw_id",
+                    "table_role": "activity_occurrence",
+                    "dry_run": False,
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertTrue(report["success"])
+        self.assertNotIn("payload", report)
+        self.assertNotIn("rec_secret_raw_id", rendered)
+        self.assertEqual(report["query"]["operation"], "record-get")
+        self.assertEqual(report["query"]["table_role"], "activity_occurrence")
+
     def test_xiaoman_activity_read_through_does_not_return_child_error_output(self):
         self.enable_xiaoman_activity_wrappers()
         fake_sidecar = self.write_raw_xiaoman_sidecar(
