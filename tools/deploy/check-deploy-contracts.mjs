@@ -674,6 +674,57 @@ if (!exists(aliangProductionRollbackPath)) {
 
 const qiweImageStagingSmokePath =
   "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh";
+const qiweImageStagingReadinessPath =
+  "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh";
+if (!exists(qiweImageStagingReadinessPath)) {
+  addError(`${qiweImageStagingReadinessPath}: missing QiWe staging readiness smoke`);
+} else {
+  const readiness = readText(qiweImageStagingReadinessPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE",
+    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL",
+    "approved-staging-qiwe-image-send",
+    "/etc/qintopia/message-sidecar-staging.env",
+    "/home/ubuntu/qintopia-agent-os-staging-releases",
+    "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256",
+    "qiwe_image_send_staging_readiness=",
+    "ready_for_staging_preflight",
+    "staging env file contents are not read",
+    "sidecar binary is not executed",
+    "no QiWe, Postgres, Feishu, provider, media, service, or timer action",
+    "path_is_secure",
+    "require_executable",
+    "reject_owner_writable",
+    "path_not_executable",
+    "path_owner_group_or_world_writable",
+    "path_group_or_world_writable",
+    "path_is_symlink",
+    "path_unexpected_owner",
+    "sidecar_hash_mismatch",
+  ]) {
+    requireFragment(qiweImageStagingReadinessPath, readiness, fragment);
+  }
+  for (const fragment of [
+    "systemctl",
+    "source ",
+    'source "$',
+    ". /etc/qintopia",
+    "env -i",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "run-qiwe-image-send-worker",
+    "process-qiwe-image-send-callback",
+    "qiwe-image-send-staging-preflight",
+    "subprocess",
+    "curl ",
+    "psql ",
+  ]) {
+    forbidFragment(qiweImageStagingReadinessPath, readiness, fragment);
+  }
+}
+
 if (!exists(qiweImageStagingSmokePath)) {
   addError(`${qiweImageStagingSmokePath}: missing QiWe image-send staging smoke`);
 } else {
@@ -684,9 +735,36 @@ if (!exists(qiweImageStagingSmokePath)) {
     "approved-staging-qiwe-image-send",
     "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE",
     "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256",
+    "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256",
     "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID",
     "QINTOPIA_QIWE_IMAGE_STAGING_PHASE",
-    "--features qiwe-staging-adapter",
+    'PHASE" != "preflight"',
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE must be preflight, upload, or callback",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256 must be a canonical SHA-256",
+    "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA must be a 40-character lowercase hex SHA",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_TEST_MODE must be 0 or 1",
+    "QiWe staging smoke must run from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>",
+    "QiWe staging smoke test mode may use a GitHub Actions checkout only in CI",
+    "GITHUB_ACTIONS",
+    "QiWe staging smoke test mode may read only a temporary fake env file",
+    "QiWe staging smoke test mode requires a loopback fake database URL",
+    "QiWe staging smoke test mode requires a fake loopback or example.test QiWe API host",
+    "packaged sidecar/qintopia-message-sidecar is required for QiWe staging smoke",
+    "verify_sidecar_binary",
+    "packaged sidecar binary hash changed before",
+    "packaged sidecar binary must stay under the fixed staging release root before",
+    "packaged sidecar binary must come from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha> before",
+    "qintopia-agent-os-staging-releases",
+    "packaged sidecar binary, parent directory, release root, and staging releases root must not be symlinks before",
+    "packaged sidecar release ancestors, parent directory, and binary must keep the expected file types before",
+    "packaged sidecar release ancestors, parent directory, and binary must be executable before",
+    "packaged sidecar release ancestors, parent directory, and binary must be owned by root or the staging runner user before",
+    "packaged sidecar binary and parent directory must not be owner/group/world writable, and release ancestors must not be group/world writable before",
+    "unexpected_owner",
+    "os.geteuid()",
+    "sidecar_binary_sha256",
+    "artifact_content_hash",
     "qiwe-image-send-staging-preflight",
     "run-qiwe-image-send-worker",
     "process-qiwe-image-send-callback",
@@ -695,9 +773,16 @@ if (!exists(qiweImageStagingSmokePath)) {
     'payload["external_send_executed"] is True',
     "callback_credential_schema",
     "contains forbidden sensitive output",
-    'output="$("$@" 2>&1)"',
+    "CHILD_ENV",
+    "add_child_env",
+    "add_child_env_if_set",
+    "env -i",
+    'verify_sidecar_binary "$label spawn"',
+    'output="$(env -i "${CHILD_ENV[@]}" "$@" 2>&1)"',
     'assert_no_sensitive_text "$label output" "$output"',
     "SANITIZED_OUTPUT",
+    "qiwe_image_send_staging_evidence=",
+    "emit_sanitized_evidence",
     "payload = json.load(sys.stdin)",
     "fileAesKey",
     "fileAeskey",
@@ -725,8 +810,288 @@ if (!exists(qiweImageStagingSmokePath)) {
     "report_file",
     "preflight_output",
     "phase_output",
+    "--features qiwe-staging-adapter",
+    "cargo run",
+    "source_fallback",
+    "QINTOPIA_SIDECAR_BIN",
   ]) {
     forbidFragment(qiweImageStagingSmokePath, smoke, fragment);
+  }
+}
+
+const qiweImageStagingSmokeTestPath = "tools/deploy/test-qiwe-image-staging-smoke.mjs";
+if (!exists(qiweImageStagingSmokeTestPath)) {
+  addError(`${qiweImageStagingSmokeTestPath}: missing QiWe staging smoke test`);
+} else {
+  const test = readText(qiweImageStagingSmokeTestPath);
+  for (const fragment of [
+    "QINTOPIA_UNRELATED_RUNTIME_SECRET",
+    "ambient secret reached child process",
+    "expected source checkout staging smoke to fail closed",
+    "source checkout failure did not enforce fixed release root",
+    "tamper-after-preflight",
+    "expected sidecar tampering before upload spawn to fail",
+    "before QiWe staging upload spawn",
+    "QiWe image-send staging smoke test passed.",
+  ]) {
+    requireFragment(qiweImageStagingSmokeTestPath, test, fragment);
+  }
+}
+
+const qiweImageStagingReadinessTestPath =
+  "tools/deploy/test-qiwe-image-staging-readiness.mjs";
+if (!exists(qiweImageStagingReadinessTestPath)) {
+  addError(`${qiweImageStagingReadinessTestPath}: missing QiWe staging readiness test`);
+} else {
+  const test = readText(qiweImageStagingReadinessTestPath);
+  for (const fragment of [
+    "QiWe image-send staging readiness smoke test passed.",
+    "expected missing readiness inputs to fail",
+    "expected owner-writable sidecar to fail readiness",
+    "expected non-executable sidecar to fail readiness",
+    "ready_for_staging_preflight",
+    "readiness smoke exposed staging env contents",
+    "sidecar_binary_path_not_executable",
+    "sidecar_hash_mismatch",
+  ]) {
+    requireFragment(qiweImageStagingReadinessTestPath, test, fragment);
+  }
+}
+
+const qiweImageStagingRunbookPath =
+  "docs/operations/qiwe-image-send-staging-runbook.md";
+if (!exists(qiweImageStagingRunbookPath)) {
+  addError(`${qiweImageStagingRunbookPath}: missing QiWe staging runbook`);
+} else {
+  const runbook = readText(qiweImageStagingRunbookPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE=1",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1",
+    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>'",
+    "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
+    "does not read the env file contents",
+    "execute the sidecar, connect to",
+    "Postgres, call QiWe, or touch services",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
+    "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env",
+    "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>'",
+    "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>'",
+    "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<same approved staging release sha>'",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>'",
+    "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>'",
+    "trusted-staging-callback-source |",
+    "callback credential schema id",
+    "qiwe_image_send_staging_evidence=<json>",
+    "node tools/deploy/check-qiwe-image-staging-evidence.mjs <staging-evidence-output.txt>",
+    "node tools/deploy/check-qiwe-image-staging-evidence.mjs --preflight-only <preflight-evidence-output.txt>",
+    "node tools/deploy/check-xiaoman-image-send-staging-evidence.mjs <huabaosi-staging-evidence-output.txt> <qiwe-staging-evidence-output.txt>",
+    "external_send_executed",
+    "artifact_content_hash",
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
+    "Do not add production listener, service, timer, or release activation",
+  ]) {
+    requireFragment(qiweImageStagingRunbookPath, runbook, fragment);
+  }
+  for (const fragment of [
+    'source "$ENV_FILE"',
+    ". /etc/qintopia/message-sidecar-staging.env",
+    "callback.json",
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(qiweImageStagingRunbookPath, runbook, fragment);
+  }
+}
+
+const qiweImageStagingEvidenceCheckPath =
+  "tools/deploy/check-qiwe-image-staging-evidence.mjs";
+if (!exists(qiweImageStagingEvidenceCheckPath)) {
+  addError(
+    `${qiweImageStagingEvidenceCheckPath}: missing QiWe staging evidence checker`
+  );
+} else {
+  const checker = readText(qiweImageStagingEvidenceCheckPath);
+  for (const fragment of [
+    "qiwe_image_send_staging_evidence=",
+    "--preflight-only",
+    "complete evidence requires preflight, upload, and callback records",
+    "upload and callback work_item_id values differ",
+    "upload and callback artifact_content_hash values differ",
+    "forbidden sensitive fragment appeared in evidence",
+    "unexpected non-evidence line",
+    "callback_credential_schema",
+    "artifact_content_hash",
+    "sidecar_binary_sha256",
+    "external_send_executed",
+    "image_send_completed",
+    "complete evidence records must use the same sidecar binary hash",
+  ]) {
+    requireFragment(qiweImageStagingEvidenceCheckPath, checker, fragment);
+  }
+  for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
+    forbidFragment(qiweImageStagingEvidenceCheckPath, checker, fragment);
+  }
+}
+
+const xiaomanImageSendStagingEvidenceCheckPath =
+  "tools/deploy/check-xiaoman-image-send-staging-evidence.mjs";
+if (!exists(xiaomanImageSendStagingEvidenceCheckPath)) {
+  addError(
+    `${xiaomanImageSendStagingEvidenceCheckPath}: missing Xiaoman image-send staging evidence checker`
+  );
+} else {
+  const checker = readText(xiaomanImageSendStagingEvidenceCheckPath);
+  for (const fragment of [
+    "huabaosi_image_generation_staging_evidence=",
+    "qiwe_image_send_staging_evidence=",
+    "Huabaosi content_hash and QiWe artifact_content_hash values differ",
+    "QiWe upload and callback artifact_content_hash values differ",
+    "QiWe preflight evidence does not prove staging send readiness",
+    "Huabaosi preflight evidence does not prove staging adapter readiness",
+    "forbidden sensitive fragment",
+    "image_send_completed",
+    "generated_image_created",
+    "Xiaoman image-send staging evidence check passed.",
+  ]) {
+    requireFragment(xiaomanImageSendStagingEvidenceCheckPath, checker, fragment);
+  }
+  for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
+    forbidFragment(xiaomanImageSendStagingEvidenceCheckPath, checker, fragment);
+  }
+}
+
+const qiweImageStagingEvidenceTemplatePath =
+  "docs/reports/templates/qiwe-image-send-staging-evidence.md";
+if (!exists(qiweImageStagingEvidenceTemplatePath)) {
+  addError(
+    `${qiweImageStagingEvidenceTemplatePath}: missing QiWe staging evidence template`
+  );
+} else {
+  const template = readText(qiweImageStagingEvidenceTemplatePath);
+  for (const fragment of [
+    "node tools/deploy/check-qiwe-image-staging-evidence.mjs <staging-evidence-output.txt>",
+    "Repository commit SHA",
+    "Packaged sidecar binary SHA-256",
+    "Staging database URL SHA-256",
+    "Work item UUID",
+    "Final JPEG `artifact_content_hash`",
+    "Target group allowlist: isolated single group confirmed, identifier not recorded.",
+    "Rollback owner",
+    "Rollback action",
+    "External upload requested",
+    "External send executed",
+    "sidecar_binary_sha256",
+    "artifact_content_hash",
+    "callback_credential_schema",
+    "callback_additional_field_count",
+    "Complete evidence checker mode passed",
+    "Cross-flow Huabaosi/QiWe hash checker passed",
+    "Production enablement PR allowed",
+    "Do not record QiWe token, GUID, API secret material, target group id, database URL",
+  ]) {
+    requireFragment(qiweImageStagingEvidenceTemplatePath, template, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+    "callback.json",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(qiweImageStagingEvidenceTemplatePath, template, fragment);
+  }
+}
+
+const xiaomanImageSendStagingEvidenceTemplatePath =
+  "docs/reports/templates/xiaoman-image-send-staging-evidence.md";
+if (!exists(xiaomanImageSendStagingEvidenceTemplatePath)) {
+  addError(
+    `${xiaomanImageSendStagingEvidenceTemplatePath}: missing Xiaoman image-send staging evidence template`
+  );
+} else {
+  const template = readText(xiaomanImageSendStagingEvidenceTemplatePath);
+  for (const fragment of [
+    "node tools/deploy/check-huabaosi-image-staging-evidence.mjs <huabaosi-staging-evidence-output.txt>",
+    "node tools/deploy/check-qiwe-image-staging-evidence.mjs <qiwe-staging-evidence-output.txt>",
+    "node tools/deploy/check-xiaoman-image-send-staging-evidence.mjs <huabaosi-staging-evidence-output.txt> <qiwe-staging-evidence-output.txt>",
+    "Huabaosi image request work item UUID",
+    "QiWe send-ready work item UUID",
+    "Final JPEG `content_hash`",
+    "QiWe `artifact_content_hash`",
+    "Hash match confirmed by `check-xiaoman-image-send-staging-evidence.mjs`",
+    "Huabaosi staging readiness",
+    "Huabaosi staging smoke",
+    "QiWe staging readiness",
+    "QiWe preflight phase",
+    "QiWe upload phase",
+    "QiWe callback phase",
+    "Xiaoman image-send staging evidence check passed.",
+    "callback_credential_schema",
+    "callback_additional_field_count",
+    "external_upload_requested=true",
+    "external_send_executed=true",
+    "QiWe production enablement PR allowed",
+    "no production listener, service, timer, feature build, Feishu write, Release",
+    "Do not record QiWe token, GUID, API secret material, target group id, database URL",
+  ]) {
+    requireFragment(xiaomanImageSendStagingEvidenceTemplatePath, template, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+    "callback.json",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(xiaomanImageSendStagingEvidenceTemplatePath, template, fragment);
+  }
+}
+
+const xiaomanImageSendStagingEvidenceTestPath =
+  "tools/deploy/test-xiaoman-image-send-staging-evidence.mjs";
+if (!exists(xiaomanImageSendStagingEvidenceTestPath)) {
+  addError(
+    `${xiaomanImageSendStagingEvidenceTestPath}: missing Xiaoman image-send staging evidence checker test`
+  );
+} else {
+  const test = readText(xiaomanImageSendStagingEvidenceTestPath);
+  for (const fragment of [
+    "check-xiaoman-image-send-staging-evidence.mjs",
+    "Huabaosi content_hash and QiWe artifact_content_hash values differ",
+    "expected exactly one QiWe preflight evidence record",
+    "forbidden sensitive fragment",
+    "Xiaoman image-send staging evidence test passed.",
+  ]) {
+    requireFragment(xiaomanImageSendStagingEvidenceTestPath, test, fragment);
+  }
+}
+
+for (const relativePath of [
+  "deploy/sidecar/README.md",
+  "docs/plans/active/xiaoman-qiwe-image-send.md",
+]) {
+  const text = readText(relativePath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload",
+    "QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback",
+    "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>'",
+    "trusted-staging-callback-source |",
+  ]) {
+    requireFragment(relativePath, text, fragment);
   }
 }
 

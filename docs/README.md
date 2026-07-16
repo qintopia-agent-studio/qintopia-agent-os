@@ -38,8 +38,10 @@ and historical source documents that still have audit or design value.
     [operations/server-directory-plan.md](operations/server-directory-plan.md)
 18. Release/current model:
     [operations/release-current-model.md](operations/release-current-model.md)
-19. Reports index: [reports/README.md](reports/README.md)
-20. Completed migration archive:
+19. QiWe image-send staging runbook:
+    [operations/qiwe-image-send-staging-runbook.md](operations/qiwe-image-send-staging-runbook.md)
+20. Reports index: [reports/README.md](reports/README.md)
+21. Completed migration archive:
     [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
 
 ## Package Entry Points

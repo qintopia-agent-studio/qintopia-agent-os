@@ -140,9 +140,14 @@ target, or missing final confirmation must stop before sending.
    runtime. The existing callback-phase smoke remains the operator-controlled stdin
    entrypoint when the webhook bridge is not used. Neither path may persist callback
    bytes or credential values.
-3. Commit only the staging database URL SHA-256, sanitized callback schema id, fixed
-   outcome labels, and reviewed rollback evidence. Do not commit the database URL,
-   callback body, request id, credentials, group id, media URL, or provider response.
+3. Commit only the staging database URL SHA-256, final JPEG `artifact_content_hash`,
+   sanitized callback schema id, fixed outcome labels, and reviewed rollback evidence.
+   The QiWe upload/callback hash must match the Huabaosi generated-image `content_hash`
+   and pass `check-xiaoman-image-send-staging-evidence.mjs` before any production
+   enablement PR. Do not commit the database URL, callback body, request id,
+   credentials, group id, media URL, or provider response. Record the full staging
+   sequence with `docs/reports/templates/xiaoman-image-send-staging-evidence.md` only
+   after the Huabaosi, QiWe, and cross-flow evidence checkers pass.
 4. Add production scheduling only after staging evidence, rollback ownership, and
    allowlists are reviewed in a separate PR.
 
@@ -157,23 +162,38 @@ database connection, callback read, or network request it requires:
 - complete API, media-host, and case-sensitive target-group allowlists; and
 - a staging database whose exact URL hash is supplied in the owner-reviewed one-shot
   command and matches the sourced database URL.
+- the packaged staging sidecar binary whose exact SHA-256 is supplied in the same
+  owner-reviewed command.
 
 The smoke runs as two explicit invocations because the QiWe upload callback is
-asynchronous:
+asynchronous. A separate `preflight` phase validates the staging boundary without
+claiming work or contacting QiWe:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
+QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight \
+QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
+deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
+
+QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 
 trusted-staging-callback-source | \
 QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<same approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<same approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<same approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
@@ -185,7 +205,11 @@ callback processor inherits the stream. The staging env file is parsed as a fixe
 allowlist of literal assignments and is never evaluated as shell. The smoke stores only
 subprocess output in shell memory and validates the fixed report schema through an
 anonymous pipe. It never writes successful, failed, or sensitive subprocess output to a
-file.
+file. Successful phases print fixed `qiwe_image_send_staging_evidence=<json>` objects
+that contain only the reviewed evidence fields. The QiWe operator checklist lives in
+`docs/operations/qiwe-image-send-staging-runbook.md`; the full Xiaoman Huabaosi-to-QiWe
+evidence template lives in
+`docs/reports/templates/xiaoman-image-send-staging-evidence.md`.
 
 ## Production Boundary
 

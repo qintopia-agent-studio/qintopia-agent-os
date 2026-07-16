@@ -480,6 +480,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
+    "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",
     "skills/qintopia-tools/variants",

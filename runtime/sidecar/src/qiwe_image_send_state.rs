@@ -51,6 +51,7 @@ pub struct QiweCallbackSendClaim {
     pub attempt_id: Uuid,
     pub work_item_id: Uuid,
     pub generated_image_artifact_id: Uuid,
+    pub artifact_content_hash: String,
     pub claim_token: String,
     pub target_group_id: String,
 }
@@ -789,6 +790,7 @@ pub async fn claim_callback_for_send(
         attempt_id: attempt.id,
         work_item_id: attempt.work_item_id,
         generated_image_artifact_id: attempt.generated_image_artifact_id,
+        artifact_content_hash: attempt.artifact_content_hash,
         claim_token: attempt.claim_token,
         target_group_id,
     }))
@@ -1990,6 +1992,9 @@ mod tests {
             attempt_id: Uuid::nil(),
             work_item_id: Uuid::nil(),
             generated_image_artifact_id: Uuid::nil(),
+            artifact_content_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
             claim_token: "qiwe-image-send-adapter:test-token".to_string(),
             target_group_id: "test-group-id".to_string(),
         }
@@ -2362,6 +2367,9 @@ mod tests {
             attempt_id: Uuid::nil(),
             work_item_id: Uuid::nil(),
             generated_image_artifact_id: Uuid::nil(),
+            artifact_content_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
             claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
             target_group_id: "secret-group-id".to_string(),
         };
@@ -2380,6 +2388,9 @@ mod tests {
             attempt_id: Uuid::nil(),
             work_item_id: Uuid::nil(),
             generated_image_artifact_id: Uuid::nil(),
+            artifact_content_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
             claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
             target_group_id: "secret-group-id".to_string(),
         });

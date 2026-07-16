@@ -953,6 +953,9 @@ try {
   execFileSync("node", ["tools/deploy/test-qiwe-image-staging-smoke.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync("node", ["tools/deploy/test-xiaoman-image-send-staging-evidence.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync(
     "node",
     ["tools/deploy/test-xiaoman-production-observation-contracts.mjs"],
@@ -997,6 +1000,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
     "deploy/sidecar/scripts/install-coscli.sh",
+    "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
     "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
     "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",

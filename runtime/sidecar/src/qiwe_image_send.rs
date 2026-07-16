@@ -91,6 +91,8 @@ pub struct QiweImageSendWorkerReport {
     pub phase: &'static str,
     pub action_status: String,
     pub work_item_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_content_hash: Option<String>,
     pub external_upload_requested: bool,
     pub callback_received: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -619,7 +621,7 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
                 println!("{}", serde_json::to_string_pretty(&report)?);
                 bail!("QiWe upload acceptance could not be persisted");
             }
-            let report = worker_report(WorkerReportState {
+            let mut report = worker_report(WorkerReportState {
                 success: true,
                 dry_run: false,
                 apply_requested: true,
@@ -630,6 +632,7 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
                 callback_received: false,
                 external_send_executed: Some(false),
             });
+            report.artifact_content_hash = Some(claim.artifact_content_hash.clone());
             println!("{}", serde_json::to_string_pretty(&report)?);
             Ok(())
         }
@@ -835,7 +838,7 @@ async fn run_enabled_callback_processor(
                 SendFailureDisposition::Rejected,
             )
             .await?;
-            let report = callback_worker_report(
+            let mut report = callback_worker_report(
                 WorkerReportState {
                     success: false,
                     dry_run: false,
@@ -849,6 +852,7 @@ async fn run_enabled_callback_processor(
                 },
                 parsed.credential_shape,
             );
+            report.artifact_content_hash = Some(send_claim.artifact_content_hash.clone());
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
@@ -865,7 +869,7 @@ async fn run_enabled_callback_processor(
     match send_result {
         Ok(receipt) => {
             qiwe_image_send_state::record_send_success(&pool, &send_claim, &receipt).await?;
-            let report = callback_worker_report(
+            let mut report = callback_worker_report(
                 WorkerReportState {
                     success: true,
                     dry_run: false,
@@ -879,6 +883,7 @@ async fn run_enabled_callback_processor(
                 },
                 parsed.credential_shape,
             );
+            report.artifact_content_hash = Some(send_claim.artifact_content_hash.clone());
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Err(failure) => {
@@ -1126,6 +1131,7 @@ fn worker_report(state: WorkerReportState) -> QiweImageSendWorkerReport {
         phase: state.phase,
         action_status: state.action_status,
         work_item_id: state.work_item_id,
+        artifact_content_hash: None,
         external_upload_requested: state.external_upload_requested,
         callback_received: state.callback_received,
         callback_credential_schema: None,

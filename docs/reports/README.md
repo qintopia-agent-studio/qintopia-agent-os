@@ -58,6 +58,12 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-15-qiwe-isolated-staging-verification.md`                                 | adopt-input | QiWe isolated staging local verification and remaining owner gate      |
 | `2026-07-15-huabaosi-feishu-artifact-mirror-production-enablement.md`              | adopt-input | Production artifact, timer, activation, rollback, and release boundary |
 
+## Templates
+
+| Template                                        | Use                                                                          |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| `templates/qiwe-image-send-staging-evidence.md` | Sanitized owner-approved QiWe isolated staging upload/callback evidence note |
+
 ## Rules
 
 - Reports are evidence and communication artifacts.
