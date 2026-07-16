@@ -145,6 +145,8 @@ const runProvisionWithoutTestMode = (extraEnv = {}) =>
     env: {
       ...process.env,
       QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL: "approved-staging-sidecar-provision",
+      GITHUB_REPOSITORY: "qintopia-agent-studio/qintopia-agent-os",
+      GITHUB_WORKFLOW: "artifacts.yml",
       ...extraEnv,
     },
     encoding: "utf8",
