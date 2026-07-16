@@ -453,6 +453,8 @@ if (!exists(qiweImageStagingSmokePath)) {
     "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA must be a 40-character lowercase hex SHA",
     "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_TEST_MODE must be 0 or 1",
     "QiWe staging smoke must run from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>",
+    "QiWe staging smoke test mode may use a GitHub Actions checkout only in CI",
+    "GITHUB_ACTIONS",
     "QiWe staging smoke test mode may read only a temporary fake env file",
     "QiWe staging smoke test mode requires a loopback fake database URL",
     "QiWe staging smoke test mode requires a fake loopback or example.test QiWe API host",

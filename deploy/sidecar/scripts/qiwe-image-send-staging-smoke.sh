@@ -72,6 +72,12 @@ if [[ "$TEST_MODE" == "0" ]]; then
 else
   case "$MONOREPO_ROOT" in
     /private/tmp/*|/tmp/*) ;;
+    /home/runner/work/*)
+      if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+        echo "QiWe staging smoke test mode may use a GitHub Actions checkout only in CI" >&2
+        exit 1
+      fi
+      ;;
     *)
       echo "QiWe staging smoke test mode may run only from a temporary checkout" >&2
       exit 1
