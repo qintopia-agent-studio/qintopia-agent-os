@@ -28,7 +28,7 @@ try {
       resolveApprovedTarget({
         platform: "linux",
         arch: "x64",
-        glibcVersionRuntime: undefined,
+        glibcVersionRuntime: null,
       }),
     "linux-x64 non-GNU hosts must not build linux-x86_64-gnu artifacts"
   );
