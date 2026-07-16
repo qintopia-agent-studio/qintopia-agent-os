@@ -55,6 +55,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
@@ -265,6 +266,72 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
   }
 }
 
+if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
+  const stagingArtifactFetchScript = readText(
+    "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh"
+  );
+  for (const requiredFragment of [
+    "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL",
+    "approved-staging-sidecar-provision",
+    'repo="qintopia-agent-studio/qintopia-agent-os"',
+    'workflow="artifacts.yml"',
+    "GITHUB_REPOSITORY override is not allowed",
+    "GITHUB_WORKFLOW override is not allowed",
+    "validate_timeout_seconds",
+    "GITHUB_API_MAX_TIME",
+    "GITHUB_DOWNLOAD_MAX_TIME",
+    "signed_download_url",
+    '--write-out "%{redirect_url}"',
+    "GitHub artifact download did not return a signed redirect URL",
+    "validate_artifact_zip",
+    "artifact zip entry must stay under artifact root",
+    "artifact zip entry is not allowlisted",
+    "artifact zip entries must exactly match the staging allowlist",
+    "qintopia-message-sidecar-staging-linux-x86_64-gnu",
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+    "staging_only",
+    "production_eligible",
+    "/home/ubuntu/qintopia-agent-os-staging-releases",
+    "--artifact-zip is test-only",
+    "sha256sum -c SHA256SUMS",
+    "qintopia-message-sidecar.tar.gz",
+    "os.lstat(path)",
+    "stat.S_ISLNK",
+    "artifact entry must not be a symlink",
+    "artifact entry must not be hardlinked",
+    "SHA256SUMS entries must exactly match the staging allowlist",
+    "path component is a symlink",
+    "path component is group/world writable",
+    "path component has unexpected owner",
+    'if ! mkdir "$sidecar_dir"',
+    "sidecar_dir_created=1",
+    "provision_complete=1",
+    "chmod 0555",
+  ]) {
+    if (!stagingArtifactFetchScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh: must preserve staging artifact provision boundary (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenFragment of [
+    'repo="${GITHUB_REPOSITORY',
+    'workflow="${GITHUB_WORKFLOW',
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    if (stagingArtifactFetchScript.includes(forbiddenFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh: must not cross production or release boundaries (${forbiddenFragment})`
+      );
+    }
+  }
+}
+
 for (const cosScriptPath of [
   "deploy/sidecar/scripts/upload-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
@@ -426,6 +493,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     }
   }
   for (const requiredFragment of [
+    "assertContainedArtifactDirBoundary",
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",
     "const bundleName = `${binaryName}.tar.gz`",
@@ -492,6 +560,7 @@ if (exists("tools/deploy/build-staging-sidecar-artifact.mjs")) {
     }
   }
   for (const requiredFragment of [
+    "assertContainedArtifactDirBoundary",
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",
     "staging-${targetTriple}",
@@ -540,8 +609,11 @@ if (exists("tools/deploy/sidecar-artifact-build-boundary.mjs")) {
     'artifactName.split("-").includes("..")',
     "fs.lstatSync(currentPath)",
     "stat.isSymbolicLink()",
+    "fs.mkdirSync(resolvedRoot, { recursive: true })",
     "fs.realpathSync.native(currentPath)",
     "artifact output path must match its real path",
+    "requireTerminalDirectory",
+    "artifact output root must be a directory",
     "path.resolve(outputRoot)",
     "!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)",
   ]) {
@@ -574,6 +646,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
   for (const requiredFragment of [
     "qintopia-agent-os-deploy-bundle",
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+    "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",

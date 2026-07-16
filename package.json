@@ -26,7 +26,7 @@
     "runtime:hermes:check": "node tools/runtime/check-runtime-contracts.mjs && node tools/runtime/test-hermes-patch-paths.mjs",
     "runtime:systemd:check": "node tools/runtime/check-runtime-contracts.mjs",
     "runtime:nginx:check": "node tools/runtime/check-runtime-contracts.mjs",
-    "deploy:contracts:check": "node tools/deploy/check-deploy-contracts.mjs && node tools/deploy/test-sidecar-artifact-build-boundary.mjs && node tools/deploy/check-xiaoman-preflight-readiness.mjs && node tools/deploy/test-huabaosi-image-staging-smoke.mjs",
+    "deploy:contracts:check": "node tools/deploy/check-deploy-contracts.mjs && node tools/deploy/test-sidecar-artifact-build-boundary.mjs && node tools/deploy/test-fetch-staging-sidecar-artifact.mjs && node tools/deploy/check-xiaoman-preflight-readiness.mjs && node tools/deploy/test-huabaosi-image-staging-smoke.mjs",
     "deploy:manifests:check": "node tools/deploy/check-deploy-contracts.mjs",
     "deploy:rollback:check": "node tools/deploy/check-deploy-contracts.mjs",
     "deploy:smoke:check": "node tools/deploy/check-deploy-contracts.mjs",

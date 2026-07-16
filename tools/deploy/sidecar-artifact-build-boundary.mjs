@@ -26,6 +26,27 @@ export const resolveApprovedTarget = ({
 };
 
 export const resolveContainedArtifactDir = (outputRoot, artifactName) => {
+  const { resolvedRoot, resolvedDir } = resolveArtifactPaths(outputRoot, artifactName);
+  assertContainedArtifactOutputRoot(resolvedRoot);
+  assertNoSymlinkPathComponents(resolvedDir);
+  return resolvedDir;
+};
+
+export const assertContainedArtifactDirBoundary = (
+  outputRoot,
+  artifactName,
+  expectedArtifactDir
+) => {
+  const { resolvedRoot, resolvedDir } = resolveArtifactPaths(outputRoot, artifactName);
+  if (path.resolve(expectedArtifactDir) !== resolvedDir) {
+    throw new Error("artifact output directory must match the resolved boundary");
+  }
+  assertContainedArtifactOutputRoot(resolvedRoot);
+  assertNoSymlinkPathComponents(resolvedDir);
+  return resolvedDir;
+};
+
+const resolveArtifactPaths = (outputRoot, artifactName) => {
   if (
     !artifactNamePattern.test(artifactName) ||
     artifactName.includes("/") ||
@@ -42,11 +63,19 @@ export const resolveContainedArtifactDir = (outputRoot, artifactName) => {
   ) {
     throw new Error("artifact output directory must stay under dist/sidecar-artifacts");
   }
-  assertNoSymlinkPathComponents(resolvedDir);
-  return resolvedDir;
+  return { resolvedRoot, resolvedDir };
 };
 
-const assertNoSymlinkPathComponents = (resolvedPath) => {
+const assertContainedArtifactOutputRoot = (resolvedRoot) => {
+  assertNoSymlinkPathComponents(resolvedRoot);
+  fs.mkdirSync(resolvedRoot, { recursive: true });
+  assertNoSymlinkPathComponents(resolvedRoot, { requireTerminalDirectory: true });
+};
+
+const assertNoSymlinkPathComponents = (
+  resolvedPath,
+  { requireTerminalDirectory = false } = {}
+) => {
   const root = path.parse(resolvedPath).root;
   const components = path.relative(root, resolvedPath).split(path.sep).filter(Boolean);
   let currentPath = root;
@@ -72,6 +101,13 @@ const assertNoSymlinkPathComponents = (resolvedPath) => {
     }
     if (index < components.length - 1 && !stat.isDirectory()) {
       throw new Error("artifact output parent path must be a directory");
+    }
+    if (
+      index === components.length - 1 &&
+      requireTerminalDirectory &&
+      !stat.isDirectory()
+    ) {
+      throw new Error("artifact output root must be a directory");
     }
   }
 };

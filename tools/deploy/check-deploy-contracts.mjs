@@ -30,6 +30,80 @@ const forbidFragment = (relativePath, text, fragment) => {
   }
 };
 
+const stagingArtifactProvisionPath =
+  "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh";
+if (!exists(stagingArtifactProvisionPath)) {
+  addError(`${stagingArtifactProvisionPath}: missing staging artifact provisioner`);
+} else {
+  const provisioner = readText(stagingArtifactProvisionPath);
+  for (const fragment of [
+    "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL",
+    "approved-staging-sidecar-provision",
+    'repo="qintopia-agent-studio/qintopia-agent-os"',
+    'workflow="artifacts.yml"',
+    "GITHUB_REPOSITORY override is not allowed",
+    "GITHUB_WORKFLOW override is not allowed",
+    "validate_timeout_seconds",
+    "GITHUB_API_MAX_TIME",
+    "GITHUB_DOWNLOAD_MAX_TIME",
+    "signed_download_url",
+    '--write-out "%{redirect_url}"',
+    "GitHub artifact download did not return a signed redirect URL",
+    "validate_artifact_zip",
+    "artifact zip entry must stay under artifact root",
+    "artifact zip entry is not allowlisted",
+    "artifact zip entries must exactly match the staging allowlist",
+    "qintopia-message-sidecar-staging-linux-x86_64-gnu",
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+    "staging_only",
+    "production_eligible",
+    "/home/ubuntu/qintopia-agent-os-staging-releases",
+    "--artifact-zip is test-only",
+    "sha256sum -c SHA256SUMS",
+    "qintopia-message-sidecar.tar.gz",
+    "os.lstat(path)",
+    "stat.S_ISLNK",
+    "artifact entry must not be a symlink",
+    "artifact entry must not be hardlinked",
+    "SHA256SUMS entries must exactly match the staging allowlist",
+    "path component is a symlink",
+    "path component is group/world writable",
+    "path component has unexpected owner",
+    'if ! mkdir "$sidecar_dir"',
+    "sidecar_dir_created=1",
+    "provision_complete=1",
+    "chmod 0555",
+  ]) {
+    requireFragment(stagingArtifactProvisionPath, provisioner, fragment);
+  }
+  for (const fragment of [
+    'repo="${GITHUB_REPOSITORY',
+    'workflow="${GITHUB_WORKFLOW',
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(stagingArtifactProvisionPath, provisioner, fragment);
+  }
+}
+
+const deployBundleBuilderPath = "tools/deploy/build-deploy-bundle.mjs";
+if (!exists(deployBundleBuilderPath)) {
+  addError(`${deployBundleBuilderPath}: missing deploy bundle builder`);
+} else {
+  const builder = readText(deployBundleBuilderPath);
+  for (const fragment of [
+    "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
+    "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
+    "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
+  ]) {
+    requireFragment(deployBundleBuilderPath, builder, fragment);
+  }
+}
+
 for (const [packagePath, requiredFragments] of Object.entries(packages)) {
   const readmePath = `${packagePath}/README.md`;
   const manifestPath = `${packagePath}/manifest.yaml`;
@@ -559,6 +633,10 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
     "staging env file already contains the downstream QiWe keys",
     "ignore those keys and must not pass them to its child sidecar process",
     "invalid assignment syntax still fail closed",
+    "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL=approved-staging-sidecar-provision",
+    "fetch-staging-sidecar-artifact.sh",
+    "c969b0d1e2f4b635f681e57d6d4d16880b391f76",
+    "8a04ab44cad0b60cbef499d7a58e0fb8fcac577be537d1418ec3649f38c4fa1f",
     "no checked path component is a symlink",
     "no checked path component is group- or world-writable",
     "node tools/deploy/check-huabaosi-image-staging-evidence.mjs",
@@ -822,6 +900,7 @@ if (!exists(stagingSidecarArtifactBuilderPath)) {
   const builder = readText(stagingSidecarArtifactBuilderPath);
   for (const fragment of [
     "qintopia-message-sidecar",
+    "assertContainedArtifactDirBoundary",
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",
     "staging-${targetTriple}",
@@ -854,6 +933,7 @@ const productionSidecarArtifactBuilderPath = "tools/deploy/build-sidecar-artifac
 if (exists(productionSidecarArtifactBuilderPath)) {
   const builder = readText(productionSidecarArtifactBuilderPath);
   for (const fragment of [
+    "assertContainedArtifactDirBoundary",
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",
     "manifestSha256",
@@ -883,8 +963,11 @@ if (!exists(sidecarArtifactBoundaryHelperPath)) {
     'artifactName.split("-").includes("..")',
     "fs.lstatSync(currentPath)",
     "stat.isSymbolicLink()",
+    "fs.mkdirSync(resolvedRoot, { recursive: true })",
     "fs.realpathSync.native(currentPath)",
     "artifact output path must match its real path",
+    "requireTerminalDirectory",
+    "artifact output root must be a directory",
     "path.resolve(outputRoot)",
     "!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)",
   ]) {
