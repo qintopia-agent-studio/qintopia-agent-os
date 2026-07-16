@@ -152,7 +152,15 @@ const manifest = {
 };
 
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-fs.writeFileSync(checksumPath, `${binarySha256}  ${binaryName}\n`);
+const manifestSha256 = sha256File(manifestPath);
+fs.writeFileSync(
+  checksumPath,
+  [
+    `${binarySha256}  ${binaryName}`,
+    `${bundleSha256}  ${bundleName}`,
+    `${manifestSha256}  artifact-manifest.json`,
+  ].join("\n") + "\n"
+);
 
 console.log(`Built ${artifactName}`);
 console.log(`Manifest: ${path.relative(repoRoot, manifestPath)}`);

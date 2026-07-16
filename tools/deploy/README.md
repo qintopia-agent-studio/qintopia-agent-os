@@ -105,8 +105,8 @@ pnpm artifact:sidecar
 ```
 
 The command writes `dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu`
-with the release binary, `artifact-manifest.json`, and `SHA256SUMS`. `dist/` is ignored
-by git.
+with the release binary, compressed bundle, `artifact-manifest.json`, and `SHA256SUMS`
+covering all three payload files. `dist/` is ignored by git.
 
 The CI artifact job uses Rust 1.96.0 to match `runtime/sidecar/Cargo.toml`
 `rust-version`. Server deployment downloads the uploaded artifact and does not require

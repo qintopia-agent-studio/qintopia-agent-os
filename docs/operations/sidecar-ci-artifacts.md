@@ -19,7 +19,8 @@ Each artifact contains:
   transport
 - `artifact-manifest.json`: commit, branch, target, build time, runner, Rust toolchain,
   Cargo feature list, file size, and file checksum
-- `SHA256SUMS`: checksum file for server-side verification
+- `SHA256SUMS`: server-side checksum file covering the release binary, compressed
+  bundle, and `artifact-manifest.json`
 
 The initial target is `linux-x86_64-gnu`, matching the current production server:
 
@@ -167,9 +168,9 @@ multipart mode instead of relying on COSCLI's larger default part size and a slo
 single-stream upload to the Shanghai bucket.
 
 The default COS payload is the compressed `qintopia-message-sidecar.tar.gz` bundle. The
-server fetch script extracts the bundle and then verifies the extracted binary with the
-same `SHA256SUMS` file, so systemd and Hermes still see `qintopia-message-sidecar` in
-the artifact directory.
+server fetch script keeps the bundle in the artifact directory, extracts it, and then
+uses the same `SHA256SUMS` file to verify the bundle, extracted binary, and manifest, so
+systemd and Hermes still see `qintopia-message-sidecar` in the artifact directory.
 
 Direct upload from GitHub-hosted runners to the Shanghai COS bucket has been too slow in
 CI even after multipart tuning and compressed payloads. Treat this as a network path

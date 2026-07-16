@@ -830,6 +830,9 @@ if (!exists(stagingSidecarArtifactBuilderPath)) {
     '"--no-default-features"',
     '"--features"',
     'cargoFeatures.join(",")',
+    "manifestSha256",
+    "`${bundleSha256}  ${bundleName}`",
+    "`${manifestSha256}  artifact-manifest.json`",
     "staging_only: true",
     "production_eligible: false",
     "staging-sidecar-artifact",
@@ -850,7 +853,13 @@ if (!exists(stagingSidecarArtifactBuilderPath)) {
 const productionSidecarArtifactBuilderPath = "tools/deploy/build-sidecar-artifact.mjs";
 if (exists(productionSidecarArtifactBuilderPath)) {
   const builder = readText(productionSidecarArtifactBuilderPath);
-  for (const fragment of ["resolveApprovedTarget", "resolveContainedArtifactDir"]) {
+  for (const fragment of [
+    "resolveApprovedTarget",
+    "resolveContainedArtifactDir",
+    "manifestSha256",
+    "`${bundleSha256}  ${bundleName}`",
+    "`${manifestSha256}  artifact-manifest.json`",
+  ]) {
     requireFragment(productionSidecarArtifactBuilderPath, builder, fragment);
   }
 }
