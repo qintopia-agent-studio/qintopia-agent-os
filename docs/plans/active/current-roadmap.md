@@ -27,8 +27,16 @@ unless correcting historical evidence.
 - `v0.2.10` is the first Release containing the new deploy-runner behavior. Its
   corrected same-SHA follow-up deploy succeeded and installed the three Huabaosi
   production image units. The worker timer remains disabled until the owner supplies
-  reviewed provider/media configuration, runs production preflight, and activates the
-  timer through the guarded script.
+  reviewed provider and Feishu-backed generated-image table configuration, runs
+  production preflight, and activates the timer through the guarded script. The
+  generated-image table id comes from the owner-provided Feishu URL's `table` query
+  parameter and must not be committed to git.
+- Xiaoman production completion is gated separately from infrastructure releases. A
+  Release may ship staging/provisioning or activation tooling without being a usable
+  Xiaoman completion. Use the
+  [Xiaoman production completion gate](xiaoman-production-completion-gate.md) before
+  describing any Release as fully usable for the real Xiaoman activity-to-group-send
+  workflow.
 - WorkTool, OpenClaw, and the current WorkTool-bound Xiaoqin runtime are archived and
   deprecated. Future Xiaoqin work requires a new non-WorkTool Agent design.
 
@@ -114,7 +122,10 @@ unless correcting historical evidence.
      evidence.
    - Real end-to-end acceptance is still incomplete. The acceptance bar is one real
      activity observed from Xiaoman signal intake through image generation, human
-     approval, and QiWe group-send arrival.
+     approval, and QiWe group-send arrival. A Release remains infrastructure-only or
+     activation-ready until the [completion gate](xiaoman-production-completion-gate.md)
+     records the required staging, production enablement, activation, and real activity
+     evidence.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,

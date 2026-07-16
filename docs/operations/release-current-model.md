@@ -102,6 +102,19 @@ the timer for canary generation. This does not enable image approval or QiWe.
 The release assembly step should be idempotent: if the release directory already exists,
 the operator must verify its manifest and checksum instead of overwriting it blindly.
 
+## Completion Claims
+
+Publishing a Release is not itself proof that a product workflow is usable end to end.
+For Xiaoman, classify the Release before merge as `infrastructure`, `activation-ready`,
+or `production-complete` using
+[`docs/plans/active/xiaoman-production-completion-gate.md`](../plans/active/xiaoman-production-completion-gate.md).
+
+An infrastructure Release may be published to ship staging artifacts, provisioners,
+deployment fixes, smoke checks, or guarded activation scripts. Its release notes and PR
+body must not claim Xiaoman production completion while Huabaosi staging evidence, QiWe
+staging upload/callback/send evidence, QiWe production enablement, production activation
+evidence, or one real end-to-end activity is still missing.
+
 ## Runtime References
 
 Systemd services should use:

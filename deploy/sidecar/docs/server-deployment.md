@@ -523,6 +523,15 @@ exact Base/table allowlists, the fixed `huabaosi-generated-image-v1` schema, the
 Huabaosi profile env path, and both image/Feishu production bindings. Do not configure
 release COS or an ad hoc public media endpoint as poster storage.
 
+Use the reviewed Huabaosi design Base token already held in server-side configuration
+for `QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN` and the matching allowlist. Use only the
+owner-provided generated-image Feishu URL's `table` query parameter for
+`QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID` and the matching allowlist; do not reuse
+the legacy poster ledger table and do not commit the live table id. In this storage
+mode, `QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1` is required for the image worker to
+write the reviewed Feishu table, but it does not enable the mirror worker timer. The
+timer is enabled only by the dedicated activation script after release-local preflight.
+
 Run the read-only observation before activation. It runs configuration preflight and a
 queue preview only; it does not claim requests or contact provider/media endpoints. For
 Feishu-backed storage, it also does not authenticate to Feishu, upload an attachment, or

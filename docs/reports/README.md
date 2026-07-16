@@ -57,6 +57,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-15-xiaoman-activity-wrapper-contract-drift.md`                            | adopt-input | Xiaoman plugin and Rust event-signal mutation contract repair          |
 | `2026-07-15-qiwe-isolated-staging-verification.md`                                 | adopt-input | QiWe isolated staging local verification and remaining owner gate      |
 | `2026-07-15-huabaosi-feishu-artifact-mirror-production-enablement.md`              | adopt-input | Production artifact, timer, activation, rollback, and release boundary |
+| `2026-07-16-huabaosi-feishu-storage-production-config.md`                          | adopt-input | Production Feishu storage config gap and activation hold               |
 
 ## Templates
 
