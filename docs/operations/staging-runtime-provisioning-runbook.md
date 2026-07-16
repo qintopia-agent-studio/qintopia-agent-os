@@ -104,7 +104,7 @@ the deploy bundle:
 ```bash
 QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL=approved-staging-sidecar-provision \
   deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh \
-  --sha c969b0d1e2f4b635f681e57d6d4d16880b391f76
+  --sha 37fff8bf819f0df68825961203e7998b51a07c31
 ```
 
 The helper downloads only the successful `artifacts.yml` GitHub Actions artifact named
@@ -115,10 +115,14 @@ only under `/home/ubuntu/qintopia-agent-os-staging-releases/<sha>/sidecar/`.
 Current reviewed staging artifact evidence:
 
 - GitHub Actions run:
-  `https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/29489620130`
-- release SHA: `c969b0d1e2f4b635f681e57d6d4d16880b391f76`
+  `https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/29495174705`
+- release SHA: `37fff8bf819f0df68825961203e7998b51a07c31`
 - sidecar SHA-256: `8a04ab44cad0b60cbef499d7a58e0fb8fcac577be537d1418ec3649f38c4fa1f`
-- bundle SHA-256: `3530ff5c2181e8ec20689f0774ae9a121aa8ddd5a9832992aac472c059b6fd41`
+- staging tarball SHA-256:
+  `87deb0c580b361c690a0de67ad31f14e2285b6230c1eb872204835a7ab1e4895`
+- deploy bundle SHA-256:
+  `a733f809f323771ff88fae9b0e3ee4694b291c36b5dbdb9df60db628b5046e11`
+- deploy bundle contains `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh`.
 
 ## Validation Sequence
 
