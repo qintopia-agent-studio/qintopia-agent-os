@@ -56,6 +56,7 @@ with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
 if manifest.get("validation", {}).get("cargo_features") != [
     "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
 ]:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
@@ -138,10 +139,6 @@ if [[ "$EXPECTED_STATE" == "auto" ]]; then
 fi
 if [[ "$EXPECTED_STATE" != "enabled" && "$EXPECTED_STATE" != "disabled" ]]; then
   echo "Huabaosi Feishu mirror expected state must be enabled, disabled, or auto" >&2
-  exit 1
-fi
-if [[ "$EXPECTED_STATE" == "enabled" ]]; then
-  echo "Huabaosi Feishu mirror production enablement requires a separate owner-reviewed release boundary" >&2
   exit 1
 fi
 if [[ "$EXPECTED_STATE" == "enabled" && "$mirror_flag" != "1" ]]; then
@@ -233,15 +230,18 @@ assert payload["worker"] == "huabaosi-feishu-artifact-mirror-worker"
 assert payload["schema_version"] == "huabaosi-generated-image-v1"
 assert payload["mirror_enabled"] is (expected_state == "enabled")
 assert payload["success"] is True
-assert payload["adapter_compiled"] is False
+assert payload["adapter_compiled"] is True
 assert payload["config_valid"] is False
 assert payload["media_allowed_host_count"] == 0
 assert payload["missing_configuration"] == []
 assert payload["external_calls_executed"] is False
 assert payload["database_writes_executed"] is False
 assert payload["sensitive_fields_redacted"] is True
-assert expected_state == "disabled"
-assert payload["action_status"] == "observation_disabled_boundary_ready"
+assert payload["action_status"] == (
+    "observation_enabled_boundary_ready"
+    if expected_state == "enabled"
+    else "observation_disabled_boundary_ready"
+)
 assert status == 0
 PY
 

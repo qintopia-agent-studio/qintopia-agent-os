@@ -10,19 +10,45 @@ const repoRoot = process.cwd();
 const tmpRoot = fs.mkdtempSync(
   path.join(os.tmpdir(), "qintopia-feishu-mirror-activation-")
 );
-const activationScript = path.join(
+const activationScriptSource = path.join(
   repoRoot,
   "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh"
 );
-const rollbackScript = path.join(
+const rollbackScriptSource = path.join(
   repoRoot,
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh"
 );
+const fixedEnvFile = "/etc/qintopia/message-sidecar.env";
 
 try {
   const logPath = path.join(tmpRoot, "systemctl.log");
   const envPath = path.join(tmpRoot, "message-sidecar.env");
   const systemctl = path.join(tmpRoot, "systemctl");
+  const activationScript = path.join(tmpRoot, "activate-production-fixture.sh");
+  const rollbackScript = path.join(tmpRoot, "rollback-production-fixture.sh");
+  for (const sourcePath of [activationScriptSource, rollbackScriptSource]) {
+    const source = fs.readFileSync(sourcePath, "utf8");
+    if (source.includes("QINTOPIA_SIDECAR_ENV_FILE")) {
+      throw new Error(
+        `${path.basename(sourcePath)} must not allow overriding the reviewed env file`
+      );
+    }
+    if (!source.includes(`ENV_FILE="${fixedEnvFile}"`)) {
+      throw new Error(
+        `${path.basename(sourcePath)} must read the fixed reviewed env file`
+      );
+    }
+  }
+  fs.writeFileSync(
+    activationScript,
+    fs.readFileSync(activationScriptSource, "utf8").replaceAll(fixedEnvFile, envPath),
+    "utf8"
+  );
+  fs.writeFileSync(
+    rollbackScript,
+    fs.readFileSync(rollbackScriptSource, "utf8").replaceAll(fixedEnvFile, envPath),
+    "utf8"
+  );
   fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n", "utf8");
   fs.writeFileSync(
     systemctl,
@@ -43,7 +69,6 @@ fi
       env: {
         ...process.env,
         SYSTEMCTL: systemctl,
-        QINTOPIA_SIDECAR_ENV_FILE: envPath,
         ...extraEnv,
       },
       encoding: "utf8",
@@ -76,19 +101,51 @@ fi
     }
   }
 
+  fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n", "utf8");
   fs.writeFileSync(logPath, "", "utf8");
   const approvedActivation = run(activationScript, {
     QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
       "approved-production-huabaosi-feishu-artifact-mirror",
   });
-  if (
-    approvedActivation.status === 0 ||
-    fs.readFileSync(logPath, "utf8") !== "" ||
-    !approvedActivation.stderr.includes("separate owner-reviewed release boundary")
-  ) {
+  if (approvedActivation.status !== 0) {
     throw new Error(
-      "activation must remain disabled until a separate reviewed release boundary"
+      `activation failed\n${approvedActivation.stdout}\n${approvedActivation.stderr}`
     );
+  }
+  const activationLog = fs.readFileSync(logPath, "utf8");
+  for (const command of [
+    "start qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
+    "enable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+    "is-enabled --quiet qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+    "is-active --quiet qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+  ]) {
+    if (!activationLog.includes(command)) {
+      throw new Error(`activation is missing systemctl command: ${command}`);
+    }
+  }
+  if (
+    !approvedActivation.stdout.includes(
+      "Huabaosi Feishu artifact mirror production timer activated"
+    )
+  ) {
+    throw new Error("activation did not report timer activation");
+  }
+
+  fs.writeFileSync(logPath, "", "utf8");
+  const failedPreflight = run(activationScript, {
+    QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
+      "approved-production-huabaosi-feishu-artifact-mirror",
+    FAKE_PREFLIGHT_FAIL: "1",
+  });
+  if (
+    failedPreflight.status === 0 ||
+    fs
+      .readFileSync(logPath, "utf8")
+      .includes(
+        "enable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
+      )
+  ) {
+    throw new Error("activation must not enable the timer when preflight fails");
   }
 
   fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0\n", "utf8");

@@ -29,12 +29,13 @@ It does not approve automatic artifact review, Feishu writeback, QiWe sends, or 
 publishing.
 
 Production activation remains a separate, explicit operation after the owner manually
-publishes the Release. The production artifact must contain only the reviewed
-`huabaosi-production-adapter` live feature, never the staging feature. The release
-installer may install the fixed worker service and timer, but it must not enable the
-timer as part of an ordinary promotion. Activation must first pass the no-network
-preflight against the release binary and fixed production environment, then enable the
-timer through the reviewed activation script.
+publishes the Release. The production artifact must contain the reviewed
+`huabaosi-production-adapter` live feature and may contain the independently guarded
+`huabaosi-feishu-mirror-adapter`; it must never contain the staging or QiWe adapter
+features. The release installer may install the fixed worker service and timer, but it
+must not enable the timer as part of an ordinary promotion. Activation must first pass
+the no-network preflight against the release binary and fixed production environment,
+then enable the timer through the reviewed activation script.
 
 The first production window is a canary: one queued request per timer invocation, one
 pending image per successful request, and all existing retry, claim, immutable-media,
@@ -324,11 +325,12 @@ data but are not eligible for the future QiWe JPG send contract.
   by the guarded QiWe adapter. The extraction preserves the existing response caps,
   header validation, chunked limits, TLS policy, fake-server behavior, and timeout
   classification while zeroizing request/response buffers on drop.
-- The current compile-gate branch moves live provider/media execution behind a
-  non-default `huabaosi-staging-adapter` feature. A staging-feature apply must enforce
-  the exact owner phrase, repository-reviewed database URL hash allowlist, staging
-  database name, and adapter policy in Rust before Postgres or network access.
-  Production artifact and server-source builds must continue to use no Cargo features.
+- The staging compile gate keeps staging provider/media execution behind the non-default
+  `huabaosi-staging-adapter` feature. A staging-feature apply must enforce the exact
+  owner phrase, repository-reviewed database URL hash allowlist, staging database name,
+  and adapter policy in Rust before Postgres or network access. Production artifact and
+  server-source builds must use only the reviewed `huabaosi-production-adapter` and
+  guarded `huabaosi-feishu-mirror-adapter` features.
 
 运行无网络预检：
 

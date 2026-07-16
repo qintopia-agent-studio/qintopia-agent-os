@@ -397,7 +397,10 @@ if (exists("deploy/sidecar/scripts/prune-cos-artifacts.sh")) {
 
 if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const buildArtifactScript = readText("tools/deploy/build-sidecar-artifact.mjs");
-  const approvedCargoFeatures = ["huabaosi-production-adapter"];
+  const approvedCargoFeatures = [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ];
   const cargoFeaturesMatch = buildArtifactScript.match(
     /const cargoFeatures = \[([\s\S]*?)\];/
   );

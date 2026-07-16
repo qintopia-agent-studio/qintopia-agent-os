@@ -7,7 +7,7 @@ if [[ "${QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK:-}" != "approved-productio
 fi
 
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
-ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
+ENV_FILE="/etc/qintopia/message-sidecar.env"
 WORKER_SERVICE="qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service"
 WORKER_TIMER="qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
 

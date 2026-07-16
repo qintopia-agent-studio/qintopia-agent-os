@@ -68,9 +68,13 @@ From the monorepo root, prefer:
   approval phrase, deployed release SHA binding, database URL hash binding, and adapter
   policy before Postgres or external I/O; shell scripts cannot be the only enforcement
   point.
-- Production sidecar artifacts must not compile `huabaosi-feishu-mirror-adapter`. Mirror
-  apply must fail before Postgres or external I/O in production artifacts, and ordinary
-  release installation must not install a mirror preflight, worker, or timer. Feishu
+- Production sidecar artifacts compile exactly `huabaosi-production-adapter` plus the
+  guarded `huabaosi-feishu-mirror-adapter`; staging, QiWe, and all-features production
+  artifacts remain forbidden. Mirror apply must still fail before Postgres or external
+  I/O unless the exact owner phrase, deployed release SHA, database hash, fixed
+  Base/table allowlists, schema, profile path, media host policy, and persistent enable
+  flag all pass. Ordinary release installation may install a mirror preflight, worker,
+  and timer, but only the explicit owner activation script may enable the timer. Feishu
   primary storage for the first canary is part of the Huabaosi production adapter path
   and still creates only pending AgentOS artifacts.
 - Production mirror observation must discover

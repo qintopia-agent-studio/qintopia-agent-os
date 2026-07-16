@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-07-15
+Updated: 2026-07-16
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -16,15 +16,19 @@ unless correcting historical evidence.
   Hermes plugins run from `/home/ubuntu/qintopia-agent-os-releases/current`.
 - Xiaoman's AgentOS-only activity workflow passed the `v0.2.9` aggregate production
   preflight on 2026-07-15. Its plugin and workers are release-managed; its live profile
-  files still require a reviewed bundle migration, and external image generation/send
-  remain disabled.
+  files still require a reviewed bundle migration. Internal intake, evidence, visual
+  brief, image-generation request, and awaiting-publish request paths are production
+  schedulable; Huabaosi image generation plus Feishu artifact mirroring move to explicit
+  production activation in the next release, while QiWe final group send remains
+  disabled.
 - Hermes remains the Agent runtime under `/home/ubuntu/.hermes`.
 - Hermes profile live state, including `.env`, sessions, logs, cache, memory, auth, and
   local config overrides, stays outside git.
 - `v0.2.10` is the first Release containing the new deploy-runner behavior. Its
   corrected same-SHA follow-up deploy succeeded and installed the three Huabaosi
-  production image units. The worker timer remains disabled because provider/media
-  configuration has not passed production preflight.
+  production image units. The worker timer remains disabled until the owner supplies
+  reviewed provider/media configuration, runs production preflight, and activates the
+  timer through the guarded script.
 - WorkTool, OpenClaw, and the current WorkTool-bound Xiaoqin runtime are archived and
   deprecated. Future Xiaoqin work requires a new non-WorkTool Agent design.
 
@@ -49,15 +53,17 @@ unless correcting historical evidence.
 
 2. External adapter allowlists
    - Keep real external send paths disabled until allowlists, runtime config, smoke, and
-     rollback are reviewed.
+     rollback are reviewed. Feishu-backed Huabaosi image storage and artifact mirroring
+     are production canary workbench paths, not approval or send paths.
    - Do not broaden Feishu, QiWe, or workbench permissions in the same PR as unrelated
      feature work.
    - Mirror Huabaosi generated images into the design Base through the dedicated
      [artifact mirror plan](huabaosi-feishu-artifact-mirror.md). The first PR defines a
      fixed image-version schema and a feature-gated writer. The production enablement PR
-     adds the feature to immutable release artifacts and installs a dedicated timer
-     without auto-enabling it. Remaining work is merge, manual Release publication,
-     production configuration, explicit activation, and first-record evidence.
+     adds the feature to immutable release artifacts, installs a dedicated timer without
+     auto-enabling it, and provides guarded activation/rollback. Remaining work is
+     merge, manual Release publication, production configuration, explicit activation,
+     and first-record evidence.
    - The owner selected the fixed Feishu image-version table as the first production
      storage boundary for the Huabaosi canary. The
      [Feishu primary-storage plan](huabaosi-feishu-primary-storage.md) reuses the
@@ -77,7 +83,10 @@ unless correcting historical evidence.
      separate gates. As of 2026-07-15, the same-SHA follow-up deploy and systemd
      installation evidence are complete. Final activation still requires reviewed
      provider/media configuration, a successful production preflight, Huabaosi timer
-     activation, and the first real pending `generated_image` review evidence.
+     activation, and the first real pending `generated_image` review evidence. The
+     production artifact can also compile the guarded Feishu mirror adapter so the
+     reviewed generated-image workbench row can be activated in the same release
+     boundary; approval and publishing still stay separate.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The

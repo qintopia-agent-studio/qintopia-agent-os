@@ -69,8 +69,10 @@
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
 - Huabaosi generated-image Feishu mirror production observation smoke:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh`
-- Huabaosi generated-image Feishu mirror activation is intentionally fail-closed until a
-  separate owner-reviewed release boundary adds the mirror adapter artifact and timer.
+- Huabaosi generated-image Feishu mirror activation is guarded, not automatic. It
+  requires the persistent mirror flag to be present exactly once and set to `1`, then
+  runs the release-local preflight service before enabling the dedicated timer:
+  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION=approved-production-huabaosi-feishu-artifact-mirror deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh`
 - Huabaosi generated-image Feishu mirror immediate timer rollback:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK=approved-production-huabaosi-feishu-artifact-mirror-rollback deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh`
 - Huabaosi image generation production activation after manual Release publish:
@@ -189,10 +191,11 @@ Use `rg` and `rg --files` for search.
   `generated_image_artifact_id`. It may mirror only a fully revalidated immutable final
   JPEG and sanitized review metadata. It must not update the legacy poster task summary
   without a stable AgentOS workflow id, treat Feishu state as approval, call QiWe, or
-  publish. Production artifacts compile only `huabaosi-production-adapter`; staging,
-  QiWe, and Feishu mirror adapter features remain forbidden. The ordinary release
-  installer must not install a dedicated mirror preflight, worker, or timer until a
-  separate owner-reviewed production boundary adds them.
+  publish. Production artifacts compile exactly `huabaosi-production-adapter` plus the
+  guarded `huabaosi-feishu-mirror-adapter`; staging, QiWe, and all-features production
+  artifacts remain forbidden. The ordinary release installer may install the dedicated
+  mirror preflight, worker, and timer units, but must not enable the external write
+  timer automatically.
 - Huabaosi Feishu mirror apply must validate the exact owner phrase, production release
   SHA binding, database URL hash, Base and table exact allowlists, fixed schema version,
   Huabaosi profile path, and media host allowlist before Postgres or external I/O. The
@@ -362,14 +365,14 @@ Use `rg` and `rg --files` for search.
   before configuration, Postgres claim/mutation, or network access even if runtime
   enable flags are misconfigured; callback apply must also fail before reading stdin.
   Production artifact manifests must record only
-  `cargo_features: [huabaosi-production-adapter]`; artifact and server-source build
-  checks must reject QiWe staging, Feishu mirror, and all-features builds. The Huabaosi
-  production feature must not make QiWe live helpers available.
+  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`;
+  artifact and server-source build checks must reject QiWe staging and all-features
+  builds. The Huabaosi production feature must not make QiWe live helpers available.
 - CI must execute non-ignored sidecar tests with all Cargo features so staging-only
   adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
   remain in the disposable integration job. Production artifacts must still use exactly
-  `cargo_features: [huabaosi-production-adapter]`; an all-features CI build must never
-  be promoted or treated as a production artifact.
+  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`; an
+  all-features CI build must never be promoted or treated as a production artifact.
 - As of 2026-07-15, QiWe final image sending is not on production. Staging smoke,
   callback bridge, and the Postgres state machine are implementation evidence only; do
   not add a production listener, service, timer, live-adapter production build, or
@@ -503,8 +506,9 @@ Use `rg` and `rg --files` for search.
   network access. Staging keeps its one-shot owner phrase and reviewed staging database
   hash gate. Production must bind explicit enablement to the deployed release SHA and
   production database URL hash before connecting to Postgres. Production artifacts must
-  record exactly `cargo_features: [huabaosi-production-adapter]` and must never contain
-  either staging adapter feature.
+  record exactly
+  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]` and
+  must never contain staging or QiWe adapter features.
 - The Huabaosi production image-generation service and timer may be installed from the
   immutable release but must not be enabled by the ordinary release installer. After the
   owner manually publishes the Release, the reviewed activation command must run the
