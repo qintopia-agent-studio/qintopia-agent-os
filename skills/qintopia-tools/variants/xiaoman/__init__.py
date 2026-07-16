@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import sys
+import subprocess
 import textwrap
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
@@ -928,6 +929,21 @@ def _xiaoman_activity_fixture_path() -> str:
 
 def _xiaoman_activity_use_feishu_base() -> bool:
     return _session_env("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE") == "1"
+
+
+def _xiaoman_activity_read_through_enabled() -> bool:
+    return _session_env("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE") == "1"
+
+
+def _xiaoman_activity_read_through_timeout_seconds() -> float:
+    raw = _session_env("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS")
+    if not raw:
+        return 12.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 12.0
+    return min(max(value, 1.0), 30.0)
 
 
 def _qintopia_weather_location() -> str:
@@ -3214,6 +3230,19 @@ def _xiaoman_activity_command(
     if _xiaoman_activity_use_feishu_base():
         command.append("--use-feishu-base")
     command.append("--dry-run" if dry_run else "--apply")
+    if (
+        _xiaoman_activity_read_through_enabled()
+        and not writes_business_state
+        and not dry_run
+        and operation in {"record-get", "list-by-date", "material-summary"}
+    ):
+        return _xiaoman_activity_run_read_through(
+            skill=skill,
+            actor_agent=actor_agent,
+            operation=operation,
+            payload=payload,
+            command=command,
+        )
     return _json(
         {
             "success": True,
@@ -3239,6 +3268,101 @@ def _xiaoman_activity_command(
             ],
         }
     )
+
+
+def _xiaoman_activity_run_read_through(
+    *,
+    skill: str,
+    actor_agent: str,
+    operation: str,
+    payload: dict[str, Any],
+    command: list[str],
+) -> str:
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_xiaoman_activity_read_through_timeout_seconds(),
+        )
+    except FileNotFoundError:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker binary was not found",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+    except subprocess.TimeoutExpired:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity read-through timed out",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+
+    stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+    if completed.returncode != 0:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker command failed",
+            actor_agent=actor_agent,
+            operation=operation,
+            exit_code=completed.returncode,
+            detail=_clean_text(stderr or stdout, max_len=500),
+        )
+    if len(stdout.encode("utf-8")) > 65536:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity read-through output is too large",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+    try:
+        report = json.loads(stdout)
+    except json.JSONDecodeError:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker returned invalid JSON",
+            actor_agent=actor_agent,
+            operation=operation,
+            detail=_clean_text(stdout, max_len=500),
+        )
+
+    allowed_keys = {
+        "success",
+        "worker",
+        "operation",
+        "source",
+        "actor_agent",
+        "dry_run",
+        "apply_requested",
+        "validation_status",
+        "action_status",
+        "safe_for_chat",
+        "record_count",
+        "records",
+        "summaries",
+        "limitations",
+        "guardrails",
+    }
+    sanitized = {key: report.get(key) for key in allowed_keys if key in report}
+    sanitized.update(
+        {
+            "skill": skill,
+            "payload": payload,
+            "action": {
+                "tool": "agentos_worker_read_through",
+                "requires_local_execution": False,
+                "executed": True,
+            },
+            "read_through": True,
+        }
+    )
+    if stderr:
+        sanitized["worker_stderr_summary"] = _clean_text(stderr, max_len=300)
+    return _json(sanitized)
 
 
 def handle_qintopia_xiaoman_activity_record_get(args: dict[str, Any], **_: Any) -> str:

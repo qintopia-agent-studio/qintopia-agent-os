@@ -74,6 +74,8 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_SIDECAR_BIN",
                 "QINTOPIA_XIAOMAN_ACTIVITY_FIXTURE_PATH",
                 "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
+                "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+                "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS",
             ]
         }
         os.environ["QINTOPIA_DIFY_KB_BASE_URL"] = "http://dify.example.test/v1"
@@ -86,6 +88,8 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_SIDECAR_BIN", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_FIXTURE_PATH", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS", None)
         self.module = load_plugin()
 
     def tearDown(self) -> None:
@@ -104,6 +108,23 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ["QINTOPIA_PROFILE_ID"] = "xiaoman"
         os.environ["QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"] = "1"
         os.environ["QINTOPIA_SIDECAR_BIN"] = "/tmp/qintopia-message-sidecar"
+
+    def write_fake_xiaoman_sidecar(self, report: dict) -> Path:
+        path = self.index_dir / "fake-xiaoman-sidecar.py"
+        path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import sys\n"
+            f"report = json.loads({json.dumps(report, ensure_ascii=False)!r})\n"
+            "payload = json.loads(sys.argv[sys.argv.index('--payload-json') + 1])\n"
+            "report['operation'] = sys.argv[2]\n"
+            "report['actor_agent'] = payload['actor_agent']\n"
+            "report['dry_run'] = '--dry-run' in sys.argv\n"
+            "print(json.dumps(report, ensure_ascii=False))\n",
+            encoding="utf-8",
+        )
+        path.chmod(0o700)
+        return path
 
     def test_gis_lookup_1_building(self):
         payload = json.loads(self.module.handle_qintopia_gis_location_lookup({"query": "1 栋"}))
@@ -222,6 +243,73 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(missing_mutation["error"], "mutation_id is required")
         self.assertFalse(overlong_gap["success"])
         self.assertEqual(overlong_gap["error"], "gap_summary must be 500 characters or fewer")
+
+    def test_xiaoman_activity_list_by_date_defaults_to_worker_command(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertFalse(report["dry_run"])
+        self.assertEqual(report["action"]["tool"], "agentos_worker_command")
+        self.assertTrue(report["action"]["requires_local_execution"])
+        self.assertNotIn("records", report)
+        self.assertEqual(report["action"]["command"][-1], "--apply")
+
+    def test_xiaoman_activity_list_by_date_read_through_returns_records(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "apply_requested": True,
+                "validation_status": "ok",
+                "action_status": "read_ok",
+                "safe_for_chat": False,
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_occurrence",
+                        "record_ref": "activity_occurrence:abc123",
+                        "title": "今日共创晚餐",
+                        "activity_date": "2026-07-16",
+                        "location": "秦托邦共享厨房",
+                        "status": "待宣传",
+                    }
+                ],
+                "summaries": ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"],
+                "limitations": ["fixture-backed read"],
+                "guardrails": ["record_ref is hashed"],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["read_through"])
+        self.assertEqual(report["action"]["tool"], "agentos_worker_read_through")
+        self.assertFalse(report["action"]["requires_local_execution"])
+        self.assertEqual(report["record_count"], 1)
+        self.assertEqual(report["records"][0]["title"], "今日共创晚餐")
+        self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
+        self.assertNotIn("command", report["action"])
 
     def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
         payload = json.loads(
