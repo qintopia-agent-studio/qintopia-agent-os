@@ -88,6 +88,14 @@ The staging release root must be immutable for the staging exercise:
 - the staged sidecar is compiled only with the reviewed staging feature needed for the
   exercise, never as a production artifact.
 
+The reviewed artifact source for the combined Huabaosi/QiWe staging exercise is the
+manually dispatched GitHub Actions artifact
+`qintopia-message-sidecar-staging-linux-x86_64-gnu`. Its manifest must show exactly
+`cargo_features: [huabaosi-staging-adapter, qiwe-staging-adapter]`, `staging_only=true`,
+and `production_eligible=false`. Do not use the production
+`qintopia-message-sidecar-linux-x86_64-gnu` artifact for staging evidence, and do not
+install the staging artifact under the production release root.
+
 ## Validation Sequence
 
 Run the validations in this order after provisioning. Retain only sanitized stdout

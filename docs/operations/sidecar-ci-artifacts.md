@@ -19,7 +19,8 @@ Each artifact contains:
   transport
 - `artifact-manifest.json`: commit, branch, target, build time, runner, Rust toolchain,
   Cargo feature list, file size, and file checksum
-- `SHA256SUMS`: checksum file for server-side verification
+- `SHA256SUMS`: server-side checksum file covering the release binary, compressed
+  bundle, and `artifact-manifest.json`
 
 The initial target is `linux-x86_64-gnu`, matching the current production server:
 
@@ -39,6 +40,21 @@ approval, release/database hash binding, allowlists, release-local preflight, an
 explicit activation. Runtime environment variables cannot select staging code or bypass
 these bindings. The builder also refuses a dirty or unreadable git worktree so
 `commit_sha` cannot describe different uncommitted source bytes.
+
+The staging-only sidecar artifact name is:
+
+```text
+qintopia-message-sidecar-staging-linux-x86_64-gnu
+```
+
+It is built only by the manually dispatched Artifacts workflow when
+`build_staging_sidecar=true`. It compiles exactly `huabaosi-staging-adapter` and
+`qiwe-staging-adapter`, records `staging_only=true` and `production_eligible=false` in
+the manifest, is retained only as a GitHub Actions artifact, and must be installed only
+under `/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` for
+owner-approved Huabaosi/QiWe staging evidence. It is never uploaded to COS, never
+included in the production release build, and must not be fetched or promoted by
+production deployment scripts.
 
 ## CI Requirements
 
@@ -74,6 +90,9 @@ The `Artifacts` workflow publishes release artifacts. It is opt-in:
 - run it manually through `workflow_dispatch`, or
 - include `[publish-artifacts]` in the `master` commit message when an automatic
   publication is intentional.
+
+The staging-only artifact is stricter: it is never built from the push path and can be
+published only by a manual `workflow_dispatch` with `build_staging_sidecar=true`.
 
 The `sidecar-artifact` job uploads the new artifact first, then runs
 `pnpm artifact:prune:sidecar` with `actions: write` permission to delete older same-name
@@ -149,9 +168,9 @@ multipart mode instead of relying on COSCLI's larger default part size and a slo
 single-stream upload to the Shanghai bucket.
 
 The default COS payload is the compressed `qintopia-message-sidecar.tar.gz` bundle. The
-server fetch script extracts the bundle and then verifies the extracted binary with the
-same `SHA256SUMS` file, so systemd and Hermes still see `qintopia-message-sidecar` in
-the artifact directory.
+server fetch script keeps the bundle in the artifact directory, extracts it, and then
+uses the same `SHA256SUMS` file to verify the bundle, extracted binary, and manifest, so
+systemd and Hermes still see `qintopia-message-sidecar` in the artifact directory.
 
 Direct upload from GitHub-hosted runners to the Shanghai COS bucket has been too slow in
 CI even after multipart tuning and compressed payloads. Treat this as a network path

@@ -147,8 +147,9 @@ artifacts.
 Deployment must still use only an artifact from a successful workflow run for the
 approved commit SHA, and the paired CI `check` job must have passed for the same commit.
 
-The artifact contains the release binary, `artifact-manifest.json`, and `SHA256SUMS` for
-M9 server verification. The server should download and verify this artifact for an
+The artifact contains the release binary, compressed bundle, `artifact-manifest.json`,
+and `SHA256SUMS` for M9 server verification. The checksum file covers the binary,
+bundle, and manifest. The server should download and verify this artifact for an
 approved commit SHA, then set the executable bit after checksum verification, instead of
 rebuilding the sidecar on the server.
 

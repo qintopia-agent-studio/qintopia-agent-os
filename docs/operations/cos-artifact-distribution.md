@@ -285,9 +285,10 @@ The upload script verifies `SHA256SUMS` before upload and writes these files by 
 - `qintopia-message-sidecar.tar.gz`
 
 `qintopia-message-sidecar.tar.gz` contains the release binary. The server fetch script
-extracts it and then verifies the extracted `qintopia-message-sidecar` with
-`SHA256SUMS`. This keeps the server runtime layout unchanged while reducing the object
-payload sent from GitHub-hosted runners to COS.
+keeps the bundle, extracts it, and verifies the bundle, extracted
+`qintopia-message-sidecar`, and `artifact-manifest.json` with `SHA256SUMS`. This keeps
+the server runtime layout unchanged while reducing the object payload sent from
+GitHub-hosted runners to COS.
 
 Set `TENCENT_COS_ARTIFACT_PAYLOAD=raw` only for emergency debugging when you need to
 upload the raw binary object directly.
@@ -338,7 +339,7 @@ The download script verifies:
 - requested commit SHA matches `artifact-manifest.json`
 - artifact name and target match the expected sidecar target
 - compressed bundle is extracted into `qintopia-message-sidecar`
-- manifest checksum matches `SHA256SUMS`
+- compressed bundle, manifest, and binary checksums match `SHA256SUMS`
 - `sha256sum -c SHA256SUMS` passes
 
 Only after this should systemd or Hermes references be repointed.

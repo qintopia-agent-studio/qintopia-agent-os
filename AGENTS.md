@@ -41,6 +41,8 @@
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
 - Release Please PR manual CI validation:
   `gh workflow run ci.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
+- Staging-only sidecar artifact for Huabaosi/QiWe evidence smokes:
+  `pnpm artifact:sidecar:staging`
 - If the local pnpm version shim cannot verify a registry signature, do not set
   `pmOnFail=ignore`. Confirm the exact `package.json` script first; when it is a fixed
   repository-local Node entrypoint, run that entrypoint directly and record the failed
@@ -428,6 +430,14 @@ Use `rg` and `rg --files` for search.
   provider output. Record that cross-flow result only in
   `docs/reports/templates/xiaoman-image-send-staging-evidence.md`; it must remain a
   staging evidence template, not production enablement.
+- The staging-only sidecar artifact `qintopia-message-sidecar-staging-linux-x86_64-gnu`
+  may be built only by manual artifact workflow dispatch or
+  `pnpm artifact:sidecar:staging`. It must compile exactly `huabaosi-staging-adapter`
+  and `qiwe-staging-adapter`, record `staging_only=true` and
+  `production_eligible=false`, and be installed only under
+  `/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` for
+  owner-approved evidence smokes. Production deploy, COS upload, Release builds, and
+  production artifact fetchers must never fetch or promote it.
 - `qiwe-image-send-staging-readiness-smoke.sh` is the read-only gate before the real
   QiWe staging preflight. It may only check metadata for the fixed staging env file,
   fixed immutable staging release root, owner-approved release SHA, and packaged sidecar

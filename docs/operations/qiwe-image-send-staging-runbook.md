@@ -14,6 +14,10 @@ production runtime configuration.
 
 - Use the immutable `sidecar/qintopia-message-sidecar` packaged in the reviewed staging
   release root and have its owner-approved SHA-256 ready.
+- Use the manually dispatched GitHub Actions artifact
+  `qintopia-message-sidecar-staging-linux-x86_64-gnu`, whose manifest records exactly
+  `cargo_features: [huabaosi-staging-adapter, qiwe-staging-adapter]`,
+  `staging_only=true`, and `production_eligible=false`.
 - Keep production sidecar artifacts on default/production features only; production
   artifacts must not contain `qiwe-staging-adapter`.
 - Prepare one reviewed send-ready work item UUID for the final approved JPEG.

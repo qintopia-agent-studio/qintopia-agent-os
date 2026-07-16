@@ -426,11 +426,16 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     }
   }
   for (const requiredFragment of [
+    "resolveApprovedTarget",
+    "resolveContainedArtifactDir",
     "const bundleName = `${binaryName}.tar.gz`",
     'gitOutput(["status", "--porcelain"], "unknown")',
     "refusing to build a release artifact from a dirty or unreadable git worktree",
     'run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName])',
     "bundleSha256",
+    "manifestSha256",
+    "`${bundleSha256}  ${bundleName}`",
+    "`${manifestSha256}  artifact-manifest.json`",
     "cargo_features: cargoFeatures",
     '"--features"',
     'cargoFeatures.join(",")',
@@ -449,6 +454,100 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     if (buildArtifactScript.includes(forbiddenFragment)) {
       addError(
         `tools/deploy/build-sidecar-artifact.mjs: production sidecar artifacts must use only the reviewed production features (${forbiddenFragment})`
+      );
+    }
+  }
+}
+
+if (exists("tools/deploy/build-staging-sidecar-artifact.mjs")) {
+  const stagingArtifactScript = readText(
+    "tools/deploy/build-staging-sidecar-artifact.mjs"
+  );
+  const approvedStagingCargoFeatures = [
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+  ];
+  const cargoFeaturesMatch = stagingArtifactScript.match(
+    /const cargoFeatures = \[([\s\S]*?)\];/
+  );
+  if (!cargoFeaturesMatch) {
+    addError(
+      "tools/deploy/build-staging-sidecar-artifact.mjs: missing literal staging cargoFeatures array"
+    );
+  } else {
+    const cargoFeaturesSource = cargoFeaturesMatch[1];
+    const cargoFeatures = [...cargoFeaturesSource.matchAll(/"([a-z0-9-]+)"/g)].map(
+      (match) => match[1]
+    );
+    const cargoFeaturesResidue = cargoFeaturesSource
+      .replace(/"[a-z0-9-]+"/g, "")
+      .replace(/[\s,]/g, "");
+    if (
+      cargoFeaturesResidue ||
+      JSON.stringify(cargoFeatures) !== JSON.stringify(approvedStagingCargoFeatures)
+    ) {
+      addError(
+        "tools/deploy/build-staging-sidecar-artifact.mjs: staging cargoFeatures must exactly match the approved feature list"
+      );
+    }
+  }
+  for (const requiredFragment of [
+    "resolveApprovedTarget",
+    "resolveContainedArtifactDir",
+    "staging-${targetTriple}",
+    '"--no-default-features"',
+    '"--features"',
+    'cargoFeatures.join(",")',
+    "manifestSha256",
+    "`${bundleSha256}  ${bundleName}`",
+    "`${manifestSha256}  artifact-manifest.json`",
+    "staging_only: true",
+    "production_eligible: false",
+    "refusing to build a staging artifact from a dirty or unreadable git worktree",
+    "/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>",
+  ]) {
+    if (!stagingArtifactScript.includes(requiredFragment)) {
+      addError(
+        `tools/deploy/build-staging-sidecar-artifact.mjs: must preserve staging artifact boundary (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenFragment of [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    '"--all-features"',
+  ]) {
+    if (stagingArtifactScript.includes(forbiddenFragment)) {
+      addError(
+        `tools/deploy/build-staging-sidecar-artifact.mjs: staging artifacts must not use production or all features (${forbiddenFragment})`
+      );
+    }
+  }
+}
+
+if (exists("tools/deploy/sidecar-artifact-build-boundary.mjs")) {
+  const helper = readText("tools/deploy/sidecar-artifact-build-boundary.mjs");
+  for (const requiredFragment of [
+    'const approvedTarget = "linux-x86_64-gnu"',
+    "artifactNamePattern.test(artifactName)",
+    "QINTOPIA_ARTIFACT_TARGET must be",
+    'platform !== "linux"',
+    'arch !== "x64"',
+    "glibcVersionRuntime",
+    "linux x64 GNU runners",
+    'artifactName.includes("/")',
+    'artifactName.includes("\\\\")',
+    'artifactName.split("-").includes("..")',
+    "fs.lstatSync(currentPath)",
+    "stat.isSymbolicLink()",
+    "fs.realpathSync.native(currentPath)",
+    "artifact output path must match its real path",
+    "path.resolve(outputRoot)",
+    "!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)",
+  ]) {
+    if (!helper.includes(requiredFragment)) {
+      addError(
+        `tools/deploy/sidecar-artifact-build-boundary.mjs: must preserve artifact path and platform safety (${requiredFragment})`
       );
     }
   }
