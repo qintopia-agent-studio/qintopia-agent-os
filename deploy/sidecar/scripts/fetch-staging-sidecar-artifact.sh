@@ -232,11 +232,47 @@ PY
 artifact_dir="${tmp_dir}/artifact"
 mkdir -p "$artifact_dir"
 
+validate_artifact_zip() {
+  local zip_path="$1"
+  python3 - "$zip_path" <<'PY'
+import posixpath
+import stat
+import sys
+import zipfile
+
+allowed = {
+    "artifact-manifest.json",
+    "SHA256SUMS",
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+}
+zip_path = sys.argv[1]
+with zipfile.ZipFile(zip_path) as archive:
+    names = []
+    for entry in archive.infolist():
+        name = entry.filename
+        normalized = posixpath.normpath(name)
+        mode = (entry.external_attr >> 16) & 0o170000
+        if name.startswith("/") or normalized.startswith("../") or "/../" in f"/{normalized}/":
+            raise SystemExit(f"artifact zip entry must stay under artifact root: {name}")
+        if normalized != name or name not in allowed:
+            raise SystemExit(f"artifact zip entry is not allowlisted: {name}")
+        if name.endswith("/") or mode == stat.S_IFDIR:
+            raise SystemExit(f"artifact zip entry must not be a directory: {name}")
+        if mode == stat.S_IFLNK:
+            raise SystemExit(f"artifact zip entry must not be a symlink: {name}")
+        names.append(name)
+    if set(names) != allowed or len(names) != len(allowed):
+        raise SystemExit("artifact zip entries must exactly match the staging allowlist")
+PY
+}
+
 if [[ "$test_mode" == "1" ]]; then
   if [[ -z "$artifact_zip" || ! -f "$artifact_zip" ]]; then
     echo "--artifact-zip is required in test mode" >&2
     exit 2
   fi
+  validate_artifact_zip "$artifact_zip"
   unzip -o -q "$artifact_zip" -d "$artifact_dir"
   run_id="local-test"
 else
@@ -317,6 +353,7 @@ else
     exit 1
   fi
   curl --config "$download_curl_config" "$signed_download_url" -o "$zip_path"
+  validate_artifact_zip "$zip_path"
   unzip -o -q "$zip_path" -d "$artifact_dir"
 fi
 
@@ -339,6 +376,22 @@ for path in (
         raise SystemExit(f"artifact entry must be a regular file: {path}")
     if st.st_nlink != 1:
         raise SystemExit(f"artifact entry must not be hardlinked: {path}")
+PY
+  python3 - <<'PY'
+allowed = {
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+    "artifact-manifest.json",
+}
+entries = {}
+with open("SHA256SUMS", encoding="utf-8") as fh:
+    for line in fh:
+        parts = line.split()
+        if len(parts) != 2:
+            raise SystemExit("SHA256SUMS entries must use exactly two fields")
+        entries[parts[1]] = parts[0]
+if set(entries) != allowed:
+    raise SystemExit("SHA256SUMS entries must exactly match the staging allowlist")
 PY
   sha256sum -c SHA256SUMS
   tar_listing="$(tar -tzf qintopia-message-sidecar.tar.gz)"
@@ -381,11 +434,11 @@ checksums = {}
 with open("SHA256SUMS", encoding="utf-8") as fh:
     for line in fh:
         parts = line.split()
-        if len(parts) >= 2:
-            checksums[parts[1]] = parts[0]
-missing = required - set(checksums)
-if missing:
-    raise SystemExit(f"SHA256SUMS missing entries: {sorted(missing)}")
+        if len(parts) != 2:
+            raise SystemExit("SHA256SUMS entries must use exactly two fields")
+        checksums[parts[1]] = parts[0]
+if set(checksums) != required:
+    raise SystemExit("SHA256SUMS entries must exactly match the staging allowlist")
 
 files = {item.get("path"): item.get("sha256") for item in manifest.get("files", [])}
 for path in ("qintopia-message-sidecar", "qintopia-message-sidecar.tar.gz"):

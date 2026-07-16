@@ -45,6 +45,7 @@ const writeFixtureArtifact = (
     stagingOnly = true,
     productionEligible = false,
     includeTarballChecksum = true,
+    extraChecksumEntry = "",
   } = {}
 ) => {
   const artifactDir = path.join(tmpRoot, name, "artifact");
@@ -92,6 +93,9 @@ const writeFixtureArtifact = (
     checksumLines.push(`${bundleSha}  ${binaryName}.tar.gz`);
   }
   checksumLines.push(`${manifestSha}  artifact-manifest.json`);
+  if (extraChecksumEntry) {
+    checksumLines.push(extraChecksumEntry);
+  }
   fs.writeFileSync(
     path.join(artifactDir, "SHA256SUMS"),
     `${checksumLines.join("\n")}\n`
@@ -111,6 +115,42 @@ const writeSymlinkArtifact = (name) => {
   fs.symlinkSync("/etc/passwd", path.join(artifactDir, binaryName));
   const zipPath = path.join(tmpRoot, `${name}.zip`);
   run("zip", ["-q", "-y", "-r", zipPath, "."], { cwd: artifactDir });
+  return zipPath;
+};
+
+const writeTraversalArtifact = (name) => {
+  const zipPath = path.join(tmpRoot, `${name}.zip`);
+  run("python3", [
+    "-c",
+    [
+      "import sys, zipfile",
+      "with zipfile.ZipFile(sys.argv[1], 'w') as archive:",
+      "    archive.writestr('../escape', 'escape')",
+      "    archive.writestr('artifact-manifest.json', '{}\\n')",
+      "    archive.writestr('SHA256SUMS', '\\n')",
+      "    archive.writestr('qintopia-message-sidecar', '')",
+      "    archive.writestr('qintopia-message-sidecar.tar.gz', '')",
+    ].join("\n"),
+    zipPath,
+  ]);
+  return zipPath;
+};
+
+const writeExtraEntryArtifact = (name) => {
+  const zipPath = path.join(tmpRoot, `${name}.zip`);
+  run("python3", [
+    "-c",
+    [
+      "import sys, zipfile",
+      "with zipfile.ZipFile(sys.argv[1], 'w') as archive:",
+      "    archive.writestr('extra-file', 'extra')",
+      "    archive.writestr('artifact-manifest.json', '{}\\n')",
+      "    archive.writestr('SHA256SUMS', '\\n')",
+      "    archive.writestr('qintopia-message-sidecar', '')",
+      "    archive.writestr('qintopia-message-sidecar.tar.gz', '')",
+    ].join("\n"),
+    zipPath,
+  ]);
   return zipPath;
 };
 
@@ -264,8 +304,49 @@ try {
         "qintopia-agent-os-staging-releases"
       ),
     }),
-    "SHA256SUMS missing entries",
+    "SHA256SUMS entries must exactly match the staging allowlist",
     "missing tarball checksum"
+  );
+
+  assertFailed(
+    runProvision({
+      zipPath: writeFixtureArtifact("extra-checksum-entry", {
+        extraChecksumEntry: `${"0".repeat(64)}  /etc/passwd`,
+      }).zipPath,
+      releaseRoot: path.join(
+        tmpRoot,
+        "extra-checksum-entry",
+        "qintopia-agent-os-staging-releases"
+      ),
+    }),
+    "SHA256SUMS entries must exactly match the staging allowlist",
+    "extra checksum entry"
+  );
+
+  assertFailed(
+    runProvision({
+      zipPath: writeExtraEntryArtifact("extra-zip-entry"),
+      releaseRoot: path.join(
+        tmpRoot,
+        "extra-zip-entry",
+        "qintopia-agent-os-staging-releases"
+      ),
+    }),
+    "artifact zip entry is not allowlisted",
+    "extra zip entry"
+  );
+
+  assertFailed(
+    runProvision({
+      zipPath: writeTraversalArtifact("traversal-zip-entry"),
+      releaseRoot: path.join(
+        tmpRoot,
+        "traversal-zip-entry",
+        "qintopia-agent-os-staging-releases"
+      ),
+    }),
+    "artifact zip entry must stay under artifact root",
+    "path traversal zip entry"
   );
 
   assertFailed(
@@ -277,7 +358,7 @@ try {
         "qintopia-agent-os-staging-releases"
       ),
     }),
-    "artifact entry must not be a symlink",
+    "artifact zip entry must not be a symlink",
     "symlink artifact entry"
   );
 
