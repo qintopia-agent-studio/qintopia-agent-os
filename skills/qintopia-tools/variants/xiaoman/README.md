@@ -71,6 +71,13 @@ Xiaoman-owned AgentOS `event_signals` and require both an internal `event_signal
 UUID and a caller-supplied `mutation_id` UUID. An exact retry must retain the same
 `mutation_id`.
 
+`qintopia_xiaoman_activity_list_by_date` normally returns the bounded sidecar command
+for local execution. Set `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1` only in a
+runtime that should let the tool directly receive sanitized read results from the
+sidecar. Read-through is limited to read-only, non-dry-run operations and returns the
+worker's `record_count`, `records`, and `summaries`; write operations still return
+commands.
+
 `qintopia_xiaoman_activity_status_update` accepts only `待处理`, `处理中`, `已完成`, or
 `已关闭`. `qintopia_xiaoman_activity_gap_update` accepts one non-sensitive `gap_summary`
 of at most 500 characters. Both wrappers default to dry-run and return a bounded sidecar

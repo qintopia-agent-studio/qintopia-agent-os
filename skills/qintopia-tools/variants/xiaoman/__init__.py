@@ -15,9 +15,13 @@ import json
 import logging
 import os
 import re
+import selectors
 import shlex
+import stat
 import sys
+import subprocess
 import textwrap
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
 from threading import Lock
@@ -83,6 +87,34 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
 XIAOMAN_ACTIVITY_TABLE_ROLES = ["activity_plan", "activity_occurrence"]
 XIAOMAN_ACTIVITY_HANDOFF_TYPES = ["visual_asset_request"]
 XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
+XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
+    "table_role": 80,
+    "record_ref": 240,
+    "title": 240,
+    "activity_date": 80,
+    "start_time": 80,
+    "end_time": 80,
+    "location": 240,
+    "status": 120,
+    "promotion_status": 120,
+    "owner_name": 120,
+    "initiator_name": 120,
+    "material_summary": 500,
+    "gap_summary": 500,
+    "notes": 500,
+    "updated_at": 120,
+}
+XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS = {
+    "PATH",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
+    "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
+}
+XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES = 64 * 1024
+XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT = Path("/home/ubuntu/qintopia-agent-os-releases")
+XIAOMAN_ACTIVITY_READ_THROUGH_SENSITIVE_ENV_KEYS = XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS - {"PATH"}
 QWEATHER_ALLOWED_MCP_TOOLS = {
     "get_weather_now",
     "get_hourly_weather",
@@ -801,7 +833,6 @@ QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_SUMMARY_SCHEMA = {
     },
 }
 
-
 QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA = _operations_intake_schema("QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA")
 
 QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA = _operations_intake_schema("QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA")
@@ -928,6 +959,21 @@ def _xiaoman_activity_fixture_path() -> str:
 
 def _xiaoman_activity_use_feishu_base() -> bool:
     return _session_env("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE") == "1"
+
+
+def _xiaoman_activity_read_through_enabled() -> bool:
+    return _session_env("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE") == "1"
+
+
+def _xiaoman_activity_read_through_timeout_seconds() -> float:
+    raw = _session_env("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS")
+    if not raw:
+        return 12.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 12.0
+    return min(max(value, 1.0), 30.0)
 
 
 def _qintopia_weather_location() -> str:
@@ -3214,6 +3260,19 @@ def _xiaoman_activity_command(
     if _xiaoman_activity_use_feishu_base():
         command.append("--use-feishu-base")
     command.append("--dry-run" if dry_run else "--apply")
+    if (
+        _xiaoman_activity_read_through_enabled()
+        and not writes_business_state
+        and not dry_run
+        and operation in {"record-get", "list-by-date", "material-summary"}
+    ):
+        return _xiaoman_activity_run_read_through(
+            skill=skill,
+            actor_agent=actor_agent,
+            operation=operation,
+            payload=payload,
+            command=command,
+        )
     return _json(
         {
             "success": True,
@@ -3239,6 +3298,335 @@ def _xiaoman_activity_command(
             ],
         }
     )
+
+
+def _xiaoman_activity_run_read_through(
+    *,
+    skill: str,
+    actor_agent: str,
+    operation: str,
+    payload: dict[str, Any],
+    command: list[str],
+) -> str:
+    try:
+        returncode, stdout, timed_out, output_too_large = _xiaoman_activity_run_bounded_read_through(command)
+    except FileNotFoundError:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker binary was not found",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+    except PermissionError:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker binary is not approved for read-through",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+
+    if timed_out:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity read-through timed out",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+    if output_too_large:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity read-through output is too large",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+    if returncode != 0:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker command failed",
+            actor_agent=actor_agent,
+            operation=operation,
+            exit_code=returncode,
+        )
+    try:
+        report = json.loads(stdout)
+    except json.JSONDecodeError:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker returned invalid JSON",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
+
+    sanitized: dict[str, Any] = {}
+    for key in ["success", "dry_run", "apply_requested", "safe_for_chat"]:
+        if key in report:
+            sanitized[key] = bool(report.get(key))
+    for key in ["worker", "operation", "source", "actor_agent", "validation_status", "action_status"]:
+        if key in report:
+            sanitized[key] = _clean_text(report.get(key), max_len=120)
+    sanitized["records"] = _xiaoman_activity_sanitize_records(report.get("records"))
+    sanitized["record_count"] = len(sanitized["records"])
+    sanitized["summaries"] = _xiaoman_activity_summaries_from_records(sanitized["records"])
+    sanitized["limitations"] = [
+        "read-through returns only wrapper-sanitized activity records",
+        "sidecar raw stdout, stderr, summaries, limitations, and guardrails are not returned",
+    ]
+    sanitized["guardrails"] = [
+        "read-through runs with a minimal environment allowlist",
+        "records use a fixed field allowlist and length limits",
+        "human confirmation is required before handoff, queueing, publishing, or sending",
+    ]
+    sanitized.update(
+        {
+            "skill": skill,
+            "query": _xiaoman_activity_read_through_query_summary(operation, payload),
+            "action": {
+                "tool": "agentos_worker_read_through",
+                "requires_local_execution": False,
+                "executed": True,
+            },
+            "read_through": True,
+        }
+    )
+    return _json(sanitized)
+
+
+def _xiaoman_activity_run_bounded_read_through(command: list[str]) -> tuple[int, str, bool, bool]:
+    trusted_worker = _xiaoman_activity_validate_read_through_worker(command[0])
+    trusted_command = [str(trusted_worker), *command[1:]]
+    proc = subprocess.Popen(
+        trusted_command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=_xiaoman_activity_read_through_env(),
+    )
+    if proc.stdout is None:
+        proc.kill()
+        return 1, "", False, False
+
+    fd = proc.stdout.fileno()
+    os.set_blocking(fd, False)
+    selector = selectors.DefaultSelector()
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    chunks: list[bytes] = []
+    total = 0
+    deadline = time.monotonic() + _xiaoman_activity_read_through_timeout_seconds()
+    timed_out = False
+    output_too_large = False
+
+    try:
+        while True:
+            if total > XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES:
+                output_too_large = True
+                proc.kill()
+                break
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                proc.kill()
+                break
+
+            if proc.poll() is not None:
+                while True:
+                    try:
+                        data = os.read(fd, 4096)
+                    except BlockingIOError:
+                        break
+                    if not data:
+                        break
+                    chunks.append(data)
+                    total += len(data)
+                    if total > XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES:
+                        output_too_large = True
+                        proc.kill()
+                        break
+                break
+
+            events = selector.select(min(remaining, 0.1))
+            for _key, _mask in events:
+                try:
+                    data = os.read(fd, 4096)
+                except BlockingIOError:
+                    continue
+                if not data:
+                    continue
+                chunks.append(data)
+                total += len(data)
+                if total > XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES:
+                    output_too_large = True
+                    proc.kill()
+                    break
+            if output_too_large:
+                break
+    finally:
+        selector.close()
+        proc.stdout.close()
+
+    if proc.poll() is None:
+        proc.kill()
+    returncode = proc.wait()
+    stdout = b"".join(chunks[: XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES // 4096 + 2])
+    stdout = stdout[:XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES]
+    return returncode, stdout.decode("utf-8", errors="replace").strip(), timed_out, output_too_large
+
+
+def _xiaoman_activity_validate_read_through_worker(worker_bin: str) -> Path:
+    worker_path = Path(worker_bin)
+    if not worker_path.is_absolute():
+        raise PermissionError("xiaoman activity read-through worker must be absolute")
+
+    release_root = XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT
+    parts = worker_path.parts
+    root_parts = release_root.parts
+    if (
+        len(parts) != len(root_parts) + 3
+        or parts[: len(root_parts)] != root_parts
+        or not re.fullmatch(r"[0-9a-f]{40}", parts[len(root_parts)])
+        or parts[len(root_parts) + 1] != "sidecar"
+        or parts[len(root_parts) + 2] != "qintopia-message-sidecar"
+    ):
+        raise PermissionError("xiaoman activity read-through worker must be release-local")
+
+    raw_components = []
+    current = Path(parts[0])
+    raw_components.append(current)
+    for part in parts[1:]:
+        current = current / part
+        raw_components.append(current)
+
+    current_uid = os.getuid()
+    for path in raw_components:
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode):
+            raise PermissionError("xiaoman activity read-through worker path must not contain symlinks")
+
+    protected_components = [release_root, worker_path.parent.parent, worker_path.parent, worker_path]
+    for path in protected_components:
+        info = path.lstat()
+        if info.st_mode & 0o222:
+            raise PermissionError("xiaoman activity read-through worker path must not be writable")
+        if info.st_uid not in {0, current_uid}:
+            raise PermissionError("xiaoman activity read-through worker path owner is not trusted")
+
+    resolved = worker_path.resolve(strict=True)
+    if resolved != worker_path:
+        raise PermissionError("xiaoman activity read-through worker must be canonical")
+
+    info = resolved.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise PermissionError("xiaoman activity read-through worker must be a regular file")
+    if not os.access(resolved, os.X_OK):
+        raise PermissionError("xiaoman activity read-through worker must be executable")
+    return resolved
+
+
+def _xiaoman_activity_read_through_query_summary(operation: str, payload: dict[str, Any]) -> dict[str, str]:
+    summary = {
+        "operation": _clean_text(operation, max_len=80),
+        "table_role": _clean_text(payload.get("table_role"), max_len=80),
+    }
+    if payload.get("date"):
+        summary["date"] = _clean_text(payload.get("date"), max_len=40)
+    if payload.get("timezone"):
+        summary["timezone"] = _clean_text(payload.get("timezone"), max_len=80)
+    return {key: value for key, value in summary.items() if value}
+
+
+def _xiaoman_activity_read_through_env() -> dict[str, str]:
+    env = {}
+    for key in XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS:
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
+def _xiaoman_activity_read_through_sensitive_values() -> set[str]:
+    values = set()
+    for key in XIAOMAN_ACTIVITY_READ_THROUGH_SENSITIVE_ENV_KEYS:
+        raw_value = os.environ.get(key)
+        if not raw_value:
+            continue
+        candidates = [raw_value, *re.split(r"[\s,]+", raw_value)]
+        for candidate in candidates:
+            value = _clean_text(candidate, max_len=500)
+            if len(value) >= 6:
+                values.add(value)
+    return values
+
+
+def _xiaoman_activity_sanitize_records(raw_records: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_records, list):
+        return []
+    records = []
+    for raw_record in raw_records[:20]:
+        if not isinstance(raw_record, dict):
+            continue
+        record = {}
+        for key, max_len in XIAOMAN_ACTIVITY_RECORD_READ_FIELDS.items():
+            value = _xiaoman_activity_sanitize_record_value(key, raw_record.get(key), max_len)
+            if value:
+                record[key] = value
+        if record:
+            records.append(record)
+    return records
+
+
+def _xiaoman_activity_summaries_from_records(records: list[dict[str, str]]) -> list[str]:
+    summaries = []
+    for record in records[:20]:
+        parts = [
+            record.get("title", ""),
+            record.get("activity_date", ""),
+            record.get("location", ""),
+            record.get("status", "") or record.get("promotion_status", ""),
+        ]
+        value = "｜".join(part for part in parts if part)
+        if value:
+            summaries.append(value)
+    return summaries
+
+
+def _xiaoman_activity_sanitize_record_value(key: str, raw_value: Any, max_len: int) -> str:
+    value = _clean_text(raw_value, max_len=max_len)
+    if not value:
+        return ""
+    if key == "table_role" and value not in XIAOMAN_ACTIVITY_TABLE_ROLES:
+        return ""
+    if key == "record_ref" and not re.fullmatch(r"(activity_plan|activity_occurrence):[0-9a-f]{12}", value):
+        return ""
+
+    lower = value.lower()
+    forbidden_tokens = [
+        "postgres://",
+        "postgresql://",
+        "tenant_access_token",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "app_secret",
+        "client_secret",
+        "authorization",
+        "bearer ",
+        "qiwe_token",
+        "qiwe_guid",
+        "feishu_app_secret",
+        "lark_app_secret",
+        "base_token",
+        "table_id",
+    ]
+    if any(token in lower for token in forbidden_tokens):
+        return ""
+    if re.search(r"https?://", lower):
+        return ""
+    if re.search(r"\b(?:tbl|rec)[A-Za-z0-9]{8,}\b", value):
+        return ""
+    for sensitive_value in _xiaoman_activity_read_through_sensitive_values():
+        if value == sensitive_value or sensitive_value in value:
+            return ""
+    return value
 
 
 def handle_qintopia_xiaoman_activity_record_get(args: dict[str, Any], **_: Any) -> str:
