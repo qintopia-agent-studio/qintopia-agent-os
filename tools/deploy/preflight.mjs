@@ -305,6 +305,7 @@ if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
     "path component is group/world writable",
     "path component has unexpected owner",
     'if ! mkdir "$sidecar_dir"',
+    "sidecar_dir_created=1",
     "provision_complete=1",
     "chmod 0555",
   ]) {

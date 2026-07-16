@@ -137,11 +137,12 @@ if [[ "$test_mode" != "1" ]]; then
 fi
 
 sidecar_dir=""
+sidecar_dir_created=0
 provision_complete=0
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
-  if [[ "$provision_complete" != "1" && -n "$sidecar_dir" && -d "$sidecar_dir" ]]; then
+  if [[ "$provision_complete" != "1" && "$sidecar_dir_created" == "1" && -n "$sidecar_dir" && -d "$sidecar_dir" ]]; then
     chmod 0755 "$sidecar_dir" 2>/dev/null || true
     rm -rf "$sidecar_dir"
   fi
@@ -513,6 +514,7 @@ if ! mkdir "$sidecar_dir"; then
   echo "staging sidecar directory already exists: ${sidecar_dir}" >&2
   exit 1
 fi
+sidecar_dir_created=1
 
 cp "${artifact_dir}/qintopia-message-sidecar" "$sidecar_dir/qintopia-message-sidecar"
 cp "${artifact_dir}/qintopia-message-sidecar.tar.gz" "$sidecar_dir/qintopia-message-sidecar.tar.gz"

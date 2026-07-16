@@ -382,6 +382,8 @@ try {
   );
   const existingSidecarDir = path.join(existingTargetRoot, releaseSha, "sidecar");
   fs.mkdirSync(existingSidecarDir, { recursive: true });
+  const existingSentinel = path.join(existingSidecarDir, "existing-sentinel");
+  fs.writeFileSync(existingSentinel, "keep\n");
   assertFailed(
     runProvision({
       zipPath: good.zipPath,
@@ -390,6 +392,9 @@ try {
     "staging sidecar directory already exists",
     "existing sidecar target"
   );
+  if (!fs.existsSync(existingSentinel)) {
+    throw new Error("existing sidecar target was deleted after mkdir failure");
+  }
 
   assertFailed(
     runProvisionWithoutTestMode({
