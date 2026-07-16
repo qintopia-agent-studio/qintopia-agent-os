@@ -153,15 +153,34 @@ fi
 
 verify_sidecar_binary() {
   local label="$1"
-  readarray -t sidecar_facts < <(python3 - "$SIDECAR_BIN" <<'PY'
+  readarray -t sidecar_facts < <(python3 - "$MONOREPO_ROOT" "$SIDECAR_BIN" <<'PY'
 import hashlib
 import os
 import stat
 import sys
 
-path = sys.argv[1]
+root = sys.argv[1]
+path = sys.argv[2]
 parent = os.path.dirname(path)
-for candidate in (parent, path):
+release_root_parent = os.path.dirname(root)
+
+if not os.path.isabs(root) or not os.path.isabs(path):
+    print("path_not_absolute")
+    sys.exit(0)
+if os.path.commonpath([root, path]) != root:
+    print("outside_release_root")
+    sys.exit(0)
+
+checked_paths = []
+if os.path.basename(release_root_parent) == "qintopia-agent-os-staging-releases":
+    checked_paths.append((release_root_parent, "directory", False))
+checked_paths.extend((
+    (root, "directory", False),
+    (parent, "directory", True),
+    (path, "regular", True),
+))
+
+for candidate, expected_type, reject_owner_writable in checked_paths:
     try:
         candidate_lstat = os.lstat(candidate)
     except FileNotFoundError:
@@ -170,14 +189,24 @@ for candidate in (parent, path):
     if stat.S_ISLNK(candidate_lstat.st_mode):
         print("symlink")
         sys.exit(0)
-path_stat = os.stat(path)
-parent_stat = os.stat(parent)
-if path_stat.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
-    print("writable")
-    sys.exit(0)
-if parent_stat.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
-    print("writable")
-    sys.exit(0)
+    if expected_type == "directory" and not stat.S_ISDIR(candidate_lstat.st_mode):
+        print("not_directory")
+        sys.exit(0)
+    if expected_type == "regular" and not stat.S_ISREG(candidate_lstat.st_mode):
+        print("not_regular_file")
+        sys.exit(0)
+    if not candidate_lstat.st_mode & stat.S_IXUSR:
+        print("not_executable")
+        sys.exit(0)
+    if candidate_lstat.st_uid not in (0, os.geteuid()):
+        print("unexpected_owner")
+        sys.exit(0)
+    writable_mask = stat.S_IWGRP | stat.S_IWOTH
+    if reject_owner_writable:
+        writable_mask |= stat.S_IWUSR
+    if candidate_lstat.st_mode & writable_mask:
+        print("writable")
+        sys.exit(0)
 digest = hashlib.sha256()
 with open(path, "rb") as handle:
     for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -189,12 +218,28 @@ PY
     echo "packaged sidecar binary disappeared before ${label}" >&2
     exit 1
   fi
+  if [[ "${sidecar_facts[0]:-}" == "path_not_absolute" || "${sidecar_facts[0]:-}" == "outside_release_root" ]]; then
+    echo "packaged sidecar binary must stay under the fixed staging release root before ${label}" >&2
+    exit 1
+  fi
   if [[ "${sidecar_facts[0]:-}" == "symlink" ]]; then
-    echo "packaged sidecar binary and parent directory must not be symlinks before ${label}" >&2
+    echo "packaged sidecar binary, parent directory, release root, and staging releases root must not be symlinks before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "not_directory" || "${sidecar_facts[0]:-}" == "not_regular_file" ]]; then
+    echo "packaged sidecar release ancestors, parent directory, and binary must keep the expected file types before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "not_executable" ]]; then
+    echo "packaged sidecar release ancestors, parent directory, and binary must be executable before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "unexpected_owner" ]]; then
+    echo "packaged sidecar release ancestors, parent directory, and binary must be owned by root or the staging runner user before ${label}" >&2
     exit 1
   fi
   if [[ "${sidecar_facts[0]:-}" == "writable" ]]; then
-    echo "packaged sidecar binary and parent directory must not be owner/group/world writable before ${label}" >&2
+    echo "packaged sidecar binary and parent directory must not be owner/group/world writable, and release ancestors must not be group/world writable before ${label}" >&2
     exit 1
   fi
   if [[ "${sidecar_facts[0]:-}" != "$EXPECTED_SIDECAR_HASH" ]]; then

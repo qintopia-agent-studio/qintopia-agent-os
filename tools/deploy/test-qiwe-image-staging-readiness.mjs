@@ -120,6 +120,24 @@ try {
     throw new Error("readiness smoke exposed staging env contents");
   }
 
+  fs.chmodSync(sidecarPath, 0o444);
+  const notExecutable = runReadiness({
+    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+  });
+  if (notExecutable.status === 0) {
+    throw new Error("expected non-executable sidecar to fail readiness");
+  }
+  const notExecutableReport = parseReport(notExecutable);
+  if (
+    notExecutableReport.sidecar_binary_secure !== false ||
+    !notExecutableReport.limitations.includes("sidecar_binary_path_not_executable")
+  ) {
+    throw new Error(
+      `non-executable report is invalid: ${JSON.stringify(notExecutableReport)}`
+    );
+  }
+  fs.chmodSync(sidecarPath, 0o555);
+
   fs.chmodSync(sidecarPath, 0o755);
   const ownerWritable = runReadiness({
     QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
