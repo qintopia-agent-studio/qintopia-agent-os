@@ -538,6 +538,10 @@ if (exists("tools/deploy/sidecar-artifact-build-boundary.mjs")) {
     'artifactName.includes("/")',
     'artifactName.includes("\\\\")',
     'artifactName.split("-").includes("..")',
+    "fs.lstatSync(currentPath)",
+    "stat.isSymbolicLink()",
+    "fs.realpathSync.native(currentPath)",
+    "artifact output path must match its real path",
     "path.resolve(outputRoot)",
     "!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)",
   ]) {

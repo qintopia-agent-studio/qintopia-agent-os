@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
@@ -42,7 +43,15 @@ try {
     "non-linux-x64 hosts must not build linux-x86_64-gnu artifacts"
   );
 
-  const root = path.join(process.cwd(), "dist", ".test-sidecar-artifact-root");
+  const fixtureRoot = path.join(
+    process.cwd(),
+    "dist",
+    ".test-sidecar-artifact-boundary"
+  );
+  fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  fs.mkdirSync(fixtureRoot, { recursive: true });
+
+  const root = path.join(fixtureRoot, "safe-root");
   const inside = resolveContainedArtifactDir(
     root,
     "qintopia-message-sidecar-linux-x86_64-gnu"
@@ -63,7 +72,47 @@ try {
       `artifact name ${artifactName} must be rejected`
     );
   }
+
+  const outsideRoot = path.join(fixtureRoot, "outside-root");
+  const symlinkRoot = path.join(fixtureRoot, "symlink-root");
+  fs.mkdirSync(outsideRoot);
+  fs.symlinkSync(outsideRoot, symlinkRoot, "dir");
+  assertThrows(
+    () =>
+      resolveContainedArtifactDir(
+        symlinkRoot,
+        "qintopia-message-sidecar-linux-x86_64-gnu"
+      ),
+    "symlink output root must be rejected"
+  );
+  assertThrows(
+    () =>
+      resolveContainedArtifactDir(
+        path.join(symlinkRoot, "sidecar-artifacts"),
+        "qintopia-message-sidecar-linux-x86_64-gnu"
+      ),
+    "symlink output parent must be rejected"
+  );
+
+  const artifactSymlinkRoot = path.join(fixtureRoot, "artifact-symlink-root");
+  const artifactSymlinkTarget = path.join(fixtureRoot, "artifact-symlink-target");
+  const artifactSymlinkName = "qintopia-message-sidecar-linux-x86_64-gnu";
+  fs.mkdirSync(artifactSymlinkRoot);
+  fs.mkdirSync(artifactSymlinkTarget);
+  fs.symlinkSync(
+    artifactSymlinkTarget,
+    path.join(artifactSymlinkRoot, artifactSymlinkName),
+    "dir"
+  );
+  assertThrows(
+    () => resolveContainedArtifactDir(artifactSymlinkRoot, artifactSymlinkName),
+    "symlink artifact directory must be rejected"
+  );
 } finally {
+  fs.rmSync(path.join(process.cwd(), "dist", ".test-sidecar-artifact-boundary"), {
+    recursive: true,
+    force: true,
+  });
   if (originalTarget === undefined) {
     delete process.env.QINTOPIA_ARTIFACT_TARGET;
   } else {

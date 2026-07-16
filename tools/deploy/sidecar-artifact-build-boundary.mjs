@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -41,5 +42,36 @@ export const resolveContainedArtifactDir = (outputRoot, artifactName) => {
   ) {
     throw new Error("artifact output directory must stay under dist/sidecar-artifacts");
   }
+  assertNoSymlinkPathComponents(resolvedDir);
   return resolvedDir;
+};
+
+const assertNoSymlinkPathComponents = (resolvedPath) => {
+  const root = path.parse(resolvedPath).root;
+  const components = path.relative(root, resolvedPath).split(path.sep).filter(Boolean);
+  let currentPath = root;
+
+  for (const [index, component] of components.entries()) {
+    currentPath = path.join(currentPath, component);
+    let stat;
+    try {
+      stat = fs.lstatSync(currentPath);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return;
+      }
+      throw error;
+    }
+
+    if (stat.isSymbolicLink()) {
+      throw new Error("artifact output path must not contain symlinks");
+    }
+    const realPath = fs.realpathSync.native(currentPath);
+    if (path.resolve(realPath) !== path.resolve(currentPath)) {
+      throw new Error("artifact output path must match its real path");
+    }
+    if (index < components.length - 1 && !stat.isDirectory()) {
+      throw new Error("artifact output parent path must be a directory");
+    }
+  }
 };
