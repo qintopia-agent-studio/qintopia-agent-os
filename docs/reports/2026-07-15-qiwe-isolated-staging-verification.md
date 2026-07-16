@@ -11,7 +11,8 @@ shape, callback credential redaction, fixed subprocess arguments, exact child
 environment allowlist, and staging-feature Rust fake-server send path.
 
 This workstation does not have the owner-approved staging runtime inputs required to
-perform a real QiWe send:
+perform a real QiWe send. A 2026-07-16 read-only server readiness check also found that
+the reviewed staging runtime has not been provisioned yet:
 
 - no `/etc/qintopia/message-sidecar-staging.env`;
 - no `/home/ubuntu/qintopia-agent-os-staging-releases` release root;
@@ -45,6 +46,18 @@ The first callback bridge test attempt from the repository root failed because t
 module imports `image_callback_bridge` relative to `skills/qiwe`. Re-running from
 `skills/qiwe` used the package-local test layout and passed.
 
+Read-only server readiness check on 2026-07-16:
+
+```text
+qiwe_staging_readiness
+missing path=/etc/qintopia/message-sidecar-staging.env
+missing path=/home/ubuntu/qintopia-agent-os-staging-releases
+```
+
+The check inspected only path presence and ownership metadata. It did not read the
+staging env file, print secrets, modify files, enable services, contact QiWe, connect to
+Postgres, or create a staging release directory.
+
 ## Remaining Owner Gate
 
 To complete real isolated staging, run the existing smoke against a reviewed staging
@@ -56,6 +69,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256=<approved staging database URL sha256>
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256=<approved staging sidecar binary sha256>
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID=<approved send-ready UUID>
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
@@ -69,6 +83,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256=<same approved staging database URL sha256>
+QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256=<same approved staging sidecar binary sha256>
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID=<same approved send-ready UUID>
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
@@ -85,4 +100,6 @@ service or timer, change nginx/systemd, write Feishu, call a media provider, con
 QiWe, or send externally. Production remains blocked until the owner-approved isolated
 staging run records only sanitized evidence: staging database URL SHA-256, fixed
 callback credential schema id, fixed outcome labels, exact release SHA, and rollback
-owner/action.
+owner/action. Use `docs/reports/templates/qiwe-image-send-staging-evidence.md` after the
+complete evidence checker passes; do not record raw callback payloads, target group ids,
+media URIs, database URLs, QiWe credentials, request ids, or raw logs.

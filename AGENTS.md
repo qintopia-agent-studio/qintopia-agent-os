@@ -71,6 +71,16 @@
   `QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`
 - Huabaosi WeCom canary disabled-state observation smoke:
   `QINTOPIA_HUABAOSI_WECOM_CANARY_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh`
+- QiWe image-send staging readiness smoke:
+
+  ```bash
+  QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE=1 \
+  QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
+  QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA=<approved-staging-release-sha> \
+  QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256=<approved-staging-sidecar-sha256> \
+    deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh
+  ```
+
 - Huabaosi WeCom shadow capture fixture replay:
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_shadow`
 - Huabaosi WeCom policy preview fixture replay:
@@ -373,16 +383,46 @@ Use `rg` and `rg --files` for search.
   API/media/group allowlists, and webhook readiness before reading stdin. Upload apply
   must validate the same adapter configuration before connecting to Postgres.
 - `qiwe-image-send-staging-smoke.sh` is the only reviewed one-shot staging entrypoint
-  for the async upload and callback send exercise. It requires an exact work item UUID,
-  owner phrase, staging env path, exact owner-reviewed staging database URL hash, and
-  explicit `upload` or `callback` phase. Callback credentials may flow only from bounded
-  stdin to the callback processor and memory-only send request; never store them in a
-  file, environment variable, CLI argument, NATS event, report, or log. The smoke must
-  attach `/dev/null` to preflight and upload subprocesses and parse only the fixed
-  staging env key allowlist without evaluating the env file as shell. Subprocess output
-  must be captured, scanned, and schema-validated through memory and anonymous pipes; no
-  subprocess output may be written to a file. It must not install a listener, service,
-  timer, production feature build, Feishu write, or broad group send.
+  for the async upload and callback send exercise. It requires an exact work item UUID
+  for upload/callback, owner phrase, staging env path, exact owner-reviewed staging
+  database URL hash, exact owner-reviewed staging release SHA, exact owner-reviewed
+  packaged sidecar binary SHA-256, and explicit `preflight`, `upload`, or `callback`
+  phase. It must fail closed unless it is running from
+  `/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` and executing
+  that release-local `sidecar/qintopia-message-sidecar`; do not allow
+  `QINTOPIA_SIDECAR_BIN`, `cargo run`, symlinked binaries, untrusted owners,
+  owner/group/world-writable binary paths, mutable source-tree fallbacks, or a binary
+  whose SHA-256 changes between the initial check and any child sidecar spawn. Callback
+  credentials may flow only from bounded stdin to the callback processor and memory-only
+  send request; never store them in a file, environment variable, CLI argument, NATS
+  event, report, or log. The smoke must attach `/dev/null` to preflight and upload
+  subprocesses, parse only the fixed staging env key allowlist without evaluating the
+  env file as shell, revalidate the sidecar path and digest immediately before each
+  child sidecar command, and run child sidecar commands with a minimal explicit
+  environment rather than inheriting ambient operator secrets. Subprocess output must be
+  captured, scanned, and schema-validated through memory and anonymous pipes; no
+  subprocess output may be written to a file. Upload and callback evidence may retain
+  only the canonical final JPEG `artifact_content_hash` for Huabaosi/QiWe hash matching;
+  it must not retain media URI, filename, MD5 value, file size, or callback credentials.
+  It must not install a listener, service, timer, production feature build, Feishu
+  write, or broad group send.
+- Before any QiWe production-enablement PR, the retained Huabaosi staging
+  generated-image evidence and QiWe staging send evidence must pass
+  `tools/deploy/check-xiaoman-image-send-staging-evidence.mjs`, proving the Huabaosi
+  final JPEG `content_hash` equals the QiWe `artifact_content_hash` without recording
+  media URI, filename, MD5 value, callback credentials, group id, database URL, or raw
+  provider output. Record that cross-flow result only in
+  `docs/reports/templates/xiaoman-image-send-staging-evidence.md`; it must remain a
+  staging evidence template, not production enablement.
+- `qiwe-image-send-staging-readiness-smoke.sh` is the read-only gate before the real
+  QiWe staging preflight. It may only check metadata for the fixed staging env file,
+  fixed immutable staging release root, owner-approved release SHA, and packaged sidecar
+  binary digest. Its sidecar release directory and binary permission checks must match
+  the staging smoke's owner/group/world-writable rejection, while the secret-bearing env
+  file may remain owner-writable. It must not read env file contents, execute the
+  sidecar, connect to Postgres, contact QiWe/Feishu/provider/media endpoints, create
+  release directories, install or enable services/timers, or report secret-bearing
+  values.
 - A QiWe webhook bridge for `cmd=20000` may invoke only one explicitly configured
   staging sidecar with fixed `process-qiwe-image-send-callback --apply` arguments. It
   must default disabled, require the exact staging owner phrase and canonical approved
