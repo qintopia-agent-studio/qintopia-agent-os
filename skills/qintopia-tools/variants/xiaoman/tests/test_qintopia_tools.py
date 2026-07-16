@@ -139,6 +139,33 @@ class QintopiaToolsTest(unittest.TestCase):
         path.chmod(0o700)
         return path
 
+    def write_env_echo_xiaoman_sidecar(self) -> Path:
+        path = self.index_dir / "env-echo-xiaoman-sidecar.py"
+        path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import os\n"
+            "report = {\n"
+            "  'success': True,\n"
+            "  'worker': 'xiaoman-activity',\n"
+            "  'source': 'fixture',\n"
+            "  'record_count': 1,\n"
+            "  'records': [{\n"
+            "    'table_role': 'activity_occurrence',\n"
+            "    'record_ref': 'activity_occurrence:abc123def456',\n"
+            "    'title': os.environ.get('SECRET_TOKEN', 'secret-not-inherited'),\n"
+            "    'activity_date': '2026-07-16',\n"
+            "    'location': '秦托邦共享厨房',\n"
+            "    'status': '待宣传',\n"
+            "  }],\n"
+            "  'summaries': [os.environ.get('SECRET_TOKEN', 'secret-not-inherited')],\n"
+            "}\n"
+            "print(json.dumps(report, ensure_ascii=False))\n",
+            encoding="utf-8",
+        )
+        path.chmod(0o700)
+        return path
+
     def test_gis_lookup_1_building(self):
         payload = json.loads(self.module.handle_qintopia_gis_location_lookup({"query": "1 栋"}))
 
@@ -291,7 +318,7 @@ class QintopiaToolsTest(unittest.TestCase):
                 "records": [
                     {
                         "table_role": "activity_occurrence",
-                        "record_ref": "activity_occurrence:abc123",
+                        "record_ref": "activity_occurrence:abc123def456",
                         "title": "今日共创晚餐",
                         "activity_date": "2026-07-16",
                         "location": "秦托邦共享厨房",
@@ -323,6 +350,79 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["records"][0]["title"], "今日共创晚餐")
         self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
         self.assertNotIn("command", report["action"])
+
+    def test_xiaoman_activity_read_through_uses_minimal_environment(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_env_echo_xiaoman_sidecar()
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+        os.environ["SECRET_TOKEN"] = "do-not-pass-this"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertTrue(report["success"])
+        self.assertNotIn("do-not-pass-this", rendered)
+        self.assertIn("secret-not-inherited", rendered)
+
+    def test_xiaoman_activity_read_through_filters_record_fields_and_raw_summaries(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_occurrence",
+                        "record_ref": "activity_occurrence:abc123def456",
+                        "title": "今日共创晚餐",
+                        "activity_date": "2026-07-16",
+                        "location": "秦托邦共享厨房",
+                        "status": "待宣传",
+                        "notes": "postgres://secret",
+                        "raw_table_id": "tbl_secret",
+                        "secret_url": "postgres://secret",
+                    }
+                ],
+                "summaries": ["raw tbl_secret postgres://secret"],
+                "limitations": ["raw tbl_secret"],
+                "guardrails": ["postgres://secret"],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertTrue(report["success"])
+        self.assertEqual(set(report["records"][0]), {
+            "table_role",
+            "record_ref",
+            "title",
+            "activity_date",
+            "location",
+            "status",
+        })
+        self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
+        self.assertNotIn("tbl_secret", rendered)
+        self.assertNotIn("postgres://secret", rendered)
 
     def test_xiaoman_activity_read_through_does_not_return_child_error_output(self):
         self.enable_xiaoman_activity_wrappers()
@@ -379,7 +479,7 @@ class QintopiaToolsTest(unittest.TestCase):
                     "records": [
                         {
                             "table_role": "activity_occurrence",
-                            "record_ref": "activity_occurrence:abc123",
+                            "record_ref": "activity_occurrence:abc123def456",
                             "title": "今日共创晚餐",
                             "activity_date": "2026-07-16",
                             "start_time": "19:00",
@@ -405,7 +505,7 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(next_action["status"], "ready_for_human_confirmation")
         self.assertEqual(next_action["after_confirmation_tool"], "qintopia_xiaoman_activity_handoff_create")
         self.assertTrue(next_action["payload"]["dry_run"])
-        self.assertEqual(next_action["payload"]["source_record_id"], "activity_occurrence:abc123")
+        self.assertEqual(next_action["payload"]["source_record_id"], "activity_occurrence:abc123def456")
         self.assertIn("does not read Feishu", report["guardrails"][1])
 
     def test_xiaoman_activity_promotion_brief_generate_holds_missing_fields(self):
@@ -416,7 +516,7 @@ class QintopiaToolsTest(unittest.TestCase):
                 {
                     "activity": {
                         "table_role": "activity_occurrence",
-                        "record_ref": "activity_occurrence:abc123",
+                        "record_ref": "activity_occurrence:abc123def456",
                         "title": "今日共创晚餐",
                         "status": "待宣传",
                     }

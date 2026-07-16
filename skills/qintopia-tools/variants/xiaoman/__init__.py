@@ -85,6 +85,31 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
 XIAOMAN_ACTIVITY_TABLE_ROLES = ["activity_plan", "activity_occurrence"]
 XIAOMAN_ACTIVITY_HANDOFF_TYPES = ["visual_asset_request"]
 XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
+XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
+    "table_role": 80,
+    "record_ref": 240,
+    "title": 240,
+    "activity_date": 80,
+    "start_time": 80,
+    "end_time": 80,
+    "location": 240,
+    "status": 120,
+    "promotion_status": 120,
+    "owner_name": 120,
+    "initiator_name": 120,
+    "material_summary": 500,
+    "gap_summary": 500,
+    "notes": 500,
+    "updated_at": 120,
+}
+XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS = {
+    "PATH",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
+    "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
+}
 QWEATHER_ALLOWED_MCP_TOOLS = {
     "get_weather_now",
     "get_hourly_weather",
@@ -3331,6 +3356,7 @@ def _xiaoman_activity_run_read_through(
             capture_output=True,
             text=True,
             timeout=_xiaoman_activity_read_through_timeout_seconds(),
+            env=_xiaoman_activity_read_through_env(),
         )
     except FileNotFoundError:
         return _xiaoman_activity_error(
@@ -3373,24 +3399,25 @@ def _xiaoman_activity_run_read_through(
             operation=operation,
         )
 
-    allowed_keys = {
-        "success",
-        "worker",
-        "operation",
-        "source",
-        "actor_agent",
-        "dry_run",
-        "apply_requested",
-        "validation_status",
-        "action_status",
-        "safe_for_chat",
-        "record_count",
-        "records",
-        "summaries",
-        "limitations",
-        "guardrails",
-    }
-    sanitized = {key: report.get(key) for key in allowed_keys if key in report}
+    sanitized: dict[str, Any] = {}
+    for key in ["success", "dry_run", "apply_requested", "safe_for_chat"]:
+        if key in report:
+            sanitized[key] = bool(report.get(key))
+    for key in ["worker", "operation", "source", "actor_agent", "validation_status", "action_status"]:
+        if key in report:
+            sanitized[key] = _clean_text(report.get(key), max_len=120)
+    sanitized["records"] = _xiaoman_activity_sanitize_records(report.get("records"))
+    sanitized["record_count"] = len(sanitized["records"])
+    sanitized["summaries"] = _xiaoman_activity_summaries_from_records(sanitized["records"])
+    sanitized["limitations"] = [
+        "read-through returns only wrapper-sanitized activity records",
+        "sidecar raw stdout, stderr, summaries, limitations, and guardrails are not returned",
+    ]
+    sanitized["guardrails"] = [
+        "read-through runs with a minimal environment allowlist",
+        "records use a fixed field allowlist and length limits",
+        "human confirmation is required before handoff, queueing, publishing, or sending",
+    ]
     sanitized.update(
         {
             "skill": skill,
@@ -3406,17 +3433,96 @@ def _xiaoman_activity_run_read_through(
     return _json(sanitized)
 
 
+def _xiaoman_activity_read_through_env() -> dict[str, str]:
+    env = {}
+    for key in XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS:
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
+def _xiaoman_activity_sanitize_records(raw_records: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_records, list):
+        return []
+    records = []
+    for raw_record in raw_records[:20]:
+        if not isinstance(raw_record, dict):
+            continue
+        record = {}
+        for key, max_len in XIAOMAN_ACTIVITY_RECORD_READ_FIELDS.items():
+            value = _xiaoman_activity_sanitize_record_value(key, raw_record.get(key), max_len)
+            if value:
+                record[key] = value
+        if record:
+            records.append(record)
+    return records
+
+
+def _xiaoman_activity_summaries_from_records(records: list[dict[str, str]]) -> list[str]:
+    summaries = []
+    for record in records[:20]:
+        parts = [
+            record.get("title", ""),
+            record.get("activity_date", ""),
+            record.get("location", ""),
+            record.get("status", "") or record.get("promotion_status", ""),
+        ]
+        value = "｜".join(part for part in parts if part)
+        if value:
+            summaries.append(value)
+    return summaries
+
+
+def _xiaoman_activity_sanitize_record_value(key: str, raw_value: Any, max_len: int) -> str:
+    value = _clean_text(raw_value, max_len=max_len)
+    if not value:
+        return ""
+    if key == "table_role" and value not in XIAOMAN_ACTIVITY_TABLE_ROLES:
+        return ""
+    if key == "record_ref" and not re.fullmatch(r"(activity_plan|activity_occurrence):[0-9a-f]{12}", value):
+        return ""
+
+    lower = value.lower()
+    forbidden_tokens = [
+        "postgres://",
+        "postgresql://",
+        "tenant_access_token",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "app_secret",
+        "client_secret",
+        "authorization",
+        "bearer ",
+        "qiwe_token",
+        "qiwe_guid",
+        "feishu_app_secret",
+        "lark_app_secret",
+        "base_token",
+        "table_id",
+    ]
+    if any(token in lower for token in forbidden_tokens):
+        return ""
+    if re.search(r"https?://", lower):
+        return ""
+    if re.search(r"\b(?:tbl|rec)[A-Za-z0-9]{8,}\b", value):
+        return ""
+    return value
+
+
 def _xiaoman_activity_select_record(args: dict[str, Any]) -> dict[str, Any]:
     activity = args.get("activity")
     if isinstance(activity, dict):
-        return activity
+        records = _xiaoman_activity_sanitize_records([activity])
+        return records[0] if records else {}
 
     records = args.get("records")
     if not isinstance(records, list):
         return {}
 
     selected_ref = _clean_text(args.get("selected_record_ref"), max_len=240)
-    candidates = [record for record in records if isinstance(record, dict)]
+    candidates = _xiaoman_activity_sanitize_records(records)
     if selected_ref:
         for record in candidates:
             if _clean_text(record.get("record_ref"), max_len=240) == selected_ref:
