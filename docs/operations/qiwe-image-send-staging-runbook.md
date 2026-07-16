@@ -51,8 +51,10 @@ exist with reviewed ownership and permissions.
 
 After readiness passes, run this from the reviewed staging release root. The phase must
 use the packaged `sidecar/qintopia-message-sidecar` binary and match the owner-approved
-binary SHA-256; it will not accept arbitrary binary paths, owner/group/world-writable
-binary paths, symlinks, a changed digest before child process spawn, or fall back to
+binary SHA-256 and release SHA under
+`/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>`; it will not
+accept arbitrary binary paths, source checkouts, owner/group/world-writable binary
+paths, symlinks, a changed digest before child process spawn, or fall back to
 `cargo run`. It validates the staging binary, env allowlist, owner phrase, database
 hash, webhook readiness, and allowlist counts without claiming a work item, opening a
 QiWe upload, or reading callback stdin:
@@ -63,6 +65,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=preflight \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
 QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
 ```
@@ -81,6 +84,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=upload \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
 QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh
@@ -105,6 +109,7 @@ QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send \
 QINTOPIA_QIWE_IMAGE_STAGING_PHASE=callback \
 QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256='<same approved staging database URL sha256>' \
+QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<same approved staging release sha>' \
 QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<same approved staging sidecar binary sha256>' \
 QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<same approved send-ready UUID>' \
 deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh

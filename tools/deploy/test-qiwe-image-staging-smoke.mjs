@@ -18,6 +18,7 @@ const evidenceChecker = path.join(
   "tools/deploy/check-qiwe-image-staging-evidence.mjs"
 );
 const workItemId = "7cd7d739-cd77-4b38-97f7-dcd57eb9475a";
+const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const databaseUrl =
   "postgres://staging-user:private-password@127.0.0.1:5432/qintopia_staging";
 const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex");
@@ -50,10 +51,10 @@ try {
       "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
       "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1",
       `QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`,
-      "QIWE_API_URL=https://manager.qiweapi.com/qiwe/api/qw/doApi",
+      "QIWE_API_URL=https://qiwe.example.test/qiwe/api/qw/doApi",
       "QIWE_TOKEN=fake-qiwe-token-must-not-appear",
       "QIWE_GUID=fake-device-guid-must-not-appear",
-      "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS=manager.qiweapi.com",
+      "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS=qiwe.example.test",
       "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test",
       "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=isolated-group-must-not-appear",
       "",
@@ -127,6 +128,8 @@ esac
     QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE: envFile,
     QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256: databaseHash,
     QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+    QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA: releaseSha,
+    QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_TEST_MODE: "1",
     QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: workItemId,
     QINTOPIA_UNRELATED_RUNTIME_SECRET: "ambient-unrelated-secret",
   };
@@ -142,6 +145,28 @@ esac
       input,
       encoding: "utf8",
     });
+
+  const sourceCheckoutPreflight = runSmoke("preflight", {
+    QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_TEST_MODE: "0",
+    QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID: "",
+  });
+  if (sourceCheckoutPreflight.status === 0) {
+    throw new Error("expected source checkout staging smoke to fail closed");
+  }
+  if (
+    !`${sourceCheckoutPreflight.stdout}\n${sourceCheckoutPreflight.stderr}`.includes(
+      "qintopia-agent-os-staging-releases/<approved 40-hex sha>"
+    )
+  ) {
+    throw new Error("source checkout failure did not enforce fixed release root");
+  }
+  if (
+    `${sourceCheckoutPreflight.stdout}\n${sourceCheckoutPreflight.stderr}`.includes(
+      databaseUrl
+    )
+  ) {
+    throw new Error("source checkout failure exposed staging database URL");
+  }
 
   const parseEvidence = (result) =>
     result.stdout

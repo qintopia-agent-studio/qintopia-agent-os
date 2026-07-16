@@ -16,6 +16,9 @@ PHASE="${QINTOPIA_QIWE_IMAGE_STAGING_PHASE:-}"
 WORK_ITEM_ID="${QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID:-}"
 EXPECTED_DATABASE_HASH="${QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256:-}"
 EXPECTED_SIDECAR_HASH="${QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256:-}"
+EXPECTED_RELEASE_SHA="${QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA:-}"
+TEST_MODE="${QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_TEST_MODE:-0}"
+STAGING_RELEASE_PARENT="/home/ubuntu/qintopia-agent-os-staging-releases"
 
 if [[ -z "$ENV_FILE" || ! -f "$ENV_FILE" || "$ENV_FILE" != /* || "$ENV_FILE" != *staging* ]]; then
   echo "QINTOPIA_QIWE_IMAGE_STAGING_ENV_FILE must be an existing absolute path containing staging" >&2
@@ -37,6 +40,16 @@ if [[ ! "$EXPECTED_SIDECAR_HASH" =~ ^[0-9a-f]{64}$ ]]; then
   exit 1
 fi
 
+if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
+  exit 1
+fi
+
+if [[ "$TEST_MODE" != "0" && "$TEST_MODE" != "1" ]]; then
+  echo "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_TEST_MODE must be 0 or 1" >&2
+  exit 1
+fi
+
 if [[ "$PHASE" != "preflight" ]] && ! python3 - "$WORK_ITEM_ID" <<'PY'
 import sys
 import uuid
@@ -50,6 +63,28 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+if [[ "$TEST_MODE" == "0" ]]; then
+  if [[ "$MONOREPO_ROOT" != "${STAGING_RELEASE_PARENT}/${EXPECTED_RELEASE_SHA}" ]]; then
+    echo "QiWe staging smoke must run from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>" >&2
+    exit 1
+  fi
+else
+  case "$MONOREPO_ROOT" in
+    /private/tmp/*|/tmp/*) ;;
+    *)
+      echo "QiWe staging smoke test mode may run only from a temporary checkout" >&2
+      exit 1
+      ;;
+  esac
+  case "$ENV_FILE" in
+    /private/tmp/*|/tmp/*|/private/var/folders/*|/var/folders/*) ;;
+    *)
+      echo "QiWe staging smoke test mode may read only a temporary fake env file" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 cd "$MONOREPO_ROOT"
 
@@ -133,8 +168,10 @@ import sys
 from urllib.parse import unquote, urlparse
 
 value = sys.stdin.read()
+parsed = urlparse(value)
 print(hashlib.sha256(value.encode("utf-8")).hexdigest())
 print(unquote(urlparse(value).path).lstrip("/").lower())
+print(parsed.hostname or "")
 ')
 if [[ "${database_facts[0]:-}" != "$EXPECTED_DATABASE_HASH" ]]; then
   echo "staging database URL hash does not match the approved command" >&2
@@ -143,6 +180,23 @@ fi
 if [[ "${database_facts[1]:-}" != *staging* ]]; then
   echo "staging database name must contain staging" >&2
   exit 1
+fi
+if [[ "$TEST_MODE" == "1" && "${database_facts[2]:-}" != "127.0.0.1" && "${database_facts[2]:-}" != "localhost" ]]; then
+  echo "QiWe staging smoke test mode requires a loopback fake database URL" >&2
+  exit 1
+fi
+
+if [[ "$TEST_MODE" == "1" ]]; then
+  readarray -t qiwe_api_facts < <(printf '%s' "${QIWE_API_URL:-}" | python3 -c '
+import sys
+from urllib.parse import urlparse
+
+print(urlparse(sys.stdin.read()).hostname or "")
+')
+  if [[ "${qiwe_api_facts[0]:-}" != "127.0.0.1" && "${qiwe_api_facts[0]:-}" != "localhost" && "${qiwe_api_facts[0]:-}" != *.example.test ]]; then
+    echo "QiWe staging smoke test mode requires a fake loopback or example.test QiWe API host" >&2
+    exit 1
+  fi
 fi
 
 SIDECAR_BIN="${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar"
@@ -153,7 +207,7 @@ fi
 
 verify_sidecar_binary() {
   local label="$1"
-  readarray -t sidecar_facts < <(python3 - "$MONOREPO_ROOT" "$SIDECAR_BIN" <<'PY'
+  readarray -t sidecar_facts < <(python3 - "$MONOREPO_ROOT" "$SIDECAR_BIN" "$EXPECTED_RELEASE_SHA" "$TEST_MODE" <<'PY'
 import hashlib
 import os
 import stat
@@ -161,6 +215,8 @@ import sys
 
 root = sys.argv[1]
 path = sys.argv[2]
+expected_release_sha = sys.argv[3]
+test_mode = sys.argv[4]
 parent = os.path.dirname(path)
 release_root_parent = os.path.dirname(root)
 
@@ -170,9 +226,16 @@ if not os.path.isabs(root) or not os.path.isabs(path):
 if os.path.commonpath([root, path]) != root:
     print("outside_release_root")
     sys.exit(0)
+if test_mode == "0":
+    if (
+        release_root_parent != "/home/ubuntu/qintopia-agent-os-staging-releases"
+        or os.path.basename(root) != expected_release_sha
+    ):
+        print("not_fixed_release_root")
+        sys.exit(0)
 
 checked_paths = []
-if os.path.basename(release_root_parent) == "qintopia-agent-os-staging-releases":
+if test_mode == "0":
     checked_paths.append((release_root_parent, "directory", False))
 checked_paths.extend((
     (root, "directory", False),
@@ -220,6 +283,10 @@ PY
   fi
   if [[ "${sidecar_facts[0]:-}" == "path_not_absolute" || "${sidecar_facts[0]:-}" == "outside_release_root" ]]; then
     echo "packaged sidecar binary must stay under the fixed staging release root before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "not_fixed_release_root" ]]; then
+    echo "packaged sidecar binary must come from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha> before ${label}" >&2
     exit 1
   fi
   if [[ "${sidecar_facts[0]:-}" == "symlink" ]]; then
