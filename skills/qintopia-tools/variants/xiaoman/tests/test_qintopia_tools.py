@@ -510,6 +510,26 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["error"], "xiaoman activity worker returned invalid JSON")
         self.assertNotIn("not-json secret table-id", rendered)
 
+    def test_xiaoman_activity_read_through_rejects_large_output(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_raw_xiaoman_sidecar("x" * (70 * 1024))
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertFalse(report["success"])
+        self.assertEqual(report["error"], "xiaoman activity read-through output is too large")
+        self.assertNotIn("x" * 100, rendered)
+
     def test_xiaoman_activity_promotion_brief_generate_promotes_reviewable_record(self):
         self.enable_xiaoman_activity_wrappers()
 

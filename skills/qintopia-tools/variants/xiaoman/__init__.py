@@ -15,10 +15,12 @@ import json
 import logging
 import os
 import re
+import selectors
 import shlex
 import sys
 import subprocess
 import textwrap
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
 from threading import Lock
@@ -110,6 +112,7 @@ XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS = {
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
 }
+XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES = 64 * 1024
 QWEATHER_ALLOWED_MCP_TOOLS = {
     "get_weather_now",
     "get_hourly_weather",
@@ -3350,14 +3353,7 @@ def _xiaoman_activity_run_read_through(
     command: list[str],
 ) -> str:
     try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=_xiaoman_activity_read_through_timeout_seconds(),
-            env=_xiaoman_activity_read_through_env(),
-        )
+        returncode, stdout, timed_out, output_too_large = _xiaoman_activity_run_bounded_read_through(command)
     except FileNotFoundError:
         return _xiaoman_activity_error(
             skill,
@@ -3365,29 +3361,28 @@ def _xiaoman_activity_run_read_through(
             actor_agent=actor_agent,
             operation=operation,
         )
-    except subprocess.TimeoutExpired:
+
+    if timed_out:
         return _xiaoman_activity_error(
             skill,
             "xiaoman activity read-through timed out",
             actor_agent=actor_agent,
             operation=operation,
         )
-
-    stdout = completed.stdout.strip()
-    if completed.returncode != 0:
-        return _xiaoman_activity_error(
-            skill,
-            "xiaoman activity worker command failed",
-            actor_agent=actor_agent,
-            operation=operation,
-            exit_code=completed.returncode,
-        )
-    if len(stdout.encode("utf-8")) > 65536:
+    if output_too_large:
         return _xiaoman_activity_error(
             skill,
             "xiaoman activity read-through output is too large",
             actor_agent=actor_agent,
             operation=operation,
+        )
+    if returncode != 0:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker command failed",
+            actor_agent=actor_agent,
+            operation=operation,
+            exit_code=returncode,
         )
     try:
         report = json.loads(stdout)
@@ -3431,6 +3426,85 @@ def _xiaoman_activity_run_read_through(
         }
     )
     return _json(sanitized)
+
+
+def _xiaoman_activity_run_bounded_read_through(command: list[str]) -> tuple[int, str, bool, bool]:
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=_xiaoman_activity_read_through_env(),
+    )
+    if proc.stdout is None:
+        proc.kill()
+        return 1, "", False, False
+
+    fd = proc.stdout.fileno()
+    os.set_blocking(fd, False)
+    selector = selectors.DefaultSelector()
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    chunks: list[bytes] = []
+    total = 0
+    deadline = time.monotonic() + _xiaoman_activity_read_through_timeout_seconds()
+    timed_out = False
+    output_too_large = False
+
+    try:
+        while True:
+            if total > XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES:
+                output_too_large = True
+                proc.kill()
+                break
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                proc.kill()
+                break
+
+            if proc.poll() is not None:
+                while True:
+                    try:
+                        data = os.read(fd, 4096)
+                    except BlockingIOError:
+                        break
+                    if not data:
+                        break
+                    chunks.append(data)
+                    total += len(data)
+                    if total > XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES:
+                        output_too_large = True
+                        proc.kill()
+                        break
+                break
+
+            events = selector.select(min(remaining, 0.1))
+            for _key, _mask in events:
+                try:
+                    data = os.read(fd, 4096)
+                except BlockingIOError:
+                    continue
+                if not data:
+                    continue
+                chunks.append(data)
+                total += len(data)
+                if total > XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES:
+                    output_too_large = True
+                    proc.kill()
+                    break
+            if output_too_large:
+                break
+    finally:
+        selector.close()
+        proc.stdout.close()
+
+    if proc.poll() is None:
+        proc.kill()
+    returncode = proc.wait()
+    stdout = b"".join(chunks[: XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES // 4096 + 2])
+    stdout = stdout[:XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES]
+    return returncode, stdout.decode("utf-8", errors="replace").strip(), timed_out, output_too_large
 
 
 def _xiaoman_activity_read_through_query_summary(operation: str, payload: dict[str, Any]) -> dict[str, str]:
