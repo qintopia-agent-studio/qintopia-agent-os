@@ -311,6 +311,67 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
         self.assertNotIn("command", report["action"])
 
+    def test_xiaoman_activity_promotion_brief_generate_promotes_reviewable_record(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_promotion_brief_generate(
+                {
+                    "records": [
+                        {
+                            "table_role": "activity_occurrence",
+                            "record_ref": "activity_occurrence:abc123",
+                            "title": "今日共创晚餐",
+                            "activity_date": "2026-07-16",
+                            "start_time": "19:00",
+                            "location": "秦托邦共享厨房",
+                            "status": "待宣传",
+                            "promotion_status": "可宣传",
+                            "material_summary": "适合邻里共创和新朋友参与",
+                            "owner_name": "小满",
+                        }
+                    ],
+                    "audience": "秦托邦成员群",
+                    "promotion_goal": "邀请成员今晚参与共创晚餐",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["promotion_worthiness"], "promote")
+        self.assertTrue(report["human_confirmation_required"])
+        self.assertIn("今日共创晚餐", report["activity_summary"])
+        self.assertIn("秦托邦共享厨房", report["copy_draft"]["group_message"])
+        next_action = report["controlled_next_action"]
+        self.assertEqual(next_action["status"], "ready_for_human_confirmation")
+        self.assertEqual(next_action["after_confirmation_tool"], "qintopia_xiaoman_activity_handoff_create")
+        self.assertTrue(next_action["payload"]["dry_run"])
+        self.assertEqual(next_action["payload"]["source_record_id"], "activity_occurrence:abc123")
+        self.assertIn("does not read Feishu", report["guardrails"][1])
+
+    def test_xiaoman_activity_promotion_brief_generate_holds_missing_fields(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_promotion_brief_generate(
+                {
+                    "activity": {
+                        "table_role": "activity_occurrence",
+                        "record_ref": "activity_occurrence:abc123",
+                        "title": "今日共创晚餐",
+                        "status": "待宣传",
+                    }
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["promotion_worthiness"], "needs_more_info")
+        self.assertEqual(report["controlled_next_action"]["status"], "needs_human_review")
+        self.assertIn("activity_date", report["missing_fields"])
+        self.assertIn("location", report["missing_fields"])
+        self.assertTrue(report["human_confirmation_required"])
+
     def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
         payload = json.loads(
             self.module.handle_qintopia_external_product_kb_search(
@@ -873,6 +934,10 @@ class QintopiaToolsTest(unittest.TestCase):
         handoff_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_HANDOFF_CREATE_SCHEMA["parameters"]
         self.assertEqual(handoff_schema["properties"]["handoff_type"]["enum"], ["visual_asset_request"])
         self.assertEqual(handoff_schema["properties"]["target_agent"]["enum"], ["huabaosi"])
+
+        brief_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_BRIEF_GENERATE_SCHEMA["parameters"]
+        self.assertIn("records", brief_schema["properties"])
+        self.assertIn("activity", brief_schema["properties"])
 
         status_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA["parameters"]
         self.assertEqual(status_schema["required"], ["event_signal_id", "mutation_id", "status"])

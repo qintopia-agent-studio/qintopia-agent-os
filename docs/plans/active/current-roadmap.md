@@ -63,7 +63,8 @@ unless correcting historical evidence.
    - Use the [Xiaoman Hermes-first MVP](xiaoman-hermes-first-mvp.md) to keep the next
      Xiaoman increment focused on thin read tools and Hermes-owned judgment before
      adding more production infrastructure. The first boundary is read-through activity
-     listing for controlled read-only queries; image generation, Feishu writes, QiWe
+     listing for controlled read-only queries plus a local promotion-brief planner that
+     only uses already-read sanitized records; image generation, Feishu writes, QiWe
      sending, and timers remain separate gates.
    - Keep real external send paths disabled until allowlists, runtime config, smoke, and
      rollback are reviewed. Feishu-backed Huabaosi image storage and artifact mirroring

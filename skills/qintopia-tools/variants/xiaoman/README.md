@@ -59,6 +59,10 @@ shared `qintopia` toolset.
   create sidecar commands for AgentOS `event_signals` mutations with `event_signal_id`
   and `mutation_id`; they do not accept Feishu `record_id` / `table_role` as write
   identifiers.
+- `qintopia_xiaoman_activity_promotion_brief_generate`: turns already-read sanitized
+  activity records into a human-reviewable summary, promotion judgment, copy draft, and
+  poster brief. It does not read Feishu, write Postgres, call Huabaosi, publish, or
+  send.
 - `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
   `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
   to `huabaosi.create_visual_asset`.
@@ -82,6 +86,12 @@ Read-through is limited to read-only, non-dry-run operations and returns the wor
 of at most 500 characters. Both wrappers default to dry-run and return a bounded sidecar
 command for the runtime executor. They do not accept Feishu record ids, write Feishu,
 send QiWe messages, or call an external adapter.
+
+For the boss-visible MVP path, Xiaoman first reads today's activity records with
+`qintopia_xiaoman_activity_list_by_date`, then passes the selected sanitized record to
+`qintopia_xiaoman_activity_promotion_brief_generate`. The generated brief always
+requires human confirmation before `qintopia_xiaoman_activity_handoff_create`, image
+generation, queueing, or any send path.
 
 Complaint guardrails:
 

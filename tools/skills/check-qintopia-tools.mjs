@@ -21,6 +21,7 @@ const requiredRegisteredTools = {
     "qintopia_daily_digest_publish",
     "qintopia_xiaoman_activity_record_get",
     "qintopia_xiaoman_activity_list_by_date",
+    "qintopia_xiaoman_activity_promotion_brief_generate",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_handoff_create",

@@ -263,6 +263,10 @@ Use `rg` and `rg --files` for search.
   configured sidecar for read-only, non-dry-run queries and return sanitized
   `record_count`, `records`, and `summaries`; write wrappers must continue to return
   bounded worker commands.
+- `qintopia_xiaoman_activity_promotion_brief_generate` may use only already-read
+  sanitized Xiaoman activity records to produce a human-reviewable summary, promotion
+  judgment, copy draft, and poster brief. It must not read Feishu, write Postgres, call
+  Huabaosi, queue or send QiWe messages, publish, or skip human confirmation.
 - Xiaoman activity lifecycle phase is a Postgres `event_signals` fact. Allowed values
   are `pre_event`, `in_event`, and `post_event`; transitions are forward-only and each
   phase maps to its fixed root/child route. Event-signal root creation must lock and
