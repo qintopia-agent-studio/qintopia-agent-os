@@ -126,6 +126,17 @@ const runProvision = ({ zipPath, releaseRoot, extraEnv = {} }) =>
     }
   );
 
+const runProvisionWithoutTestMode = (extraEnv = {}) =>
+  spawnSync("bash", [script, "--sha", releaseSha], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL: "approved-staging-sidecar-provision",
+      ...extraEnv,
+    },
+    encoding: "utf8",
+  });
+
 const assertFailed = (result, expectedFragment, label) => {
   if (result.status === 0) {
     throw new Error(`${label} unexpectedly passed\nstdout:\n${result.stdout}`);
@@ -237,6 +248,38 @@ try {
     }),
     "path component is a symlink",
     "symlink release root"
+  );
+
+  const existingTargetRoot = path.join(
+    tmpRoot,
+    "existing-target",
+    "qintopia-agent-os-staging-releases"
+  );
+  const existingSidecarDir = path.join(existingTargetRoot, releaseSha, "sidecar");
+  fs.mkdirSync(existingSidecarDir, { recursive: true });
+  assertFailed(
+    runProvision({
+      zipPath: good.zipPath,
+      releaseRoot: existingTargetRoot,
+    }),
+    "staging sidecar directory already exists",
+    "existing sidecar target"
+  );
+
+  assertFailed(
+    runProvisionWithoutTestMode({
+      GITHUB_REPOSITORY: "attacker/example",
+    }),
+    "GITHUB_REPOSITORY override is not allowed",
+    "repository override"
+  );
+
+  assertFailed(
+    runProvisionWithoutTestMode({
+      GITHUB_WORKFLOW: "unreviewed.yml",
+    }),
+    "GITHUB_WORKFLOW override is not allowed",
+    "workflow override"
   );
 
   console.log("Fetch staging sidecar artifact test passed.");

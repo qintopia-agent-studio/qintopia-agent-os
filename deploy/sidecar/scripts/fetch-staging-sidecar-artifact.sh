@@ -21,8 +21,6 @@ Fallback environment:
   GITHUB_TOKEN  Token with read access to Actions artifacts for this private repo.
 
 Optional environment:
-  GITHUB_REPOSITORY  Defaults to qintopia-agent-studio/qintopia-agent-os.
-  GITHUB_WORKFLOW    Defaults to artifacts.yml.
   GITHUB_API_MAX_TIME       Defaults to 240 seconds.
   GITHUB_DOWNLOAD_MAX_TIME  Defaults to 900 seconds.
 
@@ -88,12 +86,23 @@ if [[ "$test_mode" != "1" && -n "$artifact_zip" ]]; then
   exit 2
 fi
 
-repo="${GITHUB_REPOSITORY:-qintopia-agent-studio/qintopia-agent-os}"
-workflow="${GITHUB_WORKFLOW:-artifacts.yml}"
+repo="qintopia-agent-studio/qintopia-agent-os"
+workflow="artifacts.yml"
 artifact_name="qintopia-message-sidecar-staging-linux-x86_64-gnu"
 artifact_target="linux-x86_64-gnu"
 github_api_max_time="${GITHUB_API_MAX_TIME:-240}"
 github_download_max_time="${GITHUB_DOWNLOAD_MAX_TIME:-900}"
+
+if [[ "$test_mode" != "1" ]]; then
+  if [[ -n "${GITHUB_REPOSITORY:-}" && "$GITHUB_REPOSITORY" != "$repo" ]]; then
+    echo "GITHUB_REPOSITORY override is not allowed for staging artifact provision" >&2
+    exit 2
+  fi
+  if [[ -n "${GITHUB_WORKFLOW:-}" && "$GITHUB_WORKFLOW" != "$workflow" ]]; then
+    echo "GITHUB_WORKFLOW override is not allowed for staging artifact provision" >&2
+    exit 2
+  fi
+fi
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -112,9 +121,15 @@ if [[ "$test_mode" != "1" ]]; then
   require_command openssl
 fi
 
+sidecar_dir=""
+provision_complete=0
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
+  if [[ "$provision_complete" != "1" && -n "$sidecar_dir" && -d "$sidecar_dir" ]]; then
+    chmod 0755 "$sidecar_dir" 2>/dev/null || true
+    rm -rf "$sidecar_dir"
+  fi
 }
 trap cleanup EXIT
 chmod 700 "$tmp_dir"
@@ -348,7 +363,6 @@ binary_sha="$(awk '$2 == "qintopia-message-sidecar" {print $1}' "${artifact_dir}
 release_root="${release_root%/}"
 release_dir="${release_root}/${sha}"
 sidecar_dir="${release_dir}/sidecar"
-tmp_sidecar_dir="${release_dir}/.sidecar.$$"
 
 STAGING_RELEASE_ROOT="$release_root" \
 STAGING_RELEASE_DIR="$release_dir" \
@@ -387,11 +401,6 @@ for path in paths:
             raise SystemExit(f"path component has unexpected owner: {current}")
 PY
 
-if [[ -e "$sidecar_dir" ]]; then
-  echo "staging sidecar directory already exists: ${sidecar_dir}" >&2
-  exit 1
-fi
-
 mkdir -p "$release_dir"
 
 STAGING_RELEASE_ROOT="$release_root" \
@@ -412,20 +421,24 @@ for path in (os.environ["STAGING_RELEASE_ROOT"], os.environ["STAGING_RELEASE_DIR
         raise SystemExit(f"path component has unexpected owner: {path}")
 PY
 
-mkdir "$tmp_sidecar_dir"
-cp "${artifact_dir}/qintopia-message-sidecar" "$tmp_sidecar_dir/qintopia-message-sidecar"
-cp "${artifact_dir}/qintopia-message-sidecar.tar.gz" "$tmp_sidecar_dir/qintopia-message-sidecar.tar.gz"
-cp "${artifact_dir}/artifact-manifest.json" "$tmp_sidecar_dir/artifact-manifest.json"
-cp "${artifact_dir}/SHA256SUMS" "$tmp_sidecar_dir/SHA256SUMS"
-chmod 0555 "$tmp_sidecar_dir/qintopia-message-sidecar"
-chmod 0444 "$tmp_sidecar_dir/qintopia-message-sidecar.tar.gz" "$tmp_sidecar_dir/artifact-manifest.json" "$tmp_sidecar_dir/SHA256SUMS"
+if ! mkdir "$sidecar_dir"; then
+  echo "staging sidecar directory already exists: ${sidecar_dir}" >&2
+  exit 1
+fi
+
+cp "${artifact_dir}/qintopia-message-sidecar" "$sidecar_dir/qintopia-message-sidecar"
+cp "${artifact_dir}/qintopia-message-sidecar.tar.gz" "$sidecar_dir/qintopia-message-sidecar.tar.gz"
+cp "${artifact_dir}/artifact-manifest.json" "$sidecar_dir/artifact-manifest.json"
+cp "${artifact_dir}/SHA256SUMS" "$sidecar_dir/SHA256SUMS"
+chmod 0555 "$sidecar_dir/qintopia-message-sidecar"
+chmod 0444 "$sidecar_dir/qintopia-message-sidecar.tar.gz" "$sidecar_dir/artifact-manifest.json" "$sidecar_dir/SHA256SUMS"
 (
-  cd "$tmp_sidecar_dir"
+  cd "$sidecar_dir"
   sha256sum -c SHA256SUMS
 )
-chmod 0555 "$tmp_sidecar_dir"
-mv "$tmp_sidecar_dir" "$sidecar_dir"
+chmod 0555 "$sidecar_dir"
 chmod 0555 "$release_dir"
+provision_complete=1
 
 echo "Provisioned ${artifact_name}"
 echo "Run id: ${run_id}"

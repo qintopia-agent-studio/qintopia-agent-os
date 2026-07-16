@@ -273,6 +273,10 @@ if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
   for (const requiredFragment of [
     "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL",
     "approved-staging-sidecar-provision",
+    'repo="qintopia-agent-studio/qintopia-agent-os"',
+    'workflow="artifacts.yml"',
+    "GITHUB_REPOSITORY override is not allowed",
+    "GITHUB_WORKFLOW override is not allowed",
     "qintopia-message-sidecar-staging-linux-x86_64-gnu",
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
@@ -285,6 +289,8 @@ if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
     "path component is a symlink",
     "path component is group/world writable",
     "path component has unexpected owner",
+    'if ! mkdir "$sidecar_dir"',
+    "provision_complete=1",
     "chmod 0555",
   ]) {
     if (!stagingArtifactFetchScript.includes(requiredFragment)) {
@@ -294,6 +300,8 @@ if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
     }
   }
   for (const forbiddenFragment of [
+    'repo="${GITHUB_REPOSITORY',
+    'workflow="${GITHUB_WORKFLOW',
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
     "systemctl enable",
