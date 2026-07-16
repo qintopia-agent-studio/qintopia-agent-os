@@ -3348,7 +3348,6 @@ def _xiaoman_activity_run_read_through(
         )
 
     stdout = completed.stdout.strip()
-    stderr = completed.stderr.strip()
     if completed.returncode != 0:
         return _xiaoman_activity_error(
             skill,
@@ -3356,7 +3355,6 @@ def _xiaoman_activity_run_read_through(
             actor_agent=actor_agent,
             operation=operation,
             exit_code=completed.returncode,
-            detail=_clean_text(stderr or stdout, max_len=500),
         )
     if len(stdout.encode("utf-8")) > 65536:
         return _xiaoman_activity_error(
@@ -3373,7 +3371,6 @@ def _xiaoman_activity_run_read_through(
             "xiaoman activity worker returned invalid JSON",
             actor_agent=actor_agent,
             operation=operation,
-            detail=_clean_text(stdout, max_len=500),
         )
 
     allowed_keys = {
@@ -3406,8 +3403,6 @@ def _xiaoman_activity_run_read_through(
             "read_through": True,
         }
     )
-    if stderr:
-        sanitized["worker_stderr_summary"] = _clean_text(stderr, max_len=300)
     return _json(sanitized)
 
 

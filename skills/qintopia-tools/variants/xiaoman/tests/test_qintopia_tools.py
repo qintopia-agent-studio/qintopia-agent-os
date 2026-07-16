@@ -126,6 +126,19 @@ class QintopiaToolsTest(unittest.TestCase):
         path.chmod(0o700)
         return path
 
+    def write_raw_xiaoman_sidecar(self, body: str, *, stderr: str = "", exit_code: int = 0) -> Path:
+        path = self.index_dir / "raw-xiaoman-sidecar.py"
+        path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            f"sys.stdout.write({body!r})\n"
+            f"sys.stderr.write({stderr!r})\n"
+            f"sys.exit({exit_code})\n",
+            encoding="utf-8",
+        )
+        path.chmod(0o700)
+        return path
+
     def test_gis_lookup_1_building(self):
         payload = json.loads(self.module.handle_qintopia_gis_location_lookup({"query": "1 栋"}))
 
@@ -310,6 +323,52 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["records"][0]["title"], "今日共创晚餐")
         self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
         self.assertNotIn("command", report["action"])
+
+    def test_xiaoman_activity_read_through_does_not_return_child_error_output(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_raw_xiaoman_sidecar(
+            "postgres://secret-in-stdout",
+            stderr="feishu table token secret-in-stderr",
+            exit_code=2,
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertFalse(report["success"])
+        self.assertEqual(report["error"], "xiaoman activity worker command failed")
+        self.assertNotIn("postgres://secret-in-stdout", rendered)
+        self.assertNotIn("secret-in-stderr", rendered)
+        self.assertNotIn("worker_stderr_summary", report)
+
+    def test_xiaoman_activity_read_through_does_not_return_invalid_json_body(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_raw_xiaoman_sidecar("not-json secret table-id")
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertFalse(report["success"])
+        self.assertEqual(report["error"], "xiaoman activity worker returned invalid JSON")
+        self.assertNotIn("not-json secret table-id", rendered)
 
     def test_xiaoman_activity_promotion_brief_generate_promotes_reviewable_record(self):
         self.enable_xiaoman_activity_wrappers()
