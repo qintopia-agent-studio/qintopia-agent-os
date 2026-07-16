@@ -123,7 +123,7 @@ QINTOPIA_HUABAOSI_IMAGE_MODEL
 QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL
 QINTOPIA_HUABAOSI_IMAGE_API_KEY
 QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base
-QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=0
+QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1
 QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL
 QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA
 QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256
@@ -136,8 +136,11 @@ QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1
 QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
 ```
 
-启用开关默认 `0`。Base token 和 table
-id 必须精确 allowlist；上传前验证文件类型、尺寸、字节数和 hash，上传后通过官方 HTTPS
+图片生成调度开关 `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED` 默认 `0`。
+`QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1` 在这里表示允许 Feishu-backed generated-image
+storage/mirror 边界通过配置校验；它不自动启用 systemd timer。Base token 和 table
+id 必须精确 allowlist。table id 来自 owner-provided Feishu URL 的 `table`
+query 参数，不得把 live 值写入 git。上传前验证文件类型、尺寸、字节数和 hash，上传后通过官方 HTTPS
 API 鉴权回读并逐字节校验。任何失败都不得留下 `approved` 或 `completed` 产物状态。
 
 ## Adapter Protocol
