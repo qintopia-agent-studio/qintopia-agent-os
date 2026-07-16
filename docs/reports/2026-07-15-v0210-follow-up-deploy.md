@@ -64,8 +64,9 @@ The server returned `succeeded`. Read-only systemd inspection then confirmed:
 ## Production Preflight
 
 The no-network production preflight was started once after unit installation. It failed
-closed with `adapter_not_configured`. The report exposed only these public configuration
-names:
+closed with `adapter_not_configured`. At that point the env file had not selected the
+Feishu-backed storage backend, so the adapter used its default HTTP media backend and
+reported only these public configuration names:
 
 - `QINTOPIA_HUABAOSI_IMAGE_PROVIDER`;
 - `QINTOPIA_HUABAOSI_IMAGE_MODEL`;
@@ -75,6 +76,13 @@ names:
 - `QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL`; and
 - `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`.
 
+The correct production canary storage boundary is Feishu Base, not an HTTP media
+endpoint. Follow-up observation on 2026-07-16 found the provider configuration present
+but `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base` and the generated-image Feishu
+Base/table allowlist configuration absent. The owner-provided Feishu generated image URL
+supplies the table id through its `table` query parameter; that live value must be
+applied only through server-side runtime configuration and must not be committed to git.
+
 No values, endpoints, credentials, database URL, or media URI were read into git or
 printed by the preflight. It opened no network or database connection. The worker timer
 remained disabled, so no provider call, media upload, Postgres mutation, image artifact,
@@ -82,11 +90,12 @@ Feishu write, QiWe send, or publication occurred.
 
 ## Remaining Boundary
 
-Production image generation is not active. The owner must provision the provider and
-media configuration plus the exact approval, published release SHA, and production
-database URL hash through the reviewed server configuration channel. After the
-release-local preflight succeeds, the explicit activation command may enable the timer
-for one-item-per-invocation canary processing. The first pending final JPEG must be
-reviewed before broadening the timer window.
+Production image generation is not active. The owner must provision
+`QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`, exact Feishu Base/table
+allowlists, the fixed `huabaosi-generated-image-v1` schema, the Huabaosi profile env
+path, and the image/Feishu release and database hash bindings through the reviewed
+server configuration channel. After the release-local preflight succeeds, the explicit
+activation command may enable the timer for one-item-per-invocation canary processing.
+The first pending final JPEG must be reviewed before broadening the timer window.
 
 QiWe delivery and full Xiaoman end-to-end acceptance remain separate later gates.

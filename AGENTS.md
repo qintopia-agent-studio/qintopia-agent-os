@@ -142,6 +142,10 @@ Use `rg` and `rg --files` for search.
 - Release Please PRs and draft GitHub Releases must be merged or published only through
   an explicit manual owner decision. Do not enable or use auto-merge, automatic release
   publishing, or bot/agent-driven release merging.
+- Do not describe a Xiaoman-adjacent Release as production-complete unless
+  `docs/plans/active/xiaoman-production-completion-gate.md` is satisfied. Infrastructure
+  or activation-ready Releases may ship staging/provisioning/deploy tooling, but they
+  must not be treated as the usable activity-to-QiWe group-send workflow.
 - Before publishing a draft GitHub Release, confirm its tag points to current
   `origin/master`. If `master` advanced after the draft was prepared, do not publish or
   retry the stale tag; validate and publish the next Release Please PR instead.
@@ -185,7 +189,12 @@ Use `rg` and `rg --files` for search.
   `generated_image_artifact_id`; it must read the uploaded bytes back through the
   authenticated Feishu media API and verify the complete JPEG identity before creating a
   pending AgentOS artifact. Do not require a separate media upload/public URL service
-  for this Feishu-backed canary. Feishu automation may notify reviewers or mirror
+  for this Feishu-backed canary. The production image storage backend must be
+  `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`; the generated-image table id
+  comes from the owner-provided Feishu URL's `table` query parameter and must not be
+  committed to git. `QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1` is required by the
+  current production binary for Feishu-backed storage validation, but it does not enable
+  the mirror worker timer by itself. Feishu automation may notify reviewers or mirror
   reviewed status after the row exists, but it must not generate images, approve
   artifacts, become the fact source, call QiWe, or publish.
 - Huabaosi generated-image Feishu mirroring must use the fixed
