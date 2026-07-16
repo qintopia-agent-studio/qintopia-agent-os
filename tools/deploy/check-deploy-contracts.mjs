@@ -319,10 +319,16 @@ if (!exists(stagingRuntimePrerequisiteObservationPath)) {
     "sidecar binary is not executed",
     "no Postgres, Huabaosi, Feishu, QiWe, provider, media, service, timer, release, or network action",
     "path_is_secure",
+    "require_executable",
+    "os.access(path, os.X_OK)",
+    "path_not_executable",
     "reject_owner_writable",
     "path_owner_group_or_world_writable",
     "path_group_or_world_writable",
     "path_is_symlink",
+    "path_parent_is_symlink",
+    "path_parent_group_or_world_writable",
+    "path_parent_unexpected_owner",
     "sidecar_hash_mismatch",
   ]) {
     requireFragment(stagingRuntimePrerequisiteObservationPath, observation, fragment);
@@ -362,10 +368,16 @@ if (!exists(aliangStagingReadinessPath)) {
     "sidecar binary is not executed",
     "no Huabaosi, Postgres, Feishu, QiWe, provider, media, service, or timer action",
     "path_is_secure",
+    "require_executable",
+    "os.access(path, os.X_OK)",
+    "path_not_executable",
     "reject_owner_writable",
     "path_owner_group_or_world_writable",
     "path_group_or_world_writable",
     "path_is_symlink",
+    "path_parent_is_symlink",
+    "path_parent_group_or_world_writable",
+    "path_parent_unexpected_owner",
     "path_unexpected_owner",
     "sidecar_hash_mismatch",
   ]) {
@@ -403,7 +415,9 @@ if (!exists(aliangStagingSmokePath)) {
     "--features huabaosi-staging-adapter",
     "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256 must be a canonical SHA-256",
     "STAGING_ENV_KEYS",
+    "IGNORED_STAGING_ENV_KEYS",
     "load_staging_env",
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "staging database URL hash does not match the approved command",
     "CHILD_ENV",
     "add_child_env",
@@ -418,6 +432,7 @@ if (!exists(aliangStagingSmokePath)) {
     "pending",
     "huabaosi_image_generation_staging_evidence=",
     "emit_sanitized_evidence",
+    "payload = json.load(sys.stdin)",
     "database_url_sha256",
     "content_hash",
     "mime_type",
@@ -443,6 +458,8 @@ if (!exists(aliangStagingSmokePath)) {
     "--use-feishu-base",
     "send-ready",
     "operations-group-message-confirm",
+    "SANITIZED_EVIDENCE_PAYLOAD",
+    "json.loads(os.environ",
   ]) {
     forbidFragment(aliangStagingSmokePath, smoke, fragment);
   }
@@ -581,6 +598,10 @@ if (!exists(stagingRuntimePrerequisiteObservationTestPath)) {
     "ready_for_staging_readiness_smokes",
     "Staging runtime prerequisite observation smoke test passed.",
     "staging-prereq-secret-must-not-appear",
+    "env_file_path_parent_is_symlink",
+    "owner-executable observation should not fail",
+    "non-executable observation should not fail",
+    "sidecar_binary_path_not_executable",
     "sidecar_hash_mismatch",
   ]) {
     requireFragment(stagingRuntimePrerequisiteObservationTestPath, test, fragment);
@@ -598,6 +619,11 @@ if (!exists(aliangStagingReadinessTestPath)) {
     "Huabaosi image staging readiness smoke test passed.",
     "readiness smoke exposed staging env contents",
     "expected owner-writable sidecar to fail readiness",
+    "expected symlink parent path to fail readiness",
+    "expected owner-executable sidecar to pass readiness",
+    "expected non-executable sidecar to fail readiness",
+    "env_file_path_parent_is_symlink",
+    "sidecar_binary_path_not_executable",
     "expected sidecar hash mismatch to fail",
   ]) {
     requireFragment(aliangStagingReadinessTestPath, test, fragment);
@@ -611,6 +637,7 @@ if (!exists(aliangStagingSmokeTestPath)) {
   for (const fragment of [
     "env file command was executed",
     "ambient secret reached child process",
+    "staging-qiwe-token-must-not-reach-huabaosi-child",
     "staging database URL hash does not match the approved command",
     "staging env contains an unsupported key",
     "contains forbidden sensitive output",
@@ -695,11 +722,15 @@ if (!exists(qiweImageStagingReadinessPath)) {
     "no QiWe, Postgres, Feishu, provider, media, service, or timer action",
     "path_is_secure",
     "require_executable",
+    "os.access(path, os.X_OK)",
     "reject_owner_writable",
     "path_not_executable",
     "path_owner_group_or_world_writable",
     "path_group_or_world_writable",
     "path_is_symlink",
+    "path_parent_is_symlink",
+    "path_parent_group_or_world_writable",
+    "path_parent_unexpected_owner",
     "path_unexpected_owner",
     "sidecar_hash_mismatch",
   ]) {
@@ -745,8 +776,6 @@ if (!exists(qiweImageStagingSmokePath)) {
     "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA must be a 40-character lowercase hex SHA",
     "QINTOPIA_QIWE_IMAGE_STAGING_SMOKE_TEST_MODE must be 0 or 1",
     "QiWe staging smoke must run from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>",
-    "QiWe staging smoke test mode may use a GitHub Actions checkout only in CI",
-    "GITHUB_ACTIONS",
     "QiWe staging smoke test mode may read only a temporary fake env file",
     "QiWe staging smoke test mode requires a loopback fake database URL",
     "QiWe staging smoke test mode requires a fake loopback or example.test QiWe API host",
@@ -814,6 +843,8 @@ if (!exists(qiweImageStagingSmokePath)) {
     "cargo run",
     "source_fallback",
     "QINTOPIA_SIDECAR_BIN",
+    "SANITIZED_EVIDENCE_PAYLOAD",
+    "json.loads(os.environ",
   ]) {
     forbidFragment(qiweImageStagingSmokePath, smoke, fragment);
   }
@@ -849,8 +880,11 @@ if (!exists(qiweImageStagingReadinessTestPath)) {
     "expected missing readiness inputs to fail",
     "expected owner-writable sidecar to fail readiness",
     "expected non-executable sidecar to fail readiness",
+    "expected owner-executable sidecar to pass readiness",
+    "expected symlink parent path to fail readiness",
     "ready_for_staging_preflight",
     "readiness smoke exposed staging env contents",
+    "env_file_path_parent_is_symlink",
     "sidecar_binary_path_not_executable",
     "sidecar_hash_mismatch",
   ]) {

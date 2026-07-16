@@ -86,6 +86,13 @@ QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT=https://media.example/upload
 QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL=https://media.example
 QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example
 QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES=10485760
+QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1
+QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1
+QIWE_API_URL=https://qiwe.example
+QIWE_TOKEN=staging-qiwe-token-must-not-reach-huabaosi-child
+QIWE_GUID=staging-qiwe-guid-must-not-reach-huabaosi-child
+QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS=qiwe.example
+QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=staging-group
 `;
 
 writeFile(stagingEnvPath, envContent());

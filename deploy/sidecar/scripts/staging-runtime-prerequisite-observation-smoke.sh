@@ -50,12 +50,38 @@ def add_limitation(report, value):
 
 
 def path_is_secure(
-    path, *, require_regular=False, require_directory=False, reject_owner_writable=False
+    path,
+    *,
+    require_regular=False,
+    require_directory=False,
+    require_executable=False,
+    reject_owner_writable=False,
 ):
     if not os.path.isabs(path):
         return False, "path_not_absolute"
     if "staging" not in path:
         return False, "path_missing_staging_marker"
+    current = os.path.sep
+    for part in path.strip(os.path.sep).split(os.path.sep):
+        current = os.path.join(current, part)
+        try:
+            component_stat = os.lstat(current)
+        except FileNotFoundError:
+            if current == path:
+                return False, "path_missing"
+            return False, "path_parent_missing"
+        is_final = current == path
+        if stat.S_ISLNK(component_stat.st_mode):
+            if is_final:
+                return False, "path_is_symlink"
+            return False, "path_parent_is_symlink"
+        if not is_final:
+            if not stat.S_ISDIR(component_stat.st_mode):
+                return False, "path_parent_not_directory"
+            if component_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+                return False, "path_parent_group_or_world_writable"
+            if component_stat.st_uid not in (0, os.geteuid()):
+                return False, "path_parent_unexpected_owner"
     try:
         path_stat = os.lstat(path)
     except FileNotFoundError:
@@ -66,6 +92,8 @@ def path_is_secure(
         return False, "path_not_regular_file"
     if require_directory and not stat.S_ISDIR(path_stat.st_mode):
         return False, "path_not_directory"
+    if require_executable and not os.access(path, os.X_OK):
+        return False, "path_not_executable"
     writable_mask = stat.S_IWGRP | stat.S_IWOTH
     if reject_owner_writable:
         writable_mask |= stat.S_IWUSR
@@ -84,6 +112,7 @@ def inspect_binary(path):
             candidate,
             require_directory=candidate != path,
             require_regular=candidate == path,
+            require_executable=candidate == path,
             reject_owner_writable=True,
         )
         if not ok:

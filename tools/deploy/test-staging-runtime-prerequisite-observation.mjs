@@ -2,7 +2,6 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
@@ -12,7 +11,7 @@ const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh"
 );
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "staging-runtime-prereq-"));
+const tmpRoot = fs.mkdtempSync(path.join(repoRoot, ".tmp-staging-runtime-prereq-"));
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const envFile = path.join(tmpRoot, "message-sidecar-staging.env");
 const releaseRoot = path.join(tmpRoot, "qintopia-agent-os-staging-releases");
@@ -115,6 +114,71 @@ try {
   ) {
     throw new Error(`ready report is invalid: ${JSON.stringify(report)}`);
   }
+
+  fs.chmodSync(sidecarPath, 0o500);
+  result = runObservation({
+    QINTOPIA_STAGING_RUNTIME_PREREQUISITE_SIDECAR_SHA256: sidecarHash,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `owner-executable observation should not fail\nstderr:\n${result.stderr}`
+    );
+  }
+  report = parseReport(result);
+  if (
+    report.ready_for_staging !== true ||
+    report.sidecar_binary_secure !== true ||
+    report.sidecar_hash_matches !== true
+  ) {
+    throw new Error(`owner-executable report is invalid: ${JSON.stringify(report)}`);
+  }
+  fs.chmodSync(sidecarPath, 0o555);
+
+  const parentLink = path.join(tmpRoot, "linked-staging-parent");
+  fs.symlinkSync(tmpRoot, parentLink, "dir");
+  result = runObservation({
+    QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENV_FILE: path.join(
+      parentLink,
+      "message-sidecar-staging.env"
+    ),
+    QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_RELEASE_ROOT: path.join(
+      parentLink,
+      "qintopia-agent-os-staging-releases"
+    ),
+    QINTOPIA_STAGING_RUNTIME_PREREQUISITE_SIDECAR_SHA256: sidecarHash,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `symlink parent observation should not fail\nstderr:\n${result.stderr}`
+    );
+  }
+  report = parseReport(result);
+  if (
+    report.ready_for_staging !== false ||
+    report.env_file_secure !== false ||
+    !report.limitations.includes("env_file_path_parent_is_symlink")
+  ) {
+    throw new Error(`symlink parent report is invalid: ${JSON.stringify(report)}`);
+  }
+
+  fs.chmodSync(sidecarPath, 0o444);
+  result = runObservation({
+    QINTOPIA_STAGING_RUNTIME_PREREQUISITE_SIDECAR_SHA256: sidecarHash,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `non-executable observation should not fail\nstderr:\n${result.stderr}`
+    );
+  }
+  report = parseReport(result);
+  if (
+    report.ready_for_staging !== false ||
+    report.sidecar_binary_secure !== false ||
+    !report.limitations.includes("sidecar_binary_path_not_executable")
+  ) {
+    throw new Error(`non-executable report is invalid: ${JSON.stringify(report)}`);
+  }
+  fs.chmodSync(sidecarPath, 0o555);
 
   result = runObservation({
     QINTOPIA_STAGING_RUNTIME_PREREQUISITE_SIDECAR_SHA256: "f".repeat(64),

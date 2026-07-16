@@ -2,7 +2,6 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
@@ -12,7 +11,7 @@ const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh"
 );
-const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qiwe-staging-readiness-"));
+const tempRoot = fs.mkdtempSync(path.join(repoRoot, ".tmp-qiwe-staging-readiness-"));
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const envFile = path.join(tempRoot, "message-sidecar-staging.env");
 const releaseRoot = path.join(tempRoot, "qintopia-agent-os-staging-releases");
@@ -118,6 +117,53 @@ try {
   }
   if (`${ready.stdout}\n${ready.stderr}`.includes(secretValue)) {
     throw new Error("readiness smoke exposed staging env contents");
+  }
+
+  fs.chmodSync(sidecarPath, 0o500);
+  const ownerExecutable = runReadiness({
+    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+  });
+  if (ownerExecutable.status !== 0) {
+    throw new Error(
+      `expected owner-executable sidecar to pass readiness\nstdout:\n${ownerExecutable.stdout}\nstderr:\n${ownerExecutable.stderr}`
+    );
+  }
+  const ownerExecutableReport = parseReport(ownerExecutable);
+  if (
+    ownerExecutableReport.success !== true ||
+    ownerExecutableReport.sidecar_binary_secure !== true ||
+    ownerExecutableReport.sidecar_hash_matches !== true
+  ) {
+    throw new Error(
+      `owner-executable report is invalid: ${JSON.stringify(ownerExecutableReport)}`
+    );
+  }
+  fs.chmodSync(sidecarPath, 0o555);
+
+  const parentLink = path.join(tempRoot, "linked-staging-parent");
+  fs.symlinkSync(tempRoot, parentLink, "dir");
+  const symlinkParentEnv = runReadiness({
+    QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENV_FILE: path.join(
+      parentLink,
+      "message-sidecar-staging.env"
+    ),
+    QINTOPIA_QIWE_IMAGE_STAGING_READINESS_RELEASE_ROOT: path.join(
+      parentLink,
+      "qintopia-agent-os-staging-releases"
+    ),
+    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+  });
+  if (symlinkParentEnv.status === 0) {
+    throw new Error("expected symlink parent path to fail readiness");
+  }
+  const symlinkParentReport = parseReport(symlinkParentEnv);
+  if (
+    symlinkParentReport.env_file_secure !== false ||
+    !symlinkParentReport.limitations.includes("env_file_path_parent_is_symlink")
+  ) {
+    throw new Error(
+      `symlink parent report is invalid: ${JSON.stringify(symlinkParentReport)}`
+    );
   }
 
   fs.chmodSync(sidecarPath, 0o444);

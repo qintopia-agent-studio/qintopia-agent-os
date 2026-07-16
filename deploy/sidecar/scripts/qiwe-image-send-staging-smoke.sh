@@ -70,19 +70,6 @@ if [[ "$TEST_MODE" == "0" ]]; then
     exit 1
   fi
 else
-  case "$MONOREPO_ROOT" in
-    /private/tmp/*|/tmp/*) ;;
-    /home/runner/work/*)
-      if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
-        echo "QiWe staging smoke test mode may use a GitHub Actions checkout only in CI" >&2
-        exit 1
-      fi
-      ;;
-    *)
-      echo "QiWe staging smoke test mode may run only from a temporary checkout" >&2
-      exit 1
-      ;;
-  esac
   case "$ENV_FILE" in
     /private/tmp/*|/tmp/*|/private/var/folders/*|/var/folders/*) ;;
     *)
@@ -422,12 +409,12 @@ run_sanitized() {
 emit_sanitized_evidence() {
   local evidence_kind="$1"
 
-  SANITIZED_EVIDENCE_PAYLOAD="$SANITIZED_OUTPUT" python3 - "$evidence_kind" <<'PY'
+  printf '%s' "$SANITIZED_OUTPUT" | python3 -c '
 import json
 import os
 import sys
 
-payload = json.loads(os.environ["SANITIZED_EVIDENCE_PAYLOAD"])
+payload = json.load(sys.stdin)
 evidence_kind = sys.argv[1]
 
 evidence = {
@@ -470,7 +457,7 @@ print(
     "qiwe_image_send_staging_evidence="
     + json.dumps(evidence, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 )
-PY
+' "$evidence_kind"
 }
 
 run_sanitized \

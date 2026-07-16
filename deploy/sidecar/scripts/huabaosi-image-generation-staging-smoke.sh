@@ -55,6 +55,16 @@ STAGING_ENV_KEYS=(
   QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES
 )
 
+IGNORED_STAGING_ENV_KEYS=(
+  QINTOPIA_QIWE_IMAGE_SEND_ENABLED
+  QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY
+  QIWE_API_URL
+  QIWE_TOKEN
+  QIWE_GUID
+  QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS
+  QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS
+)
+
 for key in "${STAGING_ENV_KEYS[@]}"; do
   unset "$key"
 done
@@ -77,17 +87,25 @@ load_staging_env() {
     fi
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
-    case " ${STAGING_ENV_KEYS[*]} " in
-      *" ${key} "*) ;;
-      *)
-        echo "staging env contains an unsupported key at line ${line_number}" >&2
-        return 1
-        ;;
-    esac
     case "$loaded_keys" in
       *"|${key}|"*)
         echo "staging env contains a duplicate key at line ${line_number}" >&2
         return 1
+        ;;
+    esac
+    case " ${STAGING_ENV_KEYS[*]} " in
+      *" ${key} "*) ;;
+      *)
+        case " ${IGNORED_STAGING_ENV_KEYS[*]} " in
+          *" ${key} "*)
+            loaded_keys+="${key}|"
+            continue
+            ;;
+          *)
+            echo "staging env contains an unsupported key at line ${line_number}" >&2
+            return 1
+            ;;
+        esac
         ;;
     esac
     if [[ ${#value} -ge 2 ]]; then
@@ -234,12 +252,12 @@ run_sanitized() {
 emit_sanitized_evidence() {
   local evidence_kind="$1"
 
-  SANITIZED_EVIDENCE_PAYLOAD="$SANITIZED_OUTPUT" python3 - "$evidence_kind" <<'PY'
+  printf '%s' "$SANITIZED_OUTPUT" | python3 -c '
 import json
 import os
 import sys
 
-payload = json.loads(os.environ["SANITIZED_EVIDENCE_PAYLOAD"])
+payload = json.load(sys.stdin)
 evidence_kind = sys.argv[1]
 
 evidence = {
@@ -277,7 +295,7 @@ print(
     "huabaosi_image_generation_staging_evidence="
     + json.dumps(evidence, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 )
-PY
+' "$evidence_kind"
 }
 
 run_sanitized \
