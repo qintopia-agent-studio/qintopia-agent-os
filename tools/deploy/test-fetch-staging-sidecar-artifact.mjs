@@ -11,6 +11,7 @@ const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh"
 );
+const scriptText = fs.readFileSync(script, "utf8");
 const tmpRoot = fs.mkdtempSync(
   path.join(repoRoot, ".tmp-fetch-staging-sidecar-artifact-")
 );
@@ -149,6 +150,22 @@ const assertFailed = (result, expectedFragment, label) => {
 };
 
 try {
+  const downloadConfigMatch = scriptText.match(
+    /download_curl_config=[\s\S]*?\n  \} >"\$download_curl_config"/
+  );
+  if (!downloadConfigMatch) {
+    throw new Error("download curl config block was not found");
+  }
+  if (downloadConfigMatch[0].includes("Authorization: Bearer")) {
+    throw new Error("download curl config must not include an Authorization header");
+  }
+  if (
+    !scriptText.includes('signed_download_url="$(') ||
+    !scriptText.includes('--write-out "%{redirect_url}"')
+  ) {
+    throw new Error("artifact download must capture a signed redirect URL first");
+  }
+
   const good = writeFixtureArtifact("good");
   const releaseRoot = path.join(tmpRoot, "good", "qintopia-agent-os-staging-releases");
   const goodResult = runProvision({ zipPath: good.zipPath, releaseRoot });
@@ -280,6 +297,22 @@ try {
     }),
     "GITHUB_WORKFLOW override is not allowed",
     "workflow override"
+  );
+
+  assertFailed(
+    runProvisionWithoutTestMode({
+      GITHUB_API_MAX_TIME: "1\nproxy = http://127.0.0.1:1",
+    }),
+    "GITHUB_API_MAX_TIME must be a positive integer",
+    "API timeout injection"
+  );
+
+  assertFailed(
+    runProvisionWithoutTestMode({
+      GITHUB_DOWNLOAD_MAX_TIME: "0",
+    }),
+    "GITHUB_DOWNLOAD_MAX_TIME must be between 1 and 3600 seconds",
+    "download timeout range"
   );
 
   console.log("Fetch staging sidecar artifact test passed.");

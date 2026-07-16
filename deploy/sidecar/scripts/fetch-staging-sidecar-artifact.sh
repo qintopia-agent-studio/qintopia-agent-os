@@ -93,6 +93,19 @@ artifact_target="linux-x86_64-gnu"
 github_api_max_time="${GITHUB_API_MAX_TIME:-240}"
 github_download_max_time="${GITHUB_DOWNLOAD_MAX_TIME:-900}"
 
+validate_timeout_seconds() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "${name} must be a positive integer number of seconds" >&2
+    exit 2
+  fi
+  if ((value < 1 || value > 3600)); then
+    echo "${name} must be between 1 and 3600 seconds" >&2
+    exit 2
+  fi
+}
+
 if [[ "$test_mode" != "1" ]]; then
   if [[ -n "${GITHUB_REPOSITORY:-}" && "$GITHUB_REPOSITORY" != "$repo" ]]; then
     echo "GITHUB_REPOSITORY override is not allowed for staging artifact provision" >&2
@@ -102,6 +115,8 @@ if [[ "$test_mode" != "1" ]]; then
     echo "GITHUB_WORKFLOW override is not allowed for staging artifact provision" >&2
     exit 2
   fi
+  validate_timeout_seconds GITHUB_API_MAX_TIME "$github_api_max_time"
+  validate_timeout_seconds GITHUB_DOWNLOAD_MAX_TIME "$github_download_max_time"
 fi
 
 require_command() {
@@ -235,7 +250,6 @@ else
     printf '%s\n' 'fail'
     printf '%s\n' 'silent'
     printf '%s\n' 'show-error'
-    printf '%s\n' 'location'
     printf '%s\n' 'http1.1'
     printf '%s\n' 'header = "Accept: application/vnd.github+json"'
     printf 'header = "Authorization: Bearer %s"\n' "$github_api_token"
@@ -256,9 +270,6 @@ else
     printf '%s\n' 'location'
     printf '%s\n' 'http1.1'
     printf '%s\n' 'continue-at = -'
-    printf '%s\n' 'header = "Accept: application/vnd.github+json"'
-    printf 'header = "Authorization: Bearer %s"\n' "$github_api_token"
-    printf '%s\n' 'header = "X-GitHub-Api-Version: 2022-11-28"'
   } >"$download_curl_config"
   chmod 600 "$download_curl_config"
   unset GITHUB_TOKEN
@@ -295,7 +306,17 @@ else
   fi
 
   zip_path="${tmp_dir}/${artifact_name}.zip"
-  curl --config "$download_curl_config" "$download_url" -o "$zip_path"
+  signed_download_url="$(
+    curl --config "$curl_config" \
+      --output /dev/null \
+      --write-out "%{redirect_url}" \
+      "$download_url"
+  )"
+  if [[ -z "$signed_download_url" ]]; then
+    echo "GitHub artifact download did not return a signed redirect URL" >&2
+    exit 1
+  fi
+  curl --config "$download_curl_config" "$signed_download_url" -o "$zip_path"
   unzip -o -q "$zip_path" -d "$artifact_dir"
 fi
 
