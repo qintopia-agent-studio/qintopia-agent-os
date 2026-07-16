@@ -258,15 +258,11 @@ Use `rg` and `rg --files` for search.
   `xiaoman.create_activity_request` through the operations control plane with
   `requester_agent=default` and `target_agent=xiaoman`; do not bypass capability policy
   by making Xiaoman call its own provider capability directly.
-- `qintopia_xiaoman_activity_list_by_date` is Hermes-first only when
-  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. In that mode it may execute the
+- `qintopia_xiaoman_activity_list_by_date` may execute read-through only when
+  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. In that mode it may run the
   configured sidecar for read-only, non-dry-run queries and return sanitized
   `record_count`, `records`, and `summaries`; write wrappers must continue to return
   bounded worker commands.
-- `qintopia_xiaoman_activity_promotion_brief_generate` may use only already-read
-  sanitized Xiaoman activity records to produce a human-reviewable summary, promotion
-  judgment, copy draft, and poster brief. It must not read Feishu, write Postgres, call
-  Huabaosi, queue or send QiWe messages, publish, or skip human confirmation.
 - Xiaoman activity lifecycle phase is a Postgres `event_signals` fact. Allowed values
   are `pre_event`, `in_event`, and `post_event`; transitions are forward-only and each
   phase maps to its fixed root/child route. Event-signal root creation must lock and

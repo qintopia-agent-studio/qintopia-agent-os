@@ -108,6 +108,7 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ["QINTOPIA_PROFILE_ID"] = "xiaoman"
         os.environ["QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"] = "1"
         os.environ["QINTOPIA_SIDECAR_BIN"] = "/tmp/qintopia-message-sidecar"
+        self.module._xiaoman_activity_validate_read_through_worker = lambda worker_bin: Path(worker_bin)
 
     def write_fake_xiaoman_sidecar(self, report: dict) -> Path:
         path = self.index_dir / "fake-xiaoman-sidecar.py"
@@ -165,6 +166,95 @@ class QintopiaToolsTest(unittest.TestCase):
         )
         path.chmod(0o700)
         return path
+
+    def test_xiaoman_activity_read_through_rejects_non_release_worker(self):
+        fake_sidecar = self.write_raw_xiaoman_sidecar("{}")
+
+        with self.assertRaises(PermissionError):
+            self.module._xiaoman_activity_validate_read_through_worker(str(fake_sidecar))
+
+    def test_xiaoman_activity_read_through_rejects_raw_symlink_worker_path(self):
+        release_root = self.index_dir / "releases"
+        release_dir = release_root / ("a" * 40) / "sidecar"
+        release_dir.mkdir(parents=True)
+        trusted_sidecar = release_dir / "trusted-sidecar"
+        trusted_sidecar.write_text("#!/bin/sh\nprintf '{}'\n", encoding="utf-8")
+        trusted_sidecar.chmod(0o700)
+        symlink_sidecar = release_dir / "qintopia-message-sidecar"
+        symlink_sidecar.symlink_to(trusted_sidecar)
+        self.module.XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT = release_root
+
+        with self.assertRaises(PermissionError):
+            self.module._xiaoman_activity_validate_read_through_worker(str(symlink_sidecar))
+
+    def test_xiaoman_activity_read_through_rejects_owner_writable_worker_path(self):
+        release_root = self.index_dir / "immutable-releases"
+        release_dir = release_root / ("b" * 40) / "sidecar"
+        release_dir.mkdir(parents=True)
+        worker = release_dir / "qintopia-message-sidecar"
+        worker.write_text("#!/bin/sh\nprintf '{}'\n", encoding="utf-8")
+        release_root.chmod(0o555)
+        release_dir.parent.chmod(0o555)
+        release_dir.chmod(0o555)
+        worker.chmod(0o700)
+        self.module.XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT = release_root
+
+        try:
+            with self.assertRaises(PermissionError):
+                self.module._xiaoman_activity_validate_read_through_worker(str(worker))
+        finally:
+            worker.chmod(0o700)
+            release_dir.chmod(0o700)
+            release_dir.parent.chmod(0o700)
+            release_root.chmod(0o700)
+
+    def test_xiaoman_activity_read_through_executes_validated_worker_path(self):
+        self.enable_xiaoman_activity_wrappers()
+        trusted_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "trusted",
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_occurrence",
+                        "record_ref": "activity_occurrence:abc123def456",
+                        "title": "trusted worker",
+                        "activity_date": "2026-07-16",
+                    }
+                ],
+            }
+        )
+        raw_sidecar = self.write_raw_xiaoman_sidecar(
+            json.dumps(
+                {
+                    "success": True,
+                    "records": [
+                        {
+                            "table_role": "activity_occurrence",
+                            "record_ref": "activity_occurrence:abc123def456",
+                            "title": "raw worker should not run",
+                        }
+                    ],
+                }
+            )
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(raw_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+        self.module._xiaoman_activity_validate_read_through_worker = lambda _worker_bin: trusted_sidecar
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["records"][0]["title"], "trusted worker")
 
     def test_gis_lookup_1_building(self):
         payload = json.loads(self.module.handle_qintopia_gis_location_lookup({"query": "1 栋"}))
@@ -424,6 +514,50 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("tbl_secret", rendered)
         self.assertNotIn("postgres://secret", rendered)
 
+    def test_xiaoman_activity_read_through_filters_actual_sensitive_env_values(self):
+        self.enable_xiaoman_activity_wrappers()
+        sensitive_token = "plain-random-token-value"
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN"] = sensitive_token
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS"] = "allowed-token-one,allowed-token-two"
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_occurrence",
+                        "record_ref": "activity_occurrence:abc123def456",
+                        "title": sensitive_token,
+                        "activity_date": "2026-07-16",
+                        "location": "location includes allowed-token-two",
+                        "status": "待宣传",
+                        "notes": "ordinary note",
+                    }
+                ],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-07-16",
+                    "table_role": "activity_occurrence",
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertTrue(report["success"])
+        self.assertNotIn("title", report["records"][0])
+        self.assertNotIn("location", report["records"][0])
+        self.assertEqual(report["records"][0]["notes"], "ordinary note")
+        self.assertNotIn(sensitive_token, rendered)
+        self.assertNotIn("allowed-token-two", rendered)
+
     def test_xiaoman_activity_read_through_does_not_return_raw_payload(self):
         self.enable_xiaoman_activity_wrappers()
         fake_sidecar = self.write_fake_xiaoman_sidecar(
@@ -529,67 +663,6 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertFalse(report["success"])
         self.assertEqual(report["error"], "xiaoman activity read-through output is too large")
         self.assertNotIn("x" * 100, rendered)
-
-    def test_xiaoman_activity_promotion_brief_generate_promotes_reviewable_record(self):
-        self.enable_xiaoman_activity_wrappers()
-
-        report = json.loads(
-            self.module.handle_qintopia_xiaoman_activity_promotion_brief_generate(
-                {
-                    "records": [
-                        {
-                            "table_role": "activity_occurrence",
-                            "record_ref": "activity_occurrence:abc123def456",
-                            "title": "今日共创晚餐",
-                            "activity_date": "2026-07-16",
-                            "start_time": "19:00",
-                            "location": "秦托邦共享厨房",
-                            "status": "待宣传",
-                            "promotion_status": "可宣传",
-                            "material_summary": "适合邻里共创和新朋友参与",
-                            "owner_name": "小满",
-                        }
-                    ],
-                    "audience": "秦托邦成员群",
-                    "promotion_goal": "邀请成员今晚参与共创晚餐",
-                }
-            )
-        )
-
-        self.assertTrue(report["success"])
-        self.assertEqual(report["promotion_worthiness"], "promote")
-        self.assertTrue(report["human_confirmation_required"])
-        self.assertIn("今日共创晚餐", report["activity_summary"])
-        self.assertIn("秦托邦共享厨房", report["copy_draft"]["group_message"])
-        next_action = report["controlled_next_action"]
-        self.assertEqual(next_action["status"], "ready_for_human_confirmation")
-        self.assertEqual(next_action["after_confirmation_tool"], "qintopia_xiaoman_activity_handoff_create")
-        self.assertTrue(next_action["payload"]["dry_run"])
-        self.assertEqual(next_action["payload"]["source_record_id"], "activity_occurrence:abc123def456")
-        self.assertIn("does not read Feishu", report["guardrails"][1])
-
-    def test_xiaoman_activity_promotion_brief_generate_holds_missing_fields(self):
-        self.enable_xiaoman_activity_wrappers()
-
-        report = json.loads(
-            self.module.handle_qintopia_xiaoman_activity_promotion_brief_generate(
-                {
-                    "activity": {
-                        "table_role": "activity_occurrence",
-                        "record_ref": "activity_occurrence:abc123def456",
-                        "title": "今日共创晚餐",
-                        "status": "待宣传",
-                    }
-                }
-            )
-        )
-
-        self.assertTrue(report["success"])
-        self.assertEqual(report["promotion_worthiness"], "needs_more_info")
-        self.assertEqual(report["controlled_next_action"]["status"], "needs_human_review")
-        self.assertIn("activity_date", report["missing_fields"])
-        self.assertIn("location", report["missing_fields"])
-        self.assertTrue(report["human_confirmation_required"])
 
     def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
         payload = json.loads(
@@ -1153,10 +1226,6 @@ class QintopiaToolsTest(unittest.TestCase):
         handoff_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_HANDOFF_CREATE_SCHEMA["parameters"]
         self.assertEqual(handoff_schema["properties"]["handoff_type"]["enum"], ["visual_asset_request"])
         self.assertEqual(handoff_schema["properties"]["target_agent"]["enum"], ["huabaosi"])
-
-        brief_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_BRIEF_GENERATE_SCHEMA["parameters"]
-        self.assertIn("records", brief_schema["properties"])
-        self.assertIn("activity", brief_schema["properties"])
 
         status_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA["parameters"]
         self.assertEqual(status_schema["required"], ["event_signal_id", "mutation_id", "status"])

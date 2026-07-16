@@ -17,6 +17,7 @@ import os
 import re
 import selectors
 import shlex
+import stat
 import sys
 import subprocess
 import textwrap
@@ -78,7 +79,6 @@ DAILY_DIGEST_PUBLISH_TOOL = "qintopia_daily_digest_publish"
 XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_record_get",
     "qintopia_xiaoman_activity_list_by_date",
-    "qintopia_xiaoman_activity_promotion_brief_generate",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_handoff_create",
@@ -113,6 +113,8 @@ XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS = {
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
 }
 XIAOMAN_ACTIVITY_READ_THROUGH_MAX_OUTPUT_BYTES = 64 * 1024
+XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT = Path("/home/ubuntu/qintopia-agent-os-releases")
+XIAOMAN_ACTIVITY_READ_THROUGH_SENSITIVE_ENV_KEYS = XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS - {"PATH"}
 QWEATHER_ALLOWED_MCP_TOOLS = {
     "get_weather_now",
     "get_hourly_weather",
@@ -830,52 +832,6 @@ QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_SUMMARY_SCHEMA = {
         "additionalProperties": False,
     },
 }
-
-
-QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_BRIEF_GENERATE_SCHEMA = {
-    "description": (
-        "Turn already-read Xiaoman activity records into a human-reviewable "
-        "promotion decision, copy draft, and poster brief. This tool does not read "
-        "Feishu, write Postgres, call Huabaosi, publish, or send externally."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "records": {
-                "type": "array",
-                "description": "Sanitized records returned by qintopia_xiaoman_activity_list_by_date or record_get.",
-                "items": {"type": "object", "additionalProperties": True},
-            },
-            "activity": {
-                "type": "object",
-                "description": "One sanitized activity record when the caller has already selected it.",
-                "additionalProperties": True,
-            },
-            "selected_record_ref": {
-                "type": "string",
-                "description": "Optional record_ref to select from records.",
-            },
-            "audience": {
-                "type": "string",
-                "description": "Intended audience, for example 秦托邦成员群.",
-            },
-            "promotion_goal": {
-                "type": "string",
-                "description": "Why Xiaoman is considering promotion.",
-            },
-            "tone": {
-                "type": "string",
-                "description": "Copy tone. Defaults to 温和、清楚、可行动.",
-            },
-            "actor_agent": {
-                "type": "string",
-                "description": "Actor agent requesting the operation. Must be xiaoman.",
-            },
-        },
-        "additionalProperties": False,
-    },
-}
-
 
 QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA = _operations_intake_schema("QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA")
 
@@ -3361,6 +3317,13 @@ def _xiaoman_activity_run_read_through(
             actor_agent=actor_agent,
             operation=operation,
         )
+    except PermissionError:
+        return _xiaoman_activity_error(
+            skill,
+            "xiaoman activity worker binary is not approved for read-through",
+            actor_agent=actor_agent,
+            operation=operation,
+        )
 
     if timed_out:
         return _xiaoman_activity_error(
@@ -3429,8 +3392,10 @@ def _xiaoman_activity_run_read_through(
 
 
 def _xiaoman_activity_run_bounded_read_through(command: list[str]) -> tuple[int, str, bool, bool]:
+    trusted_worker = _xiaoman_activity_validate_read_through_worker(command[0])
+    trusted_command = [str(trusted_worker), *command[1:]]
     proc = subprocess.Popen(
-        command,
+        trusted_command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -3507,6 +3472,56 @@ def _xiaoman_activity_run_bounded_read_through(command: list[str]) -> tuple[int,
     return returncode, stdout.decode("utf-8", errors="replace").strip(), timed_out, output_too_large
 
 
+def _xiaoman_activity_validate_read_through_worker(worker_bin: str) -> Path:
+    worker_path = Path(worker_bin)
+    if not worker_path.is_absolute():
+        raise PermissionError("xiaoman activity read-through worker must be absolute")
+
+    release_root = XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT
+    parts = worker_path.parts
+    root_parts = release_root.parts
+    if (
+        len(parts) != len(root_parts) + 3
+        or parts[: len(root_parts)] != root_parts
+        or not re.fullmatch(r"[0-9a-f]{40}", parts[len(root_parts)])
+        or parts[len(root_parts) + 1] != "sidecar"
+        or parts[len(root_parts) + 2] != "qintopia-message-sidecar"
+    ):
+        raise PermissionError("xiaoman activity read-through worker must be release-local")
+
+    raw_components = []
+    current = Path(parts[0])
+    raw_components.append(current)
+    for part in parts[1:]:
+        current = current / part
+        raw_components.append(current)
+
+    current_uid = os.getuid()
+    for path in raw_components:
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode):
+            raise PermissionError("xiaoman activity read-through worker path must not contain symlinks")
+
+    protected_components = [release_root, worker_path.parent.parent, worker_path.parent, worker_path]
+    for path in protected_components:
+        info = path.lstat()
+        if info.st_mode & 0o222:
+            raise PermissionError("xiaoman activity read-through worker path must not be writable")
+        if info.st_uid not in {0, current_uid}:
+            raise PermissionError("xiaoman activity read-through worker path owner is not trusted")
+
+    resolved = worker_path.resolve(strict=True)
+    if resolved != worker_path:
+        raise PermissionError("xiaoman activity read-through worker must be canonical")
+
+    info = resolved.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise PermissionError("xiaoman activity read-through worker must be a regular file")
+    if not os.access(resolved, os.X_OK):
+        raise PermissionError("xiaoman activity read-through worker must be executable")
+    return resolved
+
+
 def _xiaoman_activity_read_through_query_summary(operation: str, payload: dict[str, Any]) -> dict[str, str]:
     summary = {
         "operation": _clean_text(operation, max_len=80),
@@ -3526,6 +3541,20 @@ def _xiaoman_activity_read_through_env() -> dict[str, str]:
         if value:
             env[key] = value
     return env
+
+
+def _xiaoman_activity_read_through_sensitive_values() -> set[str]:
+    values = set()
+    for key in XIAOMAN_ACTIVITY_READ_THROUGH_SENSITIVE_ENV_KEYS:
+        raw_value = os.environ.get(key)
+        if not raw_value:
+            continue
+        candidates = [raw_value, *re.split(r"[\s,]+", raw_value)]
+        for candidate in candidates:
+            value = _clean_text(candidate, max_len=500)
+            if len(value) >= 6:
+                values.add(value)
+    return values
 
 
 def _xiaoman_activity_sanitize_records(raw_records: Any) -> list[dict[str, str]]:
@@ -3594,176 +3623,10 @@ def _xiaoman_activity_sanitize_record_value(key: str, raw_value: Any, max_len: i
         return ""
     if re.search(r"\b(?:tbl|rec)[A-Za-z0-9]{8,}\b", value):
         return ""
+    for sensitive_value in _xiaoman_activity_read_through_sensitive_values():
+        if value == sensitive_value or sensitive_value in value:
+            return ""
     return value
-
-
-def _xiaoman_activity_select_record(args: dict[str, Any]) -> dict[str, Any]:
-    activity = args.get("activity")
-    if isinstance(activity, dict):
-        records = _xiaoman_activity_sanitize_records([activity])
-        return records[0] if records else {}
-
-    records = args.get("records")
-    if not isinstance(records, list):
-        return {}
-
-    selected_ref = _clean_text(args.get("selected_record_ref"), max_len=240)
-    candidates = _xiaoman_activity_sanitize_records(records)
-    if selected_ref:
-        for record in candidates:
-            if _clean_text(record.get("record_ref"), max_len=240) == selected_ref:
-                return record
-        return {}
-    return candidates[0] if candidates else {}
-
-
-def _xiaoman_activity_record_text(record: dict[str, Any], key: str, max_len: int = 240) -> str:
-    return _clean_text(record.get(key), max_len=max_len)
-
-
-def _xiaoman_activity_missing_brief_fields(record: dict[str, Any]) -> list[str]:
-    missing = []
-    for key in ["title", "activity_date", "location", "record_ref"]:
-        if not _xiaoman_activity_record_text(record, key):
-            missing.append(key)
-    return missing
-
-
-def _xiaoman_activity_promotion_worthiness(record: dict[str, Any], missing_fields: list[str]) -> tuple[str, list[str]]:
-    status = _xiaoman_activity_record_text(record, "status", max_len=120)
-    promotion_status = _xiaoman_activity_record_text(record, "promotion_status", max_len=120)
-    material_summary = _xiaoman_activity_record_text(record, "material_summary", max_len=500)
-    notes = _xiaoman_activity_record_text(record, "notes", max_len=500)
-    text = " ".join([status, promotion_status, material_summary, notes])
-
-    if missing_fields:
-        return "needs_more_info", [f"缺少 {', '.join(missing_fields)}，先补齐再判断是否宣传"]
-    if any(token in text for token in ["不宣传", "取消", "已关闭", "暂停"]):
-        return "skip", ["当前状态显示不适合宣传"]
-    if any(token in text for token in ["待宣传", "可宣传", "招募", "报名", "开放", "需要宣传"]):
-        return "promote", ["活动信息完整，且状态或素材显示需要触达成员"]
-    if material_summary:
-        return "review", ["已有素材或补充信息，可以给人做一次宣传判断"]
-    return "review", ["基础信息完整，但缺少明确宣传状态，需要人工确认价值"]
-
-
-def handle_qintopia_xiaoman_activity_promotion_brief_generate(args: dict[str, Any], **_: Any) -> str:
-    actor_agent = _xiaoman_activity_actor(args)
-    if actor_agent != "xiaoman":
-        return _xiaoman_activity_error(
-            "qintopia_xiaoman_activity_promotion_brief_generate",
-            "actor_agent must be xiaoman",
-            actor_agent=actor_agent,
-        )
-    if not _xiaoman_activity_wrappers_enabled():
-        return _xiaoman_activity_error(
-            "qintopia_xiaoman_activity_promotion_brief_generate",
-            "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1 is required",
-            actor_agent=actor_agent,
-        )
-
-    record = _xiaoman_activity_select_record(args)
-    if not record:
-        return _xiaoman_activity_error(
-            "qintopia_xiaoman_activity_promotion_brief_generate",
-            "activity or records are required",
-            actor_agent=actor_agent,
-        )
-
-    title = _xiaoman_activity_record_text(record, "title")
-    date = _xiaoman_activity_record_text(record, "activity_date", max_len=80)
-    start_time = _xiaoman_activity_record_text(record, "start_time", max_len=80)
-    location = _xiaoman_activity_record_text(record, "location")
-    status = _xiaoman_activity_record_text(record, "status", max_len=120)
-    promotion_status = _xiaoman_activity_record_text(record, "promotion_status", max_len=120)
-    material_summary = _xiaoman_activity_record_text(record, "material_summary", max_len=500)
-    gap_summary = _xiaoman_activity_record_text(record, "gap_summary", max_len=500)
-    owner_name = _xiaoman_activity_record_text(record, "owner_name", max_len=120)
-    record_ref = _xiaoman_activity_record_text(record, "record_ref", max_len=240)
-    table_role = _xiaoman_activity_record_text(record, "table_role", max_len=120)
-    audience = _clean_text(args.get("audience") or "秦托邦成员", max_len=160)
-    promotion_goal = _body_text(args.get("promotion_goal") or "让合适的人知道并决定是否参与", max_len=300)
-    tone = _clean_text(args.get("tone") or "温和、清楚、可行动", max_len=120)
-
-    missing_fields = _xiaoman_activity_missing_brief_fields(record)
-    worthiness, reasons = _xiaoman_activity_promotion_worthiness(record, missing_fields)
-    when = " ".join(part for part in [date, start_time] if part).strip()
-    summary_bits = [title, when, location]
-    if status:
-        summary_bits.append(status)
-    if promotion_status:
-        summary_bits.append(promotion_status)
-    activity_summary = "｜".join(part for part in summary_bits if part)
-
-    headline = title or "待补充活动标题"
-    when_text = when or "时间待确认"
-    location_text = location or "地点待确认"
-    material_text = material_summary or gap_summary or "现场亮点和参与方式待补充"
-    group_message = (
-        f"{headline}：{when_text}，在{location_text}。"
-        f"{material_text}。如果你感兴趣，可以先回复小满确认意向；正式发布前会再人工确认。"
-    )
-
-    next_action: dict[str, Any]
-    if worthiness == "promote" and not missing_fields:
-        next_action = {
-            "status": "ready_for_human_confirmation",
-            "after_confirmation_tool": "qintopia_xiaoman_activity_handoff_create",
-            "dry_run_first": True,
-            "payload": {
-                "source_record_id": record_ref,
-                "handoff_type": "visual_asset_request",
-                "target_agent": "huabaosi",
-                "brief_summary": f"{headline}｜{when_text}｜{location_text}｜{material_text}",
-                "purpose": promotion_goal,
-                "risk_level": "medium",
-                "dry_run": True,
-            },
-        }
-    else:
-        next_action = {
-            "status": "needs_human_review",
-            "suggested_tool": "qintopia_xiaoman_activity_gap_update" if gap_summary else "human_confirm_or_fill_missing_fields",
-            "missing_fields": missing_fields,
-        }
-
-    return _json(
-        {
-            "success": True,
-            "skill": "qintopia_xiaoman_activity_promotion_brief_generate",
-            "actor_agent": actor_agent,
-            "activity_summary": activity_summary,
-            "promotion_worthiness": worthiness,
-            "reasons": reasons,
-            "missing_fields": missing_fields,
-            "copy_draft": {
-                "audience": audience,
-                "tone": tone,
-                "group_message": group_message,
-                "poster_headline": headline,
-                "poster_subtitle": f"{when_text}｜{location_text}",
-            },
-            "poster_brief": {
-                "title": headline,
-                "scene": "秦托邦活动宣传",
-                "core_message": promotion_goal,
-                "visual_direction": "真实、温暖、活动信息清晰；优先突出时间、地点和参与理由",
-                "required_human_checks": ["活动信息准确", "是否适合公开宣传", "是否允许进入受控发送/记录路径"],
-                "source": {
-                    "record_ref": record_ref,
-                    "table_role": table_role,
-                    "owner_name": owner_name,
-                },
-            },
-            "human_confirmation_required": True,
-            "controlled_next_action": next_action,
-            "guardrails": [
-                "uses already-read sanitized activity records only",
-                "does not read Feishu, write Postgres, call Huabaosi, publish, or send externally",
-                "human confirmation is required before handoff, queueing, or any send path",
-            ],
-        }
-    )
 
 
 def handle_qintopia_xiaoman_activity_record_get(args: dict[str, Any], **_: Any) -> str:
@@ -4425,15 +4288,6 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA["description"],
         emoji="📅",
-    )
-    ctx.register_tool(
-        name="qintopia_xiaoman_activity_promotion_brief_generate",
-        toolset="qintopia",
-        schema=QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_BRIEF_GENERATE_SCHEMA,
-        handler=handle_qintopia_xiaoman_activity_promotion_brief_generate,
-        check_fn=check_xiaoman_activity_requirements,
-        description=QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_BRIEF_GENERATE_SCHEMA["description"],
-        emoji="📝",
     )
     ctx.register_tool(
         name="qintopia_xiaoman_activity_status_update",
