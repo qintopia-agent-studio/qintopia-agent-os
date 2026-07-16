@@ -322,10 +322,24 @@ fi
 
 (
   cd "$artifact_dir"
-  test -f artifact-manifest.json
-  test -f SHA256SUMS
-  test -f qintopia-message-sidecar
-  test -f qintopia-message-sidecar.tar.gz
+  python3 - <<'PY'
+import os
+import stat
+
+for path in (
+    "artifact-manifest.json",
+    "SHA256SUMS",
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+):
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode):
+        raise SystemExit(f"artifact entry must not be a symlink: {path}")
+    if not stat.S_ISREG(st.st_mode):
+        raise SystemExit(f"artifact entry must be a regular file: {path}")
+    if st.st_nlink != 1:
+        raise SystemExit(f"artifact entry must not be hardlinked: {path}")
+PY
   sha256sum -c SHA256SUMS
   tar_listing="$(tar -tzf qintopia-message-sidecar.tar.gz)"
   if [[ "$tar_listing" != "qintopia-message-sidecar" ]]; then

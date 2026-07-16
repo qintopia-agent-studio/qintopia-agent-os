@@ -102,6 +102,18 @@ const writeFixtureArtifact = (
   return { zipPath, binarySha };
 };
 
+const writeSymlinkArtifact = (name) => {
+  const artifactDir = path.join(tmpRoot, name, "artifact");
+  fs.mkdirSync(artifactDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactDir, "artifact-manifest.json"), "{}\n");
+  fs.writeFileSync(path.join(artifactDir, "SHA256SUMS"), "\n");
+  fs.writeFileSync(path.join(artifactDir, `${binaryName}.tar.gz`), "not a tar\n");
+  fs.symlinkSync("/etc/passwd", path.join(artifactDir, binaryName));
+  const zipPath = path.join(tmpRoot, `${name}.zip`);
+  run("zip", ["-q", "-y", "-r", zipPath, "."], { cwd: artifactDir });
+  return zipPath;
+};
+
 const runProvision = ({ zipPath, releaseRoot, extraEnv = {} }) =>
   spawnSync(
     "bash",
@@ -252,6 +264,19 @@ try {
     }),
     "SHA256SUMS missing entries",
     "missing tarball checksum"
+  );
+
+  assertFailed(
+    runProvision({
+      zipPath: writeSymlinkArtifact("symlink-artifact-entry"),
+      releaseRoot: path.join(
+        tmpRoot,
+        "symlink-artifact-entry",
+        "qintopia-agent-os-staging-releases"
+      ),
+    }),
+    "artifact entry must not be a symlink",
+    "symlink artifact entry"
   );
 
   const symlinkParent = path.join(tmpRoot, "symlink-release-root");
