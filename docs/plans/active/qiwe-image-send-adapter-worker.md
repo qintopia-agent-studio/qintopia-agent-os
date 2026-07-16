@@ -152,12 +152,12 @@ booleans. They must use `safe_for_chat=false` and must not include:
 ## Production Boundary
 
 This change must not install a service or timer, modify production runtime
-configuration, write Feishu, or contact a real QiWe endpoint. Production artifact and
-server-source builders use default Cargo features and are checked to exclude
+configuration, write Feishu as part of QiWe send, or contact a real QiWe endpoint.
+Production artifact and server-source builders are checked to exclude
 `qiwe-staging-adapter`; their manifest records only the reviewed unrelated
-`cargo_features: [huabaosi-production-adapter]`. Setting runtime environment variables
-cannot add the missing executable path. Rollback keeps default builds,
-`QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`, and both commands unscheduled. Owner-approved
-staging callback evidence and an isolated test group remain required before a
-staging-feature build may be used, and production enablement remains a later separate
-decision.
+`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`. Setting
+runtime environment variables cannot add the missing executable path. Rollback keeps
+default builds, `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`, and both commands unscheduled.
+Owner-approved staging callback evidence and an isolated test group remain required
+before a staging-feature build may be used, and production enablement remains a later
+separate decision.

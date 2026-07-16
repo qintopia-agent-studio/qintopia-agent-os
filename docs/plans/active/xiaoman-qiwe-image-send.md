@@ -114,10 +114,11 @@ target, or missing final confirmation must stop before sending.
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
   The live helpers compile only with the staging-only Cargo feature. Production release
-  artifacts record only the unrelated `huabaosi-production-adapter` feature and cannot
-  execute either QiWe external call; no service, timer, staging endpoint, or production
-  enablement is installed. The guarded staging smoke exists only as an owner-approved
-  one-shot operator entrypoint.
+  artifacts record only the unrelated `huabaosi-production-adapter` and guarded
+  `huabaosi-feishu-mirror-adapter` features and cannot execute either QiWe external
+  call; no QiWe service, timer, staging endpoint, or production enablement is installed.
+  The guarded staging smoke exists only as an owner-approved one-shot operator
+  entrypoint.
 - Callback parsing classifies the raw `msgData` field names into one of four fixed,
   reviewed credential schema ids before deserializing credential values. Reports expose
   only that fixed id and an additional-field count. They reject simultaneous canonical
@@ -214,8 +215,10 @@ evidence template lives in
 ## Production Boundary
 
 Default and production execution do not contain the live QiWe adapter and cannot contact
-QiWe or send messages. A separately built staging-feature binary can write Postgres and
-contact an allowlisted endpoint only with explicit enablement, but this plan does not
-build, install, or enable one, write Feishu, or change production configuration.
-Rollback is to retain default builds and `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no
-current internal Xiaoman timer depends on this adapter.
+QiWe or send messages. Production artifacts may contain the unrelated Huabaosi
+production and Feishu mirror features, but they still exclude `qiwe-staging-adapter`. A
+separately built staging-feature binary can write Postgres and contact an allowlisted
+endpoint only with explicit enablement, but this plan does not build, install, or enable
+one, write Feishu as part of QiWe send, or change QiWe production configuration.
+Rollback is to retain `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no current internal Xiaoman
+timer depends on this adapter.

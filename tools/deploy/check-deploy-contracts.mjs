@@ -699,6 +699,59 @@ if (!exists(aliangProductionRollbackPath)) {
   }
 }
 
+const huabaosiFeishuMirrorActivationPath =
+  "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh";
+if (!exists(huabaosiFeishuMirrorActivationPath)) {
+  addError(
+    `${huabaosiFeishuMirrorActivationPath}: missing Huabaosi Feishu mirror activation command`
+  );
+} else {
+  const activation = readText(huabaosiFeishuMirrorActivationPath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION",
+    "approved-production-huabaosi-feishu-artifact-mirror",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+    '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
+    '"$SYSTEMCTL" enable --now "$WORKER_TIMER"',
+    '"$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"',
+    '"$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"',
+    "requires exactly one persistent enablement flag",
+  ]) {
+    requireFragment(huabaosiFeishuMirrorActivationPath, activation, fragment);
+  }
+  for (const fragment of [
+    "source ",
+    'source "$',
+    ". /etc/qintopia",
+    "eval ",
+    "run-huabaosi-feishu-artifact-mirror-worker",
+    "--apply",
+    "QIWE_",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+  ]) {
+    forbidFragment(huabaosiFeishuMirrorActivationPath, activation, fragment);
+  }
+}
+
+const huabaosiFeishuMirrorRollbackPath =
+  "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh";
+if (exists(huabaosiFeishuMirrorRollbackPath)) {
+  const rollback = readText(huabaosiFeishuMirrorRollbackPath);
+  requireFragment(
+    huabaosiFeishuMirrorRollbackPath,
+    rollback,
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"'
+  );
+  forbidFragment(
+    huabaosiFeishuMirrorRollbackPath,
+    rollback,
+    "QINTOPIA_SIDECAR_ENV_FILE"
+  );
+}
+
 const qiweImageStagingSmokePath =
   "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh";
 const qiweImageStagingReadinessPath =

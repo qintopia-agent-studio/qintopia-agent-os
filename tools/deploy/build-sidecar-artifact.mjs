@@ -13,7 +13,7 @@ const binaryName = "qintopia-message-sidecar";
 const targetTriple = process.env.QINTOPIA_ARTIFACT_TARGET ?? "linux-x86_64-gnu";
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactName = `${binaryName}-${targetTriple}`;
-const cargoFeatures = ["huabaosi-production-adapter"];
+const cargoFeatures = ["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"];
 const artifactDir = path.join(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,

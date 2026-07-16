@@ -78,10 +78,12 @@ review decision。
    `QINTOPIA_DEPLOYED_COMMIT_SHA` 完全一致；
 7. profile env path、媒体 host allowlist 和固定 schema version 校验通过。
 
-生产 artifact 固定只编译 `huabaosi-production-adapter`，不编译
-`huabaosi-feishu-mirror-adapter`、staging 或 QiWe adapter。普通 release
-installer 不安装 mirror preflight/worker/timer unit。release bundle 提供 read-only
-disabled observation 脚本和 non-secret observation preflight command。 `--dry-run`
+生产 artifact 固定只编译 `huabaosi-production-adapter` 和
+`huabaosi-feishu-mirror-adapter`，不编译 staging、QiWe 或 all-features 产物。普通 release
+installer 安装 mirror preflight/worker/timer
+unit，但不自动启用外部写 timer。只有显式 owner activation 可以先跑 release-local
+preflight 再启用 timer。release bundle 提供 enabled/disabled
+observation 脚本和 non-secret observation preflight command。`--dry-run`
 可读取 Postgres 并生成脱敏 preview，但不读取媒体、不请求飞书、不写数据库。`--fixture-mode`
 只验证本地映射。
 
