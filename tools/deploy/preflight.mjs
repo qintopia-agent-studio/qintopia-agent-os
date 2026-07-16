@@ -523,9 +523,12 @@ if (exists("tools/deploy/sidecar-artifact-build-boundary.mjs")) {
   const helper = readText("tools/deploy/sidecar-artifact-build-boundary.mjs");
   for (const requiredFragment of [
     'const approvedTarget = "linux-x86_64-gnu"',
+    "artifactNamePattern.test(artifactName)",
     "QINTOPIA_ARTIFACT_TARGET must be",
-    'process.platform !== "linux"',
-    'process.arch !== "x64"',
+    'platform !== "linux"',
+    'arch !== "x64"',
+    "glibcVersionRuntime",
+    "linux x64 GNU runners",
     'artifactName.includes("/")',
     'artifactName.includes("\\\\")',
     'artifactName.split("-").includes("..")',

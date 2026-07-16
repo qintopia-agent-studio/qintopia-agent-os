@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import {
@@ -15,18 +14,35 @@ try {
   assertThrows(() => resolveApprovedTarget(), "target traversal must be rejected");
 
   process.env.QINTOPIA_ARTIFACT_TARGET = "linux-x86_64-gnu";
-  if (process.platform === "linux" && process.arch === "x64") {
-    if (resolveApprovedTarget() !== "linux-x86_64-gnu") {
-      throw new Error("approved target was not returned");
-    }
-  } else {
-    assertThrows(
-      () => resolveApprovedTarget(),
-      "non-linux-x64 hosts must not build linux-x86_64-gnu artifacts"
-    );
+  if (
+    resolveApprovedTarget({
+      platform: "linux",
+      arch: "x64",
+      glibcVersionRuntime: "2.35",
+    }) !== "linux-x86_64-gnu"
+  ) {
+    throw new Error("approved target was not returned");
   }
+  assertThrows(
+    () =>
+      resolveApprovedTarget({
+        platform: "linux",
+        arch: "x64",
+        glibcVersionRuntime: undefined,
+      }),
+    "linux-x64 non-GNU hosts must not build linux-x86_64-gnu artifacts"
+  );
+  assertThrows(
+    () =>
+      resolveApprovedTarget({
+        platform: "darwin",
+        arch: "x64",
+        glibcVersionRuntime: undefined,
+      }),
+    "non-linux-x64 hosts must not build linux-x86_64-gnu artifacts"
+  );
 
-  const root = path.join(os.tmpdir(), "qintopia-sidecar-artifact-root");
+  const root = path.join(process.cwd(), "dist", ".test-sidecar-artifact-root");
   const inside = resolveContainedArtifactDir(
     root,
     "qintopia-message-sidecar-linux-x86_64-gnu"
@@ -39,6 +55,7 @@ try {
     "../escape",
     "qintopia/escape",
     "qintopia\\escape",
+    ".hidden-artifact",
     "..-escape",
   ]) {
     assertThrows(
