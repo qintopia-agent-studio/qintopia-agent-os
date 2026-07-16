@@ -13,9 +13,15 @@ fi
 
 ENV_FILE="${QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE:-}"
 WORK_ITEM_ID="${QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID:-}"
+EXPECTED_DATABASE_HASH="${QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256:-}"
 
 if [[ -z "$ENV_FILE" || ! -f "$ENV_FILE" || "$ENV_FILE" != /* || "$ENV_FILE" != *staging* ]]; then
   echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE must be an existing absolute path containing staging" >&2
+  exit 1
+fi
+
+if [[ ! "$EXPECTED_DATABASE_HASH" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256 must be a canonical SHA-256" >&2
   exit 1
 fi
 
@@ -36,10 +42,88 @@ SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
 
 cd "$MONOREPO_ROOT"
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+STAGING_ENV_KEYS=(
+  QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED
+  QINTOPIA_SIDECAR_DATABASE_URL
+  QINTOPIA_HUABAOSI_IMAGE_PROVIDER
+  QINTOPIA_HUABAOSI_IMAGE_MODEL
+  QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL
+  QINTOPIA_HUABAOSI_IMAGE_API_KEY
+  QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT
+  QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL
+  QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS
+  QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES
+)
+
+IGNORED_STAGING_ENV_KEYS=(
+  QINTOPIA_QIWE_IMAGE_SEND_ENABLED
+  QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY
+  QIWE_API_URL
+  QIWE_TOKEN
+  QIWE_GUID
+  QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS
+  QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS
+)
+
+for key in "${STAGING_ENV_KEYS[@]}"; do
+  unset "$key"
+done
+
+load_staging_env() {
+  local line=""
+  local line_number=0
+  local key=""
+  local value=""
+  local loaded_keys="|"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    ((line_number += 1))
+    if [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]]; then
+      continue
+    fi
+    if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]]; then
+      echo "staging env contains an invalid assignment at line ${line_number}" >&2
+      return 1
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case "$loaded_keys" in
+      *"|${key}|"*)
+        echo "staging env contains a duplicate key at line ${line_number}" >&2
+        return 1
+        ;;
+    esac
+    case " ${STAGING_ENV_KEYS[*]} " in
+      *" ${key} "*) ;;
+      *)
+        case " ${IGNORED_STAGING_ENV_KEYS[*]} " in
+          *" ${key} "*)
+            loaded_keys+="${key}|"
+            continue
+            ;;
+          *)
+            echo "staging env contains an unsupported key at line ${line_number}" >&2
+            return 1
+            ;;
+        esac
+        ;;
+    esac
+    if [[ ${#value} -ge 2 ]]; then
+      if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+        value="${value:1:${#value}-2}"
+      elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+    fi
+    export "${key}=${value}"
+    loaded_keys+="${key}|"
+  done <"$ENV_FILE"
+}
+
+load_staging_env
+
+export QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation
+export QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256="$EXPECTED_DATABASE_HASH"
 
 if [[ "${QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED:-}" != "1" ]]; then
   echo "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1 is required for a reviewed staging smoke" >&2
@@ -51,13 +135,20 @@ if [[ -z "${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-database_name="$(printf '%s' "$QINTOPIA_SIDECAR_DATABASE_URL" | python3 -c '
+readarray -t database_facts < <(printf '%s' "$QINTOPIA_SIDECAR_DATABASE_URL" | python3 -c '
+import hashlib
 import sys
 from urllib.parse import unquote, urlparse
 
-print(unquote(urlparse(sys.stdin.read()).path).lstrip("/"))
-')"
-if [[ "$database_name" != *staging* ]]; then
+value = sys.stdin.read()
+print(hashlib.sha256(value.encode("utf-8")).hexdigest())
+print(unquote(urlparse(value).path).lstrip("/").lower())
+')
+if [[ "${database_facts[0]:-}" != "$EXPECTED_DATABASE_HASH" ]]; then
+  echo "staging database URL hash does not match the approved command" >&2
+  exit 1
+fi
+if [[ "${database_facts[1]:-}" != *staging* ]]; then
   echo "staging database name must contain staging" >&2
   exit 1
 fi
@@ -75,12 +166,38 @@ else
   )
 fi
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
+CHILD_ENV=()
 
-assert_no_sensitive_output() {
+add_child_env() {
+  local key="$1"
+  local value="$2"
+  CHILD_ENV+=("${key}=${value}")
+}
+
+add_child_env_if_set() {
+  local key="$1"
+  if [[ -n "${!key:-}" ]]; then
+    CHILD_ENV+=("${key}=${!key}")
+  fi
+}
+
+add_child_env PATH "${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+add_child_env HOME "${HOME:-/tmp}"
+add_child_env TMPDIR "${TMPDIR:-/tmp}"
+add_child_env_if_set CARGO_HOME
+add_child_env_if_set RUSTUP_HOME
+add_child_env_if_set SSL_CERT_FILE
+add_child_env_if_set SSL_CERT_DIR
+
+for key in "${STAGING_ENV_KEYS[@]}"; do
+  add_child_env "$key" "${!key:-}"
+done
+add_child_env QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL "$QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL"
+add_child_env QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256 "$QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256"
+
+assert_no_sensitive_text() {
   local label="$1"
-  local file="$2"
+  local text="$2"
   local forbidden=(
     "tenant_access_token"
     "message_id"
@@ -105,21 +222,90 @@ assert_no_sensitive_output() {
 
   local value
   for value in "${forbidden[@]}"; do
-    if [[ -n "$value" ]] && grep -Fq -- "$value" "$file"; then
-      echo "${label} leaked forbidden output" >&2
+    if [[ -n "$value" && "$text" == *"$value"* ]]; then
+      echo "${label} contains forbidden sensitive output" >&2
       exit 1
     fi
   done
 }
 
-preflight_output="$tmp_dir/preflight.json"
-"${BIN_CMD[@]}" huabaosi-image-generation-preflight >"$preflight_output"
-python3 - "$preflight_output" <<'PY'
+SANITIZED_OUTPUT=""
+
+run_sanitized() {
+  local label="$1"
+  local output=""
+  local status=0
+  shift
+
+  set +e
+  output="$(env -i "${CHILD_ENV[@]}" "$@" 2>&1)"
+  status=$?
+  set -e
+  assert_no_sensitive_text "$label output" "$output"
+  if [[ $status -ne 0 ]]; then
+    echo "${label} failed; inspect the protected staging runner locally" >&2
+    exit 1
+  fi
+  SANITIZED_OUTPUT="$output"
+}
+
+emit_sanitized_evidence() {
+  local evidence_kind="$1"
+
+  printf '%s' "$SANITIZED_OUTPUT" | python3 -c '
+import json
+import os
+import sys
+
+payload = json.load(sys.stdin)
+evidence_kind = sys.argv[1]
+
+evidence = {
+    "action_status": payload["action_status"],
+    "database_url_sha256": os.environ["QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256"],
+    "safe_for_chat": payload["safe_for_chat"],
+    "success": payload["success"],
+    "worker": payload["worker"],
+}
+
+if evidence_kind == "preflight":
+    evidence.update({
+        "adapter_compiled": payload["adapter_compiled"],
+        "config_valid": payload["config_valid"],
+        "generation_enabled": payload["generation_enabled"],
+        "phase": "preflight",
+    })
+else:
+    artifact = payload["artifact_preview"]
+    evidence.update({
+        "apply_requested": payload["apply_requested"],
+        "artifact_count": len(payload["artifact_ids"]),
+        "byte_size": artifact["byte_size"],
+        "content_hash": artifact["content_hash"],
+        "dry_run": payload["dry_run"],
+        "height": artifact["height"],
+        "mime_type": artifact["mime_type"],
+        "phase": "generation",
+        "review_status": artifact["review_status"],
+        "work_item_id": os.environ["QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID"],
+        "width": artifact["width"],
+    })
+
+print(
+    "huabaosi_image_generation_staging_evidence="
+    + json.dumps(evidence, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+)
+' "$evidence_kind"
+}
+
+run_sanitized \
+  "image adapter preflight" \
+  "${BIN_CMD[@]}" huabaosi-image-generation-preflight </dev/null
+printf '%s\n' "$SANITIZED_OUTPUT" | python3 -c '
 import json
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as fh:
-    payload = json.load(fh)
+payload = json.load(sys.stdin)
 
 assert payload["success"] is True
 assert payload["worker"] == "huabaosi-image-generation-worker"
@@ -129,20 +315,20 @@ assert payload["adapter_compiled"] is True
 assert payload["config_valid"] is True
 assert payload["missing_configuration"] == []
 assert payload["safe_for_chat"] is False
-PY
-assert_no_sensitive_output "image adapter preflight" "$preflight_output"
+'
+emit_sanitized_evidence "preflight"
 
-worker_output="$tmp_dir/image-worker.json"
-"${BIN_CMD[@]}" run-huabaosi-image-generation-worker \
+run_sanitized \
+  "image generation worker" \
+  "${BIN_CMD[@]}" run-huabaosi-image-generation-worker \
   --once \
   --work-item-id "$WORK_ITEM_ID" \
-  --apply >"$worker_output"
-python3 - "$worker_output" <<'PY'
+  --apply </dev/null
+printf '%s\n' "$SANITIZED_OUTPUT" | python3 -c '
 import json
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as fh:
-    payload = json.load(fh)
+payload = json.load(sys.stdin)
 
 assert payload["success"] is True
 assert payload["worker"] == "huabaosi-image-generation-worker"
@@ -171,7 +357,7 @@ if artifact_uri is not None:
     assert not parsed.username and not parsed.password
     assert not parsed.query and not parsed.fragment
     assert artifact_uri.startswith(f"{public_base}/")
-PY
-assert_no_sensitive_output "image generation worker" "$worker_output"
+'
+emit_sanitized_evidence "generation"
 
 echo "Huabaosi image staging smoke passed: one generated_image remains pending human review; no Feishu, QiWe, or publish adapter was called"

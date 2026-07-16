@@ -9,9 +9,11 @@ import { spawnSync } from "node:child_process";
 const repoRoot = process.cwd();
 const script = path.join(
   repoRoot,
-  "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh"
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh"
 );
-const tempRoot = fs.mkdtempSync(path.join(repoRoot, ".tmp-qiwe-staging-readiness-"));
+const tempRoot = fs.mkdtempSync(
+  path.join(repoRoot, ".tmp-huabaosi-staging-readiness-")
+);
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const envFile = path.join(tempRoot, "message-sidecar-staging.env");
 const releaseRoot = path.join(tempRoot, "qintopia-agent-os-staging-releases");
@@ -21,19 +23,19 @@ const sidecarPath = path.join(
   "sidecar",
   "qintopia-message-sidecar"
 );
-const secretValue = "readiness-env-secret-must-not-appear";
+const secretValue = "huabaosi-readiness-env-secret-must-not-appear";
 
 const runReadiness = (extraEnv = {}) =>
   spawnSync("bash", [script], {
     cwd: repoRoot,
     env: {
       ...process.env,
-      QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE: "1",
-      QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL: "approved-staging-qiwe-image-send",
-      QINTOPIA_QIWE_IMAGE_STAGING_READINESS_TEST_MODE: "1",
-      QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENV_FILE: envFile,
-      QINTOPIA_QIWE_IMAGE_STAGING_READINESS_RELEASE_ROOT: releaseRoot,
-      QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA: releaseSha,
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE: "1",
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL: "approved-staging-image-generation",
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_TEST_MODE: "1",
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENV_FILE: envFile,
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_RELEASE_ROOT: releaseRoot,
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA: releaseSha,
       ...extraEnv,
     },
     encoding: "utf8",
@@ -42,18 +44,18 @@ const runReadiness = (extraEnv = {}) =>
 const parseReport = (result) => {
   const line = result.stdout
     .split(/\r?\n/)
-    .find((entry) => entry.startsWith("qiwe_image_send_staging_readiness="));
+    .find((entry) => entry.startsWith("huabaosi_image_generation_staging_readiness="));
   if (!line) {
     throw new Error(
       `missing readiness report\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
     );
   }
-  return JSON.parse(line.slice("qiwe_image_send_staging_readiness=".length));
+  return JSON.parse(line.slice("huabaosi_image_generation_staging_readiness=".length));
 };
 
 try {
   const missing = runReadiness({
-    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: "0".repeat(64),
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: "0".repeat(64),
   });
   if (missing.status === 0) {
     throw new Error("expected missing readiness inputs to fail");
@@ -76,7 +78,7 @@ try {
     envFile,
     [
       `QINTOPIA_SIDECAR_DATABASE_URL=postgres://user:${secretValue}@127.0.0.1:5432/qintopia_staging`,
-      `MALICIOUS_COMMAND=$(echo ${secretValue})`,
+      `QINTOPIA_HUABAOSI_IMAGE_API_KEY=$(echo ${secretValue})`,
       "",
     ].join("\n"),
     { encoding: "utf8", mode: 0o600 }
@@ -95,7 +97,7 @@ try {
     .digest("hex");
 
   const ready = runReadiness({
-    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
   });
   if (ready.status !== 0) {
     throw new Error(
@@ -121,7 +123,7 @@ try {
 
   fs.chmodSync(sidecarPath, 0o500);
   const ownerExecutable = runReadiness({
-    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
   });
   if (ownerExecutable.status !== 0) {
     throw new Error(
@@ -143,15 +145,15 @@ try {
   const parentLink = path.join(tempRoot, "linked-staging-parent");
   fs.symlinkSync(tempRoot, parentLink, "dir");
   const symlinkParentEnv = runReadiness({
-    QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENV_FILE: path.join(
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENV_FILE: path.join(
       parentLink,
       "message-sidecar-staging.env"
     ),
-    QINTOPIA_QIWE_IMAGE_STAGING_READINESS_RELEASE_ROOT: path.join(
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_RELEASE_ROOT: path.join(
       parentLink,
       "qintopia-agent-os-staging-releases"
     ),
-    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
   });
   if (symlinkParentEnv.status === 0) {
     throw new Error("expected symlink parent path to fail readiness");
@@ -168,7 +170,7 @@ try {
 
   fs.chmodSync(sidecarPath, 0o444);
   const notExecutable = runReadiness({
-    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
   });
   if (notExecutable.status === 0) {
     throw new Error("expected non-executable sidecar to fail readiness");
@@ -186,7 +188,7 @@ try {
 
   fs.chmodSync(sidecarPath, 0o755);
   const ownerWritable = runReadiness({
-    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: sidecarHash,
   });
   if (ownerWritable.status === 0) {
     throw new Error("expected owner-writable sidecar to fail readiness");
@@ -205,7 +207,7 @@ try {
   fs.chmodSync(sidecarPath, 0o555);
 
   const mismatch = runReadiness({
-    QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256: "f".repeat(64),
+    QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: "f".repeat(64),
   });
   if (mismatch.status === 0) {
     throw new Error("expected sidecar hash mismatch to fail");
@@ -220,7 +222,7 @@ try {
     );
   }
 
-  console.log("QiWe image-send staging readiness smoke test passed.");
+  console.log("Huabaosi image staging readiness smoke test passed.");
 } finally {
   for (const candidate of [
     path.dirname(sidecarPath),

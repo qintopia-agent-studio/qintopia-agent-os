@@ -55,6 +55,16 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 - Xiaoman activity image generation starter observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
+- Huabaosi image generation staging readiness smoke:
+
+  ```bash
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE=1 \
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA=<approved-staging-release-sha> \
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256=<approved-staging-sidecar-sha256> \
+  deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh
+  ```
+
 - Huabaosi image generation production state observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
 - Huabaosi generated-image Feishu mirror production observation smoke:
@@ -400,7 +410,8 @@ Use `rg` and `rg --files` for search.
   env file as shell, revalidate the sidecar path and digest immediately before each
   child sidecar command, and run child sidecar commands with a minimal explicit
   environment rather than inheriting ambient operator secrets. Subprocess output must be
-  captured, scanned, and schema-validated through memory and anonymous pipes; no
+  captured, scanned, and schema-validated through memory and anonymous pipes, and raw
+  child JSON must not be passed to a sanitizer through environment variables; no
   subprocess output may be written to a file. Upload and callback evidence may retain
   only the canonical final JPEG `artifact_content_hash` for Huabaosi/QiWe hash matching;
   it must not retain media URI, filename, MD5 value, file size, or callback credentials.
@@ -419,10 +430,20 @@ Use `rg` and `rg --files` for search.
   fixed immutable staging release root, owner-approved release SHA, and packaged sidecar
   binary digest. Its sidecar release directory and binary permission checks must match
   the staging smoke's owner/group/world-writable rejection, while the secret-bearing env
-  file may remain owner-writable. It must not read env file contents, execute the
-  sidecar, connect to Postgres, contact QiWe/Feishu/provider/media endpoints, create
-  release directories, install or enable services/timers, or report secret-bearing
-  values.
+  file may remain owner-writable. Path checks must lstat every parent component and
+  reject symlinks, non-directories, group/world-writable parents, unexpected parent
+  owners, and a sidecar binary the running user cannot execute; tests for these checks
+  must use repository-local temporary roots, not `/tmp`. It must not read env file
+  contents, execute the sidecar, connect to Postgres, contact QiWe/Feishu/provider/media
+  endpoints, create release directories, install or enable services/timers, or report
+  secret-bearing values.
+- `staging-runtime-prerequisite-observation-smoke.sh` is a read-only observation gate
+  for fixed staging env and immutable release prerequisites. It must never read env
+  contents, execute the sidecar, connect to Postgres, call external services, install
+  units, enable timers, or report secret-bearing values. Its path checks must lstat
+  every parent component and reject symlinks, non-directories, group/world-writable
+  parents, unexpected parent owners, and a sidecar binary the running user cannot
+  execute; tests for these checks must use repository-local temporary roots, not `/tmp`.
 - A QiWe webhook bridge for `cmd=20000` may invoke only one explicitly configured
   staging sidecar with fixed `process-qiwe-image-send-callback --apply` arguments. It
   must default disabled, require the exact staging owner phrase and canonical approved
@@ -577,11 +598,35 @@ Use `rg` and `rg --files` for search.
   or publish. Its `missing_configuration` field may contain only fixed public env names
   already documented in `.env.example`; it must never contain values, URLs, hosts, ids,
   or enable flags.
+- `huabaosi-image-generation-staging-readiness-smoke.sh` may only inspect staging env
+  file metadata, immutable staging release root metadata, the exact owner-reviewed
+  release SHA, and packaged sidecar binary SHA-256. It must not read env file contents,
+  execute the sidecar, run Cargo, connect to Postgres, call Huabaosi/provider/media,
+  write Feishu, send QiWe, inspect services, install timers, or reveal paths containing
+  secrets. Path checks must lstat every parent component and reject symlinks,
+  non-directories, group/world-writable parents, unexpected parent owners, and a sidecar
+  binary the running user cannot execute; tests for these checks must use
+  repository-local temporary roots, not `/tmp`. It is a read-only prerequisite before
+  the owner-approved Huabaosi staging generation smoke.
 - `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
   image request after the fail-closed preflight, explicit smoke flag and approval
   phrase, staging-only env file, a repository-reviewed database URL hash allowlist, and
-  an explicit UUID work item id. It must leave the image pending review and must not run
-  in production, add a timer, write Feishu, send QiWe, or publish.
+  an explicit UUID work item id. It must parse the staging env file through a fixed key
+  allowlist without evaluating it as shell. Known unrelated QiWe staging keys may exist
+  in the same env file, but the Huabaosi smoke must ignore them and never pass them to
+  child sidecar/cargo commands. Child commands must run with a minimal explicit
+  environment rather than inheriting ambient operator secrets, keep subprocess output in
+  memory for sensitive-output scanning, emit only sanitized
+  `huabaosi_image_generation_staging_evidence` records for preflight and the pending
+  final JPEG, and pass raw child JSON to evidence sanitizers only through
+  stdin/anonymous pipes. It must leave the image pending review and must not run in
+  production, add a timer, write Feishu, send QiWe, or publish. Evidence may include the
+  staging database URL hash, work item UUID, final JPEG SHA-256, dimensions, byte count,
+  MIME type, and pending review state; it must not include provider/media URLs,
+  filenames, tokens, database URLs, provider responses, Feishu ids, or QiWe credentials.
+  Record the retained result in
+  `docs/reports/templates/huabaosi-image-generation-staging-evidence.md` before it is
+  used as input to QiWe staging evidence.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

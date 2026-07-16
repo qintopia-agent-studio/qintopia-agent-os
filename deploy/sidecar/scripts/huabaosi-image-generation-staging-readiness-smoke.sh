@@ -1,39 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE:-}" != "1" ]]; then
-  echo "QiWe image-send staging readiness skipped: set QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENABLE=1 for the read-only staging check" >&2
+if [[ "${QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE:-}" != "1" ]]; then
+  echo "Huabaosi image staging readiness skipped: set QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE=1 for the read-only staging check" >&2
   exit 0
 fi
 
-if [[ "${QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL:-}" != "approved-staging-qiwe-image-send" ]]; then
-  echo "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send is required" >&2
+if [[ "${QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL:-}" != "approved-staging-image-generation" ]]; then
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation is required" >&2
   exit 1
 fi
 
-TEST_MODE="${QINTOPIA_QIWE_IMAGE_STAGING_READINESS_TEST_MODE:-0}"
+TEST_MODE="${QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_TEST_MODE:-0}"
 if [[ "$TEST_MODE" != "0" && "$TEST_MODE" != "1" ]]; then
-  echo "QINTOPIA_QIWE_IMAGE_STAGING_READINESS_TEST_MODE must be 0 or 1" >&2
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_TEST_MODE must be 0 or 1" >&2
   exit 1
 fi
 
 ENV_FILE="/etc/qintopia/message-sidecar-staging.env"
 RELEASE_ROOT="/home/ubuntu/qintopia-agent-os-staging-releases"
 if [[ "$TEST_MODE" == "1" ]]; then
-  ENV_FILE="${QINTOPIA_QIWE_IMAGE_STAGING_READINESS_ENV_FILE:-$ENV_FILE}"
-  RELEASE_ROOT="${QINTOPIA_QIWE_IMAGE_STAGING_READINESS_RELEASE_ROOT:-$RELEASE_ROOT}"
+  ENV_FILE="${QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENV_FILE:-$ENV_FILE}"
+  RELEASE_ROOT="${QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_RELEASE_ROOT:-$RELEASE_ROOT}"
 fi
 
-EXPECTED_RELEASE_SHA="${QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA:-}"
-EXPECTED_SIDECAR_HASH="${QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256:-}"
+EXPECTED_RELEASE_SHA="${QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA:-}"
+EXPECTED_SIDECAR_HASH="${QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256:-}"
 
 if [[ -n "$EXPECTED_RELEASE_SHA" && ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
   exit 1
 fi
 
 if [[ -n "$EXPECTED_SIDECAR_HASH" && ! "$EXPECTED_SIDECAR_HASH" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256 must be a canonical SHA-256" >&2
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256 must be a canonical SHA-256" >&2
   exit 1
 fi
 
@@ -53,7 +53,7 @@ import sys
 def base_report():
     return {
         "success": False,
-        "worker": "qiwe-image-send-staging-readiness",
+        "worker": "huabaosi-image-generation-staging-readiness",
         "action_status": "not_ready",
         "test_mode": os.environ["READINESS_TEST_MODE"] == "1",
         "env_file_present": False,
@@ -71,7 +71,7 @@ def base_report():
             "read-only path and metadata check",
             "staging env file contents are not read",
             "sidecar binary is not executed",
-            "no QiWe, Postgres, Feishu, provider, media, service, or timer action",
+            "no Huabaosi, Postgres, Feishu, QiWe, provider, media, service, or timer action",
         ],
     }
 
@@ -210,6 +210,6 @@ if (
     report["success"] = True
     report["action_status"] = "ready_for_staging_preflight"
 
-print("qiwe_image_send_staging_readiness=" + json.dumps(report, sort_keys=True, separators=(",", ":")))
+print("huabaosi_image_generation_staging_readiness=" + json.dumps(report, sort_keys=True, separators=(",", ":")))
 sys.exit(0 if report["success"] else 1)
 PY

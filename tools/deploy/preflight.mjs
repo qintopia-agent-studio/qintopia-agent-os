@@ -55,6 +55,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
@@ -177,6 +178,7 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
@@ -470,6 +472,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
   for (const requiredFragment of [
     "qintopia-agent-os-deploy-bundle",
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+    "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
     "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
     "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",

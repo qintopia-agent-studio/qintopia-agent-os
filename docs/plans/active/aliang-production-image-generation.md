@@ -296,12 +296,25 @@ data but are not eligible for the future QiWe JPG send contract.
   `config_valid=false` 表示字段存在但格式或 allowlist 校验失败。
 - `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`
   是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
-  `staging` 的独立 env、代码内 reviewed database URL hash
-  allowlist，以及一个明确的 image request UUID。它只运行一次 image worker 并断言得到一个
+  `staging` 的独立 env、命令传入的 repository-reviewed staging database URL
+  SHA-256，以及一个明确的 image request UUID。它只按固定 env key allowlist 解析 staging
+  env file，不执行 shell；只运行一次 image worker 并断言得到一个
   `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。若将来的 worker
   report 增加 `artifact_uri`，该 URI 只能是无 query/fragment/userinfo 且位于 allowlisted
   public media base 下的 HTTPS 地址；provider/upload
-  endpoint、密钥和数据库 URL 仍必须拒绝输出。
+  endpoint、密钥和数据库 URL 仍必须拒绝输出。smoke stdout 必须包含
+  `huabaosi_image_generation_staging_evidence=<json>`
+  的 preflight 和 generation 两条脱敏记录，并通过
+  `tools/deploy/check-huabaosi-image-staging-evidence.mjs` 校验；记录只可保留 staging
+  database URL hash、work item UUID、最终 JPEG SHA-256、尺寸、字节数、MIME 和 pending
+  review 状态，不得包含媒体 URI、文件名、provider 响应、token 或数据库 URL。通过 checker 后，把脱敏结果记录到
+  `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`，再作为 QiWe
+  staging 发送证据的上游 hash 输入。
+- `deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh`
+  是真实 staging 生成前的只读 gate。它只检查固定 staging env 文件、staging release
+  root、owner-reviewed release SHA 和 packaged sidecar
+  SHA-256；不读取 env 内容、不运行 sidecar/Cargo、不连接 Postgres、不调用 provider/media、飞书或企微。ready 只说明固定 staging
+  release binary 可用于后续 preflight/smoke，不证明 provider endpoint 可达。
 - `deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
   只读验证生产开关和 provider timer 状态一致，并运行配置预检和
   `run-huabaosi-image-generation-worker --once --dry-run` 队列预览。它不 claim work
@@ -323,14 +336,28 @@ data but are not eligible for the future QiWe JPG send contract.
 huabaosi-image-generation-preflight
 ```
 
-预检完成后，仍必须先记录 Required Owner
-Decisions，再在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
-smoke；该 smoke 不得发送、发布或写飞书。
+预检完成后，仍必须先记录 Required Owner Decisions，再运行只读 staging
+readiness；ready 后才可在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
+smoke。该 smoke 不得发送、发布或写飞书。
+
+2026-07-16 Asia/Shanghai 的只读 server 观察确认 `paxon-server` 尚无固定 staging env
+file 和 immutable staging release root；见
+`docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md`。因此下一步先是 owner-reviewed
+staging provisioning，再运行 readiness/smoke，而不是把本地 fake
+smoke 当成真实 staging 证据。Provisioning 步骤见
+`docs/operations/staging-runtime-provisioning-runbook.md`。
 
 ```bash
+QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE=1 \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
+deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh
+
 QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE=1 \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID='<approved staging image request UUID>' \
 deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh
 ```
