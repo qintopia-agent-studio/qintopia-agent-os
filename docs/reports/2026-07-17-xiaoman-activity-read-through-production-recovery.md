@@ -54,15 +54,31 @@ the deploy runner consuming a signed deploy request from COS and switching
 
 The Release existed, but `paxon-server` was still on `v0.2.11`.
 
-### Production Deploy Failed On Sidecar Artifact Feature Validation
+### Production Deploy Failed On The Deployed Runner's Old Sidecar Feature Allowlist
 
-The `v0.2.12` production deploy failed because the server rejected the sidecar artifact:
+The `v0.2.12` production deploy failed because the server-side deploy runner was still
+from `v0.2.11` when it tried to fetch the `v0.2.12` sidecar artifact. That older runner
+allowed only:
+
+```json
+["huabaosi-production-adapter"]
+```
+
+The `v0.2.12` sidecar artifact was built with the newer approved production feature set:
+
+```json
+["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"]
+```
+
+The old runner therefore rejected the new artifact with:
 
 ```text
 artifact manifest Cargo features are not approved for production
 ```
 
-That failure prevented the normal deploy from reaching the Hermes plugin changes.
+That failure prevented the normal deploy from reaching the deploy-bundle and Hermes
+plugin changes. The artifact itself was not missing the mirror feature; the deployed
+fetch/validation script was stale.
 
 ### Runtime Flags Were Missing
 
@@ -188,8 +204,9 @@ to the required runtime state.
 
 ## Follow-Up
 
-- Fix the `v0.2.12` production sidecar artifact feature configuration before attempting
-  another full `sidecar-runtime` deploy.
+- When a Release changes production sidecar feature policy and deploy-runner validation
+  in the same commit, deploy the `deploy-bundle` / runner validation first or run a
+  dry-run that proves the current server runner can fetch the new sidecar artifact.
 - Add a release acceptance check that verifies `paxon-server` `current` equals the
   target Release SHA before declaring a feature live.
 - Add a Xiaoman read-through acceptance check after each relevant deployment:
@@ -200,3 +217,25 @@ to the required runtime state.
 - Treat a command-preview response as not executed. Xiaoman must not claim it has
   checked Feishu records unless read-through actually returned records or an explicit
   zero count.
+
+## Sidecar Artifact Follow-Up Verification
+
+After the deploy-bundle / Hermes-plugin recovery, the server-side runner was already on
+the `v0.2.12` validation code. A production `Deploy Production` dry-run was then
+submitted with:
+
+```text
+release_scope=sidecar-runtime,deploy-bundle,hermes-plugins
+dry_run=true
+runtime_sha=53b893c7bf5ff7411f1ac314329a882169312442
+deploy_bundle_sha=53b893c7bf5ff7411f1ac314329a882169312442
+```
+
+Result: passed.
+
+The `paxon-server` deploy runner downloaded the `v0.2.12` sidecar artifact from COS,
+validated SHA256SUMS, accepted the production Cargo feature set, downloaded the deploy
+bundle, and assembled the dry-run staging release without switching `current`.
+
+This proves the feature allowlist is no longer blocking a full `sidecar-runtime` deploy
+from the current server baseline.
