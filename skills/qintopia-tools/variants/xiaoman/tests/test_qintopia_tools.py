@@ -348,6 +348,44 @@ class QintopiaToolsTest(unittest.TestCase):
             },
         )
 
+    def test_xiaoman_phase_update_matches_event_signal_worker_contract(self):
+        self.enable_xiaoman_activity_wrappers()
+        schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_PHASE_UPDATE_SCHEMA["parameters"]
+
+        self.assertEqual(schema["required"], ["event_signal_id", "mutation_id", "activity_phase"])
+        self.assertNotIn("record_id", schema["properties"])
+        self.assertNotIn("table_role", schema["properties"])
+        self.assertEqual(schema["properties"]["activity_phase"]["enum"], ["pre_event", "in_event", "post_event"])
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_phase_update(
+                {
+                    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+                    "mutation_id": "99999999-9999-4999-8999-999999999999",
+                    "activity_phase": "in_event",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["operation"], "phase-update")
+        self.assertEqual(report["action"]["command"][-1], "--dry-run")
+        command = report["action"]["command"]
+        worker_payload = json.loads(command[command.index("--payload-json") + 1])
+        self.assertEqual(worker_payload, report["payload"])
+        self.assertEqual(
+            set(worker_payload),
+            {
+                "event_signal_id",
+                "mutation_id",
+                "activity_phase",
+                "actor_agent",
+                "operation",
+                "dry_run",
+            },
+        )
+
     def test_xiaoman_mutations_reject_missing_ids_and_overlong_gap(self):
         self.enable_xiaoman_activity_wrappers()
 
@@ -373,6 +411,22 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(missing_mutation["error"], "mutation_id is required")
         self.assertFalse(overlong_gap["success"])
         self.assertEqual(overlong_gap["error"], "gap_summary must be 500 characters or fewer")
+
+    def test_xiaoman_phase_update_rejects_unknown_phase(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_phase_update(
+                {
+                    "event_signal_id": "66666666-6666-4666-8666-666666666666",
+                    "mutation_id": "99999999-9999-4999-8999-999999999999",
+                    "activity_phase": "during",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertEqual(report["error"], "activity_phase is not allowed")
 
     def test_xiaoman_activity_list_by_date_defaults_to_worker_command(self):
         self.enable_xiaoman_activity_wrappers()

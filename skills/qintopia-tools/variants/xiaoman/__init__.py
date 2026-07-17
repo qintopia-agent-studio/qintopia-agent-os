@@ -81,10 +81,12 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_list_by_date",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
+    "qintopia_xiaoman_activity_phase_update",
     "qintopia_xiaoman_activity_handoff_create",
     "qintopia_xiaoman_activity_material_summary",
 ]
 XIAOMAN_ACTIVITY_TABLE_ROLES = ["activity_plan", "activity_occurrence"]
+XIAOMAN_ACTIVITY_PHASES = ["pre_event", "in_event", "post_event"]
 XIAOMAN_ACTIVITY_HANDOFF_TYPES = ["visual_asset_request"]
 XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
 XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
@@ -784,6 +786,36 @@ QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA = {
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
         "required": ["event_signal_id", "mutation_id", "gap_summary"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_PHASE_UPDATE_SCHEMA = {
+    "description": (
+        "Move one Xiaoman-owned Agent OS activity event signal to a forward lifecycle "
+        "phase. It requires internal event and mutation UUIDs, derives the route in "
+        "the sidecar, and never writes Feishu/Base records."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "event_signal_id": {
+                "type": "string",
+                "description": "Internal qintopia_agent_os.event_signals UUID.",
+            },
+            "mutation_id": {
+                "type": "string",
+                "description": "Caller-supplied UUID retained across exact retries.",
+            },
+            "activity_phase": {
+                "type": "string",
+                "enum": XIAOMAN_ACTIVITY_PHASES,
+                "description": "Forward lifecycle phase for the Xiaoman activity signal.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["event_signal_id", "mutation_id", "activity_phase"],
         "additionalProperties": False,
     },
 }
@@ -3232,6 +3264,10 @@ def _xiaoman_activity_command(
     if handoff_type and handoff_type not in XIAOMAN_ACTIVITY_HANDOFF_TYPES:
         return _xiaoman_activity_error(skill, "handoff_type is not allowed", handoff_type=handoff_type)
 
+    activity_phase = _clean_text(payload.get("activity_phase"), max_len=80)
+    if activity_phase and activity_phase not in XIAOMAN_ACTIVITY_PHASES:
+        return _xiaoman_activity_error(skill, "activity_phase is not allowed", activity_phase=activity_phase)
+
     risk_level = _clean_text(payload.get("risk_level"), max_len=80)
     if risk_level and risk_level not in {"low", "medium", "high"}:
         return _xiaoman_activity_error(skill, "risk_level is not allowed", risk_level=risk_level)
@@ -3695,6 +3731,22 @@ def handle_qintopia_xiaoman_activity_gap_update(args: dict[str, Any], **_: Any) 
         args=args,
         payload=payload,
         required=["event_signal_id", "mutation_id", "gap_summary"],
+        writes_business_state=True,
+    )
+
+
+def handle_qintopia_xiaoman_activity_phase_update(args: dict[str, Any], **_: Any) -> str:
+    payload = {
+        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=64),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=64),
+        "activity_phase": _clean_text(args.get("activity_phase"), max_len=80),
+    }
+    return _xiaoman_activity_command(
+        skill="qintopia_xiaoman_activity_phase_update",
+        operation="phase-update",
+        args=args,
+        payload=payload,
+        required=["event_signal_id", "mutation_id", "activity_phase"],
         writes_business_state=True,
     )
 
@@ -4306,6 +4358,15 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA["description"],
         emoji="🧩",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_activity_phase_update",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_ACTIVITY_PHASE_UPDATE_SCHEMA,
+        handler=handle_qintopia_xiaoman_activity_phase_update,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_ACTIVITY_PHASE_UPDATE_SCHEMA["description"],
+        emoji="🧭",
     )
     ctx.register_tool(
         name="qintopia_xiaoman_activity_handoff_create",
