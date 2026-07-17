@@ -101,6 +101,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
     "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
+    "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
   ]) {
     requireFragment(deployBundleBuilderPath, builder, fragment);
   }

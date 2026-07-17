@@ -48,6 +48,19 @@ incident-specific filtering contract is owned by
 non-deployable because it mixes generic reliability changes, conflicting tests, and
 cross-Agent copy.
 
+## Erhua Weather Broadcast Asset
+
+`skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py` is an allowed
+release-owned script input. It renders the canonical forecast-first weather text to
+stdout and performs no external delivery. The deploy bundle may carry it before a live
+profile cutover.
+
+Erhua's actual `cron/jobs.json` is not yet a reviewed bundle input because the
+repository does not contain its schema or sanitized production structure. Do not invent
+that declaration or repoint the live job until a read-only inventory records the job
+shape and current script hashes. Activation and rollback belong in a separate reviewed
+profile cutover.
+
 ## Initial Bundle
 
 `agents/xiaoman/profile-bundle` is the first concrete observation-only bundle. It owns a
