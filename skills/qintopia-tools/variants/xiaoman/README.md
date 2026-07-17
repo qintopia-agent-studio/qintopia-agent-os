@@ -62,6 +62,10 @@ shared `qintopia` toolset.
 - `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
   `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
   to `huabaosi.create_visual_asset`.
+- `qintopia_xiaoman_activity_promotion_review_draft`: turns already-read sanitized
+  activity records into a human-reviewable summary, promotion assessment, copy draft,
+  poster brief, and controlled record-path payload. It does not read Feishu, write
+  Postgres, call Huabaosi, publish, queue, or send.
 
 ## Xiaoman Activity Mutations
 
@@ -83,6 +87,14 @@ commands.
 of at most 500 characters. Both wrappers default to dry-run and return a bounded sidecar
 command for the runtime executor. They do not accept Feishu record ids, write Feishu,
 send QiWe messages, or call an external adapter.
+
+For the boss-visible promotion review path, Xiaoman should first read activity records,
+then pass the selected sanitized record to
+`qintopia_xiaoman_activity_promotion_review_draft`. That draft is a stateless review
+artifact for a human owner: it can suggest the controlled dry-run
+`qintopia_xiaoman_activity_handoff_create` payload to record the next step after human
+confirmation, but it does not approve, generate images, queue group messages, publish,
+or send. Postgres/AgentOS remains the fact source; Hermes only calls the tool.
 
 Complaint guardrails:
 

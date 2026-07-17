@@ -664,6 +664,73 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["error"], "xiaoman activity read-through output is too large")
         self.assertNotIn("x" * 100, rendered)
 
+    def test_xiaoman_activity_promotion_review_draft_returns_human_review_payload(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_promotion_review_draft(
+                {
+                    "records": [
+                        {
+                            "table_role": "activity_occurrence",
+                            "record_ref": "activity_occurrence:abc123def456",
+                            "title": "今日共创晚餐",
+                            "activity_date": "2026-07-17",
+                            "start_time": "19:00",
+                            "location": "秦托邦共享厨房",
+                            "status": "待宣传",
+                            "promotion_status": "可宣传",
+                            "material_summary": "适合邻里共创和新朋友参与",
+                            "owner_name": "小满",
+                        }
+                    ],
+                    "audience": "秦托邦成员群",
+                    "promotion_goal": "邀请成员今晚参与共创晚餐",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["read_model"], "already_read_sanitized_activity_record")
+        self.assertEqual(report["promotion_assessment"], "promote")
+        self.assertIn("今日共创晚餐", report["activity_summary"])
+        self.assertIn("秦托邦共享厨房", report["copy_draft"]["group_message"])
+        self.assertTrue(report["copy_draft"]["human_review_required"])
+        self.assertEqual(report["poster_brief"]["title"], "今日共创晚餐")
+        next_path = report["after_human_confirmation"]
+        self.assertEqual(next_path["status"], "ready_for_human_confirmation")
+        self.assertEqual(next_path["after_confirmation_tool"], "qintopia_xiaoman_activity_handoff_create")
+        self.assertTrue(next_path["dry_run_first"])
+        self.assertTrue(next_path["payload"]["dry_run"])
+        self.assertEqual(next_path["payload"]["target_agent"], "huabaosi")
+        self.assertEqual(next_path["payload"]["source_record_id"], "activity_occurrence:abc123def456")
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("command", rendered)
+        self.assertIn("does not read Feishu", rendered)
+
+    def test_xiaoman_activity_promotion_review_draft_holds_missing_fields(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_promotion_review_draft(
+                {
+                    "activity": {
+                        "table_role": "activity_occurrence",
+                        "record_ref": "activity_occurrence:abc123def456",
+                        "title": "今日共创晚餐",
+                        "status": "待宣传",
+                    }
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["promotion_assessment"], "needs_more_info")
+        self.assertEqual(report["after_human_confirmation"]["status"], "needs_human_review")
+        self.assertIn("activity_date", report["missing_fields"])
+        self.assertIn("location", report["missing_fields"])
+        self.assertNotIn("payload", report["after_human_confirmation"])
+
     def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
         payload = json.loads(
             self.module.handle_qintopia_external_product_kb_search(
@@ -1226,6 +1293,12 @@ class QintopiaToolsTest(unittest.TestCase):
         handoff_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_HANDOFF_CREATE_SCHEMA["parameters"]
         self.assertEqual(handoff_schema["properties"]["handoff_type"]["enum"], ["visual_asset_request"])
         self.assertEqual(handoff_schema["properties"]["target_agent"]["enum"], ["huabaosi"])
+
+        draft_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_REVIEW_DRAFT_SCHEMA["parameters"]
+        self.assertIn("records", draft_schema["properties"])
+        self.assertIn("activity", draft_schema["properties"])
+        self.assertNotIn("send", draft_schema["properties"])
+        self.assertNotIn("feishu_record_id", draft_schema["properties"])
 
         status_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA["parameters"]
         self.assertEqual(status_schema["required"], ["event_signal_id", "mutation_id", "status"])

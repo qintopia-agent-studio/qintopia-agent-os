@@ -24,6 +24,7 @@ const requiredRegisteredTools = {
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_handoff_create",
+    "qintopia_xiaoman_activity_promotion_review_draft",
     "qintopia_xiaoman_activity_material_summary",
   ],
   wenyuange: ["qintopia_wenyuange_lookup"],
