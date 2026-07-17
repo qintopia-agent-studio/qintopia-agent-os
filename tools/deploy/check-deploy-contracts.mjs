@@ -101,9 +101,69 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
     "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
+    "docs/operations/message-sidecar-staging-values.template.json",
+    "docs/operations/release-acceptance-checklist.md",
+    "docs/operations/staging-runtime-provisioning-runbook.md",
     "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
   ]) {
     requireFragment(deployBundleBuilderPath, builder, fragment);
+  }
+}
+
+const stagingValuesTemplatePath =
+  "docs/operations/message-sidecar-staging-values.template.json";
+if (!exists(stagingValuesTemplatePath)) {
+  addError(`${stagingValuesTemplatePath}: missing staging values template`);
+} else {
+  const template = readText(stagingValuesTemplatePath);
+  for (const fragment of [
+    "<staging-postgres-url-with-database-name-containing-staging>",
+    "<staging-image-provider-api-key>",
+    "<huabaosi-generated-image-base-token>",
+    "<huabaosi-generated-image-v1-table-id>",
+    "<one-isolated-staging-group-id>",
+  ]) {
+    requireFragment(stagingValuesTemplatePath, template, fragment);
+  }
+  for (const fragment of [
+    "postgres://",
+    "postgresql://",
+    "tenant_access_token",
+    "xoxb-",
+    "Bearer ",
+  ]) {
+    forbidFragment(stagingValuesTemplatePath, template, fragment);
+  }
+}
+
+const stagingRuntimeRunbookPath =
+  "docs/operations/staging-runtime-provisioning-runbook.md";
+if (!exists(stagingRuntimeRunbookPath)) {
+  addError(
+    `${stagingRuntimeRunbookPath}: missing staging runtime provisioning runbook`
+  );
+} else {
+  const runbook = readText(stagingRuntimeRunbookPath);
+  for (const fragment of [
+    "message-sidecar-staging-values.template.json",
+    "/etc/qintopia/message-sidecar-staging-values.json",
+    "/etc/qintopia/message-sidecar-staging.env",
+    "server-local values file out of git",
+    "approved-staging-runtime-env-provision",
+    "approved-staging-sidecar-provision",
+    "ready_for_huabaosi_qiwe_staging_smokes",
+    "applied as-is",
+  ]) {
+    requireFragment(stagingRuntimeRunbookPath, runbook, fragment);
+  }
+  for (const fragment of [
+    "systemctl enable --now",
+    "gh release create",
+    "QINTOPIA_SIDECAR_DATABASE_URL=",
+    "QIWE_TOKEN=",
+    "tenant_access_token",
+  ]) {
+    forbidFragment(stagingRuntimeRunbookPath, runbook, fragment);
   }
 }
 
@@ -124,6 +184,8 @@ if (!exists(releaseAcceptanceChecklistPath)) {
     "deploy/sidecar/scripts/render-staging-runtime-env.py",
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
     "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
+    "docs/operations/message-sidecar-staging-values.template.json",
+    "docs/operations/staging-runtime-provisioning-runbook.md",
     "Do not create placeholder env files",
     "/etc/qintopia/message-sidecar-staging-values.json",
     "/etc/qintopia/message-sidecar-staging.env",

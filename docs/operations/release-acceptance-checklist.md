@@ -41,6 +41,8 @@ send externally.
   - `deploy/sidecar/scripts/render-staging-runtime-env.py`
   - `deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh`
   - `deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh`
+  - `docs/operations/message-sidecar-staging-values.template.json`
+  - `docs/operations/staging-runtime-provisioning-runbook.md`
 
 ## After Deployment
 
