@@ -81,8 +81,9 @@ server-local staging env file with owner-reviewed values for:
   `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS`;
 - `QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID` and
   `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS`;
-- `QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH`; and
+- `QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH`;
 - `QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1`;
+- `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`;
 - `QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS` for exactly one isolated staging group; and
 - an explicit owner decision on whether the staging env may reuse the existing Erhua
   QiWe API URL, token, and GUID.

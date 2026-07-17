@@ -64,6 +64,7 @@ Huabaosi staging keys:
 - `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS`
 - `QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH`
 - `QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1`
+- `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`
 - `QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES`
 
 Downstream QiWe staging keys, once the QiWe staging PR is present on the staged release:
