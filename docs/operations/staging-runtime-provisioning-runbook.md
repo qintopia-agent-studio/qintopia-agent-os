@@ -96,6 +96,44 @@ and `production_eligible=false`. Do not use the production
 `qintopia-message-sidecar-linux-x86_64-gnu` artifact for staging evidence, and do not
 install the staging artifact under the production release root.
 
+## Provision Staging Env File
+
+Prepare the fixed staging env file from an owner-reviewed server-local JSON values file.
+The values file must stay on the server and must not be committed, copied into reports,
+or pasted into chat.
+
+First run the renderer in validation mode. This prints only
+`staging_runtime_env_render=` sanitized JSON and does not write the env file:
+
+```bash
+deploy/sidecar/scripts/render-staging-runtime-env.py \
+  --values /etc/qintopia/message-sidecar-staging-values.json \
+  --expected-database-url-sha256 '<approved staging database URL sha256>'
+```
+
+After the sanitized report says `action_status=staging_env_render_ready`, create the
+fixed env file with the exact owner approval phrase:
+
+```bash
+sudo deploy/sidecar/scripts/render-staging-runtime-env.py \
+  --values /etc/qintopia/message-sidecar-staging-values.json \
+  --expected-database-url-sha256 '<approved staging database URL sha256>' \
+  --apply \
+  --approval approved-staging-runtime-env-provision
+```
+
+The apply path writes only `/etc/qintopia/message-sidecar-staging.env`, requires root,
+requires a non-existing output file, writes mode `0600`, renders only the reviewed
+staging env key allowlist, verifies the staging database URL hash, requires exactly one
+isolated staging group id, and does not contact Postgres, provider, media, Feishu, QiWe,
+systemd, GitHub Releases, or any network endpoint.
+
+The renderer requires exactly one isolated staging group id.
+
+Do not hand-edit `/etc/qintopia/message-sidecar-staging.env` to satisfy a path-only
+readiness check. If a rendered env file must be replaced, remove the stale file through
+an explicit owner-reviewed rollback step before rerunning the renderer.
+
 ## Provision Staging Sidecar Artifact
 
 After owner approval, provision the staging-only artifact with the reviewed helper from
@@ -131,7 +169,10 @@ records and checker results.
 
 1. `QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh`
    with the approved release SHA and packaged staging sidecar SHA-256.
-2. Unified staging runtime readiness evidence:
+2. `deploy/sidecar/scripts/render-staging-runtime-env.py` in validation mode, then
+   `--apply --approval approved-staging-runtime-env-provision` only after the sanitized
+   render report is ready and the owner has approved the server-local values file.
+3. Unified staging runtime readiness evidence:
 
    ```bash
    QINTOPIA_STAGING_RUNTIME_READINESS_EVIDENCE_ENABLE=1 \
@@ -147,10 +188,10 @@ records and checker results.
    staging database URL SHA-256, child readiness statuses, and sanitized limitations; it
    does not read the env file contents or execute the sidecar.
 
-3. Huabaosi staging smoke for exactly one approved image request work item.
-4. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
-5. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
-6. After the QiWe staging PR is present on the staged release, run QiWe readiness,
+4. Huabaosi staging smoke for exactly one approved image request work item.
+5. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
+6. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
+7. After the QiWe staging PR is present on the staged release, run QiWe readiness,
    preflight, upload, callback, QiWe evidence check, and cross-flow hash check.
 
 Hold immediately if any readiness report says the env file is missing, the release root

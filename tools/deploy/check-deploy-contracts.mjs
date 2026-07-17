@@ -624,6 +624,12 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
     "staging-runtime-readiness-evidence-smoke.sh",
     "staging_runtime_readiness_evidence=",
     "ready_for_huabaosi_qiwe_staging_smokes",
+    "render-staging-runtime-env.py",
+    "staging_runtime_env_render=",
+    "/etc/qintopia/message-sidecar-staging-values.json",
+    "approved-staging-runtime-env-provision",
+    "mode `0600`",
+    "requires exactly one isolated staging group id",
     "docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md",
     "staging release SHA",
     "packaged staging sidecar SHA-256",
@@ -678,6 +684,10 @@ const stagingRuntimePrerequisiteObservationTestPath =
   "tools/deploy/test-staging-runtime-prerequisite-observation.mjs";
 const stagingRuntimeReadinessEvidenceTestPath =
   "tools/deploy/test-staging-runtime-readiness-evidence.mjs";
+const stagingRuntimeEnvRenderPath =
+  "deploy/sidecar/scripts/render-staging-runtime-env.py";
+const stagingRuntimeEnvRenderTestPath =
+  "tools/deploy/test-staging-runtime-env-render.mjs";
 if (!exists(stagingRuntimePrerequisiteObservationTestPath)) {
   addError(
     `${stagingRuntimePrerequisiteObservationTestPath}: missing staging runtime prerequisite observation test`
@@ -716,6 +726,63 @@ if (!exists(stagingRuntimeReadinessEvidenceTestPath)) {
     "Staging runtime readiness evidence smoke test passed.",
   ]) {
     requireFragment(stagingRuntimeReadinessEvidenceTestPath, test, fragment);
+  }
+}
+if (!exists(stagingRuntimeEnvRenderPath)) {
+  addError(`${stagingRuntimeEnvRenderPath}: missing staging runtime env renderer`);
+} else {
+  const script = readText(stagingRuntimeEnvRenderPath);
+  for (const fragment of [
+    "staging_runtime_env_render=",
+    "approved-staging-runtime-env-provision",
+    "/etc/qintopia/message-sidecar-staging.env",
+    "message-sidecar-staging-values.json",
+    "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED",
+    "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS must contain exactly one isolated group",
+    "staging database URL hash does not match approved hash",
+    "validate_protected_output_boundary",
+    "os.lstat(component)",
+    "protected output path component must not be a symlink",
+    "protected output path component must be root-owned",
+    "reject_existing_output",
+    "output parent directory must not be a symlink",
+    "output mode is 0600 on apply",
+    "server-local values file is never printed",
+    "no provider, media, Postgres, Feishu, QiWe, service, timer, or release action",
+  ]) {
+    requireFragment(stagingRuntimeEnvRenderPath, script, fragment);
+  }
+  for (const fragment of [
+    "print(content)",
+    "systemctl",
+    "gh release",
+    "subprocess",
+    "requests",
+    "urllib.request",
+  ]) {
+    forbidFragment(stagingRuntimeEnvRenderPath, script, fragment);
+  }
+}
+if (!exists(stagingRuntimeEnvRenderTestPath)) {
+  addError(
+    `${stagingRuntimeEnvRenderTestPath}: missing staging runtime env renderer test`
+  );
+} else {
+  const test = readText(stagingRuntimeEnvRenderTestPath);
+  for (const fragment of [
+    "render-staging-runtime-env.py",
+    "render-secret-must-not-appear",
+    "staging_runtime_env_render=",
+    "staging_env_render_ready",
+    "staging_env_written",
+    "unsupported keys",
+    "hash does not match",
+    "non-test output guard invalid",
+    "symlink parent guard invalid",
+    "Staging runtime env render test passed.",
+  ]) {
+    requireFragment(stagingRuntimeEnvRenderTestPath, test, fragment);
   }
 }
 if (!exists(aliangStagingReadinessTestPath)) {
