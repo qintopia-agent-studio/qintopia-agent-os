@@ -6,6 +6,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.12](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.11...v0.2.12) (2026-07-17)
+
+
+### Features
+
+* add staging runtime readiness evidence ([#165](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/165)) ([a32604f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a32604f65ebda977c2d8118d34f69b358ec41a60))
+* add staging sidecar artifact builder ([#159](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/159)) ([c969b0d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c969b0d1e2f4b635f681e57d6d4d16880b391f76))
+* add staging sidecar provisioner ([#160](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/160)) ([37fff8b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/37fff8bf819f0df68825961203e7998b51a07c31))
+* add xiaoman activity phase routing ([#153](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/153)) ([86b5a40](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/86b5a40a6746903263213991c5e2ef0c917d8107))
+* enable huabaosi feishu mirror production ([#152](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/152)) ([8064c1b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8064c1b65e1d8e684ce9b5fe7399f9a32134562f))
+* enable Huabaosi Feishu mirror production activation ([#158](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/158)) ([18042a4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/18042a4d16b0dd75c112a2692ac1fa5caea8406c))
+* store Huabaosi canary images in Feishu ([#154](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/154)) ([b810c20](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b810c20be38ba9f252482ee01923a267c89d9394))
+
+
+### Bug Fixes
+
+* harden Huabaosi staging smoke env parsing ([#156](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/156)) ([3f05237](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3f05237a03f78e177b19fe036b51e38dd6f8181c))
+* xiaoman activity read-through records ([#163](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/163)) ([9e4bb54](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9e4bb54187cd23f1209143e7275775cf7cba3102))
+
+
+### Documentation
+
+* add QiWe staging send runbook ([#155](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/155)) ([b6d3695](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b6d3695364cb0919d3bfedcbd706952f1a1319f3))
+* clarify Huabaosi Feishu production storage config ([#161](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/161)) ([960d3fb](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/960d3fbf0e2d298685a74136256f71f5d7c4ccf2))
+* clarify shared staging env handling ([#157](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/157)) ([c8231d2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c8231d2be3f07e879c39904c59a773b6bc3b8b21))
+* record qiwe isolated staging verification ([#150](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/150)) ([ffd1885](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ffd18850e5203ec8036fb2c4319ce2518ce7da45))
+* update staging runtime artifact evidence ([#162](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/162)) ([0134d02](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0134d02d1c38a2fc0367b49426f64955623bff8c))
+
 ## [0.2.11](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.10...v0.2.11) (2026-07-15)
 
 
