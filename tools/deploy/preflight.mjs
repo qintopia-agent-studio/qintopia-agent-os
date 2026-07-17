@@ -662,6 +662,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "skills/qintopia-tools/manifest.yaml",
     "skills/qintopia-weather/__init__.py",
     "skills/qintopia-weather/plugin.yaml",
+    "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
     "skills/qintopia-weather/tests",
     "skills/knowledge-retrieval/__init__.py",
     "skills/knowledge-retrieval/plugin.yaml",

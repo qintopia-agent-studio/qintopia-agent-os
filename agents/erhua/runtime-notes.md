@@ -13,3 +13,10 @@ Observed read-only on 2026-07-03:
 
 Trainer memory belongs in audited sidecar/Postgres paths. Stable persona and guardrails
 can be templated here only after owner review.
+
+The broadcast script name now has a reviewed source at
+`skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py`. It emits only the
+canonical forecast-first `morning_broadcast` and performs no send. The live 07:00 job,
+the current broadcast script hash, and `qintopia-erhua-weather-context.py` remain
+runtime-only evidence pending a read-only inventory; do not infer or overwrite their
+contents from this note.
