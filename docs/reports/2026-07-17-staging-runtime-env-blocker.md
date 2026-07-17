@@ -53,12 +53,12 @@ by the evidence gate.
 
 A key-presence-only scan of controlled server-local files found:
 
-| Location                                      | Present keys                                                                                  | Missing staging boundary                                                                    |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `/etc/qintopia/message-sidecar.env`           | Huabaosi provider, model, API base, API key, media max bytes, production sidecar database URL | reviewed staging DB URL, media upload endpoint, media public base URL, media host allowlist |
-| `/home/ubuntu/.hermes/profiles/erhua/.env`    | QiWe API URL, token, GUID                                                                     | isolated staging target group allowlist                                                     |
-| `/home/ubuntu/.hermes/profiles/huabaosi/.env` | no QiWe or media staging boundary keys                                                        | media upload endpoint, media public base URL, media host allowlist                          |
-| `/home/ubuntu/.hermes/profiles/xiaoman/.env`  | no QiWe or media staging boundary keys                                                        | media upload endpoint, media public base URL, media host allowlist                          |
+| Location                                      | Present keys                                                                                  | Missing staging boundary                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `/etc/qintopia/message-sidecar.env`           | Huabaosi provider, model, API base, API key, media max bytes, production sidecar database URL | reviewed staging DB URL, Feishu Base/table allowlists, Huabaosi profile env path |
+| `/home/ubuntu/.hermes/profiles/erhua/.env`    | QiWe API URL, token, GUID                                                                     | isolated staging target group allowlist                                          |
+| `/home/ubuntu/.hermes/profiles/huabaosi/.env` | no QiWe staging boundary keys                                                                 | Feishu Base/table allowlists for the generated-image table                       |
+| `/home/ubuntu/.hermes/profiles/xiaoman/.env`  | no QiWe staging boundary keys                                                                 | none for Huabaosi image storage; Xiaoman is not the image storage profile        |
 
 The existing production sidecar database URL does not match the reviewed staging
 database URL SHA-256, so it must not be reused for staging.
@@ -70,12 +70,25 @@ server-local staging env file with owner-reviewed values for:
 
 - `QINTOPIA_SIDECAR_DATABASE_URL`, whose SHA-256 must be
   `c6dc2730b2a3fdabf05d88e021340b748c5c5b5d06d8ec24b38feef387d39330`;
-- `QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT`;
-- `QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL`;
-- `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`;
+- `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`;
+- `QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1`;
+- `QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL=approved-huabaosi-feishu-artifact-mirror`;
+- `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA` and `QINTOPIA_DEPLOYED_COMMIT_SHA`
+  bound to the staged immutable release;
+- `QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256` matching the same staging database
+  hash;
+- `QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN` and
+  `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS`;
+- `QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID` and
+  `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS`;
+- `QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH`; and
+- `QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1`;
 - `QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS` for exactly one isolated staging group; and
 - an explicit owner decision on whether the staging env may reuse the existing Erhua
   QiWe API URL, token, and GUID.
+
+The Huabaosi generated image is stored in the fixed Feishu Base generated-image table.
+Do not provision a separate HTTP media upload/public BaseURL for this path.
 
 Do not create a placeholder staging env merely to pass path-only readiness. That would
 produce misleading readiness evidence and would still fail the real Huabaosi/QiWe

@@ -49,8 +49,18 @@ STAGING_ENV_KEYS=(
   QINTOPIA_HUABAOSI_IMAGE_MODEL
   QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL
   QINTOPIA_HUABAOSI_IMAGE_API_KEY
-  QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT
-  QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL
+  QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL
+  QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA
+  QINTOPIA_DEPLOYED_COMMIT_SHA
+  QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256
+  QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN
+  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS
+  QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID
+  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS
+  QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH
+  QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION
   QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS
   QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES
 )
@@ -130,6 +140,11 @@ if [[ "${QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED:-}" != "1" ]]; then
   exit 1
 fi
 
+if [[ "${QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND:-}" != "feishu-base" ]]; then
+  echo "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base is required for the reviewed Huabaosi staging smoke" >&2
+  exit 1
+fi
+
 if [[ -z "${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]; then
   echo "QINTOPIA_SIDECAR_DATABASE_URL is required in the staging env file" >&2
   exit 1
@@ -150,6 +165,10 @@ if [[ "${database_facts[0]:-}" != "$EXPECTED_DATABASE_HASH" ]]; then
 fi
 if [[ "${database_facts[1]:-}" != *staging* ]]; then
   echo "staging database name must contain staging" >&2
+  exit 1
+fi
+if [[ "${QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256:-}" != "$EXPECTED_DATABASE_HASH" ]]; then
+  echo "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 must match the approved staging database hash" >&2
   exit 1
 fi
 
@@ -211,7 +230,10 @@ assert_no_sensitive_text() {
     QINTOPIA_SIDECAR_DATABASE_URL \
     QINTOPIA_HUABAOSI_IMAGE_API_KEY \
     QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL \
-    QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT \
+    QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN \
+    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS \
+    QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID \
+    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS \
     QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN \
     QIWE_TOKEN \
     QIWE_GUID; do
@@ -274,9 +296,13 @@ if evidence_kind == "preflight":
         "config_valid": payload["config_valid"],
         "generation_enabled": payload["generation_enabled"],
         "phase": "preflight",
+        "storage_backend": os.environ["QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND"],
     })
 else:
     artifact = payload["artifact_preview"]
+    artifact_uri = artifact.get("artifact_uri")
+    if not isinstance(artifact_uri, str) or not artifact_uri.startswith("feishu-base://"):
+        raise AssertionError("generated artifact_uri must use the reviewed feishu-base storage boundary")
     evidence.update({
         "apply_requested": payload["apply_requested"],
         "artifact_count": len(payload["artifact_ids"]),
@@ -287,6 +313,7 @@ else:
         "mime_type": artifact["mime_type"],
         "phase": "generation",
         "review_status": artifact["review_status"],
+        "storage_backend": "feishu-base",
         "work_item_id": os.environ["QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID"],
         "width": artifact["width"],
     })
@@ -344,20 +371,11 @@ assert payload["artifact_preview"]["height"] == 1024
 assert payload["artifact_preview"]["byte_size"] > 0
 content_hash = payload["artifact_preview"]["content_hash"]
 assert content_hash.startswith("sha256:") and len(content_hash) == 71
-assert payload["safe_for_chat"] is False
-
 artifact_uri = payload["artifact_preview"].get("artifact_uri")
-if artifact_uri is not None:
-    from urllib.parse import urlparse
-    import os
-
-    public_base = os.environ["QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL"].rstrip("/")
-    parsed = urlparse(artifact_uri)
-    assert parsed.scheme == "https"
-    assert not parsed.username and not parsed.password
-    assert not parsed.query and not parsed.fragment
-    assert artifact_uri.startswith(f"{public_base}/")
+assert isinstance(artifact_uri, str)
+assert artifact_uri.startswith("feishu-base://")
+assert payload["safe_for_chat"] is False
 '
 emit_sanitized_evidence "generation"
 
-echo "Huabaosi image staging smoke passed: one generated_image remains pending human review; no Feishu, QiWe, or publish adapter was called"
+echo "Huabaosi image staging smoke passed: one generated_image remains pending human review; Feishu Base stored the final JPEG; no QiWe or publish adapter was called"
