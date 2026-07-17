@@ -185,6 +185,10 @@ Use `rg` and `rg --files` for search.
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
+- Any script expected to exist under `/home/ubuntu/qintopia-agent-os-releases/current`
+  after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
+  guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does
+  not put it on `paxon-server`.
 - Do not copy secrets, live `.env` files, tokens, table ids, private chat logs, raw
   member profiles, or server-only runtime state into git.
 - WorkTool is not a Qintopia Agent OS channel for new work. Treat WorkTool and the
