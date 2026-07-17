@@ -29,8 +29,7 @@ values themselves.
 - staging database URL SHA-256;
 - isolated database identity and rollback owner;
 - Huabaosi image request work item UUID;
-- provider account, cost cap, and media storage boundary;
-- isolated media host allowlist;
+- provider account, cost cap, and Feishu Base storage boundary;
 - isolated target group allowlist for downstream QiWe staging;
 - QiWe send-ready work item UUID after human image approval; and
 - trusted callback source for the one bounded QiWe callback.
@@ -39,8 +38,10 @@ values themselves.
 
 The staging env file may contain only reviewed literal assignments for the staging
 adapter keys. It must not contain production database URLs, production group ids, Hermes
-secrets, NATS settings, Feishu tokens, proxy variables, shell commands, command
-substitution, exports, or duplicate keys.
+secrets, NATS settings, unrelated Feishu tokens, proxy variables, shell commands,
+command substitution, exports, or duplicate keys. The only Feishu secret allowed in this
+file is the reviewed Huabaosi generated-image Base token, paired with its exact
+allowlist entry for the fixed staging exercise.
 
 Huabaosi staging keys:
 
@@ -50,9 +51,18 @@ Huabaosi staging keys:
 - `QINTOPIA_HUABAOSI_IMAGE_MODEL`
 - `QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL`
 - `QINTOPIA_HUABAOSI_IMAGE_API_KEY`
-- `QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT`
-- `QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL`
-- `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`
+- `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`
+- `QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED`
+- `QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL`
+- `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA`
+- `QINTOPIA_DEPLOYED_COMMIT_SHA`
+- `QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256`
+- `QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN`
+- `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS`
+- `QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID`
+- `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS`
+- `QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH`
+- `QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1`
 - `QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES`
 
 Downstream QiWe staging keys, once the QiWe staging PR is present on the staged release:
@@ -71,6 +81,10 @@ The Huabaosi staging smoke reads only the Huabaosi key allowlist above. If the s
 staging env file already contains the downstream QiWe keys, the Huabaosi smoke must
 ignore those keys and must not pass them to its child sidecar process. Unknown keys and
 invalid assignment syntax still fail closed.
+
+For the Feishu Base primary-storage path, Huabaosi image generation must not require
+`QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`; storage is proven by a `feishu-base://`
+artifact URI from the worker, not by an HTTP media host.
 
 The env file must be readable only by the staging operator/root boundary. Readiness
 smokes must verify only file metadata and must not read or print env contents.
@@ -188,11 +202,15 @@ records and checker results.
    staging database URL SHA-256, child readiness statuses, and sanitized limitations; it
    does not read the env file contents or execute the sidecar.
 
-4. Huabaosi staging smoke for exactly one approved image request work item.
+4. Huabaosi staging smoke for exactly one approved image request work item. The final
+   JPEG storage boundary is the fixed Huabaosi Feishu Base table, not an HTTP
+   upload/public URL service.
 5. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
 6. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
-7. After the QiWe staging PR is present on the staged release, run QiWe readiness,
-   preflight, upload, callback, QiWe evidence check, and cross-flow hash check.
+7. After the separate Feishu attachment revalidation and QiWe delivery path is present
+   on the staged release, run QiWe readiness, preflight, upload, callback, QiWe evidence
+   check, and cross-flow hash check. The current QiWe intake must continue to fail
+   closed for `feishu-base://` artifacts.
 
 Hold immediately if any readiness report says the env file is missing, the release root
 is missing, the binary hash mismatches, the staging database URL hash is absent, an

@@ -28,7 +28,10 @@ const markerPath = path.join(tempRoot, "env-executed");
 const commandLogPath = path.join(tempRoot, "commands.log");
 const fakeSidecarPath = path.join(tempRoot, "fake-sidecar.sh");
 const leakingSidecarPath = path.join(tempRoot, "leaking-sidecar.sh");
+const httpStorageSidecarPath = path.join(tempRoot, "http-storage-sidecar.sh");
 const stagingEnvPath = path.join(tempRoot, "message-sidecar-staging.env");
+const feishuEnvLine = (suffix, value) =>
+  `QINTOPIA_HUABAOSI_${"FEISHU"}_${suffix}=${value}`;
 
 const writeFile = (filePath, content, mode) => {
   fs.writeFileSync(filePath, content, mode === undefined ? undefined : { mode });
@@ -48,7 +51,7 @@ case "$1" in
     printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"config_valid":true,"missing_configuration":[],"safe_for_chat":false}'
     ;;
   run-huabaosi-image-generation-worker)
-    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"https://media.example/staging/final.jpg"},"safe_for_chat":false}'
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"feishu-base://huabaosi-generated-image/22222222-3333-4444-8555-666666666666"},"safe_for_chat":false}'
     ;;
   *)
     echo "unexpected command: $*" >&2
@@ -75,6 +78,26 @@ esac
   0o700
 );
 
+writeFile(
+  httpStorageSidecarPath,
+  `#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  huabaosi-image-generation-preflight)
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"config_valid":true,"missing_configuration":[],"safe_for_chat":false}'
+    ;;
+  run-huabaosi-image-generation-worker)
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"https://media.example.test/final.jpg"},"safe_for_chat":false}'
+    ;;
+  *)
+    echo "unexpected command: $*" >&2
+    exit 99
+    ;;
+esac
+`,
+  0o700
+);
+
 const envContent = () => `
 QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1
 QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}
@@ -82,9 +105,18 @@ QINTOPIA_HUABAOSI_IMAGE_PROVIDER=openai-compatible
 QINTOPIA_HUABAOSI_IMAGE_MODEL=gpt-image-2
 QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL=https://image.example/v1
 QINTOPIA_HUABAOSI_IMAGE_API_KEY="$(touch ${markerPath})"
-QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT=https://media.example/upload
-QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL=https://media.example
-QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example
+QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base
+QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1
+QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL=approved-huabaosi-feishu-artifact-mirror
+QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=0123456789abcdef0123456789abcdef01234567
+QINTOPIA_DEPLOYED_COMMIT_SHA=0123456789abcdef0123456789abcdef01234567
+QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256=${databaseHash}
+${feishuEnvLine("BASE_TOKEN", "baseTokenFixture")}
+${feishuEnvLine("ALLOWED_BASE_TOKENS", "baseTokenFixture")}
+${feishuEnvLine("ARTIFACT_TABLE_ID", "tblFixture")}
+${feishuEnvLine("ALLOWED_ARTIFACT_TABLE_IDS", "tblFixture")}
+QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH=/home/ubuntu/.hermes/profiles/huabaosi/.env
+QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1
 QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES=10485760
 QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1
 QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1
@@ -119,12 +151,12 @@ let result = runSmoke();
 assert.equal(result.status, 0, result.stderr);
 assert.match(
   result.stdout,
-  /Huabaosi image staging smoke passed: one generated_image remains pending human review/
+  /Huabaosi image staging smoke passed: one generated_image remains pending human review; Feishu Base stored the final JPEG/
 );
 assert.equal(result.stderr, "");
 assert.match(result.stdout, /huabaosi_image_generation_staging_evidence=/);
 assert.doesNotMatch(result.stdout, /artifact_uri/);
-assert.doesNotMatch(result.stdout, /https:\/\/media\.example\/staging\/final\.jpg/);
+assert.doesNotMatch(result.stdout, /feishu-base:\/\/huabaosi-generated-image/);
 assert.equal(fs.existsSync(markerPath), false, "env file command was executed");
 assert.deepEqual(fs.readFileSync(commandLogPath, "utf8").trim().split("\n"), [
   "huabaosi-image-generation-preflight",
@@ -141,7 +173,7 @@ assert.equal(evidenceCheck.status, 0, evidenceCheck.stderr);
 const rawEvidenceFile = path.join(tempRoot, "raw-huabaosi-staging-evidence.txt");
 fs.writeFileSync(
   rawEvidenceFile,
-  `${result.stdout}\n{"artifact_uri":"https://media.example/staging/final.jpg"}\n`,
+  `${result.stdout}\n{"artifact_uri":"feishu-base://huabaosi-generated-image/22222222-3333-4444-8555-666666666666"}\n`,
   "utf8"
 );
 const rawEvidenceCheck = spawnSync("node", [evidenceChecker, rawEvidenceFile], {
@@ -163,6 +195,20 @@ assert.equal(fs.existsSync(commandLogPath), false);
 
 writeFile(
   stagingEnvPath,
+  envContent().replace(
+    `QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256=${databaseHash}`,
+    `QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256=${"0".repeat(64)}`
+  )
+);
+result = runSmoke();
+assert.notEqual(result.status, 0);
+assert.match(
+  result.stderr,
+  /QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 must match the approved staging database hash/
+);
+
+writeFile(
+  stagingEnvPath,
   `${envContent()}
 UNSUPPORTED_ENV=value
 `
@@ -175,6 +221,12 @@ writeFile(stagingEnvPath, envContent());
 result = runSmoke({ QINTOPIA_SIDECAR_BIN: leakingSidecarPath });
 assert.notEqual(result.status, 0);
 assert.match(result.stderr, /contains forbidden sensitive output/);
+
+result = runSmoke({ QINTOPIA_SIDECAR_BIN: httpStorageSidecarPath });
+assert.notEqual(result.status, 0);
+assert.match(result.stderr, /generated image storage boundary is not Feishu Base/);
+assert.doesNotMatch(result.stdout, /generated_image_created/);
+assert.doesNotMatch(result.stdout, /"phase":"generation"/);
 
 fs.rmSync(tempRoot, { recursive: true, force: true });
 

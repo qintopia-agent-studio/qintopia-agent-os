@@ -511,8 +511,15 @@ if (!exists(aliangStagingSmokePath)) {
     "database_url_sha256",
     "content_hash",
     "mime_type",
-    "artifact_uri",
-    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "storage_backend",
+    "feishu-base",
+    'urlparse(artifact["artifact_uri"]).scheme',
+    "generated image storage boundary is not Feishu Base",
+    "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+    "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+    "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
     'hashlib.sha256(value.encode("utf-8")).hexdigest()',
     "urlparse(value).path",
   ]) {
@@ -535,6 +542,9 @@ if (!exists(aliangStagingSmokePath)) {
     "operations-group-message-confirm",
     "SANITIZED_EVIDENCE_PAYLOAD",
     "json.loads(os.environ",
+    "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
+    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
   ]) {
     forbidFragment(aliangStagingSmokePath, smoke, fragment);
   }
@@ -556,6 +566,8 @@ if (!exists(aliangStagingEvidenceCheckPath)) {
     "generation evidence does not prove one pending final JPEG",
     "artifact_uri",
     "https?:",
+    "storage_backend",
+    "feishu-base",
   ]) {
     requireFragment(aliangStagingEvidenceCheckPath, checker, fragment);
   }
@@ -580,14 +592,15 @@ if (!exists(aliangStagingEvidenceTemplatePath)) {
     "`adapter_config_ready`",
     "`generated_image_created`",
     "External provider call",
-    "Feishu write",
+    "Feishu Base write",
     "QiWe send",
     "`database_url_sha256`",
     "`content_hash`",
     "`mime_type`: `image/jpeg`",
+    "`storage_backend`: `feishu-base`",
     "Complete Huabaosi evidence checker passed",
-    "QiWe staging send may use this final JPEG hash",
-    "no Feishu write, QiWe send, production timer, service, Release publish",
+    "QiWe staging send must wait for authenticated Feishu attachment revalidation",
+    "no QiWe send, production timer, service, Release publish",
     "Do not record provider endpoint, provider response, API key, token, database URL",
   ]) {
     requireFragment(aliangStagingEvidenceTemplatePath, template, fragment);
@@ -638,6 +651,8 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
     "Downstream QiWe staging keys",
     "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED",
     "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+    "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base",
+    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "QIWE_TOKEN",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
@@ -738,8 +753,14 @@ if (!exists(stagingRuntimeEnvRenderPath)) {
     "/etc/qintopia/message-sidecar-staging.env",
     "message-sidecar-staging-values.json",
     "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED",
+    "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND",
+    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS must contain exactly one isolated group",
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA must match QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 must match the approved staging database hash",
     "staging database URL hash does not match approved hash",
     "validate_protected_output_boundary",
     "os.lstat(component)",
@@ -760,6 +781,9 @@ if (!exists(stagingRuntimeEnvRenderPath)) {
     "subprocess",
     "requests",
     "urllib.request",
+    "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
+    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
   ]) {
     forbidFragment(stagingRuntimeEnvRenderPath, script, fragment);
   }
@@ -778,6 +802,9 @@ if (!exists(stagingRuntimeEnvRenderTestPath)) {
     "staging_env_written",
     "unsupported keys",
     "hash does not match",
+    "release SHA mismatch failure invalid",
+    "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND",
+    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
     "non-test output guard invalid",
     "symlink parent guard invalid",
     "Staging runtime env render test passed.",

@@ -15,7 +15,7 @@ if (!filePath || process.argv.length !== 3) {
 const text = fs.readFileSync(filePath, "utf8");
 const prefix = "huabaosi_image_generation_staging_evidence=";
 const allowedFixedLines = new Set([
-  "Huabaosi image staging smoke passed: one generated_image remains pending human review; no Feishu, QiWe, or publish adapter was called",
+  "Huabaosi image staging smoke passed: one generated_image remains pending human review; Feishu Base stored the final JPEG; no QiWe or publish adapter was called",
 ]);
 const forbiddenPatterns = [
   /https?:\/\//i,
@@ -84,7 +84,8 @@ assertCommon(preflight, "adapter_config_ready");
 if (
   preflight.adapter_compiled !== true ||
   preflight.config_valid !== true ||
-  preflight.generation_enabled !== true
+  preflight.generation_enabled !== true ||
+  preflight.storage_backend !== "feishu-base"
 ) {
   throw new Error("preflight evidence does not prove adapter readiness");
 }
@@ -100,6 +101,7 @@ if (
   generation.height !== 1024 ||
   !Number.isInteger(generation.byte_size) ||
   generation.byte_size <= 0 ||
+  generation.storage_backend !== "feishu-base" ||
   !/^sha256:[0-9a-f]{64}$/.test(generation.content_hash) ||
   !/^[0-9a-f-]{36}$/.test(generation.work_item_id)
 ) {

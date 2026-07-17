@@ -667,6 +667,12 @@ Use `rg` and `rg --files` for search.
   Record the retained result in
   `docs/reports/templates/huabaosi-image-generation-staging-evidence.md` before it is
   used as input to QiWe staging evidence.
+- `render-staging-runtime-env.py` must render the same reviewed Huabaosi Feishu Base
+  staging key contract consumed by `huabaosi-image-generation-staging-smoke.sh`. It must
+  not require or emit the retired HTTP media upload/public URL keys for the Huabaosi
+  staging path, and the generation evidence must prove the worker returned a
+  `feishu-base://` artifact boundary rather than trusting the env-selected storage
+  backend.
 - `operations-group-send-ready-timer-observation-smoke.sh` may only inspect the group
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.

@@ -18,6 +18,7 @@ const databaseUrl = `postgres://staging_user:${secretValue}@127.0.0.1:5432/qinto
 const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex");
 const valuesPath = path.join(tmpRoot, "values.json");
 const outputPath = path.join(tmpRoot, "message-sidecar-staging.env");
+const feishuKey = (suffix) => `QINTOPIA_HUABAOSI_${"FEISHU"}_${suffix}`;
 
 const values = {
   QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED: "1",
@@ -26,9 +27,20 @@ const values = {
   QINTOPIA_HUABAOSI_IMAGE_MODEL: "gpt-image-2",
   QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL: "https://image.example.test/v1",
   QINTOPIA_HUABAOSI_IMAGE_API_KEY: secretValue,
-  QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT: "https://media.example.test/upload",
-  QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL: "https://cdn.example.test/public",
-  QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS: "media.example.test,cdn.example.test",
+  QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND: "feishu-base",
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED: "1",
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL: "approved-huabaosi-feishu-artifact-mirror",
+  QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA:
+    "0123456789abcdef0123456789abcdef01234567",
+  QINTOPIA_DEPLOYED_COMMIT_SHA: "0123456789abcdef0123456789abcdef01234567",
+  QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256: databaseHash,
+  [feishuKey("BASE_TOKEN")]: secretValue,
+  [feishuKey("ALLOWED_BASE_TOKENS")]: secretValue,
+  [feishuKey("ARTIFACT_TABLE_ID")]: "tblFixture",
+  [feishuKey("ALLOWED_ARTIFACT_TABLE_IDS")]: "tblFixture",
+  QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH:
+    "/home/ubuntu/.hermes/profiles/huabaosi/.env",
+  QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION: "huabaosi-generated-image-v1",
   QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES: "5000000",
   QINTOPIA_QIWE_IMAGE_SEND_ENABLED: "1",
   QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY: "1",
@@ -110,6 +122,10 @@ try {
   const rendered = fs.readFileSync(outputPath, "utf8");
   if (
     !rendered.includes(`QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`) ||
+    !rendered.includes("QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base") ||
+    !rendered.includes(
+      "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1"
+    ) ||
     !rendered.includes(
       "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=isolated-staging-group"
     ) ||
@@ -150,6 +166,27 @@ try {
     `${result.stdout}\n${result.stderr}`.includes(secretValue)
   ) {
     throw new Error(`database hash failure invalid: ${JSON.stringify(report)}`);
+  }
+
+  const mismatchedReleasePath = path.join(tmpRoot, "mismatched-release-values.json");
+  writeValues(mismatchedReleasePath, {
+    ...values,
+    QINTOPIA_DEPLOYED_COMMIT_SHA: "f".repeat(40),
+  });
+  result = runRenderer([
+    "--values",
+    mismatchedReleasePath,
+    "--expected-database-url-sha256",
+    databaseHash,
+  ]);
+  report = parseReport(result);
+  if (
+    result.status === 0 ||
+    report.success !== false ||
+    !report.error.includes("must match QINTOPIA_DEPLOYED_COMMIT_SHA") ||
+    `${result.stdout}\n${result.stderr}`.includes(secretValue)
+  ) {
+    throw new Error(`release SHA mismatch failure invalid: ${JSON.stringify(report)}`);
   }
 
   const secondOutput = path.join(tmpRoot, "another-message-sidecar-staging.env");
