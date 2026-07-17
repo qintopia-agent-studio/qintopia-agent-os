@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.13](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.12...v0.2.13) (2026-07-17)
+
+
+### Features
+
+* add staging runtime env renderer ([#171](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/171)) ([f1ff1cc](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f1ff1cc983c1f4062b206f38de06a29d1cfc14b5))
+* add xiaoman activity phase update tool ([#168](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/168)) ([514e6d9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/514e6d9c5886389d67509b08092e8feced504086))
+
+
+### Bug Fixes
+
+* align Huabaosi staging storage with Feishu Base ([#172](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/172)) ([cc4fe19](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cc4fe193e4758ba1082caa7562bc4c1889569b77))
+
+
+### Documentation
+
+* clarify xiaoman recovery artifact follow-up ([#169](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/169)) ([867acee](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/867aceeb2c97c9bc3fd7c56a6095633ba3b7a1ac))
+* record staging runtime env blocker ([#170](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/170)) ([0b64ab5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0b64ab589d47910c2ec9ce3fa8013456cc7ee850))
+* record xiaoman read-through recovery ([#166](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/166)) ([c21cbc5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c21cbc551ee2fab98197f910583d8a7b730eef51))
+
 ## [0.2.12](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.11...v0.2.12) (2026-07-17)
 
 
