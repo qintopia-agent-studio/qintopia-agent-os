@@ -30,8 +30,14 @@ controlled handoff, and trainer memory submission through audited backend paths.
 - Server profile observed read-only: `/home/ubuntu/.hermes/profiles/erhua`
 - Current service observed read-only: `hermes-gateway-erhua.service`
 - Related active package: `skills/qiwe`
+- Release-owned weather output entrypoint:
+  `skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py`
 - Runtime `.env`, memories, identities, caches, locks, logs, and state databases are
   excluded from this package.
+
+The weather entrypoint is packaged but not activated. Erhua's live 07:00 job and
+`cron/jobs.json` remain runtime-local until their non-secret structure and script hashes
+are inventoried and a separate reviewed profile cutover supplies rollback evidence.
 
 ## Validation
 

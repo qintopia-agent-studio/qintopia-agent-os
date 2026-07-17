@@ -59,6 +59,12 @@ runtime_mounts:
     - qintopia-erhua-weather-context.py
     - qintopia-erhua-nightly-reminder.py
 
+reviewed_script_sources:
+  - runtime_name: qintopia-erhua-weather-broadcast.py
+    source: skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py
+    contract: stdout is the canonical morning_broadcast; no external send
+    activation: pending sanitized cron and script inventory
+
 excluded_runtime_state:
   - .env
   - auth files

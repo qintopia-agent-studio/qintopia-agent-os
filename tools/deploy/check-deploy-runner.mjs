@@ -1012,6 +1012,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
     "agents/xiaoman/profile-bundle",
+    "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
   ]) {
     if (!builder.includes(fragment)) {
       addError(`tools/deploy/build-deploy-bundle.mjs: must package ${fragment}`);

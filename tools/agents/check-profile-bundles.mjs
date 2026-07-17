@@ -20,6 +20,9 @@ const readText = (relativePath) =>
 const readYaml = (relativePath) => YAML.parse(readText(relativePath));
 const readJson = (relativePath) => JSON.parse(readText(relativePath));
 
+const erhuaWeatherBroadcastPath =
+  "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py";
+
 const forbiddenRuntimeMounts = new Set([
   ".env",
   "auth.json",
@@ -36,6 +39,54 @@ const forbiddenRuntimeMounts = new Set([
   "memories",
   "pairing",
 ]);
+
+if (!exists(erhuaWeatherBroadcastPath)) {
+  addError(
+    `${erhuaWeatherBroadcastPath}: required Erhua weather broadcast asset is missing`
+  );
+} else {
+  const broadcastScript = readText(erhuaWeatherBroadcastPath);
+  if (
+    (fs.statSync(path.join(repoRoot, erhuaWeatherBroadcastPath)).mode & 0o111) ===
+    0
+  ) {
+    addError(`${erhuaWeatherBroadcastPath}: must be executable`);
+  }
+  for (const fragment of [
+    'WEATHER_ARGUMENTS = {"intent": "general", "hours": 24}',
+    'payload.get("morning_broadcast")',
+    'payload.get("daily_forecast")',
+  ]) {
+    if (!broadcastScript.includes(fragment)) {
+      addError(`${erhuaWeatherBroadcastPath}: missing ${fragment}`);
+    }
+  }
+  for (const fragment of ["QIWE_TOKEN", "QiWeAdapter", "/msg/send"]) {
+    if (broadcastScript.includes(fragment)) {
+      addError(
+        `${erhuaWeatherBroadcastPath}: must not own QiWe delivery (${fragment})`
+      );
+    }
+  }
+}
+
+if (exists("agents/erhua/profile.template.yaml")) {
+  const template = readYaml("agents/erhua/profile.template.yaml");
+  const reviewedSources = template.reviewed_script_sources ?? [];
+  const weatherSource = reviewedSources.find(
+    (item) => item?.runtime_name === "qintopia-erhua-weather-broadcast.py"
+  );
+  if (weatherSource?.source !== erhuaWeatherBroadcastPath) {
+    addError(
+      "agents/erhua/profile.template.yaml: weather broadcast source must use the release-owned asset"
+    );
+  }
+  if (!String(weatherSource?.activation ?? "").includes("pending")) {
+    addError(
+      "agents/erhua/profile.template.yaml: weather broadcast activation must remain pending"
+    );
+  }
+}
 
 if (!exists("docs/operations/profile-bundles/m10f-profile-template-plan.md")) {
   addError("docs/operations/profile-bundles/m10f-profile-template-plan.md is required");
