@@ -27,8 +27,8 @@ const databaseHash = crypto
 const markerPath = path.join(tempRoot, "env-executed");
 const commandLogPath = path.join(tempRoot, "commands.log");
 const fakeSidecarPath = path.join(tempRoot, "fake-sidecar.sh");
-const httpStorageSidecarPath = path.join(tempRoot, "http-storage-sidecar.sh");
 const leakingSidecarPath = path.join(tempRoot, "leaking-sidecar.sh");
+const httpStorageSidecarPath = path.join(tempRoot, "http-storage-sidecar.sh");
 const stagingEnvPath = path.join(tempRoot, "message-sidecar-staging.env");
 const feishuEnvLine = (suffix, value) =>
   `QINTOPIA_HUABAOSI_${"FEISHU"}_${suffix}=${value}`;
@@ -51,8 +51,7 @@ case "$1" in
     printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"config_valid":true,"missing_configuration":[],"safe_for_chat":false}'
     ;;
   run-huabaosi-image-generation-worker)
-    artifact_uri="\${QINTOPIA_FAKE_ARTIFACT_URI:-feishu-base://huabaosi-generated-image/22222222-3333-4444-8555-666666666666}"
-    printf '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"%s"},"safe_for_chat":false}\\n' "$artifact_uri"
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"feishu-base://huabaosi-generated-image/22222222-3333-4444-8555-666666666666"},"safe_for_chat":false}'
     ;;
   *)
     echo "unexpected command: $*" >&2
@@ -88,7 +87,11 @@ case "$1" in
     printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"config_valid":true,"missing_configuration":[],"safe_for_chat":false}'
     ;;
   run-huabaosi-image-generation-worker)
-    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"https://media.example/generated/22222222-3333-4444-8555-666666666666.jpg"},"safe_for_chat":false}'
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"https://media.example.test/final.jpg"},"safe_for_chat":false}'
+    ;;
+  *)
+    echo "unexpected command: $*" >&2
+    exit 99
     ;;
 esac
 `,
@@ -221,7 +224,9 @@ assert.match(result.stderr, /contains forbidden sensitive output/);
 
 result = runSmoke({ QINTOPIA_SIDECAR_BIN: httpStorageSidecarPath });
 assert.notEqual(result.status, 0);
-assert.doesNotMatch(result.stdout, /Feishu Base stored the final JPEG/);
+assert.match(result.stderr, /generated image storage boundary is not Feishu Base/);
+assert.doesNotMatch(result.stdout, /generated_image_created/);
+assert.doesNotMatch(result.stdout, /"phase":"generation"/);
 
 fs.rmSync(tempRoot, { recursive: true, force: true });
 

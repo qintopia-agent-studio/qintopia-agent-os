@@ -23,8 +23,18 @@ ORDERED_KEYS = [
     "QINTOPIA_HUABAOSI_IMAGE_MODEL",
     "QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL",
     "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
-    "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
-    "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+    "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+    "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
     "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
@@ -109,6 +119,11 @@ def require_https_url(key, value):
     return parsed
 
 
+def require_sha_env(key, value):
+    if not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise ValidationError(f"{key} must be a 40-character lowercase commit SHA")
+
+
 def validate_values(data, expected_database_hash):
     require_exact_keys(data)
     values = {key: validate_value(key, data[key]) for key in ORDERED_KEYS}
@@ -119,6 +134,21 @@ def validate_values(data, expected_database_hash):
         raise ValidationError("QINTOPIA_QIWE_IMAGE_SEND_ENABLED must be 1")
     if values["QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY"] != "1":
         raise ValidationError("QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY must be 1")
+    if values["QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND"] != "feishu-base":
+        raise ValidationError("QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND must be feishu-base")
+    if values["QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED"] != "1":
+        raise ValidationError("QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED must be 1")
+    if values["QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL"] != "approved-huabaosi-feishu-artifact-mirror":
+        raise ValidationError("QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL must match the reviewed staging phrase")
+    if values["QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION"] != "huabaosi-generated-image-v1":
+        raise ValidationError("QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION must be huabaosi-generated-image-v1")
+    if values["QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH"] != "/home/ubuntu/.hermes/profiles/huabaosi/.env":
+        raise ValidationError("QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH must be the reviewed Huabaosi profile path")
+    require_sha_env(
+        "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+        values["QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA"],
+    )
+    require_sha_env("QINTOPIA_DEPLOYED_COMMIT_SHA", values["QINTOPIA_DEPLOYED_COMMIT_SHA"])
 
     database_url = values["QINTOPIA_SIDECAR_DATABASE_URL"]
     actual_database_hash = hashlib.sha256(database_url.encode("utf-8")).hexdigest()
@@ -131,14 +161,6 @@ def validate_values(data, expected_database_hash):
     api_base = require_https_url(
         "QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL",
         values["QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL"],
-    )
-    media_upload = require_https_url(
-        "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
-        values["QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT"],
-    )
-    media_public = require_https_url(
-        "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
-        values["QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL"],
     )
     qiwe_api = require_https_url("QIWE_API_URL", values["QIWE_API_URL"])
 
@@ -158,12 +180,19 @@ def validate_values(data, expected_database_hash):
     if len(group_ids) != 1:
         raise ValidationError("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS must contain exactly one isolated group")
 
-    if media_upload.hostname not in [host.split(":")[0] for host in media_hosts]:
-        raise ValidationError("media upload host must be present in QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")
-    if media_public.hostname not in [host.split(":")[0] for host in media_hosts]:
-        raise ValidationError("media public host must be present in QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS")
     if qiwe_api.hostname not in [host.split(":")[0] for host in qiwe_hosts]:
         raise ValidationError("QIWE_API_URL host must be present in QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS")
+    if values["QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256"] != actual_database_hash:
+        raise ValidationError("QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 must match the approved staging database hash")
+    if values["QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS"] != values["QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN"]:
+        raise ValidationError("QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS must exactly match the reviewed Base token")
+    if (
+        values["QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS"]
+        != values["QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID"]
+    ):
+        raise ValidationError(
+            "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS must exactly match the reviewed artifact table id"
+        )
 
     try:
         media_max_bytes = int(values["QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES"], 10)

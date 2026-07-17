@@ -278,6 +278,7 @@ emit_sanitized_evidence() {
 import json
 import os
 import sys
+from urllib.parse import urlparse
 
 payload = json.load(sys.stdin)
 evidence_kind = sys.argv[1]
@@ -300,9 +301,9 @@ if evidence_kind == "preflight":
     })
 else:
     artifact = payload["artifact_preview"]
-    artifact_uri = artifact.get("artifact_uri")
-    if not isinstance(artifact_uri, str) or not artifact_uri.startswith("feishu-base://"):
-        raise AssertionError("generated artifact_uri must use the reviewed feishu-base storage boundary")
+    artifact_uri_scheme = urlparse(artifact["artifact_uri"]).scheme
+    if artifact_uri_scheme != "feishu-base":
+        raise AssertionError("generated image storage boundary is not Feishu Base")
     evidence.update({
         "apply_requested": payload["apply_requested"],
         "artifact_count": len(payload["artifact_ids"]),
@@ -313,7 +314,7 @@ else:
         "mime_type": artifact["mime_type"],
         "phase": "generation",
         "review_status": artifact["review_status"],
-        "storage_backend": "feishu-base",
+        "storage_backend": artifact_uri_scheme,
         "work_item_id": os.environ["QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID"],
         "width": artifact["width"],
     })
@@ -366,14 +367,12 @@ assert len(payload["artifact_ids"]) == 1
 assert payload["artifact_preview"]["artifact_type"] == "generated_image"
 assert payload["artifact_preview"]["review_status"] == "pending"
 assert payload["artifact_preview"]["mime_type"] == "image/jpeg"
+assert payload["artifact_preview"]["artifact_uri"].startswith("feishu-base://"), "generated image storage boundary is not Feishu Base"
 assert payload["artifact_preview"]["width"] == 1024
 assert payload["artifact_preview"]["height"] == 1024
 assert payload["artifact_preview"]["byte_size"] > 0
 content_hash = payload["artifact_preview"]["content_hash"]
 assert content_hash.startswith("sha256:") and len(content_hash) == 71
-artifact_uri = payload["artifact_preview"].get("artifact_uri")
-assert isinstance(artifact_uri, str)
-assert artifact_uri.startswith("feishu-base://")
 assert payload["safe_for_chat"] is False
 '
 emit_sanitized_evidence "generation"
