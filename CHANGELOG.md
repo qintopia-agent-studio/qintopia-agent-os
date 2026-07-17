@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.14](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.13...v0.2.14) (2026-07-17)
+
+
+### Bug Fixes
+
+* **erhua:** ship forecast-first weather broadcast ([#175](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/175)) ([8a9352d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8a9352d3c7d18eaffca0078a092b818714439fe9))
+* include staging env renderer in deploy bundle ([afed324](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/afed3240d19b501336bca84f8bba267cc6ddca41))
+
+
+### Documentation
+
+* add release acceptance guardrails ([#178](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/178)) ([2c50f02](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2c50f027961dca4993e0a19d95f678512b237ccd))
+* add staging runtime values template ([#176](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/176)) ([764c8d7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/764c8d7b6c26a1289aa624ce478501969232e25b))
+* record xiaoman production completion audit ([d850601](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d85060107fb96fd12a465d240f10dd5dba4d9868))
+
 ## [0.2.13](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.12...v0.2.13) (2026-07-17)
 
 
