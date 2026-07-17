@@ -107,6 +107,60 @@ if (!exists(deployBundleBuilderPath)) {
   }
 }
 
+const releaseAcceptanceChecklistPath =
+  "docs/operations/release-acceptance-checklist.md";
+if (!exists(releaseAcceptanceChecklistPath)) {
+  addError(`${releaseAcceptanceChecklistPath}: missing release acceptance checklist`);
+} else {
+  const checklist = readText(releaseAcceptanceChecklistPath);
+  for (const fragment of [
+    "Release Please validation",
+    "exact current PR head",
+    "force-updates the branch",
+    "draft Release tag points to current `origin/master`",
+    "/home/ubuntu/qintopia-agent-os-releases/current",
+    "tools/deploy/build-deploy-bundle.mjs",
+    "tools/deploy/check-deploy-contracts.mjs",
+    "deploy/sidecar/scripts/render-staging-runtime-env.py",
+    "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
+    "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
+    "Do not create placeholder env files",
+    "/etc/qintopia/message-sidecar-staging-values.json",
+    "/etc/qintopia/message-sidecar-staging.env",
+    "ready_for_huabaosi_qiwe_staging_smokes",
+    "Xiaoman Completion Boundary",
+    "infrastructure",
+    "activation-ready",
+    "production-complete",
+  ]) {
+    requireFragment(releaseAcceptanceChecklistPath, checklist, fragment);
+  }
+  for (const fragment of [
+    "QINTOPIA_SIDECAR_DATABASE_URL=",
+    "QIWE_TOKEN=",
+    "tenant_access_token",
+    "systemctl enable --now",
+    "gh release create",
+  ]) {
+    forbidFragment(releaseAcceptanceChecklistPath, checklist, fragment);
+  }
+}
+
+const releaseCurrentModelPath = "docs/operations/release-current-model.md";
+if (exists(releaseCurrentModelPath)) {
+  const releaseCurrentModel = readText(releaseCurrentModelPath);
+  requireFragment(
+    releaseCurrentModelPath,
+    releaseCurrentModel,
+    "release-acceptance-checklist.md"
+  );
+  requireFragment(
+    releaseCurrentModelPath,
+    releaseCurrentModel,
+    "exact-head Release Please validation"
+  );
+}
+
 for (const [packagePath, requiredFragments] of Object.entries(packages)) {
   const readmePath = `${packagePath}/README.md`;
   const manifestPath = `${packagePath}/manifest.yaml`;

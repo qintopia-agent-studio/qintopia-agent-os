@@ -79,6 +79,12 @@ services that Hermes mounts or executes.
 
 ## Promotion Sequence
 
+Before merging the Release Please PR or publishing its draft Release, complete
+[`release-acceptance-checklist.md`](release-acceptance-checklist.md). The checklist is
+the guardrail for exact-head Release Please validation, tag freshness, deploy-bundle
+payload coverage, post-deploy release-current convergence, and Xiaoman completion claim
+boundaries.
+
 1. Confirm the target SHA has successful `check` and `sidecar-artifact` CI jobs.
 2. Download the target SHA artifact from COS into a staging or cache directory.
 3. Verify `artifact-manifest.json`, `SHA256SUMS`, and binary self-checks.
