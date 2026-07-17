@@ -120,6 +120,23 @@ returned by its response. It must keep official warning status `unknown`, AQI un
 and minute-level precipitation unknown; it must never turn unavailable evidence into an
 official `none` or an optimistic weather conclusion.
 
+## Scheduled Broadcast Entrypoint
+
+`scripts/qintopia-erhua-weather-broadcast.py` is the release-owned, no-send entrypoint
+for Erhua's future 07:00 cron cutover. It calls
+`handle_qintopia_weather_lookup({"intent": "general", "hours": 24})` and writes only the
+returned top-level `morning_broadcast` to stdout.
+
+The entrypoint fails closed with empty stdout when the weather payload is unsuccessful,
+malformed, missing the fixed midday/afternoon/evening periods, over eight lines, or has
+regressed to current-first copy. It never falls back to `current` and never imports or
+calls the QiWe adapter. Hermes owns scheduling and `skills/qiwe` owns group delivery.
+
+This script is packaged in the immutable deploy bundle, but this package does not render
+or activate Erhua's live `cron/jobs.json`. Follow
+`docs/plans/active/erhua-weather-broadcast-runtime-adoption.md` for the read-only
+inventory and separate cutover gate.
+
 ## Validation
 
 ```bash

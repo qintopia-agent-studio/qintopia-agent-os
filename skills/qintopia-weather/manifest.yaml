@@ -35,3 +35,5 @@ next_actions:
     when the provider adapter is implemented.
   - Keep the qintopia-tools Hermes registration shell thin until profile bundles can
     load skill packages directly.
+  - Inventory the live Erhua 07:00 job and script hashes before a separate reviewed cron
+    cutover to the release-owned broadcast entrypoint.

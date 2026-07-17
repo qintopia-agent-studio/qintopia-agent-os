@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-17 Erhua weather broadcast current-only output](2026-07-17-erhua-weather-broadcast-current-only.md)
 - [2026-07-15 Aliang image generation production enablement](2026-07-15-aliang-production-enablement.md)
 - [2026-07-15 Huabaosi Feishu artifact mirror production enablement](2026-07-15-huabaosi-feishu-artifact-mirror-production-enablement.md)
 
@@ -60,6 +61,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-16-huabaosi-feishu-storage-production-config.md`                          | adopt-input | Production Feishu storage config gap and activation hold               |
 | `2026-07-17-staging-runtime-env-blocker.md`                                        | adopt-input | Staging sidecar ready; fixed staging env still blocks live smokes      |
 | `2026-07-17-xiaoman-activity-read-through-production-recovery.md`                  | adopt-input | Xiaoman read-through production deploy/config recovery evidence        |
+| `2026-07-17-erhua-weather-broadcast-current-only.md`                               | adopt-input | Forecast contract exists; server-only output selector remains unowned  |
 
 ## Templates
 
