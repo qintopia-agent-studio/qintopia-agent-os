@@ -61,6 +61,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-16-huabaosi-feishu-storage-production-config.md`                          | adopt-input | Production Feishu storage config gap and activation hold               |
 | `2026-07-17-staging-runtime-env-blocker.md`                                        | adopt-input | Staging sidecar ready; fixed staging env still blocks live smokes      |
 | `2026-07-17-xiaoman-activity-read-through-production-recovery.md`                  | adopt-input | Xiaoman read-through production deploy/config recovery evidence        |
+| `2026-07-17-xiaoman-production-completion-audit.md`                                | adopt-input | Xiaoman production completion gate audit and current blockers          |
 | `2026-07-17-erhua-weather-broadcast-current-only.md`                               | adopt-input | Forecast contract exists; server-only output selector remains unowned  |
 
 ## Templates
