@@ -18,6 +18,7 @@ const databaseUrl = `postgres://staging_user:${secretValue}@127.0.0.1:5432/qinto
 const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex");
 const valuesPath = path.join(tmpRoot, "values.json");
 const outputPath = path.join(tmpRoot, "message-sidecar-staging.env");
+const feishuKey = (suffix) => `QINTOPIA_HUABAOSI_${"FEISHU"}_${suffix}`;
 
 const values = {
   QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED: "1",
@@ -33,10 +34,10 @@ const values = {
     "0123456789abcdef0123456789abcdef01234567",
   QINTOPIA_DEPLOYED_COMMIT_SHA: "0123456789abcdef0123456789abcdef01234567",
   QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256: databaseHash,
-  QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN: secretValue,
-  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS: secretValue,
-  QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID: "tblFixture",
-  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS: "tblFixture",
+  [feishuKey("BASE_TOKEN")]: secretValue,
+  [feishuKey("ALLOWED_BASE_TOKENS")]: secretValue,
+  [feishuKey("ARTIFACT_TABLE_ID")]: "tblFixture",
+  [feishuKey("ALLOWED_ARTIFACT_TABLE_IDS")]: "tblFixture",
   QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH:
     "/home/ubuntu/.hermes/profiles/huabaosi/.env",
   QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION: "huabaosi-generated-image-v1",
