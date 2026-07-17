@@ -21,6 +21,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
+  "deploy/sidecar/scripts/render-staging-runtime-env.py",
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
   "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",

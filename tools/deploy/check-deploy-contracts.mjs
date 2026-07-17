@@ -97,6 +97,7 @@ if (!exists(deployBundleBuilderPath)) {
   const builder = readText(deployBundleBuilderPath);
   for (const fragment of [
     "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
+    "deploy/sidecar/scripts/render-staging-runtime-env.py",
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
     "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
