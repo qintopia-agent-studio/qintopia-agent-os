@@ -131,7 +131,22 @@ records and checker results.
 
 1. `QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh`
    with the approved release SHA and packaged staging sidecar SHA-256.
-2. Huabaosi staging readiness smoke with the approved release SHA and sidecar SHA-256.
+2. Unified staging runtime readiness evidence:
+
+   ```bash
+   QINTOPIA_STAGING_RUNTIME_READINESS_EVIDENCE_ENABLE=1 \
+   QINTOPIA_STAGING_RUNTIME_RELEASE_SHA='<approved staging release sha>' \
+   QINTOPIA_STAGING_RUNTIME_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
+   QINTOPIA_STAGING_RUNTIME_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+     deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh
+   ```
+
+   Retain only the emitted `staging_runtime_readiness_evidence=` JSON. It must report
+   `ready_for_huabaosi_qiwe_staging_smokes` before any Huabaosi or QiWe real staging
+   exercise. The report records only the approved release SHA, packaged sidecar SHA-256,
+   staging database URL SHA-256, child readiness statuses, and sanitized limitations; it
+   does not read the env file contents or execute the sidecar.
+
 3. Huabaosi staging smoke for exactly one approved image request work item.
 4. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
 5. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
@@ -139,8 +154,8 @@ records and checker results.
    preflight, upload, callback, QiWe evidence check, and cross-flow hash check.
 
 Hold immediately if any readiness report says the env file is missing, the release root
-is missing, the binary hash mismatches, an unsupported env key exists, or any evidence
-line contains a forbidden sensitive shape.
+is missing, the binary hash mismatches, the staging database URL hash is absent, an
+unsupported env key exists, or any evidence line contains a forbidden sensitive shape.
 
 ## Production Boundary
 

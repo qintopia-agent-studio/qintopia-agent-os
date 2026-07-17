@@ -95,6 +95,16 @@
     deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh
   ```
 
+- Combined Huabaosi/QiWe staging runtime readiness evidence:
+
+  ```bash
+  QINTOPIA_STAGING_RUNTIME_READINESS_EVIDENCE_ENABLE=1 \
+  QINTOPIA_STAGING_RUNTIME_RELEASE_SHA=<approved-staging-release-sha> \
+  QINTOPIA_STAGING_RUNTIME_SIDECAR_SHA256=<approved-staging-sidecar-sha256> \
+  QINTOPIA_STAGING_RUNTIME_DATABASE_URL_SHA256=<approved-staging-database-url-sha256> \
+    deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh
+  ```
+
 - Huabaosi WeCom shadow capture fixture replay:
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_shadow`
 - Huabaosi WeCom policy preview fixture replay:
@@ -431,11 +441,13 @@ Use `rg` and `rg --files` for search.
   environment rather than inheriting ambient operator secrets. Subprocess output must be
   captured, scanned, and schema-validated through memory and anonymous pipes, and raw
   child JSON must not be passed to a sanitizer through environment variables; no
-  subprocess output may be written to a file. Upload and callback evidence may retain
-  only the canonical final JPEG `artifact_content_hash` for Huabaosi/QiWe hash matching;
-  it must not retain media URI, filename, MD5 value, file size, or callback credentials.
-  It must not install a listener, service, timer, production feature build, Feishu
-  write, or broad group send.
+  subprocess output may be written to a file. The local fake smoke test creates a
+  temporary `sidecar/qintopia-message-sidecar`; if interrupted, remove any leftover
+  source-tree `sidecar/` before treating the checkout as clean or rerunning staging
+  checks. Upload and callback evidence may retain only the canonical final JPEG
+  `artifact_content_hash` for Huabaosi/QiWe hash matching; it must not retain media URI,
+  filename, MD5 value, file size, or callback credentials. It must not install a
+  listener, service, timer, production feature build, Feishu write, or broad group send.
 - Before any QiWe production-enablement PR, the retained Huabaosi staging
   generated-image evidence and QiWe staging send evidence must pass
   `tools/deploy/check-xiaoman-image-send-staging-evidence.mjs`, proving the Huabaosi

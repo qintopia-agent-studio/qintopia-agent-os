@@ -51,6 +51,79 @@ smoke path:
 Treating local smoke tests, fake-sidecar tests, or green PR CI as real staging would
 hide this missing runtime boundary.
 
+## Continuation Recheck
+
+A later continuation repeated the same fixed-path read-only SSH checks on
+`paxon-server`. The server was still reachable as `VM-0-4-ubuntu`, but the fixed staging
+env file and release root were still absent:
+
+```text
+/etc/qintopia/message-sidecar-staging.env: missing
+/home/ubuntu/qintopia-agent-os-staging-releases: missing
+```
+
+The recheck did not read env contents, execute a sidecar binary, connect to Postgres,
+call QiWe, or send externally. A local evidence-checker rehearsal confirmed that
+sanitized preflight-only and complete QiWe evidence records pass, while a record
+containing raw `requestId` is rejected. This validates the local guard shape only; it is
+not live staging send evidence.
+
+## Resume Recheck
+
+A resumed SSH check reached `paxon-server` again and confirmed hostname `VM-0-4-ubuntu`.
+The fixed staging env file and fixed staging release root were still absent, and no
+staged `sidecar/qintopia-message-sidecar` candidate could be listed because the release
+root itself was missing.
+
+The resumed check was read-only. It did not read env contents, execute a sidecar,
+connect to Postgres, call QiWe, or send externally. After the fixed inputs are
+provisioned, run the unified
+`deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh` gate before any
+real Huabaosi or QiWe staging phase.
+
+## Artifact Provisioning Progress
+
+A later provisioning step installed the owner-reviewed staging sidecar artifact under
+the fixed staging release root:
+
+```text
+release_sha=37fff8bf819f0df68825961203e7998b51a07c31
+sidecar_sha256=8a04ab44cad0b60cbef499d7a58e0fb8fcac577be537d1418ec3649f38c4fa1f
+sidecar_path=/home/ubuntu/qintopia-agent-os-staging-releases/37fff8bf819f0df68825961203e7998b51a07c31/sidecar/qintopia-message-sidecar
+```
+
+The provisioner verified the artifact ZIP allowlist, `SHA256SUMS`, manifest commit,
+manifest target, staging-only Cargo features, tarball contents, target path ownership,
+and immutable path permissions before installing the binary. It rejected an initial
+group-writable staging root; after the root permissions were tightened, the sidecar was
+installed with immutable release and sidecar directories.
+
+The latest sanitized prerequisite observation is:
+
+```json
+{
+  "action_status": "not_ready",
+  "env_file_present": false,
+  "env_file_secure": false,
+  "limitations": ["env_file_path_missing"],
+  "ready_for_staging": false,
+  "release_root_present": true,
+  "release_root_secure": true,
+  "release_sha": "37fff8bf819f0df68825961203e7998b51a07c31",
+  "sidecar_binary_present": true,
+  "sidecar_binary_secure": true,
+  "sidecar_binary_sha256": "8a04ab44cad0b60cbef499d7a58e0fb8fcac577be537d1418ec3649f38c4fa1f",
+  "sidecar_hash_matches": true,
+  "success": true,
+  "worker": "staging-runtime-prerequisite-observation"
+}
+```
+
+Real Huabaosi/QiWe staging remains blocked only on the fixed staging env file and the
+owner-approved staging database URL SHA-256 evidence. The observation did not read env
+contents, execute the sidecar, connect to Postgres, call Huabaosi, call QiWe, write
+Feishu, install services, enable timers, publish a Release, or send externally.
+
 ## Required Follow-Up
 
 Before a real staging exercise, an owner-reviewed provisioning step must create and

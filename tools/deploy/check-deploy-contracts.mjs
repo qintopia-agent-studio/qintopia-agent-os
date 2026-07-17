@@ -98,6 +98,7 @@ if (!exists(deployBundleBuilderPath)) {
   for (const fragment of [
     "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
+    "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
   ]) {
     requireFragment(deployBundleBuilderPath, builder, fragment);
@@ -619,6 +620,10 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
     "/home/ubuntu/qintopia-agent-os-staging-releases/<40-hex-sha>/sidecar/qintopia-message-sidecar",
     "QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE=1",
     "staging-runtime-prerequisite-observation-smoke.sh",
+    "QINTOPIA_STAGING_RUNTIME_READINESS_EVIDENCE_ENABLE=1",
+    "staging-runtime-readiness-evidence-smoke.sh",
+    "staging_runtime_readiness_evidence=",
+    "ready_for_huabaosi_qiwe_staging_smokes",
     "docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md",
     "staging release SHA",
     "packaged staging sidecar SHA-256",
@@ -642,6 +647,7 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
     "deploy bundle contains `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh`",
     "no checked path component is a symlink",
     "no checked path component is group- or world-writable",
+    "staging database URL hash is absent",
     "node tools/deploy/check-huabaosi-image-staging-evidence.mjs",
     "docs/reports/templates/huabaosi-image-generation-staging-evidence.md",
     "This runbook is not production enablement",
@@ -670,6 +676,8 @@ const aliangStagingReadinessTestPath =
   "tools/deploy/test-huabaosi-image-staging-readiness.mjs";
 const stagingRuntimePrerequisiteObservationTestPath =
   "tools/deploy/test-staging-runtime-prerequisite-observation.mjs";
+const stagingRuntimeReadinessEvidenceTestPath =
+  "tools/deploy/test-staging-runtime-readiness-evidence.mjs";
 if (!exists(stagingRuntimePrerequisiteObservationTestPath)) {
   addError(
     `${stagingRuntimePrerequisiteObservationTestPath}: missing staging runtime prerequisite observation test`
@@ -689,6 +697,25 @@ if (!exists(stagingRuntimePrerequisiteObservationTestPath)) {
     "sidecar_hash_mismatch",
   ]) {
     requireFragment(stagingRuntimePrerequisiteObservationTestPath, test, fragment);
+  }
+}
+if (!exists(stagingRuntimeReadinessEvidenceTestPath)) {
+  addError(
+    `${stagingRuntimeReadinessEvidenceTestPath}: missing staging runtime readiness evidence test`
+  );
+} else {
+  const test = readText(stagingRuntimeReadinessEvidenceTestPath);
+  for (const fragment of [
+    "staging-runtime-readiness-evidence-smoke.sh",
+    "staging_runtime_readiness_evidence=",
+    "ready_for_huabaosi_qiwe_staging_smokes",
+    "staging-runtime-evidence-secret-must-not-appear",
+    "QINTOPIA_STAGING_RUNTIME_DATABASE_URL_SHA256",
+    "hash mismatch evidence is invalid",
+    "expected missing staging database hash to fail",
+    "Staging runtime readiness evidence smoke test passed.",
+  ]) {
+    requireFragment(stagingRuntimeReadinessEvidenceTestPath, test, fragment);
   }
 }
 if (!exists(aliangStagingReadinessTestPath)) {
