@@ -83,13 +83,13 @@ server-local staging env file with owner-reviewed values for:
   `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS`;
 - `QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH`;
 - `QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1`;
-- `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`;
 - `QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS` for exactly one isolated staging group; and
 - an explicit owner decision on whether the staging env may reuse the existing Erhua
   QiWe API URL, token, and GUID.
 
 The Huabaosi generated image is stored in the fixed Feishu Base generated-image table.
-Do not provision a separate HTTP media upload/public BaseURL for this path.
+Do not provision a separate HTTP media upload/public BaseURL or Huabaosi media host
+allowlist for this path.
 
 Do not create a placeholder staging env merely to pass path-only readiness. That would
 produce misleading readiness evidence and would still fail the real Huabaosi/QiWe

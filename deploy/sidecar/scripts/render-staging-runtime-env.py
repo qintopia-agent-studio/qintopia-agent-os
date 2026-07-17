@@ -35,7 +35,6 @@ ORDERED_KEYS = [
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
     "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
     "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
-    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
@@ -149,6 +148,13 @@ def validate_values(data, expected_database_hash):
         values["QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA"],
     )
     require_sha_env("QINTOPIA_DEPLOYED_COMMIT_SHA", values["QINTOPIA_DEPLOYED_COMMIT_SHA"])
+    if (
+        values["QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA"]
+        != values["QINTOPIA_DEPLOYED_COMMIT_SHA"]
+    ):
+        raise ValidationError(
+            "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA must match QINTOPIA_DEPLOYED_COMMIT_SHA"
+        )
 
     database_url = values["QINTOPIA_SIDECAR_DATABASE_URL"]
     actual_database_hash = hashlib.sha256(database_url.encode("utf-8")).hexdigest()
@@ -164,10 +170,6 @@ def validate_values(data, expected_database_hash):
     )
     qiwe_api = require_https_url("QIWE_API_URL", values["QIWE_API_URL"])
 
-    media_hosts = parse_hosts(
-        "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
-        values["QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS"],
-    )
     qiwe_hosts = parse_hosts(
         "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
         values["QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS"],
@@ -203,7 +205,6 @@ def validate_values(data, expected_database_hash):
 
     return {
         "values": values,
-        "media_host_count": len(media_hosts),
         "qiwe_host_count": len(qiwe_hosts),
         "group_count": len(group_ids),
         "database_url_sha256": actual_database_hash,
@@ -338,7 +339,6 @@ def main():
             "output_path": str(output),
             "key_count": len(ORDERED_KEYS),
             "database_url_sha256": validated["database_url_sha256"],
-            "media_host_count": validated["media_host_count"],
             "qiwe_host_count": validated["qiwe_host_count"],
             "isolated_group_count": validated["group_count"],
             "safe_for_review": True,

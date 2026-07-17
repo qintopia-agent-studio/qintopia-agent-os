@@ -29,8 +29,7 @@ values themselves.
 - staging database URL SHA-256;
 - isolated database identity and rollback owner;
 - Huabaosi image request work item UUID;
-- provider account, cost cap, and media storage boundary;
-- isolated media host allowlist;
+- provider account, cost cap, and Feishu Base storage boundary;
 - isolated target group allowlist for downstream QiWe staging;
 - QiWe send-ready work item UUID after human image approval; and
 - trusted callback source for the one bounded QiWe callback.
@@ -64,7 +63,6 @@ Huabaosi staging keys:
 - `QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS`
 - `QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH`
 - `QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1`
-- `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`
 - `QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES`
 
 Downstream QiWe staging keys, once the QiWe staging PR is present on the staged release:
@@ -83,6 +81,10 @@ The Huabaosi staging smoke reads only the Huabaosi key allowlist above. If the s
 staging env file already contains the downstream QiWe keys, the Huabaosi smoke must
 ignore those keys and must not pass them to its child sidecar process. Unknown keys and
 invalid assignment syntax still fail closed.
+
+For the Feishu Base primary-storage path, Huabaosi image generation must not require
+`QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`; storage is proven by a `feishu-base://`
+artifact URI from the worker, not by an HTTP media host.
 
 The env file must be readable only by the staging operator/root boundary. Readiness
 smokes must verify only file metadata and must not read or print env contents.

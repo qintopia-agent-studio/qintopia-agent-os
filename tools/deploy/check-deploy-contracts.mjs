@@ -544,6 +544,7 @@ if (!exists(aliangStagingSmokePath)) {
     "json.loads(os.environ",
     "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
     "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
   ]) {
     forbidFragment(aliangStagingSmokePath, smoke, fragment);
   }
@@ -758,6 +759,7 @@ if (!exists(stagingRuntimeEnvRenderPath)) {
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS must contain exactly one isolated group",
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA must match QINTOPIA_DEPLOYED_COMMIT_SHA",
     "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 must match the approved staging database hash",
     "staging database URL hash does not match approved hash",
     "validate_protected_output_boundary",
@@ -781,6 +783,7 @@ if (!exists(stagingRuntimeEnvRenderPath)) {
     "urllib.request",
     "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
     "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
   ]) {
     forbidFragment(stagingRuntimeEnvRenderPath, script, fragment);
   }
@@ -799,6 +802,7 @@ if (!exists(stagingRuntimeEnvRenderTestPath)) {
     "staging_env_written",
     "unsupported keys",
     "hash does not match",
+    "release SHA mismatch failure invalid",
     "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND",
     "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
     "non-test output guard invalid",

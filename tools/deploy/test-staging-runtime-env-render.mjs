@@ -41,7 +41,6 @@ const values = {
   QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH:
     "/home/ubuntu/.hermes/profiles/huabaosi/.env",
   QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION: "huabaosi-generated-image-v1",
-  QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS: "media.example.test",
   QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES: "5000000",
   QINTOPIA_QIWE_IMAGE_SEND_ENABLED: "1",
   QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY: "1",
@@ -167,6 +166,27 @@ try {
     `${result.stdout}\n${result.stderr}`.includes(secretValue)
   ) {
     throw new Error(`database hash failure invalid: ${JSON.stringify(report)}`);
+  }
+
+  const mismatchedReleasePath = path.join(tmpRoot, "mismatched-release-values.json");
+  writeValues(mismatchedReleasePath, {
+    ...values,
+    QINTOPIA_DEPLOYED_COMMIT_SHA: "f".repeat(40),
+  });
+  result = runRenderer([
+    "--values",
+    mismatchedReleasePath,
+    "--expected-database-url-sha256",
+    databaseHash,
+  ]);
+  report = parseReport(result);
+  if (
+    result.status === 0 ||
+    report.success !== false ||
+    !report.error.includes("must match QINTOPIA_DEPLOYED_COMMIT_SHA") ||
+    `${result.stdout}\n${result.stderr}`.includes(secretValue)
+  ) {
+    throw new Error(`release SHA mismatch failure invalid: ${JSON.stringify(report)}`);
   }
 
   const secondOutput = path.join(tmpRoot, "another-message-sidecar-staging.env");
