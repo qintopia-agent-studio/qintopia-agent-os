@@ -116,6 +116,13 @@ Prepare the fixed staging env file from an owner-reviewed server-local JSON valu
 The values file must stay on the server and must not be committed, copied into reports,
 or pasted into chat.
 
+Use `docs/operations/message-sidecar-staging-values.template.json` only as a non-secret
+checklist for the required keys. Copy its shape into the server-local
+`/etc/qintopia/message-sidecar-staging-values.json`, replace every placeholder with
+owner-reviewed staging values, and keep that server-local values file out of git, PRs,
+reports, logs, and chat. The template itself is not renderer-ready and must not be
+applied as-is.
+
 First run the renderer in validation mode. This prints only
 `staging_runtime_env_render=` sanitized JSON and does not write the env file:
 

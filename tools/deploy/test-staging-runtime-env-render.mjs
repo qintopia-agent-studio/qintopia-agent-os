@@ -51,6 +51,21 @@ const values = {
   QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS: "isolated-staging-group",
 };
 
+const templatePath = path.join(
+  repoRoot,
+  "docs/operations/message-sidecar-staging-values.template.json"
+);
+const templateValues = JSON.parse(fs.readFileSync(templatePath, "utf8"));
+if (
+  JSON.stringify(Object.keys(templateValues).sort()) !==
+  JSON.stringify(Object.keys(values).sort())
+) {
+  throw new Error("staging values template keys drifted from the renderer contract");
+}
+if (!Object.values(templateValues).some((value) => String(value).includes("<"))) {
+  throw new Error("staging values template must keep non-secret placeholders");
+}
+
 const writeValues = (filePath, data) => {
   fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, {
     encoding: "utf8",
