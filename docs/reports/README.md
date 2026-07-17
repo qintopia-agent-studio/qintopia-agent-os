@@ -58,6 +58,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-15-qiwe-isolated-staging-verification.md`                                 | adopt-input | QiWe isolated staging local verification and remaining owner gate      |
 | `2026-07-15-huabaosi-feishu-artifact-mirror-production-enablement.md`              | adopt-input | Production artifact, timer, activation, rollback, and release boundary |
 | `2026-07-16-huabaosi-feishu-storage-production-config.md`                          | adopt-input | Production Feishu storage config gap and activation hold               |
+| `2026-07-17-xiaoman-activity-read-through-production-recovery.md`                  | adopt-input | Xiaoman read-through production deploy/config recovery evidence        |
 
 ## Templates
 
