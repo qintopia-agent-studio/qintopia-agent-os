@@ -55,10 +55,10 @@ shared `qintopia` toolset.
   whether Human Owner approval is required.
 - `qintopia_conversation_summary`: turns a customer conversation into the
   standard 小秦 handoff format.
-- `qintopia_xiaoman_activity_status_update` and `qintopia_xiaoman_activity_gap_update`:
-  create sidecar commands for AgentOS `event_signals` mutations with `event_signal_id`
-  and `mutation_id`; they do not accept Feishu `record_id` / `table_role` as write
-  identifiers.
+- `qintopia_xiaoman_activity_status_update`, `qintopia_xiaoman_activity_gap_update`,
+  and `qintopia_xiaoman_activity_phase_update`: create sidecar commands for AgentOS
+  `event_signals` mutations with `event_signal_id` and `mutation_id`; they do not
+  accept Feishu `record_id` / `table_role` as write identifiers.
 - `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
   `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
   to `huabaosi.create_visual_asset`.
@@ -80,9 +80,11 @@ commands.
 
 `qintopia_xiaoman_activity_status_update` accepts only `待处理`, `处理中`, `已完成`, or
 `已关闭`. `qintopia_xiaoman_activity_gap_update` accepts one non-sensitive `gap_summary`
-of at most 500 characters. Both wrappers default to dry-run and return a bounded sidecar
-command for the runtime executor. They do not accept Feishu record ids, write Feishu,
-send QiWe messages, or call an external adapter.
+of at most 500 characters. `qintopia_xiaoman_activity_phase_update` accepts only
+`pre_event`, `in_event`, or `post_event`; the sidecar enforces forward-only transitions
+and derives the route from the stored AgentOS phase fact. These wrappers default to
+dry-run and return a bounded sidecar command for the runtime executor. They do not
+accept Feishu record ids, write Feishu, send QiWe messages, or call an external adapter.
 
 Complaint guardrails:
 
