@@ -22,6 +22,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
+  "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
