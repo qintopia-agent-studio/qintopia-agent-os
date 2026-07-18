@@ -24,9 +24,16 @@ call Feishu or QiWe, install a listener or timer, or send externally.
   attachment through the authenticated Feishu media API, and compare those bytes with
   the AgentOS artifact metadata and creation audit. Its report is sanitized and it does
   not approve, write Postgres or Feishu, call QiWe, publish, or send.
-- Generated-image approval currently accepts only stable HTTPS JPEG artifact URIs.
-- QiWe image-send claim and upload currently accept only stable allowlisted HTTPS media
-  URLs because the reviewed staging adapter uses QiWe asynchronous URL upload.
+- Generated-image approval can consume authenticated Feishu primary-storage revalidation
+  for an explicit manual `approved` apply. Rejection and changes-requested decisions
+  remain available without Feishu I/O, and a Feishu field or automation event alone is
+  still not approval.
+- The combined staging build containing both `huabaosi-staging-adapter` and
+  `qiwe-staging-adapter` can deliver an exact `feishu-base://` artifact by committing
+  the existing `uploading` attempt, reading the authenticated Feishu bytes, uploading
+  those bytes to QiWe SDK temporary storage, reading the returned temporary URL back,
+  and then invoking the existing async URL upload path. Default, production, Huabaosi
+  only, and QiWe-only builds continue to reject this route.
 - The reviewed QiWe protocol plan says the synchronous local and URL upload APIs are
   marked for deprecation and must not become the production foundation.
 
@@ -41,12 +48,12 @@ not call the WeCom service API and is periodically cleared. The released, non-de
 `/cloud/cdnUploadByUrlAsync` API can then consume that URL and retain the existing
 callback/send-image protocol.
 
-This makes a reviewed delivery bridge possible without exposing a Feishu attachment
-token or introducing a new Qintopia-hosted public proxy. It does not make the temporary
-URL a stable AgentOS artifact URI. A later delivery PR must keep the URL memory-only,
-exact-allowlist its host, download it back through a bounded client, prove the returned
-bytes match the approved JPEG identity, and only then call the existing asynchronous
-upload API.
+This made the reviewed staging delivery bridge possible without exposing a Feishu
+attachment token or introducing a new Qintopia-hosted public proxy. It does not make the
+temporary URL a stable AgentOS artifact URI. The implemented bridge keeps the URL
+memory-only, exact-allowlists its host, downloads it back through a bounded client,
+proves the returned bytes match the approved JPEG identity, and only then calls the
+existing asynchronous upload API.
 
 The reviewed request contract is `POST /qiwe/api/qw/doFileApi` with exactly the
 multipart fields `method=/cloud/cloudUpload`, `guid`, and `file`. Success requires
@@ -58,22 +65,23 @@ limited to the API host.
 
 ## Gap
 
-Authenticated Feishu Base attachment storage proves the final JPEG identity to AgentOS,
-but it does not give QiWe a reviewed delivery URL. The current QiWe async URL upload
-request requires `fileUrl`. A `feishu-base://` artifact is not an HTTPS URL, and the
-underlying Feishu attachment is private and credentialed.
+The code-level bridge now exists, but real runtime evidence is still missing.
 
-Therefore the current fail-closed behavior is correct:
+Therefore the current fail-closed boundary is:
 
-- human approval must continue to reject `feishu-base://` generated images;
-- QiWe preview, claim, upload, and callback policy must continue to reject
-  `feishu-base://` generated images; and
-- staging evidence must not claim a Huabaosi-to-QiWe hash match from a Feishu-backed
-  artifact until a reviewed delivery path exists.
+- human approval may approve a `feishu-base://` generated image only after authenticated
+  Feishu primary-storage revalidation succeeds inside the explicit manual review apply;
+- QiWe preview, claim, upload, and callback policy may accept `feishu-base://` only in
+  the combined staging feature artifact with exact owner approval, staging database
+  hash, Feishu and QiWe allowlists, same-byte temporary-storage readback, and the
+  existing at-most-once callback/send gate; and
+- staging evidence must not claim a Huabaosi-to-QiWe hash match until one real Huabaosi
+  staging image, one QiWe staging upload/callback/send, and the cross-flow evidence
+  checker all pass.
 
 ## Implementation Phases
 
-The boundary must be implemented in reviewed phases:
+The boundary was implemented in reviewed phases, but runtime evidence is still pending:
 
 1. Authenticated Feishu attachment revalidation.
    - Load only the fixed Huabaosi generated-image Base/table boundary.
@@ -137,8 +145,9 @@ The boundary must be implemented in reviewed phases:
    release/current contains the reviewed staging runbooks and checks.
 3. Run Huabaosi staging generation to retain one pending Feishu-backed generated-image
    evidence record.
-4. Land the read-only Feishu attachment revalidation entrypoint and authenticated human
-   approval consumption in separate reviewed PRs.
-5. Add the QiWe SDK temporary-storage upload/readback plus asynchronous URL upload
-   bridge in another staging-only PR.
-6. Only then run QiWe staging upload/callback/send evidence and the cross-flow checker.
+4. Run the explicit manual approval apply for that artifact so authenticated Feishu
+   revalidation is exercised before the review mutation.
+5. Run QiWe staging preflight, upload, and callback/send with the combined staging
+   artifact, retaining only sanitized evidence.
+6. Run the cross-flow checker to prove Huabaosi `content_hash` equals the QiWe
+   `artifact_content_hash` before any production enablement PR.

@@ -60,22 +60,23 @@ provider, Feishu upload, readback, Base write, or Postgres persistence ambiguity
 terminal for the canary and must not auto-approve, publish, write the legacy task
 summary, or call QiWe.
 
-The first canary remains `pending`. The current approval and QiWe intake paths require
-an immutable public HTTPS JPEG URI and therefore fail closed for the internal
-`feishu-base://` artifact reference. The read-only
-`huabaosi-feishu-primary-storage-revalidate --artifact-id <uuid>` sidecar entrypoint can
-prove the current Feishu row schema, workflow-root association, and attachment still
-match AgentOS facts through authenticated readback, but it does not approve, publish,
-write Postgres or Feishu, call QiWe, or send. A later reviewed PR must decide how
-approval and QiWe delivery consume those exact bytes; Feishu field changes alone cannot
-cross either gate.
+The first canary remains `pending` until an explicit manual review apply occurs. The
+read-only `huabaosi-feishu-primary-storage-revalidate --artifact-id <uuid>` sidecar
+entrypoint can prove the current Feishu row schema, workflow-root association, and
+attachment still match AgentOS facts through authenticated readback, but it does not
+approve, publish, write Postgres or Feishu, call QiWe, or send. Authenticated approval
+consumption may approve a `feishu-base://` artifact only inside the explicit manual
+review transaction after revalidation succeeds; Feishu field changes alone cannot cross
+the approval gate.
 
 Authenticated approval consumption is a separate boundary: an explicit manual `approved`
 apply may revalidate first, then approve only if the transaction-locked Postgres
 artifact still matches the in-memory revalidation evidence. A Feishu review field or
 automation event alone remains insufficient. Rejection and changes-requested decisions
-do not require external readback. QiWe intake continues to reject `feishu-base://` until
-its own reviewed delivery bridge lands.
+do not require external readback. QiWe intake may consume `feishu-base://` only through
+the combined staging Feishu-to-QiWe bridge with same-byte temporary-storage readback;
+production, default, and single-feature builds still reject that route until staging
+evidence and a later production enablement PR are reviewed.
 
 ## Feishu Automation
 

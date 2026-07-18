@@ -50,7 +50,8 @@ publish, or production activation.
 
 ## Follow-Up Decision
 
-- QiWe staging send must wait for authenticated Feishu attachment revalidation: yes/no.
+- QiWe staging send must wait for manual approval revalidation and combined
+  Feishu-to-QiWe bridge evidence: yes/no.
 - Reason:
 - Required follow-up owner review:
 - Confirmed no QiWe send, production timer, service, Release publish, or production

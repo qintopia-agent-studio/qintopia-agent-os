@@ -42,6 +42,7 @@ const values = {
     "/home/ubuntu/.hermes/profiles/huabaosi/.env",
   QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION: "huabaosi-generated-image-v1",
   QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES: "5000000",
+  QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS: "media.example.test,cloud.example.test",
   QINTOPIA_QIWE_IMAGE_SEND_ENABLED: "1",
   QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY: "1",
   QIWE_API_URL: "https://qiwe.example.test",
@@ -107,6 +108,7 @@ try {
     report.action_status !== "staging_env_render_ready" ||
     report.database_url_sha256 !== databaseHash ||
     report.key_count !== Object.keys(values).length ||
+    report.media_host_count !== 2 ||
     fs.existsSync(outputPath) ||
     `${result.stdout}\n${result.stderr}`.includes(secretValue)
   ) {
@@ -143,6 +145,9 @@ try {
     ) ||
     !rendered.includes(
       "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=isolated-staging-group"
+    ) ||
+    !rendered.includes(
+      "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test,cloud.example.test"
     ) ||
     (fs.statSync(outputPath).mode & 0o777) !== 0o600
   ) {

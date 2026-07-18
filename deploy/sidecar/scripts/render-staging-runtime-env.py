@@ -36,6 +36,7 @@ ORDERED_KEYS = [
     "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
     "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
     "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
     "QIWE_API_URL",
@@ -174,6 +175,10 @@ def validate_values(data, expected_database_hash):
         "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
         values["QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS"],
     )
+    media_hosts = parse_hosts(
+        "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+        values["QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS"],
+    )
     group_ids = [
         part.strip()
         for part in values["QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS"].split(",")
@@ -206,6 +211,7 @@ def validate_values(data, expected_database_hash):
     return {
         "values": values,
         "qiwe_host_count": len(qiwe_hosts),
+        "media_host_count": len(media_hosts),
         "group_count": len(group_ids),
         "database_url_sha256": actual_database_hash,
         "huabaosi_api_host": api_base.hostname,
@@ -340,6 +346,7 @@ def main():
             "key_count": len(ORDERED_KEYS),
             "database_url_sha256": validated["database_url_sha256"],
             "qiwe_host_count": validated["qiwe_host_count"],
+            "media_host_count": validated["media_host_count"],
             "isolated_group_count": validated["group_count"],
             "safe_for_review": True,
             "guardrails": [
