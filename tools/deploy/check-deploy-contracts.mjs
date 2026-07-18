@@ -764,7 +764,8 @@ if (!exists(aliangStagingEvidenceTemplatePath)) {
     "`mime_type`: `image/jpeg`",
     "`storage_backend`: `feishu-base`",
     "Complete Huabaosi evidence checker passed",
-    "QiWe staging send must wait for authenticated Feishu attachment revalidation",
+    "QiWe staging send must wait for manual approval revalidation and combined",
+    "Feishu-to-QiWe bridge evidence",
     "no QiWe send, production timer, service, Release publish",
     "Do not record provider endpoint, provider response, API key, token, database URL",
   ]) {

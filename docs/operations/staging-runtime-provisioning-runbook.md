@@ -235,11 +235,13 @@ records and checker results.
    upload/public URL service.
 6. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
 7. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
-8. After the separate Feishu attachment revalidation and QiWe delivery path is present
-   on the staged release, run QiWe readiness, preflight, upload, callback, QiWe evidence
-   check, and cross-flow hash check. The current QiWe async upload path requires a
-   stable allowlisted HTTPS `fileUrl`, so QiWe intake must continue to fail closed for
-   `feishu-base://` artifacts. Do not solve this by exposing Feishu attachment tokens,
+8. With the merged Feishu-to-QiWe staging bridge present on the staged release, run QiWe
+   readiness, preflight, upload, callback, QiWe evidence check, and cross-flow hash
+   check. The combined staging artifact may consume a `feishu-base://` artifact only by
+   authenticated Feishu readback, memory-only QiWe SDK temporary-storage upload,
+   same-byte temporary URL readback, and the existing async URL upload/callback gate.
+   Default, production, Huabaosi-only, and QiWe-only builds must continue to fail closed
+   for `feishu-base://`. Do not solve failures by exposing Feishu attachment tokens,
    adding an unreviewed public proxy/upload service, or falling back to QiWe synchronous
    upload APIs marked deprecated in the reviewed protocol plan.
 
