@@ -38,6 +38,7 @@ publish, or production activation.
 ## Sanitized Fields
 
 - `database_url_sha256`:
+- `sidecar_binary_sha256`:
 - `work_item_id`:
 - `content_hash`:
 - `mime_type`: `image/jpeg`

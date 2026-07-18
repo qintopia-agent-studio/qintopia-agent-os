@@ -363,6 +363,8 @@ QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE=1 \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256='<same approved staging sidecar binary sha256>' \
 QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID='<approved staging image request UUID>' \
 deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh
 ```

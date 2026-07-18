@@ -89,6 +89,7 @@ assertExactKeys(
     "generation_enabled",
     "phase",
     "safe_for_chat",
+    "sidecar_binary_sha256",
     "storage_backend",
     "success",
     "worker",
@@ -110,6 +111,7 @@ assertExactKeys(
     "phase",
     "review_status",
     "safe_for_chat",
+    "sidecar_binary_sha256",
     "storage_backend",
     "success",
     "width",
@@ -127,7 +129,8 @@ if (
   huabaosiPreflight.generation_enabled !== true ||
   huabaosiPreflight.safe_for_chat !== false ||
   huabaosiPreflight.storage_backend !== "feishu-base" ||
-  !isSha256(huabaosiPreflight.database_url_sha256)
+  !isSha256(huabaosiPreflight.database_url_sha256) ||
+  !isSha256(huabaosiPreflight.sidecar_binary_sha256)
 ) {
   fail("Huabaosi preflight evidence does not prove staging adapter readiness");
 }
@@ -147,6 +150,8 @@ if (
   huabaosiGeneration.byte_size <= 0 ||
   huabaosiGeneration.storage_backend !== "feishu-base" ||
   huabaosiGeneration.database_url_sha256 !== huabaosiPreflight.database_url_sha256 ||
+  huabaosiGeneration.sidecar_binary_sha256 !==
+    huabaosiPreflight.sidecar_binary_sha256 ||
   !isCanonicalContentHash(huabaosiGeneration.content_hash) ||
   !isUuid(huabaosiGeneration.work_item_id)
 ) {
@@ -165,6 +170,65 @@ const qiweCallback = single(
   qiweRecords.filter((record) => record.phase === "callback"),
   "expected exactly one QiWe callback evidence record"
 );
+assertExactKeys(
+  qiwePreflight,
+  new Set([
+    "action_status",
+    "adapter_compiled",
+    "allowed_group_count",
+    "allowed_host_count",
+    "config_valid",
+    "database_boundary_valid",
+    "media_allowed_host_count",
+    "safe_for_chat",
+    "send_enabled",
+    "sidecar_binary_sha256",
+    "success",
+    "webhook_ready",
+    "worker",
+  ]),
+  "QiWe preflight"
+);
+assertExactKeys(
+  qiweUpload,
+  new Set([
+    "action_status",
+    "apply_requested",
+    "artifact_content_hash",
+    "callback_received",
+    "dry_run",
+    "external_send_executed",
+    "external_upload_requested",
+    "phase",
+    "safe_for_chat",
+    "sidecar_binary_sha256",
+    "success",
+    "worker",
+    "work_item_id",
+  ]),
+  "QiWe upload"
+);
+assertExactKeys(
+  qiweCallback,
+  new Set([
+    "action_status",
+    "apply_requested",
+    "artifact_content_hash",
+    "callback_additional_field_count",
+    "callback_credential_schema",
+    "callback_received",
+    "dry_run",
+    "external_send_executed",
+    "external_upload_requested",
+    "phase",
+    "safe_for_chat",
+    "sidecar_binary_sha256",
+    "success",
+    "worker",
+    "work_item_id",
+  ]),
+  "QiWe callback"
+);
 if (
   qiwePreflight.success !== true ||
   qiwePreflight.worker !== "qiwe-image-send-adapter" ||
@@ -174,7 +238,8 @@ if (
   qiwePreflight.config_valid !== true ||
   qiwePreflight.database_boundary_valid !== true ||
   qiwePreflight.webhook_ready !== true ||
-  qiwePreflight.allowed_group_count !== 1
+  qiwePreflight.allowed_group_count !== 1 ||
+  !isSha256(qiwePreflight.sidecar_binary_sha256)
 ) {
   fail("QiWe preflight evidence does not prove staging send readiness");
 }
@@ -184,6 +249,7 @@ if (
   qiweUpload.action_status !== "image_upload_accepted" ||
   qiweUpload.external_upload_requested !== true ||
   qiweUpload.external_send_executed !== false ||
+  qiweUpload.sidecar_binary_sha256 !== qiwePreflight.sidecar_binary_sha256 ||
   !isCanonicalContentHash(qiweUpload.artifact_content_hash)
 ) {
   fail("QiWe upload evidence does not prove one accepted final JPEG upload");
@@ -194,6 +260,7 @@ if (
   qiweCallback.action_status !== "image_send_completed" ||
   qiweCallback.external_upload_requested !== false ||
   qiweCallback.external_send_executed !== true ||
+  qiweCallback.sidecar_binary_sha256 !== qiwePreflight.sidecar_binary_sha256 ||
   !isCanonicalContentHash(qiweCallback.artifact_content_hash)
 ) {
   fail("QiWe callback evidence does not prove one completed final JPEG send");
@@ -206,6 +273,9 @@ if (qiweUpload.artifact_content_hash !== qiweCallback.artifact_content_hash) {
 }
 if (huabaosiGeneration.content_hash !== qiweCallback.artifact_content_hash) {
   fail("Huabaosi content_hash and QiWe artifact_content_hash values differ");
+}
+if (huabaosiGeneration.sidecar_binary_sha256 !== qiweCallback.sidecar_binary_sha256) {
+  fail("Huabaosi and QiWe sidecar_binary_sha256 values differ");
 }
 
 console.log("Xiaoman image-send staging evidence check passed.");
