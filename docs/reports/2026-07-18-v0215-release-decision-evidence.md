@@ -21,11 +21,17 @@ through QiWe group-send arrival.
 ```text
 release_pr=#180
 release_pr_title=chore(master): release 0.2.15
-release_pr_head=904ef17d8a9c1936f3a5e2689e03e241ec1bc475
-release_pr_state=open
-release_pr_mergeable=MERGEABLE
+release_pr_head_authority=gh pr view 180 at release decision time
+last_observed_release_pr_head=278be363e194249b3ccfe02dd9878596e3b3fed1
+release_pr_state_requirement=open
+release_pr_mergeable_requirement=MERGEABLE
 latest_published_release=v0.2.14
 ```
+
+Do not treat `last_observed_release_pr_head` as the merge-time head. Release Please
+refreshes `#180` after any merged follow-up PR, including evidence-only follow-ups. The
+owner must check the live PR head and PR-attached status immediately before a release
+decision.
 
 Included changes:
 
@@ -41,18 +47,25 @@ Included changes:
 - `1d02be4` `fix: tighten xiaoman staging evidence gate`
 - `3493318` `feat: bridge feishu images to qiwe staging`
 - `10b8820` `fix: prevent stale staging artifact provisioning`
+- `bb5b920` `docs: refresh v0215 release evidence`
 
 ## Validation Evidence
 
-Manual Release Please validation was run against the current Release Please head:
+Manual Release Please validation must pass on the exact current Release Please head. The
+last observed successful validation was:
 
 ```text
-workflow_run=29645143804
-head_sha=904ef17d8a9c1936f3a5e2689e03e241ec1bc475
+workflow_run=29645591436
+head_sha=278be363e194249b3ccfe02dd9878596e3b3fed1
 changes=success
 check=success
 pr_attached_status=Release Please validation SUCCESS
 ```
+
+If `gh pr view 180 --json headRefOid,statusCheckRollup` reports any head other than
+`278be363e194249b3ccfe02dd9878596e3b3fed1`, rerun the manual validation from
+`docs/operations/release-acceptance-checklist.md` and require the PR-attached
+`Release Please validation` status to be `SUCCESS` on that replacement head.
 
 The Release Please PR had no submitted reviews, no ordinary comments other than
 generated release content, no review threads, and remained mergeable at the time of this
