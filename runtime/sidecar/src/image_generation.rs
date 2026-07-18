@@ -2259,6 +2259,7 @@ mod tests {
 
     #[cfg(any(
         feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     use std::fs;
@@ -2274,6 +2275,7 @@ mod tests {
     use image::ImageEncoder;
     #[cfg(any(
         feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     use tempfile::tempdir;
@@ -3385,6 +3387,7 @@ mod tests {
     #[test]
     #[cfg(any(
         feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     fn fake_provider_stores_final_jpeg_in_feishu_before_returning_artifact() {

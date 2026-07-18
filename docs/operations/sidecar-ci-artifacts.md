@@ -52,9 +52,13 @@ It is built only by the manually dispatched Artifacts workflow when
 `qiwe-staging-adapter`, records `staging_only=true` and `production_eligible=false` in
 the manifest, is retained only as a GitHub Actions artifact, and must be installed only
 under `/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` for
-owner-approved Huabaosi/QiWe staging evidence. It is never uploaded to COS, never
-included in the production release build, and must not be fetched or promoted by
-production deployment scripts.
+owner-approved Huabaosi/QiWe staging evidence. The `huabaosi-staging-adapter` feature
+includes the guarded Feishu Base primary-storage upload and readback client because the
+staging values require `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`; it still
+requires the staging approval phrase, reviewed database hash, Base/table allowlists, and
+profile boundary before external I/O. It is never uploaded to COS, never included in the
+production release build, and must not be fetched or promoted by production deployment
+scripts.
 
 ## CI Requirements
 

@@ -44,6 +44,7 @@ pub(crate) struct HttpRequestError {
         feature = "qiwe-staging-adapter",
         feature = "huabaosi-wecom-canary-gateway",
         feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     request_may_have_been_sent: bool,
@@ -61,6 +62,7 @@ impl HttpRequestError {
                 feature = "qiwe-staging-adapter",
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
+                feature = "huabaosi-staging-adapter",
                 feature = "huabaosi-feishu-mirror-adapter"
             ))]
             request_may_have_been_sent: false,
@@ -76,6 +78,7 @@ impl HttpRequestError {
                 feature = "qiwe-staging-adapter",
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
+                feature = "huabaosi-staging-adapter",
                 feature = "huabaosi-feishu-mirror-adapter"
             ))]
             request_may_have_been_sent: false,
@@ -91,6 +94,7 @@ impl HttpRequestError {
                 feature = "qiwe-staging-adapter",
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
+                feature = "huabaosi-staging-adapter",
                 feature = "huabaosi-feishu-mirror-adapter"
             ))]
             request_may_have_been_sent: true,
@@ -107,6 +111,7 @@ impl HttpRequestError {
         feature = "qiwe-staging-adapter",
         feature = "huabaosi-wecom-canary-gateway",
         feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     pub(crate) fn request_may_have_been_sent(&self) -> bool {
