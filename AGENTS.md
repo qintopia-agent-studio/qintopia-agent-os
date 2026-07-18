@@ -179,6 +179,10 @@ Use `rg` and `rg --files` for search.
 - In the Codex desktop environment, do not run extra GitHub authentication checks before
   creating a PR. Use `pnpm pr:create` directly after PR readiness checks; only handle
   authentication when the actual push or PR creation command fails.
+- In Codex sandboxed command execution, a repo-owned Node PR script can fail when its
+  child `gh` process reaches `api.github.com` even though a top-level `gh pr ...`
+  command works. Treat that as sandbox network permission, not an auth failure; rerun
+  the repo-owned PR entrypoint with network approval instead of re-authenticating `gh`.
 - PR-Agent must not automatically edit PR descriptions. The completed repository PR
   template is author-owned because CI validates its required sections.
 - Before merging any PR, read the complete PR Reviewer Guide, submitted reviews,
@@ -381,6 +385,11 @@ Use `rg` and `rg --files` for search.
   internal-process templates. Every added template needs positive and negative tests;
   never block ordinary answers through broad standalone terms such as `plain text` or
   `纯文本`.
+- Hermes/WeCom and QiWe outbound paths must never send raw provider/runtime retry
+  diagnostics such as `Retrying in ...`, `API call failed after ...`, HTTP status codes,
+  stack traces, paths, record ids, or command text to user chats. Classify them as
+  internal process state, keep details in logs/audit, and use a short user-safe Chinese
+  fallback only where the reviewed path intentionally sends one.
 - `qintopia_agent_os.qiwe_image_send_attempts` may store only canonical hashes, AgentOS
   UUIDs, claim state, allowlisted failure codes, and sanitized audit metadata. Never
   persist QiWe callback file credentials or raw request/callback/message ids. Commit

@@ -6,7 +6,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const MAX_POLICY_PREVIEW_BYTES: usize = 64 * 1024;
-const SAFE_FALLBACK_COPY: &str = "Request is still processing. Please try again shortly.";
+const SAFE_FALLBACK_COPY: &str =
+    "我这边刚才没有整理出可读回复，先不把那段发出来。你可以直接说“重新说”，我会用更清楚的话继续。";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PolicyPreviewReport {
@@ -221,10 +222,24 @@ fn classify_internal_filter(content: &str, direction: &str) -> InternalFilter {
             reason: Some("formatting_fallback"),
         };
     }
+    if is_provider_retry_or_failure(&normalized) {
+        return InternalFilter {
+            should_suppress: true,
+            reason: Some("provider_retry_or_failure_status"),
+        };
+    }
     InternalFilter {
         should_suppress: false,
         reason: None,
     }
+}
+
+fn is_provider_retry_or_failure(normalized: &str) -> bool {
+    normalized.contains("retrying in ")
+        || normalized.contains("api call failed after ")
+        || normalized.contains("api failed after ")
+        || (normalized.contains("http 503")
+            && normalized.contains("service temporarily unavailable"))
 }
 
 fn classify_formatting_fallback(
@@ -481,6 +496,10 @@ mod tests {
                 "fixture policy private",
                 "Interrupting current task",
                 "Response formatting failed",
+                "Retrying in",
+                "API call failed",
+                "HTTP 503",
+                "Service temporarily unavailable",
                 "plain text first",
                 "fixture.example.invalid",
                 "download-token",

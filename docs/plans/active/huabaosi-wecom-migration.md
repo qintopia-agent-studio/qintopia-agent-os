@@ -139,11 +139,14 @@ Deliverables:
   - busy-session handling;
   - internal process text filtering;
   - formatting fallback classification;
-  - user-safe fallback copy;
+  - provider/API retry failure classification;
+  - Chinese user-safe fallback copy that does not mention HTTP, API, stack traces, retry
+    counts, paths, record ids, or internal execution state;
   - idempotency and duplicate suppression;
 - fixture replay inputs under `runtime/sidecar/fixtures/` for internal status,
-  formatting fallback, normal user text containing "plain text", duplicate hints, busy
-  session state, attachment placeholders, and unsupported event shapes;
+  formatting fallback, provider/API retry failures, normal user text containing "plain
+  text", duplicate hints, busy session state, attachment placeholders, and unsupported
+  event shapes;
 - preview reports emitted only as sanitized internal JSON for logs/artifacts.
 
 Forbidden:
