@@ -70,6 +70,45 @@ try {
   result = runChecker(huabaosiEvidence, missingPreflightQiweEvidence);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /expected exactly one QiWe preflight evidence record/);
+
+  const localStorageHuabaosiEvidence = path.join(tmpRoot, "huabaosi-local-storage.txt");
+  fs.writeFileSync(
+    localStorageHuabaosiEvidence,
+    huabaosiOutput(contentHash, { storage_backend: "local" }),
+    "utf8"
+  );
+  result = runChecker(localStorageHuabaosiEvidence, qiweEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /Huabaosi preflight evidence does not prove staging adapter readiness/
+  );
+
+  const driftedDatabaseHuabaosiEvidence = path.join(tmpRoot, "huabaosi-db-drift.txt");
+  fs.writeFileSync(
+    driftedDatabaseHuabaosiEvidence,
+    huabaosiOutput(contentHash, {
+      generation_database_url_sha256:
+        "3333333333333333333333333333333333333333333333333333333333333333",
+    }),
+    "utf8"
+  );
+  result = runChecker(driftedDatabaseHuabaosiEvidence, qiweEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /Huabaosi generation evidence does not prove one pending final JPEG/
+  );
+
+  const unexpectedHuabaosiKeyEvidence = path.join(tmpRoot, "huabaosi-extra-key.txt");
+  fs.writeFileSync(
+    unexpectedHuabaosiKeyEvidence,
+    huabaosiOutput(contentHash, { unexpected_generation_key: "unsafe-drift" }),
+    "utf8"
+  );
+  result = runChecker(unexpectedHuabaosiKeyEvidence, qiweEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Huabaosi generation evidence includes unexpected key/);
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
@@ -83,40 +122,48 @@ function runChecker(huabaosiEvidence, qiweEvidence) {
   });
 }
 
-function huabaosiOutput(hash) {
+function huabaosiOutput(hash, overrides = {}) {
+  const databaseHash =
+    overrides.database_url_sha256 ??
+    "1111111111111111111111111111111111111111111111111111111111111111";
+  const preflight = {
+    action_status: "adapter_config_ready",
+    adapter_compiled: true,
+    config_valid: true,
+    database_url_sha256: databaseHash,
+    generation_enabled: true,
+    phase: "preflight",
+    safe_for_chat: false,
+    storage_backend: overrides.storage_backend ?? "feishu-base",
+    success: true,
+    worker: "huabaosi-image-generation-worker",
+  };
+  const generation = {
+    action_status: "generated_image_created",
+    apply_requested: true,
+    artifact_count: 1,
+    byte_size: 123456,
+    content_hash: hash,
+    database_url_sha256: overrides.generation_database_url_sha256 ?? databaseHash,
+    dry_run: false,
+    height: 1024,
+    mime_type: "image/jpeg",
+    phase: "generation",
+    review_status: "pending",
+    safe_for_chat: false,
+    storage_backend: overrides.storage_backend ?? "feishu-base",
+    success: true,
+    width: 1024,
+    work_item_id: "11111111-2222-4333-8444-555555555555",
+    worker: "huabaosi-image-generation-worker",
+  };
+  if (overrides.unexpected_generation_key) {
+    generation.unexpected_generation_key = overrides.unexpected_generation_key;
+  }
   return [
-    `huabaosi_image_generation_staging_evidence=${JSON.stringify({
-      action_status: "adapter_config_ready",
-      adapter_compiled: true,
-      config_valid: true,
-      database_url_sha256:
-        "1111111111111111111111111111111111111111111111111111111111111111",
-      generation_enabled: true,
-      phase: "preflight",
-      safe_for_chat: false,
-      success: true,
-      worker: "huabaosi-image-generation-worker",
-    })}`,
-    `huabaosi_image_generation_staging_evidence=${JSON.stringify({
-      action_status: "generated_image_created",
-      apply_requested: true,
-      artifact_count: 1,
-      byte_size: 123456,
-      content_hash: hash,
-      database_url_sha256:
-        "1111111111111111111111111111111111111111111111111111111111111111",
-      dry_run: false,
-      height: 1024,
-      mime_type: "image/jpeg",
-      phase: "generation",
-      review_status: "pending",
-      safe_for_chat: false,
-      success: true,
-      width: 1024,
-      work_item_id: "11111111-2222-4333-8444-555555555555",
-      worker: "huabaosi-image-generation-worker",
-    })}`,
-    "Huabaosi image staging smoke passed: one generated_image remains pending human review; no Feishu, QiWe, or publish adapter was called",
+    `huabaosi_image_generation_staging_evidence=${JSON.stringify(preflight)}`,
+    `huabaosi_image_generation_staging_evidence=${JSON.stringify(generation)}`,
+    "Huabaosi image staging smoke passed: one generated_image remains pending human review; Feishu Base stored the final JPEG; no QiWe or publish adapter was called",
     "",
   ].join("\n");
 }

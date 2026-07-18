@@ -56,7 +56,7 @@ const huabaosiRecords = parsePrefixedLines(
   huabaosiText,
   "huabaosi_image_generation_staging_evidence=",
   new Set([
-    "Huabaosi image staging smoke passed: one generated_image remains pending human review; no Feishu, QiWe, or publish adapter was called",
+    "Huabaosi image staging smoke passed: one generated_image remains pending human review; Feishu Base stored the final JPEG; no QiWe or publish adapter was called",
   ]),
   "Huabaosi"
 );
@@ -79,13 +79,55 @@ const huabaosiPreflight = single(
   huabaosiRecords.filter((record) => record.phase === "preflight"),
   "expected exactly one Huabaosi preflight evidence record"
 );
+assertExactKeys(
+  huabaosiPreflight,
+  new Set([
+    "action_status",
+    "adapter_compiled",
+    "config_valid",
+    "database_url_sha256",
+    "generation_enabled",
+    "phase",
+    "safe_for_chat",
+    "storage_backend",
+    "success",
+    "worker",
+  ]),
+  "Huabaosi preflight"
+);
+assertExactKeys(
+  huabaosiGeneration,
+  new Set([
+    "action_status",
+    "apply_requested",
+    "artifact_count",
+    "byte_size",
+    "content_hash",
+    "database_url_sha256",
+    "dry_run",
+    "height",
+    "mime_type",
+    "phase",
+    "review_status",
+    "safe_for_chat",
+    "storage_backend",
+    "success",
+    "width",
+    "work_item_id",
+    "worker",
+  ]),
+  "Huabaosi generation"
+);
 if (
   huabaosiPreflight.success !== true ||
   huabaosiPreflight.worker !== "huabaosi-image-generation-worker" ||
   huabaosiPreflight.action_status !== "adapter_config_ready" ||
   huabaosiPreflight.adapter_compiled !== true ||
   huabaosiPreflight.config_valid !== true ||
-  huabaosiPreflight.generation_enabled !== true
+  huabaosiPreflight.generation_enabled !== true ||
+  huabaosiPreflight.safe_for_chat !== false ||
+  huabaosiPreflight.storage_backend !== "feishu-base" ||
+  !isSha256(huabaosiPreflight.database_url_sha256)
 ) {
   fail("Huabaosi preflight evidence does not prove staging adapter readiness");
 }
@@ -93,9 +135,20 @@ if (
   huabaosiGeneration.success !== true ||
   huabaosiGeneration.worker !== "huabaosi-image-generation-worker" ||
   huabaosiGeneration.action_status !== "generated_image_created" ||
+  huabaosiGeneration.apply_requested !== true ||
+  huabaosiGeneration.dry_run !== false ||
+  huabaosiGeneration.safe_for_chat !== false ||
+  huabaosiGeneration.artifact_count !== 1 ||
   huabaosiGeneration.review_status !== "pending" ||
   huabaosiGeneration.mime_type !== "image/jpeg" ||
-  !isCanonicalContentHash(huabaosiGeneration.content_hash)
+  huabaosiGeneration.width !== 1024 ||
+  huabaosiGeneration.height !== 1024 ||
+  !Number.isInteger(huabaosiGeneration.byte_size) ||
+  huabaosiGeneration.byte_size <= 0 ||
+  huabaosiGeneration.storage_backend !== "feishu-base" ||
+  huabaosiGeneration.database_url_sha256 !== huabaosiPreflight.database_url_sha256 ||
+  !isCanonicalContentHash(huabaosiGeneration.content_hash) ||
+  !isUuid(huabaosiGeneration.work_item_id)
 ) {
   fail("Huabaosi generation evidence does not prove one pending final JPEG");
 }
@@ -183,6 +236,29 @@ function single(records, message) {
     fail(message);
   }
   return records[0];
+}
+
+function assertExactKeys(entry, allowed, label) {
+  for (const key of Object.keys(entry)) {
+    if (!allowed.has(key)) {
+      fail(`${label} evidence includes unexpected key: ${key}`);
+    }
+  }
+  for (const key of allowed) {
+    if (!(key in entry)) {
+      fail(`${label} evidence is missing key: ${key}`);
+    }
+  }
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value ?? "")
+  );
+}
+
+function isSha256(value) {
+  return /^[0-9a-f]{64}$/.test(String(value ?? ""));
 }
 
 function isCanonicalContentHash(value) {
