@@ -1,6 +1,6 @@
 # Xiaoman Production Completion Gate
 
-Updated: 2026-07-16
+Updated: 2026-07-18
 
 ## Goal
 
@@ -16,10 +16,10 @@ send-ready state. It is not a complete business workflow while Huabaosi real ima
 generation, Feishu mirror activation, QiWe final delivery, and one real end-to-end
 activity remain unproven.
 
-Release `v0.2.12` is currently an infrastructure/provisioning candidate unless later
-changes add and prove the missing external send boundary. Publishing it may be useful
-for staging or deployment prerequisites, but it must not be used as the completion claim
-for Xiaoman production.
+Release candidate `v0.2.15` is currently an infrastructure/provisioning candidate. Its
+Release Please PR `#180` has manual validation on the latest head, but it must not be
+merged, published, deployed, or used as the Xiaoman completion claim until the owner
+makes the explicit release decision and the external send boundary below is proven.
 
 ## Release Classification
 
@@ -71,13 +71,15 @@ These are useful but not completion:
 
 ## Next Work
 
-1. Keep Release `v0.2.12` classified as infrastructure unless its PR body and release
-   notes explicitly remain within that boundary.
-2. Use the staging artifact builder and provisioner to prepare the fixed staging
+1. Keep Release candidate `v0.2.15` classified as infrastructure unless a later Release
+   satisfies every completion gate and identifies the retained evidence.
+2. Resolve the owner release decision for `#180` before relying on `release-current` for
+   staging runtime provisioning.
+3. Use the staging artifact builder and provisioner to prepare the fixed staging
    runtime.
-3. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
-4. Add QiWe production enablement in a separate reviewed PR.
-5. Process one real production Xiaoman activity and retain sanitized evidence before
+4. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
+5. Add QiWe production enablement in a separate reviewed PR.
+6. Process one real production Xiaoman activity and retain sanitized evidence before
    changing the completion classification.
 
 ## Production Boundary
