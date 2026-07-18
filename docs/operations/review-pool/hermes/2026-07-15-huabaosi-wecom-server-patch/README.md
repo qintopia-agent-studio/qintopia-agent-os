@@ -11,7 +11,7 @@ for production hot patches.
 - Upstream baseline: `9cbc37e25`
 - Server-only commit: `c76d035c1`
 - Observed: 2026-07-15
-- Patch SHA-256: `4a7f3d3c221cd85cb91318673fb30a52ea711a2b0b7ceb1ca0c7c39a932c9b06`
+- Patch SHA-256: `bf60db1218d1a5690f93a999fb0e81bc6be1547c2f4da3f5b2397ed09658f572`
 
 The patch is the exact diff from `9cbc37e25` through the observed WeCom worktree for:
 
