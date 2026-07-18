@@ -118,6 +118,14 @@ struct MirrorPreflightReport {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(
+    not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )),
+    allow(dead_code)
+)]
 struct PrimaryStorageRevalidationReport {
     success: bool,
     worker: &'static str,
@@ -166,6 +174,14 @@ struct ValidatedArtifact {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )),
+    allow(dead_code)
+)]
 struct ValidatedPrimaryStorageArtifact {
     file_md5: String,
     source_content_hash: String,
@@ -275,6 +291,14 @@ struct FeishuClient {
 #[derive(Debug)]
 struct FeishuRecord {
     record_id: String,
+    #[cfg_attr(
+        not(any(
+            feature = "huabaosi-production-adapter",
+            feature = "huabaosi-staging-adapter",
+            feature = "huabaosi-feishu-mirror-adapter"
+        )),
+        allow(dead_code)
+    )]
     fields: Value,
 }
 
