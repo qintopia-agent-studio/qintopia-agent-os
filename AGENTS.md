@@ -239,7 +239,11 @@ Use `rg` and `rg --files` for search.
 - The first Feishu-backed image canary must remain `pending`. Existing generated-image
   approval and QiWe intake accept only the reviewed immutable HTTPS JPEG contract; they
   must fail closed for `feishu-base://` artifacts until a separate PR adds authenticated
-  Feishu attachment revalidation to approval and a reviewed delivery path.
+  Feishu attachment revalidation to approval and a reviewed delivery path. The current
+  QiWe async upload contract requires a stable allowlisted HTTPS `fileUrl`; do not
+  bridge Feishu private attachments by exposing Feishu attachment tokens, storing a
+  private media URL, introducing an unreviewed public proxy/upload service, or falling
+  back to QiWe synchronous upload APIs marked deprecated in the reviewed protocol plan.
 - Huabaosi Feishu production observation must discover the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with

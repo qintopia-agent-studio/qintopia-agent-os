@@ -221,8 +221,11 @@ records and checker results.
 7. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
 8. After the separate Feishu attachment revalidation and QiWe delivery path is present
    on the staged release, run QiWe readiness, preflight, upload, callback, QiWe evidence
-   check, and cross-flow hash check. The current QiWe intake must continue to fail
-   closed for `feishu-base://` artifacts.
+   check, and cross-flow hash check. The current QiWe async upload path requires a
+   stable allowlisted HTTPS `fileUrl`, so QiWe intake must continue to fail closed for
+   `feishu-base://` artifacts. Do not solve this by exposing Feishu attachment tokens,
+   adding an unreviewed public proxy/upload service, or falling back to QiWe synchronous
+   upload APIs marked deprecated in the reviewed protocol plan.
 
 Hold immediately if any readiness report says the env file is missing, the release root
 is missing, the binary hash mismatches, the staging database URL hash is absent, an
