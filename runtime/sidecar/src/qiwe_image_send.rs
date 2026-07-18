@@ -1210,7 +1210,7 @@ fn request_temporary_storage_upload_with(
             }
         })?;
     if !(200..300).contains(&response.status) {
-        return Err(UploadCallFailure::Rejected);
+        return Err(UploadCallFailure::OutcomeUnknown);
     }
     parse_temporary_storage_acceptance_for_call(
         &response,
@@ -1230,7 +1230,7 @@ fn parse_temporary_storage_acceptance_for_call(
         serde_json::from_slice(&response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
     let cloud_url_value = Zeroizing::new(std::mem::take(&mut response.data.cloud_url));
     if response.code != 0 {
-        return Err(UploadCallFailure::Rejected);
+        return Err(UploadCallFailure::OutcomeUnknown);
     }
     let cloud_url =
         strict_temporary_storage_url(&cloud_url_value, allowed_hosts, allow_insecure_http)
@@ -3037,6 +3037,44 @@ mod tests {
             UploadCallFailure::OutcomeUnknown
         );
         server.join().expect("join drift fake server");
+    }
+
+    #[test]
+    fn temporary_storage_post_request_failures_are_ambiguous() {
+        let hosts = BTreeSet::from(["temporary.example.test".to_string()]);
+        let business_failure = http_json_response(
+            200,
+            br#"{"code":1,"data":{"cloudUrl":"https://temporary.example.test/possibly-written.jpg"}}"#,
+        );
+        assert_eq!(
+            parse_temporary_storage_acceptance_for_call(&business_failure, &hosts, false)
+                .expect_err("business failure cannot prove no temporary write"),
+            UploadCallFailure::OutcomeUnknown
+        );
+
+        let bytes = b"reviewed-final-jpeg-bytes".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind non-2xx fake server");
+        let port = listener.local_addr().expect("non-2xx fake address").port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept temporary upload");
+            let _ = read_test_request(&mut stream);
+            stream
+                .write_all(
+                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write non-2xx response");
+        });
+        let result = request_claim_upload_with(
+            &test_adapter_config(port),
+            &test_feishu_upload_claim(&bytes),
+            Some(&bytes),
+            &HttpClient::test_only(),
+        );
+        assert_eq!(
+            result.expect_err("non-2xx cannot prove no temporary write"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        server.join().expect("join non-2xx fake server");
     }
 
     #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
