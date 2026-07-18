@@ -156,6 +156,7 @@ if (!exists(stagingRuntimeRunbookPath)) {
     "approved-staging-sidecar-provision",
     "ready_for_huabaosi_qiwe_staging_smokes",
     "applied as-is",
+    "ports outside `1..65535`",
   ]) {
     requireFragment(stagingRuntimeRunbookPath, runbook, fragment);
   }
@@ -961,6 +962,8 @@ if (!exists(stagingRuntimeEnvRenderPath)) {
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
     "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "media_host_count",
+    "contains a duplicate host entry",
+    "contains a port outside 1-65535",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS must contain exactly one isolated group",
     "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA must match QINTOPIA_DEPLOYED_COMMIT_SHA",
@@ -1006,6 +1009,8 @@ if (!exists(stagingRuntimeEnvRenderTestPath)) {
     "unsupported keys",
     "hash does not match",
     "release SHA mismatch failure invalid",
+    "duplicate host failure invalid",
+    "invalid host port failure invalid",
     "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND",
     "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
     "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test,cloud.example.test",

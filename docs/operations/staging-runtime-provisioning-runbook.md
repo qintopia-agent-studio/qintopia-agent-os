@@ -80,7 +80,8 @@ Downstream QiWe staging keys, once the QiWe staging PR is present on the staged 
 `QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS` must contain only the exact `QIWE_API_URL`
 host. Owner-reviewed generated-image hosts and QiWe temporary-storage `cloudUrl` hosts
 belong in `QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS`. Do not use wildcards, URL prefixes,
-or values learned from an unreviewed run.
+duplicate host entries, ports outside `1..65535`, or values learned from an unreviewed
+run.
 
 The Huabaosi staging smoke reads only the Huabaosi key allowlist above. If the same
 staging env file already contains the downstream QiWe keys, the Huabaosi smoke must

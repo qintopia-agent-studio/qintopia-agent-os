@@ -209,6 +209,48 @@ try {
     throw new Error(`release SHA mismatch failure invalid: ${JSON.stringify(report)}`);
   }
 
+  const duplicateHostPath = path.join(tmpRoot, "duplicate-host-values.json");
+  writeValues(duplicateHostPath, {
+    ...values,
+    QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS: "media.example.test,MEDIA.example.test",
+  });
+  result = runRenderer([
+    "--values",
+    duplicateHostPath,
+    "--expected-database-url-sha256",
+    databaseHash,
+  ]);
+  report = parseReport(result);
+  if (
+    result.status === 0 ||
+    report.success !== false ||
+    !report.error.includes("duplicate host entry") ||
+    `${result.stdout}\n${result.stderr}`.includes(secretValue)
+  ) {
+    throw new Error(`duplicate host failure invalid: ${JSON.stringify(report)}`);
+  }
+
+  const invalidPortPath = path.join(tmpRoot, "invalid-port-values.json");
+  writeValues(invalidPortPath, {
+    ...values,
+    QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS: "media.example.test:99999",
+  });
+  result = runRenderer([
+    "--values",
+    invalidPortPath,
+    "--expected-database-url-sha256",
+    databaseHash,
+  ]);
+  report = parseReport(result);
+  if (
+    result.status === 0 ||
+    report.success !== false ||
+    !report.error.includes("port outside 1-65535") ||
+    `${result.stdout}\n${result.stderr}`.includes(secretValue)
+  ) {
+    throw new Error(`invalid host port failure invalid: ${JSON.stringify(report)}`);
+  }
+
   const secondOutput = path.join(tmpRoot, "another-message-sidecar-staging.env");
   result = runRenderer([
     "--values",
