@@ -4,6 +4,8 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+use md5::Md5;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -24,7 +26,13 @@ use url::Url;
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
 const ASYNC_UPLOAD_METHOD: &str = "/cloud/cdnUploadByUrlAsync";
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+const TEMPORARY_STORAGE_UPLOAD_METHOD: &str = "/cloud/cloudUpload";
 const SEND_IMAGE_METHOD: &str = "/msg/sendImage";
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+const FILE_API_PATH: &str = "/qiwe/api/qw/doFileApi";
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+const FEISHU_PRIMARY_STORAGE_URI_PREFIX: &str = "feishu-base://huabaosi-generated-image/";
 const IMAGE_FILE_TYPE: u8 = 1;
 const ASYNC_EVENT_COMMAND: i64 = 20_000;
 const SEND_SUCCESS_VALUE: i64 = 1;
@@ -41,6 +49,19 @@ const REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION: &[&str] = &[
     "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
 ];
+const REQUIRED_FEISHU_DELIVERY_CONFIGURATION: &[&str] = &[
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+    "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+    "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+];
 
 #[derive(Debug, Serialize)]
 pub struct QiweImageSendPreflightReport {
@@ -48,6 +69,7 @@ pub struct QiweImageSendPreflightReport {
     pub worker: &'static str,
     pub action_status: &'static str,
     pub adapter_compiled: bool,
+    pub feishu_delivery_bridge_compiled: bool,
     pub send_enabled: bool,
     pub config_valid: bool,
     pub webhook_ready: bool,
@@ -67,6 +89,7 @@ pub struct QiweImageSendStagingPreflightReport {
     pub worker: &'static str,
     pub action_status: &'static str,
     pub adapter_compiled: bool,
+    pub feishu_delivery_bridge_compiled: bool,
     pub send_enabled: bool,
     pub owner_approval_valid: bool,
     pub config_valid: bool,
@@ -193,6 +216,35 @@ struct UploadAcceptedData {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+struct TemporaryStorageAcceptedData {
+    cloud_url: String,
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+struct SensitiveUrl {
+    raw: Zeroizing<String>,
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+impl SensitiveUrl {
+    fn new(raw: Zeroizing<String>) -> Self {
+        Self { raw }
+    }
+
+    fn with_url<T>(&self, f: impl FnOnce(&Url) -> T) -> Result<T> {
+        // url::Url owns another buffer, so parsed values must stay short-lived.
+        let url = Url::parse(&self.raw).context("parse QiWe temporary-storage URL")?;
+        Ok(f(&url))
+    }
+
+    fn as_str(&self) -> &str {
+        &self.raw
+    }
+}
+
+#[derive(Deserialize)]
 struct CallbackEnvelope {
     code: i64,
     data: Vec<CallbackEvent>,
@@ -298,6 +350,7 @@ struct PreflightReportState {
     config_valid: bool,
     send_enabled: bool,
     adapter_compiled: bool,
+    feishu_delivery_bridge_compiled: bool,
     webhook_ready: bool,
     allowed_host_count: usize,
     media_allowed_host_count: usize,
@@ -307,6 +360,7 @@ struct PreflightReportState {
 
 struct StagingPreflightReportState {
     adapter_compiled: bool,
+    feishu_delivery_bridge_compiled: bool,
     send_enabled: bool,
     owner_approval_valid: bool,
     config_valid: bool,
@@ -327,6 +381,7 @@ pub fn run_preflight() -> Result<()> {
             config_valid: true,
             send_enabled,
             adapter_compiled,
+            feishu_delivery_bridge_compiled: feishu_delivery_bridge_compiled(),
             webhook_ready: config.webhook_ready,
             allowed_host_count: config.allowed_hosts.len(),
             media_allowed_host_count: config.media_allowed_hosts.len(),
@@ -337,6 +392,7 @@ pub fn run_preflight() -> Result<()> {
             config_valid: false,
             send_enabled,
             adapter_compiled,
+            feishu_delivery_bridge_compiled: feishu_delivery_bridge_compiled(),
             webhook_ready: false,
             allowed_host_count: 0,
             media_allowed_host_count: 0,
@@ -355,6 +411,7 @@ pub fn run_preflight() -> Result<()> {
 pub fn run_staging_preflight(cli: &Cli) -> Result<()> {
     validate_contract()?;
     let adapter_compiled = qiwe_staging_adapter_compiled();
+    let feishu_delivery_bridge_compiled = feishu_delivery_bridge_compiled();
     let send_enabled = env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED").unwrap_or(false);
     let owner_approval_valid =
         validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())
@@ -369,7 +426,10 @@ pub fn run_staging_preflight(cli: &Cli) -> Result<()> {
         allowed_host_count,
         media_allowed_host_count,
         allowed_group_count,
-    ) = match AdapterConfig::from_env() {
+    ) = match AdapterConfig::from_env().and_then(|config| {
+        validate_feishu_delivery_config(cli.database_url_required()?)?;
+        Ok(config)
+    }) {
         Ok(config) => (
             true,
             config.webhook_ready,
@@ -381,6 +441,7 @@ pub fn run_staging_preflight(cli: &Cli) -> Result<()> {
     };
     let report = staging_preflight_report(StagingPreflightReportState {
         adapter_compiled,
+        feishu_delivery_bridge_compiled,
         send_enabled,
         owner_approval_valid,
         config_valid,
@@ -579,10 +640,39 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
         return Ok(());
     };
     let claim_id = claim.work_item_id;
+    let delivery_bytes = match prepare_feishu_delivery_bytes(&pool, &claim, database_url).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            qiwe_image_send_state::record_upload_failure(
+                &pool,
+                &claim,
+                UploadFailureDisposition::OutcomeUnknown,
+            )
+            .await?;
+            let report = worker_report(WorkerReportState {
+                success: false,
+                dry_run: false,
+                apply_requested: true,
+                phase: "upload",
+                action_status: "feishu_delivery_revalidation_outcome_unknown".to_string(),
+                work_item_id: Some(claim_id),
+                external_upload_requested: false,
+                callback_received: false,
+                external_send_executed: Some(false),
+            });
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(());
+        }
+    };
     let worker_config = config.clone();
     let worker_claim = claim.clone();
     let upload = tokio::task::spawn_blocking(move || {
-        request_async_upload_with(&worker_config, &worker_claim, &HttpClient::production())
+        request_claim_upload_with(
+            &worker_config,
+            &worker_claim,
+            delivery_bytes.as_ref().map(|bytes| bytes.as_slice()),
+            &HttpClient::production(),
+        )
     })
     .await;
     let upload = match upload {
@@ -919,20 +1009,116 @@ async fn run_enabled_callback_processor(
     Ok(())
 }
 
+#[cfg(feature = "qiwe-staging-adapter")]
+async fn prepare_feishu_delivery_bytes(
+    pool: &sqlx::PgPool,
+    claim: &QiweUploadClaim,
+    database_url: &str,
+) -> Result<Option<Zeroizing<Vec<u8>>>> {
+    if !claim
+        .artifact_uri
+        .starts_with(FEISHU_PRIMARY_STORAGE_URI_PREFIX)
+    {
+        return Ok(None);
+    }
+
+    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    {
+        let _ = (pool, database_url);
+        bail!("Feishu delivery bridge requires the combined staging feature build");
+    }
+
+    #[cfg(feature = "huabaosi-staging-adapter")]
+    {
+        let artifact =
+            crate::huabaosi_feishu_artifact_mirror::revalidate_primary_storage_for_delivery(
+                pool,
+                claim.generated_image_artifact_id,
+                database_url,
+            )
+            .await?;
+        validate_feishu_delivery_artifact(claim, &artifact)?;
+        Ok(Some(artifact.bytes))
+    }
+}
+
+#[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+fn validate_feishu_delivery_artifact(
+    claim: &QiweUploadClaim,
+    artifact: &crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageDeliveryArtifact,
+) -> Result<()> {
+    if artifact.artifact_id != claim.generated_image_artifact_id
+        || artifact.artifact_uri != claim.artifact_uri
+        || artifact.content_hash != claim.artifact_content_hash
+        || artifact.file_md5 != claim.artifact_file_md5
+        || artifact.byte_size != claim.artifact_byte_size
+    {
+        bail!("Feishu delivery revalidation does not match the locked QiWe claim");
+    }
+    Ok(())
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn request_claim_upload_with(
+    config: &AdapterConfig,
+    claim: &QiweUploadClaim,
+    feishu_bytes: Option<&[u8]>,
+    client: &HttpClient,
+) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
+    if claim
+        .artifact_uri
+        .starts_with(FEISHU_PRIMARY_STORAGE_URI_PREFIX)
+    {
+        let bytes = feishu_bytes.ok_or(UploadCallFailure::Rejected)?;
+        request_feishu_bridge_upload_with(config, claim, bytes, client)
+    } else if feishu_bytes.is_some() {
+        Err(UploadCallFailure::Rejected)
+    } else {
+        request_async_upload_with(config, claim, client)
+    }
+}
+
 #[cfg(any(test, feature = "qiwe-staging-adapter"))]
 fn request_async_upload_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
     client: &HttpClient,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
-    let body = build_async_upload_request(
-        &config.guid,
-        &claim.filename,
-        &claim.artifact_uri,
-        "image/jpeg",
+    let artifact_url =
+        strict_media_url(&claim.artifact_uri).map_err(|_| UploadCallFailure::Rejected)?;
+    request_async_upload_url_with(
+        config,
+        claim,
+        &artifact_url,
         &config.media_allowed_hosts,
+        client,
     )
-    .map_err(|_| UploadCallFailure::Rejected)?;
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn request_async_upload_url_with(
+    config: &AdapterConfig,
+    claim: &QiweUploadClaim,
+    file_url: &Url,
+    allowed_hosts: &BTreeSet<String>,
+    client: &HttpClient,
+) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
+    let host = file_url
+        .host_str()
+        .ok_or(UploadCallFailure::Rejected)?
+        .to_ascii_lowercase();
+    if !allowed_hosts.contains(&host) {
+        return Err(UploadCallFailure::Rejected);
+    }
+    let body = Zeroizing::new(
+        build_async_upload_request_from_validated_url(
+            &config.guid,
+            &claim.filename,
+            file_url,
+            "image/jpeg",
+        )
+        .map_err(|_| UploadCallFailure::Rejected)?,
+    );
     let response = client
         .request(
             "POST",
@@ -956,6 +1142,126 @@ fn request_async_upload_with(
         return Err(UploadCallFailure::Rejected);
     }
     parse_upload_acceptance_for_call(&response)
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn request_feishu_bridge_upload_with(
+    config: &AdapterConfig,
+    claim: &QiweUploadClaim,
+    bytes: &[u8],
+    client: &HttpClient,
+) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
+    validate_claim_bytes(claim, bytes).map_err(|_| UploadCallFailure::Rejected)?;
+    let cloud_url = request_temporary_storage_upload_with(config, claim, bytes, client)?;
+    readback_temporary_storage_with(config, claim, &cloud_url, client)?;
+    let cloud_url = strict_temporary_storage_url(
+        &cloud_url,
+        &config.media_allowed_hosts,
+        client.allows_insecure_http(),
+    )
+    .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    let async_upload = cloud_url
+        .with_url(|url| {
+            request_async_upload_url_with(config, claim, url, &config.media_allowed_hosts, client)
+        })
+        .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    async_upload.map_err(|_| UploadCallFailure::OutcomeUnknown)
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn request_temporary_storage_upload_with(
+    config: &AdapterConfig,
+    claim: &QiweUploadClaim,
+    bytes: &[u8],
+    client: &HttpClient,
+) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
+    let file_api_url =
+        file_api_url_from_api_url(&config.api_url).map_err(|_| UploadCallFailure::Rejected)?;
+    let boundary = format!("qintopia-{}", Uuid::new_v4().simple());
+    let body = build_temporary_storage_upload_body(&boundary, &config.guid, &claim.filename, bytes)
+        .map_err(|_| UploadCallFailure::Rejected)?;
+    let response = client
+        .request(
+            "POST",
+            &file_api_url,
+            &[
+                (
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                ),
+                ("Accept", "application/json".to_string()),
+                ("x-qiwei-token", config.token.clone()),
+            ],
+            &body,
+            MAX_JSON_RESPONSE_BYTES,
+        )
+        .map_err(|error| {
+            if error.request_may_have_been_sent() {
+                UploadCallFailure::OutcomeUnknown
+            } else {
+                UploadCallFailure::Rejected
+            }
+        })?;
+    if !(200..300).contains(&response.status) {
+        return Err(UploadCallFailure::OutcomeUnknown);
+    }
+    parse_temporary_storage_acceptance_for_call(
+        &response,
+        &config.media_allowed_hosts,
+        client.allows_insecure_http(),
+    )
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn parse_temporary_storage_acceptance_for_call(
+    response: &HttpResponse,
+    allowed_hosts: &BTreeSet<String>,
+    allow_insecure_http: bool,
+) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
+    validate_json_body_size(&response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    let mut response: ApiResponse<TemporaryStorageAcceptedData> =
+        serde_json::from_slice(&response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    let cloud_url_value = Zeroizing::new(std::mem::take(&mut response.data.cloud_url));
+    if response.code != 0 {
+        return Err(UploadCallFailure::OutcomeUnknown);
+    }
+    let cloud_url =
+        strict_temporary_storage_url(&cloud_url_value, allowed_hosts, allow_insecure_http)
+            .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    Ok(Zeroizing::new(cloud_url.as_str().to_string()))
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn readback_temporary_storage_with(
+    config: &AdapterConfig,
+    claim: &QiweUploadClaim,
+    cloud_url: &str,
+    client: &HttpClient,
+) -> std::result::Result<(), UploadCallFailure> {
+    let cloud_url = strict_temporary_storage_url(
+        cloud_url,
+        &config.media_allowed_hosts,
+        client.allows_insecure_http(),
+    )
+    .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    let max_bytes =
+        usize::try_from(claim.artifact_byte_size).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    let response = cloud_url
+        .with_url(|url| {
+            client.request(
+                "GET",
+                url,
+                &[("Accept", "image/jpeg".to_string())],
+                &[],
+                max_bytes,
+            )
+        })
+        .map_err(|_| UploadCallFailure::OutcomeUnknown)?
+        .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    if !(200..300).contains(&response.status) {
+        return Err(UploadCallFailure::OutcomeUnknown);
+    }
+    validate_claim_bytes(claim, &response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)
 }
 
 #[cfg(any(test, feature = "qiwe-staging-adapter"))]
@@ -1145,6 +1451,7 @@ fn worker_report(state: WorkerReportState) -> QiweImageSendWorkerReport {
         guardrails: vec![
             "Postgres remains the system source of truth".to_string(),
             "default production builds exclude the staging-only live QiWe adapter".to_string(),
+            "Feishu bytes and QiWe temporary-storage URLs remain memory-only and are zeroized after same-byte readback".to_string(),
             "tokens, device ids, group ids, media URLs, request ids, callback credentials, response bodies, and message ids are excluded from reports".to_string(),
             "no Feishu writeback or unrelated external adapter is called".to_string(),
         ],
@@ -1236,6 +1543,7 @@ fn preflight_report(state: PreflightReportState) -> QiweImageSendPreflightReport
             "adapter_contract_ready"
         },
         adapter_compiled: state.adapter_compiled,
+        feishu_delivery_bridge_compiled: state.feishu_delivery_bridge_compiled,
         send_enabled: state.send_enabled,
         config_valid: state.config_valid,
         webhook_ready: state.webhook_ready,
@@ -1263,6 +1571,7 @@ fn staging_preflight_report(
     state: StagingPreflightReportState,
 ) -> QiweImageSendStagingPreflightReport {
     let success = state.adapter_compiled
+        && state.feishu_delivery_bridge_compiled
         && state.send_enabled
         && state.owner_approval_valid
         && state.config_valid
@@ -1273,6 +1582,8 @@ fn staging_preflight_report(
         worker: WORKER_ID,
         action_status: if !state.adapter_compiled {
             "staging_adapter_not_compiled"
+        } else if !state.feishu_delivery_bridge_compiled {
+            "feishu_delivery_bridge_not_compiled"
         } else if !state.send_enabled {
             "staging_send_not_enabled"
         } else if !state.owner_approval_valid {
@@ -1285,6 +1596,7 @@ fn staging_preflight_report(
             "staging_adapter_ready"
         },
         adapter_compiled: state.adapter_compiled,
+        feishu_delivery_bridge_compiled: state.feishu_delivery_bridge_compiled,
         send_enabled: state.send_enabled,
         owner_approval_valid: state.owner_approval_valid,
         config_valid: state.config_valid,
@@ -1294,7 +1606,7 @@ fn staging_preflight_report(
         media_allowed_host_count: state.media_allowed_host_count,
         allowed_group_count: state.allowed_group_count,
         missing_configuration: state.missing_configuration,
-        protocol: "qiwe_async_url_upload_then_send_image_staging_v1",
+        protocol: "qiwe_feishu_temp_storage_then_async_upload_then_send_image_staging_v1",
         safe_for_chat: false,
         limitations: vec![
             "staging preflight validates local configuration only; it does not connect to Postgres, read callback stdin, upload media, or send a message".to_string(),
@@ -1303,6 +1615,7 @@ fn staging_preflight_report(
         guardrails: vec![
             "staging apply requires the exact owner phrase and expected database URL hash before Postgres, callback stdin, or network access".to_string(),
             "API hosts, media hosts, and target group ids use exact reviewed allowlists".to_string(),
+            "Feishu primary-storage delivery requires the combined Huabaosi and QiWe staging feature build and same-byte temporary-storage readback".to_string(),
             "production artifacts exclude the staging adapter and no listener, service, or timer is installed".to_string(),
         ],
     }
@@ -1310,6 +1623,13 @@ fn staging_preflight_report(
 
 const fn qiwe_staging_adapter_compiled() -> bool {
     cfg!(feature = "qiwe-staging-adapter")
+}
+
+const fn feishu_delivery_bridge_compiled() -> bool {
+    cfg!(all(
+        feature = "huabaosi-staging-adapter",
+        feature = "qiwe-staging-adapter"
+    ))
 }
 
 impl AdapterConfig {
@@ -1353,6 +1673,123 @@ impl AdapterConfig {
     }
 }
 
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn build_temporary_storage_upload_body(
+    boundary: &str,
+    guid: &str,
+    filename: &str,
+    bytes: &[u8],
+) -> Result<Zeroizing<Vec<u8>>> {
+    if boundary.is_empty()
+        || boundary.len() > 70
+        || !boundary
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        bail!("QiWe temporary-storage multipart boundary is invalid");
+    }
+    validate_plain_value(guid, "QiWe device id")?;
+    validate_jpeg_filename(filename)?;
+    if !filename
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        bail!("QiWe temporary-storage filename is not multipart-safe");
+    }
+    if bytes.is_empty() {
+        bail!("QiWe temporary-storage JPEG is empty");
+    }
+    if bytes
+        .windows(boundary.len())
+        .any(|window| window == boundary.as_bytes())
+    {
+        bail!("QiWe temporary-storage multipart boundary collides with JPEG bytes");
+    }
+
+    let mut body = Zeroizing::new(Vec::with_capacity(bytes.len() + 1024));
+    append_multipart_text(
+        &mut body,
+        boundary,
+        "method",
+        TEMPORARY_STORAGE_UPLOAD_METHOD,
+    );
+    append_multipart_text(&mut body, boundary, "guid", guid);
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: image/jpeg\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    Ok(body)
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn append_multipart_text(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+        )
+        .as_bytes(),
+    );
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn file_api_url_from_api_url(api_url: &Url) -> Result<Url> {
+    if api_url.path() != "/qiwe/api/qw/doApi"
+        || api_url.query().is_some()
+        || api_url.fragment().is_some()
+    {
+        bail!("QiWe API URL does not match the reviewed doApi endpoint");
+    }
+    let mut file_api_url = api_url.clone();
+    file_api_url.set_path(FILE_API_PATH);
+    Ok(file_api_url)
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn strict_temporary_storage_url(
+    value: &str,
+    allowed_hosts: &BTreeSet<String>,
+    allow_insecure_http: bool,
+) -> Result<SensitiveUrl> {
+    if value.is_empty() || value.len() > 4096 {
+        bail!("QiWe temporary-storage URL length is invalid");
+    }
+    url_policy::reject_path_separator_ambiguity(value, "QiWe temporary-storage URL")?;
+    let url = Url::parse(value).context("parse QiWe temporary-storage URL")?;
+    let scheme_allowed = url.scheme() == "https" || (allow_insecure_http && url.scheme() == "http");
+    if !scheme_allowed
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        bail!("QiWe temporary-storage URL is outside the reviewed boundary");
+    }
+    let host = url
+        .host_str()
+        .context("QiWe temporary-storage URL host is missing")?
+        .to_ascii_lowercase();
+    if !allowed_hosts.contains(&host) {
+        bail!("QiWe temporary-storage URL host is not allowlisted");
+    }
+    Ok(SensitiveUrl::new(Zeroizing::new(value.to_string())))
+}
+
+#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+fn validate_claim_bytes(claim: &QiweUploadClaim, bytes: &[u8]) -> Result<()> {
+    if u64::try_from(bytes.len()).ok() != Some(claim.artifact_byte_size)
+        || format!("sha256:{:x}", Sha256::digest(bytes)) != claim.artifact_content_hash
+        || format!("{:x}", Md5::digest(bytes)) != claim.artifact_file_md5
+    {
+        bail!("QiWe delivery bytes do not match the approved generated image");
+    }
+    Ok(())
+}
+
 pub fn build_async_upload_request(
     guid: &str,
     filename: &str,
@@ -1372,6 +1809,20 @@ pub fn build_async_upload_request(
         .to_ascii_lowercase();
     if !media_allowed_hosts.contains(&artifact_host) {
         bail!("approved generated-image URI host is not allowlisted");
+    }
+    build_async_upload_request_from_validated_url(guid, filename, &artifact_uri, mime_type)
+}
+
+fn build_async_upload_request_from_validated_url(
+    guid: &str,
+    filename: &str,
+    artifact_uri: &Url,
+    mime_type: &str,
+) -> Result<Vec<u8>> {
+    validate_plain_value(guid, "QiWe device id")?;
+    validate_jpeg_filename(filename)?;
+    if mime_type != "image/jpeg" {
+        bail!("QiWe image upload requires the documented JPEG MIME type");
     }
     serde_json::to_vec(&ApiRequest {
         method: ASYNC_UPLOAD_METHOD,
@@ -1518,8 +1969,26 @@ fn required_env(name: &str) -> Result<String> {
 #[cfg(feature = "qiwe-staging-adapter")]
 fn staging_apply_config(cli: &Cli) -> Result<AdapterConfig> {
     validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
-    validate_staging_database_boundary(cli.database_url_required()?)?;
+    let database_url = cli.database_url_required()?;
+    validate_staging_database_boundary(database_url)?;
+    validate_feishu_delivery_config(database_url)?;
     AdapterConfig::from_env()
+}
+
+fn validate_feishu_delivery_config(database_url: &str) -> Result<()> {
+    #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+    {
+        let _ = crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageConfig::from_env(
+            database_url,
+        )?;
+        Ok(())
+    }
+
+    #[cfg(not(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter")))]
+    {
+        let _ = database_url;
+        bail!("Feishu delivery bridge requires the combined staging feature build")
+    }
 }
 
 fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
@@ -1579,6 +2048,12 @@ fn missing_qiwe_image_send_configuration() -> Vec<&'static str> {
 
 fn missing_qiwe_image_staging_configuration(cli: &Cli) -> Vec<&'static str> {
     let mut missing = missing_qiwe_image_send_configuration();
+    if feishu_delivery_bridge_compiled() {
+        missing.extend(missing_required_configuration_with(
+            REQUIRED_FEISHU_DELIVERY_CONFIGURATION,
+            |name| std::env::var(name).ok(),
+        ));
+    }
     if cli.database_url_required().is_err() {
         missing.push("QINTOPIA_SIDECAR_DATABASE_URL");
     }
@@ -1719,6 +2194,7 @@ mod tests {
             config_valid,
             send_enabled,
             adapter_compiled,
+            feishu_delivery_bridge_compiled: adapter_compiled,
             webhook_ready: true,
             allowed_host_count: 1,
             media_allowed_host_count: 1,
@@ -1730,6 +2206,7 @@ mod tests {
     fn ready_staging_preflight_state() -> StagingPreflightReportState {
         StagingPreflightReportState {
             adapter_compiled: true,
+            feishu_delivery_bridge_compiled: true,
             send_enabled: true,
             owner_approval_valid: true,
             config_valid: true,
@@ -2305,19 +2782,21 @@ mod tests {
 
         let cases = [
             ("staging_adapter_not_compiled", 0),
-            ("staging_send_not_enabled", 1),
-            ("staging_owner_approval_required", 2),
-            ("staging_database_not_approved", 3),
-            ("adapter_not_configured", 4),
+            ("feishu_delivery_bridge_not_compiled", 1),
+            ("staging_send_not_enabled", 2),
+            ("staging_owner_approval_required", 3),
+            ("staging_database_not_approved", 4),
+            ("adapter_not_configured", 5),
         ];
         for (expected_status, gate) in cases {
             let mut state = ready_staging_preflight_state();
             match gate {
                 0 => state.adapter_compiled = false,
-                1 => state.send_enabled = false,
-                2 => state.owner_approval_valid = false,
-                3 => state.database_boundary_valid = false,
-                4 => state.config_valid = false,
+                1 => state.feishu_delivery_bridge_compiled = false,
+                2 => state.send_enabled = false,
+                3 => state.owner_approval_valid = false,
+                4 => state.database_boundary_valid = false,
+                5 => state.config_valid = false,
                 _ => unreachable!(),
             }
             let report = staging_preflight_report(state);
@@ -2363,6 +2842,24 @@ mod tests {
     #[test]
     fn default_build_excludes_qiwe_staging_adapter() {
         assert!(!qiwe_staging_adapter_compiled());
+        assert!(!feishu_delivery_bridge_compiled());
+    }
+
+    #[cfg(all(
+        feature = "qiwe-staging-adapter",
+        not(feature = "huabaosi-staging-adapter")
+    ))]
+    #[test]
+    fn qiwe_only_build_excludes_feishu_delivery_bridge() {
+        assert!(qiwe_staging_adapter_compiled());
+        assert!(!feishu_delivery_bridge_compiled());
+    }
+
+    #[cfg(all(feature = "qiwe-staging-adapter", feature = "huabaosi-staging-adapter"))]
+    #[test]
+    fn combined_staging_build_contains_feishu_delivery_bridge() {
+        assert!(qiwe_staging_adapter_compiled());
+        assert!(feishu_delivery_bridge_compiled());
     }
 
     #[cfg(not(feature = "qiwe-staging-adapter"))]
@@ -2395,6 +2892,7 @@ mod tests {
             config_valid: false,
             send_enabled: false,
             adapter_compiled: false,
+            feishu_delivery_bridge_compiled: false,
             webhook_ready: false,
             allowed_host_count: 0,
             media_allowed_host_count: 0,
@@ -2432,6 +2930,297 @@ mod tests {
         );
 
         assert_eq!(missing, vec!["PUBLIC_PLACEHOLDER", "PUBLIC_ABSENT"]);
+    }
+
+    #[test]
+    fn feishu_bridge_uploads_reads_back_and_starts_existing_async_protocol() {
+        let bytes = b"reviewed-final-jpeg-bytes".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind bridge fake server");
+        let port = listener.local_addr().expect("bridge fake address").port();
+        let expected_bytes = bytes.clone();
+        let server = thread::spawn(move || {
+            let (mut upload_stream, _) = listener.accept().expect("accept temporary upload");
+            let upload = read_test_request(&mut upload_stream);
+            assert!(upload
+                .headers
+                .starts_with("POST /qiwe/api/qw/doFileApi HTTP/1.1"));
+            assert!(upload.headers.contains("multipart/form-data; boundary="));
+            assert!(upload
+                .body
+                .windows(TEMPORARY_STORAGE_UPLOAD_METHOD.len())
+                .any(|window| window == TEMPORARY_STORAGE_UPLOAD_METHOD.as_bytes()));
+            assert!(upload
+                .body
+                .windows(expected_bytes.len())
+                .any(|window| window == expected_bytes));
+            upload_stream
+                .write_all(&json_response(&format!(
+                    r#"{{"code":0,"data":{{"cloudUrl":"http://127.0.0.1:{port}/temporary/reviewed.jpg"}}}}"#
+                )))
+                .expect("write temporary upload response");
+            drop(upload_stream);
+
+            let (mut readback_stream, _) = listener.accept().expect("accept temporary readback");
+            let readback = read_test_request(&mut readback_stream);
+            assert!(readback
+                .headers
+                .starts_with("GET /temporary/reviewed.jpg HTTP/1.1"));
+            readback_stream
+                .write_all(&binary_response(&expected_bytes))
+                .expect("write temporary readback");
+            drop(readback_stream);
+
+            let (mut async_stream, _) = listener.accept().expect("accept async upload");
+            let async_request = read_test_request(&mut async_stream);
+            assert!(async_request
+                .headers
+                .starts_with("POST /qiwe/api/qw/doApi HTTP/1.1"));
+            let body: Value =
+                serde_json::from_slice(&async_request.body).expect("parse async upload body");
+            assert_eq!(body["method"], ASYNC_UPLOAD_METHOD);
+            assert_eq!(
+                body["params"]["fileUrl"],
+                format!("http://127.0.0.1:{port}/temporary/reviewed.jpg")
+            );
+            async_stream
+                .write_all(&json_response(
+                    r#"{"code":0,"data":{"requestId":"bridge-upload-request"}}"#,
+                ))
+                .expect("write async upload response");
+        });
+
+        let config = test_adapter_config(port);
+        let claim = test_feishu_upload_claim(&bytes);
+        let request_id =
+            request_claim_upload_with(&config, &claim, Some(&bytes), &HttpClient::test_only())
+                .expect("Feishu bridge starts the existing async upload");
+        assert_eq!(request_id.as_str(), "bridge-upload-request");
+        server.join().expect("join bridge fake server");
+    }
+
+    #[test]
+    fn feishu_bridge_fails_closed_before_async_upload_on_readback_drift() {
+        let bytes = b"reviewed-final-jpeg-bytes".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind drift fake server");
+        let port = listener.local_addr().expect("drift fake address").port();
+        let changed = b"reviewed-final-jpeg-byteX".to_vec();
+        assert_eq!(bytes.len(), changed.len());
+        let server = thread::spawn(move || {
+            let (mut upload_stream, _) = listener.accept().expect("accept temporary upload");
+            let _ = read_test_request(&mut upload_stream);
+            upload_stream
+                .write_all(&json_response(&format!(
+                    r#"{{"code":0,"data":{{"cloudUrl":"http://127.0.0.1:{port}/temporary/drift.jpg"}}}}"#
+                )))
+                .expect("write temporary upload response");
+            drop(upload_stream);
+            let (mut readback_stream, _) = listener.accept().expect("accept temporary readback");
+            let _ = read_test_request(&mut readback_stream);
+            readback_stream
+                .write_all(&binary_response(&changed))
+                .expect("write drifted readback");
+            drop(readback_stream);
+        });
+
+        let result = request_claim_upload_with(
+            &test_adapter_config(port),
+            &test_feishu_upload_claim(&bytes),
+            Some(&bytes),
+            &HttpClient::test_only(),
+        );
+        assert_eq!(
+            result.expect_err("drifted readback fails closed"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        server.join().expect("join drift fake server");
+    }
+
+    #[test]
+    fn temporary_storage_post_request_failures_are_ambiguous() {
+        let hosts = BTreeSet::from(["temporary.example.test".to_string()]);
+        let business_failure = http_json_response(
+            200,
+            br#"{"code":1,"data":{"cloudUrl":"https://temporary.example.test/possibly-written.jpg"}}"#,
+        );
+        assert_eq!(
+            parse_temporary_storage_acceptance_for_call(&business_failure, &hosts, false)
+                .expect_err("business failure cannot prove no temporary write"),
+            UploadCallFailure::OutcomeUnknown
+        );
+
+        let bytes = b"reviewed-final-jpeg-bytes".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind non-2xx fake server");
+        let port = listener.local_addr().expect("non-2xx fake address").port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept temporary upload");
+            let _ = read_test_request(&mut stream);
+            stream
+                .write_all(
+                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write non-2xx response");
+        });
+        let result = request_claim_upload_with(
+            &test_adapter_config(port),
+            &test_feishu_upload_claim(&bytes),
+            Some(&bytes),
+            &HttpClient::test_only(),
+        );
+        assert_eq!(
+            result.expect_err("non-2xx cannot prove no temporary write"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        server.join().expect("join non-2xx fake server");
+    }
+
+    #[test]
+    fn feishu_bridge_async_upload_failure_after_temporary_write_is_ambiguous() {
+        let bytes = b"reviewed-final-jpeg-bytes".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind async failure fake server");
+        let port = listener
+            .local_addr()
+            .expect("async failure fake address")
+            .port();
+        let expected_bytes = bytes.clone();
+        let server = thread::spawn(move || {
+            let (mut upload_stream, _) = listener.accept().expect("accept temporary upload");
+            let _ = read_test_request(&mut upload_stream);
+            upload_stream
+                .write_all(&json_response(&format!(
+                    r#"{{"code":0,"data":{{"cloudUrl":"http://127.0.0.1:{port}/temporary/reviewed.jpg"}}}}"#
+                )))
+                .expect("write temporary upload response");
+            drop(upload_stream);
+
+            let (mut readback_stream, _) = listener.accept().expect("accept temporary readback");
+            let _ = read_test_request(&mut readback_stream);
+            readback_stream
+                .write_all(&binary_response(&expected_bytes))
+                .expect("write temporary readback");
+            drop(readback_stream);
+
+            let (mut async_stream, _) = listener.accept().expect("accept async upload");
+            let _ = read_test_request(&mut async_stream);
+            async_stream
+                .write_all(&json_response(
+                    r#"{"code":1,"data":{"requestId":"possibly-written"}}"#,
+                ))
+                .expect("write async business failure");
+        });
+
+        let result = request_claim_upload_with(
+            &test_adapter_config(port),
+            &test_feishu_upload_claim(&bytes),
+            Some(&bytes),
+            &HttpClient::test_only(),
+        );
+        assert_eq!(
+            result.expect_err("async failure after temporary write is ambiguous"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        server.join().expect("join async failure fake server");
+    }
+
+    #[test]
+    fn temporary_storage_cloud_url_uses_media_allowlist_not_api_allowlist() {
+        let api_hosts = BTreeSet::from(["manager.qiweapi.com".to_string()]);
+        let media_hosts = BTreeSet::from(["temporary.example.test".to_string()]);
+        let response = http_json_response(
+            200,
+            br#"{"code":0,"data":{"cloudUrl":"https://temporary.example.test/reviewed.jpg"}}"#,
+        );
+
+        assert_eq!(
+            parse_temporary_storage_acceptance_for_call(&response, &api_hosts, false)
+                .expect_err("temporary URL must not use the API allowlist"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        assert_eq!(
+            parse_temporary_storage_acceptance_for_call(&response, &media_hosts, false)
+                .expect("temporary URL uses reviewed media allowlist")
+                .as_str(),
+            "https://temporary.example.test/reviewed.jpg"
+        );
+    }
+
+    #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+    #[test]
+    fn feishu_delivery_identity_must_match_the_locked_qiwe_claim() {
+        use crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageDeliveryArtifact;
+
+        let bytes = b"reviewed-final-jpeg-bytes".to_vec();
+        let claim = test_feishu_upload_claim(&bytes);
+        let fixture = || FeishuPrimaryStorageDeliveryArtifact {
+            artifact_id: claim.generated_image_artifact_id,
+            artifact_uri: claim.artifact_uri.clone(),
+            content_hash: claim.artifact_content_hash.clone(),
+            file_md5: claim.artifact_file_md5.clone(),
+            byte_size: claim.artifact_byte_size,
+            bytes: Zeroizing::new(bytes.clone()),
+        };
+        validate_feishu_delivery_artifact(&claim, &fixture())
+            .expect("matching delivery artifact is accepted");
+
+        for field in [
+            "artifact_id",
+            "artifact_uri",
+            "content_hash",
+            "file_md5",
+            "byte_size",
+        ] {
+            let mut artifact = fixture();
+            match field {
+                "artifact_id" => artifact.artifact_id = Uuid::new_v4(),
+                "artifact_uri" => artifact.artifact_uri.push_str("-drifted"),
+                "content_hash" => artifact.content_hash.push('0'),
+                "file_md5" => artifact.file_md5.push('0'),
+                "byte_size" => artifact.byte_size += 1,
+                _ => unreachable!(),
+            }
+            assert!(
+                validate_feishu_delivery_artifact(&claim, &artifact).is_err(),
+                "accepted drifted delivery identity field {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn temporary_storage_url_and_file_api_are_exactly_bounded() {
+        let api = Url::parse("https://manager.qiweapi.com/qiwe/api/qw/doApi")
+            .expect("fixture API URL is valid");
+        assert_eq!(
+            file_api_url_from_api_url(&api)
+                .expect("derive fixed file API path")
+                .as_str(),
+            "https://manager.qiweapi.com/qiwe/api/qw/doFileApi"
+        );
+        let hosts = BTreeSet::from(["temporary.example.test".to_string()]);
+        assert!(strict_temporary_storage_url(
+            "https://temporary.example.test/reviewed.jpg",
+            &hosts,
+            false
+        )
+        .is_ok());
+        for url in [
+            "https://other.example.test/reviewed.jpg",
+            "https://temporary.example.test/reviewed.jpg?token=secret",
+            "http://temporary.example.test/reviewed.jpg",
+        ] {
+            assert!(strict_temporary_storage_url(url, &hosts, false).is_err());
+        }
+        assert!(strict_temporary_storage_url(
+            &format!("https://temporary.example.test/{}", "a".repeat(4096)),
+            &hosts,
+            false
+        )
+        .is_err());
+        assert!(build_temporary_storage_upload_body(
+            "qintopia-fixed-boundary",
+            "device-guid",
+            "generated-image.jpg",
+            b"jpeg-qintopia-fixed-boundary-bytes"
+        )
+        .is_err());
     }
 
     #[test]
@@ -2899,6 +3688,16 @@ mod tests {
         .into_bytes()
     }
 
+    fn binary_response(body: &[u8]) -> Vec<u8> {
+        let mut response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        response.extend_from_slice(body);
+        response
+    }
+
     fn http_json_response(status: u16, body: &[u8]) -> HttpResponse {
         HttpResponse {
             status,
@@ -2913,7 +3712,10 @@ mod tests {
             token: "fake-token".to_string(),
             guid: "fake-device-guid".to_string(),
             allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
-            media_allowed_hosts: BTreeSet::from(["media.example.test".to_string()]),
+            media_allowed_hosts: BTreeSet::from([
+                "127.0.0.1".to_string(),
+                "media.example.test".to_string(),
+            ]),
             allowed_groups: BTreeSet::from(["group-id".to_string()]),
             webhook_ready: true,
         }
@@ -2933,6 +3735,24 @@ mod tests {
             artifact_file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
             artifact_byte_size: 48_300,
             filename: "activity-poster.jpg".to_string(),
+            target_group_id: "group-id".to_string(),
+        }
+    }
+
+    fn test_feishu_upload_claim(bytes: &[u8]) -> QiweUploadClaim {
+        let artifact_id =
+            Uuid::parse_str("53afddaf-53c3-4b57-a3b8-853d1c07d32f").expect("fixture UUID is valid");
+        QiweUploadClaim {
+            attempt_id: Uuid::new_v4(),
+            work_item_id: Uuid::new_v4(),
+            generated_image_artifact_id: artifact_id,
+            attempt_number: 1,
+            claim_token: format!("qiwe-image-send-adapter:{}", Uuid::new_v4()),
+            artifact_uri: format!("{FEISHU_PRIMARY_STORAGE_URI_PREFIX}{artifact_id}"),
+            artifact_content_hash: format!("sha256:{:x}", Sha256::digest(bytes)),
+            artifact_file_md5: format!("{:x}", Md5::digest(bytes)),
+            artifact_byte_size: u64::try_from(bytes.len()).expect("fixture size fits u64"),
+            filename: format!("generated-image-{artifact_id}.jpg"),
             target_group_id: "group-id".to_string(),
         }
     }

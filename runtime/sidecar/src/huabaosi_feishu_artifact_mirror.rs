@@ -201,6 +201,16 @@ pub(crate) struct FeishuPrimaryStorageApprovalEvidence {
     pub(crate) height: i64,
 }
 
+#[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+pub(crate) struct FeishuPrimaryStorageDeliveryArtifact {
+    pub(crate) artifact_id: Uuid,
+    pub(crate) artifact_uri: String,
+    pub(crate) content_hash: String,
+    pub(crate) file_md5: String,
+    pub(crate) byte_size: u64,
+    pub(crate) bytes: Zeroizing<Vec<u8>>,
+}
+
 #[cfg(test)]
 impl FeishuPrimaryStorageApprovalEvidence {
     pub(crate) fn test_only(
@@ -522,8 +532,14 @@ pub(crate) async fn revalidate_primary_storage_for_approval(
             .context("Huabaosi generated image artifact was not found")?;
         let workflow_root_id = resolve_workflow_root_pool(pool, artifact.work_item_id).await?;
         let validated = validate_primary_storage_artifact(&artifact)?;
-        revalidate_primary_storage_artifact(&artifact, &validated, workflow_root_id, &config)
-            .map_err(primary_storage_error)?;
+        let readback = read_revalidated_primary_storage_bytes(
+            &artifact,
+            &validated,
+            workflow_root_id,
+            &config,
+        )
+        .map_err(primary_storage_error)?;
+        drop(readback);
 
         Ok(FeishuPrimaryStorageApprovalEvidence {
             artifact_id: artifact.id,
@@ -537,6 +553,42 @@ pub(crate) async fn revalidate_primary_storage_for_approval(
             height: i64::from(validated.height),
         })
     }
+}
+
+#[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+pub(crate) async fn revalidate_primary_storage_for_delivery(
+    pool: &PgPool,
+    artifact_id: Uuid,
+    database_url: &str,
+) -> Result<FeishuPrimaryStorageDeliveryArtifact> {
+    let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
+    let artifact = peek_candidate(pool, Some(artifact_id))
+        .await?
+        .context("Huabaosi generated image artifact was not found")?;
+    if artifact.review_status != "approved"
+        || artifact.reviewed_at.is_none()
+        || artifact
+            .reviewed_by
+            .as_deref()
+            .is_none_or(|reviewer| reviewer.trim().is_empty())
+    {
+        bail!("Huabaosi Feishu-backed delivery artifact is not human-approved");
+    }
+    let workflow_root_id = resolve_workflow_root_pool(pool, artifact.work_item_id).await?;
+    let validated = validate_primary_storage_artifact(&artifact)?;
+    let bytes =
+        read_revalidated_primary_storage_bytes(&artifact, &validated, workflow_root_id, &config)
+            .map_err(primary_storage_error)?;
+
+    Ok(FeishuPrimaryStorageDeliveryArtifact {
+        artifact_id: artifact.id,
+        artifact_uri: artifact.artifact_uri,
+        content_hash: artifact.content_hash,
+        file_md5: validated.file_md5,
+        byte_size: u64::try_from(validated.byte_size)
+            .context("Huabaosi Feishu-backed delivery byte size is invalid")?,
+        bytes,
+    })
 }
 
 fn observation_preflight_report() -> MirrorPreflightReport {
@@ -2004,21 +2056,9 @@ fn revalidate_primary_storage_artifact(
     workflow_root_id: Uuid,
     config: &FeishuPrimaryStorageConfig,
 ) -> std::result::Result<PrimaryStorageRevalidationReport, MirrorFailure> {
-    let credentials = read_feishu_credentials(&config.profile_env_path)?;
-    let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
-    let record = client
-        .search_record(&config.base_token, &config.table_id, artifact.id)?
-        .ok_or_else(|| {
-            MirrorFailure::external("record_search", "record_missing", Some(false), false)
-        })?;
-    let fields = record.fields.as_object().ok_or_else(|| {
-        MirrorFailure::external("record_search", "record_fields_missing", Some(false), false)
-    })?;
-    validate_primary_storage_record_fields(artifact, validated, workflow_root_id, fields)?;
-    let file_token = primary_storage_attachment_token(fields)?;
-    let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
-    validate_primary_storage_readback(artifact, validated, &readback)?;
-    readback.zeroize();
+    let readback =
+        read_revalidated_primary_storage_bytes(artifact, validated, workflow_root_id, config)?;
+    drop(readback);
     Ok(PrimaryStorageRevalidationReport {
         success: true,
         worker: WORKER_ID,
@@ -2035,6 +2075,34 @@ fn revalidate_primary_storage_artifact(
         sensitive_fields_redacted: true,
         guardrails: primary_storage_revalidation_guardrails(),
     })
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn read_revalidated_primary_storage_bytes(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    workflow_root_id: Uuid,
+    config: &FeishuPrimaryStorageConfig,
+) -> std::result::Result<Zeroizing<Vec<u8>>, MirrorFailure> {
+    let credentials = read_feishu_credentials(&config.profile_env_path)?;
+    let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+    let record = client
+        .search_record(&config.base_token, &config.table_id, artifact.id)?
+        .ok_or_else(|| {
+            MirrorFailure::external("record_search", "record_missing", Some(false), false)
+        })?;
+    let fields = record.fields.as_object().ok_or_else(|| {
+        MirrorFailure::external("record_search", "record_fields_missing", Some(false), false)
+    })?;
+    validate_primary_storage_record_fields(artifact, validated, workflow_root_id, fields)?;
+    let file_token = primary_storage_attachment_token(fields)?;
+    let readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
+    validate_primary_storage_readback(artifact, validated, &readback)?;
+    Ok(readback)
 }
 
 #[cfg(any(

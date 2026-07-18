@@ -16,6 +16,9 @@ const CAPABILITY_KEY: &str = "erhua.send_group_message";
 const CLAIM_TTL_MINUTES: i64 = 10;
 const SEND_CLAIM_TTL_MINUTES: i64 = 2;
 const MAX_CALLBACK_PAYLOAD_BYTES: usize = 64 * 1024;
+const HTTPS_UPLOAD_PROTOCOL: &str = "qiwe_async_url_upload_then_send_image";
+const FEISHU_BRIDGE_PROTOCOL: &str = "qiwe_feishu_temp_storage_then_async_upload_then_send_image";
+const FEISHU_PRIMARY_STORAGE_URI_PREFIX: &str = "feishu-base://huabaosi-generated-image/";
 
 #[derive(Clone)]
 pub struct QiweUploadClaim {
@@ -130,6 +133,8 @@ struct ValidatedArtifactIdentity {
     filename: String,
     file_md5: String,
     byte_size: u64,
+    feishu_artifact_id: Option<Uuid>,
+    protocol: &'static str,
 }
 
 pub async fn claim_ready_work_item(
@@ -288,9 +293,16 @@ pub async fn claim_ready_work_item(
         },
         allowed_group_ids,
         media_allowed_hosts,
+        feishu_delivery_bridge_compiled(),
     )?;
     let work_item_id: Uuid = row.try_get("id")?;
     let generated_image_artifact_id: Uuid = row.try_get("generated_image_artifact_id")?;
+    if identity
+        .feishu_artifact_id
+        .is_some_and(|artifact_id| artifact_id != generated_image_artifact_id)
+    {
+        bail!("Feishu primary-storage URI does not match the generated image artifact id");
+    }
     let attempt_number: i32 = row.try_get("attempt_number")?;
     let stored_claim_token: String = row.try_get("claim_token")?;
     let target_group_sha256 = sha256_marker(target_group_id.as_bytes());
@@ -331,7 +343,7 @@ pub async fn claim_ready_work_item(
         "callback_credentials_persisted": false,
         "external_upload_outcome": "not_started",
         "external_send_executed": false,
-        "protocol": "qiwe_async_url_upload_then_send_image"
+        "protocol": identity.protocol
     }))
     .fetch_one(&mut *tx)
     .await
@@ -350,7 +362,8 @@ pub async fn claim_ready_work_item(
             "automatic_retry_allowed": false,
             "external_upload_outcome": "not_started",
             "external_send_executed": false,
-            "send_executed": false
+            "send_executed": false,
+            "protocol": identity.protocol
         }),
     )
     .await?;
@@ -381,6 +394,7 @@ pub async fn preview_ready_work_item(
         r#"
         SELECT
             request.id,
+            artifact.id AS generated_image_artifact_id,
             artifact.artifact_uri,
             artifact.content_hash AS artifact_content_hash,
             artifact.metadata->>'mime_type' AS mime_type,
@@ -462,7 +476,7 @@ pub async fn preview_ready_work_item(
         "approved generated-image byte_size",
     )?;
     let target_group_id: String = row.try_get("target_group_id")?;
-    validate_claim_boundary(
+    let identity = validate_claim_boundary(
         ArtifactBoundary {
             uri: &artifact_uri,
             content_hash: &artifact_content_hash,
@@ -473,7 +487,15 @@ pub async fn preview_ready_work_item(
         },
         allowed_group_ids,
         media_allowed_hosts,
+        feishu_delivery_bridge_compiled(),
     )?;
+    let generated_image_artifact_id: Uuid = row.try_get("generated_image_artifact_id")?;
+    if identity
+        .feishu_artifact_id
+        .is_some_and(|artifact_id| artifact_id != generated_image_artifact_id)
+    {
+        bail!("Feishu primary-storage URI does not match the generated image artifact id");
+    }
     Ok(Some(QiweUploadPreview {
         work_item_id: row.try_get("id")?,
     }))
@@ -485,6 +507,7 @@ pub async fn record_upload_acceptance(
     request_id: &str,
 ) -> Result<Uuid> {
     validate_plain_value(request_id, "QiWe upload request id")?;
+    let protocol = upload_protocol_for_claim(claim)?;
     let request_id_sha256 = sha256_marker(request_id.as_bytes());
     let target_group_sha256 = sha256_marker(claim.target_group_id.as_bytes());
     let artifact_uri_sha256 = sha256_marker(claim.artifact_uri.as_bytes());
@@ -532,7 +555,7 @@ pub async fn record_upload_acceptance(
         "callback_credentials_persisted": false,
         "external_upload_outcome": "accepted",
         "external_send_executed": false,
-        "protocol": "qiwe_async_url_upload_then_send_image"
+        "protocol": protocol
     }))
     .fetch_optional(&mut *tx)
     .await
@@ -550,6 +573,7 @@ pub async fn record_upload_acceptance(
             "target_group_sha256": target_group_sha256,
             "artifact_content_hash": claim.artifact_content_hash,
             "artifact_uri_sha256": artifact_uri_sha256,
+            "protocol": protocol,
             "callback_credentials_persisted": false,
             "send_executed": false
         }),
@@ -1446,6 +1470,7 @@ fn validate_claim_boundary(
     artifact: ArtifactBoundary<'_>,
     allowed_group_ids: &BTreeSet<String>,
     media_allowed_hosts: &BTreeSet<String>,
+    allow_feishu_primary_storage: bool,
 ) -> Result<ValidatedArtifactIdentity> {
     validate_canonical_sha256(artifact.content_hash, "generated-image content hash")?;
     validate_canonical_md5(artifact.file_md5, "generated-image file MD5")?;
@@ -1458,6 +1483,19 @@ fn validate_claim_boundary(
     validate_plain_value(artifact.target_group_id, "QiWe target group id")?;
     if !allowed_group_ids.contains(artifact.target_group_id) {
         bail!("QiWe target group id is not allowlisted");
+    }
+    if artifact.uri.starts_with(FEISHU_PRIMARY_STORAGE_URI_PREFIX) {
+        if !allow_feishu_primary_storage {
+            bail!("Feishu primary-storage delivery bridge is not compiled");
+        }
+        let artifact_id = parse_feishu_primary_storage_uri(artifact.uri)?;
+        return Ok(ValidatedArtifactIdentity {
+            filename: format!("generated-image-{artifact_id}.jpg"),
+            file_md5: artifact.file_md5.to_string(),
+            byte_size: artifact.byte_size,
+            feishu_artifact_id: Some(artifact_id),
+            protocol: FEISHU_BRIDGE_PROTOCOL,
+        });
     }
     let uri = strict_media_url(artifact.uri)?;
     let host = uri
@@ -1473,7 +1511,63 @@ fn validate_claim_boundary(
         filename: filename.to_string(),
         file_md5: artifact.file_md5.to_string(),
         byte_size: artifact.byte_size,
+        feishu_artifact_id: None,
+        protocol: HTTPS_UPLOAD_PROTOCOL,
     })
+}
+
+fn artifact_filename_for_uri(
+    artifact_uri: &str,
+    expected_artifact_id: Uuid,
+    allow_feishu_primary_storage: bool,
+) -> Result<String> {
+    if artifact_uri.starts_with(FEISHU_PRIMARY_STORAGE_URI_PREFIX) {
+        if !allow_feishu_primary_storage {
+            bail!("Feishu primary-storage delivery bridge is not compiled");
+        }
+        let artifact_id = parse_feishu_primary_storage_uri(artifact_uri)?;
+        if artifact_id != expected_artifact_id {
+            bail!("Feishu primary-storage URI does not match the generated image artifact id");
+        }
+        return Ok(format!("generated-image-{artifact_id}.jpg"));
+    }
+    let artifact_url = strict_media_url(artifact_uri)?;
+    Ok(media_filename(&artifact_url)?.to_string())
+}
+
+fn parse_feishu_primary_storage_uri(value: &str) -> Result<Uuid> {
+    let artifact_id = value
+        .strip_prefix(FEISHU_PRIMARY_STORAGE_URI_PREFIX)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .context("Feishu primary-storage URI must contain one canonical artifact UUID")?;
+    if value != format!("{FEISHU_PRIMARY_STORAGE_URI_PREFIX}{artifact_id}") {
+        bail!("Feishu primary-storage URI is not canonical");
+    }
+    Ok(artifact_id)
+}
+
+const fn feishu_delivery_bridge_compiled() -> bool {
+    cfg!(all(
+        feature = "huabaosi-staging-adapter",
+        feature = "qiwe-staging-adapter"
+    ))
+}
+
+fn upload_protocol_for_claim(claim: &QiweUploadClaim) -> Result<&'static str> {
+    if claim
+        .artifact_uri
+        .starts_with(FEISHU_PRIMARY_STORAGE_URI_PREFIX)
+    {
+        if parse_feishu_primary_storage_uri(&claim.artifact_uri)?
+            != claim.generated_image_artifact_id
+        {
+            bail!("Feishu primary-storage URI does not match the generated image artifact id");
+        }
+        Ok(FEISHU_BRIDGE_PROTOCOL)
+    } else {
+        strict_media_url(&claim.artifact_uri)?;
+        Ok(HTTPS_UPLOAD_PROTOCOL)
+    }
 }
 
 async fn lock_current_claim(
@@ -1625,8 +1719,11 @@ async fn lock_callback_policy(
         &row.try_get::<String, _>("artifact_byte_size")?,
         "approved generated-image byte_size",
     )?;
-    let artifact_url = strict_media_url(&artifact_uri)?;
-    let artifact_filename = media_filename(&artifact_url)?;
+    let artifact_filename = artifact_filename_for_uri(
+        &artifact_uri,
+        attempt.generated_image_artifact_id,
+        feishu_delivery_bridge_compiled(),
+    )?;
     let claim_is_current: bool = row.try_get("claim_is_current")?;
     if sha256_marker(target_group_id.as_bytes()) != attempt.target_group_sha256
         || sha256_marker(artifact_uri.as_bytes()) != attempt.artifact_uri_sha256
@@ -2072,6 +2169,7 @@ mod tests {
             },
             &groups,
             &hosts,
+            false,
         )
         .expect("reviewed boundary is valid");
         assert_eq!(identity.filename, "activity.jpg");
@@ -2087,6 +2185,7 @@ mod tests {
             },
             &groups,
             &hosts,
+            false,
         )
         .is_err());
         assert!(validate_claim_boundary(
@@ -2101,6 +2200,7 @@ mod tests {
             },
             &groups,
             &hosts,
+            false,
         )
         .is_err());
         assert!(validate_claim_boundary(
@@ -2115,6 +2215,7 @@ mod tests {
             },
             &groups,
             &hosts,
+            false,
         )
         .is_err());
         assert!(validate_claim_boundary(
@@ -2129,6 +2230,7 @@ mod tests {
             },
             &groups,
             &hosts,
+            false,
         )
         .is_err());
     }
@@ -2150,6 +2252,7 @@ mod tests {
             },
             &groups,
             &hosts,
+            false,
         )
         .expect("host normalization preserves reviewed media boundary");
 
@@ -2166,8 +2269,63 @@ mod tests {
             },
             &groups,
             &hosts,
+            false,
         )
         .is_err());
+    }
+
+    #[test]
+    fn feishu_claim_boundary_requires_combined_bridge_and_canonical_artifact_id() {
+        let artifact_id =
+            Uuid::parse_str("53afddaf-53c3-4b57-a3b8-853d1c07d32f").expect("fixture UUID is valid");
+        let uri = format!("{FEISHU_PRIMARY_STORAGE_URI_PREFIX}{artifact_id}");
+        let groups = BTreeSet::from(["group-id".to_string()]);
+        let hosts = BTreeSet::new();
+        let boundary = |uri: &str, enabled| {
+            validate_claim_boundary(
+                ArtifactBoundary {
+                    uri,
+                    content_hash:
+                        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    mime_type: "image/jpeg",
+                    file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                    byte_size: 48_300,
+                    target_group_id: "group-id",
+                },
+                &groups,
+                &hosts,
+                enabled,
+            )
+        };
+
+        assert!(boundary(&uri, false).is_err());
+        let identity = boundary(&uri, true).expect("combined staging bridge accepts Feishu URI");
+        assert_eq!(identity.feishu_artifact_id, Some(artifact_id));
+        assert_eq!(
+            identity.filename,
+            format!("generated-image-{artifact_id}.jpg")
+        );
+        assert_eq!(identity.protocol, FEISHU_BRIDGE_PROTOCOL);
+        assert!(boundary(&format!("{uri}?token=secret"), true).is_err());
+        assert!(boundary("feishu-base://huabaosi-generated-image/not-a-uuid", true).is_err());
+
+        assert_eq!(
+            artifact_filename_for_uri(&uri, artifact_id, true)
+                .expect("callback filename derives from artifact id"),
+            format!("generated-image-{artifact_id}.jpg")
+        );
+        assert!(artifact_filename_for_uri(&uri, Uuid::new_v4(), true).is_err());
+        assert!(artifact_filename_for_uri(&uri, artifact_id, false).is_err());
+
+        let mut claim = upload_claim_fixture();
+        claim.generated_image_artifact_id = artifact_id;
+        claim.artifact_uri = uri.clone();
+        assert_eq!(
+            upload_protocol_for_claim(&claim).expect("derive Feishu bridge protocol"),
+            FEISHU_BRIDGE_PROTOCOL
+        );
+        claim.generated_image_artifact_id = Uuid::new_v4();
+        assert!(upload_protocol_for_claim(&claim).is_err());
     }
 
     #[test]
@@ -2213,6 +2371,7 @@ mod tests {
                     },
                     &groups,
                     &hosts,
+                    false,
                 )
                 .is_err(),
                 "accepted unsafe claim boundary {artifact_uri}"
@@ -2237,6 +2396,7 @@ mod tests {
                 },
                 &groups,
                 &hosts,
+                false,
             )
         };
         assert!(validate(
@@ -2666,6 +2826,66 @@ mod tests {
                 status: "sent".to_string()
             }
         );
+        delete_fixture(&pool, image_id, group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(all(
+        feature = "postgres-integration-tests",
+        feature = "huabaosi-staging-adapter",
+        feature = "qiwe-staging-adapter"
+    ))]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_qiwe_send_state_claims_feishu_bridge_without_persisting_uri() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let (image_id, artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
+        let artifact_uri = format!("{FEISHU_PRIMARY_STORAGE_URI_PREFIX}{artifact_id}");
+        sqlx::query("UPDATE qintopia_agent_os.artifacts SET artifact_uri = $2 WHERE id = $1")
+            .bind(artifact_id)
+            .bind(&artifact_uri)
+            .execute(&pool)
+            .await
+            .expect("switch fixture to Feishu primary storage");
+
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::new();
+        assert_eq!(
+            preview_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+                .await
+                .expect("preview Feishu-backed send-ready work item"),
+            Some(QiweUploadPreview {
+                work_item_id: group_id
+            })
+        );
+        let claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("claim Feishu-backed send-ready work item")
+            .expect("Feishu-backed work item is claimable");
+        assert_eq!(claim.generated_image_artifact_id, artifact_id);
+        assert_eq!(claim.artifact_uri, artifact_uri);
+        assert_eq!(claim.filename, format!("generated-image-{artifact_id}.jpg"));
+
+        let audit: serde_json::Value = sqlx::query_scalar(
+            "SELECT audit_metadata FROM qintopia_agent_os.qiwe_image_send_attempts WHERE id = $1",
+        )
+        .bind(claim.attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load Feishu bridge attempt audit");
+        assert_eq!(audit["protocol"], FEISHU_BRIDGE_PROTOCOL);
+        let audit_text = audit.to_string();
+        assert!(!audit_text.contains("feishu-base://"));
+        assert!(!audit_text.contains("cloudUrl"));
+
+        record_upload_failure(&pool, &claim, UploadFailureDisposition::Rejected)
+            .await
+            .expect("terminalize Feishu bridge fixture claim");
         delete_fixture(&pool, image_id, group_id).await;
     }
 
