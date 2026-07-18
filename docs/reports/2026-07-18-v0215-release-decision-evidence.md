@@ -10,18 +10,18 @@ owner release decision, but it is not a Xiaoman production-complete release.
 The release candidate packages the release-current acceptance docs, the staging values
 observation gate, the staging evidence CI coverage, Feishu-backed generated-image
 approval/revalidation, the guarded Feishu-to-QiWe staging bridge, and the tightened
-combined staging evidence gate needed before staging runtime provisioning. It still does
-not provision server-local staging values, render
-`/etc/qintopia/message-sidecar-staging.env`, run Huabaosi/QiWe staging evidence, enable
-production external timers, or prove one real Xiaoman activity through QiWe group-send
-arrival.
+combined staging evidence gate plus stale staging artifact provisioning guardrails
+needed before staging runtime provisioning. It still does not provision server-local
+staging values, render `/etc/qintopia/message-sidecar-staging.env`, run Huabaosi/QiWe
+staging evidence, enable production external timers, or prove one real Xiaoman activity
+through QiWe group-send arrival.
 
 ## Release Candidate
 
 ```text
 release_pr=#180
 release_pr_title=chore(master): release 0.2.15
-release_pr_head=73f429f66982a36e94d6173047f4df785338547f
+release_pr_head=904ef17d8a9c1936f3a5e2689e03e241ec1bc475
 release_pr_state=open
 release_pr_mergeable=MERGEABLE
 latest_published_release=v0.2.14
@@ -40,14 +40,15 @@ Included changes:
 - `ab2ed2a` `feat: approve revalidated feishu images`
 - `1d02be4` `fix: tighten xiaoman staging evidence gate`
 - `3493318` `feat: bridge feishu images to qiwe staging`
+- `10b8820` `fix: prevent stale staging artifact provisioning`
 
 ## Validation Evidence
 
 Manual Release Please validation was run against the current Release Please head:
 
 ```text
-workflow_run=29644161178
-head_sha=73f429f66982a36e94d6173047f4df785338547f
+workflow_run=29645143804
+head_sha=904ef17d8a9c1936f3a5e2689e03e241ec1bc475
 changes=success
 check=success
 pr_attached_status=Release Please validation SUCCESS
