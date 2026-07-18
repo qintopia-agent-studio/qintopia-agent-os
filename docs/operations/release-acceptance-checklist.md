@@ -38,9 +38,11 @@ send externally.
 - Confirm `tools/deploy/check-deploy-contracts.mjs` guards those scripts.
 - If the target Release is meant to unblock staging runtime provisioning, confirm the
   deploy bundle includes:
+  - `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh`
   - `deploy/sidecar/scripts/render-staging-runtime-env.py`
   - `deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh`
   - `deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh`
+  - `deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh`
   - `docs/operations/message-sidecar-staging-values.template.json`
   - `docs/operations/staging-runtime-provisioning-runbook.md`
 
@@ -58,6 +60,9 @@ send externally.
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/render-staging-runtime-env.py
   ```
 
+- Confirm the release-local values observation smoke and staging artifact fetch helper
+  also exist under `current`; the staging runbook relies on both before real Huabaosi or
+  QiWe staging evidence can start.
 - Do not create placeholder env files to satisfy path-only readiness checks.
 - Do not paste server-local values, database URLs, tokens, table ids, group ids, raw
   activity records, or callback payloads into reports, PRs, logs, or chat.
