@@ -223,30 +223,24 @@ struct TemporaryStorageAcceptedData {
 }
 
 #[cfg(any(test, feature = "qiwe-staging-adapter"))]
-struct SensitiveUrl(Option<Url>);
-
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
-impl SensitiveUrl {
-    fn new(url: Url) -> Self {
-        Self(Some(url))
-    }
-
-    fn as_url(&self) -> &Url {
-        self.0.as_ref().expect("sensitive URL is present")
-    }
-
-    fn as_str(&self) -> &str {
-        self.as_url().as_str()
-    }
+struct SensitiveUrl {
+    raw: Zeroizing<String>,
 }
 
 #[cfg(any(test, feature = "qiwe-staging-adapter"))]
-impl Drop for SensitiveUrl {
-    fn drop(&mut self) {
-        if let Some(url) = self.0.take() {
-            let mut value = String::from(url);
-            value.zeroize();
-        }
+impl SensitiveUrl {
+    fn new(raw: Zeroizing<String>) -> Self {
+        Self { raw }
+    }
+
+    fn with_url<T>(&self, f: impl FnOnce(&Url) -> T) -> Result<T> {
+        // url::Url owns another buffer, so parsed values must stay short-lived.
+        let url = Url::parse(&self.raw).context("parse QiWe temporary-storage URL")?;
+        Ok(f(&url))
+    }
+
+    fn as_str(&self) -> &str {
+        &self.raw
     }
 }
 
@@ -1166,13 +1160,11 @@ fn request_feishu_bridge_upload_with(
         client.allows_insecure_http(),
     )
     .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
-    request_async_upload_url_with(
-        config,
-        claim,
-        cloud_url.as_url(),
-        &config.allowed_hosts,
-        client,
-    )
+    cloud_url
+        .with_url(|url| {
+            request_async_upload_url_with(config, claim, url, &config.allowed_hosts, client)
+        })
+        .map_err(|_| UploadCallFailure::OutcomeUnknown)?
 }
 
 #[cfg(any(test, feature = "qiwe-staging-adapter"))]
@@ -1253,14 +1245,17 @@ fn readback_temporary_storage_with(
     .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
     let max_bytes =
         usize::try_from(claim.artifact_byte_size).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
-    let response = client
-        .request(
-            "GET",
-            cloud_url.as_url(),
-            &[("Accept", "image/jpeg".to_string())],
-            &[],
-            max_bytes,
-        )
+    let response = cloud_url
+        .with_url(|url| {
+            client.request(
+                "GET",
+                url,
+                &[("Accept", "image/jpeg".to_string())],
+                &[],
+                max_bytes,
+            )
+        })
+        .map_err(|_| UploadCallFailure::OutcomeUnknown)?
         .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
     if !(200..300).contains(&response.status) {
         return Err(UploadCallFailure::OutcomeUnknown);
@@ -1780,7 +1775,7 @@ fn strict_temporary_storage_url(
     if !allowed_hosts.contains(&host) {
         bail!("QiWe temporary-storage URL host is not allowlisted");
     }
-    Ok(SensitiveUrl::new(url))
+    Ok(SensitiveUrl::new(Zeroizing::new(value.to_string())))
 }
 
 #[cfg(any(test, feature = "qiwe-staging-adapter"))]
