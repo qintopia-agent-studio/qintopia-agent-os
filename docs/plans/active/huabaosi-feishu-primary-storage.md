@@ -64,10 +64,11 @@ The first canary remains `pending`. The current approval and QiWe intake paths r
 an immutable public HTTPS JPEG URI and therefore fail closed for the internal
 `feishu-base://` artifact reference. The read-only
 `huabaosi-feishu-primary-storage-revalidate --artifact-id <uuid>` sidecar entrypoint can
-prove the current Feishu attachment still matches AgentOS facts through authenticated
-readback, but it does not approve, publish, write Postgres or Feishu, call QiWe, or
-send. A later reviewed PR must decide how approval and QiWe delivery consume those exact
-bytes; Feishu field changes alone cannot cross either gate.
+prove the current Feishu row schema, workflow-root association, and attachment still
+match AgentOS facts through authenticated readback, but it does not approve, publish,
+write Postgres or Feishu, call QiWe, or send. A later reviewed PR must decide how
+approval and QiWe delivery consume those exact bytes; Feishu field changes alone cannot
+cross either gate.
 
 ## Feishu Automation
 

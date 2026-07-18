@@ -450,9 +450,11 @@ pub async fn run_primary_storage_revalidation(cli: &Cli, artifact_id: Uuid) -> R
         let artifact = peek_candidate(&pool, Some(artifact_id))
             .await?
             .context("Huabaosi generated image artifact was not found")?;
+        let workflow_root_id = resolve_workflow_root_pool(&pool, artifact.work_item_id).await?;
         let validated = validate_primary_storage_artifact(&artifact)?;
-        let report = revalidate_primary_storage_artifact(&artifact, &validated, &config)
-            .map_err(primary_storage_error)?;
+        let report =
+            revalidate_primary_storage_artifact(&artifact, &validated, workflow_root_id, &config)
+                .map_err(primary_storage_error)?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         Ok(())
     }
@@ -1920,6 +1922,7 @@ fn validate_primary_storage_artifact(
 fn revalidate_primary_storage_artifact(
     artifact: &MirrorArtifact,
     validated: &ValidatedPrimaryStorageArtifact,
+    workflow_root_id: Uuid,
     config: &FeishuPrimaryStorageConfig,
 ) -> std::result::Result<PrimaryStorageRevalidationReport, MirrorFailure> {
     let credentials = read_feishu_credentials(&config.profile_env_path)?;
@@ -1932,7 +1935,7 @@ fn revalidate_primary_storage_artifact(
     let fields = record.fields.as_object().ok_or_else(|| {
         MirrorFailure::external("record_search", "record_fields_missing", Some(false), false)
     })?;
-    validate_primary_storage_record_fields(artifact, validated, fields)?;
+    validate_primary_storage_record_fields(artifact, validated, workflow_root_id, fields)?;
     let file_token = primary_storage_attachment_token(fields)?;
     let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
     validate_primary_storage_readback(artifact, validated, &readback)?;
@@ -1963,11 +1966,13 @@ fn revalidate_primary_storage_artifact(
 fn validate_primary_storage_record_fields(
     artifact: &MirrorArtifact,
     validated: &ValidatedPrimaryStorageArtifact,
+    workflow_root_id: Uuid,
     fields: &Map<String, Value>,
 ) -> std::result::Result<(), MirrorFailure> {
     for (field, expected) in [
         ("AgentOS产物ID", artifact.id.to_string()),
         ("Schema版本", SCHEMA_VERSION.to_string()),
+        ("AgentOS工作项ID", workflow_root_id.to_string()),
         ("图片请求ID", artifact.work_item_id.to_string()),
         ("JPEG SHA-256", artifact.content_hash.clone()),
         ("文件MD5", validated.file_md5.clone()),
@@ -3230,10 +3235,11 @@ mod tests {
         artifact.artifact_uri = format!("feishu-base://huabaosi-generated-image/{}", artifact.id);
         let validated =
             validate_primary_storage_artifact(&artifact).expect("Feishu-backed artifact validates");
+        let workflow_root_id = Uuid::new_v4();
         let fields = build_primary_storage_fields(
             &FeishuPrimaryStorageImage {
                 artifact_id: artifact.id,
-                workflow_root_id: Uuid::new_v4(),
+                workflow_root_id,
                 work_item_id: artifact.work_item_id,
                 content_hash: &artifact.content_hash,
                 file_md5: &validated.file_md5,
@@ -3310,8 +3316,9 @@ mod tests {
             DEFAULT_MAX_MEDIA_BYTES,
         );
 
-        let report = revalidate_primary_storage_artifact(&artifact, &validated, &config)
-            .expect("primary storage revalidation succeeds");
+        let report =
+            revalidate_primary_storage_artifact(&artifact, &validated, workflow_root_id, &config)
+                .expect("primary storage revalidation succeeds");
         let serialized = serde_json::to_string(&report).expect("serialize revalidation report");
 
         assert!(report.success);
@@ -3349,10 +3356,11 @@ mod tests {
         artifact.artifact_uri = format!("feishu-base://huabaosi-generated-image/{}", artifact.id);
         let validated =
             validate_primary_storage_artifact(&artifact).expect("Feishu-backed artifact validates");
+        let workflow_root_id = Uuid::new_v4();
         let mut fields = build_primary_storage_fields(
             &FeishuPrimaryStorageImage {
                 artifact_id: artifact.id,
-                workflow_root_id: Uuid::new_v4(),
+                workflow_root_id,
                 work_item_id: artifact.work_item_id,
                 content_hash: &artifact.content_hash,
                 file_md5: &validated.file_md5,
@@ -3369,8 +3377,9 @@ mod tests {
             "JPEG SHA-256".to_string(),
             json!(format!("sha256:{}", "0".repeat(64))),
         );
-        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
-            .expect_err("record hash drift must fail");
+        let failure =
+            validate_primary_storage_record_fields(&artifact, &validated, workflow_root_id, fields)
+                .expect_err("record hash drift must fail");
         assert_eq!(failure.stage, "record_search");
         assert_eq!(failure.code, "record_identity_mismatch");
 
@@ -3392,18 +3401,34 @@ mod tests {
             json!([{"file_token": "fileFixture"}]),
         );
         fields.insert("宽度".to_string(), json!(f64::from(validated.width) + 0.9));
-        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
-            .expect_err("fractional numeric drift must fail");
+        let failure =
+            validate_primary_storage_record_fields(&artifact, &validated, workflow_root_id, fields)
+                .expect_err("fractional numeric drift must fail");
         assert_eq!(failure.stage, "record_search");
         assert_eq!(failure.code, "record_identity_mismatch");
 
         fields.insert("宽度".to_string(), json!(f64::from(validated.width)));
-        validate_primary_storage_record_fields(&artifact, &validated, fields)
+        validate_primary_storage_record_fields(&artifact, &validated, workflow_root_id, fields)
             .expect("integral float values remain compatible");
 
+        fields.insert(
+            "AgentOS工作项ID".to_string(),
+            json!(Uuid::new_v4().to_string()),
+        );
+        let failure =
+            validate_primary_storage_record_fields(&artifact, &validated, workflow_root_id, fields)
+                .expect_err("workflow root drift must fail");
+        assert_eq!(failure.stage, "record_search");
+        assert_eq!(failure.code, "record_identity_mismatch");
+        fields.insert(
+            "AgentOS工作项ID".to_string(),
+            json!(workflow_root_id.to_string()),
+        );
+
         fields.remove("Schema版本");
-        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
-            .expect_err("missing schema version must fail");
+        let failure =
+            validate_primary_storage_record_fields(&artifact, &validated, workflow_root_id, fields)
+                .expect_err("missing schema version must fail");
         assert_eq!(failure.stage, "record_search");
         assert_eq!(failure.code, "record_identity_mismatch");
 
@@ -3411,13 +3436,14 @@ mod tests {
             "Schema版本".to_string(),
             json!("huabaosi-generated-image-v0"),
         );
-        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
-            .expect_err("schema version drift must fail");
+        let failure =
+            validate_primary_storage_record_fields(&artifact, &validated, workflow_root_id, fields)
+                .expect_err("schema version drift must fail");
         assert_eq!(failure.stage, "record_search");
         assert_eq!(failure.code, "record_identity_mismatch");
 
         fields.insert("Schema版本".to_string(), json!(SCHEMA_VERSION));
-        validate_primary_storage_record_fields(&artifact, &validated, fields)
+        validate_primary_storage_record_fields(&artifact, &validated, workflow_root_id, fields)
             .expect("fixed schema version validates");
 
         let mut changed = bytes.clone();
