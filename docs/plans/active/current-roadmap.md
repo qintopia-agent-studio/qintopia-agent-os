@@ -105,10 +105,15 @@ unless correcting historical evidence.
      disabled because no listener service or timer exists. The disabled staging webhook
      bridge accepts only a digest-pinned sidecar under the fixed immutable staging
      release root; the provider/storage/readback path plus callback credential shape
-     still require owner-approved staging evidence. A read-only 2026-07-16 Asia/Shanghai
-     server observation confirmed that `paxon-server` still lacks the fixed staging env
-     file and immutable staging release root, so real staging must first provision those
-     owner-reviewed inputs instead of treating local fake smokes as runtime evidence.
+     still require owner-approved staging evidence. Feishu-backed generated images add a
+     separate delivery gap: `feishu-base://` artifacts prove authenticated storage
+     readback inside AgentOS, but the current QiWe async URL upload path still requires
+     a stable allowlisted HTTPS `fileUrl`. Track the missing reviewed bridge in
+     [Xiaoman Feishu-To-QiWe Delivery Boundary](xiaoman-feishu-qiwe-delivery-boundary.md).
+     A read-only 2026-07-16 Asia/Shanghai server observation confirmed that
+     `paxon-server` still lacks the fixed staging env file and immutable staging release
+     root, so real staging must first provision those owner-reviewed inputs instead of
+     treating local fake smokes as runtime evidence.
    - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md)
      merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration
