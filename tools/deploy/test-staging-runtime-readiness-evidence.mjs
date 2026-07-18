@@ -93,6 +93,8 @@ try {
     report.staging_database_url_sha256 !== databaseHash ||
     report.reports.length !== 3 ||
     !report.reports.every((entry) => entry.success === true) ||
+    !report.reports.every((entry) => entry.sidecar_hash_matches === true) ||
+    !report.reports.every((entry) => entry.sidecar_binary_sha256 === sidecarHash) ||
     `${result.stdout}\n${result.stderr}`.includes(secretValue)
   ) {
     throw new Error(`ready evidence is invalid: ${JSON.stringify(report)}`);
@@ -106,6 +108,7 @@ try {
     result.status === 0 ||
     report.success !== false ||
     report.action_status !== "not_ready" ||
+    !report.reports.every((entry) => entry.sidecar_hash_matches === false) ||
     !report.limitations.some((entry) => entry.includes("sidecar_hash_mismatch"))
   ) {
     throw new Error(`hash mismatch evidence is invalid: ${JSON.stringify(report)}`);
