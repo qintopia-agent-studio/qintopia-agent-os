@@ -1156,13 +1156,13 @@ fn request_feishu_bridge_upload_with(
     readback_temporary_storage_with(config, claim, &cloud_url, client)?;
     let cloud_url = strict_temporary_storage_url(
         &cloud_url,
-        &config.allowed_hosts,
+        &config.media_allowed_hosts,
         client.allows_insecure_http(),
     )
     .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
     cloud_url
         .with_url(|url| {
-            request_async_upload_url_with(config, claim, url, &config.allowed_hosts, client)
+            request_async_upload_url_with(config, claim, url, &config.media_allowed_hosts, client)
         })
         .map_err(|_| UploadCallFailure::OutcomeUnknown)?
 }
@@ -1206,7 +1206,7 @@ fn request_temporary_storage_upload_with(
     }
     parse_temporary_storage_acceptance_for_call(
         &response,
-        &config.allowed_hosts,
+        &config.media_allowed_hosts,
         client.allows_insecure_http(),
     )
 }
@@ -1239,7 +1239,7 @@ fn readback_temporary_storage_with(
 ) -> std::result::Result<(), UploadCallFailure> {
     let cloud_url = strict_temporary_storage_url(
         cloud_url,
-        &config.allowed_hosts,
+        &config.media_allowed_hosts,
         client.allows_insecure_http(),
     )
     .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
@@ -3072,6 +3072,28 @@ mod tests {
         server.join().expect("join non-2xx fake server");
     }
 
+    #[test]
+    fn temporary_storage_cloud_url_uses_media_allowlist_not_api_allowlist() {
+        let api_hosts = BTreeSet::from(["manager.qiweapi.com".to_string()]);
+        let media_hosts = BTreeSet::from(["temporary.example.test".to_string()]);
+        let response = http_json_response(
+            200,
+            br#"{"code":0,"data":{"cloudUrl":"https://temporary.example.test/reviewed.jpg"}}"#,
+        );
+
+        assert_eq!(
+            parse_temporary_storage_acceptance_for_call(&response, &api_hosts, false)
+                .expect_err("temporary URL must not use the API allowlist"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        assert_eq!(
+            parse_temporary_storage_acceptance_for_call(&response, &media_hosts, false)
+                .expect("temporary URL uses reviewed media allowlist")
+                .as_str(),
+            "https://temporary.example.test/reviewed.jpg"
+        );
+    }
+
     #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
     #[test]
     fn feishu_delivery_identity_must_match_the_locked_qiwe_claim() {
@@ -3641,7 +3663,10 @@ mod tests {
             token: "fake-token".to_string(),
             guid: "fake-device-guid".to_string(),
             allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
-            media_allowed_hosts: BTreeSet::from(["media.example.test".to_string()]),
+            media_allowed_hosts: BTreeSet::from([
+                "127.0.0.1".to_string(),
+                "media.example.test".to_string(),
+            ]),
             allowed_groups: BTreeSet::from(["group-id".to_string()]),
             webhook_ready: true,
         }
