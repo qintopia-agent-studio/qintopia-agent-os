@@ -18,6 +18,9 @@ const contentHash =
   "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const otherContentHash =
   "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const sidecarHash = "2222222222222222222222222222222222222222222222222222222222222222";
+const otherSidecarHash =
+  "3333333333333333333333333333333333333333333333333333333333333333";
 
 try {
   const huabaosiEvidence = path.join(tmpRoot, "huabaosi.txt");
@@ -37,6 +40,19 @@ try {
     result.stderr,
     /Huabaosi content_hash and QiWe artifact_content_hash values differ/
   );
+
+  const mismatchSidecarHuabaosiEvidence = path.join(
+    tmpRoot,
+    "huabaosi-sidecar-mismatch.txt"
+  );
+  fs.writeFileSync(
+    mismatchSidecarHuabaosiEvidence,
+    huabaosiOutput(contentHash, { sidecar_binary_sha256: otherSidecarHash }),
+    "utf8"
+  );
+  result = runChecker(mismatchSidecarHuabaosiEvidence, qiweEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Huabaosi and QiWe sidecar_binary_sha256 values differ/);
 
   const rawHuabaosiEvidence = path.join(tmpRoot, "huabaosi-raw.txt");
   fs.writeFileSync(
@@ -134,6 +150,7 @@ function huabaosiOutput(hash, overrides = {}) {
     generation_enabled: true,
     phase: "preflight",
     safe_for_chat: false,
+    sidecar_binary_sha256: overrides.sidecar_binary_sha256 ?? sidecarHash,
     storage_backend: overrides.storage_backend ?? "feishu-base",
     success: true,
     worker: "huabaosi-image-generation-worker",
@@ -151,6 +168,7 @@ function huabaosiOutput(hash, overrides = {}) {
     phase: "generation",
     review_status: "pending",
     safe_for_chat: false,
+    sidecar_binary_sha256: overrides.sidecar_binary_sha256 ?? sidecarHash,
     storage_backend: overrides.storage_backend ?? "feishu-base",
     success: true,
     width: 1024,
@@ -180,8 +198,7 @@ function qiweOutput(hash) {
       media_allowed_host_count: 1,
       safe_for_chat: false,
       send_enabled: true,
-      sidecar_binary_sha256:
-        "2222222222222222222222222222222222222222222222222222222222222222",
+      sidecar_binary_sha256: sidecarHash,
       success: true,
       webhook_ready: true,
       worker: "qiwe-image-send-adapter",
@@ -196,8 +213,7 @@ function qiweOutput(hash) {
       external_upload_requested: true,
       phase: "upload",
       safe_for_chat: false,
-      sidecar_binary_sha256:
-        "2222222222222222222222222222222222222222222222222222222222222222",
+      sidecar_binary_sha256: sidecarHash,
       success: true,
       work_item_id: "77777777-8888-4999-aaaa-bbbbbbbbbbbb",
       worker: "qiwe-image-send-adapter",
@@ -214,8 +230,7 @@ function qiweOutput(hash) {
       external_upload_requested: false,
       phase: "callback",
       safe_for_chat: false,
-      sidecar_binary_sha256:
-        "2222222222222222222222222222222222222222222222222222222222222222",
+      sidecar_binary_sha256: sidecarHash,
       success: true,
       work_item_id: "77777777-8888-4999-aaaa-bbbbbbbbbbbb",
       worker: "qiwe-image-send-adapter",

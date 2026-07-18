@@ -153,13 +153,15 @@ node tools/deploy/check-xiaoman-image-send-staging-evidence.mjs <huabaosi-stagin
 ```
 
 The checker requires a ready preflight record plus matching upload/callback work item
-evidence for complete mode. The upload and callback records must also carry the same
+evidence for complete mode. The Huabaosi and QiWe records must carry the same staging
+sidecar binary SHA-256. The upload and callback records must also carry the same
 canonical final JPEG `artifact_content_hash`, which can be compared with the Huabaosi
 staging generated-image `content_hash` without exposing the media URI. It fails closed
 if raw callback keys, database URLs, QiWe tokens, group ids, media URIs, unexpected
-fields, duplicate upload/callback records, hash mismatches, or an incomplete send
-outcome appear. It also rejects any non-empty line that is not a fixed smoke pass
-message or a `qiwe_image_send_staging_evidence=<json>` record.
+fields, duplicate upload/callback records, sidecar hash mismatches, image hash
+mismatches, or an incomplete send outcome appear. It also rejects any non-empty line
+that is not a fixed smoke pass message or a `qiwe_image_send_staging_evidence=<json>`
+record.
 
 After the complete checker passes, copy only the sanitized values into
 `docs/reports/templates/qiwe-image-send-staging-evidence.md` for QiWe phase evidence and
@@ -203,6 +205,8 @@ the complete checker mode and the reviewer can see:
 - the same final JPEG `artifact_content_hash` in the upload and callback records;
 - `check-xiaoman-image-send-staging-evidence.mjs` proves Huabaosi `content_hash` equals
   the QiWe `artifact_content_hash`;
+- the Huabaosi and QiWe staging evidence records use the same staging sidecar binary
+  SHA-256;
 - `external_upload_requested=true` only in the upload phase;
 - `external_send_executed=true` only in the callback phase;
 - no raw callback fields, database URL, token, GUID, group id, media URI, or provider

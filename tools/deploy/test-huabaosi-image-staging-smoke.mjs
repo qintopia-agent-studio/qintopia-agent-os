@@ -18,6 +18,7 @@ const evidenceChecker = path.join(
 );
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "huabaosi-staging-smoke-"));
 const workItemId = "11111111-2222-4333-8444-555555555555";
+const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const databaseUrl =
   "postgres://qintopia:staging-secret@127.0.0.1:55432/qintopia_staging";
 const databaseHash = crypto
@@ -29,6 +30,7 @@ const commandLogPath = path.join(tempRoot, "commands.log");
 const fakeSidecarPath = path.join(tempRoot, "fake-sidecar.sh");
 const leakingSidecarPath = path.join(tempRoot, "leaking-sidecar.sh");
 const httpStorageSidecarPath = path.join(tempRoot, "http-storage-sidecar.sh");
+const tamperingSidecarPath = path.join(tempRoot, "tampering-sidecar.sh");
 const stagingEnvPath = path.join(tempRoot, "message-sidecar-staging.env");
 const feishuEnvLine = (suffix, value) =>
   `QINTOPIA_HUABAOSI_${"FEISHU"}_${suffix}=${value}`;
@@ -98,6 +100,26 @@ esac
   0o700
 );
 
+writeFile(
+  tamperingSidecarPath,
+  `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >>"${commandLogPath}"
+case "$1" in
+  huabaosi-image-generation-preflight)
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"config_valid":true,"missing_configuration":[],"safe_for_chat":false}'
+    printf '%s\\n' '#!/usr/bin/env bash' 'echo tampered sidecar executed >&2' 'exit 99' >"$0"
+    chmod 700 "$0"
+    ;;
+  *)
+    echo "tampered sidecar should not execute worker" >&2
+    exit 99
+    ;;
+esac
+`,
+  0o700
+);
+
 const envContent = () => `
 QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1
 QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}
@@ -129,6 +151,22 @@ QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=staging-group
 `;
 
 writeFile(stagingEnvPath, envContent());
+const fakeSidecarHash = crypto
+  .createHash("sha256")
+  .update(fs.readFileSync(fakeSidecarPath))
+  .digest("hex");
+const leakingSidecarHash = crypto
+  .createHash("sha256")
+  .update(fs.readFileSync(leakingSidecarPath))
+  .digest("hex");
+const httpStorageSidecarHash = crypto
+  .createHash("sha256")
+  .update(fs.readFileSync(httpStorageSidecarPath))
+  .digest("hex");
+const tamperingSidecarHash = crypto
+  .createHash("sha256")
+  .update(fs.readFileSync(tamperingSidecarPath))
+  .digest("hex");
 
 const runSmoke = (overrides = {}) =>
   spawnSync("bash", [smokePath], {
@@ -140,6 +178,9 @@ const runSmoke = (overrides = {}) =>
       QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE: stagingEnvPath,
       QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID: workItemId,
       QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256: databaseHash,
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: fakeSidecarHash,
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA: releaseSha,
+      QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_TEST_MODE: "1",
       QINTOPIA_SIDECAR_BIN: fakeSidecarPath,
       QINTOPIA_UNRELATED_RUNTIME_SECRET: "ambient-unrelated-secret",
       QIWE_TOKEN: "ambient-qiwe-secret",
@@ -147,6 +188,17 @@ const runSmoke = (overrides = {}) =>
     },
     encoding: "utf8",
   });
+
+let sourceCheckoutResult = runSmoke({
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_TEST_MODE: "0",
+});
+assert.notEqual(sourceCheckoutResult.status, 0);
+assert.ok(
+  sourceCheckoutResult.stderr.includes(
+    "qintopia-agent-os-staging-releases/<approved 40-hex sha>"
+  )
+);
+assert.doesNotMatch(sourceCheckoutResult.stderr, new RegExp(databaseUrl));
 
 let result = runSmoke();
 assert.equal(result.status, 0, result.stderr);
@@ -158,6 +210,14 @@ assert.equal(result.stderr, "");
 assert.match(result.stdout, /huabaosi_image_generation_staging_evidence=/);
 assert.doesNotMatch(result.stdout, /artifact_uri/);
 assert.doesNotMatch(result.stdout, /feishu-base:\/\/huabaosi-generated-image/);
+for (const line of result.stdout.split(/\r?\n/)) {
+  if (line.startsWith("huabaosi_image_generation_staging_evidence=")) {
+    const record = JSON.parse(
+      line.slice("huabaosi_image_generation_staging_evidence=".length)
+    );
+    assert.equal(record.sidecar_binary_sha256, fakeSidecarHash);
+  }
+}
 assert.equal(fs.existsSync(markerPath), false, "env file command was executed");
 assert.deepEqual(fs.readFileSync(commandLogPath, "utf8").trim().split("\n"), [
   "huabaosi-image-generation-preflight",
@@ -219,15 +279,32 @@ assert.notEqual(result.status, 0);
 assert.match(result.stderr, /staging env contains an unsupported key/);
 
 writeFile(stagingEnvPath, envContent());
-result = runSmoke({ QINTOPIA_SIDECAR_BIN: leakingSidecarPath });
+result = runSmoke({
+  QINTOPIA_SIDECAR_BIN: leakingSidecarPath,
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: leakingSidecarHash,
+});
 assert.notEqual(result.status, 0);
 assert.match(result.stderr, /contains forbidden sensitive output/);
 
-result = runSmoke({ QINTOPIA_SIDECAR_BIN: httpStorageSidecarPath });
+result = runSmoke({
+  QINTOPIA_SIDECAR_BIN: httpStorageSidecarPath,
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: httpStorageSidecarHash,
+});
 assert.notEqual(result.status, 0);
 assert.match(result.stderr, /generated image storage boundary is not Feishu Base/);
 assert.doesNotMatch(result.stdout, /generated_image_created/);
 assert.doesNotMatch(result.stdout, /"phase":"generation"/);
+
+fs.rmSync(commandLogPath, { force: true });
+result = runSmoke({
+  QINTOPIA_SIDECAR_BIN: tamperingSidecarPath,
+  QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256: tamperingSidecarHash,
+});
+assert.notEqual(result.status, 0);
+assert.match(result.stderr, /staging sidecar binary hash changed before/);
+assert.deepEqual(fs.readFileSync(commandLogPath, "utf8").trim().split("\n"), [
+  "huabaosi-image-generation-preflight",
+]);
 
 fs.rmSync(tempRoot, { recursive: true, force: true });
 

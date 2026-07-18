@@ -68,6 +68,13 @@ if (
 ) {
   throw new Error("staging database hash is missing or inconsistent");
 }
+const sidecarHash = preflight.sidecar_binary_sha256;
+if (
+  !/^[0-9a-f]{64}$/.test(sidecarHash) ||
+  generation.sidecar_binary_sha256 !== sidecarHash
+) {
+  throw new Error("staging sidecar binary hash is missing or inconsistent");
+}
 
 const assertCommon = (record, expectedActionStatus) => {
   if (

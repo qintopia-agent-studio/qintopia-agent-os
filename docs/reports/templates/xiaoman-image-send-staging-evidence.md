@@ -51,6 +51,7 @@ activation.
 
 - Huabaosi `content_hash`:
 - Huabaosi `review_status`:
+- Huabaosi `sidecar_binary_sha256`:
 - QiWe `artifact_content_hash`:
 - QiWe `callback_credential_schema`:
 - QiWe `callback_additional_field_count`:

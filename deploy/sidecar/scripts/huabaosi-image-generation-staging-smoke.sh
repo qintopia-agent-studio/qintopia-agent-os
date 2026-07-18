@@ -14,6 +14,10 @@ fi
 ENV_FILE="${QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE:-}"
 WORK_ITEM_ID="${QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID:-}"
 EXPECTED_DATABASE_HASH="${QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256:-}"
+EXPECTED_SIDECAR_HASH="${QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256:-}"
+EXPECTED_RELEASE_SHA="${QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA:-}"
+TEST_MODE="${QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_TEST_MODE:-0}"
+STAGING_RELEASE_PARENT="/home/ubuntu/qintopia-agent-os-staging-releases"
 
 if [[ -z "$ENV_FILE" || ! -f "$ENV_FILE" || "$ENV_FILE" != /* || "$ENV_FILE" != *staging* ]]; then
   echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE must be an existing absolute path containing staging" >&2
@@ -22,6 +26,21 @@ fi
 
 if [[ ! "$EXPECTED_DATABASE_HASH" =~ ^[0-9a-f]{64}$ ]]; then
   echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256 must be a canonical SHA-256" >&2
+  exit 1
+fi
+
+if [[ ! "$EXPECTED_SIDECAR_HASH" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256 must be a canonical SHA-256" >&2
+  exit 1
+fi
+
+if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
+  exit 1
+fi
+
+if [[ "$TEST_MODE" != "0" && "$TEST_MODE" != "1" ]]; then
+  echo "QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_TEST_MODE must be 0 or 1" >&2
   exit 1
 fi
 
@@ -38,7 +57,25 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-SIDECAR_DIR="${QINTOPIA_SIDECAR_SOURCE_DIR:-${MONOREPO_ROOT}/runtime/sidecar}"
+
+if [[ "$TEST_MODE" == "0" ]]; then
+  if [[ "$MONOREPO_ROOT" != "${STAGING_RELEASE_PARENT}/${EXPECTED_RELEASE_SHA}" ]]; then
+    echo "Huabaosi staging smoke must run from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>" >&2
+    exit 1
+  fi
+  if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
+    echo "QINTOPIA_SIDECAR_BIN is test-only and must not override the fixed staging release sidecar" >&2
+    exit 1
+  fi
+else
+  case "$ENV_FILE" in
+    /private/tmp/*|/tmp/*|/private/var/folders/*|/var/folders/*) ;;
+    *)
+      echo "Huabaosi staging smoke test mode may read only a temporary fake env file" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 cd "$MONOREPO_ROOT"
 
@@ -172,18 +209,140 @@ if [[ "${QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256:-}" != "$EXPECTED_DATABASE
   exit 1
 fi
 
-if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
-  BIN_CMD=("$QINTOPIA_SIDECAR_BIN")
+if [[ "$TEST_MODE" == "1" && -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
+  SIDECAR_BIN="$QINTOPIA_SIDECAR_BIN"
 elif [[ -x "${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar" ]]; then
-  BIN_CMD=("${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar")
+  SIDECAR_BIN="${MONOREPO_ROOT}/sidecar/qintopia-message-sidecar"
 else
-  BIN_CMD=(
-    "${CARGO:-cargo}" run --quiet
-    --manifest-path "$SIDECAR_DIR/Cargo.toml"
-    --features huabaosi-staging-adapter
-    --
-  )
+  echo "packaged sidecar/qintopia-message-sidecar or QINTOPIA_SIDECAR_BIN is required for Huabaosi staging smoke" >&2
+  exit 1
 fi
+
+verify_sidecar_binary() {
+  local label="$1"
+  readarray -t sidecar_facts < <(python3 - "$MONOREPO_ROOT" "$SIDECAR_BIN" "$EXPECTED_RELEASE_SHA" "$TEST_MODE" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+path = sys.argv[2]
+expected_release_sha = sys.argv[3]
+test_mode = sys.argv[4]
+parent = os.path.dirname(path)
+release_root_parent = os.path.dirname(root)
+
+if not os.path.isabs(root) or not os.path.isabs(path):
+    print("path_not_absolute")
+    sys.exit(0)
+if test_mode == "0":
+    if os.path.commonpath([root, path]) != root:
+        print("outside_release_root")
+        sys.exit(0)
+    if (
+        release_root_parent != "/home/ubuntu/qintopia-agent-os-staging-releases"
+        or os.path.basename(root) != expected_release_sha
+    ):
+        print("not_fixed_release_root")
+        sys.exit(0)
+if not os.path.isabs(path):
+    print("path_not_absolute")
+    sys.exit(0)
+
+checked_paths = []
+if test_mode == "0":
+    checked_paths.append((release_root_parent, "directory", True))
+checked_paths.extend((
+    (root, "directory", True),
+    (parent, "directory", True),
+    (path, "regular", True),
+))
+
+for candidate, expected_type, reject_owner_writable in checked_paths:
+    try:
+        candidate_lstat = os.lstat(candidate)
+    except FileNotFoundError:
+        print("missing")
+        sys.exit(0)
+    if stat.S_ISLNK(candidate_lstat.st_mode):
+        print("symlink")
+        sys.exit(0)
+    if expected_type == "directory" and not stat.S_ISDIR(candidate_lstat.st_mode):
+        print("not_directory")
+        sys.exit(0)
+    if expected_type == "regular" and not stat.S_ISREG(candidate_lstat.st_mode):
+        print("not_regular_file")
+        sys.exit(0)
+    if not candidate_lstat.st_mode & stat.S_IXUSR:
+        print("not_executable")
+        sys.exit(0)
+    if candidate_lstat.st_uid not in (0, os.geteuid()):
+        print("unexpected_owner")
+        sys.exit(0)
+    writable_mask = stat.S_IWGRP | stat.S_IWOTH
+    if (
+        test_mode == "0"
+        and reject_owner_writable
+        and candidate_lstat.st_uid == os.geteuid()
+    ):
+        writable_mask |= stat.S_IWUSR
+    if candidate_lstat.st_mode & writable_mask:
+        print("writable")
+        sys.exit(0)
+digest = hashlib.sha256()
+with open(path, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+print(digest.hexdigest())
+PY
+)
+  if [[ "${sidecar_facts[0]:-}" == "path_not_absolute" ]]; then
+    echo "staging sidecar binary path must be absolute before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "outside_release_root" ]]; then
+    echo "staging sidecar binary must stay under the fixed staging release root before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "not_fixed_release_root" ]]; then
+    echo "staging sidecar binary must come from /home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha> before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "missing" ]]; then
+    echo "staging sidecar binary is missing before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "symlink" ]]; then
+    echo "staging sidecar binary, parent directory, release root, and staging releases root must not be symlinks before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "not_directory" || "${sidecar_facts[0]:-}" == "not_regular_file" ]]; then
+    echo "staging sidecar release ancestors, parent directory, and binary must keep the expected file types before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "not_executable" ]]; then
+    echo "staging sidecar release ancestors, parent directory, and binary must be executable before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "unexpected_owner" ]]; then
+    echo "staging sidecar release ancestors, parent directory, and binary must be owned by root or the staging runner user before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" == "writable" ]]; then
+    echo "staging sidecar binary, parent directory, and release ancestors must not be writable by the staging runner or by group/world before ${label}" >&2
+    exit 1
+  fi
+  if [[ "${sidecar_facts[0]:-}" != "$EXPECTED_SIDECAR_HASH" ]]; then
+    echo "staging sidecar binary hash changed before ${label}" >&2
+    exit 1
+  fi
+}
+
+verify_sidecar_binary "initial staging smoke validation"
+SIDECAR_BINARY_SHA256="${sidecar_facts[0]}"
+export SIDECAR_BINARY_SHA256
+BIN_CMD=("$SIDECAR_BIN")
 
 CHILD_ENV=()
 
@@ -259,6 +418,7 @@ run_sanitized() {
   local status=0
   shift
 
+  verify_sidecar_binary "$label spawn"
   set +e
   output="$(env -i "${CHILD_ENV[@]}" "$@" 2>&1)"
   status=$?
@@ -287,6 +447,7 @@ evidence = {
     "action_status": payload["action_status"],
     "database_url_sha256": os.environ["QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256"],
     "safe_for_chat": payload["safe_for_chat"],
+    "sidecar_binary_sha256": os.environ["SIDECAR_BINARY_SHA256"],
     "success": payload["success"],
     "worker": payload["worker"],
 }
