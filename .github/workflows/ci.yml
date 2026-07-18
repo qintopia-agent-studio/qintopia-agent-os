@@ -390,6 +390,13 @@ jobs:
           huabaosi_feishu_artifact_mirror::tests::postgres_mirror_state_is_idempotent_and_redacted
           -- --ignored --exact
 
+      - name: Feishu-backed generated-image approval integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          operations::tests::postgres_feishu_backed_approval_requires_matching_revalidation_evidence
+          -- --ignored --exact
+
       - name: QiWe callback capture-storage redaction integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

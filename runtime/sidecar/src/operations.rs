@@ -5,7 +5,13 @@ use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
 
-use crate::{activity_lifecycle::ActivityPhase, config::Cli, db, url_policy};
+use crate::{
+    activity_lifecycle::ActivityPhase,
+    config::Cli,
+    db,
+    huabaosi_feishu_artifact_mirror::{self, FeishuPrimaryStorageApprovalEvidence},
+    url_policy,
+};
 
 const ALLOWED_WORK_ITEM_TYPES: &[&str] = &[
     "visual_asset_request",
@@ -461,6 +467,7 @@ struct WorkItemStatusRow {
 
 #[derive(Debug, Clone)]
 struct ArtifactApprovalContext {
+    artifact_id: Uuid,
     work_item_id: Uuid,
     artifact_type: String,
     review_status: String,
@@ -677,14 +684,29 @@ pub async fn run_review_decision(
     if apply && dry_run {
         bail!("use either --apply or --dry-run, not both");
     }
-    let request: ArtifactReviewDecisionRequest =
+    let mut request: ArtifactReviewDecisionRequest =
         serde_json::from_str(&payload_json).context("parse artifact review decision payload")?;
     let apply_requested = apply && !dry_run;
     let report = if apply_requested {
         let database_url = cli.database_url_required()?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
         let policy = OperationsPolicy::from_cli(cli, true);
-        record_artifact_review_decision(&pool, request, true, &policy).await?
+        normalize_review_request(&mut request);
+        let approval_evidence = if validate_review_request(&request).is_ok()
+            && validate_reviewer_authorized(&request.reviewer_id, &policy).is_ok()
+        {
+            prepare_feishu_primary_storage_approval_evidence(&pool, &request, database_url).await?
+        } else {
+            None
+        };
+        record_artifact_review_decision_with_evidence(
+            &pool,
+            request,
+            true,
+            &policy,
+            approval_evidence.as_ref(),
+        )
+        .await?
     } else {
         let policy = OperationsPolicy::from_cli(cli, false);
         record_artifact_review_decision_dry_run(request, &policy)?
@@ -1969,11 +1991,83 @@ pub fn record_artifact_review_decision_dry_run(
     Ok(review_report(&request, false, "dry_run_ok", None, None))
 }
 
+async fn prepare_feishu_primary_storage_approval_evidence(
+    pool: &PgPool,
+    request: &ArtifactReviewDecisionRequest,
+    database_url: &str,
+) -> Result<Option<FeishuPrimaryStorageApprovalEvidence>> {
+    if request.decision != "approved" {
+        return Ok(None);
+    }
+    let row = sqlx::query(
+        r#"
+        SELECT work_item_id, artifact_type, created_by_agent, artifact_uri
+        FROM qintopia_agent_os.artifacts
+        WHERE id = $1
+        "#,
+    )
+    .bind(request.artifact_id)
+    .fetch_optional(pool)
+    .await
+    .context("inspect generated image storage boundary before approval")?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let artifact_type: String = row.try_get("artifact_type")?;
+    let created_by_agent: String = row.try_get("created_by_agent")?;
+    let artifact_uri: Option<String> = row.try_get("artifact_uri")?;
+    let expected_uri = format!(
+        "feishu-base://huabaosi-generated-image/{}",
+        request.artifact_id
+    );
+    if artifact_type != GENERATED_IMAGE_ARTIFACT_TYPE
+        || created_by_agent != "huabaosi"
+        || artifact_uri.as_deref() != Some(expected_uri.as_str())
+    {
+        return Ok(None);
+    }
+
+    match huabaosi_feishu_artifact_mirror::revalidate_primary_storage_for_approval(
+        pool,
+        request.artifact_id,
+        database_url,
+    )
+    .await
+    {
+        Ok(evidence) => Ok(Some(evidence)),
+        Err(error) => {
+            let work_item_id: Uuid = row.try_get("work_item_id")?;
+            append_review_policy_denial(
+                pool,
+                request,
+                Some(work_item_id),
+                "generated image approval denied by authenticated Feishu revalidation",
+                "authenticated Feishu primary-storage revalidation failed",
+                "generated_image_approval_feishu_revalidation",
+            )
+            .await?;
+            Err(error)
+                .context("generated_image approval requires authenticated Feishu revalidation")
+        }
+    }
+}
+
 pub async fn record_artifact_review_decision(
+    pool: &PgPool,
+    request: ArtifactReviewDecisionRequest,
+    apply_requested: bool,
+    policy: &OperationsPolicy,
+) -> Result<ArtifactReviewDecisionReport> {
+    record_artifact_review_decision_with_evidence(pool, request, apply_requested, policy, None)
+        .await
+}
+
+async fn record_artifact_review_decision_with_evidence(
     pool: &PgPool,
     mut request: ArtifactReviewDecisionRequest,
     apply_requested: bool,
     policy: &OperationsPolicy,
+    approval_evidence: Option<&FeishuPrimaryStorageApprovalEvidence>,
 ) -> Result<ArtifactReviewDecisionReport> {
     normalize_review_request(&mut request);
     validate_review_request(&request)?;
@@ -2053,7 +2147,11 @@ pub async fn record_artifact_review_decision(
     .ok_or_else(|| anyhow::anyhow!("artifact is not found"))?;
 
     let approval_context = artifact_approval_context_from_row(&row)?;
-    if let Err(error) = validate_generated_image_approval(&approval_context, &request.decision) {
+    if let Err(error) = validate_generated_image_approval_with_evidence(
+        &approval_context,
+        &request.decision,
+        approval_evidence,
+    ) {
         tx.rollback()
             .await
             .context("rollback denied generated image approval")?;
@@ -2109,6 +2207,7 @@ pub async fn record_artifact_review_decision(
             "review_status": request.decision,
             "reason": request.reason,
             "source": request.source,
+            "authenticated_feishu_revalidation": approval_evidence.is_some(),
             "does_not_publish": true,
         }),
     )
@@ -4912,6 +5011,7 @@ fn artifact_approval_context_from_row(
     row: &sqlx::postgres::PgRow,
 ) -> Result<ArtifactApprovalContext> {
     Ok(ArtifactApprovalContext {
+        artifact_id: row.try_get("id")?,
         work_item_id: row.try_get("work_item_id")?,
         artifact_type: row.try_get("artifact_type")?,
         review_status: row.try_get("review_status")?,
@@ -4930,9 +5030,18 @@ fn artifact_approval_context_from_row(
     })
 }
 
+#[cfg(test)]
 fn validate_generated_image_approval(
     context: &ArtifactApprovalContext,
     decision: &str,
+) -> Result<()> {
+    validate_generated_image_approval_with_evidence(context, decision, None)
+}
+
+fn validate_generated_image_approval_with_evidence(
+    context: &ArtifactApprovalContext,
+    decision: &str,
+    approval_evidence: Option<&FeishuPrimaryStorageApprovalEvidence>,
 ) -> Result<()> {
     if decision != "approved" || context.artifact_type != GENERATED_IMAGE_ARTIFACT_TYPE {
         return Ok(());
@@ -4960,7 +5069,7 @@ fn validate_generated_image_approval(
         bail!("generated_image approval requires controlled artifact provenance");
     }
 
-    validate_generated_image_uri(context.artifact_uri.as_deref().unwrap_or_default())?;
+    validate_generated_image_storage_boundary(context, approval_evidence)?;
     validate_canonical_sha256(
         context.content_hash.as_deref().unwrap_or_default(),
         "generated_image content_hash",
@@ -5028,6 +5137,44 @@ fn validate_generated_image_approval(
         bail!("generated_image approval requires a matching creation audit");
     }
     Ok(())
+}
+
+fn validate_generated_image_storage_boundary(
+    context: &ArtifactApprovalContext,
+    approval_evidence: Option<&FeishuPrimaryStorageApprovalEvidence>,
+) -> Result<()> {
+    let artifact_uri = context.artifact_uri.as_deref().unwrap_or_default();
+    let expected_feishu_uri = format!(
+        "feishu-base://huabaosi-generated-image/{}",
+        context.artifact_id
+    );
+    if artifact_uri == expected_feishu_uri {
+        let evidence = approval_evidence.context(
+            "generated_image Feishu approval requires authenticated revalidation evidence",
+        )?;
+        let metadata_file_md5 = json_string(&context.metadata, "file_md5");
+        let metadata_byte_size = json_i64(&context.metadata, "byte_size");
+        let metadata_width = json_i64(&context.metadata, "width");
+        let metadata_height = json_i64(&context.metadata, "height");
+        if evidence.artifact_id != context.artifact_id
+            || evidence.work_item_id != context.work_item_id
+            || evidence.artifact_uri != artifact_uri
+            || Some(evidence.content_hash.as_str()) != context.content_hash.as_deref()
+            || Some(evidence.file_md5.as_str()) != metadata_file_md5
+            || Some(evidence.byte_size) != metadata_byte_size
+            || Some(evidence.width) != metadata_width
+            || Some(evidence.height) != metadata_height
+        {
+            bail!(
+                "generated_image Feishu revalidation evidence does not match the locked artifact identity"
+            );
+        }
+        return Ok(());
+    }
+    if approval_evidence.is_some() {
+        bail!("generated_image Feishu revalidation evidence requires the fixed Feishu URI");
+    }
+    validate_generated_image_uri(artifact_uri)
 }
 
 fn validate_generated_image_uri(value: &str) -> Result<()> {
@@ -5610,6 +5757,8 @@ fn review_report(
             "only approved, rejected, or changes_requested decisions are accepted".to_string(),
             "rejected and changes_requested decisions require a reason".to_string(),
             "generated_image approvals revalidate worker provenance and media metadata".to_string(),
+            "Feishu-backed approvals require authenticated same-identity readback evidence"
+                .to_string(),
             "review decisions are audited through work_item_events".to_string(),
         ],
     }
@@ -6130,6 +6279,32 @@ mod tests {
     use super::*;
     use clap::Parser;
     use serde_json::json;
+
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = url::Url::parse(&database_url).expect("integration database URL must parse");
+        assert!(
+            matches!(parsed.scheme(), "postgres" | "postgresql"),
+            "PostgreSQL integration test requires a postgres URL"
+        );
+        assert!(
+            matches!(parsed.host_str(), Some("127.0.0.1" | "::1")),
+            "PostgreSQL integration test may only use a literal loopback database"
+        );
+        assert_eq!(
+            parsed.path().trim_start_matches('/'),
+            "qintopia_test",
+            "PostgreSQL integration test may only use qintopia_test"
+        );
+        database_url
+    }
 
     fn request(value: Value) -> WorkItemCreateRequest {
         serde_json::from_value(value).expect("request should deserialize")
@@ -7064,6 +7239,7 @@ mod tests {
         let brief_hash = format!("sha256:{}", "b".repeat(64));
         let prompt_hash = format!("sha256:{}", "c".repeat(64));
         ArtifactApprovalContext {
+            artifact_id: Uuid::new_v4(),
             work_item_id: Uuid::new_v4(),
             artifact_type: GENERATED_IMAGE_ARTIFACT_TYPE.to_string(),
             review_status: "pending".to_string(),
@@ -7114,6 +7290,248 @@ mod tests {
     fn generated_image_approval_accepts_complete_worker_provenance() {
         validate_generated_image_approval(&generated_image_approval_context(), "approved")
             .expect("complete generated image should be approvable");
+    }
+
+    fn feishu_backed_approval_context() -> (
+        ArtifactApprovalContext,
+        FeishuPrimaryStorageApprovalEvidence,
+    ) {
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some(format!(
+            "feishu-base://huabaosi-generated-image/{}",
+            context.artifact_id
+        ));
+        let evidence = FeishuPrimaryStorageApprovalEvidence::test_only(
+            context.artifact_id,
+            context.work_item_id,
+            context.content_hash.clone().expect("fixture content hash"),
+            json_string(&context.metadata, "file_md5")
+                .expect("fixture file MD5")
+                .to_string(),
+            json_i64(&context.metadata, "byte_size").expect("fixture byte size"),
+            json_i64(&context.metadata, "width").expect("fixture width"),
+            json_i64(&context.metadata, "height").expect("fixture height"),
+        );
+        (context, evidence)
+    }
+
+    #[test]
+    fn generated_image_approval_accepts_matching_feishu_revalidation() {
+        let (context, evidence) = feishu_backed_approval_context();
+
+        validate_generated_image_approval_with_evidence(&context, "approved", Some(&evidence))
+            .expect("matching authenticated Feishu evidence should allow approval");
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_drifted_feishu_revalidation() {
+        for drifted_field in [
+            "artifact_id",
+            "work_item_id",
+            "artifact_uri",
+            "content_hash",
+            "file_md5",
+            "byte_size",
+            "width",
+            "height",
+        ] {
+            let (context, mut evidence) = feishu_backed_approval_context();
+            match drifted_field {
+                "artifact_id" => evidence.artifact_id = Uuid::new_v4(),
+                "work_item_id" => evidence.work_item_id = Uuid::new_v4(),
+                "artifact_uri" => evidence.artifact_uri.push_str("-drifted"),
+                "content_hash" => evidence.content_hash = format!("sha256:{}", "0".repeat(64)),
+                "file_md5" => evidence.file_md5 = "0".repeat(32),
+                "byte_size" => evidence.byte_size += 1,
+                "width" => evidence.width += 1,
+                "height" => evidence.height += 1,
+                _ => unreachable!("fixed drift field"),
+            }
+
+            let error = validate_generated_image_approval_with_evidence(
+                &context,
+                "approved",
+                Some(&evidence),
+            )
+            .expect_err("drifted Feishu evidence must fail closed");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("does not match the locked artifact identity"),
+                "unexpected result for {drifted_field}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_feishu_evidence_for_https_artifact() {
+        let (mut context, evidence) = feishu_backed_approval_context();
+        context.artifact_uri = Some("https://media.example.test/posters/image.jpg".to_string());
+
+        let error =
+            validate_generated_image_approval_with_evidence(&context, "approved", Some(&evidence))
+                .expect_err("HTTPS artifacts must not consume Feishu evidence");
+
+        assert!(error.to_string().contains("requires the fixed Feishu URI"));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_feishu_backed_approval_requires_matching_revalidation_evidence() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 1)
+            .await
+            .expect("connect guarded integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded integration database");
+
+        let (context, evidence) = feishu_backed_approval_context();
+        let suffix = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, payload, review_policy, risk_level,
+                 information_class)
+            VALUES
+                ($1, 'image_generation_request', 'awaiting_review', 'xiaoman',
+                 'huabaosi', 'huabaosi.generate_image_asset',
+                 'Feishu-backed approval integration request', 'integration_test',
+                 $2, $2, $3, 'before_external_use', 'medium', 'internal_ops')
+            "#,
+        )
+        .bind(context.work_item_id)
+        .bind(format!("feishu-backed-approval:{suffix}"))
+        .bind(&context.work_item_payload)
+        .execute(&pool)
+        .await
+        .expect("insert approval work item");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, source_ids, risk_labels,
+                 information_class, metadata)
+            VALUES
+                ($1, $2, 'generated_image', 'pending', 'huabaosi',
+                 'Feishu-backed integration image', 'sanitized integration fixture',
+                 $3, $4, $5, $6, $7, $8)
+            "#,
+        )
+        .bind(context.artifact_id)
+        .bind(context.work_item_id)
+        .bind(context.artifact_uri.as_deref())
+        .bind(context.content_hash.as_deref())
+        .bind(&context.source_ids)
+        .bind(&context.risk_labels)
+        .bind(&context.information_class)
+        .bind(&context.metadata)
+        .execute(&pool)
+        .await
+        .expect("insert Feishu-backed generated image");
+        let mut creation_data = context
+            .metadata
+            .as_object()
+            .expect("fixture metadata object")
+            .clone();
+        creation_data.insert(
+            "content_hash".to_string(),
+            json!(context
+                .content_hash
+                .as_deref()
+                .expect("fixture content hash")),
+        );
+        creation_data.insert("external_publish_executed".to_string(), json!(false));
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_item_events
+                (work_item_id, artifact_id, event_type, actor_type, actor_id,
+                 message, data)
+            VALUES
+                ($1, $2, 'generated_image_created', 'worker', $3,
+                 'integration generated image created', $4)
+            "#,
+        )
+        .bind(context.work_item_id)
+        .bind(context.artifact_id)
+        .bind(GENERATED_IMAGE_WORKER_ID)
+        .bind(Value::Object(creation_data))
+        .execute(&pool)
+        .await
+        .expect("insert generated-image creation audit");
+
+        let request = ArtifactReviewDecisionRequest {
+            artifact_id: context.artifact_id,
+            reviewer_id: "human-owner-1".to_string(),
+            decision: "approved".to_string(),
+            reason: "reviewed exact Feishu-backed JPEG".to_string(),
+            source: "integration_test".to_string(),
+            metadata: json!({}),
+        };
+        let policy = OperationsPolicy::dry_run();
+        let missing_evidence_error =
+            record_artifact_review_decision(&pool, request.clone(), true, &policy)
+                .await
+                .expect_err("Feishu-backed approval without evidence must fail");
+        assert!(missing_evidence_error
+            .to_string()
+            .contains("requires authenticated revalidation evidence"));
+
+        let report = record_artifact_review_decision_with_evidence(
+            &pool,
+            request,
+            true,
+            &policy,
+            Some(&evidence),
+        )
+        .await
+        .expect("matching evidence should approve transaction-locked artifact");
+        assert_eq!(report.action_status, "review_recorded");
+
+        let state: (String, String) = sqlx::query_as(
+            r#"
+            SELECT artifact.review_status, item.status
+            FROM qintopia_agent_os.artifacts artifact
+            JOIN qintopia_agent_os.work_items item ON item.id = artifact.work_item_id
+            WHERE artifact.id = $1
+            "#,
+        )
+        .bind(context.artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load approved integration state");
+        assert_eq!(state.0, "approved");
+        assert_eq!(state.1, "completed");
+
+        let audit: Value = sqlx::query_scalar(
+            r#"
+            SELECT data
+            FROM qintopia_agent_os.work_item_events
+            WHERE artifact_id = $1 AND event_type = 'review_decision_recorded'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(context.artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load approval audit");
+        assert_eq!(audit["authenticated_feishu_revalidation"], true);
+        let serialized = serde_json::to_string(&audit).expect("serialize approval audit");
+        for forbidden in [
+            "feishu-base://",
+            "file_token",
+            "record_id",
+            "base_token",
+            "table_id",
+            "tenant_access_token",
+        ] {
+            assert!(!serialized.contains(forbidden), "audit leaked {forbidden}");
+        }
     }
 
     #[test]
@@ -7169,15 +7587,15 @@ mod tests {
         assert!(uri_error.to_string().contains("stable HTTPS media URL"));
 
         let mut context = generated_image_approval_context();
-        context.artifact_uri = Some(
-            "feishu-base://huabaosi-generated-image/00000000-0000-0000-0000-000000000000"
-                .to_string(),
-        );
+        context.artifact_uri = Some(format!(
+            "feishu-base://huabaosi-generated-image/{}",
+            context.artifact_id
+        ));
         let feishu_canary_error = validate_generated_image_approval(&context, "approved")
-            .expect_err("Feishu-backed canary must remain pending");
+            .expect_err("Feishu-backed approval must require authenticated evidence");
         assert!(feishu_canary_error
             .to_string()
-            .contains("stable HTTPS media URL"));
+            .contains("requires authenticated revalidation evidence"));
 
         let mut context = generated_image_approval_context();
         context.artifact_uri = Some("https://media.example.test/posters%2Fimage.jpg".to_string());
@@ -7214,6 +7632,10 @@ mod tests {
 
         validate_generated_image_approval(&context, "rejected")
             .expect("humans must be able to reject malformed artifacts");
+
+        let (context, _) = feishu_backed_approval_context();
+        validate_generated_image_approval(&context, "rejected")
+            .expect("Feishu-backed rejection must not require external revalidation");
     }
 
     #[test]

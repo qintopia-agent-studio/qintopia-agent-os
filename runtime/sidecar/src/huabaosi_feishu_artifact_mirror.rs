@@ -190,6 +190,41 @@ struct ValidatedPrimaryStorageArtifact {
     height: u32,
 }
 
+pub(crate) struct FeishuPrimaryStorageApprovalEvidence {
+    pub(crate) artifact_id: Uuid,
+    pub(crate) work_item_id: Uuid,
+    pub(crate) artifact_uri: String,
+    pub(crate) content_hash: String,
+    pub(crate) file_md5: String,
+    pub(crate) byte_size: i64,
+    pub(crate) width: i64,
+    pub(crate) height: i64,
+}
+
+#[cfg(test)]
+impl FeishuPrimaryStorageApprovalEvidence {
+    pub(crate) fn test_only(
+        artifact_id: Uuid,
+        work_item_id: Uuid,
+        content_hash: String,
+        file_md5: String,
+        byte_size: i64,
+        width: i64,
+        height: i64,
+    ) -> Self {
+        Self {
+            artifact_id,
+            work_item_id,
+            artifact_uri: format!("feishu-base://huabaosi-generated-image/{artifact_id}"),
+            content_hash,
+            file_md5,
+            byte_size,
+            width,
+            height,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct MirrorPolicy {
     media_allowed_hosts: BTreeSet<String>,
@@ -457,6 +492,50 @@ pub async fn run_primary_storage_revalidation(cli: &Cli, artifact_id: Uuid) -> R
                 .map_err(primary_storage_error)?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         Ok(())
+    }
+}
+
+pub(crate) async fn revalidate_primary_storage_for_approval(
+    pool: &PgPool,
+    artifact_id: Uuid,
+    database_url: &str,
+) -> Result<FeishuPrimaryStorageApprovalEvidence> {
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )))]
+    {
+        let _ = (pool, artifact_id, database_url);
+        bail!("Huabaosi Feishu primary-storage approval adapter is not compiled");
+    }
+
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    {
+        let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
+        let artifact = peek_candidate(pool, Some(artifact_id))
+            .await?
+            .context("Huabaosi generated image artifact was not found")?;
+        let workflow_root_id = resolve_workflow_root_pool(pool, artifact.work_item_id).await?;
+        let validated = validate_primary_storage_artifact(&artifact)?;
+        revalidate_primary_storage_artifact(&artifact, &validated, workflow_root_id, &config)
+            .map_err(primary_storage_error)?;
+
+        Ok(FeishuPrimaryStorageApprovalEvidence {
+            artifact_id: artifact.id,
+            work_item_id: artifact.work_item_id,
+            artifact_uri: artifact.artifact_uri,
+            content_hash: artifact.content_hash,
+            file_md5: validated.file_md5,
+            byte_size: i64::try_from(validated.byte_size)
+                .context("Huabaosi Feishu-backed byte size is invalid")?,
+            width: i64::from(validated.width),
+            height: i64::from(validated.height),
+        })
     }
 }
 
