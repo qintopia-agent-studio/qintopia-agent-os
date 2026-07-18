@@ -104,10 +104,26 @@ def parse_hosts(key, value):
     hosts = [part.strip() for part in value.split(",") if part.strip()]
     if not hosts:
         raise ValidationError(f"{key} must contain at least one host")
+    seen = set()
+    canonical_hosts = []
     for host in hosts:
         if not HOST_RE.match(host):
             raise ValidationError(f"{key} contains an invalid host entry")
-    return hosts
+        hostname = host
+        port_text = None
+        if ":" in host:
+            hostname, port_text = host.rsplit(":", 1)
+            port = int(port_text, 10)
+            if port < 1 or port > 65535:
+                raise ValidationError(f"{key} contains a port outside 1-65535")
+        canonical = hostname.lower()
+        if port_text is not None:
+            canonical = f"{canonical}:{port}"
+        if canonical in seen:
+            raise ValidationError(f"{key} contains a duplicate host entry")
+        seen.add(canonical)
+        canonical_hosts.append(canonical)
+    return canonical_hosts
 
 
 def require_https_url(key, value):
