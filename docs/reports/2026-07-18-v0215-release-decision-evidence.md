@@ -8,18 +8,20 @@ Release Please PR `#180`, `chore(master): release 0.2.15`, is ready for an expli
 owner release decision, but it is not a Xiaoman production-complete release.
 
 The release candidate packages the release-current acceptance docs, the staging values
-observation gate, the staging evidence CI coverage, and the Feishu-to-QiWe delivery
-boundary notes needed before staging runtime provisioning. It still does not provision
-server-local staging values, render `/etc/qintopia/message-sidecar-staging.env`, run
-Huabaosi/QiWe staging evidence, enable production external timers, or prove one real
-Xiaoman activity through QiWe group-send arrival.
+observation gate, the staging evidence CI coverage, Feishu-backed generated-image
+approval/revalidation, the guarded Feishu-to-QiWe staging bridge, and the tightened
+combined staging evidence gate needed before staging runtime provisioning. It still does
+not provision server-local staging values, render
+`/etc/qintopia/message-sidecar-staging.env`, run Huabaosi/QiWe staging evidence, enable
+production external timers, or prove one real Xiaoman activity through QiWe group-send
+arrival.
 
 ## Release Candidate
 
 ```text
 release_pr=#180
 release_pr_title=chore(master): release 0.2.15
-release_pr_head=1648a463e0b4617230aa952b65301cdb479a1102
+release_pr_head=73f429f66982a36e94d6173047f4df785338547f
 release_pr_state=open
 release_pr_mergeable=MERGEABLE
 latest_published_release=v0.2.14
@@ -31,21 +33,29 @@ Included changes:
 - `caeddc3` `fix: add staging values observation gate (#181)`
 - `a53e3b2` `ci: run staging evidence contract tests (#182)`
 - `1706c56` `docs: record feishu qiwe delivery boundary (#183)`
+- `51ab4b1` `docs: record v0215 release decision evidence (#184)`
+- `7b0adc8` `fix: compile staging feishu primary storage (#185)`
+- `e415c2d` `fix: add feishu primary storage revalidation (#186)`
+- `3c07c31` `fix: harden user-facing failure handling`
+- `ab2ed2a` `feat: approve revalidated feishu images`
+- `1d02be4` `fix: tighten xiaoman staging evidence gate`
+- `3493318` `feat: bridge feishu images to qiwe staging`
 
 ## Validation Evidence
 
 Manual Release Please validation was run against the current Release Please head:
 
 ```text
-workflow_run=29633149916
-head_sha=1648a463e0b4617230aa952b65301cdb479a1102
+workflow_run=29644161178
+head_sha=73f429f66982a36e94d6173047f4df785338547f
 changes=success
 check=success
-pr_attached_status=Release Please validation pass
+pr_attached_status=Release Please validation SUCCESS
 ```
 
 The Release Please PR had no submitted reviews, no ordinary comments other than
-generated release content, and remained mergeable at the time of this record.
+generated release content, no review threads, and remained mergeable at the time of this
+record.
 
 ## Deploy Bundle Evidence
 
@@ -84,6 +94,16 @@ qintopia-agentos-qiwe-image-send-worker.timer enabled=not-found active=inactive
 
 No server-local values, env contents, database URLs, table ids, tokens, group ids, raw
 activity records, callback payloads, or provider outputs were read or recorded.
+
+The observed staging release root is historical. It proves a staging root can exist, but
+it predates the merged Feishu-to-QiWe staging bridge and tightened combined evidence
+gate. The real Huabaosi/QiWe staging exercise must use a newly reviewed staging-only
+artifact built from the target release SHA and record that artifact's sidecar SHA-256
+before provisioning `/etc/qintopia/message-sidecar-staging.env`.
+
+This follow-up changes release-decision evidence and staging artifact guidance. If it
+merges before `#180`, Release Please must update `#180`, and the manual validation above
+must be rerun on the new Release Please head before any release decision.
 
 ## Classification
 
@@ -125,8 +145,8 @@ Do not merge the Release Please PR as a background maintenance action.
 5. Run values observation, renderer validation, owner-approved renderer apply, and
    unified staging readiness.
 6. Only after readiness reports `ready_for_huabaosi_qiwe_staging_smokes`, run Huabaosi
-   staging generation and proceed toward the separate Feishu-to-QiWe delivery
-   implementation and QiWe staging evidence.
+   staging generation, QiWe staging upload/callback/send evidence, and the cross-flow
+   hash checker.
 
 ## Production Boundary
 

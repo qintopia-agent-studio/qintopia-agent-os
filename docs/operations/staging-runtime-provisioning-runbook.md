@@ -172,7 +172,7 @@ the deploy bundle:
 ```bash
 QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL=approved-staging-sidecar-provision \
   deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh \
-  --sha 37fff8bf819f0df68825961203e7998b51a07c31
+  --sha '<approved staging release sha>'
 ```
 
 The helper downloads only the successful `artifacts.yml` GitHub Actions artifact named
@@ -180,7 +180,14 @@ The helper downloads only the successful `artifacts.yml` GitHub Actions artifact
 manifest staging feature boundary, rejects production-eligible manifests, and installs
 only under `/home/ubuntu/qintopia-agent-os-staging-releases/<sha>/sidecar/`.
 
-Current reviewed staging artifact evidence:
+The approved staging release SHA must be the exact commit whose staging artifact is
+being used for the real Huabaosi/QiWe staging exercise. After the Feishu-to-QiWe staging
+bridge merged, do not provision the older `37fff8bf...` staging binary for the combined
+bridge exercise; first build or fetch a successful staging-only artifact from the target
+release SHA and record its reviewed sidecar SHA-256.
+
+Previous staging artifact evidence, retained only as historical proof that the
+provisioning boundary works:
 
 - GitHub Actions run:
   `https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/29495174705`
