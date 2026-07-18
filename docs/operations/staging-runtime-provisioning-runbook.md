@@ -108,7 +108,11 @@ manually dispatched GitHub Actions artifact
 `cargo_features: [huabaosi-staging-adapter, qiwe-staging-adapter]`, `staging_only=true`,
 and `production_eligible=false`. Do not use the production
 `qintopia-message-sidecar-linux-x86_64-gnu` artifact for staging evidence, and do not
-install the staging artifact under the production release root.
+install the staging artifact under the production release root. Because the staging
+image storage backend is fixed to `feishu-base`, the staged `huabaosi-staging-adapter`
+binary must include the guarded Feishu Base primary-storage upload/readback path. It
+must still fail before external I/O unless the staging owner approval, reviewed database
+URL hash, Base/table allowlists, schema version, and Huabaosi profile path are valid.
 
 ## Provision Staging Env File
 

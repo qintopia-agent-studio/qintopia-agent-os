@@ -472,8 +472,12 @@ Use `rg` and `rg --files` for search.
   and `qiwe-staging-adapter`, record `staging_only=true` and
   `production_eligible=false`, and be installed only under
   `/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` for
-  owner-approved evidence smokes. Production deploy, COS upload, Release builds, and
-  production artifact fetchers must never fetch or promote it.
+  owner-approved evidence smokes. Because staging image storage is fixed to
+  `feishu-base`, the staging Huabaosi adapter must compile the guarded Feishu Base
+  primary-storage upload/readback path while preserving the staging owner approval,
+  database hash, Base/table allowlists, schema, and Huabaosi profile gates before
+  external I/O. Production deploy, COS upload, Release builds, and production artifact
+  fetchers must never fetch or promote it.
 - `qiwe-image-send-staging-readiness-smoke.sh` is the read-only gate before the real
   QiWe staging preflight. It may only check metadata for the fixed staging env file,
   fixed immutable staging release root, owner-approved release SHA, and packaged sidecar
