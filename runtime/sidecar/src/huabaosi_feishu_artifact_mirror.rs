@@ -1095,6 +1095,7 @@ fn build_feishu_fields(
     let mut fields = Map::new();
     fields.insert("产物标题".to_string(), json!(artifact.title));
     fields.insert("AgentOS产物ID".to_string(), json!(artifact.id.to_string()));
+    fields.insert("Schema版本".to_string(), json!(SCHEMA_VERSION));
     fields.insert(
         "AgentOS工作项ID".to_string(),
         json!(workflow_root_id.to_string()),
@@ -1808,6 +1809,7 @@ fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_toke
     json!({
         "产物标题": "活动海报图片（待审核）",
         "AgentOS产物ID": image.artifact_id.to_string(),
+        "Schema版本": SCHEMA_VERSION,
         "AgentOS工作项ID": image.workflow_root_id.to_string(),
         "图片请求ID": image.work_item_id.to_string(),
         "最终JPEG": [{"file_token": file_token}],
@@ -1965,6 +1967,7 @@ fn validate_primary_storage_record_fields(
 ) -> std::result::Result<(), MirrorFailure> {
     for (field, expected) in [
         ("AgentOS产物ID", artifact.id.to_string()),
+        ("Schema版本", SCHEMA_VERSION.to_string()),
         ("图片请求ID", artifact.work_item_id.to_string()),
         ("JPEG SHA-256", artifact.content_hash.clone()),
         ("文件MD5", validated.file_md5.clone()),
@@ -2928,6 +2931,7 @@ mod tests {
         let fields = build_feishu_fields(&artifact, &validated, Uuid::nil(), Some("fileFixture"));
 
         assert_eq!(fields["AgentOS产物ID"], artifact.id.to_string());
+        assert_eq!(fields["Schema版本"], SCHEMA_VERSION);
         assert_eq!(fields["图片请求ID"], artifact.work_item_id.to_string());
         assert_eq!(fields["审核状态"], "待审核");
         assert_eq!(fields["最终JPEG"][0]["file_token"], "fileFixture");
@@ -2963,6 +2967,7 @@ mod tests {
         }
         for required in [
             "AgentOS产物ID",
+            "Schema版本",
             "AgentOS工作项ID",
             "图片请求ID",
             "最终JPEG",
@@ -3395,6 +3400,25 @@ mod tests {
         fields.insert("宽度".to_string(), json!(f64::from(validated.width)));
         validate_primary_storage_record_fields(&artifact, &validated, fields)
             .expect("integral float values remain compatible");
+
+        fields.remove("Schema版本");
+        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
+            .expect_err("missing schema version must fail");
+        assert_eq!(failure.stage, "record_search");
+        assert_eq!(failure.code, "record_identity_mismatch");
+
+        fields.insert(
+            "Schema版本".to_string(),
+            json!("huabaosi-generated-image-v0"),
+        );
+        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
+            .expect_err("schema version drift must fail");
+        assert_eq!(failure.stage, "record_search");
+        assert_eq!(failure.code, "record_identity_mismatch");
+
+        fields.insert("Schema版本".to_string(), json!(SCHEMA_VERSION));
+        validate_primary_storage_record_fields(&artifact, &validated, fields)
+            .expect("fixed schema version validates");
 
         let mut changed = bytes.clone();
         let last = changed.len() - 1;

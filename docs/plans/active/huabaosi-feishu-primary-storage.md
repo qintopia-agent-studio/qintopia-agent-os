@@ -31,6 +31,7 @@ approved poster_brief
 - Base: `画报司 | 设计产出库`
 - table: `阿靓图片产物版本表`
 - schema: `huabaosi-generated-image-v1`
+- schema field: `Schema版本=huabaosi-generated-image-v1`
 - idempotency field: `AgentOS产物ID`
 - attachment field: `最终JPEG`
 
@@ -48,7 +49,8 @@ only.
 4. Download the uploaded attachment through the authenticated Feishu API and require
    byte-for-byte, SHA-256, MD5, MIME, width, height, and byte-size parity.
 5. Search the fixed version table by `AgentOS产物ID`; create on zero matches, update on
-   one match, and fail closed on multiple matches.
+   one match, and fail closed on multiple matches. Every row must carry the exact fixed
+   `Schema版本`; authenticated readback rejects missing or drifted versions.
 6. Only after readback and row upsert succeed, create one `pending generated_image` and
    its sanitized creation audit in Postgres.
 
