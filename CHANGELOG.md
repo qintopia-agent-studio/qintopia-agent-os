@@ -6,6 +6,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.15](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.14...v0.2.15) (2026-07-18)
+
+
+### Features
+
+* approve revalidated feishu images ([ab2ed2a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ab2ed2a8170ec1c7a747b9114ae8c3f1e0efa8c0))
+* bridge feishu images to qiwe staging ([3493318](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3493318e6e60c0d0878be1fe8e865095cd71baf0))
+
+
+### Bug Fixes
+
+* add feishu primary storage revalidation ([#186](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/186)) ([e415c2d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e415c2d5feff7ff98e74d4729d8cf34598b0e132))
+* add staging values observation gate ([#181](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/181)) ([caeddc3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/caeddc385eae51b15a04f14413ca060a8b8f40b9))
+* bind staging image evidence to sidecar hash ([#199](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/199)) ([239a4d2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/239a4d2caceffffb9adaba59acd6e53b9a1447db))
+* compile staging feishu primary storage ([#185](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/185)) ([7b0adc8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7b0adc8f4ec8ba32e6f4398b90762c592eb5d847))
+* harden user-facing failure handling ([3c07c31](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3c07c31e7c9fd2d67c7156ecb2f543a703511a8f))
+* package release acceptance docs ([027ee63](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/027ee6360f97b7d9c7127389f4058b42070d4d5f))
+* prevent stale staging artifact provisioning ([10b8820](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/10b8820b412497bf66bb79a069ef854f9af7ddf1))
+* tighten staging host allowlists ([#198](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/198)) ([81fddf9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/81fddf9c854c4191ffbdd3734d2cdee64589ba91))
+* tighten xiaoman staging evidence gate ([1d02be4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1d02be4c70068c112129c291cc2e68bbdb1ab160))
+
+
+### CI / Deployment
+
+* run staging evidence contract tests ([#182](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/182)) ([a53e3b2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a53e3b2f07ab844ae67f854c7f299b90ed9241a2))
+
+
+### Documentation
+
+* align feishu qiwe staging state ([6b7204d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6b7204d3814a3e038995d15e5bb91b4b2d82623e))
+* align staging release acceptance checks ([42ca0a4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/42ca0a4d95426b37cc55a118330c34dd30aee208))
+* clarify qiwe staging media allowlists ([d8990f7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d8990f7252bff99095f817ea74fa6bdbb22dc631))
+* make release evidence head-aware ([7b11b1a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7b11b1a420c12586339bc28feeec132dd594b5f9))
+* record feishu qiwe delivery boundary ([#183](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/183)) ([1706c56](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1706c56cde5cc3e139bada9c64bbe294249dda8b))
+* record v0215 release decision evidence ([#184](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/184)) ([51ab4b1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/51ab4b116a78731652b0c87afd60b15af8629197))
+* refresh v0215 release evidence ([bb5b920](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bb5b9201f6a49f1e89d1e26412c84938fc47c618))
+* refresh xiaoman completion gate release state ([6e7c347](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6e7c347c1e9f9447f0de38260de673bb39e814db))
+
 ## [0.2.14](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.13...v0.2.14) (2026-07-17)
 
 
