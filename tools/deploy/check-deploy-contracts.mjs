@@ -100,6 +100,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/render-staging-runtime-env.py",
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
     "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
+    "deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
@@ -493,6 +494,52 @@ const aliangStagingReadinessPath =
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh";
 const stagingRuntimePrerequisiteObservationPath =
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh";
+const stagingRuntimeValuesObservationPath =
+  "deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh";
+if (!exists(stagingRuntimeValuesObservationPath)) {
+  addError(
+    `${stagingRuntimeValuesObservationPath}: missing staging runtime values observation smoke`
+  );
+} else {
+  const observation = readText(stagingRuntimeValuesObservationPath);
+  for (const fragment of [
+    "QINTOPIA_STAGING_RUNTIME_VALUES_OBSERVATION_ENABLE",
+    "QINTOPIA_STAGING_RUNTIME_VALUES_OBSERVATION_TEST_MODE",
+    "/etc/qintopia/message-sidecar-staging-values.json",
+    "/etc/qintopia/message-sidecar-staging.env",
+    "deploy/sidecar/scripts/render-staging-runtime-env.py",
+    "staging_runtime_values_observation=",
+    "ready_for_render_validation",
+    "server-local values file contents are not read",
+    "staging env file contents are not read",
+    "renderer is not executed",
+    "no Postgres, Huabaosi, Feishu, QiWe, provider, media, service, timer, release, or network action",
+    "values_file_present",
+    "env_file_already_present",
+    "path_parent_is_symlink",
+    "path_parent_missing",
+    "path_group_or_world_writable",
+    "path_group_or_world_readable",
+  ]) {
+    requireFragment(stagingRuntimeValuesObservationPath, observation, fragment);
+  }
+  for (const fragment of [
+    "systemctl",
+    "source ",
+    'source "$',
+    ". /etc/qintopia",
+    "env -i",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QINTOPIA_HUABAOSI_IMAGE_API_KEY",
+    "QIWE_TOKEN",
+    "run-huabaosi-image-generation-worker",
+    "run-qiwe-image-send-worker",
+    "curl ",
+    "psql ",
+  ]) {
+    forbidFragment(stagingRuntimeValuesObservationPath, observation, fragment);
+  }
+}
 if (!exists(stagingRuntimePrerequisiteObservationPath)) {
   addError(
     `${stagingRuntimePrerequisiteObservationPath}: missing staging runtime prerequisite observation smoke`
@@ -751,6 +798,9 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
     "/home/ubuntu/qintopia-agent-os-staging-releases/<40-hex-sha>/sidecar/qintopia-message-sidecar",
     "QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE=1",
     "staging-runtime-prerequisite-observation-smoke.sh",
+    "QINTOPIA_STAGING_RUNTIME_VALUES_OBSERVATION_ENABLE=1",
+    "staging-runtime-values-observation-smoke.sh",
+    "ready_for_render_validation",
     "QINTOPIA_STAGING_RUNTIME_READINESS_EVIDENCE_ENABLE=1",
     "staging-runtime-readiness-evidence-smoke.sh",
     "staging_runtime_readiness_evidence=",
@@ -815,6 +865,8 @@ const aliangStagingReadinessTestPath =
   "tools/deploy/test-huabaosi-image-staging-readiness.mjs";
 const stagingRuntimePrerequisiteObservationTestPath =
   "tools/deploy/test-staging-runtime-prerequisite-observation.mjs";
+const stagingRuntimeValuesObservationTestPath =
+  "tools/deploy/test-staging-runtime-values-observation.mjs";
 const stagingRuntimeReadinessEvidenceTestPath =
   "tools/deploy/test-staging-runtime-readiness-evidence.mjs";
 const stagingRuntimeEnvRenderPath =
@@ -840,6 +892,30 @@ if (!exists(stagingRuntimePrerequisiteObservationTestPath)) {
     "sidecar_hash_mismatch",
   ]) {
     requireFragment(stagingRuntimePrerequisiteObservationTestPath, test, fragment);
+  }
+}
+if (!exists(stagingRuntimeValuesObservationTestPath)) {
+  addError(
+    `${stagingRuntimeValuesObservationTestPath}: missing staging runtime values observation test`
+  );
+} else {
+  const test = readText(stagingRuntimeValuesObservationTestPath);
+  for (const fragment of [
+    "staging-runtime-values-observation-smoke.sh",
+    "staging_runtime_values_observation=",
+    "ready_for_render_validation",
+    "rendered_env_already_present",
+    "Staging runtime values observation smoke test passed.",
+    "staging-values-secret-must-not-appear",
+    "values_file_path_parent_is_symlink",
+    "values_file_path_parent_missing",
+    "env_file_path_parent_missing",
+    "renderer_path_parent_missing",
+    "values_file_path_group_or_world_writable",
+    "values_file_path_group_or_world_readable",
+    "env_file_path_group_or_world_readable",
+  ]) {
+    requireFragment(stagingRuntimeValuesObservationTestPath, test, fragment);
   }
 }
 if (!exists(stagingRuntimeReadinessEvidenceTestPath)) {

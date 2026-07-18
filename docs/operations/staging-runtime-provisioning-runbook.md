@@ -190,10 +190,15 @@ records and checker results.
 
 1. `QINTOPIA_STAGING_RUNTIME_PREREQUISITE_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh`
    with the approved release SHA and packaged staging sidecar SHA-256.
-2. `deploy/sidecar/scripts/render-staging-runtime-env.py` in validation mode, then
+2. `QINTOPIA_STAGING_RUNTIME_VALUES_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh`.
+   This is a read-only metadata check for the server-local values JSON, renderer, and
+   fixed output env path. It does not read values, execute the renderer, or print
+   secrets. It must report `ready_for_render_validation` before the renderer validation
+   command runs.
+3. `deploy/sidecar/scripts/render-staging-runtime-env.py` in validation mode, then
    `--apply --approval approved-staging-runtime-env-provision` only after the sanitized
    render report is ready and the owner has approved the server-local values file.
-3. Unified staging runtime readiness evidence:
+4. Unified staging runtime readiness evidence:
 
    ```bash
    QINTOPIA_STAGING_RUNTIME_READINESS_EVIDENCE_ENABLE=1 \
@@ -209,12 +214,12 @@ records and checker results.
    staging database URL SHA-256, child readiness statuses, and sanitized limitations; it
    does not read the env file contents or execute the sidecar.
 
-4. Huabaosi staging smoke for exactly one approved image request work item. The final
+5. Huabaosi staging smoke for exactly one approved image request work item. The final
    JPEG storage boundary is the fixed Huabaosi Feishu Base table, not an HTTP
    upload/public URL service.
-5. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
-6. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
-7. After the separate Feishu attachment revalidation and QiWe delivery path is present
+6. `node tools/deploy/check-huabaosi-image-staging-evidence.mjs`.
+7. Record `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`.
+8. After the separate Feishu attachment revalidation and QiWe delivery path is present
    on the staged release, run QiWe readiness, preflight, upload, callback, QiWe evidence
    check, and cross-flow hash check. The current QiWe intake must continue to fail
    closed for `feishu-base://` artifacts.

@@ -24,6 +24,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/render-staging-runtime-env.py",
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
   "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
+  "deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
