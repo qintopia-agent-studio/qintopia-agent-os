@@ -124,6 +124,7 @@ QIWE_API_URL=https://qiwe.example
 QIWE_TOKEN=staging-qiwe-token-must-not-reach-huabaosi-child
 QIWE_GUID=staging-qiwe-guid-must-not-reach-huabaosi-child
 QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS=qiwe.example
+QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test
 QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=staging-group
 `;
 

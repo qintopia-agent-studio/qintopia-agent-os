@@ -18,6 +18,7 @@
   "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH": "/home/ubuntu/.hermes/profiles/huabaosi/.env",
   "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION": "huabaosi-generated-image-v1",
   "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES": "25000000",
+  "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS": "<owner-reviewed-generated-image-and-qiwe-temporary-storage-hosts>",
   "QINTOPIA_QIWE_IMAGE_SEND_ENABLED": "1",
   "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY": "1",
   "QIWE_API_URL": "<https-qiwe-api-url>",

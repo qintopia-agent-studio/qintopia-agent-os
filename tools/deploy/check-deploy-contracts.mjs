@@ -122,6 +122,8 @@ if (!exists(stagingValuesTemplatePath)) {
     "<staging-image-provider-api-key>",
     "<huabaosi-generated-image-base-token>",
     "<huabaosi-generated-image-v1-table-id>",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+    "<owner-reviewed-generated-image-and-qiwe-temporary-storage-hosts>",
     "<one-isolated-staging-group-id>",
   ]) {
     requireFragment(stagingValuesTemplatePath, template, fragment);
@@ -658,6 +660,7 @@ if (!exists(aliangStagingSmokePath)) {
     "IGNORED_STAGING_ENV_KEYS",
     "load_staging_env",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "staging database URL hash does not match the approved command",
     "CHILD_ENV",
     "add_child_env",
@@ -709,7 +712,6 @@ if (!exists(aliangStagingSmokePath)) {
     "json.loads(os.environ",
     "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
     "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
-    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
   ]) {
     forbidFragment(aliangStagingSmokePath, smoke, fragment);
   }
@@ -954,6 +956,8 @@ if (!exists(stagingRuntimeEnvRenderPath)) {
     "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+    "media_host_count",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS must contain exactly one isolated group",
     "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA must match QINTOPIA_DEPLOYED_COMMIT_SHA",
@@ -980,7 +984,6 @@ if (!exists(stagingRuntimeEnvRenderPath)) {
     "urllib.request",
     "QINTOPIA_HUABAOSI_MEDIA_UPLOAD_ENDPOINT",
     "QINTOPIA_HUABAOSI_MEDIA_PUBLIC_BASE_URL",
-    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
   ]) {
     forbidFragment(stagingRuntimeEnvRenderPath, script, fragment);
   }
@@ -1002,6 +1005,8 @@ if (!exists(stagingRuntimeEnvRenderTestPath)) {
     "release SHA mismatch failure invalid",
     "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND",
     "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test,cloud.example.test",
+    "report.media_host_count !== 2",
     "non-test output guard invalid",
     "symlink parent guard invalid",
     "Staging runtime env render test passed.",
