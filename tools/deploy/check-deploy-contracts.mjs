@@ -1393,6 +1393,7 @@ if (!exists(qiweImageStagingSmokePath)) {
     "fileSize",
     "requestId",
     "STAGING_ENV_KEYS",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "load_staging_env",
     "qiwe-image-send-staging-preflight </dev/null",
     "--apply </dev/null",
@@ -1436,6 +1437,7 @@ if (!exists(qiweImageStagingSmokeTestPath)) {
     "tamper-after-preflight",
     "expected sidecar tampering before upload spawn to fail",
     "before QiWe staging upload spawn",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test",
     "QiWe image-send staging smoke test passed.",
   ]) {
     requireFragment(qiweImageStagingSmokeTestPath, test, fragment);
@@ -1489,6 +1491,7 @@ if (!exists(qiweImageStagingRunbookPath)) {
     "QINTOPIA_QIWE_IMAGE_STAGING_RELEASE_SHA='<same approved staging release sha>'",
     "QINTOPIA_QIWE_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>'",
     "QINTOPIA_QIWE_IMAGE_STAGING_WORK_ITEM_ID='<approved send-ready UUID>'",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "trusted-staging-callback-source |",
     "callback credential schema id",
     "qiwe_image_send_staging_evidence=<json>",
