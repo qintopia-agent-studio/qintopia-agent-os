@@ -1444,6 +1444,9 @@ class QiWeParserTests(unittest.TestCase):
             "⚡ 正在中断当前任务，稍后我会回复您的消息。",
             "（响应格式设置失败，显示为纯文本：）\n\n⚡ 正在中断当前任务，稍后我会回复您的消息。",
             "⏳ Working — 3 min — iteration 2/90, execute_code",
+            "⏳ Retrying in 5.5s (attempt 2/3)...",
+            "API call failed after 3 retries: HTTP 503: Service temporarily unavailable",
+            "❌ API failed after 3 retries — HTTP 503: Service temporarily unavailable",
             'Traceback (most recent call last):\n  File "/home/ubuntu/.hermes/hermes-agent/foo.py", line 1',
             "record_id=recABCDEFG123456789 obj_token=secretish",
         ]

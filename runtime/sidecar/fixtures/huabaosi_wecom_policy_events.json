@@ -49,6 +49,38 @@
     "expected_fallback_copy": false
   },
   {
+    "name": "outbound provider retry progress",
+    "payload": {
+      "direction": "outbound_candidate",
+      "msg_type": "text",
+      "message_id": "fixture-policy-message-provider-retry",
+      "content": "⏳ Retrying in 5.5s (attempt 2/3)..."
+    },
+    "expected_message_classification": "provider_retry_or_failure_status",
+    "expected_should_suppress": true,
+    "expected_suppression_reason": "provider_retry_or_failure_status",
+    "expected_busy_session_action": "suppress_internal_status",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "process_if_idempotency_key_unseen",
+    "expected_fallback_copy": true
+  },
+  {
+    "name": "outbound provider final failure",
+    "payload": {
+      "direction": "outbound_candidate",
+      "msg_type": "text",
+      "message_id": "fixture-policy-message-provider-failure",
+      "content": "API call failed after 3 retries: HTTP 503: Service temporarily unavailable"
+    },
+    "expected_message_classification": "provider_retry_or_failure_status",
+    "expected_should_suppress": true,
+    "expected_suppression_reason": "provider_retry_or_failure_status",
+    "expected_busy_session_action": "suppress_internal_status",
+    "expected_formatting_fallback": false,
+    "expected_duplicate_action": "process_if_idempotency_key_unseen",
+    "expected_fallback_copy": true
+  },
+  {
     "name": "duplicate inbound request hint",
     "payload": {
       "direction": "inbound",

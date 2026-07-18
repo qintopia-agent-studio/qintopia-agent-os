@@ -6,7 +6,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const MAX_POLICY_PREVIEW_BYTES: usize = 64 * 1024;
-const SAFE_FALLBACK_COPY: &str = "Request is still processing. Please try again shortly.";
+const SAFE_FALLBACK_COPY: &str =
+    "我这边刚才没有整理出可读回复，先不把那段发出来。你可以直接说“重新说”，我会用更清楚的话继续。";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PolicyPreviewReport {
@@ -221,10 +222,59 @@ fn classify_internal_filter(content: &str, direction: &str) -> InternalFilter {
             reason: Some("formatting_fallback"),
         };
     }
+    if is_provider_retry_or_failure(&normalized) {
+        return InternalFilter {
+            should_suppress: true,
+            reason: Some("provider_retry_or_failure_status"),
+        };
+    }
     InternalFilter {
         should_suppress: false,
         reason: None,
     }
+}
+
+fn is_provider_retry_or_failure(normalized: &str) -> bool {
+    is_provider_retry_progress(normalized)
+        || normalized.contains("api call failed after ")
+        || normalized.contains("api failed after ")
+        || (normalized.contains("http 503")
+            && normalized.contains("service temporarily unavailable"))
+}
+
+fn is_provider_retry_progress(normalized: &str) -> bool {
+    let value = normalized.trim_start_matches(|character: char| {
+        character.is_whitespace() || matches!(character, '⏳' | '❌' | '-' | ':' | '：')
+    });
+    let Some(rest) = value.strip_prefix("retrying in ") else {
+        return false;
+    };
+    let Some((delay, rest)) = rest.split_once("s ") else {
+        return false;
+    };
+    if delay.is_empty()
+        || !delay
+            .chars()
+            .all(|character| character.is_ascii_digit() || character == '.')
+        || delay.matches('.').count() > 1
+    {
+        return false;
+    }
+    let Some(rest) = rest.strip_prefix("(attempt ") else {
+        return false;
+    };
+    let Some((attempt, rest)) = rest.split_once('/') else {
+        return false;
+    };
+    let Some((max_attempts, _)) = rest.split_once(')') else {
+        return false;
+    };
+    !attempt.is_empty()
+        && !max_attempts.is_empty()
+        && attempt.chars().all(|character| character.is_ascii_digit())
+        && max_attempts
+            .chars()
+            .all(|character| character.is_ascii_digit())
 }
 
 fn classify_formatting_fallback(
@@ -400,6 +450,34 @@ mod tests {
     }
 
     #[test]
+    fn normal_retry_advice_is_not_suppressed() {
+        let raw = br#"{
+          "direction": "outbound_candidate",
+          "msg_type": "text",
+          "message_id": "policy-message-retry-advice",
+          "content": "You can try retrying in 5 minutes if the page is still loading."
+        }"#;
+
+        let report = policy_preview_report(raw).expect("policy report");
+        let serialized = serde_json::to_string(&report).expect("serialize report");
+
+        assert_eq!(report.message_classification, "user_or_agent_text");
+        assert!(!report.should_suppress);
+        assert!(report.user_safe_fallback_copy.is_none());
+        assert!(!serialized.contains("retrying in 5 minutes"));
+        assert!(!serialized.contains("policy-message-retry-advice"));
+    }
+
+    #[test]
+    fn provider_retry_progress_requires_runtime_attempt_shape() {
+        assert!(is_provider_retry_or_failure(
+            "⏳ retrying in 5.5s (attempt 2/3)..."
+        ));
+        assert!(!is_provider_retry_or_failure("try retrying in 5 minutes"));
+        assert!(!is_provider_retry_or_failure("retrying in 5 minutes"));
+    }
+
+    #[test]
     fn unknown_direction_internal_template_is_still_suppressed() {
         let raw = br#"{
           "msg_type": "text",
@@ -481,6 +559,10 @@ mod tests {
                 "fixture policy private",
                 "Interrupting current task",
                 "Response formatting failed",
+                "Retrying in",
+                "API call failed",
+                "HTTP 503",
+                "Service temporarily unavailable",
                 "plain text first",
                 "fixture.example.invalid",
                 "download-token",

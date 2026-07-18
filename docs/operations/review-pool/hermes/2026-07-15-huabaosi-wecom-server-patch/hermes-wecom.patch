@@ -11,6 +11,10 @@ index 5bec5baca9209ca6c0532adfb5cf9df7a1eb8574..b24c2d1730fa5deaebc1e6387c5a6891
 +_INTERNAL_PROCESS_MESSAGE_PATTERNS = (
 +    re.compile(r"Dangerous command requires approval|Reply [`']?/approve", re.IGNORECASE),
 +    re.compile(r"⏳\s*Working|Working\s+[—-].*iteration", re.IGNORECASE),
++    re.compile(r"⏳?\s*Retrying\s+in\s+\d+(?:\.\d+)?s\s+\(attempt\s+\d+/\d+\)", re.IGNORECASE),
++    re.compile(r"\bAPI\s+call\s+failed\s+after\s+\d+\s+retries\b", re.IGNORECASE),
++    re.compile(r"\bAPI\s+failed\s+after\s+\d+\s+retries\b", re.IGNORECASE),
++    re.compile(r"\bHTTP\s+503\b.*\bService\s+temporarily\s+unavailable\b", re.IGNORECASE),
 +    re.compile(r"\b(?:execute_code|skill_view|tool_progress|terminal|clarify)\b", re.IGNORECASE),
 +    re.compile(r"Traceback \(most recent call last\)|\bFile \"(?:/home|/Users|/tmp|/var|/opt)/", re.IGNORECASE),
 +    re.compile(r"(?:/home/ubuntu|/Users/[^\s`]+|/tmp|/var/tmp)/[^\s`]+", re.IGNORECASE),
@@ -200,10 +204,8 @@ index 5bec5baca9209ca6c0532adfb5cf9df7a1eb8574..b24c2d1730fa5deaebc1e6387c5a6891
 +        ):
 +            logger.warning("[%s] Replacing internal process message with sanitized notice for WeCom chat %s", self.name, chat_id)
 +            content = (
-+                "四老师刚才生成的回复包含内部执行信息，已自动隐藏。\n"
-+                "我还在，但这条不能原样发到企微。\n\n"
-+                "你可以直接回复：用人话重述\n"
-+                "我会只保留结论和下一步，不带记录 ID、命令、路径或调试细节。"
++                "我这边刚才没有整理出可读回复，先不把那段发出来。\n"
++                "你可以直接说“重新说”，我会用更清楚的话继续。"
 +            )
 +
          try:
