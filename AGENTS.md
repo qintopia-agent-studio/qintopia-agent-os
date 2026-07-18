@@ -71,6 +71,8 @@
 
 - Huabaosi image generation production state observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
+- Huabaosi Feishu-backed generated-image read-only revalidation:
+  `qintopia-message-sidecar huabaosi-feishu-primary-storage-revalidate --artifact-id <generated-image-uuid>`
 - Huabaosi generated-image Feishu mirror production observation smoke:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh`
 - Huabaosi generated-image Feishu mirror activation is guarded, not automatic. It
@@ -239,11 +241,16 @@ Use `rg` and `rg --files` for search.
 - The first Feishu-backed image canary must remain `pending`. Existing generated-image
   approval and QiWe intake accept only the reviewed immutable HTTPS JPEG contract; they
   must fail closed for `feishu-base://` artifacts until a separate PR adds authenticated
-  Feishu attachment revalidation to approval and a reviewed delivery path. The current
-  QiWe async upload contract requires a stable allowlisted HTTPS `fileUrl`; do not
-  bridge Feishu private attachments by exposing Feishu attachment tokens, storing a
-  private media URL, introducing an unreviewed public proxy/upload service, or falling
-  back to QiWe synchronous upload APIs marked deprecated in the reviewed protocol plan.
+  Feishu attachment revalidation to approval and a reviewed delivery path. The
+  `huabaosi-feishu-primary-storage-revalidate` sidecar command is read-only evidence: it
+  may authenticate to Feishu, reload the fixed record by generated-image artifact id,
+  download the `最终JPEG` attachment, and emit a sanitized report, but it must not
+  approve, write Postgres or Feishu, call QiWe, publish, send, or expose attachment
+  tokens/record ids/Base/table ids/credentials. The current QiWe async upload contract
+  requires a stable allowlisted HTTPS `fileUrl`; do not bridge Feishu private
+  attachments by exposing Feishu attachment tokens, storing a private media URL,
+  introducing an unreviewed public proxy/upload service, or falling back to QiWe
+  synchronous upload APIs marked deprecated in the reviewed protocol plan.
 - Huabaosi Feishu production observation must discover the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with

@@ -1070,6 +1070,12 @@ pub enum Command {
     HuabaosiFeishuArtifactMirrorPreflight,
     /// Validate the Huabaosi generated-image Feishu mirror observation boundary without secret configuration.
     HuabaosiFeishuArtifactMirrorObservationPreflight,
+    /// Revalidate one Feishu-backed Huabaosi generated image without approval, sending, or writes.
+    HuabaosiFeishuPrimaryStorageRevalidate {
+        /// Restrict revalidation to one generated-image artifact.
+        #[arg(long)]
+        artifact_id: uuid::Uuid,
+    },
     /// Mirror one immutable Huabaosi generated image into the fixed Feishu Base artifact table.
     RunHuabaosiFeishuArtifactMirrorWorker {
         /// Process one candidate and exit.

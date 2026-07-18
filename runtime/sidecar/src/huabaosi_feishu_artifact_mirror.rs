@@ -117,6 +117,24 @@ struct MirrorPreflightReport {
     sensitive_fields_redacted: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct PrimaryStorageRevalidationReport {
+    success: bool,
+    worker: &'static str,
+    action_status: String,
+    artifact_id: Uuid,
+    work_item_id: Uuid,
+    schema_version: &'static str,
+    content_hash: String,
+    byte_size: usize,
+    width: u32,
+    height: u32,
+    external_calls_executed: bool,
+    database_writes_executed: bool,
+    sensitive_fields_redacted: bool,
+    guardrails: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 struct MirrorArtifact {
     id: Uuid,
@@ -140,6 +158,15 @@ struct MirrorArtifact {
 #[derive(Debug, Clone)]
 struct ValidatedArtifact {
     artifact_uri: Url,
+    file_md5: String,
+    source_content_hash: String,
+    byte_size: usize,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone)]
+struct ValidatedPrimaryStorageArtifact {
     file_md5: String,
     source_content_hash: String,
     byte_size: usize,
@@ -248,6 +275,7 @@ struct FeishuClient {
 #[derive(Debug)]
 struct FeishuRecord {
     record_id: String,
+    fields: Value,
 }
 
 #[cfg(any(
@@ -372,6 +400,37 @@ pub fn run_observation_preflight() -> Result<()> {
         Ok(())
     } else {
         bail!("Huabaosi Feishu mirror observation boundary is invalid")
+    }
+}
+
+pub async fn run_primary_storage_revalidation(cli: &Cli, artifact_id: Uuid) -> Result<()> {
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )))]
+    {
+        let _ = (cli, artifact_id);
+        bail!("Huabaosi Feishu primary-storage revalidation adapter is not compiled");
+    }
+
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    {
+        let database_url = cli.database_url_required()?;
+        let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
+        let pool = db::connect(database_url, cli.db_max_connections).await?;
+        let artifact = peek_candidate(&pool, Some(artifact_id))
+            .await?
+            .context("Huabaosi generated image artifact was not found")?;
+        let validated = validate_primary_storage_artifact(&artifact)?;
+        let report = revalidate_primary_storage_artifact(&artifact, &validated, &config)
+            .map_err(primary_storage_error)?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        Ok(())
     }
 }
 
@@ -1756,6 +1815,288 @@ fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
 }
 
 #[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_primary_storage_artifact(
+    artifact: &MirrorArtifact,
+) -> Result<ValidatedPrimaryStorageArtifact> {
+    let expected_uri = format!("feishu-base://huabaosi-generated-image/{}", artifact.id);
+    if artifact.artifact_uri != expected_uri {
+        bail!("Huabaosi Feishu-backed artifact URI does not match the generated image id");
+    }
+    if !is_canonical_sha256(&artifact.content_hash) {
+        bail!("Huabaosi Feishu-backed artifact content hash is not canonical");
+    }
+    let metadata = artifact
+        .metadata
+        .as_object()
+        .context("Huabaosi Feishu-backed metadata must be an object")?;
+    let mime_type = metadata_text(metadata, "mime_type")?;
+    let generated_by = metadata_text(metadata, "generated_by")?;
+    let provider = metadata_text(metadata, "provider")?;
+    let model = metadata_text(metadata, "model")?;
+    let file_md5 = metadata_text(metadata, "file_md5")?;
+    let source_mime_type = metadata_text(metadata, "provider_source_mime_type")?;
+    let source_content_hash = metadata_text(metadata, "provider_source_content_hash")?;
+    let media_transform = metadata_text(metadata, "media_transform")?;
+    let alpha_background = metadata_text(metadata, "alpha_background")?;
+    let approved_brief_id = metadata_text(metadata, "approved_brief_artifact_id")?;
+    let approved_brief_hash = metadata_text(metadata, "approved_brief_content_hash")?;
+    let prompt_hash = metadata_text(metadata, "prompt_hash")?;
+    let jpeg_quality = metadata_i64(metadata, "jpeg_quality")?;
+    let width = metadata_i64(metadata, "width")?;
+    let height = metadata_i64(metadata, "height")?;
+    let byte_size = metadata_i64(metadata, "byte_size")?;
+    if generated_by != REQUIRED_GENERATOR
+        || provider != REQUIRED_PROVIDER
+        || model != REQUIRED_MODEL
+        || mime_type != REQUIRED_MIME_TYPE
+        || source_mime_type != REQUIRED_SOURCE_MIME_TYPE
+        || media_transform != REQUIRED_TRANSFORM
+        || alpha_background != REQUIRED_ALPHA_BACKGROUND
+        || jpeg_quality != REQUIRED_JPEG_QUALITY
+    {
+        bail!("Huabaosi Feishu-backed metadata does not match the reviewed JPEG contract");
+    }
+    if Uuid::parse_str(&approved_brief_id).is_err()
+        || !is_canonical_sha256(&approved_brief_hash)
+        || !is_canonical_sha256(&prompt_hash)
+        || !is_lower_hex(&file_md5, 32)
+        || !is_canonical_sha256(&source_content_hash)
+    {
+        bail!("Huabaosi Feishu-backed identity metadata is not canonical");
+    }
+    validate_source_ids(artifact, &approved_brief_id, &approved_brief_hash)?;
+    validate_creation_event(artifact, metadata)?;
+    if width != REQUIRED_WIDTH || height != REQUIRED_HEIGHT {
+        bail!("Huabaosi Feishu-backed dimensions do not match the reviewed JPEG contract");
+    }
+    let byte_size = usize::try_from(byte_size)
+        .ok()
+        .filter(|size| *size > 0 && *size <= DEFAULT_MAX_MEDIA_BYTES)
+        .context("Huabaosi Feishu-backed byte size is outside the reviewed bound")?;
+    Ok(ValidatedPrimaryStorageArtifact {
+        file_md5,
+        source_content_hash,
+        byte_size,
+        width: u32::try_from(width).context("Huabaosi Feishu-backed width is invalid")?,
+        height: u32::try_from(height).context("Huabaosi Feishu-backed height is invalid")?,
+    })
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn revalidate_primary_storage_artifact(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    config: &FeishuPrimaryStorageConfig,
+) -> std::result::Result<PrimaryStorageRevalidationReport, MirrorFailure> {
+    let credentials = read_feishu_credentials(&config.profile_env_path)?;
+    let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+    let record = client
+        .search_record(&config.base_token, &config.table_id, artifact.id)?
+        .ok_or_else(|| {
+            MirrorFailure::external("record_search", "record_missing", Some(false), false)
+        })?;
+    let fields = record.fields.as_object().ok_or_else(|| {
+        MirrorFailure::external("record_search", "record_fields_missing", Some(false), false)
+    })?;
+    validate_primary_storage_record_fields(artifact, validated, fields)?;
+    let file_token = primary_storage_attachment_token(fields)?;
+    let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
+    validate_primary_storage_readback(artifact, validated, &readback)?;
+    readback.zeroize();
+    Ok(PrimaryStorageRevalidationReport {
+        success: true,
+        worker: WORKER_ID,
+        action_status: "feishu_primary_storage_revalidated".to_string(),
+        artifact_id: artifact.id,
+        work_item_id: artifact.work_item_id,
+        schema_version: SCHEMA_VERSION,
+        content_hash: artifact.content_hash.clone(),
+        byte_size: validated.byte_size,
+        width: validated.width,
+        height: validated.height,
+        external_calls_executed: true,
+        database_writes_executed: false,
+        sensitive_fields_redacted: true,
+        guardrails: primary_storage_revalidation_guardrails(),
+    })
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_primary_storage_record_fields(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    fields: &Map<String, Value>,
+) -> std::result::Result<(), MirrorFailure> {
+    for (field, expected) in [
+        ("AgentOS产物ID", artifact.id.to_string()),
+        ("图片请求ID", artifact.work_item_id.to_string()),
+        ("JPEG SHA-256", artifact.content_hash.clone()),
+        ("文件MD5", validated.file_md5.clone()),
+        ("MIME类型", REQUIRED_MIME_TYPE.to_string()),
+        ("源PNG SHA-256", validated.source_content_hash.clone()),
+        ("转换规则", REQUIRED_TRANSFORM.to_string()),
+    ] {
+        if field_text(fields, field).as_deref() != Some(expected.as_str()) {
+            return Err(MirrorFailure::external(
+                "record_search",
+                "record_identity_mismatch",
+                Some(false),
+                false,
+            ));
+        }
+    }
+    for (field, expected) in [
+        (
+            "字节数",
+            i64::try_from(validated.byte_size).unwrap_or(i64::MAX),
+        ),
+        ("宽度", i64::from(validated.width)),
+        ("高度", i64::from(validated.height)),
+    ] {
+        if field_i64(fields, field) != Some(expected) {
+            return Err(MirrorFailure::external(
+                "record_search",
+                "record_identity_mismatch",
+                Some(false),
+                false,
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn primary_storage_attachment_token(
+    fields: &Map<String, Value>,
+) -> std::result::Result<Zeroizing<String>, MirrorFailure> {
+    let attachments = fields
+        .get("最终JPEG")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .ok_or_else(|| {
+            MirrorFailure::external("record_search", "attachment_missing", Some(false), false)
+        })?;
+    if attachments.len() != 1 {
+        return Err(MirrorFailure::external(
+            "record_search",
+            "attachment_count_invalid",
+            Some(false),
+            false,
+        ));
+    }
+    let token = attachments[0]
+        .get("file_token")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            MirrorFailure::external(
+                "record_search",
+                "attachment_token_missing",
+                Some(false),
+                false,
+            )
+        })?;
+    validate_external_identifier(token, "Feishu attachment token").map_err(|_| {
+        MirrorFailure::external(
+            "record_search",
+            "attachment_token_invalid",
+            Some(false),
+            false,
+        )
+    })?;
+    Ok(Zeroizing::new(token.to_string()))
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_primary_storage_readback(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    bytes: &[u8],
+) -> std::result::Result<(), MirrorFailure> {
+    if bytes.len() != validated.byte_size
+        || format!("sha256:{}", sha256_hex(bytes)) != artifact.content_hash
+        || md5_hex(bytes) != validated.file_md5
+    {
+        return Err(MirrorFailure::external(
+            "media_readback",
+            "file_identity_mismatch",
+            Some(false),
+            false,
+        ));
+    }
+    let image =
+        image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg).map_err(|_| {
+            MirrorFailure::external("media_readback", "jpeg_decode_failed", Some(false), false)
+        })?;
+    if image.dimensions() != (validated.width, validated.height) {
+        return Err(MirrorFailure::external(
+            "media_readback",
+            "jpeg_dimensions_mismatch",
+            Some(false),
+            false,
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn field_text(fields: &Map<String, Value>, name: &str) -> Option<String> {
+    fields.get(name).and_then(Value::as_str).map(str::to_string)
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn field_i64(fields: &Map<String, Value>, name: &str) -> Option<i64> {
+    fields.get(name).and_then(|value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_f64().map(|number| number as i64))
+    })
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn primary_storage_revalidation_guardrails() -> Vec<String> {
+    vec![
+        "Postgres remains the system fact source".to_string(),
+        "the Feishu Base record is resolved only by generated_image_artifact_id".to_string(),
+        "the attachment is downloaded through authenticated Feishu media API".to_string(),
+        "revalidation does not approve, publish, call QiWe, or send".to_string(),
+        "attachment tokens, record ids, credentials, and raw responses are redacted".to_string(),
+    ]
+}
+
+#[cfg(any(
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
@@ -1874,6 +2215,7 @@ impl FeishuClient {
         })?;
         Ok(Some(FeishuRecord {
             record_id: record_id.to_string(),
+            fields: record.get("fields").cloned().unwrap_or(Value::Null),
         }))
     }
 
@@ -1906,6 +2248,7 @@ impl FeishuClient {
         })?;
         Ok(FeishuRecord {
             record_id: record_id.to_string(),
+            fields: Value::Null,
         })
     }
 
@@ -2839,6 +3182,188 @@ mod tests {
             format!("feishu-base://huabaosi-generated-image/{artifact_id}")
         );
         server.join().expect("fake Feishu server completes");
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn huabaosi_feishu_primary_storage_revalidates_authenticated_attachment() {
+        let bytes = jpeg_fixture();
+        let mut artifact = artifact_fixture(&bytes, "feishu-base://pending");
+        artifact.artifact_uri = format!("feishu-base://huabaosi-generated-image/{}", artifact.id);
+        let validated =
+            validate_primary_storage_artifact(&artifact).expect("Feishu-backed artifact validates");
+        let fields = build_primary_storage_fields(
+            &FeishuPrimaryStorageImage {
+                artifact_id: artifact.id,
+                workflow_root_id: Uuid::new_v4(),
+                work_item_id: artifact.work_item_id,
+                content_hash: &artifact.content_hash,
+                file_md5: &validated.file_md5,
+                source_content_hash: &validated.source_content_hash,
+                bytes: &bytes,
+                width: validated.width,
+                height: validated.height,
+            },
+            "fileFixture",
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake Feishu server");
+        let address = listener.local_addr().expect("fake server address");
+        let search_body = serde_json::to_vec(&json!({
+            "code": 0,
+            "data": {
+                "items": [{
+                    "record_id": "recFixture",
+                    "fields": fields,
+                }],
+                "has_more": false,
+            },
+        }))
+        .expect("serialize search body");
+        let server_bytes = bytes.clone();
+        let server = thread::spawn(move || {
+            let expected = [
+                "/open-apis/auth/v3/tenant_access_token/internal",
+                "/open-apis/bitable/v1/apps/baseTokenFixture/tables/tblFixture/records/search",
+                "/open-apis/drive/v1/medias/fileFixture/download",
+            ];
+            for path in expected {
+                let (mut stream, _) = listener.accept().expect("accept fake request");
+                let request = read_http_request(&mut stream);
+                let request_text = String::from_utf8_lossy(&request);
+                assert!(
+                    request_text
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .contains(path),
+                    "unexpected request path: {}",
+                    request_text.lines().next().unwrap_or_default()
+                );
+                let (content_type, body) = match path {
+                    "/open-apis/auth/v3/tenant_access_token/internal" => (
+                        "application/json",
+                        br#"{"code":0,"tenant_access_token":"tenantFixture"}"#.to_vec(),
+                    ),
+                    "/open-apis/bitable/v1/apps/baseTokenFixture/tables/tblFixture/records/search" => {
+                        assert!(request_text.contains("AgentOS产物ID"));
+                        ("application/json", search_body.clone())
+                    }
+                    _ => {
+                        assert!(request_text.contains("Authorization: Bearer tenantFixture"));
+                        ("image/jpeg", server_bytes.clone())
+                    }
+                };
+                write_http_response(&mut stream, content_type, &body);
+            }
+        });
+
+        let temp = tempdir().expect("temp credential root");
+        let profile_dir = temp.path().join(".hermes/profiles/huabaosi");
+        fs::create_dir_all(&profile_dir).expect("create Huabaosi profile dir");
+        let profile_path = profile_dir.join(".env");
+        fs::write(
+            &profile_path,
+            "FEISHU_APP_ID=appFixture\nFEISHU_APP_SECRET=secretFixture\n",
+        )
+        .expect("write fake credentials");
+        let config = FeishuPrimaryStorageConfig::test_only(
+            Url::parse(&format!("http://{address}/open-apis/")).expect("fake API root"),
+            profile_path.to_string_lossy().to_string(),
+            DEFAULT_MAX_MEDIA_BYTES,
+        );
+
+        let report = revalidate_primary_storage_artifact(&artifact, &validated, &config)
+            .expect("primary storage revalidation succeeds");
+        let serialized = serde_json::to_string(&report).expect("serialize revalidation report");
+
+        assert!(report.success);
+        assert_eq!(report.action_status, "feishu_primary_storage_revalidated");
+        assert_eq!(report.artifact_id, artifact.id);
+        assert_eq!(report.work_item_id, artifact.work_item_id);
+        assert_eq!(report.content_hash, artifact.content_hash);
+        assert!(report.external_calls_executed);
+        assert!(!report.database_writes_executed);
+        assert!(report.sensitive_fields_redacted);
+        for forbidden in [
+            "fileFixture",
+            "recFixture",
+            "tenantFixture",
+            "secretFixture",
+            "baseTokenFixture",
+            "tblFixture",
+            "file_token",
+            "record_id",
+        ] {
+            assert!(!serialized.contains(forbidden), "leaked {forbidden}");
+        }
+        server.join().expect("fake Feishu server completes");
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn huabaosi_feishu_primary_storage_revalidation_fails_closed_on_drift() {
+        let bytes = jpeg_fixture();
+        let mut artifact = artifact_fixture(&bytes, "feishu-base://pending");
+        artifact.artifact_uri = format!("feishu-base://huabaosi-generated-image/{}", artifact.id);
+        let validated =
+            validate_primary_storage_artifact(&artifact).expect("Feishu-backed artifact validates");
+        let mut fields = build_primary_storage_fields(
+            &FeishuPrimaryStorageImage {
+                artifact_id: artifact.id,
+                workflow_root_id: Uuid::new_v4(),
+                work_item_id: artifact.work_item_id,
+                content_hash: &artifact.content_hash,
+                file_md5: &validated.file_md5,
+                source_content_hash: &validated.source_content_hash,
+                bytes: &bytes,
+                width: validated.width,
+                height: validated.height,
+            },
+            "fileFixture",
+        );
+        let fields = fields.as_object_mut().expect("primary storage fields");
+
+        fields.insert(
+            "JPEG SHA-256".to_string(),
+            json!(format!("sha256:{}", "0".repeat(64))),
+        );
+        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
+            .expect_err("record hash drift must fail");
+        assert_eq!(failure.stage, "record_search");
+        assert_eq!(failure.code, "record_identity_mismatch");
+
+        fields.insert(
+            "JPEG SHA-256".to_string(),
+            json!(artifact.content_hash.clone()),
+        );
+        fields.insert(
+            "最终JPEG".to_string(),
+            json!([{"file_token": "fileFixture"}, {"file_token": "fileFixture2"}]),
+        );
+        let failure =
+            primary_storage_attachment_token(fields).expect_err("multiple attachments must fail");
+        assert_eq!(failure.stage, "record_search");
+        assert_eq!(failure.code, "attachment_count_invalid");
+
+        fields.insert(
+            "最终JPEG".to_string(),
+            json!([{"file_token": "fileFixture"}]),
+        );
+        let mut changed = bytes.clone();
+        let last = changed.len() - 1;
+        changed[last] ^= 1;
+        let failure = validate_primary_storage_readback(&artifact, &validated, &changed)
+            .expect_err("changed readback bytes must fail");
+        assert_eq!(failure.stage, "media_readback");
+        assert_eq!(failure.code, "file_identity_mismatch");
     }
 
     #[test]
