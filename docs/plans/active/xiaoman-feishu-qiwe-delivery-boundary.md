@@ -52,8 +52,9 @@ The reviewed request contract is `POST /qiwe/api/qw/doFileApi` with exactly the
 multipart fields `method=/cloud/cloudUpload`, `guid`, and `file`. Success requires
 `code=0` and one HTTPS `data.cloudUrl`. The file API URL is derived only from the
 already validated `/qiwe/api/qw/doApi` endpoint by replacing that exact terminal path;
-it is not caller-selectable. The returned temporary host must be present in the same
-exact QiWe host allowlist as the API host.
+it is not caller-selectable. The returned temporary host must be present in the
+owner-reviewed Huabaosi media host allowlist, while the QiWe host allowlist remains
+limited to the API host.
 
 ## Gap
 
