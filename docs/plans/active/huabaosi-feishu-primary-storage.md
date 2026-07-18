@@ -70,6 +70,13 @@ write Postgres or Feishu, call QiWe, or send. A later reviewed PR must decide ho
 approval and QiWe delivery consume those exact bytes; Feishu field changes alone cannot
 cross either gate.
 
+Authenticated approval consumption is a separate boundary: an explicit manual `approved`
+apply may revalidate first, then approve only if the transaction-locked Postgres
+artifact still matches the in-memory revalidation evidence. A Feishu review field or
+automation event alone remains insufficient. Rejection and changes-requested decisions
+do not require external readback. QiWe intake continues to reject `feishu-base://` until
+its own reviewed delivery bridge lands.
+
 ## Feishu Automation
 
 The Base currently has no configured automation. After the first pending canary row is

@@ -238,19 +238,21 @@ Use `rg` and `rg --files` for search.
   CLI arguments, or environment-derived output. A failed or ambiguous Feishu write must
   not create a pending artifact or be retried automatically as if no external write
   occurred.
-- The first Feishu-backed image canary must remain `pending`. Existing generated-image
-  approval and QiWe intake accept only the reviewed immutable HTTPS JPEG contract; they
-  must fail closed for `feishu-base://` artifacts until a separate PR adds authenticated
-  Feishu attachment revalidation to approval and a reviewed delivery path. The
-  `huabaosi-feishu-primary-storage-revalidate` sidecar command is read-only evidence: it
-  may authenticate to Feishu, reload the fixed record by generated-image artifact id,
-  download the `最终JPEG` attachment, and emit a sanitized report, but it must not
-  approve, write Postgres or Feishu, call QiWe, publish, send, or expose attachment
-  tokens/record ids/Base/table ids/credentials. The current QiWe async upload contract
-  requires a stable allowlisted HTTPS `fileUrl`; do not bridge Feishu private
-  attachments by exposing Feishu attachment tokens, storing a private media URL,
-  introducing an unreviewed public proxy/upload service, or falling back to QiWe
-  synchronous upload APIs marked deprecated in the reviewed protocol plan.
+- A Feishu-backed image canary may cross from `pending` to `approved` only through an
+  explicit human apply that first completes authenticated Feishu attachment revalidation
+  and then matches the memory-only evidence against the transaction-locked Postgres
+  artifact identity. Rejection and changes-requested decisions must not require Feishu
+  I/O. Feishu fields, automation, and workbench events alone must never approve. QiWe
+  intake must continue to fail closed for `feishu-base://` until a separate reviewed
+  delivery path exists. The `huabaosi-feishu-primary-storage-revalidate` sidecar command
+  is read-only evidence: it may authenticate to Feishu, reload the fixed record by
+  generated-image artifact id, download the `最终JPEG` attachment, and emit a sanitized
+  report, but it must not approve, write Postgres or Feishu, call QiWe, publish, send,
+  or expose attachment tokens/record ids/Base/table ids/credentials. The current QiWe
+  async upload contract requires a stable allowlisted HTTPS `fileUrl`; do not bridge
+  Feishu private attachments by exposing Feishu attachment tokens, storing a private
+  media URL, introducing an unreviewed public proxy/upload service, or falling back to
+  QiWe synchronous upload APIs marked deprecated in the reviewed protocol plan.
 - Huabaosi Feishu production observation must discover the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with

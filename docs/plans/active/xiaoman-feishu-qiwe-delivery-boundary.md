@@ -30,6 +30,24 @@ call Feishu or QiWe, install a listener or timer, or send externally.
 - The reviewed QiWe protocol plan says the synchronous local and URL upload APIs are
   marked for deprecation and must not become the production foundation.
 
+## Official QiWe Storage Bridge Evidence
+
+The QiWe Open Platform documentation rechecked on 2026-07-18 also exposes the released,
+non-deprecated [SDK temporary-storage upload](https://doc.qiweapi.com/api-344613899)
+`/cloud/cloudUpload` multipart API. It accepts local bytes into QiWe's SDK temporary
+object storage and returns a `cloudUrl`; the documentation states that this storage does
+not call the WeCom service API and is periodically cleared. The released, non-deprecated
+[asynchronous URL upload](https://doc.qiweapi.com/api-347221662)
+`/cloud/cdnUploadByUrlAsync` API can then consume that URL and retain the existing
+callback/send-image protocol.
+
+This makes a reviewed delivery bridge possible without exposing a Feishu attachment
+token or introducing a new Qintopia-hosted public proxy. It does not make the temporary
+URL a stable AgentOS artifact URI. A later delivery PR must keep the URL memory-only,
+exact-allowlist its host, download it back through a bounded client, prove the returned
+bytes match the approved JPEG identity, and only then call the existing asynchronous
+upload API.
+
 ## Gap
 
 Authenticated Feishu Base attachment storage proves the final JPEG identity to AgentOS,
@@ -60,7 +78,17 @@ The boundary must be implemented in reviewed phases:
      raw bytes out of Postgres, logs, reports, CLI args, and environment-derived output.
    - The first entrypoint is read-only and does not change the approval gate by itself.
 
-2. A reviewed QiWe delivery path for the exact revalidated JPEG.
+2. Authenticated approval consumption.
+   - Only an explicit human `approved` apply may consume the read-only revalidation.
+   - Revalidation must finish before the review mutation and remain memory-only.
+   - The review transaction must reload and lock the artifact, then match artifact id,
+     image-request id, Feishu URI, content hash, MD5, byte size, and dimensions against
+     the revalidated evidence before recording approval.
+   - Rejection and changes-requested decisions must remain available without Feishu I/O.
+   - A Feishu workbench field or automation event must not become approval merely
+     because the row says it was reviewed.
+
+3. A reviewed QiWe delivery path for the exact revalidated JPEG.
    - It must not expose Feishu attachment tokens or private media URLs.
    - It must not introduce an unreviewed public proxy, upload service, or mutable
      source-tree fallback.
@@ -90,6 +118,8 @@ The boundary must be implemented in reviewed phases:
    release/current contains the reviewed staging runbooks and checks.
 3. Run Huabaosi staging generation to retain one pending Feishu-backed generated-image
    evidence record.
-4. Land the read-only Feishu attachment revalidation entrypoint, then add the reviewed
-   Feishu-to-QiWe delivery bridge in a separate PR.
-5. Only then run QiWe staging upload/callback/send evidence and the cross-flow checker.
+4. Land the read-only Feishu attachment revalidation entrypoint and authenticated human
+   approval consumption in separate reviewed PRs.
+5. Add the QiWe SDK temporary-storage upload/readback plus asynchronous URL upload
+   bridge in another staging-only PR.
+6. Only then run QiWe staging upload/callback/send evidence and the cross-flow checker.

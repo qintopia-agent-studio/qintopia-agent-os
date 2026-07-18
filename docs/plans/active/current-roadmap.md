@@ -110,10 +110,14 @@ unless correcting historical evidence.
      readback inside AgentOS, but the current QiWe async URL upload path still requires
      a stable allowlisted HTTPS `fileUrl`. Track the missing reviewed bridge in
      [Xiaoman Feishu-To-QiWe Delivery Boundary](xiaoman-feishu-qiwe-delivery-boundary.md).
-     A read-only 2026-07-16 Asia/Shanghai server observation confirmed that
-     `paxon-server` still lacks the fixed staging env file and immutable staging release
-     root, so real staging must first provision those owner-reviewed inputs instead of
-     treating local fake smokes as runtime evidence.
+     The official QiWe SDK temporary-storage multipart endpoint is a released,
+     non-deprecated candidate for bridging authenticated Feishu bytes into the existing
+     asynchronous URL upload protocol. It still requires separate approval-consumption
+     and staging delivery PRs with memory-only URLs and same-byte readback before any
+     production enablement. A read-only 2026-07-16 Asia/Shanghai server observation
+     confirmed that `paxon-server` still lacks the fixed staging env file and immutable
+     staging release root, so real staging must first provision those owner-reviewed
+     inputs instead of treating local fake smokes as runtime evidence.
    - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md)
      merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration
