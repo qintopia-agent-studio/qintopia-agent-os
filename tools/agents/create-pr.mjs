@@ -35,15 +35,18 @@ const isTransientGitHubApiError = (error) =>
     commandErrorOutput(error)
   );
 
+const normalizeGhOutput = (output) => String(output ?? "").trim();
+
 const runGh = (args, options = {}) => {
   const attempts = options.attempts ?? 1;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return execFileSync("gh", args, {
+      const output = execFileSync("gh", args, {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 15_000,
-      }).trim();
+      });
+      return normalizeGhOutput(output);
     } catch (error) {
       if (attempt === attempts || !isTransientGitHubApiError(error)) {
         throw error;
