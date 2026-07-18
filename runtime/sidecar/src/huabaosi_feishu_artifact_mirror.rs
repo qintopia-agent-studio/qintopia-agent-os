@@ -2075,9 +2075,14 @@ fn field_text(fields: &Map<String, Value>, name: &str) -> Option<String> {
 ))]
 fn field_i64(fields: &Map<String, Value>, name: &str) -> Option<i64> {
     fields.get(name).and_then(|value| {
-        value
-            .as_i64()
-            .or_else(|| value.as_f64().map(|number| number as i64))
+        value.as_i64().or_else(|| {
+            let number = value.as_f64()?;
+            (number.is_finite()
+                && number.fract() == 0.0
+                && number >= i64::MIN as f64
+                && number <= i64::MAX as f64)
+                .then_some(number as i64)
+        })
     })
 }
 
@@ -3357,6 +3362,16 @@ mod tests {
             "最终JPEG".to_string(),
             json!([{"file_token": "fileFixture"}]),
         );
+        fields.insert("宽度".to_string(), json!(f64::from(validated.width) + 0.9));
+        let failure = validate_primary_storage_record_fields(&artifact, &validated, fields)
+            .expect_err("fractional numeric drift must fail");
+        assert_eq!(failure.stage, "record_search");
+        assert_eq!(failure.code, "record_identity_mismatch");
+
+        fields.insert("宽度".to_string(), json!(f64::from(validated.width)));
+        validate_primary_storage_record_fields(&artifact, &validated, fields)
+            .expect("integral float values remain compatible");
+
         let mut changed = bytes.clone();
         let last = changed.len() - 1;
         changed[last] ^= 1;
