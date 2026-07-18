@@ -923,6 +923,9 @@ try {
     ["tools/deploy/test-staging-runtime-prerequisite-observation.mjs"],
     { cwd: repoRoot }
   );
+  execFileSync("node", ["tools/deploy/test-staging-runtime-values-observation.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync(
     "node",
     ["tools/deploy/test-huabaosi-image-production-observation.mjs"],
