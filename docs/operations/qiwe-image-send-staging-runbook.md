@@ -22,6 +22,8 @@ production runtime configuration.
   artifacts must not contain `qiwe-staging-adapter`.
 - Prepare one reviewed send-ready work item UUID for the final approved JPEG.
 - Use exactly one isolated, case-sensitive target group allowlist entry.
+- Exact-allowlist both the QiWe API host and the owner-reviewed SDK temporary-storage
+  host. The returned `cloudUrl` remains memory-only and must pass same-byte readback.
 - Use a staging env file whose path is absolute, contains `staging`, and contains only
   the fixed key allowlist parsed by
   `deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh`.

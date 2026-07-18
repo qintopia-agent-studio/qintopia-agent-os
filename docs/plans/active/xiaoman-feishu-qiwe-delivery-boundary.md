@@ -48,6 +48,13 @@ exact-allowlist its host, download it back through a bounded client, prove the r
 bytes match the approved JPEG identity, and only then call the existing asynchronous
 upload API.
 
+The reviewed request contract is `POST /qiwe/api/qw/doFileApi` with exactly the
+multipart fields `method=/cloud/cloudUpload`, `guid`, and `file`. Success requires
+`code=0` and one HTTPS `data.cloudUrl`. The file API URL is derived only from the
+already validated `/qiwe/api/qw/doApi` endpoint by replacing that exact terminal path;
+it is not caller-selectable. The returned temporary host must be present in the same
+exact QiWe host allowlist as the API host.
+
 ## Gap
 
 Authenticated Feishu Base attachment storage proves the final JPEG identity to AgentOS,
@@ -96,6 +103,17 @@ The boundary must be implemented in reviewed phases:
      `docs/plans/active/xiaoman-qiwe-image-send.md`.
    - It must preserve the current at-most-once send gate, sanitized callback evidence,
      target-group allowlist, and rollback ownership.
+   - The Postgres `uploading` attempt must be committed before authenticated Feishu
+     readback or either QiWe upload call. Interrupted external work remains terminal
+     ambiguous and is never retried automatically.
+   - Only a combined staging artifact containing both `huabaosi-staging-adapter` and
+     `qiwe-staging-adapter` may claim a `feishu-base://` artifact. Default, production,
+     Huabaosi-only, and QiWe-only builds must continue to reject it.
+   - The revalidated JPEG bytes, multipart body, returned `cloudUrl`, and readback bytes
+     remain memory-only and are zeroized. No temporary URL or attachment credential may
+     enter Postgres, reports, logs, CLI arguments, or environment-derived output.
+   - The callback filename is fixed as `generated-image-<artifact-id>.jpg`; it is not
+     accepted from Feishu fields or QiWe temporary-storage metadata.
    - It must update the QiWe staging evidence checker and cross-flow checker so the
      Huabaosi final JPEG `content_hash` is proven against the exact bytes delivered to
      QiWe.

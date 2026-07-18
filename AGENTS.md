@@ -446,6 +446,16 @@ Use `rg` and `rg --files` for search.
   call, and terminalize every outcome. Neither command may be scheduled or
   production-enabled without approved staging evidence, isolated group allowlists, and
   rollback.
+- The Feishu-backed QiWe staging bridge may claim `feishu-base://` generated images only
+  when the immutable staging binary contains both `huabaosi-staging-adapter` and
+  `qiwe-staging-adapter`. It must commit the existing `uploading` attempt before Feishu
+  or QiWe I/O, authenticated-readback the approved JPEG, upload those bytes only to the
+  non-deprecated QiWe SDK temporary-storage endpoint, keep the returned `cloudUrl`
+  memory-only, exact-allowlist and read back that URL, and prove SHA-256, MD5, and byte
+  size before invoking the existing asynchronous URL upload. Default, production,
+  Huabaosi-only, and QiWe-only builds must fail closed. Temporary URLs, Feishu tokens,
+  multipart bodies, and raw bytes must not enter Postgres, reports, logs, CLI arguments,
+  or environment-derived output.
 - A staging-feature QiWe callback apply must validate explicit enablement, exact
   API/media/group allowlists, and webhook readiness before reading stdin. Upload apply
   must validate the same adapter configuration before connecting to Postgres.

@@ -105,19 +105,19 @@ unless correcting historical evidence.
      disabled because no listener service or timer exists. The disabled staging webhook
      bridge accepts only a digest-pinned sidecar under the fixed immutable staging
      release root; the provider/storage/readback path plus callback credential shape
-     still require owner-approved staging evidence. Feishu-backed generated images add a
-     separate delivery gap: `feishu-base://` artifacts prove authenticated storage
-     readback inside AgentOS, but the current QiWe async URL upload path still requires
-     a stable allowlisted HTTPS `fileUrl`. Track the missing reviewed bridge in
+     still require owner-approved staging evidence. Feishu-backed generated images use a
+     separately gated staging bridge: authenticated Feishu bytes are uploaded to the
+     non-deprecated QiWe SDK temporary-storage endpoint, its memory-only URL is
+     allowlisted and read back for complete JPEG identity, and only then enters the
+     existing asynchronous URL upload path. Track this reviewed boundary in
      [Xiaoman Feishu-To-QiWe Delivery Boundary](xiaoman-feishu-qiwe-delivery-boundary.md).
-     The official QiWe SDK temporary-storage multipart endpoint is a released,
-     non-deprecated candidate for bridging authenticated Feishu bytes into the existing
-     asynchronous URL upload protocol. It still requires separate approval-consumption
-     and staging delivery PRs with memory-only URLs and same-byte readback before any
-     production enablement. A read-only 2026-07-16 Asia/Shanghai server observation
-     confirmed that `paxon-server` still lacks the fixed staging env file and immutable
-     staging release root, so real staging must first provision those owner-reviewed
-     inputs instead of treating local fake smokes as runtime evidence.
+     Only the combined Huabaosi/QiWe staging feature artifact may claim this storage
+     type; production and single-feature builds still fail closed. This is code-level
+     implementation evidence, not real staging or send evidence. A read-only 2026-07-16
+     Asia/Shanghai server observation confirmed that `paxon-server` still lacks the
+     fixed staging env file and immutable staging release root, so real staging must
+     first provision those owner-reviewed inputs instead of treating local fake smokes
+     as runtime evidence.
    - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md)
      merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration

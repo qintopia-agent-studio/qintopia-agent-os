@@ -407,6 +407,10 @@ jobs:
       - name: QiWe image-send state integration
         run: |
           cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests,huabaosi-staging-adapter,qiwe-staging-adapter \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_claims_feishu_bridge_without_persisting_uri \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
             --features postgres-integration-tests \
             qiwe_image_send_state::tests::postgres_qiwe_send_state_is_idempotent_and_redacted \
             -- --ignored --exact

@@ -1,6 +1,6 @@
 # Xiaoman QiWe Image Send
 
-Updated: 2026-07-15
+Updated: 2026-07-18
 
 ## Goal
 
@@ -26,6 +26,12 @@ The synchronous local and URL upload APIs return file credentials directly, but 
 marked for deprecation. New AgentOS work must not make either deprecated API the
 production foundation.
 
+The official non-deprecated SDK temporary-storage upload uses
+`POST /qiwe/api/qw/doFileApi` with multipart `method=/cloud/cloudUpload`, `guid`, and
+`file`, then returns `data.cloudUrl`. Feishu-backed delivery may use that URL only in
+memory after exact-host allowlisting and same-byte readback; it remains an input to the
+non-deprecated asynchronous URL upload rather than a stable AgentOS artifact URI.
+
 ## Final Artifact Format Decision
 
 The official send-image page names JPG as the supported image format and asynchronous
@@ -49,7 +55,9 @@ the deprecated synchronous API.
 
 ```text
 approved generated_image + internal send-ready
-  -> validate immutable HTTPS URI, target allowlist, final confirmation, and format
+  -> validate immutable HTTPS URI or exact Feishu primary-storage URI
+  -> for Feishu: authenticated readback -> temporary upload -> same-byte URL readback
+  -> validate target allowlist, final confirmation, and format
   -> POST /cloud/cdnUploadByUrlAsync
   -> persist sanitized requestId correlation and wait
   -> ingest exactly one cmd=20000 callback with matching requestId
@@ -119,6 +127,13 @@ target, or missing final confirmation must stop before sending.
   call; no QiWe service, timer, staging endpoint, or production enablement is installed.
   The guarded staging smoke exists only as an owner-approved one-shot operator
   entrypoint.
+- A combined staging build containing both `huabaosi-staging-adapter` and
+  `qiwe-staging-adapter` may claim an exact Feishu primary-storage URI. It commits the
+  existing `uploading` attempt before Feishu or QiWe I/O, revalidates the approved JPEG,
+  performs the non-deprecated SDK temporary upload, reads the temporary URL back, and
+  proves SHA-256, MD5, and byte size before invoking the existing async upload. The
+  bytes, multipart body, and temporary URL are memory-only and zeroized; production,
+  default, and single-feature builds reject this route.
 - Callback parsing classifies the raw `msgData` field names into one of four fixed,
   reviewed credential schema ids before deserializing credential values. Reports expose
   only that fixed id and an additional-field count. They reject simultaneous canonical
@@ -161,6 +176,9 @@ database connection, callback read, or network request it requires:
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1` and webhook readiness;
 - the exact one-shot owner approval phrase;
 - complete API, media-host, and case-sensitive target-group allowlists; and
+- the complete Feishu primary-storage release, database-hash, Base/table allowlist,
+  schema, profile-path, and enablement boundary required for authenticated JPEG
+  readback;
 - a staging database whose exact URL hash is supplied in the owner-reviewed one-shot
   command and matches the sourced database URL.
 - the packaged staging sidecar binary whose exact SHA-256 is supplied in the same
