@@ -31,6 +31,7 @@ approved poster_brief
 - Base: `画报司 | 设计产出库`
 - table: `阿靓图片产物版本表`
 - schema: `huabaosi-generated-image-v1`
+- schema field: `Schema版本=huabaosi-generated-image-v1`
 - idempotency field: `AgentOS产物ID`
 - attachment field: `最终JPEG`
 
@@ -48,7 +49,8 @@ only.
 4. Download the uploaded attachment through the authenticated Feishu API and require
    byte-for-byte, SHA-256, MD5, MIME, width, height, and byte-size parity.
 5. Search the fixed version table by `AgentOS产物ID`; create on zero matches, update on
-   one match, and fail closed on multiple matches.
+   one match, and fail closed on multiple matches. Every row must carry the exact fixed
+   `Schema版本`; authenticated readback rejects missing or drifted versions.
 6. Only after readback and row upsert succeed, create one `pending generated_image` and
    its sanitized creation audit in Postgres.
 
@@ -60,9 +62,13 @@ summary, or call QiWe.
 
 The first canary remains `pending`. The current approval and QiWe intake paths require
 an immutable public HTTPS JPEG URI and therefore fail closed for the internal
-`feishu-base://` artifact reference. A later reviewed PR must revalidate the current
-Feishu attachment through authenticated readback before approval and define how QiWe
-receives those exact bytes; Feishu field changes alone cannot cross either gate.
+`feishu-base://` artifact reference. The read-only
+`huabaosi-feishu-primary-storage-revalidate --artifact-id <uuid>` sidecar entrypoint can
+prove the current Feishu row schema, workflow-root association, and attachment still
+match AgentOS facts through authenticated readback, but it does not approve, publish,
+write Postgres or Feishu, call QiWe, or send. A later reviewed PR must decide how
+approval and QiWe delivery consume those exact bytes; Feishu field changes alone cannot
+cross either gate.
 
 ## Feishu Automation
 

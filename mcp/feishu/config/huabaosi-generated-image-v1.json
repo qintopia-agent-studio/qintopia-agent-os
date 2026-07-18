@@ -7,6 +7,7 @@
   "fields": [
     { "name": "产物标题", "type": "text", "primary": true },
     { "name": "AgentOS产物ID", "type": "text", "required": true, "unique": true },
+    { "name": "Schema版本", "type": "text", "required": true },
     { "name": "AgentOS工作项ID", "type": "text", "required": true },
     { "name": "图片请求ID", "type": "text", "required": true },
     { "name": "最终JPEG", "type": "attachment", "required": true },

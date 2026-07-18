@@ -541,6 +541,10 @@ async fn main() -> Result<()> {
         Command::HuabaosiFeishuArtifactMirrorObservationPreflight => {
             huabaosi_feishu_artifact_mirror::run_observation_preflight()
         }
+        Command::HuabaosiFeishuPrimaryStorageRevalidate { artifact_id } => {
+            huabaosi_feishu_artifact_mirror::run_primary_storage_revalidation(&cli, artifact_id)
+                .await
+        }
         Command::RunHuabaosiFeishuArtifactMirrorWorker {
             once,
             artifact_id,

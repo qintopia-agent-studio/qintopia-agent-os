@@ -99,8 +99,8 @@ observation 脚本和 non-secret observation preflight command。`--dry-run`
   `1`，再执行无网络 preflight 和 enable/start timer；
 - Release Please PR 不自动合并，Release 不自动发布。
 
-目标 Base 已由 owner 在真实飞书工作台中创建“阿靓图片产物版本表”并核对 20 个字段；真实 Base
-token、table
+目标 Base 已由 owner 在真实飞书工作台中创建“阿靓图片产物版本表”；启用写入前还需核对包含必填
+`Schema版本=huabaosi-generated-image-v1` 在内的 21 个字段。真实 Base token、table
 id 和凭据不进入 git。首条真实记录仍需在生产激活后核对附件、不可变 identity、审核字段和 Postgres 脱敏 sync
 audit。
 
