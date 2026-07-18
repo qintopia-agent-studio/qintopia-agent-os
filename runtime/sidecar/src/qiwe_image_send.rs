@@ -646,7 +646,7 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
             qiwe_image_send_state::record_upload_failure(
                 &pool,
                 &claim,
-                UploadFailureDisposition::Rejected,
+                UploadFailureDisposition::OutcomeUnknown,
             )
             .await?;
             let report = worker_report(WorkerReportState {
@@ -654,7 +654,7 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
                 dry_run: false,
                 apply_requested: true,
                 phase: "upload",
-                action_status: "feishu_delivery_revalidation_failed".to_string(),
+                action_status: "feishu_delivery_revalidation_outcome_unknown".to_string(),
                 work_item_id: Some(claim_id),
                 external_upload_requested: false,
                 callback_received: false,
@@ -1160,11 +1160,12 @@ fn request_feishu_bridge_upload_with(
         client.allows_insecure_http(),
     )
     .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
-    cloud_url
+    let async_upload = cloud_url
         .with_url(|url| {
             request_async_upload_url_with(config, claim, url, &config.media_allowed_hosts, client)
         })
-        .map_err(|_| UploadCallFailure::OutcomeUnknown)?
+        .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    async_upload.map_err(|_| UploadCallFailure::OutcomeUnknown)
 }
 
 #[cfg(any(test, feature = "qiwe-staging-adapter"))]
@@ -3070,6 +3071,54 @@ mod tests {
             UploadCallFailure::OutcomeUnknown
         );
         server.join().expect("join non-2xx fake server");
+    }
+
+    #[test]
+    fn feishu_bridge_async_upload_failure_after_temporary_write_is_ambiguous() {
+        let bytes = b"reviewed-final-jpeg-bytes".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind async failure fake server");
+        let port = listener
+            .local_addr()
+            .expect("async failure fake address")
+            .port();
+        let expected_bytes = bytes.clone();
+        let server = thread::spawn(move || {
+            let (mut upload_stream, _) = listener.accept().expect("accept temporary upload");
+            let _ = read_test_request(&mut upload_stream);
+            upload_stream
+                .write_all(&json_response(&format!(
+                    r#"{{"code":0,"data":{{"cloudUrl":"http://127.0.0.1:{port}/temporary/reviewed.jpg"}}}}"#
+                )))
+                .expect("write temporary upload response");
+            drop(upload_stream);
+
+            let (mut readback_stream, _) = listener.accept().expect("accept temporary readback");
+            let _ = read_test_request(&mut readback_stream);
+            readback_stream
+                .write_all(&binary_response(&expected_bytes))
+                .expect("write temporary readback");
+            drop(readback_stream);
+
+            let (mut async_stream, _) = listener.accept().expect("accept async upload");
+            let _ = read_test_request(&mut async_stream);
+            async_stream
+                .write_all(&json_response(
+                    r#"{"code":1,"data":{"requestId":"possibly-written"}}"#,
+                ))
+                .expect("write async business failure");
+        });
+
+        let result = request_claim_upload_with(
+            &test_adapter_config(port),
+            &test_feishu_upload_claim(&bytes),
+            Some(&bytes),
+            &HttpClient::test_only(),
+        );
+        assert_eq!(
+            result.expect_err("async failure after temporary write is ambiguous"),
+            UploadCallFailure::OutcomeUnknown
+        );
+        server.join().expect("join async failure fake server");
     }
 
     #[test]
