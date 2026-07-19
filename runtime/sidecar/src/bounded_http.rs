@@ -127,10 +127,14 @@ impl std::fmt::Display for HttpRequestError {
 
 impl HttpClient {
     pub(crate) fn production() -> Self {
+        Self::production_with_timeout(DEFAULT_SOCKET_TIMEOUT)
+    }
+
+    pub(crate) fn production_with_timeout(socket_timeout: Duration) -> Self {
         Self {
             tls_config: Arc::new(tls_config()),
             allow_insecure_http: false,
-            socket_timeout: DEFAULT_SOCKET_TIMEOUT,
+            socket_timeout,
         }
     }
 

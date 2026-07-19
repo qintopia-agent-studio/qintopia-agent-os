@@ -71,6 +71,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-19-production-release-metadata-permissions.md`                            | adopt-input | Production release metadata readability remediation                    |
 | `2026-07-19-production-release-owner-normalization.md`                             | adopt-input | Production COS archive owner normalization remediation                 |
 | `2026-07-19-staging-sidecar-provision-umask.md`                                    | adopt-input | Staging release directory mode and cleanup remediation                 |
+| `2026-07-19-aliang-provider-timeout-canary.md`                                     | adopt-input | Aliang canary timeout evidence, rollback, and remediation              |
 
 ## Templates
 
