@@ -100,7 +100,13 @@ unless correcting historical evidence.
      socket timeout before an image response. The timer is disabled and no artifact was
      created. Production completion now requires the reviewed image-specific timeout
      remediation, a new Release deployment, and a newly approved canary that reaches one
-     pending Feishu-backed JPEG.
+     pending Feishu-backed JPEG. Release `v0.2.16` deployed the timeout remediation, but
+     production acceptance found that the first assembly retained the previous runner's
+     owner and metadata modes. A same-SHA follow-up reported success without replacing
+     the existing immutable tree and also collapsed `previous` onto `current`. Keep the
+     generation timer disabled until a distinct Release includes existing-tree
+     validation, is assembled by the corrected runner, and passes release-local
+     observation.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The

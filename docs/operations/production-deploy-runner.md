@@ -92,6 +92,19 @@ remain mode `0755`. This lets the unprivileged release-local observation and pre
 paths verify the exact production feature set without running as root or weakening the
 immutable release boundary.
 
+Promotion must validate a newly assembled tree before it can become current. Every entry
+must be owned by the effective deploy-runner UID, non-symlink entries must not be group-
+or world-writable, the sidecar binary must be `0755`, and packaged manifests, checksum
+files, and archives must be `0444`. Directories must remain group/world readable and
+traversable for unprivileged release-local observation, and special file types are
+forbidden.
+
+An existing same-SHA release may repair owner and modes only after exact manifest
+identity, complete content/path/type/symlink equality with the freshly verified tree,
+and both packaged checksum files pass. The repaired tree must then pass the same strict
+validation as a new tree. Content or path drift fails before metadata mutation, and an
+idempotent request must not replace a distinct `previous` target with `current`.
+
 GitHub Actions must not SSH to the server. The server must not pull repository source or
 build Rust for routine releases.
 

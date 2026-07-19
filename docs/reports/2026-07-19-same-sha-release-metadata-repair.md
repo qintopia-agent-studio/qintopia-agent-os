@@ -50,8 +50,10 @@ from the freshly assembled tree. Any content or path drift fails before `chown` 
 
 This PR does not hot-edit the current release, publish a Release, trigger deployment,
 enable Huabaosi or Feishu timers, create staging configuration, call a provider, write
-Feishu, call QiWe, or send externally. Production repair requires a later owner-approved
-Release followed by an exact same-SHA deployment through the reviewed runner.
+Feishu, call QiWe, or send externally. Production acceptance requires a later
+owner-approved Release assembled by the corrected runner. A same-SHA follow-up may be
+used only with the exact immutable manifest identity and must preserve the distinct
+rollback pointer.
 
 ## Next Owner Action
 

@@ -76,6 +76,7 @@ const requiredFiles = [
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
+  "tools/deploy/test-promote-release-tree.mjs",
   "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
@@ -635,6 +636,15 @@ const promoteText = exists("deploy/runner/promote-release.sh")
   : "";
 for (const fragment of [
   "existing release manifest",
+  "validate_release_tree",
+  "release tree owner mismatch",
+  "release tree path is group/world writable",
+  "release tree directory is not group/world accessible",
+  "release tree contains unsupported file type",
+  "release tree mode mismatch",
+  'validate_release_tree "$staging_dir"',
+  'validate_release_tree "$release_dir"',
+  'current_target" != "$release_target',
   "staging_dir/manifest.json",
   '"runtime_sha"',
   '"deploy_bundle_sha"',
@@ -935,6 +945,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-promotion.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-promote-release-tree.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-promote-existing-release-metadata.mjs"], {

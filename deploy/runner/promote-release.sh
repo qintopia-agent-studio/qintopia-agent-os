@@ -58,6 +58,72 @@ else:
 PY
 }
 
+validate_release_tree() {
+  local candidate="$1"
+  local expected_uid
+  expected_uid="$(id -u)"
+  python3 - "$candidate" "$expected_uid" <<'PY'
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+expected_uid = int(sys.argv[2])
+
+if not os.path.isdir(root) or os.path.islink(root):
+    raise SystemExit("release tree must be a non-symlink directory")
+
+paths = [root]
+for directory, directories, files in os.walk(root, followlinks=False):
+    paths.extend(os.path.join(directory, name) for name in directories)
+    paths.extend(os.path.join(directory, name) for name in files)
+
+for path in paths:
+    metadata = os.lstat(path)
+    relative = os.path.relpath(path, root)
+    if metadata.st_uid != expected_uid:
+        raise SystemExit(f"release tree owner mismatch: {relative}")
+    is_link = stat.S_ISLNK(metadata.st_mode)
+    is_directory = stat.S_ISDIR(metadata.st_mode)
+    is_regular = stat.S_ISREG(metadata.st_mode)
+    if not (is_link or is_directory or is_regular):
+        raise SystemExit(f"release tree contains unsupported file type: {relative}")
+    if not is_link and metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise SystemExit(f"release tree path is group/world writable: {relative}")
+    required_directory_access = (
+        stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
+    )
+    if (
+        is_directory
+        and metadata.st_mode & required_directory_access != required_directory_access
+    ):
+        raise SystemExit(f"release tree directory is not group/world accessible: {relative}")
+
+required = {
+    "sidecar/qintopia-message-sidecar": 0o755,
+    "sidecar/artifact-manifest.json": 0o444,
+    "sidecar/SHA256SUMS": 0o444,
+    "sidecar/qintopia-message-sidecar.tar.gz": 0o444,
+    "deploy-bundle/artifact-manifest.json": 0o444,
+    "deploy-bundle/SHA256SUMS": 0o444,
+    "deploy-bundle/qintopia-agent-os-deploy-bundle.tar.gz": 0o444,
+}
+for relative, expected_mode in required.items():
+    path = os.path.join(root, relative)
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        raise SystemExit(f"release tree required file is missing: {relative}") from None
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit(f"release tree required path is not a regular file: {relative}")
+    actual_mode = stat.S_IMODE(metadata.st_mode)
+    if actual_mode != expected_mode:
+        raise SystemExit(
+            f"release tree mode mismatch: {relative} expected {expected_mode:04o} got {actual_mode:04o}"
+        )
+PY
+}
+
 release_sha="$(json_get release_sha)"
 runtime_sha="$(json_get runtime_sha)"
 deploy_bundle_sha="$(json_get deploy_bundle_sha)"
@@ -248,6 +314,7 @@ PY
 test -x "${staging_dir}/sidecar/qintopia-message-sidecar"
 test -f "${staging_dir}/manifest.json"
 test -d "${staging_dir}/deploy"
+validate_release_tree "$staging_dir"
 
 if [[ "$dry_run" == "true" ]]; then
   echo "Dry run assembled release at ${staging_dir}"
@@ -279,12 +346,14 @@ for key in keys:
         raise SystemExit(f"existing release manifest {key} mismatch")
 PY
   repair_existing_release_metadata "$release_dir" "$staging_dir"
+  validate_release_tree "$release_dir"
   rm -rf "$staging_dir"
 else
   mv "$staging_dir" "$release_dir"
 fi
 
-if [[ -n "$current_target" ]]; then
+release_target="$(readlink -f "$release_dir")"
+if [[ -n "$current_target" && "$current_target" != "$release_target" ]]; then
   ln -sfn "$current_target" "${release_root}/previous"
 fi
 ln -sfn "$release_dir" "${release_root}/current"
