@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.16](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.15...v0.2.16) (2026-07-19)
+
+
+### Bug Fixes
+
+* extend aliang image provider timeout ([#204](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/204)) ([6e2d349](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6e2d349ac0d6cb2deef219fed9d3c41e7befd28d))
+* make staging provision modes deterministic ([#202](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/202)) ([1e918d3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1e918d3f5a25f4739ca44f9c9992517243261b01))
+* normalize production release archive owners ([#203](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/203)) ([e517d6f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e517d6f1622400399c44e4c4f818d3b723724ba8))
+* normalize production release metadata modes ([#200](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/200)) ([54df434](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/54df4347cc7a7c643f8033427385985e8fa575b2))
+* preserve image generation audit outcome ([#205](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/205)) ([d404a21](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d404a21e6dd2c4ae63184477da6ff75eeb87bd54))
+
 ## [0.2.15](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.14...v0.2.15) (2026-07-18)
 
 
