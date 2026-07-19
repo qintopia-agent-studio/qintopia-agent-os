@@ -333,7 +333,9 @@ data but are not eligible for the future QiWe JPG send contract.
   timeout and ended as sanitized `provider_transport` failures. No image or Feishu row
   was created, and the production generation timer was rolled back to disabled and
   inactive. The remediation keeps the shared default unchanged while giving this image
-  path a 180-second default bounded to 60-300 seconds; see the
+  path a 180-second default bounded to 60-240 seconds. A transport or protocol failure
+  after request bytes may have been sent is recorded as an ambiguous provider outcome
+  and never retried automatically; see the
   [production canary report](../../reports/2026-07-19-aliang-provider-timeout-canary.md).
 - The staging compile gate keeps staging provider/media execution behind the non-default
   `huabaosi-staging-adapter` feature. A staging-feature apply must enforce the exact

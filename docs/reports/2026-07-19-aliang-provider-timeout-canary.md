@@ -33,15 +33,22 @@ configuration gates.
 The image adapter had no reviewed way to select a longer timeout without also changing
 the shared default for QiWe, WeCom, Feishu, and other HTTP users.
 
+The canary also proved that a socket timeout after provider request bytes were sent was
+classified as retryable. That caused three provider requests even though each timed-out
+request had an unknown external generation and billing outcome. A post-send timeout is
+not a recoverable connection failure and must fail closed without automatic retry.
+
 ## Resolution
 
 - Keep the shared bounded HTTP client default at 60 seconds.
 - Give the Huabaosi image adapter an image-only HTTP timeout with a default of 180
   seconds.
 - Accept an optional `QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS` only from 60 through
-  300 seconds. The upper bound preserves room inside the fixed 10-minute claim lease for
-  PNG validation, JPEG conversion, storage, authenticated readback, and the final
-  Postgres transaction.
+  240 seconds. The upper bound reserves the five shared-client 60-second Feishu calls
+  plus final transform and transaction time inside the fixed 10-minute claim lease.
+- Retry only transport failures proven to occur before provider request bytes may have
+  been sent. Record a post-send transport or protocol error as an ambiguous provider
+  outcome with `external_generation_executed=null` and `automatic_retry_allowed=false`.
 - Validate the timeout during the existing no-network preflight. Invalid values fail
   before Postgres or provider access and are never emitted in chat-safe output.
 - Preserve the three-attempt retry limit, retry classifications, idempotency, and
@@ -52,9 +59,9 @@ the shared default for QiWe, WeCom, Feishu, and other HTTP users.
 Local validation completed:
 
 - `cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml`;
-- default Huabaosi image-generation tests: 45 passed, 0 failed;
-- exact production-feature Huabaosi image-generation tests: 45 passed, 0 failed;
-- `cargo test --manifest-path runtime/sidecar/Cargo.toml --all-features`: 408 passed, 0
+- focused all-feature Huabaosi image-generation tests: 46 passed, 0 failed, and 1
+  guarded PostgreSQL test ignored by design;
+- `cargo test --manifest-path runtime/sidecar/Cargo.toml --all-features`: 409 passed, 0
   failed, and 12 guarded PostgreSQL tests ignored by design;
 - warning-denied Clippy with exact production features and with all features;
 - `node tools/deploy/check-deploy-contracts.mjs`;
@@ -62,7 +69,7 @@ Local validation completed:
 - Markdown lint and `git diff --check`; and
 - `sh .husky/pre-commit`.
 
-The three fake provider/media tests initially could not bind loopback inside the Codex
+The four fake provider/media tests initially could not bind loopback inside the Codex
 sandbox. The unchanged test command passed outside that network sandbox. PR CI and
 review are still required on the final head SHA.
 

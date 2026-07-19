@@ -82,7 +82,7 @@ const MAX_GENERATION_ATTEMPTS: i32 = 3;
 const BASE_RETRY_DELAY_SECONDS: i64 = 60;
 const DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS: u64 = 180;
 const MIN_IMAGE_HTTP_TIMEOUT_SECONDS: u64 = 60;
-const MAX_IMAGE_HTTP_TIMEOUT_SECONDS: u64 = 300;
+const MAX_IMAGE_HTTP_TIMEOUT_SECONDS: u64 = 240;
 const IMAGE_HTTP_TIMEOUT_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS";
 const _: () = assert!(MAX_IMAGE_HTTP_TIMEOUT_SECONDS < 10 * 60);
 #[cfg(feature = "huabaosi-staging-adapter")]
@@ -246,6 +246,7 @@ struct MediaUploadResponse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GenerationFailureClass {
     RetryableProvider,
+    AmbiguousProvider,
     Terminal,
 }
 
@@ -253,6 +254,7 @@ impl GenerationFailureClass {
     fn as_str(self) -> &'static str {
         match self {
             Self::RetryableProvider => "retryable_provider",
+            Self::AmbiguousProvider => "ambiguous_provider",
             Self::Terminal => "terminal",
         }
     }
@@ -271,6 +273,14 @@ impl GenerationAttemptError {
     fn retryable_provider(stage: &'static str, source: anyhow::Error) -> Self {
         Self {
             class: GenerationFailureClass::RetryableProvider,
+            stage,
+            source,
+        }
+    }
+
+    fn ambiguous_provider(stage: &'static str, source: anyhow::Error) -> Self {
+        Self {
+            class: GenerationFailureClass::AmbiguousProvider,
             stage,
             source,
         }
@@ -308,6 +318,7 @@ struct GenerationFailure {
 enum FailureRecordOutcome {
     RetryScheduled,
     RetryExhausted,
+    Ambiguous,
     Failed,
     StaleClaim,
 }
@@ -898,6 +909,7 @@ async fn record_generation_failure_report(
     let action_status = match record_generation_failure(pool, work_item, failure).await? {
         FailureRecordOutcome::RetryScheduled => "image_generation_retry_scheduled",
         FailureRecordOutcome::RetryExhausted => "image_generation_retry_exhausted",
+        FailureRecordOutcome::Ambiguous => "image_generation_outcome_ambiguous",
         FailureRecordOutcome::Failed => "image_generation_failed",
         FailureRecordOutcome::StaleClaim => "image_generation_stale_claim",
     };
@@ -1001,7 +1013,7 @@ fn image_http_timeout(value: Option<&str>) -> Result<Duration> {
         .transpose()?
         .unwrap_or(DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS);
     if !(MIN_IMAGE_HTTP_TIMEOUT_SECONDS..=MAX_IMAGE_HTTP_TIMEOUT_SECONDS).contains(&seconds) {
-        bail!("image HTTP timeout seconds must be between 60 and 300");
+        bail!("image HTTP timeout seconds must be between 60 and 240");
     }
     Ok(Duration::from_secs(seconds))
 }
@@ -1860,6 +1872,7 @@ async fn record_generation_failure(
     let retry_scheduled = should_retry_generation(failure.class, work_item.attempts);
     let retry_exhausted =
         failure.class == GenerationFailureClass::RetryableProvider && !retry_scheduled;
+    let ambiguous = failure.class == GenerationFailureClass::AmbiguousProvider;
     let status = if retry_scheduled { "queued" } else { "failed" };
     let retry_delay_seconds = if retry_scheduled {
         generation_retry_delay_seconds(work_item.attempts)
@@ -1870,6 +1883,8 @@ async fn record_generation_failure(
         "retryable image provider failure; retry scheduled"
     } else if retry_exhausted {
         "retryable image provider failure; retry attempts exhausted"
+    } else if ambiguous {
+        "image provider outcome ambiguous; automatic retry disabled"
     } else {
         "image generation failed; inspect sanitized worker metrics"
     };
@@ -1906,6 +1921,8 @@ async fn record_generation_failure(
     }
     let event_type = if retry_scheduled {
         "image_generation_retry_scheduled"
+    } else if ambiguous {
+        "image_generation_outcome_ambiguous"
     } else {
         "failed"
     };
@@ -1913,6 +1930,8 @@ async fn record_generation_failure(
         "retryable image provider failure scheduled for another attempt"
     } else if retry_exhausted {
         "image generation retry attempts exhausted before pending artifact creation"
+    } else if ambiguous {
+        "image provider request outcome is unknown and automatic retry is disabled"
     } else {
         "image generation failed before pending artifact creation"
     };
@@ -1935,6 +1954,8 @@ async fn record_generation_failure(
         "retry_delay_seconds": retry_delay_seconds,
         "retry_scheduled": retry_scheduled,
         "retry_exhausted": retry_exhausted,
+        "automatic_retry_allowed": retry_scheduled,
+        "external_generation_executed": if ambiguous { None } else { Some(false) },
         "external_publish_executed": false,
         "sensitive_fields_redacted": true,
     }))
@@ -1948,6 +1969,8 @@ async fn record_generation_failure(
         FailureRecordOutcome::RetryScheduled
     } else if retry_exhausted {
         FailureRecordOutcome::RetryExhausted
+    } else if ambiguous {
+        FailureRecordOutcome::Ambiguous
     } else {
         FailureRecordOutcome::Failed
     })
@@ -2123,10 +2146,13 @@ fn generate_and_store_with(
             provider_response_limit(config.max_media_bytes),
         )
         .map_err(|error| {
-            let retryable = error.transport;
+            let request_may_have_been_sent = error.request_may_have_been_sent();
+            let retryable = error.transport && !request_may_have_been_sent;
             let source = error.into_source();
             if retryable {
                 GenerationAttemptError::retryable_provider("provider_transport", source)
+            } else if request_may_have_been_sent {
+                GenerationAttemptError::ambiguous_provider("provider_transport", source)
             } else {
                 GenerationAttemptError::terminal("provider_request", source)
             }
@@ -2137,7 +2163,7 @@ fn generate_and_store_with(
             GenerationFailureClass::RetryableProvider => {
                 GenerationAttemptError::retryable_provider("provider_response", source)
             }
-            GenerationFailureClass::Terminal => {
+            GenerationFailureClass::Terminal | GenerationFailureClass::AmbiguousProvider => {
                 GenerationAttemptError::terminal("provider_response", source)
             }
         })?;
@@ -2732,11 +2758,11 @@ mod tests {
             Duration::from_secs(60)
         );
         assert_eq!(
-            image_http_timeout(Some("300")).expect("maximum timeout"),
-            Duration::from_secs(300)
+            image_http_timeout(Some("240")).expect("maximum timeout"),
+            Duration::from_secs(240)
         );
         assert!(image_http_timeout(Some("59")).is_err());
-        assert!(image_http_timeout(Some("301")).is_err());
+        assert!(image_http_timeout(Some("241")).is_err());
         assert!(image_http_timeout(Some("invalid")).is_err());
     }
 
@@ -2800,6 +2826,35 @@ mod tests {
         assert_eq!(error.class, GenerationFailureClass::RetryableProvider);
         assert_eq!(error.stage, "provider_transport");
         assert!(should_retry_generation(error.class, 1));
+    }
+
+    #[test]
+    fn provider_timeout_after_send_is_ambiguous_and_never_retried() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake provider");
+        let port = listener.local_addr().expect("fake provider address").port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let mut request = [0_u8; 4096];
+            assert!(stream.read(&mut request).expect("read provider request") > 0);
+            thread::sleep(Duration::from_millis(150));
+        });
+        let mut config = test_config("https://media.example.test/public");
+        config.provider_endpoint =
+            Url::parse(&format!("http://127.0.0.1:{port}/v1/images/generations"))
+                .expect("fake provider URL");
+
+        let error = generate_and_store_with_client(
+            &config,
+            &fixture_work_item(),
+            Uuid::nil(),
+            HttpClient::test_only_with_timeout(Duration::from_millis(50)),
+        )
+        .expect_err("post-send provider timeout must fail");
+        server.join().expect("fake provider joins");
+
+        assert_eq!(error.class, GenerationFailureClass::AmbiguousProvider);
+        assert_eq!(error.stage, "provider_transport");
+        assert!(!should_retry_generation(error.class, 1));
     }
 
     #[test]
@@ -2967,6 +3022,10 @@ mod tests {
         ));
         assert!(!should_retry_generation(
             GenerationFailureClass::Terminal,
+            1
+        ));
+        assert!(!should_retry_generation(
+            GenerationFailureClass::AmbiguousProvider,
             1
         ));
     }
