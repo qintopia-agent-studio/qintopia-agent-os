@@ -350,10 +350,10 @@ for file_name in "${payload_files[@]}"; do
 done
 
 if [[ "$payload_mode" == "bundle" && "$artifact_type" == "sidecar" ]]; then
-  tar -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir" \
+  tar --no-same-owner -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir" \
     qintopia-message-sidecar
 elif [[ "$payload_mode" == "bundle" && "$artifact_type" == "deploy-bundle" ]]; then
-  tar -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir" \
+  tar --no-same-owner -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir" \
     payload
 fi
 

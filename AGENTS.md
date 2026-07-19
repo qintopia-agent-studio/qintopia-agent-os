@@ -202,6 +202,11 @@ Use `rg` and `rg --files` for search.
   immutable non-secret release evidence needed by unprivileged release-local
   observation; mode `0640` can make a valid release unverifiable after root-owned
   promotion.
+- Production COS archive extraction runs under the root deploy runner and must use
+  `tar --no-same-owner` for both sidecar and deploy-bundle payloads. Never preserve
+  GitHub runner numeric owners from an artifact archive or propagate them into the
+  immutable production release with `cp -a`; the promoted release tree must remain owned
+  by the deploy runner.
 - Staging sidecar provisioning runs as the `ubuntu` operator, not root. It must create
   the fixed staging release root, release directory, and sidecar directory with explicit
   mode `0755` independent of ambient `umask`, then freeze the immutable release and
