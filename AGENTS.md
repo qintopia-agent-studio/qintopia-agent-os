@@ -207,6 +207,11 @@ Use `rg` and `rg --files` for search.
   GitHub runner numeric owners from an artifact archive or propagate them into the
   immutable production release with `cp -a`; the promoted release tree must remain owned
   by the deploy runner.
+- A production same-SHA follow-up may repair owner and mode metadata only after the
+  existing manifest identity matches the request, the complete release tree matches
+  freshly fetched verified artifacts, and both packaged checksum files pass. It must
+  fail before metadata mutation on any content or path drift; do not hot-fix release
+  ownership with server-side `chown` or `chmod` outside this reviewed runner path.
 - Staging sidecar provisioning runs as the `ubuntu` operator, not root. It must create
   the fixed staging release root, release directory, and sidecar directory with explicit
   mode `0755` independent of ambient `umask`, then freeze the immutable release and
