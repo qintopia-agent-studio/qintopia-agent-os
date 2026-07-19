@@ -54,6 +54,8 @@ if (!exists(stagingArtifactProvisionPath)) {
     "artifact zip entry is not allowlisted",
     "artifact zip entries must exactly match the staging allowlist",
     "qintopia-message-sidecar-staging-linux-x86_64-gnu",
+    "huabaosi-image-generation-staging-smoke.sh",
+    "qiwe-image-send-staging-smoke.sh",
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
     "staging_only",
@@ -73,7 +75,7 @@ if (!exists(stagingArtifactProvisionPath)) {
     'mkdir -m 0755 "$release_root"',
     'mkdir -m 0755 "$release_dir"',
     'mkdir -m 0755 "$sidecar_dir"',
-    'rmdir "$release_dir"',
+    'rm -rf "$release_dir"',
     'rmdir "$release_root"',
     "sidecar_dir_created=1",
     "release_dir_created=1",
@@ -1342,6 +1344,8 @@ if (!exists(stagingSidecarArtifactBuilderPath)) {
   const builder = readText(stagingSidecarArtifactBuilderPath);
   for (const fragment of [
     "qintopia-message-sidecar",
+    "huabaosi-image-generation-staging-smoke.sh",
+    "qiwe-image-send-staging-smoke.sh",
     "assertContainedArtifactDirBoundary",
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",

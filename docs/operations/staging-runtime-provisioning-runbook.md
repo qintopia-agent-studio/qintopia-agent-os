@@ -178,12 +178,15 @@ QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL=approved-staging-sidecar-provision \
 
 The helper downloads only the successful `artifacts.yml` GitHub Actions artifact named
 `qintopia-message-sidecar-staging-linux-x86_64-gnu`, verifies `SHA256SUMS`, verifies the
-manifest staging feature boundary, rejects production-eligible manifests, and installs
-only under `/home/ubuntu/qintopia-agent-os-staging-releases/<sha>/sidecar/`. It creates
-the staging release root and release directory with explicit mode `0755` before freezing
-the release directory to `0555`; ambient operator `umask` must not make the new path
-group-writable. A failed provision removes only directories created by that attempt and
-never reuses or removes an existing release directory.
+manifest staging feature boundary, and rejects production-eligible manifests. It
+installs the binary and evidence files under
+`/home/ubuntu/qintopia-agent-os-staging-releases/<sha>/sidecar/` and the exact reviewed
+Huabaosi/QiWe smoke runners under the same immutable release at
+`deploy/sidecar/scripts/`. The helper creates every staging release directory with
+explicit mode `0755` before freezing installed files and directories to `0555`; ambient
+operator `umask` must not make the new path group-writable. A failed provision removes
+only the release directory created by that attempt and never reuses or removes an
+existing release directory.
 
 The approved staging release SHA must be the exact commit whose staging artifact is
 being used for the real Huabaosi/QiWe staging exercise. After the Feishu-to-QiWe staging

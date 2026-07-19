@@ -145,12 +145,9 @@ provision_complete=0
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
-  if [[ "$provision_complete" != "1" && "$sidecar_dir_created" == "1" && -n "$sidecar_dir" && -d "$sidecar_dir" ]]; then
-    chmod 0755 "$sidecar_dir" 2>/dev/null || true
-    rm -rf "$sidecar_dir"
-  fi
-  if [[ "$provision_complete" != "1" && "$release_dir_created" == "1" && -n "$release_dir" ]]; then
-    rmdir "$release_dir" 2>/dev/null || true
+  if [[ "$provision_complete" != "1" && "$release_dir_created" == "1" && -n "$release_dir" && -d "$release_dir" ]]; then
+    chmod -R u+w "$release_dir" 2>/dev/null || true
+    rm -rf "$release_dir"
   fi
   if [[ "$provision_complete" != "1" && "$release_root_created" == "1" ]]; then
     rmdir "$release_root" 2>/dev/null || true
@@ -253,8 +250,10 @@ import zipfile
 allowed = {
     "artifact-manifest.json",
     "SHA256SUMS",
+    "huabaosi-image-generation-staging-smoke.sh",
     "qintopia-message-sidecar",
     "qintopia-message-sidecar.tar.gz",
+    "qiwe-image-send-staging-smoke.sh",
 }
 zip_path = sys.argv[1]
 with zipfile.ZipFile(zip_path) as archive:
@@ -376,8 +375,10 @@ import stat
 for path in (
     "artifact-manifest.json",
     "SHA256SUMS",
+    "huabaosi-image-generation-staging-smoke.sh",
     "qintopia-message-sidecar",
     "qintopia-message-sidecar.tar.gz",
+    "qiwe-image-send-staging-smoke.sh",
 ):
     st = os.lstat(path)
     if stat.S_ISLNK(st.st_mode):
@@ -389,9 +390,11 @@ for path in (
 PY
   python3 - <<'PY'
 allowed = {
+    "huabaosi-image-generation-staging-smoke.sh",
     "qintopia-message-sidecar",
     "qintopia-message-sidecar.tar.gz",
     "artifact-manifest.json",
+    "qiwe-image-send-staging-smoke.sh",
 }
 entries = {}
 with open("SHA256SUMS", encoding="utf-8") as fh:
@@ -436,9 +439,11 @@ if validation.get("production_eligible") is not False:
     raise SystemExit("artifact manifest production_eligible must be false")
 
 required = {
+    "huabaosi-image-generation-staging-smoke.sh",
     "qintopia-message-sidecar",
     "qintopia-message-sidecar.tar.gz",
     "artifact-manifest.json",
+    "qiwe-image-send-staging-smoke.sh",
 }
 checksums = {}
 with open("SHA256SUMS", encoding="utf-8") as fh:
@@ -448,19 +453,37 @@ with open("SHA256SUMS", encoding="utf-8") as fh:
             raise SystemExit("SHA256SUMS entries must use exactly two fields")
         checksums[parts[1]] = parts[0]
 if set(checksums) != required:
-    raise SystemExit("SHA256SUMS entries must exactly match the staging allowlist")
+    missing = sorted(required - set(checksums))
+    unexpected = sorted(set(checksums) - required)
+    raise SystemExit(
+        "SHA256SUMS entries must exactly match the staging allowlist; "
+        f"missing={missing}; unexpected={unexpected}"
+    )
 
 files = {item.get("path"): item.get("sha256") for item in manifest.get("files", [])}
-for path in ("qintopia-message-sidecar", "qintopia-message-sidecar.tar.gz"):
+for path in (
+    "huabaosi-image-generation-staging-smoke.sh",
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+    "qiwe-image-send-staging-smoke.sh",
+):
     if files.get(path) != checksums.get(path):
         raise SystemExit(f"manifest checksum does not match SHA256SUMS for {path}")
 PY
+)
+
+(
+  cd "$artifact_dir"
+  sha256sum -c SHA256SUMS
 )
 
 binary_sha="$(awk '$2 == "qintopia-message-sidecar" {print $1}' "${artifact_dir}/SHA256SUMS")"
 release_root="${release_root%/}"
 release_dir="${release_root}/${sha}"
 sidecar_dir="${release_dir}/sidecar"
+deploy_dir="${release_dir}/deploy"
+deploy_sidecar_dir="${deploy_dir}/sidecar"
+runner_dir="${deploy_sidecar_dir}/scripts"
 
 STAGING_RELEASE_ROOT="$release_root" \
 STAGING_RELEASE_DIR="$release_dir" \
@@ -536,17 +559,37 @@ if ! mkdir -m 0755 "$sidecar_dir"; then
 fi
 sidecar_dir_created=1
 
+for directory in "$deploy_dir" "$deploy_sidecar_dir" "$runner_dir"; do
+  if ! mkdir -m 0755 "$directory"; then
+    echo "failed to create staging smoke runner directory: ${directory}" >&2
+    exit 1
+  fi
+done
+
 cp "${artifact_dir}/qintopia-message-sidecar" "$sidecar_dir/qintopia-message-sidecar"
 cp "${artifact_dir}/qintopia-message-sidecar.tar.gz" "$sidecar_dir/qintopia-message-sidecar.tar.gz"
 cp "${artifact_dir}/artifact-manifest.json" "$sidecar_dir/artifact-manifest.json"
 cp "${artifact_dir}/SHA256SUMS" "$sidecar_dir/SHA256SUMS"
 chmod 0555 "$sidecar_dir/qintopia-message-sidecar"
 chmod 0444 "$sidecar_dir/qintopia-message-sidecar.tar.gz" "$sidecar_dir/artifact-manifest.json" "$sidecar_dir/SHA256SUMS"
-(
-  cd "$sidecar_dir"
-  sha256sum -c SHA256SUMS
-)
+cp "${artifact_dir}/huabaosi-image-generation-staging-smoke.sh" "$runner_dir/huabaosi-image-generation-staging-smoke.sh"
+cp "${artifact_dir}/qiwe-image-send-staging-smoke.sh" "$runner_dir/qiwe-image-send-staging-smoke.sh"
+chmod 0555 "$runner_dir/huabaosi-image-generation-staging-smoke.sh" "$runner_dir/qiwe-image-send-staging-smoke.sh"
+for installed_file in \
+  "$sidecar_dir/qintopia-message-sidecar" \
+  "$sidecar_dir/qintopia-message-sidecar.tar.gz" \
+  "$runner_dir/huabaosi-image-generation-staging-smoke.sh" \
+  "$runner_dir/qiwe-image-send-staging-smoke.sh"; do
+  artifact_name="$(basename "$installed_file")"
+  expected_hash="$(awk -v name="$artifact_name" '$2 == name {print $1}' "${artifact_dir}/SHA256SUMS")"
+  actual_hash="$(sha256sum "$installed_file" | awk '{print $1}')"
+  if [[ -z "$expected_hash" || "$actual_hash" != "$expected_hash" ]]; then
+    echo "installed staging artifact hash mismatch: ${artifact_name}" >&2
+    exit 1
+  fi
+done
 chmod 0555 "$sidecar_dir"
+chmod 0555 "$runner_dir" "$deploy_sidecar_dir" "$deploy_dir"
 chmod 0555 "$release_dir"
 provision_complete=1
 

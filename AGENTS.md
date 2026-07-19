@@ -229,6 +229,10 @@ Use `rg` and `rg --files` for search.
   mode `0755` independent of ambient `umask`, then freeze the immutable release and
   sidecar directories to `0555`. Failed attempts may remove only paths they created;
   they must not reuse or delete an existing release directory.
+- The staging-only sidecar artifact must package the exact Huabaosi and QiWe staging
+  smoke runners with manifest and checksum identities. Provision them under the same
+  immutable staging release at `deploy/sidecar/scripts/`; a real staging smoke must not
+  fall back to a mutable checkout or use test mode because the runner is absent.
 - Do not copy secrets, live `.env` files, tokens, table ids, private chat logs, raw
   member profiles, or server-only runtime state into git.
 - WorkTool is not a Qintopia Agent OS channel for new work. Treat WorkTool and the
