@@ -796,7 +796,8 @@ Use `rg` and `rg --files` for search.
   repair allowed above, the existing tree must satisfy the same deploy-runner owner,
   non-writable, directory accessibility, regular/symlink type, sidecar `0755`, and
   metadata `0444` checks as a new staging tree. Same-SHA reuse must preserve a distinct
-  `previous` target.
+  `previous` target. Production release and staging roots must be created explicitly as
+  `0755` so the validation contract does not depend on ambient `umask`.
 - PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
   live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
   profile symlink without that reviewed cutover, smoke evidence, and rollback note.

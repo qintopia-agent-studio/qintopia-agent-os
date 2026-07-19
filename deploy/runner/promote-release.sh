@@ -268,9 +268,12 @@ for relative, mode in sorted(directories, key=lambda item: item[0].count(os.sep)
 PY
 }
 
-mkdir -p "$release_root"
+install -d -m 0755 "$release_root"
 rm -rf "$staging_dir"
-mkdir -p "$staging_dir"
+install -d -m 0755 \
+  "$staging_dir" \
+  "$staging_dir/sidecar" \
+  "$staging_dir/deploy-bundle"
 
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --artifact-type sidecar \

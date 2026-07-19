@@ -97,7 +97,8 @@ must be owned by the effective deploy-runner UID, non-symlink entries must not b
 or world-writable, the sidecar binary must be `0755`, and packaged manifests, checksum
 files, and archives must be `0444`. Directories must remain group/world readable and
 traversable for unprivileged release-local observation, and special file types are
-forbidden.
+forbidden. Release and staging roots are created explicitly as `0755` so this contract
+is independent of ambient `umask`.
 
 An existing same-SHA release may repair owner and modes only after exact manifest
 identity, complete content/path/type/symlink equality with the freshly verified tree,

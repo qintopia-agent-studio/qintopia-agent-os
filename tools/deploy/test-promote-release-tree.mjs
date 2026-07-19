@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
 const promoteScript = path.join(repoRoot, "deploy/runner/promote-release.sh");
+const originalUmask = process.umask(0o077);
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-promote-tree-"));
 const fixtureRoot = path.join(tmpRoot, "fixtures");
 const fakeBin = path.join(tmpRoot, "bin");
@@ -122,6 +123,7 @@ try {
     `${JSON.stringify({ commit_sha: sha, artifact_name: "deploy-fixture" })}\n`,
     0o444
   );
+  ensureDirectory(path.join(deployFixture, "payload"));
   writeFile(
     path.join(deployFixture, "payload/deploy/runner-fixture.sh"),
     "#!/usr/bin/env bash\nexit 0\n",
@@ -220,6 +222,7 @@ exec /usr/bin/id "$@"
     "release tree owner mismatch"
   );
 } finally {
+  process.umask(originalUmask);
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
 
