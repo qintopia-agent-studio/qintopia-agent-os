@@ -3,6 +3,7 @@
 - [2026-07-17 Erhua weather broadcast current-only output](2026-07-17-erhua-weather-broadcast-current-only.md)
 - [2026-07-18 v0.2.15 release decision evidence](2026-07-18-v0215-release-decision-evidence.md)
 - [2026-07-19 production release metadata permissions](2026-07-19-production-release-metadata-permissions.md)
+- [2026-07-19 staging sidecar provision umask](2026-07-19-staging-sidecar-provision-umask.md)
 - [2026-07-15 Aliang image generation production enablement](2026-07-15-aliang-production-enablement.md)
 - [2026-07-15 Huabaosi Feishu artifact mirror production enablement](2026-07-15-huabaosi-feishu-artifact-mirror-production-enablement.md)
 
@@ -67,6 +68,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-17-erhua-weather-broadcast-current-only.md`                               | adopt-input | Forecast contract exists; server-only output selector remains unowned  |
 | `2026-07-18-v0215-release-decision-evidence.md`                                    | adopt-input | v0.2.15 owner release decision evidence and remaining completion gates |
 | `2026-07-19-production-release-metadata-permissions.md`                            | adopt-input | Production release metadata readability remediation                    |
+| `2026-07-19-staging-sidecar-provision-umask.md`                                    | adopt-input | Staging release directory mode and cleanup remediation                 |
 
 ## Templates
 
