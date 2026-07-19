@@ -75,6 +75,7 @@ const requiredFiles = [
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
+  "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
 ];
@@ -653,6 +654,20 @@ for (const forbidden of [
   }
 }
 
+const fetchCosArtifactText = exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")
+  ? readText("deploy/sidecar/scripts/fetch-cos-artifact.sh")
+  : "";
+for (const fragment of [
+  "chmod 0444 artifact-manifest.json SHA256SUMS",
+  "chmod 0444 qintopia-message-sidecar.tar.gz",
+  "chmod 0444 qintopia-agent-os-deploy-bundle.tar.gz",
+  "chmod 0755 qintopia-message-sidecar",
+]) {
+  if (!fetchCosArtifactText.includes(fragment)) {
+    addError(`deploy/sidecar/scripts/fetch-cos-artifact.sh: missing ${fragment}`);
+  }
+}
+
 const pollerText = exists("deploy/runner/poll-deploy-requests.sh")
   ? readText("deploy/runner/poll-deploy-requests.sh")
   : "";
@@ -913,6 +928,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-promotion.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-fetch-cos-artifact-permissions.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-release-systemd-install.mjs"], {

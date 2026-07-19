@@ -86,6 +86,12 @@ Owner manually publishes the draft GitHub Release
   -> server archives the local request state
 ```
 
+The fetched `artifact-manifest.json`, `SHA256SUMS`, and packaged archives are immutable
+non-secret release metadata and must be installed mode `0444`. The sidecar binary must
+remain mode `0755`. This lets the unprivileged release-local observation and preflight
+paths verify the exact production feature set without running as root or weakening the
+immutable release boundary.
+
 GitHub Actions must not SSH to the server. The server must not pull repository source or
 build Rust for routine releases.
 
