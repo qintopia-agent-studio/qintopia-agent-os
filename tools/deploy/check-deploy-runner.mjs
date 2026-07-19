@@ -642,6 +642,7 @@ for (const fragment of [
   "release tree directory is not group/world accessible",
   "release tree contains unsupported file type",
   "release tree mode mismatch",
+  'install -d -m 0755 "$release_root"',
   'validate_release_tree "$staging_dir"',
   'validate_release_tree "$release_dir"',
   'current_target" != "$release_target',

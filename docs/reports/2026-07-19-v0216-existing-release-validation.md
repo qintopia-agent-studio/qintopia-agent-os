@@ -49,6 +49,8 @@ unreadable metadata and removed the distinct rollback pointer.
 - Require the sidecar binary to be a regular file with mode `0755`.
 - Require packaged manifests, checksum files, and archives to be regular files with mode
   `0444`.
+- Explicitly create release and staging roots as `0755` so validation is independent of
+  ambient `umask`.
 - For an existing same-SHA release, prove exact identity, complete tree content
   equality, and both packaged checksums before repairing owner/modes, then run the same
   strict tree validation. Reject content or path drift before metadata mutation.
@@ -57,7 +59,8 @@ unreadable metadata and removed the distinct rollback pointer.
 The repair must include executable promotion fixtures covering metadata repair only
 after content proof, content-drift rejection, strict new-tree validation, valid same-SHA
 reuse without rollback-pointer drift, and successful new release promotion. Fixture
-directory modes must be explicit so validation does not depend on the process `umask`.
+directory modes must be explicit and the fixture must run under strict `umask` so the
+result does not depend on the caller environment.
 
 ## Remaining Boundary
 
