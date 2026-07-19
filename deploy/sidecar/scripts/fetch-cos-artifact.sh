@@ -420,9 +420,14 @@ if not manifest_sha or manifest_sha != checksum_sha:
     raise SystemExit("artifact manifest checksum does not match SHA256SUMS")
 PY
   sha256sum -c SHA256SUMS
+  chmod 0444 artifact-manifest.json SHA256SUMS
   if [[ "$artifact_type" == "sidecar" ]]; then
     chmod 0755 qintopia-message-sidecar
+    if [[ "$payload_mode" == "bundle" ]]; then
+      chmod 0444 qintopia-message-sidecar.tar.gz
+    fi
   else
+    chmod 0444 qintopia-agent-os-deploy-bundle.tar.gz
     chmod 0755 payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp
     chmod 0755 payload/deploy/sidecar/scripts/render-systemd-units.sh
   fi

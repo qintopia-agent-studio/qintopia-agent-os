@@ -197,6 +197,11 @@ Use `rg` and `rg --files` for search.
   after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
   guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does
   not put it on `paxon-server`.
+- Production COS fetch must leave `artifact-manifest.json`, `SHA256SUMS`, and packaged
+  archives mode `0444`, while the sidecar binary remains `0755`. These files are
+  immutable non-secret release evidence needed by unprivileged release-local
+  observation; mode `0640` can make a valid release unverifiable after root-owned
+  promotion.
 - Do not copy secrets, live `.env` files, tokens, table ids, private chat logs, raw
   member profiles, or server-only runtime state into git.
 - WorkTool is not a Qintopia Agent OS channel for new work. Treat WorkTool and the
