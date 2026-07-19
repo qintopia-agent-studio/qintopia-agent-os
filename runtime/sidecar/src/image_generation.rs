@@ -264,16 +264,25 @@ impl GenerationFailureClass {
 struct GenerationAttemptError {
     class: GenerationFailureClass,
     stage: &'static str,
+    external_generation_executed: Option<bool>,
+    external_media_write_executed: Option<bool>,
     source: anyhow::Error,
 }
 
 type GenerationAttemptResult<T> = std::result::Result<T, GenerationAttemptError>;
 
 impl GenerationAttemptError {
-    fn retryable_provider(stage: &'static str, source: anyhow::Error) -> Self {
+    fn retryable_provider(
+        stage: &'static str,
+        external_generation_executed: Option<bool>,
+        external_media_write_executed: Option<bool>,
+        source: anyhow::Error,
+    ) -> Self {
         Self {
             class: GenerationFailureClass::RetryableProvider,
             stage,
+            external_generation_executed,
+            external_media_write_executed,
             source,
         }
     }
@@ -282,14 +291,23 @@ impl GenerationAttemptError {
         Self {
             class: GenerationFailureClass::AmbiguousProvider,
             stage,
+            external_generation_executed: None,
+            external_media_write_executed: Some(false),
             source,
         }
     }
 
-    fn terminal(stage: &'static str, source: anyhow::Error) -> Self {
+    fn terminal(
+        stage: &'static str,
+        external_generation_executed: Option<bool>,
+        external_media_write_executed: Option<bool>,
+        source: anyhow::Error,
+    ) -> Self {
         Self {
             class: GenerationFailureClass::Terminal,
             stage,
+            external_generation_executed,
+            external_media_write_executed,
             source,
         }
     }
@@ -298,6 +316,8 @@ impl GenerationAttemptError {
         GenerationFailure {
             class: self.class,
             stage: self.stage,
+            external_generation_executed: self.external_generation_executed,
+            external_media_write_executed: self.external_media_write_executed,
         }
     }
 }
@@ -312,6 +332,8 @@ impl fmt::Display for GenerationAttemptError {
 struct GenerationFailure {
     class: GenerationFailureClass,
     stage: &'static str,
+    external_generation_executed: Option<bool>,
+    external_media_write_executed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -662,6 +684,8 @@ async fn run_once(
                     GenerationFailure {
                         class: GenerationFailureClass::Terminal,
                         stage: "workflow_root_resolution",
+                        external_generation_executed: Some(false),
+                        external_media_write_executed: Some(false),
                     },
                 )
                 .await
@@ -681,6 +705,8 @@ async fn run_once(
                     GenerationFailure {
                         class: GenerationFailureClass::Terminal,
                         stage: "worker_execution",
+                        external_generation_executed: None,
+                        external_media_write_executed: None,
                     },
                 )
                 .await
@@ -712,6 +738,8 @@ async fn run_once(
                     GenerationFailure {
                         class: GenerationFailureClass::Terminal,
                         stage: "persistence",
+                        external_generation_executed: Some(true),
+                        external_media_write_executed: Some(true),
                     },
                 )
                 .await
@@ -1873,8 +1901,6 @@ async fn record_generation_failure(
     let retry_exhausted =
         failure.class == GenerationFailureClass::RetryableProvider && !retry_scheduled;
     let ambiguous = failure.class == GenerationFailureClass::AmbiguousProvider;
-    let external_generation_executed = failure_external_generation_executed(failure);
-    let external_media_write_executed = failure_external_media_write_executed(failure);
     let status = if retry_scheduled { "queued" } else { "failed" };
     let retry_delay_seconds = if retry_scheduled {
         generation_retry_delay_seconds(work_item.attempts)
@@ -1957,8 +1983,8 @@ async fn record_generation_failure(
         "retry_scheduled": retry_scheduled,
         "retry_exhausted": retry_exhausted,
         "automatic_retry_allowed": retry_scheduled,
-        "external_generation_executed": external_generation_executed,
-        "external_media_write_executed": external_media_write_executed,
+        "external_generation_executed": failure.external_generation_executed,
+        "external_media_write_executed": failure.external_media_write_executed,
         "external_publish_executed": false,
         "sensitive_fields_redacted": true,
     }))
@@ -1977,36 +2003,6 @@ async fn record_generation_failure(
     } else {
         FailureRecordOutcome::Failed
     })
-}
-
-fn failure_external_generation_executed(failure: GenerationFailure) -> Option<bool> {
-    if failure.class == GenerationFailureClass::AmbiguousProvider {
-        return None;
-    }
-    match failure.stage {
-        "workflow_root_resolution"
-        | "prompt_validation"
-        | "provider_request"
-        | "provider_transport" => Some(false),
-        "provider_response" | "provider_payload" | "media_transform" | "media_upload"
-        | "media_readback" | "feishu_storage" | "persistence" => Some(true),
-        _ => None,
-    }
-}
-
-fn failure_external_media_write_executed(failure: GenerationFailure) -> Option<bool> {
-    match failure.stage {
-        "workflow_root_resolution"
-        | "prompt_validation"
-        | "provider_request"
-        | "provider_transport"
-        | "provider_response"
-        | "provider_payload"
-        | "media_transform" => Some(false),
-        "media_upload" | "feishu_storage" => None,
-        "media_readback" | "persistence" => Some(true),
-        _ => None,
-    }
 }
 
 fn generation_retry_delay_seconds(attempts: i32) -> i64 {
@@ -2156,8 +2152,9 @@ fn generate_and_store_with(
     workflow_root_id: Uuid,
     client: &HttpClient,
 ) -> GenerationAttemptResult<GeneratedImage> {
-    let prompt = build_prompt(work_item)
-        .map_err(|source| GenerationAttemptError::terminal("prompt_validation", source))?;
+    let prompt = build_prompt(work_item).map_err(|source| {
+        GenerationAttemptError::terminal("prompt_validation", Some(false), Some(false), source)
+    })?;
     let provider_body = serde_json::to_vec(&json!({
         "model": config.model,
         "prompt": prompt,
@@ -2165,7 +2162,9 @@ fn generate_and_store_with(
         "response_format": "b64_json",
     }))
     .context("serialize image provider request")
-    .map_err(|source| GenerationAttemptError::terminal("provider_request", source))?;
+    .map_err(|source| {
+        GenerationAttemptError::terminal("provider_request", Some(false), Some(false), source)
+    })?;
     let provider_response = client
         .request(
             "POST",
@@ -2183,33 +2182,54 @@ fn generate_and_store_with(
             let retryable = error.transport && !request_may_have_been_sent;
             let source = error.into_source();
             if retryable {
-                GenerationAttemptError::retryable_provider("provider_transport", source)
+                GenerationAttemptError::retryable_provider(
+                    "provider_transport",
+                    Some(false),
+                    Some(false),
+                    source,
+                )
             } else if request_may_have_been_sent {
                 GenerationAttemptError::ambiguous_provider("provider_transport", source)
             } else {
-                GenerationAttemptError::terminal("provider_request", source)
+                GenerationAttemptError::terminal(
+                    "provider_request",
+                    Some(false),
+                    Some(false),
+                    source,
+                )
             }
         })?;
     let provider_class = classify_provider_response(provider_response.status);
     let provider_response =
         parse_provider_response(&provider_response).map_err(|source| match provider_class {
             GenerationFailureClass::RetryableProvider => {
-                GenerationAttemptError::retryable_provider("provider_response", source)
+                GenerationAttemptError::retryable_provider(
+                    "provider_response",
+                    None,
+                    Some(false),
+                    source,
+                )
             }
             GenerationFailureClass::Terminal | GenerationFailureClass::AmbiguousProvider => {
-                GenerationAttemptError::terminal("provider_response", source)
+                GenerationAttemptError::terminal("provider_response", None, Some(false), source)
             }
         })?;
     let provider_bytes = Base64::decode_vec(&provider_response)
         .map_err(|_| anyhow!("decode image provider b64_json response"))
-        .map_err(|source| GenerationAttemptError::terminal("provider_payload", source))?;
-    let source_image = decode_provider_png(&provider_bytes, config.max_media_bytes)
-        .map_err(|source| GenerationAttemptError::terminal("provider_payload", source))?;
+        .map_err(|source| {
+            GenerationAttemptError::terminal("provider_payload", None, Some(false), source)
+        })?;
+    let source_image =
+        decode_provider_png(&provider_bytes, config.max_media_bytes).map_err(|source| {
+            GenerationAttemptError::terminal("provider_payload", None, Some(false), source)
+        })?;
     let provider_source_content_hash = content_hash_bytes(&provider_bytes);
-    let bytes = encode_final_jpeg(&source_image, config.max_media_bytes)
-        .map_err(|source| GenerationAttemptError::terminal("media_transform", source))?;
-    let metadata = inspect_final_jpeg(&bytes, config.max_media_bytes)
-        .map_err(|source| GenerationAttemptError::terminal("media_transform", source))?;
+    let bytes = encode_final_jpeg(&source_image, config.max_media_bytes).map_err(|source| {
+        GenerationAttemptError::terminal("media_transform", Some(true), Some(false), source)
+    })?;
+    let metadata = inspect_final_jpeg(&bytes, config.max_media_bytes).map_err(|source| {
+        GenerationAttemptError::terminal("media_transform", Some(true), Some(false), source)
+    })?;
     let content_hash = content_hash_bytes(&bytes);
     let file_md5 = md5_hex_bytes(&bytes);
     let artifact_id = generated_image_artifact_id(work_item.id, &content_hash);
@@ -2235,10 +2255,16 @@ fn generate_and_store_with(
                     MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
                 )
                 .map_err(|error| {
-                    GenerationAttemptError::terminal("media_upload", error.into_source())
+                    GenerationAttemptError::terminal(
+                        "media_upload",
+                        Some(true),
+                        None,
+                        error.into_source(),
+                    )
                 })?;
-            let media = parse_media_upload_response(&upload_response)
-                .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
+            let media = parse_media_upload_response(&upload_response).map_err(|source| {
+                GenerationAttemptError::terminal("media_upload", Some(true), None, source)
+            })?;
             let media_url = validate_media_response(
                 storage,
                 &media,
@@ -2247,14 +2273,22 @@ fn generate_and_store_with(
                 bytes.len(),
                 client.allows_insecure_http(),
             )
-            .map_err(|source| GenerationAttemptError::terminal("media_upload", source))?;
+            .map_err(|source| {
+                GenerationAttemptError::terminal("media_upload", Some(true), None, source)
+            })?;
             let readback = client
                 .request("GET", &media_url, &[], &[], config.max_media_bytes)
                 .map_err(|error| {
-                    GenerationAttemptError::terminal("media_readback", error.into_source())
+                    GenerationAttemptError::terminal(
+                        "media_readback",
+                        Some(true),
+                        Some(true),
+                        error.into_source(),
+                    )
                 })?;
-            ensure_success(&readback, "media readback")
-                .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
+            ensure_success(&readback, "media readback").map_err(|source| {
+                GenerationAttemptError::terminal("media_readback", Some(true), Some(true), source)
+            })?;
             let content_type = readback
                 .headers
                 .get("content-type")
@@ -2263,11 +2297,20 @@ fn generate_and_store_with(
             if content_type != FINAL_IMAGE_MIME_TYPE {
                 return Err(GenerationAttemptError::terminal(
                     "media_readback",
+                    Some(true),
+                    Some(true),
                     anyhow!("media readback returned an unexpected MIME type"),
                 ));
             }
             let readback_metadata = inspect_final_jpeg(&readback.body, config.max_media_bytes)
-                .map_err(|source| GenerationAttemptError::terminal("media_readback", source))?;
+                .map_err(|source| {
+                    GenerationAttemptError::terminal(
+                        "media_readback",
+                        Some(true),
+                        Some(true),
+                        source,
+                    )
+                })?;
             if readback.body != bytes
                 || content_hash_bytes(&readback.body) != content_hash
                 || readback_metadata.width != metadata.width
@@ -2275,6 +2318,8 @@ fn generate_and_store_with(
             {
                 return Err(GenerationAttemptError::terminal(
                     "media_readback",
+                    Some(true),
+                    Some(true),
                     anyhow!("media readback did not match uploaded image"),
                 ));
             }
@@ -2295,7 +2340,9 @@ fn generate_and_store_with(
                     height: metadata.height,
                 },
             )
-            .map_err(|source| GenerationAttemptError::terminal("feishu_storage", source))?;
+            .map_err(|source| {
+                GenerationAttemptError::terminal("feishu_storage", Some(true), None, source)
+            })?;
             (
                 result.artifact_uri,
                 FEISHU_STORAGE_BACKEND,
@@ -2834,6 +2881,8 @@ mod tests {
 
         assert_eq!(error.class, GenerationFailureClass::Terminal);
         assert_eq!(error.stage, "provider_request");
+        assert_eq!(error.failure().external_generation_executed, Some(false));
+        assert_eq!(error.failure().external_media_write_executed, Some(false));
         assert!(error.to_string().contains("invalid header value"));
         assert!(!should_retry_generation(error.class, 1));
     }
@@ -2858,6 +2907,8 @@ mod tests {
 
         assert_eq!(error.class, GenerationFailureClass::RetryableProvider);
         assert_eq!(error.stage, "provider_transport");
+        assert_eq!(error.failure().external_generation_executed, Some(false));
+        assert_eq!(error.failure().external_media_write_executed, Some(false));
         assert!(should_retry_generation(error.class, 1));
     }
 
@@ -2887,7 +2938,38 @@ mod tests {
 
         assert_eq!(error.class, GenerationFailureClass::AmbiguousProvider);
         assert_eq!(error.stage, "provider_transport");
+        assert_eq!(error.failure().external_generation_executed, None);
+        assert_eq!(error.failure().external_media_write_executed, Some(false));
         assert!(!should_retry_generation(error.class, 1));
+    }
+
+    #[test]
+    fn invalid_provider_payload_keeps_generation_outcome_unknown() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake provider");
+        let port = listener.local_addr().expect("fake provider address").port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            read_request(&mut stream);
+            stream
+                .write_all(&json_response(
+                    &json!({"data":[{"b64_json":"not-valid-base64!"}]}).to_string(),
+                ))
+                .expect("write fake provider response");
+        });
+
+        let error = generate_and_store_with_client(
+            &test_http_config(port),
+            &fixture_work_item(),
+            Uuid::nil(),
+            HttpClient::test_only(),
+        )
+        .expect_err("invalid provider payload must fail");
+        server.join().expect("fake provider joins");
+
+        assert_eq!(error.class, GenerationFailureClass::Terminal);
+        assert_eq!(error.stage, "provider_payload");
+        assert_eq!(error.failure().external_generation_executed, None);
+        assert_eq!(error.failure().external_media_write_executed, Some(false));
     }
 
     #[test]
@@ -3061,69 +3143,6 @@ mod tests {
             GenerationFailureClass::AmbiguousProvider,
             1
         ));
-
-        let pre_send = GenerationFailure {
-            class: GenerationFailureClass::RetryableProvider,
-            stage: "provider_transport",
-        };
-        assert_eq!(failure_external_generation_executed(pre_send), Some(false));
-        assert_eq!(failure_external_media_write_executed(pre_send), Some(false));
-
-        let ambiguous = GenerationFailure {
-            class: GenerationFailureClass::AmbiguousProvider,
-            stage: "provider_transport",
-        };
-        assert_eq!(failure_external_generation_executed(ambiguous), None);
-        assert_eq!(
-            failure_external_media_write_executed(ambiguous),
-            Some(false)
-        );
-
-        let media_upload = GenerationFailure {
-            class: GenerationFailureClass::Terminal,
-            stage: "media_upload",
-        };
-        assert_eq!(
-            failure_external_generation_executed(media_upload),
-            Some(true)
-        );
-        assert_eq!(failure_external_media_write_executed(media_upload), None);
-
-        let media_readback = GenerationFailure {
-            class: GenerationFailureClass::Terminal,
-            stage: "media_readback",
-        };
-        assert_eq!(
-            failure_external_generation_executed(media_readback),
-            Some(true)
-        );
-        assert_eq!(
-            failure_external_media_write_executed(media_readback),
-            Some(true)
-        );
-
-        let persistence = GenerationFailure {
-            class: GenerationFailureClass::Terminal,
-            stage: "persistence",
-        };
-        assert_eq!(
-            failure_external_generation_executed(persistence),
-            Some(true)
-        );
-        assert_eq!(
-            failure_external_media_write_executed(persistence),
-            Some(true)
-        );
-
-        let worker_execution = GenerationFailure {
-            class: GenerationFailureClass::Terminal,
-            stage: "worker_execution",
-        };
-        assert_eq!(failure_external_generation_executed(worker_execution), None);
-        assert_eq!(
-            failure_external_media_write_executed(worker_execution),
-            None
-        );
     }
 
     #[test]
@@ -3535,6 +3554,42 @@ mod tests {
     }
 
     #[test]
+    fn fake_media_upload_failure_keeps_write_outcome_unknown() {
+        let source_png = fixture_png();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake server");
+        let port = listener.local_addr().expect("fake server address").port();
+        let handle = thread::spawn(move || {
+            for expected_path in ["/v1/images/generations", "/upload"] {
+                let (mut stream, _) = listener.accept().expect("accept fake request");
+                let request = read_request(&mut stream);
+                assert!(request.headers.contains(expected_path));
+                let response = if expected_path == "/v1/images/generations" {
+                    json_response(
+                        &json!({"data":[{"b64_json": Base64::encode_string(&source_png)}]})
+                            .to_string(),
+                    )
+                } else {
+                    json_response("{}")
+                };
+                stream.write_all(&response).expect("write fake response");
+            }
+        });
+
+        let error = generate_and_store_with_client(
+            &test_http_config(port),
+            &fixture_work_item(),
+            Uuid::nil(),
+            HttpClient::test_only(),
+        )
+        .expect_err("invalid upload response must fail");
+        handle.join().expect("fake server joins");
+
+        assert_eq!(error.stage, "media_upload");
+        assert_eq!(error.failure().external_generation_executed, Some(true));
+        assert_eq!(error.failure().external_media_write_executed, None);
+    }
+
+    #[test]
     fn fake_media_readback_must_match_uploaded_bytes() {
         let source_png = fixture_png();
         let final_jpeg = fixture_jpeg(&source_png);
@@ -3583,6 +3638,8 @@ mod tests {
         handle.join().expect("fake server joins");
 
         assert!(error.to_string().contains("did not match uploaded image"));
+        assert_eq!(error.failure().external_generation_executed, Some(true));
+        assert_eq!(error.failure().external_media_write_executed, Some(true));
     }
 
     #[test]
