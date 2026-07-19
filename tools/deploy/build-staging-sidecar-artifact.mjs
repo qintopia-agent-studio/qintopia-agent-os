@@ -33,6 +33,10 @@ const bundleName = `${binaryName}.tar.gz`;
 const bundlePath = path.join(artifactDir, bundleName);
 const manifestPath = path.join(artifactDir, "artifact-manifest.json");
 const checksumPath = path.join(artifactDir, "SHA256SUMS");
+const smokeRunners = [
+  "huabaosi-image-generation-staging-smoke.sh",
+  "qiwe-image-send-staging-smoke.sh",
+];
 const verifyArtifactBoundary = () =>
   assertContainedArtifactDirBoundary(outputRoot, artifactName, artifactDir);
 
@@ -104,6 +108,13 @@ fs.mkdirSync(artifactDir, { recursive: true });
 verifyArtifactBoundary();
 fs.copyFileSync(binaryPath, stagedBinaryPath);
 fs.chmodSync(stagedBinaryPath, 0o755);
+for (const runnerName of smokeRunners) {
+  const sourcePath = path.join(repoRoot, "deploy", "sidecar", "scripts", runnerName);
+  const stagedPath = path.join(artifactDir, runnerName);
+  ensureFile(sourcePath, `staging smoke runner ${runnerName}`);
+  fs.copyFileSync(sourcePath, stagedPath);
+  fs.chmodSync(stagedPath, 0o755);
+}
 verifyArtifactBoundary();
 run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName]);
 
@@ -146,6 +157,12 @@ const manifest = {
       compression: "gzip",
       mode: "0644",
     },
+    ...smokeRunners.map((runnerName) => ({
+      path: runnerName,
+      sha256: sha256File(path.join(artifactDir, runnerName)),
+      size_bytes: fs.statSync(path.join(artifactDir, runnerName)).size,
+      mode: "0755",
+    })),
   ],
   validation: {
     cargo_features: cargoFeatures,
@@ -163,11 +180,15 @@ const manifest = {
 
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 const manifestSha256 = sha256File(manifestPath);
+const smokeRunnerChecksums = smokeRunners.map(
+  (runnerName) => `${sha256File(path.join(artifactDir, runnerName))}  ${runnerName}`
+);
 fs.writeFileSync(
   checksumPath,
   [
     `${binarySha256}  ${binaryName}`,
     `${bundleSha256}  ${bundleName}`,
+    ...smokeRunnerChecksums,
     `${manifestSha256}  artifact-manifest.json`,
   ].join("\n") + "\n"
 );

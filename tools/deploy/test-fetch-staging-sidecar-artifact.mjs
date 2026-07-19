@@ -18,6 +18,10 @@ const tmpRoot = fs.mkdtempSync(
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const artifactName = "qintopia-message-sidecar-staging-linux-x86_64-gnu";
 const binaryName = "qintopia-message-sidecar";
+const smokeRunners = [
+  "huabaosi-image-generation-staging-smoke.sh",
+  "qiwe-image-send-staging-smoke.sh",
+];
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -45,6 +49,7 @@ const writeFixtureArtifact = (
     stagingOnly = true,
     productionEligible = false,
     includeTarballChecksum = true,
+    includeRunnerChecksums = true,
     extraChecksumEntry = "",
   } = {}
 ) => {
@@ -62,6 +67,16 @@ const writeFixtureArtifact = (
 
   const binarySha = sha256File(binaryPath);
   const bundleSha = sha256File(bundlePath);
+  const runnerHashes = new Map();
+  for (const runnerName of smokeRunners) {
+    const runnerPath = path.join(artifactDir, runnerName);
+    fs.writeFileSync(runnerPath, "#!/usr/bin/env bash\nexit 0\n", {
+      encoding: "utf8",
+      mode: 0o755,
+    });
+    fs.chmodSync(runnerPath, 0o755);
+    runnerHashes.set(runnerName, sha256File(runnerPath));
+  }
   const manifest = {
     schema_version: 1,
     artifact_name: artifactName,
@@ -78,6 +93,10 @@ const writeFixtureArtifact = (
         path: `${binaryName}.tar.gz`,
         sha256: bundleSha,
       },
+      ...smokeRunners.map((runnerName) => ({
+        path: runnerName,
+        sha256: runnerHashes.get(runnerName),
+      })),
     ],
     validation: {
       cargo_features: cargoFeatures,
@@ -91,6 +110,11 @@ const writeFixtureArtifact = (
   const checksumLines = [`${binarySha}  ${binaryName}`];
   if (includeTarballChecksum) {
     checksumLines.push(`${bundleSha}  ${binaryName}.tar.gz`);
+  }
+  if (includeRunnerChecksums) {
+    for (const runnerName of smokeRunners) {
+      checksumLines.push(`${runnerHashes.get(runnerName)}  ${runnerName}`);
+    }
   }
   checksumLines.push(`${manifestSha}  artifact-manifest.json`);
   if (extraChecksumEntry) {
@@ -112,6 +136,9 @@ const writeSymlinkArtifact = (name) => {
   fs.writeFileSync(path.join(artifactDir, "artifact-manifest.json"), "{}\n");
   fs.writeFileSync(path.join(artifactDir, "SHA256SUMS"), "\n");
   fs.writeFileSync(path.join(artifactDir, `${binaryName}.tar.gz`), "not a tar\n");
+  for (const runnerName of smokeRunners) {
+    fs.writeFileSync(path.join(artifactDir, runnerName), "#!/usr/bin/env bash\n");
+  }
   fs.symlinkSync("/etc/passwd", path.join(artifactDir, binaryName));
   const zipPath = path.join(tmpRoot, `${name}.zip`);
   run("zip", ["-q", "-y", "-r", zipPath, "."], { cwd: artifactDir });
@@ -130,6 +157,8 @@ const writeTraversalArtifact = (name) => {
       "    archive.writestr('SHA256SUMS', '\\n')",
       "    archive.writestr('qintopia-message-sidecar', '')",
       "    archive.writestr('qintopia-message-sidecar.tar.gz', '')",
+      "    archive.writestr('huabaosi-image-generation-staging-smoke.sh', '')",
+      "    archive.writestr('qiwe-image-send-staging-smoke.sh', '')",
     ].join("\n"),
     zipPath,
   ]);
@@ -148,6 +177,8 @@ const writeExtraEntryArtifact = (name) => {
       "    archive.writestr('SHA256SUMS', '\\n')",
       "    archive.writestr('qintopia-message-sidecar', '')",
       "    archive.writestr('qintopia-message-sidecar.tar.gz', '')",
+      "    archive.writestr('huabaosi-image-generation-staging-smoke.sh', '')",
+      "    archive.writestr('qiwe-image-send-staging-smoke.sh', '')",
     ].join("\n"),
     zipPath,
   ]);
@@ -235,6 +266,7 @@ try {
     );
   }
   const sidecarDir = path.join(releaseRoot, releaseSha, "sidecar");
+  const runnerDir = path.join(releaseRoot, releaseSha, "deploy/sidecar/scripts");
   const sidecarPath = path.join(sidecarDir, binaryName);
   for (const requiredPath of [
     sidecarPath,
@@ -244,6 +276,17 @@ try {
   ]) {
     if (!fs.existsSync(requiredPath)) {
       throw new Error(`provision did not install ${requiredPath}`);
+    }
+  }
+  for (const runnerName of smokeRunners) {
+    const runnerPath = path.join(runnerDir, runnerName);
+    if (!fs.existsSync(runnerPath)) {
+      throw new Error(`provision did not install ${runnerPath}`);
+    }
+    if ((fs.statSync(runnerPath).mode & 0o777) !== 0o555) {
+      throw new Error(
+        `installed staging smoke runner must be mode 0555: ${runnerName}`
+      );
     }
   }
   if (sha256File(sidecarPath) !== good.binarySha) {
@@ -257,6 +300,9 @@ try {
   }
   if ((fs.statSync(sidecarDir).mode & 0o777) !== 0o555) {
     throw new Error("installed sidecar directory must be mode 0555");
+  }
+  if ((fs.statSync(runnerDir).mode & 0o777) !== 0o555) {
+    throw new Error("installed staging smoke runner directory must be mode 0555");
   }
   if ((fs.statSync(path.join(releaseRoot, releaseSha)).mode & 0o777) !== 0o555) {
     throw new Error("installed release directory must be mode 0555");
@@ -317,6 +363,21 @@ try {
     }),
     "SHA256SUMS entries must exactly match the staging allowlist",
     "missing tarball checksum"
+  );
+
+  assertFailed(
+    runProvision({
+      zipPath: writeFixtureArtifact("missing-runner-checksums", {
+        includeRunnerChecksums: false,
+      }).zipPath,
+      releaseRoot: path.join(
+        tmpRoot,
+        "missing-runner-checksums",
+        "qintopia-agent-os-staging-releases"
+      ),
+    }),
+    "SHA256SUMS entries must exactly match the staging allowlist",
+    "missing runner checksums"
   );
 
   assertFailed(
