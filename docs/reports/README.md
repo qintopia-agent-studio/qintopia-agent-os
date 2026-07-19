@@ -4,6 +4,7 @@
 - [2026-07-18 v0.2.15 release decision evidence](2026-07-18-v0215-release-decision-evidence.md)
 - [2026-07-19 production release metadata permissions](2026-07-19-production-release-metadata-permissions.md)
 - [2026-07-19 production release owner normalization](2026-07-19-production-release-owner-normalization.md)
+- [2026-07-19 Aliang production canary runner](2026-07-19-aliang-production-canary-runner.md)
 - [2026-07-19 same-SHA release metadata repair](2026-07-19-same-sha-release-metadata-repair.md)
 - [2026-07-19 staging sidecar provision umask](2026-07-19-staging-sidecar-provision-umask.md)
 - [2026-07-15 Aliang image generation production enablement](2026-07-15-aliang-production-enablement.md)
@@ -71,6 +72,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-18-v0215-release-decision-evidence.md`                                    | adopt-input | v0.2.15 owner release decision evidence and remaining completion gates |
 | `2026-07-19-production-release-metadata-permissions.md`                            | adopt-input | Production release metadata readability remediation                    |
 | `2026-07-19-production-release-owner-normalization.md`                             | adopt-input | Production COS archive owner normalization remediation                 |
+| `2026-07-19-aliang-production-canary-runner.md`                                    | adopt-input | One-shot Aliang production canary and sanitized evidence boundary      |
 | `2026-07-19-same-sha-release-metadata-repair.md`                                   | adopt-input | Existing release owner and mode reconciliation remediation             |
 | `2026-07-19-v0216-existing-release-validation.md`                                  | adopt-input | v0.2.16 same-SHA release validation and rollback-pointer gap           |
 | `2026-07-19-staging-sidecar-provision-umask.md`                                    | adopt-input | Staging release directory mode and cleanup remediation                 |

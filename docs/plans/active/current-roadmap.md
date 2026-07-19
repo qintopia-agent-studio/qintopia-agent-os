@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-07-16
+Updated: 2026-07-19
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -106,7 +106,11 @@ unless correcting historical evidence.
      the existing immutable tree and also collapsed `previous` onto `current`. Keep the
      generation timer disabled until a distinct Release includes existing-tree
      validation, is assembled by the corrected runner, and passes release-local
-     observation.
+     observation. The final Release also includes a release-local one-shot runner so the
+     next production attempt can approve one pending brief as `trainer`, create one new
+     request, generate one pending Feishu-backed JPEG, and authenticate the same bytes
+     without first enabling the long-running timer. Generated-image approval, mirror
+     scheduling, publishing, QiWe, and sending remain separate gates.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The

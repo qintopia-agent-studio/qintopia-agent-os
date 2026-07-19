@@ -71,6 +71,18 @@
 
 - Huabaosi image generation production state observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
+- Huabaosi image generation one-shot production canary:
+
+  ```bash
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENABLE=1 \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_APPROVAL=approved-production-image-generation-canary \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_BRIEF_ARTIFACT_ID=<pending-poster-brief-uuid> \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_DATABASE_URL_SHA256=<approved-database-url-sha256> \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_RELEASE_SHA=<approved-release-sha> \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_SIDECAR_SHA256=<approved-sidecar-sha256> \
+    deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh
+  ```
+
 - Huabaosi Feishu-backed generated-image read-only revalidation:
   `qintopia-message-sidecar huabaosi-feishu-primary-storage-revalidate --artifact-id <generated-image-uuid>`
 - Huabaosi generated-image Feishu mirror production observation smoke:
@@ -669,6 +681,13 @@ Use `rg` and `rg --files` for search.
   preflight, and run `run-huabaosi-image-generation-worker --once --dry-run` for a
   read-only queue preview. It must not use `--apply`, contact provider/media endpoints,
   write Postgres or Feishu, call QiWe, create a generated image, or publish.
+- `huabaosi-image-generation-production-canary-smoke.sh` is the release-local one-shot
+  entrypoint for the first post-deploy image. It must run from the exact immutable
+  release with the provider timer inactive, parse only allowlisted keys from the fixed
+  production env without `source` or `eval`, reuse reviewer `trainer`, and bind one
+  pending brief to one new request, one pending Feishu-backed JPEG, and authenticated
+  same-byte revalidation. It must not approve the generated image, enable timers, run
+  the mirror worker, publish, call QiWe, send, or retry terminal/ambiguous outcomes.
 - `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
   Hermes WeCom user-service active state through `systemctl --user`, fixed service
   command, public `busy_input_mode`, release/current presence, and sanitized

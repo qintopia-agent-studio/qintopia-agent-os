@@ -973,6 +973,9 @@ try {
     ["tools/deploy/test-huabaosi-image-production-observation.mjs"],
     { cwd: repoRoot }
   );
+  execFileSync("node", ["tools/deploy/test-huabaosi-image-production-canary.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync("node", ["tools/deploy/test-huabaosi-image-staging-readiness.mjs"], {
     cwd: repoRoot,
   });

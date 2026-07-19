@@ -28,6 +28,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh",
   "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
   "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
   "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",

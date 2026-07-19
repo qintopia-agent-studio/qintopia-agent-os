@@ -36,6 +36,10 @@ send externally.
   `/home/ubuntu/qintopia-agent-os-releases/current`.
 - Confirm `tools/deploy/build-deploy-bundle.mjs` packages those scripts.
 - Confirm `tools/deploy/check-deploy-contracts.mjs` guards those scripts.
+- For the final Huabaosi image canary Release, confirm the bundle contains
+  `deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh` and the
+  contract check covers its immutable release, timer, reviewer, pending-image, and
+  no-send boundaries.
 - If the target Release is meant to unblock staging runtime provisioning, confirm the
   deploy bundle includes:
   - `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh`
