@@ -161,6 +161,13 @@ reviewer/confirmer/owner/attachment-host allowlist denials append
 `work_item_events.denied_by_policy` with `policy` metadata before the command returns
 the policy error.
 
+Artifact review apply may also carry `expected_artifact_type` and
+`expected_review_status`. When present, the sidecar checks them before any generated
+image Feishu revalidation and again under the artifact row lock before changing review
+state. A mismatch returns an error without recording a review decision. Production
+one-shot workflows must use these preconditions when a generic review command is
+intended to approve only one artifact class and state.
+
 New `group_message_request` work items for `erhua.send_group_message` should start in
 `awaiting_publish` rather than `queued`. That keeps approved-but-not- finally-confirmed
 sends out of claimable worker queues until a separate human confirmation path records

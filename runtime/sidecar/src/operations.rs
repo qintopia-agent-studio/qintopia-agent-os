@@ -154,6 +154,10 @@ pub struct ArtifactReviewDecisionRequest {
     pub reviewer_id: String,
     pub decision: String,
     #[serde(default)]
+    pub expected_artifact_type: Option<String>,
+    #[serde(default)]
+    pub expected_review_status: Option<String>,
+    #[serde(default)]
     pub reason: String,
     #[serde(default)]
     pub source: String,
@@ -169,6 +173,7 @@ pub struct ArtifactReviewDecisionReport {
     pub action_status: String,
     pub artifact_id: Uuid,
     pub work_item_id: Option<Uuid>,
+    pub artifact_type: Option<String>,
     pub previous_review_status: Option<String>,
     pub review_status: String,
     pub reviewer_id: String,
@@ -1988,7 +1993,14 @@ pub fn record_artifact_review_decision_dry_run(
     normalize_review_request(&mut request);
     validate_review_request(&request)?;
     validate_reviewer_authorized(&request.reviewer_id, policy)?;
-    Ok(review_report(&request, false, "dry_run_ok", None, None))
+    Ok(review_report(
+        &request,
+        false,
+        "dry_run_ok",
+        None,
+        None,
+        None,
+    ))
 }
 
 async fn prepare_feishu_primary_storage_approval_evidence(
@@ -2001,7 +2013,7 @@ async fn prepare_feishu_primary_storage_approval_evidence(
     }
     let row = sqlx::query(
         r#"
-        SELECT work_item_id, artifact_type, created_by_agent, artifact_uri
+        SELECT work_item_id, artifact_type, review_status, created_by_agent, artifact_uri
         FROM qintopia_agent_os.artifacts
         WHERE id = $1
         "#,
@@ -2014,8 +2026,10 @@ async fn prepare_feishu_primary_storage_approval_evidence(
         return Ok(None);
     };
     let artifact_type: String = row.try_get("artifact_type")?;
+    let review_status: String = row.try_get("review_status")?;
     let created_by_agent: String = row.try_get("created_by_agent")?;
     let artifact_uri: Option<String> = row.try_get("artifact_uri")?;
+    validate_artifact_review_preconditions(request, &artifact_type, &review_status)?;
     let expected_uri = format!(
         "feishu-base://huabaosi-generated-image/{}",
         request.artifact_id
@@ -2087,7 +2101,14 @@ async fn record_artifact_review_decision_with_evidence(
     }
 
     if !apply_requested {
-        return Ok(review_report(&request, false, "dry_run_ok", None, None));
+        return Ok(review_report(
+            &request,
+            false,
+            "dry_run_ok",
+            None,
+            None,
+            None,
+        ));
     }
 
     let mut tx = pool
@@ -2147,6 +2168,16 @@ async fn record_artifact_review_decision_with_evidence(
     .ok_or_else(|| anyhow::anyhow!("artifact is not found"))?;
 
     let approval_context = artifact_approval_context_from_row(&row)?;
+    if let Err(error) = validate_artifact_review_preconditions(
+        &request,
+        &approval_context.artifact_type,
+        &approval_context.review_status,
+    ) {
+        tx.rollback()
+            .await
+            .context("rollback artifact review precondition mismatch")?;
+        return Err(error);
+    }
     if let Err(error) = validate_generated_image_approval_with_evidence(
         &approval_context,
         &request.decision,
@@ -2168,6 +2199,7 @@ async fn record_artifact_review_decision_with_evidence(
     }
 
     let work_item_id = approval_context.work_item_id;
+    let artifact_type = approval_context.artifact_type;
     let previous_review_status = approval_context.review_status;
     sqlx::query(
         r#"
@@ -2222,6 +2254,7 @@ async fn record_artifact_review_decision_with_evidence(
         true,
         "review_recorded",
         Some(work_item_id),
+        Some(artifact_type),
         Some(previous_review_status),
     ))
 }
@@ -2574,6 +2607,8 @@ pub async fn process_workbench_event(
                 artifact_id,
                 reviewer_id: event.actor_id.clone(),
                 decision: event.review_decision.clone(),
+                expected_artifact_type: None,
+                expected_review_status: None,
                 reason: non_empty_or_default(
                     &event.comment_text,
                     "workbench review event processed",
@@ -4977,6 +5012,12 @@ async fn validate_apply_policy(
 fn normalize_review_request(request: &mut ArtifactReviewDecisionRequest) {
     request.reviewer_id = request.reviewer_id.trim().to_string();
     request.decision = normalize_key(&request.decision);
+    if let Some(value) = request.expected_artifact_type.as_mut() {
+        *value = normalize_key(value);
+    }
+    if let Some(value) = request.expected_review_status.as_mut() {
+        *value = normalize_key(value);
+    }
     request.reason = request.reason.trim().to_string();
     request.source = request.source.trim().to_string();
     if request.source.is_empty() {
@@ -4993,6 +5034,29 @@ fn validate_review_request(request: &ArtifactReviewDecisionRequest) -> Result<()
     if !["approved", "rejected", "changes_requested"].contains(&request.decision.as_str()) {
         bail!("review decision is not allowed");
     }
+    if let Some(expected_artifact_type) = request.expected_artifact_type.as_deref() {
+        if expected_artifact_type.is_empty()
+            || expected_artifact_type.len() > 64
+            || !expected_artifact_type
+                .chars()
+                .all(|value| value.is_ascii_lowercase() || value.is_ascii_digit() || value == '_')
+        {
+            bail!("expected_artifact_type is invalid");
+        }
+    }
+    if let Some(expected_review_status) = request.expected_review_status.as_deref() {
+        if ![
+            "not_required",
+            "pending",
+            "approved",
+            "rejected",
+            "changes_requested",
+        ]
+        .contains(&expected_review_status)
+        {
+            bail!("expected_review_status is invalid");
+        }
+    }
     if ["rejected", "changes_requested"].contains(&request.decision.as_str())
         && request.reason.trim().is_empty()
     {
@@ -5003,6 +5067,28 @@ fn validate_review_request(request: &ArtifactReviewDecisionRequest) -> Result<()
     }
     if contains_sensitive_value(&request.metadata) || contains_sensitive_text(&request.reason) {
         bail!("review payload contains disallowed sensitive or raw internal content");
+    }
+    Ok(())
+}
+
+fn validate_artifact_review_preconditions(
+    request: &ArtifactReviewDecisionRequest,
+    artifact_type: &str,
+    review_status: &str,
+) -> Result<()> {
+    if request
+        .expected_artifact_type
+        .as_deref()
+        .is_some_and(|expected| expected != artifact_type)
+    {
+        bail!("artifact type does not match the review precondition");
+    }
+    if request
+        .expected_review_status
+        .as_deref()
+        .is_some_and(|expected| expected != review_status)
+    {
+        bail!("artifact review status does not match the review precondition");
     }
     Ok(())
 }
@@ -5735,6 +5821,7 @@ fn review_report(
     apply_requested: bool,
     action_status: &str,
     work_item_id: Option<Uuid>,
+    artifact_type: Option<String>,
     previous_review_status: Option<String>,
 ) -> ArtifactReviewDecisionReport {
     ArtifactReviewDecisionReport {
@@ -5744,6 +5831,7 @@ fn review_report(
         action_status: action_status.to_string(),
         artifact_id: request.artifact_id,
         work_item_id,
+        artifact_type,
         previous_review_status,
         review_status: request.decision.clone(),
         reviewer_id: request.reviewer_id.clone(),
@@ -5758,6 +5846,8 @@ fn review_report(
             "rejected and changes_requested decisions require a reason".to_string(),
             "generated_image approvals revalidate worker provenance and media metadata".to_string(),
             "Feishu-backed approvals require authenticated same-identity readback evidence"
+                .to_string(),
+            "caller-supplied artifact type and status preconditions are enforced under row lock"
                 .to_string(),
             "review decisions are audited through work_item_events".to_string(),
         ],
@@ -7234,6 +7324,35 @@ mod tests {
             .any(|item| item.contains("does not publish")));
     }
 
+    #[test]
+    fn review_decision_preconditions_bind_artifact_type_and_status() {
+        let mut request: ArtifactReviewDecisionRequest = serde_json::from_value(json!({
+            "artifact_id": "02dd5f47-81f8-4b8c-898d-b4c926fcf9b5",
+            "reviewer_id": "human-owner-1",
+            "decision": "approved",
+            "expected_artifact_type": " poster_brief ",
+            "expected_review_status": " pending "
+        }))
+        .expect("review request should deserialize");
+        normalize_review_request(&mut request);
+        validate_review_request(&request).expect("review preconditions should validate");
+
+        validate_artifact_review_preconditions(&request, "poster_brief", "pending")
+            .expect("matching artifact should pass");
+        let type_error =
+            validate_artifact_review_preconditions(&request, "generated_image", "pending")
+                .expect_err("wrong artifact type must fail");
+        assert!(type_error
+            .to_string()
+            .contains("artifact type does not match"));
+        let status_error =
+            validate_artifact_review_preconditions(&request, "poster_brief", "approved")
+                .expect_err("wrong review status must fail");
+        assert!(status_error
+            .to_string()
+            .contains("review status does not match"));
+    }
+
     fn generated_image_approval_context() -> ArtifactApprovalContext {
         let brief_id = Uuid::new_v4();
         let brief_hash = format!("sha256:{}", "b".repeat(64));
@@ -7468,6 +7587,8 @@ mod tests {
             artifact_id: context.artifact_id,
             reviewer_id: "human-owner-1".to_string(),
             decision: "approved".to_string(),
+            expected_artifact_type: None,
+            expected_review_status: None,
             reason: "reviewed exact Feishu-backed JPEG".to_string(),
             source: "integration_test".to_string(),
             metadata: json!({}),

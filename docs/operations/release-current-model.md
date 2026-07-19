@@ -102,8 +102,11 @@ The Huabaosi image-generation worker is an external provider boundary, not an in
 timer. A release may install its preflight, worker, and timer units, but the ordinary
 installer must leave that timer disabled. After the owner manually publishes the
 Release, production configuration must bind the enablement to that exact release SHA and
-database URL hash. Run the release-local activation script to pass preflight and enable
-the timer for canary generation. This does not enable image approval or QiWe.
+database URL hash. Run the release-local one-shot production canary first with the timer
+inactive; it binds one pending brief, the fixed `trainer` reviewer, one new request, one
+pending Feishu-backed JPEG, and authenticated same-byte revalidation to the immutable
+release evidence. It does not approve the generated image or call QiWe. Enable ongoing
+scheduling through the separate activation script only after that canary is reviewed.
 
 The release assembly step should be idempotent: if the release directory already exists,
 the operator must verify its manifest and checksum instead of overwriting it blindly.

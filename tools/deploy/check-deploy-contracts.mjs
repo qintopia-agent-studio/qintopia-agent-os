@@ -109,6 +109,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
     "deploy/sidecar/scripts/staging-runtime-readiness-evidence-smoke.sh",
     "deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh",
+    "deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
@@ -117,6 +118,17 @@ if (!exists(deployBundleBuilderPath)) {
   ]) {
     requireFragment(deployBundleBuilderPath, builder, fragment);
   }
+}
+
+const deployRunnerCheckPath = "tools/deploy/check-deploy-runner.mjs";
+if (!exists(deployRunnerCheckPath)) {
+  addError(`${deployRunnerCheckPath}: missing deploy runner check`);
+} else {
+  requireFragment(
+    deployRunnerCheckPath,
+    readText(deployRunnerCheckPath),
+    "tools/deploy/test-huabaosi-image-production-canary.mjs"
+  );
 }
 
 const stagingValuesTemplatePath =
@@ -406,6 +418,54 @@ if (!exists(huabaosiImageProductionObservationPath)) {
     "run-group-message-send-worker",
   ]) {
     forbidFragment(huabaosiImageProductionObservationPath, smoke, fragment);
+  }
+}
+
+const huabaosiImageProductionCanaryPath =
+  "deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh";
+if (!exists(huabaosiImageProductionCanaryPath)) {
+  addError(`${huabaosiImageProductionCanaryPath}: missing production canary command`);
+} else {
+  const canary = readText(huabaosiImageProductionCanaryPath);
+  for (const fragment of [
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENABLE",
+    "approved-production-image-generation-canary",
+    'REVIEWER_ID="trainer"',
+    'PRODUCTION_ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PROVIDER_TIMER="qintopia-agentos-huabaosi-image-generation-worker.timer"',
+    'if "$SYSTEMCTL" is-active --quiet "$PROVIDER_TIMER"',
+    "production provider timer must be inactive during one-shot canary",
+    "production canary sidecar hash does not match",
+    "production canary database hash does not match",
+    "production environment contains a duplicate canary key",
+    "operations-artifact-review-decision --apply",
+    '"expected_artifact_type": "poster_brief"',
+    '"expected_review_status": "pending"',
+    'assert data["artifact_type"] == "poster_brief"',
+    'assert data["previous_review_status"] == "pending"',
+    'BRIEF_WORK_ITEM_ID="${review_facts[2]}"',
+    "run-xiaoman-activity-image-generation-starter-worker --once --apply --work-item-id",
+    'assert data["requested_work_item_id"] == sys.argv[1]',
+    'assert item["parent_work_item_id"] == sys.argv[1]',
+    "run-huabaosi-image-generation-worker --once --work-item-id",
+    "huabaosi-feishu-primary-storage-revalidate --artifact-id",
+    'assert artifact["review_status"] == "pending"',
+    "database_writes_executed",
+    "contains sensitive output",
+    "one Feishu-backed JPEG remains pending human review",
+  ]) {
+    requireFragment(huabaosiImageProductionCanaryPath, canary, fragment);
+  }
+  for (const fragment of [
+    'source "$ENV_FILE"',
+    "eval ",
+    "systemctl enable",
+    "systemctl start",
+    'operations-artifact-review-decision --apply --payload-json "{',
+    "run-group-message-send-worker",
+    "run-qiwe-image-send-worker",
+  ]) {
+    forbidFragment(huabaosiImageProductionCanaryPath, canary, fragment);
   }
 }
 
@@ -898,6 +958,8 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
 }
 
 const aliangStagingSmokeTestPath = "tools/deploy/test-huabaosi-image-staging-smoke.mjs";
+const aliangProductionCanaryTestPath =
+  "tools/deploy/test-huabaosi-image-production-canary.mjs";
 const aliangStagingReadinessTestPath =
   "tools/deploy/test-huabaosi-image-staging-readiness.mjs";
 const stagingRuntimePrerequisiteObservationTestPath =
@@ -1093,6 +1155,31 @@ if (!exists(aliangStagingSmokeTestPath)) {
     "Huabaosi image staging smoke test passed.",
   ]) {
     requireFragment(aliangStagingSmokeTestPath, test, fragment);
+  }
+}
+
+if (!exists(aliangProductionCanaryTestPath)) {
+  addError(
+    `${aliangProductionCanaryTestPath}: missing Huabaosi production canary test`
+  );
+} else {
+  const test = readText(aliangProductionCanaryTestPath);
+  for (const fragment of [
+    "huabaosi-image-generation-production-canary-smoke.sh",
+    '"reviewer_id":"trainer"',
+    "expected five sidecar commands",
+    "timer must be inactive during one-shot canary",
+    "ambient QiWe credential reached Huabaosi child",
+    "invalid production canary brief UUID must fail closed",
+    "missing trainer reviewer allowlist entry must fail closed",
+    "starter parent work item mismatch must fail before generation",
+    "duplicate production canary env key must fail closed",
+    "revalidation identity mismatch must block canary completion",
+    "sensitive child output must block production canary",
+    "one Feishu-backed JPEG remains pending human review",
+    "Huabaosi image production canary test passed.",
+  ]) {
+    requireFragment(aliangProductionCanaryTestPath, test, fragment);
   }
 }
 

@@ -551,7 +551,31 @@ is processed by the previous deploy runner, so run the reviewed same-SHA follow-
 deployment with the original release scope and `qintopia-system-services` restart target
 before activation. Do not repair a missing unit with a server edit.
 
-Then activate the canary timer. The activation command first starts the fixed no-network
+Run the release-local one-shot canary while the provider timer is disabled. Use the
+approved hashes from Release/deployment evidence and one pending `poster_brief` UUID.
+The command parses only its allowlisted keys from the fixed production env, approves the
+brief as `trainer`, creates exactly one new request, generates one Feishu-backed JPEG,
+and performs authenticated same-byte revalidation.
+
+```bash
+release_sha='<approved 40-hex release sha>'
+sudo env \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENABLE=1 \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_APPROVAL=approved-production-image-generation-canary \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_BRIEF_ARTIFACT_ID='<pending poster_brief UUID>' \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_DATABASE_URL_SHA256='<approved database URL sha256>' \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_RELEASE_SHA="$release_sha" \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_SIDECAR_SHA256='<approved sidecar binary sha256>' \
+  "/home/ubuntu/qintopia-agent-os-releases/${release_sha}/deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh"
+```
+
+Retain all five sanitized evidence records. The generated image remains `pending`; the
+command does not approve it, enable a timer, run the mirror worker, publish, call QiWe,
+or send. A failed or ambiguous request remains terminal and requires a new reviewed
+brief/request rather than a retry.
+
+Only after the one-shot evidence and pending JPEG are reviewed may the owner choose to
+activate ongoing scheduling. The activation command first starts the fixed no-network
 preflight service and stops without enabling the timer if any production gate is
 invalid.
 
