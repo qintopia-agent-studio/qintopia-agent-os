@@ -92,6 +92,14 @@ remain mode `0755`. This lets the unprivileged release-local observation and pre
 paths verify the exact production feature set without running as root or weakening the
 immutable release boundary.
 
+Promotion must validate both a newly assembled tree and an existing immutable release
+before reporting success. Every entry must be owned by the effective deploy-runner UID,
+non-symlink entries must not be group- or world-writable, the sidecar binary must be
+`0755`, and its manifest and checksum file must be `0444`. Directories must remain
+group/world readable and traversable for unprivileged release-local observation, and
+special file types are forbidden. An invalid existing release must fail closed; a
+same-SHA idempotent request must not replace `previous` with `current`.
+
 GitHub Actions must not SSH to the server. The server must not pull repository source or
 build Rust for routine releases.
 

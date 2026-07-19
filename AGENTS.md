@@ -786,7 +786,11 @@ Use `rg` and `rg --files` for search.
 - As of 2026-07-15, the corrected `v0.2.10` same-SHA follow-up deploy installed the new
   systemd units. A same-SHA request for an existing release must reuse the immutable
   manifest's exact runtime, bundle, commit, scope, and restart-target fields; narrowing
-  `restart_targets` is rejected before promotion and does not trigger rollback.
+  `restart_targets` is rejected before promotion and does not trigger rollback. Before
+  reuse, the existing tree must satisfy the same deploy-runner owner, non-writable,
+  directory accessibility, regular/symlink type, sidecar `0755`, and metadata `0444`
+  checks as a new staging tree. Invalid existing trees fail closed, and same-SHA reuse
+  must preserve a distinct `previous` target.
 - PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
   live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
   profile symlink without that reviewed cutover, smoke evidence, and rollback note.
