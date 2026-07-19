@@ -49,10 +49,12 @@ not a recoverable connection failure and must fail closed without automatic retr
 - Retry only transport failures proven to occur before provider request bytes may have
   been sent. Record a post-send transport or protocol error as an ambiguous provider
   outcome with `external_generation_executed=null` and `automatic_retry_allowed=false`.
-- Derive generation and media-write audit outcomes from explicit completed stages.
-  Persistence failure records both as executed; upload or Feishu storage failure uses
-  `null` for an unprovable write outcome, and any unknown future stage also defaults to
-  `null` instead of reporting a false negative.
+- Carry generation and media-write outcomes explicitly through every failure path.
+  Record generation as `false` only before provider execution, `true` only after
+  accepting a valid provider payload, and `null` when execution is uncertain. Record a
+  media write as `false` before storage, `null` for an unprovable upload or Feishu
+  write, and `true` only after storage is confirmed by readback or completed
+  persistence.
 - Validate the timeout during the existing no-network preflight. Invalid values fail
   before Postgres or provider access and are never emitted in chat-safe output.
 - Preserve the three-attempt retry limit, retry classifications, idempotency, and
@@ -63,9 +65,9 @@ not a recoverable connection failure and must fail closed without automatic retr
 Local validation completed:
 
 - `cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml`;
-- focused all-feature Huabaosi image-generation tests: 46 passed, 0 failed, and 1
+- focused all-feature Huabaosi image-generation tests: 48 passed, 0 failed, and 1
   guarded PostgreSQL test ignored by design;
-- `cargo test --manifest-path runtime/sidecar/Cargo.toml --all-features`: 409 passed, 0
+- `cargo test --manifest-path runtime/sidecar/Cargo.toml --all-features`: 411 passed, 0
   failed, and 12 guarded PostgreSQL tests ignored by design;
 - warning-denied Clippy with exact production features and with all features;
 - `node tools/deploy/check-deploy-contracts.mjs`;
@@ -73,7 +75,7 @@ Local validation completed:
 - Markdown lint and `git diff --check`; and
 - `sh .husky/pre-commit`.
 
-The four fake provider/media tests initially could not bind loopback inside the Codex
+The six fake provider/media tests initially could not bind loopback inside the Codex
 sandbox. The unchanged test command passed outside that network sandbox. PR CI and
 review are still required on the final head SHA.
 

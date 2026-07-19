@@ -576,8 +576,13 @@ Use `rg` and `rg --files` for search.
   10-minute image claim lease for the five bounded Feishu auth/search/upload/readback/
   upsert calls, transform, and the final transaction. A provider transport or protocol
   error after request bytes may have been sent is ambiguous and must not be retried
-  automatically. Do not change the shared timeout for QiWe, WeCom, Feishu, or other
-  adapters to remediate image-provider latency.
+  automatically. Image-generation failure audits may record
+  `external_generation_executed=false` only before provider request execution, `true`
+  only after a valid provider payload is accepted, and `null` when the provider outcome
+  cannot be proved. `external_media_write_executed` must likewise remain `null` for an
+  unprovable upload or Feishu write and become `true` only after confirmed storage. Do
+  not change the shared timeout for QiWe, WeCom, Feishu, or other adapters to remediate
+  image-provider latency.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Production generation may run only
   from a release artifact compiled with the reviewed `huabaosi-production-adapter`
