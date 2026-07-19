@@ -41,6 +41,12 @@ bundle, installs a fixed allowlist under `/etc/systemd/system`, and enables only
 internal AgentOS worker timers. Those timers may write AgentOS/Postgres state, but they
 do not enable Feishu writeback, QiWe sends, or external adapters.
 
+The root runner extracts both COS archives with `tar --no-same-owner`. Build artifacts
+may contain the GitHub runner's numeric UID and GID; preserving those identities would
+make the immutable release tree owned by an unrelated server account and invalidate
+release-local ownership checks. The later `cp -a` assembly step may preserve modes and
+the already normalized root ownership only.
+
 The deploy artifact may carry the observation-only Xiaoman profile bundle and parity
 smoke. The runner does not render it, read its server-local values, create profile
 symlinks, or restart Xiaoman on the bundle's behalf. Activation requires a later

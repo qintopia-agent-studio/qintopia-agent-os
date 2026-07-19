@@ -658,6 +658,8 @@ const fetchCosArtifactText = exists("deploy/sidecar/scripts/fetch-cos-artifact.s
   ? readText("deploy/sidecar/scripts/fetch-cos-artifact.sh")
   : "";
 for (const fragment of [
+  'tar --no-same-owner -xzf "${output_dir}/qintopia-message-sidecar.tar.gz"',
+  'tar --no-same-owner -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz"',
   "chmod 0444 artifact-manifest.json SHA256SUMS",
   "chmod 0444 qintopia-message-sidecar.tar.gz",
   "chmod 0444 qintopia-agent-os-deploy-bundle.tar.gz",
