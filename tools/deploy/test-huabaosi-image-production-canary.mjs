@@ -17,6 +17,7 @@ const envFile = path.join(tmpRoot, "message-sidecar.env");
 const commandLog = path.join(tmpRoot, "commands.log");
 const systemctl = path.join(tmpRoot, "systemctl");
 const briefId = "11111111-2222-4333-8444-555555555555";
+const briefWorkItemId = "44444444-5555-4666-8777-888888888888";
 const imageWorkItemId = "22222222-3333-4444-8555-666666666666";
 const generatedArtifactId = "33333333-4444-4555-8666-777777777777";
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
@@ -73,10 +74,16 @@ const writeEnv = (extra = "", reviewerIds = "owner, trainer") => {
   fs.chmodSync(envFile, 0o600);
 };
 
-const fakeSidecar = (name, { mismatch = false, leak = false } = {}) => {
+const fakeSidecar = (
+  name,
+  { mismatch = false, leak = false, starterParentMismatch = false } = {}
+) => {
   const filePath = path.join(tmpRoot, name);
   const revalidatedHash = mismatch ? `sha256:${"b".repeat(64)}` : contentHash;
   const preflightExtra = leak ? ',"unexpected":"provider-secret-key"' : "";
+  const starterParentWorkItemId = starterParentMismatch
+    ? "55555555-6666-4777-8888-999999999999"
+    : briefWorkItemId;
   writeExecutable(
     filePath,
     `#!/usr/bin/env bash
@@ -107,7 +114,7 @@ case "\${1:-}" in
       apply_requested: true,
       action_status: "review_recorded",
       artifact_id: briefId,
-      work_item_id: "44444444-5555-4666-8777-888888888888",
+      work_item_id: briefWorkItemId,
       previous_review_status: "pending",
       review_status: "approved",
       reviewer_id: "trainer",
@@ -118,6 +125,7 @@ case "\${1:-}" in
     printf '%s\n' '${JSON.stringify({
       success: true,
       action_status: "image_generation_requests_created",
+      requested_work_item_id: briefWorkItemId,
       created_count: 1,
       existing_count: 0,
       work_items: [
@@ -125,6 +133,7 @@ case "\${1:-}" in
           existing: false,
           work_item_type: "image_generation_request",
           capability_key: "huabaosi.generate_image_asset",
+          parent_work_item_id: starterParentWorkItemId,
           work_item_id: imageWorkItemId,
         },
       ],
@@ -253,6 +262,8 @@ esac
     evidence[3].content_hash !== contentHash ||
     evidence[4].content_hash !== contentHash ||
     evidence[3].review_status !== "pending" ||
+    evidence[1].brief_work_item_id !== briefWorkItemId ||
+    evidence[2].brief_work_item_id !== briefWorkItemId ||
     evidence[4].database_writes_executed !== false
   ) {
     throw new Error("production canary evidence did not preserve artifact identity");
@@ -268,7 +279,7 @@ esac
   if (
     !commands[1].includes("operations-artifact-review-decision --apply") ||
     !commands[1].includes('"reviewer_id":"trainer"') ||
-    !commands[2].includes(`--work-item-id ${briefId}`) ||
+    !commands[2].includes(`--work-item-id ${briefWorkItemId}`) ||
     !commands[3].includes(`--work-item-id ${imageWorkItemId}`) ||
     !commands[4].includes(`--artifact-id ${generatedArtifactId}`) ||
     commands.some((command) => /enable|publish|qiwe|send/i.test(command))
@@ -344,6 +355,21 @@ esac
     throw new Error("revalidation identity mismatch must block canary completion");
   }
   assertNoSecrets(`${mismatch.stdout}\n${mismatch.stderr}`);
+
+  const mismatchedParentSidecar = fakeSidecar("sidecar-parent-mismatch", {
+    starterParentMismatch: true,
+  });
+  fs.writeFileSync(commandLog, "", "utf8");
+  const mismatchedParent = run(mismatchedParentSidecar);
+  if (
+    mismatchedParent.status === 0 ||
+    !mismatchedParent.stderr.includes(
+      "image request intake returned an invalid report"
+    ) ||
+    fs.readFileSync(commandLog, "utf8").includes("run-huabaosi-image-generation-worker")
+  ) {
+    throw new Error("starter parent work item mismatch must fail before generation");
+  }
 
   const leakSidecar = fakeSidecar("sidecar-leak", { leak: true });
   const leak = run(leakSidecar);

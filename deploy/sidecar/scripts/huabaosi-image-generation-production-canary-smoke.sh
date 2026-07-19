@@ -371,14 +371,16 @@ elif phase == "brief_review":
     evidence.update({
         "action_status": values[0],
         "brief_artifact_id": values[1],
-        "review_status": values[2],
+        "brief_work_item_id": values[2],
+        "review_status": values[3],
         "reviewer_id": "trainer",
     })
 elif phase == "request_intake":
     evidence.update({
         "action_status": values[0],
         "brief_artifact_id": values[1],
-        "image_generation_work_item_id": values[2],
+        "brief_work_item_id": values[2],
+        "image_generation_work_item_id": values[3],
         "request_created": True,
     })
 elif phase == "generation":
@@ -445,31 +447,35 @@ PY
 )"
 run_sanitized "poster brief review" "$SIDECAR_BIN" operations-artifact-review-decision --apply --payload-json "$review_payload"
 if ! parsed_facts="$(printf '%s' "$SANITIZED_OUTPUT" | python3 -c '
-import json,sys
+import json,sys,uuid
 data=json.load(sys.stdin)
 assert data["success"] is True
 assert data["dry_run"] is False
 assert data["apply_requested"] is True
 assert data["action_status"] == "review_recorded"
 assert data["artifact_id"] == sys.argv[1]
+uuid.UUID(data["work_item_id"])
 assert data["review_status"] == "approved"
 assert data["reviewer_id"] == sys.argv[2]
 print(data["action_status"])
 print(data["artifact_id"])
+print(data["work_item_id"])
 print(data["review_status"])
 ' "$BRIEF_ARTIFACT_ID" "$REVIEWER_ID" 2>/dev/null)"; then
   echo "poster brief review returned an invalid report" >&2
   exit 1
 fi
 mapfile -t review_facts <<<"$parsed_facts"
+BRIEF_WORK_ITEM_ID="${review_facts[2]}"
 emit_evidence brief_review "${review_facts[@]}"
 
-run_sanitized "image request intake" "$SIDECAR_BIN" run-xiaoman-activity-image-generation-starter-worker --once --apply --work-item-id "$BRIEF_ARTIFACT_ID"
+run_sanitized "image request intake" "$SIDECAR_BIN" run-xiaoman-activity-image-generation-starter-worker --once --apply --work-item-id "$BRIEF_WORK_ITEM_ID"
 if ! parsed_facts="$(printf '%s' "$SANITIZED_OUTPUT" | python3 -c '
 import json,sys,uuid
 data=json.load(sys.stdin)
 assert data["success"] is True
 assert data["action_status"] == "image_generation_requests_created"
+assert data["requested_work_item_id"] == sys.argv[1]
 assert data["created_count"] == 1
 assert data["existing_count"] == 0
 assert len(data["work_items"]) == 1
@@ -477,16 +483,17 @@ item=data["work_items"][0]
 assert item["existing"] is False
 assert item["work_item_type"] == "image_generation_request"
 assert item["capability_key"] == "huabaosi.generate_image_asset"
+assert item["parent_work_item_id"] == sys.argv[1]
 uuid.UUID(item["work_item_id"])
 print(data["action_status"])
 print(item["work_item_id"])
-' 2>/dev/null)"; then
+' "$BRIEF_WORK_ITEM_ID" 2>/dev/null)"; then
   echo "image request intake returned an invalid report" >&2
   exit 1
 fi
 mapfile -t intake_facts <<<"$parsed_facts"
 IMAGE_WORK_ITEM_ID="${intake_facts[1]}"
-emit_evidence request_intake "${intake_facts[0]}" "$BRIEF_ARTIFACT_ID" "$IMAGE_WORK_ITEM_ID"
+emit_evidence request_intake "${intake_facts[0]}" "$BRIEF_ARTIFACT_ID" "$BRIEF_WORK_ITEM_ID" "$IMAGE_WORK_ITEM_ID"
 
 run_sanitized "image generation worker" "$SIDECAR_BIN" run-huabaosi-image-generation-worker --once --work-item-id "$IMAGE_WORK_ITEM_ID" --apply
 if ! parsed_facts="$(printf '%s' "$SANITIZED_OUTPUT" | python3 -c '

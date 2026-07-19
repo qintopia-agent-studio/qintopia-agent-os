@@ -30,6 +30,10 @@ operations policy keys it needs from the fixed production environment file. It m
 release path, binary digest, disabled provider timer, generation configuration, release
 binding, and database binding.
 
+After review, it must parse the actual visual work item UUID returned for the brief and
+pass that UUID to the starter. The starter report must bind both its requested UUID and
+the new request's parent UUID to that same visual work item before provider execution.
+
 It then performs exactly one bounded chain:
 
 ```text
