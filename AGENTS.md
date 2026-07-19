@@ -565,6 +565,12 @@ Use `rg` and `rg --files` for search.
   header/body/chunk limits while reading, set socket timeouts, zeroize sensitive request
   and response buffers, and classify whether an error occurred after a request may have
   been sent.
+- Huabaosi image generation may override the shared 60-second socket timeout only
+  through `QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS`, defaulting to 180 seconds and
+  bounded from 60 through 300 seconds. Keep the upper bound below the fixed 10-minute
+  image claim lease so provider completion still leaves time for transform, storage,
+  authenticated readback, and the final transaction. Do not change the shared timeout
+  for QiWe, WeCom, Feishu, or other adapters to remediate image-provider latency.
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Production generation may run only
   from a release artifact compiled with the reviewed `huabaosi-production-adapter`

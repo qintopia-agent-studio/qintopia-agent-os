@@ -1,10 +1,10 @@
-use std::{collections::BTreeSet, fmt, io};
+use std::{collections::BTreeSet, fmt, io, time::Duration};
 
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
 use std::net::IpAddr;
 
 #[cfg(test)]
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
 
 use anyhow::{anyhow, bail, Context, Result};
 #[cfg(any(
@@ -80,6 +80,11 @@ const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
 const MAX_GENERATION_ATTEMPTS: i32 = 3;
 const BASE_RETRY_DELAY_SECONDS: i64 = 60;
+const DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS: u64 = 180;
+const MIN_IMAGE_HTTP_TIMEOUT_SECONDS: u64 = 60;
+const MAX_IMAGE_HTTP_TIMEOUT_SECONDS: u64 = 300;
+const IMAGE_HTTP_TIMEOUT_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS";
+const _: () = assert!(MAX_IMAGE_HTTP_TIMEOUT_SECONDS < 10 * 60);
 #[cfg(feature = "huabaosi-staging-adapter")]
 const STAGING_APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL";
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
@@ -171,6 +176,7 @@ struct AdapterConfig {
     api_key: String,
     storage: StorageConfig,
     max_media_bytes: usize,
+    http_timeout: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -918,6 +924,8 @@ impl AdapterConfig {
         }
         let provider_endpoint =
             image_provider_endpoint(&required_env("QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL")?)?;
+        let http_timeout =
+            image_http_timeout(std::env::var(IMAGE_HTTP_TIMEOUT_ENV).ok().as_deref())?;
         let max_media_bytes = std::env::var("QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES")
             .ok()
             .filter(|value| !value.trim().is_empty())
@@ -969,6 +977,7 @@ impl AdapterConfig {
             api_key: required_env("QINTOPIA_HUABAOSI_IMAGE_API_KEY")?,
             storage,
             max_media_bytes,
+            http_timeout,
         })
     }
 
@@ -978,6 +987,23 @@ impl AdapterConfig {
             StorageConfig::Feishu(_) => 0,
         }
     }
+}
+
+fn image_http_timeout(value: Option<&str>) -> Result<Duration> {
+    let seconds = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .context("parse image HTTP timeout seconds")
+        })
+        .transpose()?
+        .unwrap_or(DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS);
+    if !(MIN_IMAGE_HTTP_TIMEOUT_SECONDS..=MAX_IMAGE_HTTP_TIMEOUT_SECONDS).contains(&seconds) {
+        bail!("image HTTP timeout seconds must be between 60 and 300");
+    }
+    Ok(Duration::from_secs(seconds))
 }
 
 fn required_env(name: &str) -> Result<String> {
@@ -2059,7 +2085,7 @@ fn generate_and_store(
         config,
         work_item,
         workflow_root_id,
-        HttpClient::production(),
+        HttpClient::production_with_timeout(config.http_timeout),
     )
 }
 
@@ -2696,6 +2722,25 @@ mod tests {
     }
 
     #[test]
+    fn image_http_timeout_is_bounded_below_claim_lease() {
+        assert_eq!(
+            image_http_timeout(None).expect("default timeout"),
+            Duration::from_secs(180)
+        );
+        assert_eq!(
+            image_http_timeout(Some("60")).expect("minimum timeout"),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            image_http_timeout(Some("300")).expect("maximum timeout"),
+            Duration::from_secs(300)
+        );
+        assert!(image_http_timeout(Some("59")).is_err());
+        assert!(image_http_timeout(Some("301")).is_err());
+        assert!(image_http_timeout(Some("invalid")).is_err());
+    }
+
+    #[test]
     fn production_endpoints_reject_query_parameters() {
         assert!(https_url("https://media.example.test/upload?token=secret", "media").is_err());
         assert!(https_url("https://media.example.test/public%2Fupload", "media").is_err());
@@ -3312,6 +3357,7 @@ mod tests {
                 media_allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
             }),
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
+            http_timeout: Duration::from_secs(DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS),
         };
         let generated = generate_and_store_with_client(
             &config,
@@ -3475,6 +3521,7 @@ mod tests {
                 DEFAULT_MAX_MEDIA_BYTES,
             )),
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
+            http_timeout: Duration::from_secs(DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS),
         };
         let work_item = fixture_work_item();
         let generated = generate_and_store_with_client(
@@ -3524,6 +3571,7 @@ mod tests {
                 media_allowed_hosts: BTreeSet::from(["media.example.test".to_string()]),
             }),
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
+            http_timeout: Duration::from_secs(DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS),
         }
     }
 
@@ -3550,6 +3598,7 @@ mod tests {
                 media_allowed_hosts: BTreeSet::from(["127.0.0.1".to_string()]),
             }),
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
+            http_timeout: Duration::from_secs(DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS),
         }
     }
 

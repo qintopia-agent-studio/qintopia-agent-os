@@ -94,7 +94,13 @@ unless correcting historical evidence.
      activation, and the first real pending `generated_image` review evidence. The
      production artifact can also compile the guarded Feishu mirror adapter so the
      reviewed generated-image workbench row can be activated in the same release
-     boundary; approval and publishing still stay separate.
+     boundary; approval and publishing still stay separate. A first real canary on
+     2026-07-19 proved brief approval, starter intake, production claims, bounded
+     retries, and rollback, but all three provider calls reached the fixed 60-second
+     socket timeout before an image response. The timer is disabled and no artifact was
+     created. Production completion now requires the reviewed image-specific timeout
+     remediation, a new Release deployment, and a newly approved canary that reaches one
+     pending Feishu-backed JPEG.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The

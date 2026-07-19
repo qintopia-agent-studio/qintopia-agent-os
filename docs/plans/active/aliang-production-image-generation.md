@@ -328,6 +328,13 @@ data but are not eligible for the future QiWe JPG send contract.
   by the guarded QiWe adapter. The extraction preserves the existing response caps,
   header validation, chunked limits, TLS policy, fake-server behavior, and timeout
   classification while zeroizing request/response buffers on drop.
+- The first owner-approved production canary on 2026-07-19 created one correctly bound
+  image request, but all three provider attempts reached the shared 60-second socket
+  timeout and ended as sanitized `provider_transport` failures. No image or Feishu row
+  was created, and the production generation timer was rolled back to disabled and
+  inactive. The remediation keeps the shared default unchanged while giving this image
+  path a 180-second default bounded to 60-300 seconds; see the
+  [production canary report](../../reports/2026-07-19-aliang-provider-timeout-canary.md).
 - The staging compile gate keeps staging provider/media execution behind the non-default
   `huabaosi-staging-adapter` feature. A staging-feature apply must enforce the exact
   owner phrase, repository-reviewed database URL hash allowlist, staging database name,

@@ -69,6 +69,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-18-v0215-release-decision-evidence.md`                                    | adopt-input | v0.2.15 owner release decision evidence and remaining completion gates |
 | `2026-07-19-production-release-metadata-permissions.md`                            | adopt-input | Production release metadata readability remediation                    |
 | `2026-07-19-staging-sidecar-provision-umask.md`                                    | adopt-input | Staging release directory mode and cleanup remediation                 |
+| `2026-07-19-aliang-provider-timeout-canary.md`                                     | adopt-input | Aliang canary timeout evidence, rollback, and remediation              |
 
 ## Templates
 
