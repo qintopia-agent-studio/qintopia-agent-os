@@ -49,6 +49,10 @@ not a recoverable connection failure and must fail closed without automatic retr
 - Retry only transport failures proven to occur before provider request bytes may have
   been sent. Record a post-send transport or protocol error as an ambiguous provider
   outcome with `external_generation_executed=null` and `automatic_retry_allowed=false`.
+- Derive generation and media-write audit outcomes from explicit completed stages.
+  Persistence failure records both as executed; upload or Feishu storage failure uses
+  `null` for an unprovable write outcome, and any unknown future stage also defaults to
+  `null` instead of reporting a false negative.
 - Validate the timeout during the existing no-network preflight. Invalid values fail
   before Postgres or provider access and are never emitted in chat-safe output.
 - Preserve the three-attempt retry limit, retry classifications, idempotency, and

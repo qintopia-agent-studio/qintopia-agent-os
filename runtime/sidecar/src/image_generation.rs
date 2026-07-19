@@ -1873,6 +1873,8 @@ async fn record_generation_failure(
     let retry_exhausted =
         failure.class == GenerationFailureClass::RetryableProvider && !retry_scheduled;
     let ambiguous = failure.class == GenerationFailureClass::AmbiguousProvider;
+    let external_generation_executed = failure_external_generation_executed(failure);
+    let external_media_write_executed = failure_external_media_write_executed(failure);
     let status = if retry_scheduled { "queued" } else { "failed" };
     let retry_delay_seconds = if retry_scheduled {
         generation_retry_delay_seconds(work_item.attempts)
@@ -1955,7 +1957,8 @@ async fn record_generation_failure(
         "retry_scheduled": retry_scheduled,
         "retry_exhausted": retry_exhausted,
         "automatic_retry_allowed": retry_scheduled,
-        "external_generation_executed": if ambiguous { None } else { Some(false) },
+        "external_generation_executed": external_generation_executed,
+        "external_media_write_executed": external_media_write_executed,
         "external_publish_executed": false,
         "sensitive_fields_redacted": true,
     }))
@@ -1974,6 +1977,36 @@ async fn record_generation_failure(
     } else {
         FailureRecordOutcome::Failed
     })
+}
+
+fn failure_external_generation_executed(failure: GenerationFailure) -> Option<bool> {
+    if failure.class == GenerationFailureClass::AmbiguousProvider {
+        return None;
+    }
+    match failure.stage {
+        "workflow_root_resolution"
+        | "prompt_validation"
+        | "provider_request"
+        | "provider_transport" => Some(false),
+        "provider_response" | "provider_payload" | "media_transform" | "media_upload"
+        | "media_readback" | "feishu_storage" | "persistence" => Some(true),
+        _ => None,
+    }
+}
+
+fn failure_external_media_write_executed(failure: GenerationFailure) -> Option<bool> {
+    match failure.stage {
+        "workflow_root_resolution"
+        | "prompt_validation"
+        | "provider_request"
+        | "provider_transport"
+        | "provider_response"
+        | "provider_payload"
+        | "media_transform" => Some(false),
+        "media_upload" | "feishu_storage" => None,
+        "media_readback" | "persistence" => Some(true),
+        _ => None,
+    }
 }
 
 fn generation_retry_delay_seconds(attempts: i32) -> i64 {
@@ -3028,6 +3061,69 @@ mod tests {
             GenerationFailureClass::AmbiguousProvider,
             1
         ));
+
+        let pre_send = GenerationFailure {
+            class: GenerationFailureClass::RetryableProvider,
+            stage: "provider_transport",
+        };
+        assert_eq!(failure_external_generation_executed(pre_send), Some(false));
+        assert_eq!(failure_external_media_write_executed(pre_send), Some(false));
+
+        let ambiguous = GenerationFailure {
+            class: GenerationFailureClass::AmbiguousProvider,
+            stage: "provider_transport",
+        };
+        assert_eq!(failure_external_generation_executed(ambiguous), None);
+        assert_eq!(
+            failure_external_media_write_executed(ambiguous),
+            Some(false)
+        );
+
+        let media_upload = GenerationFailure {
+            class: GenerationFailureClass::Terminal,
+            stage: "media_upload",
+        };
+        assert_eq!(
+            failure_external_generation_executed(media_upload),
+            Some(true)
+        );
+        assert_eq!(failure_external_media_write_executed(media_upload), None);
+
+        let media_readback = GenerationFailure {
+            class: GenerationFailureClass::Terminal,
+            stage: "media_readback",
+        };
+        assert_eq!(
+            failure_external_generation_executed(media_readback),
+            Some(true)
+        );
+        assert_eq!(
+            failure_external_media_write_executed(media_readback),
+            Some(true)
+        );
+
+        let persistence = GenerationFailure {
+            class: GenerationFailureClass::Terminal,
+            stage: "persistence",
+        };
+        assert_eq!(
+            failure_external_generation_executed(persistence),
+            Some(true)
+        );
+        assert_eq!(
+            failure_external_media_write_executed(persistence),
+            Some(true)
+        );
+
+        let worker_execution = GenerationFailure {
+            class: GenerationFailureClass::Terminal,
+            stage: "worker_execution",
+        };
+        assert_eq!(failure_external_generation_executed(worker_execution), None);
+        assert_eq!(
+            failure_external_media_write_executed(worker_execution),
+            None
+        );
     }
 
     #[test]
