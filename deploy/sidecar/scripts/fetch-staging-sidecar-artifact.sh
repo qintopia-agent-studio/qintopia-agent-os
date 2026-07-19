@@ -138,6 +138,9 @@ fi
 
 sidecar_dir=""
 sidecar_dir_created=0
+release_dir=""
+release_dir_created=0
+release_root_created=0
 provision_complete=0
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -145,6 +148,12 @@ cleanup() {
   if [[ "$provision_complete" != "1" && "$sidecar_dir_created" == "1" && -n "$sidecar_dir" && -d "$sidecar_dir" ]]; then
     chmod 0755 "$sidecar_dir" 2>/dev/null || true
     rm -rf "$sidecar_dir"
+  fi
+  if [[ "$provision_complete" != "1" && "$release_dir_created" == "1" && -n "$release_dir" ]]; then
+    rmdir "$release_dir" 2>/dev/null || true
+  fi
+  if [[ "$provision_complete" != "1" && "$release_root_created" == "1" ]]; then
+    rmdir "$release_root" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -490,7 +499,18 @@ for path in paths:
             raise SystemExit(f"path component has unexpected owner: {current}")
 PY
 
-mkdir -p "$release_dir"
+if [[ ! -e "$release_root" ]]; then
+  if ! mkdir -m 0755 "$release_root"; then
+    echo "failed to create staging release root: ${release_root}" >&2
+    exit 1
+  fi
+  release_root_created=1
+fi
+if ! mkdir -m 0755 "$release_dir"; then
+  echo "staging release directory already exists: ${release_dir}" >&2
+  exit 1
+fi
+release_dir_created=1
 
 STAGING_RELEASE_ROOT="$release_root" \
 STAGING_RELEASE_DIR="$release_dir" \
@@ -510,7 +530,7 @@ for path in (os.environ["STAGING_RELEASE_ROOT"], os.environ["STAGING_RELEASE_DIR
         raise SystemExit(f"path component has unexpected owner: {path}")
 PY
 
-if ! mkdir "$sidecar_dir"; then
+if ! mkdir -m 0755 "$sidecar_dir"; then
   echo "staging sidecar directory already exists: ${sidecar_dir}" >&2
   exit 1
 fi

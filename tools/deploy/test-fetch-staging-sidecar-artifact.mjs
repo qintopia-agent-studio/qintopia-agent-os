@@ -154,30 +154,36 @@ const writeExtraEntryArtifact = (name) => {
   return zipPath;
 };
 
-const runProvision = ({ zipPath, releaseRoot, extraEnv = {} }) =>
-  spawnSync(
-    "bash",
-    [
-      script,
-      "--sha",
-      releaseSha,
-      "--release-root",
-      releaseRoot,
-      "--artifact-zip",
-      zipPath,
-    ],
-    {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        QINTOPIA_STAGING_SIDECAR_PROVISION_TEST_MODE: "1",
-        QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL:
-          "approved-staging-sidecar-provision",
-        ...extraEnv,
-      },
-      encoding: "utf8",
-    }
-  );
+const runProvision = ({ zipPath, releaseRoot, extraEnv = {} }) => {
+  const previousUmask = process.umask(0o002);
+  try {
+    return spawnSync(
+      "bash",
+      [
+        script,
+        "--sha",
+        releaseSha,
+        "--release-root",
+        releaseRoot,
+        "--artifact-zip",
+        zipPath,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          QINTOPIA_STAGING_SIDECAR_PROVISION_TEST_MODE: "1",
+          QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL:
+            "approved-staging-sidecar-provision",
+          ...extraEnv,
+        },
+        encoding: "utf8",
+      }
+    );
+  } finally {
+    process.umask(previousUmask);
+  }
+};
 
 const runProvisionWithoutTestMode = (extraEnv = {}) =>
   spawnSync("bash", [script, "--sha", releaseSha], {
@@ -254,6 +260,11 @@ try {
   }
   if ((fs.statSync(path.join(releaseRoot, releaseSha)).mode & 0o777) !== 0o555) {
     throw new Error("installed release directory must be mode 0555");
+  }
+  if ((fs.statSync(releaseRoot).mode & 0o777) !== 0o755) {
+    throw new Error(
+      "staging release root must be mode 0755 regardless of ambient umask"
+    );
   }
   if (
     !goodResult.stdout.includes(`Release SHA: ${releaseSha}`) ||
@@ -389,7 +400,7 @@ try {
       zipPath: good.zipPath,
       releaseRoot: existingTargetRoot,
     }),
-    "staging sidecar directory already exists",
+    "staging release directory already exists",
     "existing sidecar target"
   );
   if (!fs.existsSync(existingSentinel)) {
