@@ -33,6 +33,10 @@ binding, and database binding.
 After review, it must parse the actual visual work item UUID returned for the brief and
 pass that UUID to the starter. The starter report must bind both its requested UUID and
 the new request's parent UUID to that same visual work item before provider execution.
+The review apply payload must also require `artifact_type=poster_brief` and
+`review_status=pending`; the sidecar enforces both preconditions under the artifact row
+lock before approval mutation. The pre-revalidation read path applies the same checks so
+an accidentally supplied generated-image UUID cannot trigger Feishu I/O or approval.
 
 It then performs exactly one bounded chain:
 

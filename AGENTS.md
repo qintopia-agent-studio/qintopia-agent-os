@@ -690,8 +690,10 @@ Use `rg` and `rg --files` for search.
   release with the provider timer inactive, parse only allowlisted keys from the fixed
   production env without `source` or `eval`, reuse reviewer `trainer`, and bind one
   pending brief to one new request, one pending Feishu-backed JPEG, and authenticated
-  same-byte revalidation. It must not approve the generated image, enable timers, run
-  the mirror worker, publish, call QiWe, send, or retry terminal/ambiguous outcomes.
+  same-byte revalidation. Its approval request must transactionally require the target
+  artifact to be a pending `poster_brief` before mutation or Feishu revalidation. It
+  must not approve the generated image, enable timers, run the mirror worker, publish,
+  call QiWe, send, or retry terminal/ambiguous outcomes.
 - `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
   Hermes WeCom user-service active state through `systemctl --user`, fixed service
   command, public `busy_input_mode`, release/current presence, and sanitized

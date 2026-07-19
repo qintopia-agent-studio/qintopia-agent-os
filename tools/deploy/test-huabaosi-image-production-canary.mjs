@@ -115,6 +115,7 @@ case "\${1:-}" in
       action_status: "review_recorded",
       artifact_id: briefId,
       work_item_id: briefWorkItemId,
+      artifact_type: "poster_brief",
       previous_review_status: "pending",
       review_status: "approved",
       reviewer_id: "trainer",
@@ -279,6 +280,8 @@ esac
   if (
     !commands[1].includes("operations-artifact-review-decision --apply") ||
     !commands[1].includes('"reviewer_id":"trainer"') ||
+    !commands[1].includes('"expected_artifact_type":"poster_brief"') ||
+    !commands[1].includes('"expected_review_status":"pending"') ||
     !commands[2].includes(`--work-item-id ${briefWorkItemId}`) ||
     !commands[3].includes(`--work-item-id ${imageWorkItemId}`) ||
     !commands[4].includes(`--artifact-id ${generatedArtifactId}`) ||

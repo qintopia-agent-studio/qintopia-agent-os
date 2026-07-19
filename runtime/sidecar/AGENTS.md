@@ -77,6 +77,10 @@ From the monorepo root, prefer:
   and timer, but only the explicit owner activation script may enable the timer. Feishu
   primary storage for the first canary is part of the Huabaosi production adapter path
   and still creates only pending AgentOS artifacts.
+- A canary review apply must provide expected artifact type and review status
+  preconditions. The sidecar must enforce them again under the artifact row lock before
+  changing review state, and before authenticated Feishu revalidation, so a mistaken
+  generated-image UUID cannot be approved through a poster-brief workflow.
 - Production mirror observation must discover
   `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
   only when it resolves to that same immutable binary with the approved production

@@ -440,6 +440,8 @@ print(json.dumps({
     "artifact_id": sys.argv[1],
     "reviewer_id": sys.argv[2],
     "decision": "approved",
+    "expected_artifact_type": "poster_brief",
+    "expected_review_status": "pending",
     "reason": "owner-approved Aliang production canary brief",
     "source": "huabaosi_production_canary",
 }, separators=(",", ":")))
@@ -455,6 +457,8 @@ assert data["apply_requested"] is True
 assert data["action_status"] == "review_recorded"
 assert data["artifact_id"] == sys.argv[1]
 uuid.UUID(data["work_item_id"])
+assert data["artifact_type"] == "poster_brief"
+assert data["previous_review_status"] == "pending"
 assert data["review_status"] == "approved"
 assert data["reviewer_id"] == sys.argv[2]
 print(data["action_status"])
