@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,84 +10,130 @@ import { spawnSync } from "node:child_process";
 const repoRoot = process.cwd();
 const promoteScript = path.join(repoRoot, "deploy/runner/promote-release.sh");
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-promote-tree-"));
+const fixtureRoot = path.join(tmpRoot, "fixtures");
+const fakeBin = path.join(tmpRoot, "bin");
 const sha = "0123456789abcdef0123456789abcdef01234567";
 const previousSha = "89abcdef0123456789abcdef0123456789abcdef";
 
-const mode = (filePath) => fs.statSync(filePath).mode & 0o777;
+const sha256File = (filePath) => {
+  const hash = crypto.createHash("sha256");
+  hash.update(fs.readFileSync(filePath));
+  return hash.digest("hex");
+};
 
-const writeExecutable = (filePath, content) => {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+const ensureDirectory = (directory, mode = 0o755) => {
+  fs.mkdirSync(directory, { recursive: true });
+  fs.chmodSync(directory, mode);
+};
+
+const writeFile = (filePath, content, mode = 0o644) => {
+  ensureDirectory(path.dirname(filePath));
   fs.writeFileSync(filePath, content, "utf8");
-  fs.chmodSync(filePath, 0o755);
+  fs.chmodSync(filePath, mode);
+};
+
+const writeChecksums = (directory, names) => {
+  writeFile(
+    path.join(directory, "SHA256SUMS"),
+    `${names
+      .map((name) => `${sha256File(path.join(directory, name))}  ${name}`)
+      .join("\n")}\n`,
+    0o444
+  );
 };
 
 const writeRequest = () => {
-  const request = {
-    release_sha: sha,
-    runtime_sha: sha,
-    deploy_bundle_sha: sha,
-    commit_sha: sha,
-    request_id: "deploy-20260719T000000Z-0123456789ab",
-    release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
-    restart_targets: ["qintopia-system-services", "hermes-erhua"],
-    dry_run: false,
-  };
-  const requestFile = path.join(tmpRoot, "request.json");
-  fs.writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, "utf8");
-  return { request, requestFile };
-};
-
-const writeExistingRelease = (releaseRoot, request, metadataMode) => {
-  const releaseDir = path.join(releaseRoot, sha);
-  const previousDir = path.join(releaseRoot, previousSha);
-  fs.mkdirSync(path.join(releaseDir, "sidecar"), { recursive: true });
-  fs.mkdirSync(path.join(releaseDir, "deploy"), { recursive: true });
-  fs.mkdirSync(previousDir, { recursive: true });
-  writeExecutable(
-    path.join(releaseDir, "sidecar", "qintopia-message-sidecar"),
-    "#!/usr/bin/env bash\nexit 0\n"
-  );
-  for (const name of ["artifact-manifest.json", "SHA256SUMS"]) {
-    const filePath = path.join(releaseDir, "sidecar", name);
-    fs.writeFileSync(filePath, "{}\n", "utf8");
-    fs.chmodSync(filePath, metadataMode);
-  }
-  fs.writeFileSync(
-    path.join(releaseDir, "manifest.json"),
+  const requestPath = path.join(tmpRoot, "request.json");
+  writeFile(
+    requestPath,
     `${JSON.stringify(
       {
-        release_sha: request.release_sha,
-        runtime_sha: request.runtime_sha,
-        deploy_bundle_sha: request.deploy_bundle_sha,
-        commit_sha: request.commit_sha,
-        release_scope: request.release_scope,
-        restart_targets: request.restart_targets,
+        release_sha: sha,
+        runtime_sha: sha,
+        deploy_bundle_sha: sha,
+        commit_sha: sha,
+        request_id: "deploy-20260719T000000Z-0123456789ab",
+        release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
+        restart_targets: ["qintopia-system-services", "hermes-erhua"],
+        dry_run: false,
       },
       null,
       2
-    )}\n`,
-    "utf8"
+    )}\n`
   );
-  fs.symlinkSync(releaseDir, path.join(releaseRoot, "current"));
-  fs.symlinkSync(previousDir, path.join(releaseRoot, "previous"));
-  return { releaseDir, previousDir };
+  return requestPath;
 };
 
-const runPromotion = (requestFile, releaseRoot) =>
+const runPromotion = (requestFile, releaseRoot, extraEnv = {}) =>
   spawnSync(
     "bash",
     [promoteScript, "--request-file", requestFile, "--release-root", releaseRoot],
     {
       cwd: tmpRoot,
-      env: process.env,
+      env: {
+        ...process.env,
+        ...extraEnv,
+        FIXTURE_ROOT: fixtureRoot,
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
       encoding: "utf8",
     }
   );
 
+const expectFailure = (result, expected) => {
+  if (result.status === 0 || !result.stderr.includes(expected)) {
+    throw new Error(
+      `promotion must fail with ${expected}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+};
+
 try {
-  const fakeFetch = path.join(tmpRoot, "deploy/sidecar/scripts/fetch-cos-artifact.sh");
-  writeExecutable(
-    fakeFetch,
+  const sidecarFixture = path.join(fixtureRoot, "sidecar");
+  writeFile(
+    path.join(sidecarFixture, "qintopia-message-sidecar"),
+    "#!/usr/bin/env bash\nexit 0\n",
+    0o755
+  );
+  writeFile(
+    path.join(sidecarFixture, "qintopia-message-sidecar.tar.gz"),
+    "sidecar archive fixture\n",
+    0o444
+  );
+  writeFile(
+    path.join(sidecarFixture, "artifact-manifest.json"),
+    `${JSON.stringify({ commit_sha: sha, artifact_name: "sidecar-fixture" })}\n`,
+    0o444
+  );
+  writeChecksums(sidecarFixture, [
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+    "artifact-manifest.json",
+  ]);
+
+  const deployFixture = path.join(fixtureRoot, "deploy-bundle");
+  writeFile(
+    path.join(deployFixture, "qintopia-agent-os-deploy-bundle.tar.gz"),
+    "deploy bundle archive fixture\n",
+    0o444
+  );
+  writeFile(
+    path.join(deployFixture, "artifact-manifest.json"),
+    `${JSON.stringify({ commit_sha: sha, artifact_name: "deploy-fixture" })}\n`,
+    0o444
+  );
+  writeFile(
+    path.join(deployFixture, "payload/deploy/runner-fixture.sh"),
+    "#!/usr/bin/env bash\nexit 0\n",
+    0o755
+  );
+  writeChecksums(deployFixture, [
+    "qintopia-agent-os-deploy-bundle.tar.gz",
+    "artifact-manifest.json",
+  ]);
+
+  writeFile(
+    path.join(tmpRoot, "deploy/sidecar/scripts/fetch-cos-artifact.sh"),
     `#!/usr/bin/env bash
 set -euo pipefail
 artifact_type=""
@@ -96,102 +143,82 @@ while [[ $# -gt 0 ]]; do
     --artifact-type) artifact_type="$2"; shift 2 ;;
     --sha) shift 2 ;;
     --output-dir) output_dir="$2"; shift 2 ;;
-    *) exit 2 ;;
+    *) exit 64 ;;
   esac
 done
 mkdir -p "$output_dir"
-printf '{}\n' > "$output_dir/artifact-manifest.json"
-printf '{}\n' > "$output_dir/SHA256SUMS"
-chmod 0444 "$output_dir/artifact-manifest.json" "$output_dir/SHA256SUMS"
-if [[ "$artifact_type" == "sidecar" ]]; then
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$output_dir/qintopia-message-sidecar"
-  chmod 0755 "$output_dir/qintopia-message-sidecar"
-elif [[ "$artifact_type" == "deploy-bundle" ]]; then
-  mkdir -p "$output_dir/payload/deploy"
-else
-  exit 2
+chmod 0755 "$output_dir"
+cp -a "$FIXTURE_ROOT/$artifact_type/." "$output_dir/"
+`,
+    0o755
+  );
+  writeFile(path.join(fakeBin, "chown"), "#!/usr/bin/env bash\nexit 0\n", 0o755);
+  writeFile(
+    path.join(fakeBin, "id"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "-u" ]]; then
+  printf '%s\n' "\${FAKE_ID_UID:-${process.getuid()}}"
+  exit 0
 fi
-`
+exec /usr/bin/id "$@"
+`,
+    0o755
   );
 
-  const { request, requestFile } = writeRequest();
-  const existingRoot = path.join(tmpRoot, "existing-releases");
-  fs.mkdirSync(existingRoot, { recursive: true });
-  const { releaseDir, previousDir } = writeExistingRelease(
-    existingRoot,
-    request,
-    0o640
-  );
-  fs.chmodSync(releaseDir, 0o777);
-
-  const rejected = runPromotion(requestFile, existingRoot);
-  if (rejected.status === 0) {
-    throw new Error("invalid existing release tree must be rejected");
-  }
-  if (!rejected.stderr.includes("release tree path is group/world writable")) {
-    throw new Error(`unexpected rejection error: ${rejected.stderr}`);
-  }
-  if (
-    fs.realpathSync(path.join(existingRoot, "previous")) !==
-    fs.realpathSync(previousDir)
-  ) {
-    throw new Error("failed same-SHA promotion changed previous");
+  const requestFile = writeRequest();
+  const validRoot = path.join(tmpRoot, "valid-releases");
+  const promoted = runPromotion(requestFile, validRoot);
+  if (promoted.status !== 0) {
+    throw new Error(`new release promotion failed: ${promoted.stderr}`);
   }
 
-  fs.chmodSync(releaseDir, 0o700);
-  const inaccessible = runPromotion(requestFile, existingRoot);
-  if (inaccessible.status === 0) {
-    throw new Error("inaccessible existing release tree must be rejected");
-  }
-  if (
-    !inaccessible.stderr.includes(
-      "release tree directory is not group/world accessible"
-    )
-  ) {
-    throw new Error(`unexpected accessibility rejection: ${inaccessible.stderr}`);
-  }
-
-  fs.chmodSync(releaseDir, 0o755);
-  const unreadableMetadata = runPromotion(requestFile, existingRoot);
-  if (unreadableMetadata.status === 0) {
-    throw new Error("existing release with unreadable metadata must be rejected");
-  }
-  if (!unreadableMetadata.stderr.includes("release tree mode mismatch")) {
-    throw new Error(`unexpected metadata rejection: ${unreadableMetadata.stderr}`);
-  }
-
-  fs.chmodSync(path.join(releaseDir, "sidecar", "artifact-manifest.json"), 0o444);
-  fs.chmodSync(path.join(releaseDir, "sidecar", "SHA256SUMS"), 0o444);
-  const reused = runPromotion(requestFile, existingRoot);
+  const releaseDir = fs.realpathSync(path.join(validRoot, "current"));
+  const previousDir = path.join(validRoot, previousSha);
+  ensureDirectory(previousDir);
+  fs.symlinkSync(previousDir, path.join(validRoot, "previous"));
+  const reused = runPromotion(requestFile, validRoot);
   if (reused.status !== 0) {
     throw new Error(`valid same-SHA reuse failed: ${reused.stderr}`);
   }
   if (
-    fs.realpathSync(path.join(existingRoot, "previous")) !==
-    fs.realpathSync(previousDir)
+    fs.realpathSync(path.join(validRoot, "previous")) !== fs.realpathSync(previousDir)
   ) {
     throw new Error("valid same-SHA reuse replaced previous with current");
   }
+  if (fs.realpathSync(path.join(validRoot, "current")) !== releaseDir) {
+    throw new Error("valid same-SHA reuse changed current");
+  }
 
-  const newRoot = path.join(tmpRoot, "new-releases");
-  const promoted = runPromotion(requestFile, newRoot);
-  if (promoted.status !== 0) {
-    throw new Error(`new release promotion failed: ${promoted.stderr}`);
-  }
-  const promotedDir = fs.realpathSync(path.join(newRoot, "current"));
-  if (promotedDir !== fs.realpathSync(path.join(newRoot, sha))) {
-    throw new Error(`unexpected promoted target: ${promotedDir}`);
-  }
-  if (
-    mode(path.join(promotedDir, "sidecar", "qintopia-message-sidecar")) !== 0o755 ||
-    mode(path.join(promotedDir, "sidecar", "artifact-manifest.json")) !== 0o444 ||
-    mode(path.join(promotedDir, "sidecar", "SHA256SUMS")) !== 0o444
-  ) {
-    throw new Error("new release did not preserve reviewed sidecar modes");
-  }
-  if (fs.statSync(promotedDir).uid !== process.getuid()) {
-    throw new Error("new release owner does not match deploy runner uid");
-  }
+  fs.chmodSync(sidecarFixture, 0o777);
+  expectFailure(
+    runPromotion(requestFile, path.join(tmpRoot, "writable-releases")),
+    "release tree path is group/world writable"
+  );
+  fs.chmodSync(sidecarFixture, 0o755);
+
+  const payloadDeploy = path.join(deployFixture, "payload/deploy");
+  fs.chmodSync(payloadDeploy, 0o700);
+  expectFailure(
+    runPromotion(requestFile, path.join(tmpRoot, "inaccessible-releases")),
+    "release tree directory is not group/world accessible"
+  );
+  fs.chmodSync(payloadDeploy, 0o755);
+
+  const sidecarManifest = path.join(sidecarFixture, "artifact-manifest.json");
+  fs.chmodSync(sidecarManifest, 0o640);
+  expectFailure(
+    runPromotion(requestFile, path.join(tmpRoot, "mode-releases")),
+    "release tree mode mismatch"
+  );
+  fs.chmodSync(sidecarManifest, 0o444);
+
+  expectFailure(
+    runPromotion(requestFile, path.join(tmpRoot, "owner-releases"), {
+      FAKE_ID_UID: String(process.getuid() + 1),
+    }),
+    "release tree owner mismatch"
+  );
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }

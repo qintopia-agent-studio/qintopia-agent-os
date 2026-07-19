@@ -202,6 +202,12 @@ the promoted release evidence or the prior successful deploy result. Do not gues
 restart targets from the current diff or from a later runbook summary. A mismatch fails
 before promotion, does not switch `current`, and does not require rollback.
 
+The existing-release path also repairs metadata left by a previous runner only after the
+exact manifest identity matches, the complete release tree matches freshly fetched and
+verified artifacts, and both packaged `SHA256SUMS` files pass. It then makes the release
+tree root-owned and copies only modes from the fresh staging tree. Any missing, extra,
+changed, symlink-drifted, or unsupported path fails before metadata mutation.
+
 ## Server Units
 
 Install `qintopia-agent-os-deploy-runner.service` and

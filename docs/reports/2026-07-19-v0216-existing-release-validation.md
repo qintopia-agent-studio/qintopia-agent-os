@@ -4,8 +4,8 @@ Date: 2026-07-19 Asia/Shanghai
 
 ## Observed Evidence
 
-The owner-published `v0.2.16` Release and `origin/master` both pointed to
-`c353a767f725f80a575bf60bc886f2da257d84f2`. Release-triggered Deploy Production run
+At publication, the owner-published `v0.2.16` Release and `origin/master` both pointed
+to `c353a767f725f80a575bf60bc886f2da257d84f2`. Release-triggered Deploy Production run
 `29674135332` completed with `dry_run=false`, server status `succeeded`, previous SHA
 `ad4d79fa19916afcf1f90c332d661efe2531d201`, and no rollback.
 
@@ -13,8 +13,9 @@ The first server-side assembly was handled by the previous `v0.2.15` runner. A r
 acceptance check then found:
 
 ```text
-release owner=root:root mode=0777
-sidecar owner=lighthouse:ubuntu mode=0755
+release owner=lighthouse:ubuntu mode=0755
+deploy owner=lighthouse:ubuntu mode=0755
+sidecar binary owner=lighthouse:ubuntu mode=0755
 artifact-manifest.json owner=root:root mode=0640
 SHA256SUMS owner=root:root mode=0640
 ```
@@ -40,21 +41,23 @@ unreadable metadata and removed the distinct rollback pointer.
 
 ## Resolution
 
-- Validate every newly assembled and existing release tree before promotion or reuse.
+- Validate every newly assembled tree before promotion.
 - Require every entry to be owned by the effective deploy-runner UID.
 - Reject non-symlink entries that are group- or world-writable.
 - Require directories to remain group/world readable and traversable, and reject special
   file types.
 - Require the sidecar binary to be a regular file with mode `0755`.
-- Require sidecar `artifact-manifest.json` and `SHA256SUMS` to be regular files with
-  mode `0444`.
-- Reject an invalid existing immutable release instead of deleting the valid staging
-  tree and reporting success.
+- Require packaged manifests, checksum files, and archives to be regular files with mode
+  `0444`.
+- For an existing same-SHA release, prove exact identity, complete tree content
+  equality, and both packaged checksums before repairing owner/modes, then run the same
+  strict tree validation. Reject content or path drift before metadata mutation.
 - Preserve `previous` when an idempotent same-SHA request already targets `current`.
 
-The repair must include an executable promotion fixture covering invalid existing-tree
-rejection, valid same-SHA reuse without rollback-pointer drift, and successful new
-release promotion.
+The repair must include executable promotion fixtures covering metadata repair only
+after content proof, content-drift rejection, strict new-tree validation, valid same-SHA
+reuse without rollback-pointer drift, and successful new release promotion. Fixture
+directory modes must be explicit so validation does not depend on the process `umask`.
 
 ## Remaining Boundary
 
