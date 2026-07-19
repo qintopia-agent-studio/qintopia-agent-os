@@ -75,6 +75,7 @@ const requiredFiles = [
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
+  "tools/deploy/test-promote-existing-release-metadata.mjs",
   "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
@@ -640,6 +641,10 @@ for (const fragment of [
   '"commit_sha"',
   '"release_scope"',
   '"restart_targets"',
+  'repair_existing_release_metadata "$release_dir" "$staging_dir"',
+  "existing release content differs from freshly verified artifacts",
+  'chown -hR root:root "$existing_dir"',
+  "sha256sum -c SHA256SUMS",
 ]) {
   if (!promoteText.includes(fragment)) {
     addError(`deploy/runner/promote-release.sh: missing ${fragment}`);
@@ -930,6 +935,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-promotion.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-promote-existing-release-metadata.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-fetch-cos-artifact-permissions.mjs"], {
