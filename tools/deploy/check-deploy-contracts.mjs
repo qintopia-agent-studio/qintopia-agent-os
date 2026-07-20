@@ -30,6 +30,24 @@ const forbidFragment = (relativePath, text, fragment) => {
   }
 };
 
+const sidecarDeployPath = "deploy/sidecar/scripts/server-deploy.sh";
+if (!exists(sidecarDeployPath)) {
+  addError(`${sidecarDeployPath}: missing sidecar deploy script`);
+} else {
+  const sidecarDeploy = readText(sidecarDeployPath);
+  for (const fragment of [
+    'sudo chown root:ubuntu "$ENV_FILE"',
+    'sudo chmod 0640 "$ENV_FILE"',
+  ]) {
+    requireFragment(sidecarDeployPath, sidecarDeploy, fragment);
+  }
+  forbidFragment(
+    sidecarDeployPath,
+    sidecarDeploy,
+    'sudo chown ubuntu:ubuntu "$ENV_FILE"'
+  );
+}
+
 const stagingArtifactProvisionPath =
   "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh";
 if (!exists(stagingArtifactProvisionPath)) {

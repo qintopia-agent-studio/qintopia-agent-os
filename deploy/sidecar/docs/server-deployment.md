@@ -67,6 +67,11 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH1fnbaWX9q/g+ovbo9sK0LtvcJolUzFQhmaGMzYgjqq
 Do not commit the real database URL. Store it only in
 `/etc/qintopia/message-sidecar.env`:
 
+The deploy script renders this file as `root:ubuntu 0640`. The `ubuntu` service user may
+read it through systemd and release-local observations, but the runtime user must not
+own or write it; the Huabaosi production canary fails closed when the file is not
+root-owned.
+
 ```env
 QINTOPIA_SIDECAR_NATS_URL=nats://127.0.0.1:4222
 QINTOPIA_SIDECAR_NATS_STREAM=QINTOPIA_QIWE_MESSAGES

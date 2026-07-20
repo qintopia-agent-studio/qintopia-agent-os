@@ -694,7 +694,7 @@ QINTOPIA_RAW_ARCHIVE_FORMAT=jsonl.zst
 # QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL is read at deploy-time.
 RUST_LOG=info,qintopia_message_sidecar=debug
 EOF
-  sudo chown ubuntu:ubuntu "$ENV_FILE"
+  sudo chown root:ubuntu "$ENV_FILE"
   sudo chmod 0640 "$ENV_FILE"
 }
 
