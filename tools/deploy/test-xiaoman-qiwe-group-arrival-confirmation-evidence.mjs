@@ -70,6 +70,16 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /forbidden sensitive fragment/);
 
+  const nonPrefixedLeak = writeCase("non-prefixed-leak");
+  fs.appendFileSync(
+    nonPrefixedLeak.confirmation,
+    "operator note: https://media.example/private.jpg\n",
+    "utf8"
+  );
+  result = runChecker(nonPrefixedLeak);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /forbidden sensitive fragment/);
+
   const missingRecord = writeCase("missing-record");
   fs.writeFileSync(missingRecord.confirmation, "\n", "utf8");
   result = runChecker(missingRecord);
