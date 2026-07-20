@@ -96,7 +96,15 @@ These are useful but not completion:
 5. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
 6. Confirm QiWe production enablement and Huabaosi production activation evidence are
    merged, deployed, and owner-approved.
-7. Process one real production Xiaoman activity and retain sanitized real-activity
+7. After the Huabaosi one-shot production canary creates one pending Feishu-backed JPEG,
+   retain its sanitized output and validate it before using it as first-record evidence:
+
+   ```bash
+   node tools/deploy/check-huabaosi-image-production-canary-evidence.mjs \
+     <production-canary-output.txt>
+   ```
+
+8. Process one real production Xiaoman activity and retain sanitized real-activity
    evidence with the release-local exporter:
 
    ```bash
@@ -107,7 +115,7 @@ These are useful but not completion:
    node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>
    ```
 
-8. Fill the non-secret completion manifest and run the full completion checker before
+9. Fill the non-secret completion manifest and run the full completion checker before
    changing any Release classification to `production-complete`.
 
 ## Production Boundary
