@@ -1797,6 +1797,38 @@ if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
   }
 }
 
+const xiaomanProductionCompletionEvidenceCheckPath =
+  "tools/deploy/check-xiaoman-production-completion-evidence.mjs";
+if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
+  addError(
+    `${xiaomanProductionCompletionEvidenceCheckPath}: missing Xiaoman production completion evidence checker`
+  );
+} else {
+  const checker = readText(xiaomanProductionCompletionEvidenceCheckPath);
+  for (const fragment of [
+    "xiaoman-production-completion-evidence-v1",
+    "check-huabaosi-image-staging-evidence.mjs",
+    "check-qiwe-image-staging-evidence.mjs",
+    "check-xiaoman-image-send-staging-evidence.mjs",
+    "check-xiaoman-real-activity-production-evidence.mjs",
+    "staging_runtime_readiness_evidence=",
+    "qiwe_production_enablement",
+    "listener_service_timer_reviewed",
+    "production_feature_boundary_reviewed",
+    "huabaosi_production_activation",
+    "first_record_evidence_retained",
+    "qiwe_group_arrival_confirmed",
+    "release_binary_verified",
+    "approved_sidecar_sha256_matched",
+    "Xiaoman production completion evidence check passed.",
+  ]) {
+    requireFragment(xiaomanProductionCompletionEvidenceCheckPath, checker, fragment);
+  }
+  for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
+    forbidFragment(xiaomanProductionCompletionEvidenceCheckPath, checker, fragment);
+  }
+}
+
 const xiaomanRealActivityEvidenceRuntimePath =
   "runtime/sidecar/src/xiaoman_real_activity_evidence.rs";
 if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {
@@ -2034,6 +2066,51 @@ for (const relativePath of [
     "trusted-staging-callback-source |",
   ]) {
     requireFragment(relativePath, text, fragment);
+  }
+}
+
+const xiaomanProductionCompletionEvidenceTemplatePath =
+  "docs/reports/templates/xiaoman-production-completion-evidence.json";
+if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
+  addError(
+    `${xiaomanProductionCompletionEvidenceTemplatePath}: missing Xiaoman production completion evidence manifest template`
+  );
+} else {
+  const template = readText(xiaomanProductionCompletionEvidenceTemplatePath);
+  for (const fragment of [
+    "xiaoman-production-completion-evidence-v1",
+    "release_please_validation",
+    "manual_ci_workflow",
+    "release_please_status",
+    "qiwe_production_enablement",
+    "listener_service_timer_reviewed",
+    "observation_reviewed",
+    "rollback_reviewed",
+    "exact_allowlists_reviewed",
+    "production_feature_boundary_reviewed",
+    "huabaosi_production_activation",
+    "image_generation_observation_passed",
+    "feishu_mirror_activation_approved",
+    "first_record_evidence_retained",
+    "real_activity_confirmation",
+    "qiwe_group_arrival_confirmed",
+  ]) {
+    requireFragment(
+      xiaomanProductionCompletionEvidenceTemplatePath,
+      template,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "postgres://",
+    "postgresql://",
+    "https://",
+    "target_group_id",
+    "artifact_uri",
+  ]) {
+    forbidFragment(xiaomanProductionCompletionEvidenceTemplatePath, template, fragment);
   }
 }
 

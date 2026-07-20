@@ -1,0 +1,35 @@
+{
+  "schema": "xiaoman-production-completion-evidence-v1",
+  "release_please_validation": {
+    "status": "passed",
+    "pr_number": 0,
+    "head_sha": "<release-please-head-sha>",
+    "manual_ci_workflow": "ci.yml",
+    "release_please_status": "success"
+  },
+  "qiwe_production_enablement": {
+    "status": "merged",
+    "pr_number": 0,
+    "head_sha": "<qiwe-production-enablement-head-sha>",
+    "listener_service_timer_reviewed": true,
+    "observation_reviewed": true,
+    "rollback_reviewed": true,
+    "exact_allowlists_reviewed": true,
+    "production_feature_boundary_reviewed": true
+  },
+  "huabaosi_production_activation": {
+    "release_sha": "<production-release-sha>",
+    "sidecar_binary_sha256": "<approved-production-sidecar-sha256>",
+    "database_url_sha256": "<approved-production-database-url-sha256>",
+    "image_generation_observation_passed": true,
+    "image_generation_activation_approved": true,
+    "feishu_mirror_observation_passed": true,
+    "feishu_mirror_activation_approved": true,
+    "first_record_evidence_retained": true
+  },
+  "real_activity_confirmation": {
+    "qiwe_group_arrival_confirmed": true,
+    "confirmed_by": "<safe-human-operator-id>",
+    "confirmed_at": "YYYY-MM-DDTHH:MM:SSZ"
+  }
+}

@@ -124,6 +124,17 @@
 
 - Real Xiaoman activity production evidence validation:
   `node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>`
+- Full Xiaoman production completion evidence validation after all completion gates have
+  retained sanitized evidence:
+
+  ```bash
+  node tools/deploy/check-xiaoman-production-completion-evidence.mjs \
+    --manifest <completed-xiaoman-production-completion-evidence.json> \
+    --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
+    --huabaosi-staging <huabaosi-staging-output.txt> \
+    --qiwe-staging <qiwe-staging-output.txt> \
+    --production-real-activity <production-evidence-output.txt>
+  ```
 
 - Combined Huabaosi/QiWe staging runtime readiness evidence:
 
@@ -486,12 +497,14 @@ Use `rg` and `rg --files` for search.
   staging evidence as production completion.
 - A real Xiaoman activity may be described as production-complete only after the
   retained sanitized evidence passes
-  `tools/deploy/check-xiaoman-real-activity-production-evidence.mjs`. The report may
-  keep only the fixed schema ids, AgentOS UUIDs, release/database hashes, the
-  owner-approved sidecar binary hash, release-binary verification booleans,
-  `artifact_content_hash`, and boolean execution facts; it must not retain raw QiWe
-  callback bodies, request ids, file credentials, group ids, message ids, media URLs,
-  database URLs, provider responses, raw chat, or raw logs.
+  `tools/deploy/check-xiaoman-real-activity-production-evidence.mjs` and the full
+  completion manifest plus staging/production evidence files pass
+  `tools/deploy/check-xiaoman-production-completion-evidence.mjs`. The report may keep
+  only the fixed schema ids, AgentOS UUIDs, release/database hashes, the owner-approved
+  sidecar binary hash, release-binary verification booleans, `artifact_content_hash`,
+  reviewed PR numbers/head SHAs, and boolean execution facts; it must not retain raw
+  QiWe callback bodies, request ids, file credentials, group ids, message ids, media
+  URLs, database URLs, provider responses, raw chat, or raw logs.
 - `xiaoman-real-activity-production-evidence` is a read-only retention exporter. It may
   run only from the immutable
   `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`
