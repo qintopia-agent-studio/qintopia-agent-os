@@ -481,32 +481,32 @@ pub fn run_preflight() -> Result<()> {
 
 pub fn run_staging_preflight(cli: &Cli) -> Result<()> {
     run_live_preflight(
-        cli,
         LivePreflightMode::Staging,
         validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())
             .is_ok(),
         cli.database_url_required()
             .and_then(validate_staging_database_boundary)
             .is_ok(),
+        feishu_delivery_config_valid(cli),
         missing_qiwe_image_staging_configuration(cli),
     )
 }
 
 pub fn run_production_preflight(cli: &Cli) -> Result<()> {
     run_live_preflight(
-        cli,
         LivePreflightMode::Production,
         production_owner_approval_valid(),
         production_database_boundary_valid(cli),
+        feishu_delivery_config_valid(cli),
         missing_qiwe_image_production_configuration(cli),
     )
 }
 
 fn run_live_preflight(
-    cli: &Cli,
     mode: LivePreflightMode,
     owner_approval_valid: bool,
     database_boundary_valid: bool,
+    feishu_delivery_config_valid: bool,
     missing_configuration: Vec<&'static str>,
 ) -> Result<()> {
     validate_contract()?;
@@ -514,15 +514,12 @@ fn run_live_preflight(
     let feishu_delivery_bridge_compiled = feishu_delivery_bridge_compiled();
     let send_enabled = env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED").unwrap_or(false);
     let (
-        config_valid,
+        adapter_config_valid,
         webhook_ready,
         allowed_host_count,
         media_allowed_host_count,
         allowed_group_count,
-    ) = match AdapterConfig::from_env().and_then(|config| {
-        validate_feishu_delivery_config(cli.database_url_required()?)?;
-        Ok(config)
-    }) {
+    ) = match AdapterConfig::from_env() {
         Ok(config) => (
             true,
             config.webhook_ready,
@@ -537,7 +534,7 @@ fn run_live_preflight(
         feishu_delivery_bridge_compiled,
         send_enabled,
         owner_approval_valid,
-        config_valid,
+        config_valid: adapter_config_valid && feishu_delivery_config_valid,
         database_boundary_valid,
         webhook_ready,
         allowed_host_count,
@@ -2358,6 +2355,12 @@ fn production_database_boundary_valid(_cli: &Cli) -> bool {
     false
 }
 
+fn feishu_delivery_config_valid(cli: &Cli) -> bool {
+    cli.database_url_required()
+        .and_then(validate_feishu_delivery_config)
+        .is_ok()
+}
+
 fn validate_staging_database_boundary_with_expected_hash(
     database_url: &str,
     expected_hash: &str,
@@ -3380,6 +3383,82 @@ mod tests {
         assert!(error
             .to_string()
             .contains("production owner approval is required"));
+    }
+
+    #[cfg(all(
+        feature = "qiwe-production-adapter",
+        feature = "qiwe-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    #[test]
+    fn live_preflight_feishu_delivery_gate_rejects_invalid_values() {
+        let env_keys = [
+            "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+            "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+            "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+            "QINTOPIA_DEPLOYED_COMMIT_SHA",
+            "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+            "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+            "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+            "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+            "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+            "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+            "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+            "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+        ];
+        let _restore: Vec<_> = env_keys
+            .iter()
+            .map(|key| EnvRestore::capture(key))
+            .collect();
+        let database_url = "postgres://production-user:secret@127.0.0.1:5432/qintopia";
+        let database_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
+        let release_sha = "0123456789abcdef0123456789abcdef01234567";
+        unsafe {
+            std::env::set_var("QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED", "1");
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+                "approved-huabaosi-feishu-artifact-mirror",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+                release_sha,
+            );
+            std::env::set_var("QINTOPIA_DEPLOYED_COMMIT_SHA", release_sha);
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+                database_hash,
+            );
+            std::env::set_var("QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN", "bascnReviewed");
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+                "bascnReviewed",
+            );
+            std::env::set_var("QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID", "tblReviewed");
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+                "tblDifferent",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+                "/etc/qintopia/huabaosi-profile.env",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+                "huabaosi-generated-image-v1",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+                "media.example.test",
+            );
+        }
+        let cli = Cli::parse_from([
+            "qintopia-message-sidecar",
+            "--database-url",
+            database_url,
+            "check",
+        ]);
+
+        assert!(!feishu_delivery_config_valid(&cli));
     }
 
     #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
