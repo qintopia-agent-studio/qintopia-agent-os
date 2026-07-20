@@ -976,6 +976,11 @@ try {
   execFileSync("node", ["tools/deploy/test-huabaosi-image-production-canary.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync(
+    "node",
+    ["tools/deploy/test-huabaosi-image-production-canary-evidence.mjs"],
+    { cwd: repoRoot }
+  );
   execFileSync("node", ["tools/deploy/test-huabaosi-image-staging-readiness.mjs"], {
     cwd: repoRoot,
   });
