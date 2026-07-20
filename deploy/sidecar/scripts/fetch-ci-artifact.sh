@@ -272,7 +272,7 @@ unzip -o -q "$zip_path" -d "$output_dir"
     echo "artifact manifest target mismatch: got ${manifest_target}, expected ${artifact_target}" >&2
     exit 1
   fi
-  if [[ "$manifest_cargo_features" != '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter"]' ]]; then
+  if [[ "$manifest_cargo_features" != '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]' ]]; then
     echo "artifact manifest Cargo features are not approved for production" >&2
     exit 1
   fi

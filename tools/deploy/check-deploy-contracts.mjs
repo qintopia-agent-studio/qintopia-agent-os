@@ -90,6 +90,7 @@ if (!exists(stagingArtifactProvisionPath)) {
     'workflow="${GITHUB_WORKFLOW',
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
     "systemctl enable",
     "systemctl start",
     "gh release",
@@ -111,6 +112,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
+    "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
     "docs/operations/staging-runtime-provisioning-runbook.md",
@@ -1342,6 +1344,53 @@ if (!exists(qiweImageStagingReadinessPath)) {
   }
 }
 
+const qiweImageProductionObservationPath =
+  "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh";
+if (!exists(qiweImageProductionObservationPath)) {
+  addError(
+    `${qiweImageProductionObservationPath}: missing QiWe production observation smoke`
+  );
+} else {
+  const observation = readText(qiweImageProductionObservationPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE",
+    "/home/ubuntu/qintopia-agent-os-releases/current",
+    "sidecar/qintopia-message-sidecar",
+    "artifact-manifest.json",
+    '"huabaosi-production-adapter"',
+    '"huabaosi-feishu-mirror-adapter"',
+    '"qiwe-production-adapter"',
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
+    "QINTOPIA_QIWE_IMAGE_PRODUCTION_DATABASE_URL_SHA256",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QIWE_API_URL",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+    "env -i",
+    "qiwe-image-send-preflight",
+    "run-qiwe-image-send-worker --once --dry-run",
+    '"production_adapter_ready"',
+    '"production_adapter_disabled"',
+    "contains forbidden sensitive output",
+    "qiwe_image_send_production_observation_state=",
+  ]) {
+    requireFragment(qiweImageProductionObservationPath, observation, fragment);
+  }
+  for (const fragment of [
+    "cargo run",
+    'source "$',
+    ". /etc/qintopia",
+    "eval ",
+    "--apply",
+    "process-qiwe-image-send-callback",
+  ]) {
+    forbidFragment(qiweImageProductionObservationPath, observation, fragment);
+  }
+}
+
 const stagingSidecarArtifactBuilderPath =
   "tools/deploy/build-staging-sidecar-artifact.mjs";
 if (!exists(stagingSidecarArtifactBuilderPath)) {
@@ -1492,6 +1541,7 @@ if (!exists(qiweImageStagingSmokePath)) {
     "os.geteuid()",
     "sidecar_binary_sha256",
     "artifact_content_hash",
+    "feishu_delivery_bridge_compiled",
     "qiwe-image-send-staging-preflight",
     "run-qiwe-image-send-worker",
     "process-qiwe-image-send-callback",
@@ -1663,6 +1713,7 @@ if (!exists(qiweImageStagingEvidenceCheckPath)) {
     "callback_credential_schema",
     "artifact_content_hash",
     "sidecar_binary_sha256",
+    "feishu_delivery_bridge_compiled",
     "external_send_executed",
     "image_send_completed",
     "complete evidence records must use the same sidecar binary hash",

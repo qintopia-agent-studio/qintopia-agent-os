@@ -85,18 +85,20 @@ target, or missing final confirmation must stop before sending.
 - The Huabaosi final-artifact path converts provider PNG to the immutable reviewed JPEG
   while preserving source and final hashes plus the fixed transform metadata.
 - `qiwe-image-send-preflight` checks only local configuration and emits a sanitized
-  report. It opens no network or database connection and fails closed if the send-enable
-  flag is already `1` because this PR does not approve enablement.
+  report. It opens no network or database connection. In the production feature build it
+  may report `production_adapter_ready` only when the reviewed production adapter is
+  compiled, send enablement is explicit, and local configuration is valid.
 - Preflight `missing_configuration` may list only fixed public variable names from
   `.env.example`, never values, URLs, hosts, group ids, or enable flags. An empty list
   with `config_valid=false` means present configuration failed format, readiness, or
   allowlist validation and must still fail closed.
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; guarded upload/callback commands
-  exist, but default and production binaries compile without the non-default
-  `qiwe-staging-adapter` feature. Apply fails before Postgres or network access even if
-  the runtime enable flag is misconfigured. A staging-feature apply also requires the
-  exact owner approval phrase before Postgres or network access. No callback listener,
-  staging smoke, service, or timer is installed.
+  exist, but default binaries and production binaries without `qiwe-production-adapter`
+  fail apply before Postgres or network access even if the runtime enable flag is
+  misconfigured. A staging-feature apply also requires the exact owner approval phrase
+  before Postgres or network access. Production enablement installs only the fixed
+  worker service/timer and read-only observation smoke; it does not install a production
+  callback listener.
 - The QiWe capture producer sanitizes any `cmd=20000` event before NATS publication, and
   the Rust sidecar independently repeats the boundary before Postgres persistence. Both
   rebuild the entire callback payload from hashed correlation ids and fixed `msgData`
@@ -121,12 +123,12 @@ target, or missing final confirmation must stop before sending.
   upload request, and `process-qiwe-image-send-callback` reads one bounded callback from
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
-  The live helpers compile only with the staging-only Cargo feature. Production release
-  artifacts record only the unrelated `huabaosi-production-adapter` and guarded
-  `huabaosi-feishu-mirror-adapter` features and cannot execute either QiWe external
-  call; no QiWe service, timer, staging endpoint, or production enablement is installed.
-  The guarded staging smoke exists only as an owner-approved one-shot operator
-  entrypoint.
+  The live helpers compile only with `qiwe-staging-adapter` or the reviewed
+  `qiwe-production-adapter`. Production release artifacts for image-send enablement
+  record exactly `huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and
+  `qiwe-production-adapter`, while still excluding `qiwe-staging-adapter` and
+  all-features builds. The guarded staging smoke remains an owner-approved one-shot
+  operator entrypoint.
 - A combined staging build containing both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter` may claim an exact Feishu primary-storage URI. It commits the
   existing `uploading` attempt before Feishu or QiWe I/O, revalidates the approved JPEG,
@@ -164,8 +166,9 @@ target, or missing final confirmation must stop before sending.
    credentials, group id, media URL, or provider response. Record the full staging
    sequence with `docs/reports/templates/xiaoman-image-send-staging-evidence.md` only
    after the Huabaosi, QiWe, and cross-flow evidence checkers pass.
-4. Add production scheduling only after staging evidence, rollback ownership, and
-   allowlists are reviewed in a separate PR.
+4. Add production scheduling only with the reviewed `qiwe-production-adapter`, fixed
+   systemd worker timer, release/current observation smoke, rollback ownership, and
+   exact production allowlists.
 
 ## Guarded Staging Smoke Contract
 
@@ -232,11 +235,12 @@ evidence template lives in
 
 ## Production Boundary
 
-Default and production execution do not contain the live QiWe adapter and cannot contact
-QiWe or send messages. Production artifacts may contain the unrelated Huabaosi
-production and Feishu mirror features, but they still exclude `qiwe-staging-adapter`. A
-separately built staging-feature binary can write Postgres and contact an allowlisted
-endpoint only with explicit enablement, but this plan does not build, install, or enable
-one, write Feishu as part of QiWe send, or change QiWe production configuration.
-Rollback is to retain `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`; no current internal Xiaoman
-timer depends on this adapter.
+Default execution does not contain the live QiWe adapter and cannot contact QiWe or send
+messages. Production image-send artifacts may contain the reviewed
+`qiwe-production-adapter`, but they must still exclude `qiwe-staging-adapter` and
+all-features builds. The production observation smoke accepts only the immutable
+release/current binary, parses only the fixed production env allowlist without
+evaluating shell, runs `qiwe-image-send-preflight`, and runs
+`run-qiwe-image-send-worker --once --dry-run`; it must not run `--apply` or callback
+processing. Rollback is to retain `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and keep the
+fixed QiWe image-send timer disabled.

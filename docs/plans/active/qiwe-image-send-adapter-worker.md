@@ -39,10 +39,10 @@ to Postgres, read a callback, or open a network connection.
   not claim, write Postgres, or open a network connection. Preview and apply share the
   exact target-group, media-host, JPEG hash, MD5, byte-size, and filename validation, so
   missing policy and ineligible candidates fail closed instead of being reported.
-- A default build rejects apply as `staging_adapter_not_compiled` before reading adapter
+- A default build rejects apply as `live_adapter_not_compiled` before reading adapter
   configuration, connecting to Postgres, claiming work, or opening a socket. Callback
-  apply also rejects before reading stdin, so production does not ingest callback
-  credentials for an unavailable capability.
+  apply also rejects before reading stdin, so a build without a reviewed live adapter
+  does not ingest callback credentials for an unavailable capability.
 - A staging-only build additionally requires the non-default `qiwe-staging-adapter`
   Cargo feature, `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, a valid reviewed adapter config,
   `QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1`, and the exact one-shot owner approval
@@ -151,13 +151,11 @@ booleans. They must use `safe_for_chat=false` and must not include:
 
 ## Production Boundary
 
-This change must not install a service or timer, modify production runtime
-configuration, write Feishu as part of QiWe send, or contact a real QiWe endpoint.
-Production artifact and server-source builders are checked to exclude
-`qiwe-staging-adapter`; their manifest records only the reviewed unrelated
-`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`. Setting
-runtime environment variables cannot add the missing executable path. Rollback keeps
-default builds, `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0`, and both commands unscheduled.
-Owner-approved staging callback evidence and an isolated test group remain required
-before a staging-feature build may be used, and production enablement remains a later
-separate decision.
+Production image-send enablement may install the fixed worker service/timer and compile
+the reviewed `qiwe-production-adapter`, but it must not install an unreviewed callback
+listener, broaden group allowlists, or contact QiWe outside the at-most-once upload and
+callback send state machine. Production artifact builders are checked to exclude
+`qiwe-staging-adapter` and all-features builds; their manifest records exactly
+`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter, qiwe-production-adapter]`.
+Rollback keeps `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and the fixed QiWe image-send timer
+disabled.

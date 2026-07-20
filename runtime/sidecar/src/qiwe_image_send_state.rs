@@ -1548,8 +1548,14 @@ fn parse_feishu_primary_storage_uri(value: &str) -> Result<Uuid> {
 
 const fn feishu_delivery_bridge_compiled() -> bool {
     cfg!(all(
-        feature = "huabaosi-staging-adapter",
-        feature = "qiwe-staging-adapter"
+        any(
+            feature = "huabaosi-production-adapter",
+            feature = "huabaosi-staging-adapter"
+        ),
+        any(
+            feature = "qiwe-production-adapter",
+            feature = "qiwe-staging-adapter"
+        )
     ))
 }
 
@@ -2832,8 +2838,11 @@ mod tests {
     #[tokio::test]
     #[cfg(all(
         feature = "postgres-integration-tests",
-        feature = "huabaosi-staging-adapter",
-        feature = "qiwe-staging-adapter"
+        any(
+            feature = "huabaosi-production-adapter",
+            feature = "huabaosi-staging-adapter"
+        ),
+        any(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter")
     ))]
     #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
     async fn postgres_qiwe_send_state_claims_feishu_bridge_without_persisting_uri() {

@@ -29,17 +29,18 @@ Linux x86_64, Ubuntu glibc
 ```
 
 Production sidecar artifacts are built with exactly the non-default
-`huabaosi-production-adapter` and guarded `huabaosi-feishu-mirror-adapter` Cargo
-features, and record only those names in `cargo_features`. Neither
-`huabaosi-staging-adapter` nor `qiwe-staging-adapter` may appear in this builder or a
-server-source production build, and all-features production artifacts remain forbidden.
-Feishu primary storage for the Huabaosi canary is guarded by the production adapter path
-and creates only pending AgentOS artifacts. The Feishu mirror worker is compiled into
-the reviewed production artifact but can run only after persistent enablement, owner
-approval, release/database hash binding, allowlists, release-local preflight, and
-explicit activation. Runtime environment variables cannot select staging code or bypass
-these bindings. The builder also refuses a dirty or unreadable git worktree so
-`commit_sha` cannot describe different uncommitted source bytes.
+`huabaosi-production-adapter`, guarded `huabaosi-feishu-mirror-adapter`, and reviewed
+`qiwe-production-adapter` Cargo features, and record only those names in
+`cargo_features`. Neither `huabaosi-staging-adapter` nor `qiwe-staging-adapter` may
+appear in this builder or a server-source production build, and all-features production
+artifacts remain forbidden. Feishu primary storage for the Huabaosi canary is guarded by
+the production adapter path and creates only pending AgentOS artifacts. The Feishu
+mirror worker and QiWe image-send worker are compiled into the reviewed production
+artifact but can run only after persistent enablement, owner approval where required,
+release/database hash binding, allowlists, release-local preflight, and explicit timer
+activation. Runtime environment variables cannot select staging code or bypass these
+bindings. The builder also refuses a dirty or unreadable git worktree so `commit_sha`
+cannot describe different uncommitted source bytes.
 
 The staging-only sidecar artifact name is:
 
