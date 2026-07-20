@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { validateXiaomanProductionCompletionClaimBoundary } from "./xiaoman-production-claim-boundary.mjs";
 
 const repoRoot = process.cwd();
 const errors = [];
@@ -72,7 +73,7 @@ const validateChangelog = () => {
   const changelogPath = "CHANGELOG.md";
   if (!exists(changelogPath)) {
     addError(`${changelogPath}: missing root changelog`);
-    return;
+    return "";
   }
 
   const changelog = readText(changelogPath);
@@ -85,11 +86,18 @@ const validateChangelog = () => {
   if (!/^## \[\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\]/m.test(changelog)) {
     addError(`${changelogPath}: must include a released version section`);
   }
+  return changelog;
 };
 
-requireReleasePleasePullRequest();
+const pullRequest = requireReleasePleasePullRequest();
 validateManifest();
-validateChangelog();
+const changelog = validateChangelog();
+for (const error of validateXiaomanProductionCompletionClaimBoundary({
+  pullRequestBody: pullRequest?.body ?? "",
+  changelog,
+})) {
+  addError(error);
+}
 
 if (errors.length > 0) {
   console.error("Release Please PR check failed:");

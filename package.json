@@ -32,7 +32,7 @@
     "deploy:smoke:check": "node tools/deploy/check-deploy-contracts.mjs",
     "deploy:runner:check": "node tools/deploy/check-deploy-runner.mjs",
     "tools:inventory:check": "node tools/inventory/check-inventory-contracts.mjs",
-    "tools:ci:check": "node tools/ci/check-ci-contracts.mjs",
+    "tools:ci:check": "node tools/ci/check-ci-contracts.mjs && node tools/ci/test-xiaoman-production-claim-boundary.mjs",
     "pr:check-body": "node tools/ci/check-pr-body.mjs",
     "release-please:check": "node tools/ci/check-release-please-pr.mjs",
     "pr:doctor": "node tools/agents/pr-doctor.mjs",
