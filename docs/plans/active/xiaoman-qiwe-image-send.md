@@ -234,12 +234,43 @@ evidence template lives in
 
 ## Production Boundary
 
-Default execution does not contain the live QiWe adapter and cannot contact QiWe or send
-messages. Production image-send artifacts must not contain `qiwe-staging-adapter` or
-all-features builds. The production observation smoke accepts only the immutable
-release/current binary, parses only the non-secret send enable flag from the fixed
-production env file without evaluating shell, and confirms the production apply
-service/timer is absent, inactive, and disabled. It must not accept production
-env/release/systemctl overrides, pass database/QiWe secrets to a child process, run
-sidecar commands, run `--apply`, or process callbacks. Rollback is to retain
-`QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and keep QiWe image-send production units absent.
+Default execution still cannot contact QiWe or send messages. Production image-send
+artifacts may contain only the reviewed `huabaosi-production-adapter`,
+`huabaosi-feishu-mirror-adapter`, and `qiwe-production-adapter` feature set; staging and
+all-features builds remain forbidden. The production observation smoke accepts only the
+immutable `release/current` binary and fixed production env file, and it must not run
+`--apply` or process callbacks.
+
+Production activation is guarded rather than automatic. It requires the persistent
+enablement flag, exact production owner phrase, canonical production database URL hash,
+and release-local `qiwe-image-send-production-preflight` before enabling the worker
+timer. That worker can upload one approved send-ready image and persist sanitized
+`awaiting_callback` state, but final `/msg/sendImage` still depends on one reviewed
+`cmd=20000` callback reaching `process-qiwe-image-send-callback --apply`.
+
+The Hermes webhook callback bridge is the reviewed callback ingress for that final step.
+In production mode it must use exactly
+`/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar` with
+root `/home/ubuntu/qintopia-agent-os-releases/current`, the production owner/database
+gate, explicit image-send and webhook readiness flags, and an approved sidecar SHA-256.
+It streams the bounded callback only through child stdin and never via argv, env, files,
+NATS, logs, or HTTP response bodies. It does not publish a Release, enable timers,
+approve images, or bypass the Rust production apply gate.
+
+The release-local callback bridge production observation is read-only:
+
+```bash
+QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 \
+  deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh
+```
+
+It verifies that Erhua's QiWe plugin symlink resolves to `release/current`, the bridge
+configuration is either explicitly disabled or bound to production mode, the configured
+sidecar path/hash match the immutable release binary, and the approved production
+database URL SHA-256 matches the runtime database URL without printing that URL. It does
+not process callbacks, start services, enable timers, read Feishu, write Postgres, call
+QiWe, or publish.
+
+Until a new immutable Release is owner-published, deployed, activated, and backed by one
+real Xiaoman activity evidence bundle, QiWe image send remains code-ready rather than a
+completed production workflow.
