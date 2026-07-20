@@ -80,11 +80,12 @@ team onboarding, architecture review, or migration decisions.
 
 ## Templates
 
-| Template                                                 | Use                                                                                  |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `templates/qiwe-image-send-staging-evidence.md`          | Sanitized owner-approved QiWe isolated staging upload/callback evidence note         |
-| `templates/xiaoman-production-completion-evidence.json`  | Non-secret manifest for the final Xiaoman production-complete evidence checker       |
-| `templates/xiaoman-real-activity-production-evidence.md` | Sanitized one-real-activity production completion evidence after QiWe group delivery |
+| Template                                                        | Use                                                                                                 |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `templates/qiwe-image-send-staging-evidence.md`                 | Sanitized owner-approved QiWe isolated staging upload/callback evidence note                        |
+| `templates/xiaoman-production-completion-evidence.json`         | Non-secret manifest for the final Xiaoman production-complete evidence checker                      |
+| `templates/xiaoman-qiwe-group-arrival-confirmation-evidence.md` | Sanitized human confirmation that the real Xiaoman image message arrived in the intended QiWe group |
+| `templates/xiaoman-real-activity-production-evidence.md`        | Sanitized one-real-activity production completion evidence after QiWe group delivery                |
 
 ## Rules
 
