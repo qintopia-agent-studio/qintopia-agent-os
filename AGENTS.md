@@ -118,7 +118,10 @@
 - QiWe image callback bridge production observation smoke:
   `QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh`
 - QiWe image-send production activation after manual Release publish and production env
-  approval:
+  approval. The activation script must fail before preflight or timer changes unless the
+  persistent `QINTOPIA_SIDECAR_DATABASE_URL` hashes to the approved
+  `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256`; never weaken this to a
+  format-only hash check:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`
 - QiWe image-send immediate timer rollback:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK=approved-production-qiwe-image-send-rollback deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh`
@@ -133,6 +136,9 @@
 
 - Real Xiaoman activity production evidence validation:
   `node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>`
+- Xiaoman QiWe group-arrival human confirmation evidence validation after a real
+  activity send:
+  `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`
 - Full Xiaoman production completion evidence validation after all completion gates have
   retained sanitized evidence:
 

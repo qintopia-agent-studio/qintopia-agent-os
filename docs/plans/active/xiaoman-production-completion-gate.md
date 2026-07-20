@@ -57,7 +57,9 @@ All gates are required before a Release is called Xiaoman production complete:
    separate sanitized output.
 8. One real Xiaoman activity is observed from signal intake through image generation,
    human approval, send-ready, QiWe group-send arrival, and sanitized production
-   evidence retention.
+   evidence retention. The QiWe group arrival must also have a separate sanitized human
+   confirmation record bound to the same send-ready work item, generated-image artifact,
+   and `artifact_content_hash`.
 9. The final production completion checker passes against the owner-retained evidence
    bundle:
 
@@ -115,6 +117,9 @@ These are useful but not completion:
    qintopia-message-sidecar xiaoman-real-activity-production-evidence \
      --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
    node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>
+   node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs \
+     <production-evidence-output.txt> \
+     <qiwe-group-arrival-confirmation-output.txt>
    ```
 
 9. Fill the non-secret completion manifest and run the full completion checker before
