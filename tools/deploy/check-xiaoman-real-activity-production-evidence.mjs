@@ -354,7 +354,11 @@ function parsePrefixedLines(text, prefix, allowedLines) {
       fail(`unexpected non-evidence line ${index + 1}`);
     }
     try {
-      records.push(JSON.parse(line.slice(prefix.length)));
+      const record = JSON.parse(line.slice(prefix.length));
+      if (!record || typeof record !== "object" || Array.isArray(record)) {
+        fail(`evidence line ${index + 1} must be a JSON object`);
+      }
+      records.push(record);
     } catch (error) {
       fail(`evidence line ${index + 1} is not valid JSON: ${error.message}`);
     }

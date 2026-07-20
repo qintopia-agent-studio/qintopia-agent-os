@@ -126,6 +126,23 @@ try {
   result = runChecker(extraPhaseEvidence);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /exactly seven fixed phase records/);
+
+  const nonObjectRecordEvidence = path.join(tmpRoot, "non-object-record.txt");
+  fs.writeFileSync(
+    nonObjectRecordEvidence,
+    productionOutput()
+      .split(/\r?\n/)
+      .map((line) =>
+        line.includes('"phase":"signal_intake"')
+          ? "xiaoman_real_activity_production_evidence=[]"
+          : line
+      )
+      .join("\n"),
+    "utf8"
+  );
+  result = runChecker(nonObjectRecordEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /evidence line 1 must be a JSON object/);
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
