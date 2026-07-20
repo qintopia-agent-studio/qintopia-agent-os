@@ -60,4 +60,14 @@ run_step \
   env QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE=1 \
   "${SCRIPT_DIR}/operations-group-send-ready-timer-observation-smoke.sh"
 
+run_step \
+  "QiWe image-send production observation" \
+  env QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 \
+  "${SCRIPT_DIR}/qiwe-image-send-production-observation-smoke.sh"
+
+run_step \
+  "QiWe image callback bridge production observation" \
+  env QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 \
+  "${SCRIPT_DIR}/qiwe-image-callback-bridge-production-observation-smoke.sh"
+
 echo "xiaoman activity production preflight passed"

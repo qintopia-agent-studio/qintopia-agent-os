@@ -131,6 +131,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
     "docs/operations/staging-runtime-provisioning-runbook.md",
@@ -320,6 +321,10 @@ if (!exists(xiaomanPreflightPath)) {
     "huabaosi-image-generation-production-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1",
     "xiaoman-activity-send-request-starter-observation-smoke.sh",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1",
+    "qiwe-image-send-production-observation-smoke.sh",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1",
+    "qiwe-image-callback-bridge-production-observation-smoke.sh",
   ]) {
     requireFragment(xiaomanPreflightPath, preflight, fragment);
   }
@@ -338,6 +343,47 @@ if (!exists(xiaomanPreflightPath)) {
     "QIWE_GUID",
   ]) {
     forbidFragment(xiaomanPreflightPath, preflight, fragment);
+  }
+}
+
+const qiweCallbackBridgeProductionObservationPath =
+  "deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh";
+if (!exists(qiweCallbackBridgeProductionObservationPath)) {
+  addError(
+    `${qiweCallbackBridgeProductionObservationPath}: missing production observation smoke`
+  );
+} else {
+  const smoke = readText(qiweCallbackBridgeProductionObservationPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
+    "callback bridge production database hash does not match runtime database URL",
+    "/home/ubuntu/.hermes/profiles/erhua/.env",
+    "/home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform",
+    "/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar",
+    "skills/qiwe/image_callback_bridge.py",
+    "qiwe_image_callback_bridge_production_observation_state",
+    "huabaosi-production-adapter",
+    "qiwe-production-adapter",
+  ]) {
+    requireFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
+  }
+  for (const fragment of [
+    "process-qiwe-image-send-callback",
+    "--apply",
+    "systemctl enable",
+    "systemctl start",
+    "source ",
+    "eval ",
+    "tenant_access_token",
+    "raw_body",
+  ]) {
+    forbidFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
   }
 }
 

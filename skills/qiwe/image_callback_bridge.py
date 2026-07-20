@@ -18,21 +18,46 @@ MAX_CALLBACK_EVENTS = 64
 MAX_PROCESSOR_BYTES = 128 * 1024 * 1024
 PROCESSOR_BASENAME = "qintopia-message-sidecar"
 PROCESSOR_ARGS = ("process-qiwe-image-send-callback", "--apply")
+PROCESSOR_MODE_STAGING = "staging"
+PROCESSOR_MODE_PRODUCTION = "production"
 STAGING_RELEASES_ROOT = Path("/home/ubuntu/qintopia-agent-os-staging-releases")
+PRODUCTION_RELEASES_ROOT = Path("/home/ubuntu/qintopia-agent-os-releases")
+PRODUCTION_RELEASE_CURRENT_DIR = PRODUCTION_RELEASES_ROOT / "current"
 STAGING_APPROVAL = "approved-staging-qiwe-image-send"
-PROCESSOR_ENV_ALLOWLIST = (
+PRODUCTION_APPROVAL = "approved-production-qiwe-image-send"
+COMMON_PROCESSOR_ENV_ALLOWLIST = (
     "QINTOPIA_SIDECAR_DATABASE_URL",
     "QINTOPIA_SIDECAR_DB_MAX_CONNECTIONS",
-    "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
-    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL",
     "QIWE_API_URL",
     "QIWE_TOKEN",
     "QIWE_GUID",
     "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
     "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+)
+PROCESSOR_ENV_ALLOWLIST = (
+    *COMMON_PROCESSOR_ENV_ALLOWLIST,
+    "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256",
+    "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL",
+)
+PRODUCTION_PROCESSOR_ENV_ALLOWLIST = (
+    *COMMON_PROCESSOR_ENV_ALLOWLIST,
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+    "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+    "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+    "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
 )
 CALLBACK_SCHEMAS = {
     "fileAesKey+fileId+fileMd5+fileSize+filename",
@@ -91,9 +116,12 @@ class QiWeImageCallbackBridge:
         processor_bin: str = "",
         processor_root: str = "",
         processor_sha256: str = "",
+        processor_mode: str = PROCESSOR_MODE_STAGING,
         timeout_seconds: float = 30.0,
         staging_approval: str = "",
         staging_database_url_sha256: str = "",
+        production_approval: str = "",
+        production_database_url_sha256: str = "",
         image_send_enabled: str = "0",
         webhook_ready: str = "0",
         configuration_valid: bool = True,
@@ -101,26 +129,39 @@ class QiWeImageCallbackBridge:
         self.enabled = enabled
         self.configuration_valid = configuration_valid
         self.timeout_seconds = timeout_seconds
+        self.processor_mode = processor_mode
         self.processor_bin = ""
         self.processor_root = ""
         self.processor_sha256 = ""
+        if processor_mode == PROCESSOR_MODE_PRODUCTION:
+            env_allowlist = PRODUCTION_PROCESSOR_ENV_ALLOWLIST
+        else:
+            env_allowlist = PROCESSOR_ENV_ALLOWLIST
         self.processor_env = {
             name: os.environ[name]
-            for name in PROCESSOR_ENV_ALLOWLIST
+            for name in env_allowlist
             if name in os.environ
         }
         if not enabled or not configuration_valid:
             return
-        if staging_approval != STAGING_APPROVAL:
-            raise ValueError("staging owner approval is required")
-        if not _is_canonical_sha256(staging_database_url_sha256):
-            raise ValueError("approved staging database URL hash is required")
+        if processor_mode == PROCESSOR_MODE_STAGING:
+            if staging_approval != STAGING_APPROVAL:
+                raise ValueError("staging owner approval is required")
+            if not _is_canonical_sha256(staging_database_url_sha256):
+                raise ValueError("approved staging database URL hash is required")
+        elif processor_mode == PROCESSOR_MODE_PRODUCTION:
+            if production_approval != PRODUCTION_APPROVAL:
+                raise ValueError("production owner approval is required")
+            if not _is_canonical_sha256(production_database_url_sha256):
+                raise ValueError("approved production database URL hash is required")
+        else:
+            raise ValueError("callback processor mode is invalid")
         if image_send_enabled != "1" or webhook_ready != "1":
-            raise ValueError("staging image send and webhook readiness are required")
+            raise ValueError("image send and webhook readiness are required")
         if not 1.0 <= timeout_seconds <= 60.0:
             raise ValueError("callback processor timeout is outside the reviewed range")
         self.processor_bin, self.processor_root = _validated_processor_path(
-            processor_bin, processor_root, processor_sha256
+            processor_bin, processor_root, processor_sha256, processor_mode
         )
         self.processor_sha256 = processor_sha256
 
@@ -148,6 +189,12 @@ class QiWeImageCallbackBridge:
                 timeout_seconds = float(timeout_raw)
             except (TypeError, ValueError) as exc:
                 raise ValueError("callback processor timeout must be numeric") from exc
+            processor_mode = str(
+                os.getenv("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE")
+                or extra.get(
+                    "image_callback_processor_mode", PROCESSOR_MODE_STAGING
+                )
+            )
             return cls(
                 enabled=enabled,
                 processor_bin=str(
@@ -162,12 +209,19 @@ class QiWeImageCallbackBridge:
                     "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256"
                 )
                 or str(extra.get("image_callback_processor_sha256", "")),
+                processor_mode=processor_mode,
                 timeout_seconds=timeout_seconds,
                 staging_approval=os.getenv(
                     "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL", ""
                 ),
                 staging_database_url_sha256=os.getenv(
                     "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256", ""
+                ),
+                production_approval=os.getenv(
+                    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL", ""
+                ),
+                production_database_url_sha256=os.getenv(
+                    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256", ""
                 ),
                 image_send_enabled=os.getenv("QINTOPIA_QIWE_IMAGE_SEND_ENABLED", "0"),
                 webhook_ready=os.getenv(
@@ -213,7 +267,10 @@ class QiWeImageCallbackBridge:
 
     async def _invoke(self, raw_body: bytes) -> dict[str, Any]:
         _validated_processor_path(
-            self.processor_bin, self.processor_root, self.processor_sha256
+            self.processor_bin,
+            self.processor_root,
+            self.processor_sha256,
+            self.processor_mode,
         )
         process = await asyncio.create_subprocess_exec(
             self.processor_bin,
@@ -333,7 +390,10 @@ def _is_canonical_sha256(value: str) -> bool:
 
 
 def _validated_processor_path(
-    value: str, root_value: str, expected_sha256: str
+    value: str,
+    root_value: str,
+    expected_sha256: str,
+    processor_mode: str = PROCESSOR_MODE_STAGING,
 ) -> tuple[str, str]:
     candidate = Path(value)
     root = Path(root_value)
@@ -341,12 +401,16 @@ def _validated_processor_path(
         not candidate.is_absolute()
         or candidate.name != PROCESSOR_BASENAME
         or not root.is_absolute()
-        or len(root.name) != 40
-        or any(char not in "0123456789abcdef" for char in root.name)
     ):
         raise ValueError("callback processor path is invalid")
     if not _is_canonical_sha256(expected_sha256):
         raise ValueError("callback processor SHA-256 is invalid")
+    if processor_mode == PROCESSOR_MODE_PRODUCTION:
+        return _validated_production_processor_path(candidate, root, expected_sha256)
+    if processor_mode != PROCESSOR_MODE_STAGING:
+        raise ValueError("callback processor mode is invalid")
+    if len(root.name) != 40 or any(char not in "0123456789abcdef" for char in root.name):
+        raise ValueError("callback processor path is invalid")
     try:
         resolved_releases_root = STAGING_RELEASES_ROOT.resolve(strict=True)
         resolved = candidate.resolve(strict=True)
@@ -374,6 +438,49 @@ def _validated_processor_path(
     )
     _validate_processor_digest(resolved, expected_sha256)
     return str(resolved), str(resolved_root)
+
+
+def _validated_production_processor_path(
+    candidate: Path, root: Path, expected_sha256: str
+) -> tuple[str, str]:
+    if not candidate.is_absolute() or candidate.name != PROCESSOR_BASENAME:
+        raise ValueError("callback processor path is invalid")
+    if not root.is_absolute():
+        raise ValueError("callback processor path is invalid")
+    try:
+        resolved_releases_root = PRODUCTION_RELEASES_ROOT.resolve(strict=True)
+        resolved_current = PRODUCTION_RELEASE_CURRENT_DIR.resolve(strict=True)
+        resolved = candidate.resolve(strict=True)
+        resolved_root = root.resolve(strict=True)
+        resolved_sidecar = candidate.parent.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("callback processor path does not exist") from exc
+    if (
+        root != PRODUCTION_RELEASE_CURRENT_DIR
+        or candidate
+        != PRODUCTION_RELEASE_CURRENT_DIR / "sidecar" / PROCESSOR_BASENAME
+        or not PRODUCTION_RELEASE_CURRENT_DIR.is_symlink()
+        or len(resolved_current.name) != 40
+        or any(char not in "0123456789abcdef" for char in resolved_current.name)
+        or resolved_current.parent != resolved_releases_root
+        or resolved_root != resolved_current
+        or resolved_sidecar.name != "sidecar"
+        or resolved_sidecar.parent != resolved_current
+        or resolved.parent != resolved_sidecar
+        or resolved
+        != resolved_current / "sidecar" / PROCESSOR_BASENAME
+        or candidate.is_symlink()
+        or candidate.parent.is_symlink()
+        or PRODUCTION_RELEASES_ROOT.is_symlink()
+        or not resolved.is_file()
+        or not os.access(resolved, os.X_OK)
+    ):
+        raise ValueError("callback processor must be the production release/current executable")
+    _validate_processor_path_chain(
+        resolved_releases_root, resolved_current, resolved_sidecar, resolved
+    )
+    _validate_processor_digest(resolved, expected_sha256)
+    return str(candidate), str(root)
 
 
 def _validate_processor_path_chain(*paths: Path) -> None:
