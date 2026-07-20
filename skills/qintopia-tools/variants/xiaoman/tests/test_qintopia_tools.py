@@ -501,6 +501,96 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertFalse(report["safe_for_member_chat"])
         self.assertNotIn("record_ref", rendered)
 
+    def test_xiaoman_activity_announcement_prepare_post_event_material_followup_stages(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        base_args = {
+            "date": "2026-07-21",
+            "mode": "post_event_followup",
+            "operator_name": "刘珊",
+            "operations_lead_name": "小满运营负责人",
+            "records": [
+                {
+                    "table_role": "activity_occurrence",
+                    "record_ref": "activity_occurrence:abc123def456",
+                    "title": "木作体验课",
+                    "activity_date": "2026-07-20",
+                    "end_time": "17:00",
+                    "location": "秦托邦工坊",
+                    "owner_name": "阿成",
+                }
+            ],
+        }
+
+        first = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    **base_args,
+                    "post_event_elapsed_hours": 24,
+                }
+            )
+        )
+        second = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    **base_args,
+                    "post_event_elapsed_hours": 48,
+                }
+            )
+        )
+        third = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    **base_args,
+                    "post_event_elapsed_hours": 72,
+                }
+            )
+        )
+
+        self.assertEqual(first["post_event_followup_stage"], "24h_first_reminder")
+        self.assertEqual(first["material_followup_reminders"][0]["stage"], 1)
+        self.assertFalse(first["material_followup_reminders"][0]["work_omission_candidate"])
+        self.assertIn("第 1 次", first["material_followup_reminders"][0]["reminder_text"])
+        self.assertEqual(second["post_event_followup_stage"], "48h_second_reminder")
+        self.assertIn("第 2 次", second["material_followup_reminders"][0]["reminder_text"])
+        self.assertEqual(third["post_event_followup_stage"], "72h_third_miss")
+        self.assertTrue(third["material_followup_reminders"][0]["work_omission_candidate"])
+        self.assertIn("工作遗漏", third["material_escalations"][0]["escalation_text"])
+        self.assertIn("小满运营负责人", third["material_escalations"][0]["escalation_text"])
+        self.assertIn("运营升级草稿", third["operator_review_message"])
+        self.assertFalse(third["external_send_executed"])
+        self.assertFalse(third["safe_for_member_chat"])
+        self.assertNotIn("record_ref", json.dumps(third, ensure_ascii=False))
+
+    def test_xiaoman_activity_announcement_prepare_rejects_non_integer_material_followup(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        elapsed_report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    "date": "2026-07-21",
+                    "mode": "post_event_followup",
+                    "post_event_elapsed_hours": "72",
+                    "records": [{"title": "木作体验课"}],
+                }
+            )
+        )
+        attempt_report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    "date": "2026-07-21",
+                    "mode": "post_event_followup",
+                    "material_followup_attempt": True,
+                    "records": [{"title": "木作体验课"}],
+                }
+            )
+        )
+
+        self.assertFalse(elapsed_report["success"])
+        self.assertEqual(elapsed_report["error"], "post_event_elapsed_hours must be an integer")
+        self.assertFalse(attempt_report["success"])
+        self.assertEqual(attempt_report["error"], "material_followup_attempt must be an integer")
+
     def test_xiaoman_activity_announcement_prepare_needs_records_or_read_through(self):
         self.enable_xiaoman_activity_wrappers()
 

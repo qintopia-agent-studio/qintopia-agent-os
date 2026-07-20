@@ -775,6 +775,22 @@ QINTOPIA_XIAOMAN_ACTIVITY_ANNOUNCEMENT_PREPARE_SCHEMA = {
                 "type": "boolean",
                 "description": "Include temporary meal records. Defaults to false for the MVP boundary.",
             },
+            "post_event_elapsed_hours": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 168,
+                "description": "Elapsed hours after the activity for post-event material follow-up staging.",
+            },
+            "material_followup_attempt": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "description": "Explicit post-event material reminder attempt, from 1 to 3.",
+            },
+            "operations_lead_name": {
+                "type": "string",
+                "description": "Human operations lead name for third-miss escalation drafts.",
+            },
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
         "required": ["date"],
@@ -3812,6 +3828,43 @@ def _xiaoman_activity_announcement_header(mode: str, date: str, audience: str) -
     return f"{date} 明日活动预告"
 
 
+def _xiaoman_activity_post_event_stage(elapsed_hours: int | None, explicit_attempt: int | None) -> int:
+    if explicit_attempt is not None:
+        return explicit_attempt
+    if elapsed_hours is None:
+        return 1
+    if elapsed_hours >= 72:
+        return 3
+    if elapsed_hours >= 48:
+        return 2
+    if elapsed_hours >= 24:
+        return 1
+    return 0
+
+
+def _xiaoman_activity_post_event_stage_label(stage: int) -> str:
+    if stage == 3:
+        return "72h_third_miss"
+    if stage == 2:
+        return "48h_second_reminder"
+    if stage == 1:
+        return "24h_first_reminder"
+    return "before_24h_wait"
+
+
+def _xiaoman_activity_material_followup_text(title: str, stage: int, operations_lead_name: str) -> str:
+    if stage == 3:
+        return (
+            f"{title} 已到第 3 次素材补交提醒，请补活动照片/反馈/可公开亮点；"
+            f"如果仍未补齐，建议同步{operations_lead_name}标记工作遗漏。"
+        )
+    if stage == 2:
+        return f"{title} 已到第 2 次素材补交提醒，请补活动照片/反馈/可公开亮点，避免影响复盘和后续宣发。"
+    if stage == 1:
+        return f"{title} 已到第 1 次素材补交提醒，请补活动照片/反馈/可公开亮点。"
+    return f"{title} 活动结束未满 24 小时，先观察，不升级提醒。"
+
+
 def _xiaoman_activity_build_announcement(
     *,
     date: str,
@@ -3820,10 +3873,16 @@ def _xiaoman_activity_build_announcement(
     community_audience: str,
     records: list[dict[str, str]],
     include_temporary_meals: bool,
+    post_event_elapsed_hours: int | None,
+    material_followup_attempt: int | None,
+    operations_lead_name: str,
 ) -> dict[str, Any]:
     publishable = []
     skipped = []
     missing_followups = []
+    material_followup_reminders = []
+    material_escalations = []
+    post_event_stage = _xiaoman_activity_post_event_stage(post_event_elapsed_hours, material_followup_attempt)
     for record in records[:20]:
         if not include_temporary_meals and _xiaoman_activity_is_temporary_meal(record):
             skipped.append(
@@ -3842,6 +3901,30 @@ def _xiaoman_activity_build_announcement(
                     "reminder_text": f"还差：{'、'.join(missing)}。补齐后我再整理可发版本。",
                 }
             )
+            if mode == "post_event_followup" and "活动素材" in missing:
+                title = _xiaoman_activity_display_title(record, len(material_followup_reminders) + 1)
+                reminder = {
+                    "title": title,
+                    "stage": post_event_stage,
+                    "stage_label": _xiaoman_activity_post_event_stage_label(post_event_stage),
+                    "elapsed_hours": post_event_elapsed_hours,
+                    "reminder_text": _xiaoman_activity_material_followup_text(
+                        title,
+                        post_event_stage,
+                        operations_lead_name,
+                    ),
+                    "work_omission_candidate": post_event_stage >= 3,
+                }
+                material_followup_reminders.append(reminder)
+                if post_event_stage >= 3:
+                    material_escalations.append(
+                        {
+                            "title": title,
+                            "stage_label": reminder["stage_label"],
+                            "operations_lead_name": operations_lead_name,
+                            "escalation_text": f"{title} 连续三次素材未补齐，建议由{operations_lead_name}确认是否标记工作遗漏。",
+                        }
+                    )
         publishable.append(record)
 
     header = _xiaoman_activity_announcement_header(mode, date, community_audience)
@@ -3862,6 +3945,18 @@ def _xiaoman_activity_build_announcement(
         gap_text = f"\n\n待补齐：\n{gap_lines}"
     else:
         gap_text = "\n\n信息齐，可以先给你确认文案。"
+    if material_followup_reminders:
+        reminder_lines = "\n".join(
+            f"- {item['reminder_text']}"
+            for item in material_followup_reminders
+        )
+        gap_text = f"{gap_text}\n\n素材补交提醒草稿：\n{reminder_lines}"
+    if material_escalations:
+        escalation_lines = "\n".join(
+            f"- {item['escalation_text']}"
+            for item in material_escalations
+        )
+        gap_text = f"{gap_text}\n\n运营升级草稿：\n{escalation_lines}"
 
     operator_review_message = (
         f"{operator_name}，我先把 {date} 的活动文字预告整理好了。"
@@ -3878,6 +3973,11 @@ def _xiaoman_activity_build_announcement(
         "operator_review_message": operator_review_message,
         "erhua_handoff_draft": erhua_handoff_draft,
         "missing_followups": missing_followups,
+        "material_followup_reminders": material_followup_reminders,
+        "material_escalations": material_escalations,
+        "post_event_followup_stage": _xiaoman_activity_post_event_stage_label(post_event_stage)
+        if mode == "post_event_followup"
+        else "",
         "skipped_records": skipped,
         "publishable_count": len(publishable),
         "skipped_count": len(skipped),
@@ -4178,6 +4278,39 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
             "include_temporary_meals must be a boolean",
             actor_agent=actor_agent,
         )
+    raw_elapsed_hours = args.get("post_event_elapsed_hours")
+    post_event_elapsed_hours = None
+    if raw_elapsed_hours is not None:
+        if isinstance(raw_elapsed_hours, bool) or not isinstance(raw_elapsed_hours, int):
+            return _xiaoman_activity_error(
+                skill,
+                "post_event_elapsed_hours must be an integer",
+                actor_agent=actor_agent,
+            )
+        if raw_elapsed_hours < 0 or raw_elapsed_hours > 168:
+            return _xiaoman_activity_error(
+                skill,
+                "post_event_elapsed_hours must be between 0 and 168",
+                actor_agent=actor_agent,
+            )
+        post_event_elapsed_hours = raw_elapsed_hours
+    raw_followup_attempt = args.get("material_followup_attempt")
+    material_followup_attempt = None
+    if raw_followup_attempt is not None:
+        if isinstance(raw_followup_attempt, bool) or not isinstance(raw_followup_attempt, int):
+            return _xiaoman_activity_error(
+                skill,
+                "material_followup_attempt must be an integer",
+                actor_agent=actor_agent,
+            )
+        if raw_followup_attempt < 1 or raw_followup_attempt > 3:
+            return _xiaoman_activity_error(
+                skill,
+                "material_followup_attempt must be between 1 and 3",
+                actor_agent=actor_agent,
+            )
+        material_followup_attempt = raw_followup_attempt
+    operations_lead_name = _clean_text(args.get("operations_lead_name") or "运营负责人", max_len=80)
     draft = _xiaoman_activity_build_announcement(
         date=date,
         mode=mode,
@@ -4185,6 +4318,9 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
         community_audience=community_audience,
         records=records,
         include_temporary_meals=include_temporary_meals,
+        post_event_elapsed_hours=post_event_elapsed_hours,
+        material_followup_attempt=material_followup_attempt,
+        operations_lead_name=operations_lead_name,
     )
 
     return _json(
