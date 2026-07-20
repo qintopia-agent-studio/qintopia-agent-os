@@ -302,6 +302,7 @@ function productionOutput() {
     database_url_sha256: productionDatabaseHash,
     release_binary_verified: true,
     approved_sidecar_sha256_matched: true,
+    approved_database_url_sha256_matched: true,
     safe_for_chat: false,
   };
   return [

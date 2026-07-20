@@ -1820,6 +1820,7 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
     "qiwe_group_arrival_confirmed",
     "release_binary_verified",
     "approved_sidecar_sha256_matched",
+    "approved_database_url_sha256_matched",
     "Xiaoman production completion evidence check passed.",
   ]) {
     requireFragment(xiaomanProductionCompletionEvidenceCheckPath, checker, fragment);

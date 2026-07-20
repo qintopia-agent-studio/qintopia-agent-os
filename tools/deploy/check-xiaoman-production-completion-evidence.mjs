@@ -128,7 +128,8 @@ if (
   productionRetention.external_send_executed !== true ||
   productionRetention.raw_secret_fields_retained !== false ||
   productionRetention.release_binary_verified !== true ||
-  productionRetention.approved_sidecar_sha256_matched !== true
+  productionRetention.approved_sidecar_sha256_matched !== true ||
+  productionRetention.approved_database_url_sha256_matched !== true
 ) {
   fail("production real activity retention does not prove the final evidence boundary");
 }
