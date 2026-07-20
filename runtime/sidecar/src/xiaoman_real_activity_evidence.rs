@@ -60,6 +60,46 @@ const GENERATED_IMAGE_EVIDENCE_SQL: &str = r#"
         ORDER BY review.created_at DESC, review.id DESC
         LIMIT 1
         "#;
+const SEND_READY_EVIDENCE_SQL: &str = r#"
+        SELECT
+            request.id,
+            (request.payload->>'approved_artifact_id')::uuid AS generated_image_artifact_id,
+            attempt.artifact_content_hash
+        FROM qintopia_agent_os.work_items request
+        JOIN qintopia_agent_os.work_item_events ready
+          ON ready.work_item_id = request.id
+         AND ready.event_type = 'group_message_send_ready_recorded'
+         AND ready.data->>'send_executed' = 'false'
+         AND ready.data->>'target_channel' = request.payload->>'target_channel'
+         AND ready.data->>'target_group_alias' = request.payload->>'target_group_alias'
+         AND ready.data->>'approved_artifact_id' = request.payload->>'approved_artifact_id'
+        JOIN qintopia_agent_os.qiwe_image_send_attempts attempt
+          ON attempt.work_item_id = request.id
+         AND attempt.generated_image_artifact_id = (request.payload->>'approved_artifact_id')::uuid
+         AND attempt.status = 'sent'
+         AND attempt.request_id_sha256 IS NOT NULL
+         AND attempt.callback_payload_sha256 IS NOT NULL
+         AND attempt.provider_message_id_sha256 IS NOT NULL
+        WHERE request.parent_work_item_id = $1
+          AND request.capability_key = 'erhua.send_group_message'
+          AND request.work_item_type = 'group_message_request'
+          AND request.requester_agent = 'xiaoman'
+          AND request.target_agent = 'erhua'
+          AND request.status = 'completed'
+          AND request.review_policy = 'human_final_confirmation'
+          AND request.payload->>'target_channel' = 'qiwe'
+          AND request.payload->>'target_group_alias' = $2
+          AND EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events confirm
+              WHERE confirm.work_item_id = request.id
+                AND confirm.event_type = 'group_message_final_confirmation_recorded'
+                AND confirm.data->>'decision' = 'confirmed'
+                AND confirm.data->>'current_status' = 'queued'
+                AND confirm.data->>'send_executed' = 'false'
+          )
+        ORDER BY attempt.completed_at DESC NULLS LAST, attempt.created_at DESC
+        "#;
 
 pub async fn run(
     cli: &Cli,
@@ -470,45 +510,12 @@ async fn load_activity_root(
 }
 
 async fn load_send_ready(pool: &PgPool, root_id: Uuid) -> Result<SendReadyEvidence> {
-    let rows = sqlx::query(
-        r#"
-        SELECT
-            request.id,
-            (request.payload->>'approved_artifact_id')::uuid AS generated_image_artifact_id,
-            attempt.artifact_content_hash
-        FROM qintopia_agent_os.work_items request
-        JOIN qintopia_agent_os.work_item_events ready
-          ON ready.work_item_id = request.id
-         AND ready.event_type = 'group_message_send_ready_recorded'
-         AND ready.data->>'send_executed' = 'false'
-        JOIN qintopia_agent_os.qiwe_image_send_attempts attempt
-          ON attempt.work_item_id = request.id
-         AND attempt.generated_image_artifact_id = (request.payload->>'approved_artifact_id')::uuid
-         AND attempt.status = 'sent'
-         AND attempt.callback_payload_sha256 IS NOT NULL
-         AND attempt.provider_message_id_sha256 IS NOT NULL
-        WHERE request.parent_work_item_id = $1
-          AND request.capability_key = 'erhua.send_group_message'
-          AND request.work_item_type = 'group_message_request'
-          AND request.review_policy = 'human_final_confirmation'
-          AND request.payload->>'target_channel' = 'qiwe'
-          AND request.payload->>'target_group_alias' = $2
-          AND EXISTS (
-              SELECT 1
-              FROM qintopia_agent_os.work_item_events confirm
-              WHERE confirm.work_item_id = request.id
-                AND confirm.event_type = 'group_message_final_confirmation_recorded'
-                AND confirm.data->>'decision' = 'confirmed'
-                AND confirm.data->>'send_executed' = 'false'
-          )
-        ORDER BY attempt.completed_at DESC NULLS LAST, attempt.created_at DESC
-        "#,
-    )
-    .bind(root_id)
-    .bind(TARGET_GROUP_ALIAS)
-    .fetch_all(pool)
-    .await
-    .context("load Xiaoman send-ready QiWe delivery")?;
+    let rows = sqlx::query(SEND_READY_EVIDENCE_SQL)
+        .bind(root_id)
+        .bind(TARGET_GROUP_ALIAS)
+        .fetch_all(pool)
+        .await
+        .context("load Xiaoman send-ready QiWe delivery")?;
     if rows.len() != 1 {
         bail!("expected exactly one sent QiWe group-message request under the activity root");
     }
@@ -815,6 +822,27 @@ mod tests {
             assert!(
                 GENERATED_IMAGE_EVIDENCE_SQL.contains(fragment),
                 "generated image evidence query is missing {fragment}"
+            );
+        }
+    }
+
+    #[test]
+    fn send_ready_query_binds_final_confirmation_ready_event_and_sent_attempt() {
+        for fragment in [
+            "ready.data->>'target_channel' = request.payload->>'target_channel'",
+            "ready.data->>'target_group_alias' = request.payload->>'target_group_alias'",
+            "ready.data->>'approved_artifact_id' = request.payload->>'approved_artifact_id'",
+            "attempt.request_id_sha256 IS NOT NULL",
+            "attempt.callback_payload_sha256 IS NOT NULL",
+            "attempt.provider_message_id_sha256 IS NOT NULL",
+            "request.requester_agent = 'xiaoman'",
+            "request.target_agent = 'erhua'",
+            "request.status = 'completed'",
+            "confirm.data->>'current_status' = 'queued'",
+        ] {
+            assert!(
+                SEND_READY_EVIDENCE_SQL.contains(fragment),
+                "send-ready evidence query is missing {fragment}"
             );
         }
     }

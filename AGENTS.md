@@ -562,7 +562,10 @@ Use `rg` and `rg --files` for search.
   connect to a database whose URL hash is not owner-approved, write Postgres or Feishu,
   approve artifacts, call QiWe, publish, send, expose raw group ids, request ids,
   callback bodies, file credentials, message ids, media URLs, database URLs, provider
-  responses, raw chat, or logs.
+  responses, raw chat, or logs. Its send-ready query must bind the completed
+  `group_message_request`, queued-state final confirmation, send-ready event payload,
+  approved generated-image artifact id, and sanitized QiWe `sent` attempt before
+  emitting production-complete evidence.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
