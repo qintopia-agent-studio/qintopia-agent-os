@@ -300,7 +300,7 @@ function assertRealActivityConfirmation(record) {
   if (
     record.qiwe_group_arrival_confirmed !== true ||
     !isSafeLabel(record.confirmed_by) ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(String(record.confirmed_at ?? ""))
+    !isUtcSecondTimestamp(record.confirmed_at)
   ) {
     fail("real activity human group-arrival confirmation is incomplete");
   }
@@ -324,6 +324,14 @@ function assertStagingRuntime(record) {
     ]),
     "staging runtime readiness"
   );
+  const expectedReportLabels = new Set([
+    "prerequisite",
+    "huabaosi_readiness",
+    "qiwe_readiness",
+  ]);
+  const reportLabels = new Set(
+    Array.isArray(record.reports) ? record.reports.map((entry) => entry.label) : []
+  );
   if (
     record.success !== true ||
     record.worker !== "staging-runtime-readiness-evidence" ||
@@ -335,7 +343,12 @@ function assertStagingRuntime(record) {
     record.safe_for_review !== true ||
     !Array.isArray(record.reports) ||
     record.reports.length !== 3 ||
-    !record.reports.every((entry) => entry.success === true) ||
+    reportLabels.size !== expectedReportLabels.size ||
+    ![...expectedReportLabels].every((label) => reportLabels.has(label)) ||
+    !record.reports.every((entry) => {
+      assertExactKeys(entry, new Set(["label", "success"]), "staging readiness report");
+      return expectedReportLabels.has(entry.label) && entry.success === true;
+    }) ||
     !Array.isArray(record.limitations) ||
     record.limitations.length !== 0
   ) {
@@ -405,6 +418,17 @@ function positiveInteger(value) {
 
 function isSafeLabel(value) {
   return /^[a-z0-9][a-z0-9_-]{1,63}$/i.test(String(value ?? ""));
+}
+
+function isUtcSecondTimestamp(value) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(String(value ?? ""))) {
+    return false;
+  }
+  const parsed = new Date(value);
+  return (
+    !Number.isNaN(parsed.valueOf()) &&
+    parsed.toISOString().replace(".000Z", "Z") === value
+  );
 }
 
 function fail(message) {

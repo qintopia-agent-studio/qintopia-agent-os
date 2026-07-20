@@ -47,6 +47,19 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /staging runtime readiness/);
 
+  const wrongReadinessReport = writeEvidenceFiles({
+    stagingRuntime: {
+      reports: [
+        { label: "prerequisite", success: true },
+        { label: "huabaosi_readiness", success: true },
+        { label: "unreviewed_report", success: true },
+      ],
+    },
+  });
+  result = runChecker(wrongReadinessReport);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /staging runtime readiness/);
+
   const productionDrift = writeEvidenceFiles({
     manifest: {
       huabaosi_production_activation: {
@@ -68,6 +81,17 @@ try {
   result = runChecker(rawSecret);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /forbidden sensitive fragment/);
+
+  const invalidConfirmationTime = writeEvidenceFiles({
+    manifest: {
+      real_activity_confirmation: {
+        confirmed_at: "2026-99-99T99:99:99Z",
+      },
+    },
+  });
+  result = runChecker(invalidConfirmationTime);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /human group-arrival confirmation/);
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
