@@ -49,6 +49,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh",
