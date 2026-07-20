@@ -251,6 +251,9 @@ function assertHuabaosiProductionCanary(records) {
   for (const record of records) {
     if (
       record.success !== true ||
+      record.release_binary_verified !== true ||
+      record.approved_sidecar_sha256_matched !== true ||
+      record.approved_database_url_sha256_matched !== true ||
       !isGitSha(record.release_sha) ||
       !isSha256(record.sidecar_binary_sha256) ||
       !isSha256(record.database_url_sha256)
@@ -266,15 +269,7 @@ function assertHuabaosiProductionCanary(records) {
 
   assertExactKeys(
     preflight,
-    new Set([
-      "database_url_sha256",
-      "phase",
-      "release_sha",
-      "sidecar_binary_sha256",
-      "success",
-      "action_status",
-      "timer_active",
-    ]),
+    new Set([...huabaosiCanaryCommonKeys(), "action_status", "timer_active"]),
     "Huabaosi production canary preflight"
   );
   if (
@@ -289,11 +284,7 @@ function assertHuabaosiProductionCanary(records) {
   assertExactKeys(
     briefReview,
     new Set([
-      "database_url_sha256",
-      "phase",
-      "release_sha",
-      "sidecar_binary_sha256",
-      "success",
+      ...huabaosiCanaryCommonKeys(),
       "action_status",
       "brief_artifact_id",
       "brief_work_item_id",
@@ -315,11 +306,7 @@ function assertHuabaosiProductionCanary(records) {
   assertExactKeys(
     requestIntake,
     new Set([
-      "database_url_sha256",
-      "phase",
-      "release_sha",
-      "sidecar_binary_sha256",
-      "success",
+      ...huabaosiCanaryCommonKeys(),
       "action_status",
       "brief_artifact_id",
       "brief_work_item_id",
@@ -341,11 +328,7 @@ function assertHuabaosiProductionCanary(records) {
   assertExactKeys(
     generation,
     new Set([
-      "database_url_sha256",
-      "phase",
-      "release_sha",
-      "sidecar_binary_sha256",
-      "success",
+      ...huabaosiCanaryCommonKeys(),
       "action_status",
       "artifact_id",
       "byte_size",
@@ -380,11 +363,7 @@ function assertHuabaosiProductionCanary(records) {
   assertExactKeys(
     revalidation,
     new Set([
-      "database_url_sha256",
-      "phase",
-      "release_sha",
-      "sidecar_binary_sha256",
-      "success",
+      ...huabaosiCanaryCommonKeys(),
       "action_status",
       "artifact_id",
       "byte_size",
@@ -416,6 +395,19 @@ function assertHuabaosiProductionCanary(records) {
     release_sha: generation.release_sha,
     sidecar_binary_sha256: generation.sidecar_binary_sha256,
   };
+}
+
+function huabaosiCanaryCommonKeys() {
+  return [
+    "approved_database_url_sha256_matched",
+    "approved_sidecar_sha256_matched",
+    "database_url_sha256",
+    "phase",
+    "release_binary_verified",
+    "release_sha",
+    "sidecar_binary_sha256",
+    "success",
+  ];
 }
 
 function runChecker(label, checkerArgs) {

@@ -107,6 +107,15 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /five fixed phases/);
 
+  const canaryBoundaryMissing = writeEvidenceFiles({
+    huabaosiProductionCanary: {
+      preflight: { release_binary_verified: false },
+    },
+  });
+  result = runChecker(canaryBoundaryMissing);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
+
   const rawSecret = writeEvidenceFiles({
     manifest: {
       real_activity_confirmation: {
@@ -409,7 +418,10 @@ function huabaosiProductionCanaryOutput(overrides = {}) {
   const imageWorkItemId = "55555555-6666-4777-8888-999999999999";
   const generatedImageArtifactId = "66666666-7777-4888-8999-aaaaaaaaaaaa";
   const common = {
+    approved_database_url_sha256_matched: true,
+    approved_sidecar_sha256_matched: true,
     database_url_sha256: productionDatabaseHash,
+    release_binary_verified: true,
     release_sha: productionReleaseSha,
     sidecar_binary_sha256: productionSidecarHash,
     success: true,

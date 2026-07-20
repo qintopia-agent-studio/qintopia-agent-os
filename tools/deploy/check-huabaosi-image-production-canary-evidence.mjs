@@ -95,6 +95,9 @@ const [preflight, briefReview, requestIntake, generation, revalidation] = record
 for (const record of records) {
   if (
     record.success !== true ||
+    record.release_binary_verified !== true ||
+    record.approved_sidecar_sha256_matched !== true ||
+    record.approved_database_url_sha256_matched !== true ||
     !isGitSha(record.release_sha) ||
     !isSha256(record.sidecar_binary_sha256) ||
     !isSha256(record.database_url_sha256)
@@ -106,17 +109,20 @@ assertSame(records, "release_sha", "production release SHA");
 assertSame(records, "sidecar_binary_sha256", "sidecar binary SHA-256");
 assertSame(records, "database_url_sha256", "database URL SHA-256");
 
+const commonKeys = [
+  "approved_database_url_sha256_matched",
+  "approved_sidecar_sha256_matched",
+  "database_url_sha256",
+  "phase",
+  "release_binary_verified",
+  "release_sha",
+  "sidecar_binary_sha256",
+  "success",
+];
+
 assertExactKeys(
   preflight,
-  new Set([
-    "database_url_sha256",
-    "phase",
-    "release_sha",
-    "sidecar_binary_sha256",
-    "success",
-    "action_status",
-    "timer_active",
-  ]),
+  new Set([...commonKeys, "action_status", "timer_active"]),
   "preflight"
 );
 if (
@@ -129,11 +135,7 @@ if (
 assertExactKeys(
   briefReview,
   new Set([
-    "database_url_sha256",
-    "phase",
-    "release_sha",
-    "sidecar_binary_sha256",
-    "success",
+    ...commonKeys,
     "action_status",
     "brief_artifact_id",
     "brief_work_item_id",
@@ -155,11 +157,7 @@ if (
 assertExactKeys(
   requestIntake,
   new Set([
-    "database_url_sha256",
-    "phase",
-    "release_sha",
-    "sidecar_binary_sha256",
-    "success",
+    ...commonKeys,
     "action_status",
     "brief_artifact_id",
     "brief_work_item_id",
@@ -181,11 +179,7 @@ if (
 assertExactKeys(
   generation,
   new Set([
-    "database_url_sha256",
-    "phase",
-    "release_sha",
-    "sidecar_binary_sha256",
-    "success",
+    ...commonKeys,
     "action_status",
     "artifact_id",
     "byte_size",
@@ -220,11 +214,7 @@ if (
 assertExactKeys(
   revalidation,
   new Set([
-    "database_url_sha256",
-    "phase",
-    "release_sha",
-    "sidecar_binary_sha256",
-    "success",
+    ...commonKeys,
     "action_status",
     "artifact_id",
     "byte_size",

@@ -364,8 +364,11 @@ import sys
 
 phase, release_sha, binary_hash, database_hash, *values = sys.argv[1:]
 evidence = {
+    "approved_database_url_sha256_matched": True,
+    "approved_sidecar_sha256_matched": True,
     "database_url_sha256": database_hash,
     "phase": phase,
+    "release_binary_verified": True,
     "release_sha": release_sha,
     "sidecar_binary_sha256": binary_hash,
     "success": True,
