@@ -83,6 +83,7 @@ team onboarding, architecture review, or migration decisions.
 | Template                                                 | Use                                                                                  |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `templates/qiwe-image-send-staging-evidence.md`          | Sanitized owner-approved QiWe isolated staging upload/callback evidence note         |
+| `templates/xiaoman-production-completion-evidence.json`  | Non-secret manifest for the final Xiaoman production-complete evidence checker       |
 | `templates/xiaoman-real-activity-production-evidence.md` | Sanitized one-real-activity production completion evidence after QiWe group delivery |
 
 ## Rules
