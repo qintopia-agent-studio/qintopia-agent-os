@@ -59,6 +59,10 @@ shared `qintopia` toolset.
   `qintopia_xiaoman_activity_phase_update`: create sidecar commands for AgentOS
   `event_signals` mutations with `event_signal_id` and `mutation_id`; they do not accept
   Feishu `record_id` / `table_role` as write identifiers.
+- `qintopia_xiaoman_activity_announcement_prepare`: prepares the text-only community
+  activity announcement MVP for operations review. It turns sanitized activity records
+  into a draft for 刘珊, missing-field follow-ups, and an Erhua handoff draft that still
+  requires human confirmation before any group delivery.
 - `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
   `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
   to `huabaosi.create_visual_asset`.
@@ -85,6 +89,13 @@ of at most 500 characters. `qintopia_xiaoman_activity_phase_update` accepts only
 and derives the route from the stored AgentOS phase fact. These wrappers default to
 dry-run and return a bounded sidecar command for the runtime executor. They do not
 accept Feishu record ids, write Feishu, send QiWe messages, or call an external adapter.
+
+`qintopia_xiaoman_activity_announcement_prepare` is the current text-first operations
+MVP. It may use records already returned by `qintopia_xiaoman_activity_list_by_date`, or
+perform read-through only when that read-only path is explicitly enabled. It skips
+temporary meal records by default, keeps paid planned activities in the scheduling pool,
+flags missing time/location/owner/material fields, and returns only drafts. It does not
+create work items, call Huabaosi, call Erhua, call QiWe, publish, or send.
 
 Complaint guardrails:
 

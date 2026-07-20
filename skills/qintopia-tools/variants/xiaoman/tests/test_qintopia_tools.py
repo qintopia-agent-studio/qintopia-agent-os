@@ -447,6 +447,75 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("records", report)
         self.assertEqual(report["action"]["command"][-1], "--apply")
 
+    def test_xiaoman_activity_announcement_prepare_text_only_mvp(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    "date": "2026-07-21",
+                    "operator_name": "刘珊",
+                    "records": [
+                        {
+                            "table_role": "activity_plan",
+                            "record_ref": "activity_plan:abc123def456",
+                            "title": "付费木作体验课",
+                            "activity_date": "2026-07-21",
+                            "start_time": "15:00",
+                            "end_time": "17:00",
+                            "location": "秦托邦工坊",
+                            "owner_name": "阿成",
+                            "promotion_status": "待确认",
+                        },
+                        {
+                            "table_role": "activity_plan",
+                            "record_ref": "activity_plan:def456abc123",
+                            "title": "临时约饭",
+                            "activity_date": "2026-07-21",
+                            "start_time": "12:30",
+                            "location": "共享厨房",
+                            "owner_name": "刘珊",
+                        },
+                        {
+                            "table_role": "activity_plan",
+                            "record_ref": "activity_plan:111111aaaaaa",
+                            "title": "晚间共创会",
+                            "activity_date": "2026-07-21",
+                        },
+                    ],
+                }
+            )
+        )
+
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertTrue(report["success"])
+        self.assertEqual(report["publishable_count"], 2)
+        self.assertEqual(report["skipped_count"], 1)
+        self.assertIn("付费木作体验课", report["announcement_text"])
+        self.assertIn("晚间共创会", report["announcement_text"])
+        self.assertNotIn("临时约饭", report["announcement_text"])
+        self.assertIn("地点", report["missing_followups"][0]["missing_fields"])
+        self.assertIn("负责人", report["missing_followups"][0]["missing_fields"])
+        self.assertTrue(report["requires_human_confirmation"])
+        self.assertFalse(report["external_send_executed"])
+        self.assertFalse(report["safe_for_member_chat"])
+        self.assertNotIn("record_ref", rendered)
+
+    def test_xiaoman_activity_announcement_prepare_needs_records_or_read_through(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    "date": "2026-07-21",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertEqual(report["error"], "records are required unless read-through is enabled")
+        self.assertFalse(report["action"]["external_send_executed"])
+
     def test_xiaoman_activity_list_by_date_read_through_returns_records(self):
         self.enable_xiaoman_activity_wrappers()
         fake_sidecar = self.write_fake_xiaoman_sidecar(

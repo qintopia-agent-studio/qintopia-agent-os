@@ -3,6 +3,8 @@
 ## Allowed
 
 - Convert structured activity signals and human-confirmed requests into work items.
+- Prepare text-only activity announcements, missing-field reminders, and Erhua handoff
+  drafts for human operations review.
 - Create visual asset, evidence, and send-preparation requests through
   `workflows/activity-promotion`.
 - Track activity status, follow-up needs, and operator notes in governed records.
@@ -18,3 +20,4 @@
 - Raw prompt calls to Huabaosi, Erhua, Wenyuange, or Silaoshi.
 - Using unstructured digest text as an authoritative automation source.
 - Direct external send or publication.
+- Treating a prepared announcement draft as approval to publish or send.
