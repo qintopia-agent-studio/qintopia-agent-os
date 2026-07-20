@@ -29,6 +29,19 @@ try {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Xiaoman production completion evidence check passed/);
 
+  const templateText = writeEvidenceFiles();
+  fs.appendFileSync(
+    templateText.qiweGroupArrivalConfirmation,
+    [
+      "## Exclusions",
+      "Do not record QiWe token, GUID, API secret material, raw target group id, message id, request id, callback event id, file id, MD5 value, AES key, file size, filename, media URL, database URL, database credentials, raw chat content, screenshots containing member profiles, shell logs, or response bodies.",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  result = runChecker(templateText);
+  assert.equal(result.status, 0, result.stderr);
+
   const missingEnablement = writeEvidenceFiles({
     manifest: {
       qiwe_production_enablement: {
@@ -116,6 +129,25 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /human group-arrival confirmation/);
 
+  const confirmationTimeDrift = writeEvidenceFiles({
+    qiweGroupArrivalConfirmation: {
+      confirmed_at: "2026-07-20T06:31:00Z",
+    },
+  });
+  result = runChecker(confirmationTimeDrift);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /does not bind to QiWe group arrival evidence/);
+
+  const missingArrivalConfirmation = writeEvidenceFiles();
+  fs.writeFileSync(
+    missingArrivalConfirmation.qiweGroupArrivalConfirmation,
+    "\n",
+    "utf8"
+  );
+  result = runChecker(missingArrivalConfirmation);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /QiWe group arrival confirmation evidence failed/);
+
   const routeMismatch = writeEvidenceFiles({
     production: {
       activityRoute: "activity_recap",
@@ -153,6 +185,8 @@ function runChecker(files) {
       files.huabaosiProductionCanary,
       "--production-real-activity",
       files.production,
+      "--qiwe-group-arrival-confirmation",
+      files.qiweGroupArrivalConfirmation,
     ],
     {
       cwd: repoRoot,
@@ -170,6 +204,7 @@ function writeEvidenceFiles(overrides = {}) {
     qiwe: path.join(dir, "qiwe.txt"),
     huabaosiProductionCanary: path.join(dir, "huabaosi-production-canary.txt"),
     production: path.join(dir, "production.txt"),
+    qiweGroupArrivalConfirmation: path.join(dir, "qiwe-group-arrival-confirmation.txt"),
   };
   fs.writeFileSync(
     files.manifest,
@@ -193,6 +228,11 @@ function writeEvidenceFiles(overrides = {}) {
   fs.writeFileSync(
     files.production,
     productionOutput(overrides.production ?? {}),
+    "utf8"
+  );
+  fs.writeFileSync(
+    files.qiweGroupArrivalConfirmation,
+    qiweGroupArrivalConfirmationOutput(overrides.qiweGroupArrivalConfirmation ?? {}),
     "utf8"
   );
   return files;
@@ -569,6 +609,29 @@ function productionOutput(overrides = {}) {
       ""
     )
     .join("\n");
+}
+
+function qiweGroupArrivalConfirmationOutput(overrides = {}) {
+  return [
+    `xiaoman_qiwe_group_arrival_confirmation_evidence=${JSON.stringify({
+      schema: "xiaoman-qiwe-group-arrival-confirmation-evidence-v1",
+      success: true,
+      confirmation_status: "confirmed",
+      confirmation_method: "human_visible_group_check",
+      confirmed_by: "owner",
+      confirmed_at: "2026-07-20T06:30:00Z",
+      target_channel: "qiwe",
+      target_group_alias: "community_activity_group",
+      workflow_root_id: "44444444-5555-4666-8777-888888888888",
+      send_ready_work_item_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+      generated_image_artifact_id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      artifact_content_hash: contentHash,
+      external_send_executed: true,
+      raw_secret_fields_retained: false,
+      ...overrides,
+    })}`,
+    "",
+  ].join("\n");
 }
 
 function deepMerge(base, override) {
