@@ -1968,8 +1968,8 @@ fn required_env(name: &str) -> Result<String> {
 
 #[cfg(feature = "qiwe-staging-adapter")]
 fn staging_apply_config(cli: &Cli) -> Result<AdapterConfig> {
-    let database_url = cli.database_url_required()?;
     validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
+    let database_url = cli.database_url_required()?;
     validate_staging_database_boundary(database_url)?;
     validate_feishu_delivery_config(database_url)?;
     AdapterConfig::from_env()
