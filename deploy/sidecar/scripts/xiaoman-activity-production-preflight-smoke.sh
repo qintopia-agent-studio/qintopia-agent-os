@@ -26,6 +26,11 @@ run_step \
   "${SCRIPT_DIR}/xiaoman-activity-signal-timer-observation-smoke.sh"
 
 run_step \
+  "Xiaoman legacy Hermes cron observation" \
+  env QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 \
+  "${SCRIPT_DIR}/xiaoman-legacy-cron-observation-smoke.sh"
+
+run_step \
   "activity promotion starter timer observation" \
   env QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1 \
   "${SCRIPT_DIR}/xiaoman-activity-promotion-starter-timer-observation-smoke.sh"
