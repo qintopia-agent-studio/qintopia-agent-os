@@ -1,6 +1,6 @@
 # Xiaoman Production Completion Gate
 
-Updated: 2026-07-18
+Updated: 2026-07-20
 
 ## Goal
 
@@ -12,14 +12,15 @@ workflow has passed the gates below.
 ## Current Boundary
 
 The AgentOS-only Xiaoman orchestration path is production schedulable through internal
-send-ready state. It is not a complete business workflow while Huabaosi real image
-generation, Feishu mirror activation, QiWe final delivery, and one real end-to-end
-activity remain unproven.
+send-ready state. It is not a complete business workflow until the reviewed production
+evidence path proves Huabaosi real image generation, human approval, QiWe final
+delivery, and one real end-to-end activity.
 
-Release candidate `v0.2.15` is currently an infrastructure/provisioning candidate. Its
-Release Please PR `#180` has manual validation on the latest head, but it must not be
-merged, published, deployed, or used as the Xiaoman completion claim until the owner
-makes the explicit release decision and the external send boundary below is proven.
+PR `#214` adds the read-only real-activity production evidence exporter and checker. PR
+`#215` is stacked on `#214` and adds the final Xiaoman production-completion evidence
+gate. Both PRs may be used only as reviewed code readiness until they are merged in
+order, released through the manual Release Please process, deployed as an immutable
+production release, and backed by retained evidence from a real activity.
 
 ## Release Classification
 
@@ -56,6 +57,17 @@ All gates are required before a Release is called Xiaoman production complete:
 8. One real Xiaoman activity is observed from signal intake through image generation,
    human approval, send-ready, QiWe group-send arrival, and sanitized production
    evidence retention.
+9. The final production completion checker passes against the owner-retained evidence
+   bundle:
+
+   ```bash
+   node tools/deploy/check-xiaoman-production-completion-evidence.mjs \
+     --manifest <completed-xiaoman-production-completion-evidence.json> \
+     --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
+     --huabaosi-staging <huabaosi-staging-output.txt> \
+     --qiwe-staging <qiwe-staging-output.txt> \
+     --production-real-activity <production-real-activity-output.txt>
+   ```
 
 ## Non-Completion Cases
 
@@ -67,20 +79,36 @@ These are useful but not completion:
 - Huabaosi production units installed but timer disabled;
 - Feishu mirror units installed but timer disabled or first-record evidence missing;
 - QiWe staging evidence without a reviewed production enablement PR;
-- a Release that deploys internal timers but still leaves QiWe delivery disabled.
+- a Release that deploys internal timers but still leaves QiWe delivery disabled;
+- passing PR CI or PR-Agent review without the owner-retained production evidence bundle
+  above.
 
 ## Next Work
 
-1. Keep Release candidate `v0.2.15` classified as infrastructure unless a later Release
-   satisfies every completion gate and identifies the retained evidence.
-2. Resolve the owner release decision for `#180` before relying on `release-current` for
-   staging runtime provisioning.
-3. Use the staging artifact builder and provisioner to prepare the fixed staging
-   runtime.
-4. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
-5. Add QiWe production enablement in a separate reviewed PR.
-6. Process one real production Xiaoman activity and retain sanitized evidence before
-   changing the completion classification.
+1. Merge `#214` into `master`, then merge `#215` after its base includes `#214`.
+2. Let Release Please prepare the next release PR from current `master`; run manual
+   Release Please validation on the exact release PR head before any release decision.
+3. Publish and deploy only an owner-approved immutable production release whose release
+   SHA, sidecar SHA-256, and database URL SHA-256 are retained for the evidence
+   commands.
+4. Use the staging artifact builder and provisioner to prepare the fixed staging
+   runtime, then retain the staging runtime readiness output.
+5. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
+6. Confirm QiWe production enablement and Huabaosi production activation evidence are
+   merged, deployed, and owner-approved.
+7. Process one real production Xiaoman activity and retain sanitized real-activity
+   evidence with the release-local exporter:
+
+   ```bash
+   QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-production-sidecar-sha256> \
+   QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256=<approved-production-database-url-sha256> \
+   qintopia-message-sidecar xiaoman-real-activity-production-evidence \
+     --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
+   node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>
+   ```
+
+8. Fill the non-secret completion manifest and run the full completion checker before
+   changing any Release classification to `production-complete`.
 
 ## Production Boundary
 
