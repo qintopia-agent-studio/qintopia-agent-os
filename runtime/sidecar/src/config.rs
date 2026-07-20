@@ -1146,6 +1146,16 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Emit retained sanitized evidence for one completed real Xiaoman production activity.
+    XiaomanRealActivityProductionEvidence {
+        /// Completed Xiaoman activity workflow root work item id.
+        #[arg(long)]
+        workflow_root_id: Option<uuid::Uuid>,
+
+        /// Xiaoman event signal id for an activity with exactly one completed workflow root.
+        #[arg(long)]
+        source_event_signal_id: Option<uuid::Uuid>,
+    },
     /// Claim Wenyuange evidence requests and create internal evidence artifacts.
     RunEvidenceWorker {
         /// Run one batch and exit.

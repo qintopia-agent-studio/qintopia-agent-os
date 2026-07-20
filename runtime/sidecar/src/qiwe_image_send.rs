@@ -958,7 +958,16 @@ async fn run_enabled_callback_processor(
     };
     match send_result {
         Ok(receipt) => {
-            qiwe_image_send_state::record_send_success(&pool, &send_claim, &receipt).await?;
+            qiwe_image_send_state::record_send_success(
+                &pool,
+                &send_claim,
+                &receipt,
+                Some(qiwe_image_send_state::QiweCallbackCredentialShapeEvidence {
+                    schema_id: parsed.credential_shape.schema_id,
+                    additional_field_count: parsed.credential_shape.additional_field_count,
+                }),
+            )
+            .await?;
             let mut report = callback_worker_report(
                 WorkerReportState {
                     success: true,

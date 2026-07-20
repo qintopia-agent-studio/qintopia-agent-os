@@ -1794,6 +1794,46 @@ if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
   }
 }
 
+const xiaomanRealActivityEvidenceRuntimePath =
+  "runtime/sidecar/src/xiaoman_real_activity_evidence.rs";
+if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {
+  addError(
+    `${xiaomanRealActivityEvidenceRuntimePath}: missing Xiaoman production evidence exporter`
+  );
+} else {
+  const source = readText(xiaomanRealActivityEvidenceRuntimePath);
+  for (const fragment of [
+    "xiaoman_real_activity_production_evidence=",
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "current_exe",
+    "database_url_sha256",
+    "signal_intake",
+    "image_generation",
+    "human_approval",
+    "send_ready",
+    "qiwe_upload",
+    "qiwe_callback_send",
+    "sanitized_evidence_retention",
+    "callback_credential_schema",
+    "target_group_alias",
+    "community_activity_group",
+  ]) {
+    requireFragment(xiaomanRealActivityEvidenceRuntimePath, source, fragment);
+  }
+  for (const fragment of [
+    "reqwest",
+    "HttpClient",
+    "systemctl",
+    "INSERT INTO",
+    "UPDATE qintopia_agent_os",
+    'target_group_id":',
+    'artifact_uri":',
+    'provider_message_id_sha256":',
+  ]) {
+    forbidFragment(xiaomanRealActivityEvidenceRuntimePath, source, fragment);
+  }
+}
+
 const qiweImageStagingEvidenceTemplatePath =
   "docs/reports/templates/qiwe-image-send-staging-evidence.md";
 if (!exists(qiweImageStagingEvidenceTemplatePath)) {
@@ -1897,6 +1937,8 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
 } else {
   const template = readText(xiaomanRealActivityProductionEvidenceTemplatePath);
   for (const fragment of [
+    "qintopia-message-sidecar xiaoman-real-activity-production-evidence",
+    "--workflow-root-id <completed-xiaoman-activity-root-uuid>",
     "node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>",
     "Production release SHA",
     "Production database URL SHA-256",

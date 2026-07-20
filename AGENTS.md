@@ -113,6 +113,13 @@
 
 - QiWe image-send production observation smoke:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh`
+- Real Xiaoman activity production evidence export after owner-confirmed completion:
+
+  ```bash
+  qintopia-message-sidecar xiaoman-real-activity-production-evidence \
+    --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
+  ```
+
 - Real Xiaoman activity production evidence validation:
   `node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>`
 
@@ -482,6 +489,13 @@ Use `rg` and `rg --files` for search.
   `artifact_content_hash`, and boolean execution facts; it must not retain raw QiWe
   callback bodies, request ids, file credentials, group ids, message ids, media URLs,
   database URLs, provider responses, raw chat, or raw logs.
+- `xiaoman-real-activity-production-evidence` is a read-only retention exporter. It may
+  read Postgres, hash the configured database URL, hash the current sidecar binary, and
+  emit the fixed `xiaoman_real_activity_production_evidence=` records for one already
+  completed Xiaoman activity chain. It must not write Postgres or Feishu, approve
+  artifacts, call QiWe, publish, send, expose raw group ids, request ids, callback
+  bodies, file credentials, message ids, media URLs, database URLs, provider responses,
+  raw chat, or logs.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must

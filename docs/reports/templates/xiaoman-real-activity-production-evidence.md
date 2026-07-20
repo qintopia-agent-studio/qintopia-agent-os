@@ -6,6 +6,8 @@ Use this template only after a single owner-approved production activity has com
 and the sanitized evidence output passes:
 
 ```bash
+qintopia-message-sidecar xiaoman-real-activity-production-evidence \
+  --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
 node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>
 ```
 
