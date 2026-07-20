@@ -77,6 +77,24 @@ assert.match(
 );
 assert.match(reversedOrderErrors[0], /production-ready Xiaoman workflow/);
 
+const missingArrivalEvidenceErrors = validateXiaomanProductionCompletionClaimBoundary({
+  pullRequestBody: [
+    "This PR was generated with [Release Please]",
+    "Xiaoman production-complete workflow is now available.",
+    "docs/plans/active/xiaoman-production-completion-gate.md",
+    "tools/deploy/check-xiaoman-production-completion-evidence.mjs",
+    "xiaoman-production-completion-evidence-v1",
+    "owner-retained evidence",
+  ].join("\n"),
+  changelog: "# Changelog\n\n## [1.2.3]\n\n- feat: Xiaoman production complete",
+});
+assert.equal(missingArrivalEvidenceErrors.length, 1);
+assert.match(
+  missingArrivalEvidenceErrors[0],
+  /check-xiaoman-qiwe-group-arrival-confirmation-evidence\.mjs/
+);
+assert.match(missingArrivalEvidenceErrors[0], /--qiwe-group-arrival-confirmation/);
+
 assert.deepEqual(
   validateXiaomanProductionCompletionClaimBoundary({
     pullRequestBody: [
