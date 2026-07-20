@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.17](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.16...v0.2.17) (2026-07-20)
+
+
+### Features
+
+* add xiaoman production completion evidence gate ([#215](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/215)) ([1e40644](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1e4064497f1834fd4cd3779a1681229ba41f036e))
+* add xiaoman production evidence gate ([#214](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/214)) ([ae8415f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ae8415f2cfde53c74526077613ae1b53fe94494c))
+* **deploy:** add one-shot production image canary ([#211](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/211)) ([c8d2003](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c8d20031337a8c077e6e923685a975eedddab8e4))
+* enable qiwe image-send production observation ([#212](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/212)) ([3b0c11d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3b0c11dfc91600be45f88aac3297b9a168222ea6))
+
+
+### Bug Fixes
+
+* normalize production release staging modes ([#209](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/209)) ([5ccfed1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5ccfed1938f9d8aaab2a2b3961c5e7b1dee7fae6))
+* package staging smoke runners ([#210](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/210)) ([40a713c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/40a713ca7c652161627163d150ceba66769ddff5))
+* repair same-sha release metadata ([#206](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/206)) ([b775670](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b775670f770e3fbbc64ab5f3a185bbf31e665799))
+* require disabled Huabaosi canary timer ([#213](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/213)) ([1586654](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/158665416950b00b51b2f011eb82177c38d6ca8a))
+* validate existing production releases ([#207](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/207)) ([3a1dafd](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3a1dafd231d828d04a8f52f44e8ab08f76ea5632))
+
 ## [0.2.16](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.15...v0.2.16) (2026-07-19)
 
 
