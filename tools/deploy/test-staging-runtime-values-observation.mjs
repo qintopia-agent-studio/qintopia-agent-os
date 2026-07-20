@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
@@ -10,7 +11,11 @@ const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh"
 );
-const tmpRoot = fs.mkdtempSync(path.join(repoRoot, ".tmp-staging-runtime-values-"));
+const fixtureParent =
+  process.platform === "darwin" ? fs.realpathSync(os.tmpdir()) : repoRoot;
+const tmpRoot = fs.mkdtempSync(
+  path.join(fixtureParent, "qintopia-staging-runtime-values-")
+);
 const valuesFile = path.join(tmpRoot, "message-sidecar-staging-values.json");
 const envFile = path.join(tmpRoot, "message-sidecar-staging.env");
 const renderer = path.join(tmpRoot, "render-staging-runtime-env.py");

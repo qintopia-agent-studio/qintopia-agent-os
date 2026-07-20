@@ -69,6 +69,7 @@ exit 70
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
+            "qiwe-production-adapter",
           ],
         },
       },
@@ -91,6 +92,7 @@ exit 70
   ];
   const disabledEnv = path.join(tmpRoot, "disabled.env");
   const enabledEnv = path.join(tmpRoot, "enabled.env");
+  const unapprovedEnabledEnv = path.join(tmpRoot, "unapproved-enabled.env");
   const secretEnv = path.join(tmpRoot, "secret.env");
   const maliciousEnv = path.join(tmpRoot, "malicious.env");
   fs.writeFileSync(
@@ -100,6 +102,17 @@ exit 70
   );
   fs.writeFileSync(
     enabledEnv,
+    [
+      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+      ...qiweConfigLines,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    unapprovedEnabledEnv,
     ["QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1", ...qiweConfigLines, ""].join("\n"),
     "utf8"
   );
@@ -240,20 +253,38 @@ exit 70
   }
 
   fs.writeFileSync(sidecarLog, "", "utf8");
-  const enabled = run({
-    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
+  const unapprovedEnabled = run({
+    QINTOPIA_SIDECAR_ENV_FILE: unapprovedEnabledEnv,
   });
-  if (enabled.status === 0 || !enabled.stderr.includes("not approved")) {
+  if (
+    unapprovedEnabled.status === 0 ||
+    !unapprovedEnabled.stderr.includes("approval flag")
+  ) {
     throw new Error(
-      "enabled observation must fail before any production send boundary"
+      "enabled observation must require production approval before success"
     );
   }
 
-  const installedUnit = run({
+  const installedDisabledUnit = run({
     FAKE_QIWE_UNIT_PRESENT: "1",
   });
-  if (installedUnit.status === 0) {
-    throw new Error("observation accepted an installed production apply unit");
+  if (installedDisabledUnit.status !== 0) {
+    throw new Error("disabled observation should accept installed but inactive units");
+  }
+
+  const enabled = run({
+    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
+    FAKE_QIWE_UNIT_PRESENT: "1",
+    FAKE_QIWE_TIMER_ENABLED: "1",
+    FAKE_QIWE_TIMER_ACTIVE: "1",
+  });
+  if (enabled.status !== 0) {
+    throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
+  }
+  if (
+    !enabled.stdout.includes("qiwe_image_send_production_observation_state=enabled")
+  ) {
+    throw new Error("enabled observation did not report enabled state");
   }
 
   const disabledTimerEnabled = run({

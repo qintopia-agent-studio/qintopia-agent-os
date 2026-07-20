@@ -100,6 +100,7 @@ esac
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "qintopia-agentos-operations-group-send-ready.timer",
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+    "qintopia-agentos-qiwe-image-send-worker.timer",
   ]) {
     if (!fs.existsSync(path.join(unitDir, timer))) {
       throw new Error(`expected rendered timer ${timer}`);
@@ -133,6 +134,9 @@ esac
     throw new Error(
       "release installer must not automatically enable Huabaosi Feishu mirroring"
     );
+  }
+  if (log.includes("enable --now qintopia-agentos-qiwe-image-send-worker.timer")) {
+    throw new Error("release installer must not automatically enable QiWe image send");
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

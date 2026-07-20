@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
@@ -11,7 +12,11 @@ const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh"
 );
-const tmpRoot = fs.mkdtempSync(path.join(repoRoot, ".tmp-staging-runtime-prereq-"));
+const fixtureParent =
+  process.platform === "darwin" ? fs.realpathSync(os.tmpdir()) : repoRoot;
+const tmpRoot = fs.mkdtempSync(
+  path.join(fixtureParent, "qintopia-staging-runtime-prereq-")
+);
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const envFile = path.join(tmpRoot, "message-sidecar-staging.env");
 const releaseRoot = path.join(tmpRoot, "qintopia-agent-os-staging-releases");
