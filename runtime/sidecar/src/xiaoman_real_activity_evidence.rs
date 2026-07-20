@@ -1,4 +1,4 @@
-use std::{env, fs};
+use std::{env, fs, os::unix::fs::PermissionsExt, path::Path};
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
@@ -14,6 +14,8 @@ const RETAINED_REPORT_SCHEMA: &str = "xiaoman-real-activity-production-evidence-
 const TARGET_GROUP_ALIAS: &str = "community_activity_group";
 const GENERATED_IMAGE_WORKER: &str = "huabaosi-image-generation-worker";
 const EVIDENCE_WORKER: &str = "xiaoman-real-activity-production-evidence";
+const PRODUCTION_RELEASE_CURRENT_DIR: &str = "/home/ubuntu/qintopia-agent-os-releases/current";
+const EXPECTED_SIDECAR_SHA_ENV: &str = "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256";
 const GENERATED_IMAGE_EVIDENCE_SQL: &str = r#"
         SELECT
             image_request.id AS image_generation_work_item_id,
@@ -83,6 +85,8 @@ struct ProductionBoundary {
     production_release_sha: String,
     sidecar_binary_sha256: String,
     database_url_sha256: String,
+    release_binary_verified: bool,
+    approved_sidecar_sha256_matched: bool,
 }
 
 impl ProductionBoundary {
@@ -92,12 +96,24 @@ impl ProductionBoundary {
         if !is_lower_hex(&production_release_sha, 40) {
             bail!("QINTOPIA_DEPLOYED_COMMIT_SHA must be a 40-character lowercase Git SHA");
         }
+        let expected_sidecar_sha256 = env::var(EXPECTED_SIDECAR_SHA_ENV)
+            .with_context(|| format!("{EXPECTED_SIDECAR_SHA_ENV} is required"))?;
+        if !is_lower_hex(&expected_sidecar_sha256, 64) {
+            bail!("{EXPECTED_SIDECAR_SHA_ENV} must be a canonical lowercase SHA-256");
+        }
         let sidecar_path = env::current_exe().context("resolve current sidecar binary path")?;
+        verify_release_binary_path(&sidecar_path, &production_release_sha)?;
         let sidecar_bytes = fs::read(&sidecar_path).context("read current sidecar binary")?;
+        let sidecar_binary_sha256 = sha256_hex(&sidecar_bytes);
+        if sidecar_binary_sha256 != expected_sidecar_sha256 {
+            bail!("current sidecar binary does not match the owner-approved SHA-256");
+        }
         Ok(Self {
             production_release_sha,
-            sidecar_binary_sha256: sha256_hex(&sidecar_bytes),
+            sidecar_binary_sha256,
             database_url_sha256: sha256_hex(database_url.as_bytes()),
+            release_binary_verified: true,
+            approved_sidecar_sha256_matched: true,
         })
     }
 
@@ -110,9 +126,57 @@ impl ProductionBoundary {
             "production_release_sha": self.production_release_sha,
             "sidecar_binary_sha256": self.sidecar_binary_sha256,
             "database_url_sha256": self.database_url_sha256,
+            "release_binary_verified": self.release_binary_verified,
+            "approved_sidecar_sha256_matched": self.approved_sidecar_sha256_matched,
             "safe_for_chat": false,
         })
     }
+}
+
+fn verify_release_binary_path(sidecar_path: &Path, production_release_sha: &str) -> Result<()> {
+    let current_real = fs::canonicalize(PRODUCTION_RELEASE_CURRENT_DIR)
+        .context("resolve production release/current directory")?;
+    if current_real.file_name().and_then(|name| name.to_str()) != Some(production_release_sha) {
+        bail!("production release/current does not match QINTOPIA_DEPLOYED_COMMIT_SHA");
+    }
+    let expected = current_real
+        .join("sidecar")
+        .join("qintopia-message-sidecar");
+    let sidecar_real = fs::canonicalize(sidecar_path).context("resolve current sidecar binary")?;
+    if sidecar_real != expected {
+        bail!(
+            "production evidence export must run from the immutable release/current sidecar binary"
+        );
+    }
+    if symlink_metadata(&sidecar_real)?.file_type().is_symlink() {
+        bail!("production sidecar binary must not be a symlink");
+    }
+    if !symlink_metadata(&sidecar_real)?.is_file() {
+        bail!("production sidecar binary is missing");
+    }
+    for path in [
+        current_real,
+        expected
+            .parent()
+            .context("production sidecar binary parent is missing")?
+            .to_path_buf(),
+        sidecar_real,
+    ] {
+        reject_group_or_world_writable(&path)?;
+    }
+    Ok(())
+}
+
+fn symlink_metadata(path: &Path) -> Result<fs::Metadata> {
+    fs::symlink_metadata(path).with_context(|| format!("inspect {}", path.display()))
+}
+
+fn reject_group_or_world_writable(path: &Path) -> Result<()> {
+    let mode = symlink_metadata(path)?.permissions().mode();
+    if mode & 0o022 != 0 {
+        bail!("production release binary path must not be group/world writable");
+    }
+    Ok(())
 }
 
 struct ActivityRoot {
@@ -617,6 +681,8 @@ mod tests {
             production_release_sha: "a".repeat(40),
             sidecar_binary_sha256: "b".repeat(64),
             database_url_sha256: "c".repeat(64),
+            release_binary_verified: true,
+            approved_sidecar_sha256_matched: true,
         }
     }
 

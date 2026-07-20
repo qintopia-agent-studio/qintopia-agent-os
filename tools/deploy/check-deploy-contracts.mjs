@@ -1784,6 +1784,8 @@ if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
     "artifact_content_hash",
     "callback_credential_schema",
     "raw_secret_fields_retained",
+    "release_binary_verified",
+    "approved_sidecar_sha256_matched",
     "forbidden sensitive fragment",
     "Xiaoman real activity production evidence check passed.",
   ]) {
@@ -1805,8 +1807,14 @@ if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {
   for (const fragment of [
     "xiaoman_real_activity_production_evidence=",
     "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256",
+    "/home/ubuntu/qintopia-agent-os-releases/current",
     "current_exe",
+    "canonicalize",
+    "owner-approved SHA-256",
     "database_url_sha256",
+    "release_binary_verified",
+    "approved_sidecar_sha256_matched",
     "signal_intake",
     "image_generation",
     "human_approval",
@@ -1937,10 +1945,13 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
 } else {
   const template = readText(xiaomanRealActivityProductionEvidenceTemplatePath);
   for (const fragment of [
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256='<approved production sidecar binary sha256>'",
     "qintopia-message-sidecar xiaoman-real-activity-production-evidence",
     "--workflow-root-id <completed-xiaoman-activity-root-uuid>",
     "node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>",
     "Production release SHA",
+    "Release-local binary verified",
+    "Owner-approved sidecar SHA-256 matched",
     "Production database URL SHA-256",
     "Xiaoman source event signal UUID",
     "Generated-image artifact UUID",
@@ -1954,6 +1965,8 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
     "qiwe_upload",
     "qiwe_callback_send",
     "sanitized_evidence_retention",
+    "`release_binary_verified`: `true`",
+    "`approved_sidecar_sha256_matched`: `true`",
     "Do not record QiWe token, GUID, API secret material, target group id, database URL",
   ]) {
     requireFragment(

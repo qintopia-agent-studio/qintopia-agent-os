@@ -6,6 +6,7 @@ Use this template only after a single owner-approved production activity has com
 and the sanitized evidence output passes:
 
 ```bash
+QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256='<approved production sidecar binary sha256>' \
 qintopia-message-sidecar xiaoman-real-activity-production-evidence \
   --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
 node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>
@@ -22,6 +23,8 @@ the intended group.
 - Repository commit SHA:
 - Production release SHA:
 - Packaged sidecar binary SHA-256:
+- Release-local binary verified: yes/no.
+- Owner-approved sidecar SHA-256 matched: yes/no.
 - Production database URL SHA-256:
 - Xiaoman source event signal UUID:
 - AgentOS workflow root UUID:
@@ -55,6 +58,8 @@ the intended group.
 
 - `production_release_sha`:
 - `sidecar_binary_sha256`:
+- `release_binary_verified`: `true`
+- `approved_sidecar_sha256_matched`: `true`
 - `database_url_sha256`:
 - `source_event_signal_id`:
 - `workflow_root_id`:

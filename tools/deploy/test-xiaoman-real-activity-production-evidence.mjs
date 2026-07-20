@@ -85,6 +85,16 @@ try {
     /sanitized evidence retention evidence includes unexpected key/
   );
 
+  const mutableBinaryEvidence = path.join(tmpRoot, "mutable-binary.txt");
+  fs.writeFileSync(
+    mutableBinaryEvidence,
+    productionOutput({ releaseBinaryVerified: false }),
+    "utf8"
+  );
+  result = runChecker(mutableBinaryEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
+
   const extraPhaseEvidence = path.join(tmpRoot, "extra-phase.txt");
   fs.writeFileSync(
     extraPhaseEvidence,
@@ -96,6 +106,8 @@ try {
       production_release_sha: releaseSha,
       sidecar_binary_sha256: sidecarHash,
       database_url_sha256: databaseHash,
+      release_binary_verified: true,
+      approved_sidecar_sha256_matched: true,
       safe_for_chat: false,
     })}\n`,
     "utf8"
@@ -127,6 +139,8 @@ function productionOutput(overrides = {}) {
     production_release_sha: releaseSha,
     sidecar_binary_sha256: sidecarHash,
     database_url_sha256: databaseHash,
+    release_binary_verified: overrides.releaseBinaryVerified ?? true,
+    approved_sidecar_sha256_matched: overrides.approvedSidecarSha256Matched ?? true,
     safe_for_chat: false,
   };
   const records = [
