@@ -30,6 +30,13 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  positiveXiaomanProductionCompletionClaimLines(
+    "Xiaoman remains production-complete after the retained evidence bundle passed."
+  ),
+  ["Xiaoman remains production-complete after the retained evidence bundle passed."]
+);
+
+assert.deepEqual(
   positiveXiaomanProductionCompletionClaimLines("小满生产闭环已完成。"),
   ["小满生产闭环已完成。"]
 );
