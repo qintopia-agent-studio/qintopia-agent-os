@@ -84,6 +84,27 @@ try {
   result = runChecker(missingCompletion);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /exactly one fixed completion line/);
+
+  const mutableBoundary = writeEvidence("mutable-boundary.txt", {
+    generation: { release_binary_verified: false },
+  });
+  result = runChecker(mutableBoundary);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
+
+  const sidecarBoundary = writeEvidence("sidecar-boundary.txt", {
+    revalidation: { approved_sidecar_sha256_matched: false },
+  });
+  result = runChecker(sidecarBoundary);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
+
+  const databaseBoundary = writeEvidence("database-boundary.txt", {
+    preflight: { approved_database_url_sha256_matched: false },
+  });
+  result = runChecker(databaseBoundary);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
@@ -109,7 +130,10 @@ function productionOutput(overrides = {}) {
   const imageWorkItemId = "33333333-4444-4555-8666-777777777777";
   const artifactId = "44444444-5555-4666-8777-888888888888";
   const common = {
+    approved_database_url_sha256_matched: true,
+    approved_sidecar_sha256_matched: true,
     database_url_sha256: databaseHash,
+    release_binary_verified: true,
     release_sha: releaseSha,
     sidecar_binary_sha256: sidecarHash,
     success: true,
