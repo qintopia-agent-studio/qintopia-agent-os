@@ -135,7 +135,11 @@ if (
 }
 if (
   !["pre_event", "post_event"].includes(productionSignal.activity_phase) ||
-  !["activity_promotion", "activity_recap"].includes(productionSignal.activity_route)
+  !["activity_promotion", "activity_recap"].includes(productionSignal.activity_route) ||
+  !activityRouteMatchesPhase(
+    productionSignal.activity_phase,
+    productionSignal.activity_route
+  )
 ) {
   fail("production signal intake did not bind an eligible Xiaoman activity route");
 }
@@ -437,6 +441,13 @@ function isUtcSecondTimestamp(value) {
   return (
     !Number.isNaN(parsed.valueOf()) &&
     parsed.toISOString().replace(".000Z", "Z") === value
+  );
+}
+
+function activityRouteMatchesPhase(phase, route) {
+  return (
+    (phase === "pre_event" && route === "activity_promotion") ||
+    (phase === "post_event" && route === "activity_recap")
   );
 }
 

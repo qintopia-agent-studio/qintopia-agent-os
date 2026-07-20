@@ -105,6 +105,16 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /shared production boundary/);
 
+  const routeMismatchEvidence = path.join(tmpRoot, "route-mismatch.txt");
+  fs.writeFileSync(
+    routeMismatchEvidence,
+    productionOutput({ activityRoute: "activity_recap" }),
+    "utf8"
+  );
+  result = runChecker(routeMismatchEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /signal intake evidence does not prove/);
+
   const extraPhaseEvidence = path.join(tmpRoot, "extra-phase.txt");
   fs.writeFileSync(
     extraPhaseEvidence,
@@ -183,8 +193,8 @@ function productionOutput(overrides = {}) {
       dry_run: false,
       source_event_signal_id: sourceEventSignalId,
       workflow_root_id: workflowRootId,
-      activity_phase: "pre_event",
-      activity_route: "activity_promotion",
+      activity_phase: overrides.activityPhase ?? "pre_event",
+      activity_route: overrides.activityRoute ?? "activity_promotion",
       external_send_executed: false,
     },
     {
