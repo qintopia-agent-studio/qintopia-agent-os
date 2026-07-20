@@ -4,7 +4,7 @@ mod activity_lifecycle;
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
     feature = "huabaosi-feishu-mirror-adapter",
-    feature = "qiwe-live-adapter"
+    feature = "qiwe-staging-adapter"
 ))]
 mod bounded_http;
 mod collaboration;

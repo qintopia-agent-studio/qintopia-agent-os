@@ -10,9 +10,7 @@ postgres-integration-tests = []
 huabaosi-production-adapter = []
 huabaosi-staging-adapter = []
 huabaosi-feishu-mirror-adapter = []
-qiwe-live-adapter = []
-qiwe-staging-adapter = ["qiwe-live-adapter"]
-qiwe-production-adapter = ["qiwe-live-adapter"]
+qiwe-staging-adapter = []
 
 [dependencies]
 anyhow = "=1.0.86"

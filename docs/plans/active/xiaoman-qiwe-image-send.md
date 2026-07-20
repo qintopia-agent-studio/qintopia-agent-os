@@ -124,11 +124,10 @@ target, or missing final confirmation must stop before sending.
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
   The live helpers compile only with `qiwe-staging-adapter` in runnable artifacts.
-  `qiwe-production-adapter` remains a dormant source feature and must not be included in
-  production release artifacts until a separate owner-approved production send boundary
-  exists. Production release artifacts continue to record exactly
-  `huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`. The guarded
-  staging smoke remains an owner-approved one-shot operator entrypoint.
+  Production release artifacts must not include any QiWe live adapter until a separate
+  owner-approved production send boundary exists. Production release artifacts continue
+  to record exactly `huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`.
+  The guarded staging smoke remains an owner-approved one-shot operator entrypoint.
 - A combined staging build containing both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter` may claim an exact Feishu primary-storage URI. It commits the
   existing `uploading` attempt before Feishu or QiWe I/O, revalidates the approved JPEG,
@@ -236,10 +235,10 @@ evidence template lives in
 ## Production Boundary
 
 Default execution does not contain the live QiWe adapter and cannot contact QiWe or send
-messages. Production image-send artifacts must not contain `qiwe-production-adapter`,
-`qiwe-staging-adapter`, or all-features builds. The production observation smoke accepts
-only the immutable release/current binary, parses only the non-secret send enable flag
-without evaluating shell, and confirms the production apply service/timer is absent,
-inactive, and disabled. It must not pass database/QiWe secrets to a child process, run
-sidecar commands, run `--apply`, or process callbacks. Rollback is to retain
+messages. Production image-send artifacts must not contain `qiwe-staging-adapter` or
+all-features builds. The production observation smoke accepts only the immutable
+release/current binary, parses only the non-secret send enable flag without evaluating
+shell, and confirms the production apply service/timer is absent, inactive, and
+disabled. It must not pass database/QiWe secrets to a child process, run sidecar
+commands, run `--apply`, or process callbacks. Rollback is to retain
 `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and keep QiWe image-send production units absent.

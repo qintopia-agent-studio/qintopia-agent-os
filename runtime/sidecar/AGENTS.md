@@ -134,9 +134,7 @@ From the monorepo root, prefer:
   with automatic retry disabled. Worker previews must reuse the exact apply-side group
   and media-host allowlists.
 - The QiWe upload worker and callback processor may compile live helpers for staging
-  only with `qiwe-staging-adapter`. The dormant `qiwe-production-adapter` source feature
-  must not be included in production artifacts until a separate owner-approved
-  production send boundary exists. Default and production builds must fail apply before
+  only with `qiwe-staging-adapter`. Default and production builds must fail apply before
   Postgres or network access, and callback apply must do so before reading stdin.
   Runtime env flags are not a substitute for this compile gate. Callback JSON is
   accepted from bounded stdin only, never CLI arguments or environment variables. File

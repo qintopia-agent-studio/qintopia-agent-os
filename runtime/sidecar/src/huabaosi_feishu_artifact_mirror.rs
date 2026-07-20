@@ -201,13 +201,7 @@ pub(crate) struct FeishuPrimaryStorageApprovalEvidence {
     pub(crate) height: i64,
 }
 
-#[cfg(all(
-    any(
-        feature = "huabaosi-production-adapter",
-        feature = "huabaosi-staging-adapter"
-    ),
-    any(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter")
-))]
+#[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
 pub(crate) struct FeishuPrimaryStorageDeliveryArtifact {
     pub(crate) artifact_id: Uuid,
     pub(crate) artifact_uri: String,
@@ -561,13 +555,7 @@ pub(crate) async fn revalidate_primary_storage_for_approval(
     }
 }
 
-#[cfg(all(
-    any(
-        feature = "huabaosi-production-adapter",
-        feature = "huabaosi-staging-adapter"
-    ),
-    any(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter")
-))]
+#[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
 pub(crate) async fn revalidate_primary_storage_for_delivery(
     pool: &PgPool,
     artifact_id: Uuid,

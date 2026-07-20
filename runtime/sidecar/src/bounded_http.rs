@@ -41,7 +41,7 @@ pub(crate) struct HttpRequestError {
     pub(crate) transport: bool,
     #[cfg(any(
         test,
-        feature = "qiwe-live-adapter",
+        feature = "qiwe-staging-adapter",
         feature = "huabaosi-wecom-canary-gateway",
         feature = "huabaosi-production-adapter",
         feature = "huabaosi-staging-adapter",
@@ -59,7 +59,7 @@ impl HttpRequestError {
             transport: true,
             #[cfg(any(
                 test,
-                feature = "qiwe-live-adapter",
+                feature = "qiwe-staging-adapter",
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
                 feature = "huabaosi-staging-adapter",
@@ -75,7 +75,7 @@ impl HttpRequestError {
             transport: false,
             #[cfg(any(
                 test,
-                feature = "qiwe-live-adapter",
+                feature = "qiwe-staging-adapter",
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
                 feature = "huabaosi-staging-adapter",
@@ -91,7 +91,7 @@ impl HttpRequestError {
             transport,
             #[cfg(any(
                 test,
-                feature = "qiwe-live-adapter",
+                feature = "qiwe-staging-adapter",
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
                 feature = "huabaosi-staging-adapter",
@@ -108,7 +108,7 @@ impl HttpRequestError {
 
     #[cfg(any(
         test,
-        feature = "qiwe-live-adapter",
+        feature = "qiwe-staging-adapter",
         feature = "huabaosi-wecom-canary-gateway",
         feature = "huabaosi-production-adapter",
         feature = "huabaosi-staging-adapter",

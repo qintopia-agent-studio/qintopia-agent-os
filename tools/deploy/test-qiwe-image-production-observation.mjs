@@ -81,7 +81,6 @@ exit 70
   fs.writeFileSync(sidecarLog, "", "utf8");
 
   const qiweConfigLines = [
-    envLine("QINTOPIA_QIWE_IMAGE_PRODUCTION_DATABASE_URL_SHA256", "0".repeat(64)),
     envLine("QINTOPIA_SIDECAR_DATABASE_URL", fixtureSecrets[0]),
     envLine("QIWE_API_URL", "https://manager.qiweapi.com/qiwe/api/qw/doApi"),
     envLine("QIWE_TOKEN", fixtureSecrets[1]),

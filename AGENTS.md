@@ -458,9 +458,9 @@ Use `rg` and `rg --files` for search.
   are misconfigured; callback apply must also fail before reading stdin. Production
   artifact manifests must record exactly
   `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`;
-  artifact and server-source build checks must reject `qiwe-staging-adapter`,
-  `qiwe-production-adapter`, and all-features builds. The Huabaosi production feature
-  alone must not make QiWe live helpers available.
+  artifact and server-source build checks must reject `qiwe-staging-adapter` and
+  all-features builds. The Huabaosi production feature alone must not make QiWe live
+  helpers available.
 - CI must execute non-ignored sidecar tests with all Cargo features so staging-only
   adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
   remain in the disposable integration job. Production artifacts must still use only
