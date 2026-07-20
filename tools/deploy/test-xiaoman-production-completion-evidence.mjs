@@ -92,6 +92,12 @@ try {
   result = runChecker(invalidConfirmationTime);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /human group-arrival confirmation/);
+
+  const nonObjectManifest = writeEvidenceFiles();
+  fs.writeFileSync(nonObjectManifest.manifest, "[]\n", "utf8");
+  result = runChecker(nonObjectManifest);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /completion manifest must be a JSON object/);
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }

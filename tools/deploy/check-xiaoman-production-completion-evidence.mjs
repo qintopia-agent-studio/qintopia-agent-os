@@ -361,7 +361,13 @@ function prefixedRecords(file, prefix) {
     .readFileSync(file, "utf8")
     .split(/\r?\n/)
     .filter((line) => line.startsWith(prefix))
-    .map((line) => JSON.parse(line.slice(prefix.length)));
+    .map((line) => {
+      const record = JSON.parse(line.slice(prefix.length));
+      if (!record || typeof record !== "object" || Array.isArray(record)) {
+        fail(`${prefix} record must be a JSON object`);
+      }
+      return record;
+    });
 }
 
 function singlePrefixedRecord(file, prefix) {
@@ -376,6 +382,9 @@ function single(records, message) {
 }
 
 function assertExactKeys(entry, allowed, label) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    fail(`${label} must be a JSON object`);
+  }
   for (const key of Object.keys(entry ?? {})) {
     if (!allowed.has(key)) {
       fail(`${label} includes unexpected key: ${key}`);
