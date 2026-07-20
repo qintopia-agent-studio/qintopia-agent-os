@@ -2239,27 +2239,23 @@ fn required_env(name: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("required QiWe image-send configuration is missing"))
 }
 
-#[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
+#[cfg(feature = "qiwe-production-adapter")]
 fn apply_config(cli: &Cli) -> Result<AdapterConfig> {
-    #[cfg(feature = "qiwe-production-adapter")]
-    {
-        if std::env::var(PRODUCTION_APPROVAL_ENV).ok().as_deref()
-            == Some(PRODUCTION_APPROVAL_PHRASE)
-        {
-            return production_apply_config(cli);
-        }
-    }
-    #[cfg(feature = "qiwe-staging-adapter")]
-    {
-        staging_apply_config(cli)
-    }
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
-    {
-        production_apply_config(cli)
-    }
+    production_apply_config(cli)
 }
 
-#[cfg(feature = "qiwe-staging-adapter")]
+#[cfg(all(
+    not(feature = "qiwe-production-adapter"),
+    feature = "qiwe-staging-adapter"
+))]
+fn apply_config(cli: &Cli) -> Result<AdapterConfig> {
+    staging_apply_config(cli)
+}
+
+#[cfg(all(
+    not(feature = "qiwe-production-adapter"),
+    feature = "qiwe-staging-adapter"
+))]
 fn staging_apply_config(cli: &Cli) -> Result<AdapterConfig> {
     validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
     let database_url = cli.database_url_required()?;
@@ -2580,7 +2576,13 @@ mod tests {
         time::Duration,
     };
 
-    #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    use std::ffi::OsString;
+
+    #[cfg(any(
+        not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")),
+        all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter")
+    ))]
     use clap::Parser;
 
     use super::*;
@@ -3329,6 +3331,55 @@ mod tests {
     fn combined_production_build_contains_feishu_delivery_bridge() {
         assert!(qiwe_live_adapter_compiled());
         assert!(feishu_delivery_bridge_compiled());
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    struct EnvRestore {
+        key: &'static str,
+        value: Option<OsString>,
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    impl EnvRestore {
+        fn capture(key: &'static str) -> Self {
+            Self {
+                key,
+                value: std::env::var_os(key),
+            }
+        }
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.value {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    #[test]
+    fn production_feature_apply_never_falls_back_to_staging_gate() {
+        let _staging_approval = EnvRestore::capture(STAGING_APPROVAL_ENV);
+        let _production_approval = EnvRestore::capture(PRODUCTION_APPROVAL_ENV);
+        unsafe {
+            std::env::set_var(STAGING_APPROVAL_ENV, STAGING_APPROVAL_PHRASE);
+            std::env::remove_var(PRODUCTION_APPROVAL_ENV);
+        }
+        let cli = Cli::parse_from(["qintopia-message-sidecar", "check"]);
+
+        let error = match apply_config(&cli) {
+            Ok(_) => panic!("production feature must require production gate"),
+            Err(error) => error,
+        };
+
+        assert!(error
+            .to_string()
+            .contains("production owner approval is required"));
     }
 
     #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]

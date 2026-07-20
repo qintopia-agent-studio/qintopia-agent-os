@@ -78,6 +78,28 @@ fi
     throw new Error("activation must fail before systemctl when env is invalid");
   }
 
+  fs.writeFileSync(
+    envFile,
+    [
+      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=not-a-hash",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(logPath, "", "utf8");
+  const duplicateDatabaseHash = run(activationScript, {
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
+      "approved-production-qiwe-image-send",
+  });
+  if (duplicateDatabaseHash.status === 0 || fs.readFileSync(logPath, "utf8") !== "") {
+    throw new Error(
+      "activation must fail before systemctl when production database hash is duplicated"
+    );
+  }
+
   writeEnv("1");
   fs.writeFileSync(logPath, "", "utf8");
   const preflightRejected = run(activationScript, {

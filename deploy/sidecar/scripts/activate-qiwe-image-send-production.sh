@@ -39,6 +39,11 @@ require_env_line() {
 require_sha256_env_line() {
   local key="$1"
   local count
+  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
+  if [[ "$count" != "1" ]]; then
+    echo "QiWe image-send production activation requires exactly one ${key}" >&2
+    exit 1
+  fi
   count="$(grep -Ec "^${key}=[0-9a-f]{64}$" "$ENV_FILE" || true)"
   if [[ "$count" != "1" ]]; then
     echo "QiWe image-send production activation requires exactly one canonical ${key}" >&2

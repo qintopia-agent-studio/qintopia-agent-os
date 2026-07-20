@@ -510,11 +510,14 @@ Use `rg` and `rg --files` for search.
   database URL hash and Feishu delivery config. Rollback must stop the timer first and
   may report completion only after the persistent enablement flag is present exactly
   once and set to `0`. Do not install or enable QiWe production apply units by
-  hot-editing systemd outside the reviewed release runner and activation scripts.
-  Production observation may inspect the immutable release/current binary and fixed
-  production env file, but it must not pass database/QiWe secrets to observation
-  children, bypass the async callback/send state machine, write Feishu as part of
-  sending, or treat staging evidence as production completion.
+  hot-editing systemd outside the reviewed release runner and activation scripts. If a
+  test or accidental build includes both `qiwe-production-adapter` and
+  `qiwe-staging-adapter`, apply commands must still select the production gate and must
+  never fall back to staging approval or staging database hashing. Production
+  observation may inspect the immutable release/current binary and fixed production env
+  file, but it must not pass database/QiWe secrets to observation children, bypass the
+  async callback/send state machine, write Feishu as part of sending, or treat staging
+  evidence as production completion.
 - A real Xiaoman activity may be described as production-complete only after the
   retained sanitized evidence passes
   `tools/deploy/check-xiaoman-real-activity-production-evidence.mjs` and the full
