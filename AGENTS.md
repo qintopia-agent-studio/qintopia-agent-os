@@ -161,6 +161,8 @@
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_canary`
 - Xiaoman activity production preflight smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh`
+- Xiaoman legacy Hermes cron observation smoke:
+  `QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh`
 - AgentOS downstream evidence/visual timers observation smoke:
   `QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh`
 - Sidecar dependency vulnerability audit:
