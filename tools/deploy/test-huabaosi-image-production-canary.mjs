@@ -223,6 +223,15 @@ try {
 set -euo pipefail
 case "\${1:-}" in
   cat) exit 0 ;;
+  is-enabled)
+    case "\${FAKE_TIMER_ENABLED_STATE:-disabled}" in
+      disabled) printf '%s\n' disabled; exit 1 ;;
+      enabled) printf '%s\n' enabled; exit 0 ;;
+      masked) printf '%s\n' masked; exit 1 ;;
+      static) printf '%s\n' static; exit 0 ;;
+      *) exit 64 ;;
+    esac
+    ;;
   is-active)
     [[ "\${FAKE_TIMER_ACTIVE:-0}" == "1" ]] && exit 0
     exit 3
@@ -296,6 +305,30 @@ esac
     !activeTimer.stderr.includes("timer must be inactive during one-shot canary")
   ) {
     throw new Error("active provider timer must block one-shot production canary");
+  }
+
+  const enabledTimer = run(sidecar, { FAKE_TIMER_ENABLED_STATE: "enabled" });
+  if (
+    enabledTimer.status === 0 ||
+    !enabledTimer.stderr.includes("timer must be disabled during one-shot canary")
+  ) {
+    throw new Error("enabled provider timer must block one-shot production canary");
+  }
+
+  const maskedTimer = run(sidecar, { FAKE_TIMER_ENABLED_STATE: "masked" });
+  if (
+    maskedTimer.status === 0 ||
+    !maskedTimer.stderr.includes("timer must be disabled during one-shot canary")
+  ) {
+    throw new Error("masked provider timer must block one-shot production canary");
+  }
+
+  const staticTimer = run(sidecar, { FAKE_TIMER_ENABLED_STATE: "static" });
+  if (
+    staticTimer.status === 0 ||
+    !staticTimer.stderr.includes("timer must be disabled during one-shot canary")
+  ) {
+    throw new Error("static provider timer must block one-shot production canary");
   }
 
   const wrongApproval = run(sidecar, {
