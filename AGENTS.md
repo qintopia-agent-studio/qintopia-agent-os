@@ -395,8 +395,11 @@ Use `rg` and `rg --files` for search.
   are `pre_event`, `in_event`, and `post_event`; transitions are forward-only and each
   phase maps to its fixed root/child route. Event-signal root creation must lock and
   match the current phase. Do not accept caller-selected routes, rewrite historical
-  phase roots, add a timer, or extend in/post-event routing into image generation,
-  Feishu writeback, QiWe send, or publishing without a separate reviewed PR.
+  phase roots, add a timer, or extend `in_event` routing into visual/image generation,
+  Feishu writeback, QiWe send, or publishing. `post_event` may use the reviewed internal
+  starter path from approved recap brief to image-generation request and then approved
+  generated image to awaiting-publish group-message request; those starters must not
+  call providers, write Feishu, confirm, queue, publish, call QiWe, or send.
 - Xiaoman signal apply smokes should use sanitized non-UUID event signal ids unless a
   matching `qintopia_agent_os.event_signals` row is created first; UUID
   `event_signal_id` values are stored as `source_event_signal_id` and must satisfy the
