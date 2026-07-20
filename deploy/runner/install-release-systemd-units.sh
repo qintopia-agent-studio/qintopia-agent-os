@@ -122,9 +122,6 @@ unit_files=(
   qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.service
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer
-  qintopia-agentos-qiwe-image-send-preflight.service
-  qintopia-agentos-qiwe-image-send-worker.service
-  qintopia-agentos-qiwe-image-send-worker.timer
 )
 
 mkdir -p "$unit_dir"

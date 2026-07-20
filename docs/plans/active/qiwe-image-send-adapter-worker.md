@@ -151,11 +151,12 @@ booleans. They must use `safe_for_chat=false` and must not include:
 
 ## Production Boundary
 
-Production image-send enablement may install the fixed worker service/timer and compile
-the reviewed `qiwe-production-adapter`, but it must not install an unreviewed callback
-listener, broaden group allowlists, or contact QiWe outside the at-most-once upload and
-callback send state machine. Production artifact builders are checked to exclude
-`qiwe-staging-adapter` and all-features builds; their manifest records exactly
-`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter, qiwe-production-adapter]`.
-Rollback keeps `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and the fixed QiWe image-send timer
-disabled.
+Production image-send observation may inspect the immutable release/current artifact and
+confirm send remains disabled, but it must not install a worker service/timer, compile a
+QiWe live adapter into the production artifact, install a callback listener, broaden
+group allowlists, pass database/QiWe secrets to observation children, or contact QiWe.
+Production artifact builders are checked to exclude `qiwe-staging-adapter`,
+`qiwe-production-adapter`, and all-features builds; their manifest records exactly
+`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`.
+Rollback keeps `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and QiWe image-send production units
+absent.

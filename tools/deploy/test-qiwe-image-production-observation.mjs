@@ -56,26 +56,8 @@ exit 1
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >>"${sidecarLog}"
-if env | grep -F -e '${fixtureSecrets[5]}' >/dev/null; then
-  echo "unrelated secret reached fake sidecar" >&2
-  exit 70
-fi
-case "$1" in
-  qiwe-image-send-preflight)
-    if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_ENABLED:-0}" == "1" ]]; then
-      printf '%s\\n' '{"success":true,"worker":"qiwe-image-send-adapter","action_status":"production_adapter_ready","adapter_compiled":true,"production_adapter_compiled":true,"feishu_delivery_bridge_compiled":true,"send_enabled":true,"config_valid":true,"webhook_ready":true,"allowed_host_count":1,"media_allowed_host_count":1,"allowed_group_count":1,"missing_configuration":[],"protocol":"qiwe_async_url_upload_then_send_image","safe_for_chat":false,"limitations":[],"guardrails":[]}'
-      exit 0
-    fi
-    printf '%s\\n' '{"success":true,"worker":"qiwe-image-send-adapter","action_status":"production_adapter_disabled","adapter_compiled":true,"production_adapter_compiled":true,"feishu_delivery_bridge_compiled":true,"send_enabled":false,"config_valid":true,"webhook_ready":true,"allowed_host_count":1,"media_allowed_host_count":1,"allowed_group_count":1,"missing_configuration":[],"protocol":"qiwe_async_url_upload_then_send_image","safe_for_chat":false,"limitations":[],"guardrails":[]}'
-    exit 0
-    ;;
-  run-qiwe-image-send-worker)
-    [[ "$2" == "--once" && "$3" == "--dry-run" ]]
-    [[ -n "\${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]
-    printf '%s\\n' '{"success":true,"dry_run":true,"apply_requested":false,"worker":"qiwe-image-send-adapter","phase":"upload","action_status":"no_claimable_send_request","work_item_id":null,"external_upload_requested":false,"callback_received":false,"external_send_executed":false,"safe_for_chat":false,"guardrails":[]}'
-    ;;
-  *) exit 64 ;;
-esac
+echo "fake sidecar must not run during production observation" >&2
+exit 70
 `
   );
   fs.writeFileSync(
@@ -87,7 +69,6 @@ esac
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
-            "qiwe-production-adapter",
           ],
         },
       },
@@ -185,12 +166,13 @@ esac
     );
   }
   const disabledCommands = fs.readFileSync(sidecarLog, "utf8");
+  if (disabledCommands !== "") {
+    throw new Error("disabled observation must not run the sidecar child process");
+  }
   if (
-    !disabledCommands.includes("qiwe-image-send-preflight") ||
-    !disabledCommands.includes("run-qiwe-image-send-worker --once --dry-run") ||
-    disabledCommands.includes("--apply")
+    !disabled.stdout.includes("qiwe_image_send_production_observation_state=disabled")
   ) {
-    throw new Error("disabled observation did not run the expected read-only commands");
+    throw new Error("disabled observation did not report disabled state");
   }
 
   fs.writeFileSync(sidecarLog, "", "utf8");
@@ -239,22 +221,18 @@ esac
   fs.writeFileSync(sidecarLog, "", "utf8");
   const enabled = run({
     QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
-    FAKE_QIWE_UNIT_PRESENT: "1",
-    FAKE_QIWE_TIMER_ENABLED: "1",
-    FAKE_QIWE_TIMER_ACTIVE: "1",
   });
-  if (enabled.status !== 0) {
-    throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
+  if (enabled.status === 0 || !enabled.stderr.includes("not approved")) {
+    throw new Error(
+      "enabled observation must fail before any production send boundary"
+    );
   }
 
-  const incomplete = run({
-    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
+  const installedUnit = run({
     FAKE_QIWE_UNIT_PRESENT: "1",
-    FAKE_QIWE_TIMER_ENABLED: "1",
-    FAKE_QIWE_TIMER_ACTIVE: "0",
   });
-  if (incomplete.status === 0) {
-    throw new Error("enabled observation accepted an inactive production timer");
+  if (installedUnit.status === 0) {
+    throw new Error("observation accepted an installed production apply unit");
   }
 
   const disabledTimerEnabled = run({

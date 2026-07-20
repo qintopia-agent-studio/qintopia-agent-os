@@ -493,22 +493,6 @@ render_all() {
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
     "10min" \
     "${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL:-2min}"
-
-  render_oneshot_service \
-    "qintopia-agentos-qiwe-image-send-preflight.service" \
-    "Qintopia AgentOS QiWe Image Send Production Preflight" \
-    "qiwe-image-send-preflight"
-  render_guarded_oneshot_service \
-    "qintopia-agentos-qiwe-image-send-worker.service" \
-    "Qintopia AgentOS QiWe Image Send Worker" \
-    "qiwe-image-send-preflight" \
-    "run-qiwe-image-send-worker --once --apply"
-  render_timer \
-    "qintopia-agentos-qiwe-image-send-worker.timer" \
-    "Run Qintopia AgentOS QiWe image send worker" \
-    "qintopia-agentos-qiwe-image-send-worker.service" \
-    "13min" \
-    "${QINTOPIA_QIWE_IMAGE_SEND_TIMER_INTERVAL:-5min}"
 }
 
 validate_output() {
@@ -547,9 +531,6 @@ validate_output() {
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
-    "qintopia-agentos-qiwe-image-send-preflight.service"
-    "qintopia-agentos-qiwe-image-send-worker.service"
-    "qintopia-agentos-qiwe-image-send-worker.timer"
   )
 
   local file

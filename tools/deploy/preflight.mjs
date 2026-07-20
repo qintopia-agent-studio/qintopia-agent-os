@@ -267,7 +267,6 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
     "openssl",
     "jwt_path",
     "huabaosi-production-adapter",
-    "qiwe-production-adapter",
   ]) {
     if (!artifactFetchScript.includes(requiredFragment)) {
       addError(
@@ -485,7 +484,6 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const approvedCargoFeatures = [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
-    "qiwe-production-adapter",
   ];
   const cargoFeaturesMatch = buildArtifactScript.match(
     /const cargoFeatures = \[([\s\S]*?)\];/

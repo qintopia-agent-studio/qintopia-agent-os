@@ -62,19 +62,18 @@ through the fixed production feature, release-bound preflight, and explicit time
 activation documented in `docs/server-deployment.md`. Huabaosi WeCom shadow/canary
 material remains a separate review boundary.
 
-QiWe image-send production enablement is also release/current based. The read-only
-production observation smoke accepts only the immutable production sidecar artifact with
-the reviewed `qiwe-production-adapter`, checks the fixed worker timer state, runs
-`qiwe-image-send-preflight`, and runs `run-qiwe-image-send-worker --once --dry-run`:
+QiWe image-send production observation is also release/current based. The read-only
+production observation smoke accepts only the immutable production sidecar artifact
+without QiWe live adapter features, parses only the non-secret send enable flag, and
+confirms the production apply service/timer is absent, inactive, and disabled:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 \
 scripts/qiwe-image-send-production-observation-smoke.sh
 ```
 
-It parses only its fixed production env allowlist without sourcing shell, runs the
-sidecar with an explicit minimal environment, and never runs `--apply` or callback
-processing.
+It does not source shell, pass database/QiWe secrets to a child process, run sidecar
+commands, run `--apply`, or process callbacks.
 
 ## QiWe Image-Send Staging
 

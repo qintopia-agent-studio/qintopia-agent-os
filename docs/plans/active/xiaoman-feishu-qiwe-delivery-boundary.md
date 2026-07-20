@@ -33,10 +33,8 @@ call Feishu or QiWe, install a listener or timer, or send externally.
   committing the existing `uploading` attempt, reading the authenticated Feishu bytes,
   uploading those bytes to QiWe SDK temporary storage, reading the returned temporary
   URL back, and then invoking the existing async URL upload path. Default,
-  Huabaosi-only, and QiWe-only builds continue to reject this route. Staging requires
-  `huabaosi-staging-adapter` plus `qiwe-staging-adapter`; production requires
-  `huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and
-  `qiwe-production-adapter`.
+  Huabaosi-only, QiWe-only, and production builds continue to reject this route. Staging
+  requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`.
 - The reviewed QiWe protocol plan says the synchronous local and URL upload APIs are
   marked for deprecation and must not become the production foundation.
 
@@ -119,11 +117,9 @@ The boundary was implemented in reviewed phases, but runtime evidence is still p
      readback or either QiWe upload call. Interrupted external work remains terminal
      ambiguous and is never retried automatically.
    - Only a combined live artifact containing both the Huabaosi Feishu primary-storage
-     path and a reviewed QiWe live adapter may claim a `feishu-base://` artifact.
-     Default, Huabaosi-only, and QiWe-only builds must continue to reject it. Staging
-     requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`; production
-     requires `huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and
-     `qiwe-production-adapter`.
+     path and a reviewed QiWe staging live adapter may claim a `feishu-base://`
+     artifact. Default, production, Huabaosi-only, and QiWe-only builds must continue to
+     reject it. Staging requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`.
    - The revalidated JPEG bytes, multipart body, returned `cloudUrl`, and readback bytes
      remain memory-only and are zeroized. No temporary URL or attachment credential may
      enter Postgres, reports, logs, CLI arguments, or environment-derived output.
