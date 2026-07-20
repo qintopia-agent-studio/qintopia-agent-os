@@ -21,6 +21,11 @@ if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v sha256sum >/dev/null 2>&1; then
+  echo "sha256sum is required for QiWe image-send production activation" >&2
+  exit 1
+fi
+
 require_env_line() {
   local key="$1"
   local expected="$2"
@@ -51,9 +56,36 @@ require_sha256_env_line() {
   fi
 }
 
+env_line_value() {
+  local key="$1"
+  local count
+  local line
+  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
+  if [[ "$count" != "1" ]]; then
+    echo "QiWe image-send production activation requires exactly one ${key}" >&2
+    exit 1
+  fi
+  line="$(grep -E "^${key}=" "$ENV_FILE")"
+  printf '%s' "${line#*=}"
+}
+
+require_database_hash_match() {
+  local expected_hash
+  local database_url
+  local actual_hash
+  expected_hash="$(env_line_value "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256")"
+  database_url="$(env_line_value "QINTOPIA_SIDECAR_DATABASE_URL")"
+  actual_hash="$(printf '%s' "$database_url" | sha256sum | awk '{print $1}')"
+  if [[ "$actual_hash" != "$expected_hash" ]]; then
+    echo "QiWe image-send production activation database URL hash does not match the approved production hash" >&2
+    exit 1
+  fi
+}
+
 require_env_line "QINTOPIA_QIWE_IMAGE_SEND_ENABLED" "1"
 require_env_line "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-image-send"
 require_sha256_env_line "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256"
+require_database_hash_match
 
 "$SYSTEMCTL" start "$PREFLIGHT_SERVICE"
 "$SYSTEMCTL" enable --now "$WORKER_TIMER"
