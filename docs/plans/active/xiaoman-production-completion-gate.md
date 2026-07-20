@@ -70,7 +70,8 @@ All gates are required before a Release is called Xiaoman production complete:
      --huabaosi-staging <huabaosi-staging-output.txt> \
      --qiwe-staging <qiwe-staging-output.txt> \
      --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
-     --production-real-activity <production-real-activity-output.txt>
+     --production-real-activity <production-real-activity-output.txt> \
+     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>
    ```
 
 ## Non-Completion Cases

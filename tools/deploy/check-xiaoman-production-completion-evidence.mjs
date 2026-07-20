@@ -41,7 +41,11 @@ const forbiddenPatterns = [
 ];
 
 for (const [label, file] of Object.entries(options)) {
-  assertNoSensitiveText(label, fs.readFileSync(file, "utf8"));
+  let text = fs.readFileSync(file, "utf8");
+  if (label === "qiweGroupArrivalConfirmation") {
+    text = stripAllowedGroupArrivalTemplateLines(text);
+  }
+  assertNoSensitiveText(label, text);
 }
 
 runChecker("Huabaosi staging evidence", [
@@ -60,6 +64,11 @@ runChecker("Xiaoman Huabaosi/QiWe staging cross-flow evidence", [
 runChecker("Xiaoman real activity production evidence", [
   "tools/deploy/check-xiaoman-real-activity-production-evidence.mjs",
   options.productionRealActivity,
+]);
+runChecker("Xiaoman QiWe group arrival confirmation evidence", [
+  "tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs",
+  options.productionRealActivity,
+  options.qiweGroupArrivalConfirmation,
 ]);
 
 const completion = JSON.parse(fs.readFileSync(options.manifest, "utf8"));
@@ -82,6 +91,10 @@ const huabaosiProductionCanaryRecords = prefixedRecords(
 const productionRecords = prefixedRecords(
   options.productionRealActivity,
   "xiaoman_real_activity_production_evidence="
+);
+const qiweGroupArrivalConfirmation = singlePrefixedRecord(
+  options.qiweGroupArrivalConfirmation,
+  "xiaoman_qiwe_group_arrival_confirmation_evidence="
 );
 
 const huabaosiGeneration = single(
@@ -110,6 +123,10 @@ const huabaosiProductionCanary = assertHuabaosiProductionCanary(
 
 assertCompletionManifest(completion);
 assertStagingRuntime(stagingRuntime);
+assertRealActivityConfirmationBinding(
+  completion.real_activity_confirmation,
+  qiweGroupArrivalConfirmation
+);
 
 if (
   stagingRuntime.packaged_sidecar_sha256 !== huabaosiGeneration.sidecar_binary_sha256 ||
@@ -189,6 +206,7 @@ function parseArgs(argv) {
     "qiwe-staging",
     "huabaosi-production-canary",
     "production-real-activity",
+    "qiwe-group-arrival-confirmation",
   ];
   for (const key of required) {
     if (!parsed[key] || !fs.existsSync(parsed[key])) {
@@ -202,12 +220,13 @@ function parseArgs(argv) {
     qiweStaging: parsed["qiwe-staging"],
     huabaosiProductionCanary: parsed["huabaosi-production-canary"],
     productionRealActivity: parsed["production-real-activity"],
+    qiweGroupArrivalConfirmation: parsed["qiwe-group-arrival-confirmation"],
   };
 }
 
 function usage() {
   fail(
-    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completion-manifest.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-output.txt>"
+    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completion-manifest.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>"
   );
 }
 
@@ -526,6 +545,46 @@ function assertRealActivityConfirmation(record) {
   }
 }
 
+function assertRealActivityConfirmationBinding(manifestRecord, confirmationRecord) {
+  assertExactKeys(
+    confirmationRecord,
+    new Set([
+      "schema",
+      "success",
+      "confirmation_status",
+      "confirmation_method",
+      "confirmed_by",
+      "confirmed_at",
+      "target_channel",
+      "target_group_alias",
+      "workflow_root_id",
+      "send_ready_work_item_id",
+      "generated_image_artifact_id",
+      "artifact_content_hash",
+      "external_send_executed",
+      "raw_secret_fields_retained",
+    ]),
+    "QiWe group arrival confirmation"
+  );
+  if (
+    confirmationRecord.schema !==
+      "xiaoman-qiwe-group-arrival-confirmation-evidence-v1" ||
+    confirmationRecord.success !== true ||
+    confirmationRecord.confirmation_status !== "confirmed" ||
+    confirmationRecord.confirmation_method !== "human_visible_group_check" ||
+    confirmationRecord.target_channel !== "qiwe" ||
+    confirmationRecord.target_group_alias !== "community_activity_group" ||
+    confirmationRecord.confirmed_by !== manifestRecord.confirmed_by ||
+    confirmationRecord.confirmed_at !== manifestRecord.confirmed_at ||
+    confirmationRecord.external_send_executed !== true ||
+    confirmationRecord.raw_secret_fields_retained !== false
+  ) {
+    fail(
+      "real activity confirmation manifest does not bind to QiWe group arrival evidence"
+    );
+  }
+}
+
 function assertStagingRuntime(record) {
   assertExactKeys(
     record,
@@ -574,6 +633,36 @@ function assertStagingRuntime(record) {
   ) {
     fail("staging runtime readiness does not prove real staging smoke readiness");
   }
+}
+
+function stripAllowedGroupArrivalTemplateLines(text) {
+  const allowedParagraph =
+    "Do not record QiWe token, GUID, API secret material, raw target group id, message id, request id, callback event id, file id, MD5 value, AES key, file size, filename, media URL, database URL, database credentials, raw chat content, screenshots containing member profiles, shell logs, or response bodies.";
+  const lines = text.split(/\r?\n/);
+  const stripped = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index] !== "## Exclusions") {
+      stripped.push(lines[index]);
+      continue;
+    }
+
+    const paragraph = [];
+    let cursor = index + 1;
+    while (cursor < lines.length && lines[cursor].trim() === "") {
+      cursor += 1;
+    }
+    while (cursor < lines.length && lines[cursor].trim() !== "") {
+      paragraph.push(lines[cursor].trim());
+      cursor += 1;
+    }
+
+    if (paragraph.join(" ") !== allowedParagraph) {
+      stripped.push(lines[index]);
+      continue;
+    }
+    index = cursor - 1;
+  }
+  return stripped.join("\n");
 }
 
 function prefixedRecords(file, prefix) {
