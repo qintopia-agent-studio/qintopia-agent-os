@@ -142,6 +142,7 @@
     --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
     --huabaosi-staging <huabaosi-staging-output.txt> \
     --qiwe-staging <qiwe-staging-output.txt> \
+    --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
     --production-real-activity <production-evidence-output.txt>
   ```
 

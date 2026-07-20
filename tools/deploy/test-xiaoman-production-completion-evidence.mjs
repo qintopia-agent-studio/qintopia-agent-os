@@ -69,7 +69,30 @@ try {
   });
   result = runChecker(productionDrift);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /do not bind to real activity evidence/);
+  assert.match(result.stderr, /do not bind to retained evidence/);
+
+  const canaryContentDrift = writeEvidenceFiles({
+    huabaosiProductionCanary: {
+      generation: { content_hash: `sha256:${"b".repeat(64)}` },
+      revalidation: { content_hash: `sha256:${"b".repeat(64)}` },
+    },
+  });
+  result = runChecker(canaryContentDrift);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /does not bind to real activity image/);
+
+  const canaryPhaseMissing = writeEvidenceFiles();
+  fs.writeFileSync(
+    canaryPhaseMissing.huabaosiProductionCanary,
+    huabaosiProductionCanaryOutput()
+      .split(/\r?\n/)
+      .filter((line) => !line.includes('"phase":"brief_review"'))
+      .join("\n"),
+    "utf8"
+  );
+  result = runChecker(canaryPhaseMissing);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /five fixed phases/);
 
   const rawSecret = writeEvidenceFiles({
     manifest: {
@@ -126,6 +149,8 @@ function runChecker(files) {
       files.huabaosi,
       "--qiwe-staging",
       files.qiwe,
+      "--huabaosi-production-canary",
+      files.huabaosiProductionCanary,
       "--production-real-activity",
       files.production,
     ],
@@ -143,6 +168,7 @@ function writeEvidenceFiles(overrides = {}) {
     stagingRuntime: path.join(dir, "staging-runtime.txt"),
     huabaosi: path.join(dir, "huabaosi.txt"),
     qiwe: path.join(dir, "qiwe.txt"),
+    huabaosiProductionCanary: path.join(dir, "huabaosi-production-canary.txt"),
     production: path.join(dir, "production.txt"),
   };
   fs.writeFileSync(
@@ -159,6 +185,11 @@ function writeEvidenceFiles(overrides = {}) {
   );
   fs.writeFileSync(files.huabaosi, huabaosiStagingOutput(), "utf8");
   fs.writeFileSync(files.qiwe, qiweStagingOutput(), "utf8");
+  fs.writeFileSync(
+    files.huabaosiProductionCanary,
+    huabaosiProductionCanaryOutput(overrides.huabaosiProductionCanary ?? {}),
+    "utf8"
+  );
   fs.writeFileSync(
     files.production,
     productionOutput(overrides.production ?? {}),
@@ -330,6 +361,79 @@ function qiweStagingOutput() {
       ""
     )
     .join("\n");
+}
+
+function huabaosiProductionCanaryOutput(overrides = {}) {
+  const briefArtifactId = "88888888-9999-4aaa-8bbb-cccccccccccc";
+  const briefWorkItemId = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
+  const imageWorkItemId = "55555555-6666-4777-8888-999999999999";
+  const generatedImageArtifactId = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+  const common = {
+    database_url_sha256: productionDatabaseHash,
+    release_sha: productionReleaseSha,
+    sidecar_binary_sha256: productionSidecarHash,
+    success: true,
+  };
+  const records = [
+    {
+      ...common,
+      phase: "preflight",
+      action_status: "adapter_config_ready",
+      timer_active: false,
+    },
+    {
+      ...common,
+      phase: "brief_review",
+      action_status: "review_recorded",
+      brief_artifact_id: briefArtifactId,
+      brief_work_item_id: briefWorkItemId,
+      review_status: "approved",
+      reviewer_id: "trainer",
+    },
+    {
+      ...common,
+      phase: "request_intake",
+      action_status: "image_generation_requests_created",
+      brief_artifact_id: briefArtifactId,
+      brief_work_item_id: briefWorkItemId,
+      image_generation_work_item_id: imageWorkItemId,
+      request_created: true,
+    },
+    {
+      ...common,
+      phase: "generation",
+      action_status: "generated_image_created",
+      artifact_id: generatedImageArtifactId,
+      byte_size: 123456,
+      content_hash: contentHash,
+      height: 1024,
+      image_generation_work_item_id: imageWorkItemId,
+      mime_type: "image/jpeg",
+      review_status: "pending",
+      storage_backend: "feishu-base",
+      width: 1024,
+    },
+    {
+      ...common,
+      phase: "revalidation",
+      action_status: "feishu_primary_storage_revalidated",
+      artifact_id: generatedImageArtifactId,
+      byte_size: 123456,
+      content_hash: contentHash,
+      database_writes_executed: false,
+      external_calls_executed: true,
+      height: 1024,
+      width: 1024,
+    },
+  ].map((record) => deepMerge(record, overrides[record.phase] ?? {}));
+  return [
+    ...records.map(
+      (record) =>
+        `huabaosi_image_generation_production_canary_evidence=${JSON.stringify(record)}`
+    ),
+    "Huabaosi production canary passed: one Feishu-backed JPEG remains pending human review; no generated-image approval, mirror, publish, QiWe, or send was executed",
+    "",
+  ].join("\n");
 }
 
 function productionOutput(overrides = {}) {
