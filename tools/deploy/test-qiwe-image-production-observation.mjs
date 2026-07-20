@@ -139,7 +139,10 @@ esac
     [
       "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
       ...qiweConfigLines,
-      `QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN=$(touch ${commandSubstitutionMarker})`,
+      envLine(
+        "QINTOPIA_IGNORED_RUNTIME_VALUE",
+        `$(touch ${commandSubstitutionMarker})`
+      ),
       "",
     ].join("\n"),
     "utf8"
