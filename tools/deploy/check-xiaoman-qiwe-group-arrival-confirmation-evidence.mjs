@@ -25,7 +25,7 @@ const confirmationEvidenceLines = prefixedLines(
   confirmationText,
   "xiaoman_qiwe_group_arrival_confirmation_evidence="
 );
-const allowedConfirmationTemplateLine =
+const allowedConfirmationTemplateParagraph =
   "Do not record QiWe token, GUID, API secret material, raw target group id, message id, request id, callback event id, file id, MD5 value, AES key, file size, filename, media URL, database URL, database credentials, raw chat content, screenshots containing member profiles, shell logs, or response bodies.";
 
 const forbiddenPatterns = [
@@ -152,10 +152,31 @@ function prefixedLines(text, prefix) {
 }
 
 function stripAllowedTemplateLines(text) {
-  return text
-    .split(/\r?\n/)
-    .filter((line) => line !== allowedConfirmationTemplateLine)
-    .join("\n");
+  const lines = text.split(/\r?\n/);
+  const stripped = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index] !== "## Exclusions") {
+      stripped.push(lines[index]);
+      continue;
+    }
+
+    const paragraph = [];
+    let cursor = index + 1;
+    while (cursor < lines.length && lines[cursor].trim() === "") {
+      cursor += 1;
+    }
+    while (cursor < lines.length && lines[cursor].trim() !== "") {
+      paragraph.push(lines[cursor].trim());
+      cursor += 1;
+    }
+
+    if (paragraph.join(" ") !== allowedConfirmationTemplateParagraph) {
+      stripped.push(lines[index]);
+      continue;
+    }
+    index = cursor - 1;
+  }
+  return stripped.join("\n");
 }
 
 function prefixedRecords(lines, prefix) {

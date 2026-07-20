@@ -11,6 +11,13 @@ const checker = path.join(
   repoRoot,
   "tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs"
 );
+const template = fs.readFileSync(
+  path.join(
+    repoRoot,
+    "docs/reports/templates/xiaoman-qiwe-group-arrival-confirmation-evidence.md"
+  ),
+  "utf8"
+);
 const tmpRoot = fs.mkdtempSync(
   path.join(os.tmpdir(), "xiaoman-qiwe-arrival-confirmation-")
 );
@@ -29,16 +36,9 @@ try {
     /Xiaoman QiWe group arrival confirmation evidence check passed/
   );
 
-  const templateText = writeCase("template-text");
-  fs.appendFileSync(
-    templateText.confirmation,
-    [
-      "## Exclusions",
-      "Do not record QiWe token, GUID, API secret material, raw target group id, message id, request id, callback event id, file id, MD5 value, AES key, file size, filename, media URL, database URL, database credentials, raw chat content, screenshots containing member profiles, shell logs, or response bodies.",
-      "",
-    ].join("\n"),
-    "utf8"
-  );
+  const templateText = writeCase("template-text", {
+    confirmationReport: true,
+  });
   result = runChecker(templateText);
   assert.equal(result.status, 0, result.stderr);
 
@@ -80,6 +80,16 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /forbidden sensitive fragment/);
 
+  const nonPrefixedTokenLeak = writeCase("non-prefixed-token-leak");
+  fs.appendFileSync(
+    nonPrefixedTokenLeak.confirmation,
+    "operator note: QiWe token was present before redaction\n",
+    "utf8"
+  );
+  result = runChecker(nonPrefixedTokenLeak);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /forbidden sensitive fragment/);
+
   const missingRecord = writeCase("missing-record");
   fs.writeFileSync(missingRecord.confirmation, "\n", "utf8");
   result = runChecker(missingRecord);
@@ -118,10 +128,20 @@ function writeCase(name, overrides = {}) {
   );
   fs.writeFileSync(
     files.confirmation,
-    confirmationOutput(overrides.confirmation ?? {}),
+    overrides.confirmationReport
+      ? confirmationTemplateOutput(overrides.confirmation ?? {})
+      : confirmationOutput(overrides.confirmation ?? {}),
     "utf8"
   );
   return files;
+}
+
+function confirmationTemplateOutput(overrides = {}) {
+  const filledRecord = confirmationOutput(overrides).trim();
+  return template.replace(
+    /^xiaoman_qiwe_group_arrival_confirmation_evidence=.*$/m,
+    filledRecord
+  );
 }
 
 function confirmationOutput(overrides = {}) {
