@@ -48,26 +48,36 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
   sidecar independently enforces the same boundary before Postgres writes. Existing
   callback ids are preserved only when the suffix is a validated 64-hex SHA-256 digest;
   a `qiwe-callback:` prefix by itself is not trusted.
-- Provides a disabled-by-default staging bridge that recognizes `cmd=20000` before
+- Provides a disabled-by-default memory bridge that recognizes `cmd=20000` before
   ordinary Agent dispatch and streams the bounded callback only to
-  `process-qiwe-image-send-callback --apply` over child stdin. It requires the exact
-  staging owner phrase, canonical approved staging database URL hash, an executable
-  staging sidecar path, explicit image-send and webhook readiness flags, bounded
+  `process-qiwe-image-send-callback --apply` over child stdin. It requires explicit
+  `staging` or `production` processor mode, the matching owner phrase, canonical
+  approved database URL hash, explicit image-send and webhook readiness flags, bounded
   sanitized stdout, discarded stderr, and a hard timeout. It never places callback
   credentials in arguments, environment variables, files, NATS, logs, audit records, or
   HTTP responses. An explicitly enabled but invalid bridge returns HTTP 503 so an
   unprocessed callback is not acknowledged and silently lost. Callback detection
   requires the reviewed top-level QiWe success envelope, bounded event list, request id,
   and complete `msgData` credential-field presence; arbitrary nested `cmd=20000` values
-  do not bypass ordinary message parsing. The child receives only the fixed staging
-  database, QiWe adapter, owner gate, and host/group allowlist environment; unrelated
-  Hermes, NATS, Feishu, proxy, and runtime variables are not inherited. Any explicit
-  invalid enable value also returns HTTP 503. The processor must be the exact
+  do not bypass ordinary message parsing.
+- In staging mode the child receives only the fixed staging database, QiWe adapter,
+  owner gate, and host/group allowlist environment. Its processor must be the exact
   `<40-hex-sha>/sidecar/qintopia-message-sidecar` under the fixed owner-reviewed
-  `/home/ubuntu/qintopia-agent-os-staging-releases` root. The root, release directory,
-  sidecar directory, and executable may not be symlinks or group/world-writable, their
-  owners must be root or the gateway effective user, and the approved executable SHA-256
-  is checked during configuration and again immediately before spawn.
+  `/home/ubuntu/qintopia-agent-os-staging-releases` root.
+- In production mode the child receives only the production database/QiWe apply gate and
+  the reviewed Huabaosi Feishu primary-storage delivery configuration needed by the
+  production sidecar. The processor must be exactly
+  `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`,
+  with root exactly `/home/ubuntu/qintopia-agent-os-releases/current`; direct release
+  directory paths, mutable checkout binaries, staging roots, missing `current` symlinks,
+  or sidecar SHA drift fail closed. The release root, current target, sidecar directory,
+  and executable may not be group/world-writable, their owners must be root or the
+  gateway effective user, and the approved executable SHA-256 is checked during
+  configuration and again immediately before spawn.
+- Unrelated Hermes, NATS, proxy, and runtime variables are not inherited in either mode.
+  The bridge does not enable production timers, publish a Release, approve artifacts, or
+  bypass the Rust production apply gate; it only gives the already reviewed sidecar a
+  memory-only callback ingress after production deployment and owner activation.
 - Supports passive processors such as group-solitaire activity collection when enabled.
 - Keeps Feishu activity writes and reminders behind explicit scoped configuration.
 - Treats Erhua trainer memory as a controlled context-MCP path, not free-form prompt
@@ -83,6 +93,13 @@ Package validation:
 ```bash
 pnpm test:qiwe
 node tools/deploy/test-qiwe-image-staging-smoke.mjs
+```
+
+Focused callback bridge validation:
+
+```bash
+cd skills/qiwe
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_image_callback_bridge -v
 ```
 
 M4B validation result on 2026-07-03:
