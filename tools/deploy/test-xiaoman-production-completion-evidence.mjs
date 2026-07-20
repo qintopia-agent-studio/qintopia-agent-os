@@ -93,6 +93,15 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /human group-arrival confirmation/);
 
+  const routeMismatch = writeEvidenceFiles({
+    production: {
+      activityRoute: "activity_recap",
+    },
+  });
+  result = runChecker(routeMismatch);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Xiaoman real activity production evidence failed/);
+
   const nonObjectManifest = writeEvidenceFiles();
   fs.writeFileSync(nonObjectManifest.manifest, "[]\n", "utf8");
   result = runChecker(nonObjectManifest);
@@ -150,7 +159,11 @@ function writeEvidenceFiles(overrides = {}) {
   );
   fs.writeFileSync(files.huabaosi, huabaosiStagingOutput(), "utf8");
   fs.writeFileSync(files.qiwe, qiweStagingOutput(), "utf8");
-  fs.writeFileSync(files.production, productionOutput(), "utf8");
+  fs.writeFileSync(
+    files.production,
+    productionOutput(overrides.production ?? {}),
+    "utf8"
+  );
   return files;
 }
 
@@ -319,7 +332,7 @@ function qiweStagingOutput() {
     .join("\n");
 }
 
-function productionOutput() {
+function productionOutput(overrides = {}) {
   const sourceEventSignalId = "33333333-4444-4555-8666-777777777777";
   const workflowRootId = "44444444-5555-4666-8777-888888888888";
   const imageWorkItemId = "55555555-6666-4777-8888-999999999999";
@@ -345,8 +358,8 @@ function productionOutput() {
       dry_run: false,
       source_event_signal_id: sourceEventSignalId,
       workflow_root_id: workflowRootId,
-      activity_phase: "pre_event",
-      activity_route: "activity_promotion",
+      activity_phase: overrides.activityPhase ?? "pre_event",
+      activity_route: overrides.activityRoute ?? "activity_promotion",
       external_send_executed: false,
     },
     {
