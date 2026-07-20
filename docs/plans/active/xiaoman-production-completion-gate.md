@@ -16,11 +16,12 @@ send-ready state. It is not a complete business workflow until the reviewed prod
 evidence path proves Huabaosi real image generation, human approval, QiWe final
 delivery, and one real end-to-end activity.
 
-PR `#214` adds the read-only real-activity production evidence exporter and checker. PR
-`#215` is stacked on `#214` and adds the final Xiaoman production-completion evidence
-gate. Both PRs may be used only as reviewed code readiness until they are merged in
-order, released through the manual Release Please process, deployed as an immutable
-production release, and backed by retained evidence from a real activity.
+The reviewed code gates for route binding, Huabaosi canary evidence, QiWe activation
+hash binding, QiWe group-arrival confirmation, release-claim protection, send-ready
+evidence binding, and final completion-evidence binding are merged in `#226` through
+`#233`. They are still code readiness only until a manual Release Please decision,
+immutable production deployment, owner activation, and owner-retained real-activity
+evidence prove the full workflow.
 
 ## Release Classification
 
@@ -90,18 +91,17 @@ These are useful but not completion:
 
 ## Next Work
 
-1. Merge `#214` into `master`, then merge `#215` after its base includes `#214`.
-2. Let Release Please prepare the next release PR from current `master`; run manual
+1. Let Release Please prepare the next release PR from current `master`; run manual
    Release Please validation on the exact release PR head before any release decision.
-3. Publish and deploy only an owner-approved immutable production release whose release
+2. Publish and deploy only an owner-approved immutable production release whose release
    SHA, sidecar SHA-256, and database URL SHA-256 are retained for the evidence
    commands.
-4. Use the staging artifact builder and provisioner to prepare the fixed staging
+3. Use the staging artifact builder and provisioner to prepare the fixed staging
    runtime, then retain the staging runtime readiness output.
-5. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
-6. Confirm QiWe production enablement and Huabaosi production activation evidence are
+4. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
+5. Confirm QiWe production enablement and Huabaosi production activation evidence are
    merged, deployed, and owner-approved.
-7. After the Huabaosi one-shot production canary creates one pending Feishu-backed JPEG,
+6. After the Huabaosi one-shot production canary creates one pending Feishu-backed JPEG,
    retain its sanitized output and validate it before using it as first-record evidence:
 
    ```bash
@@ -109,7 +109,7 @@ These are useful but not completion:
      <production-canary-output.txt>
    ```
 
-8. Process one real production Xiaoman activity and retain sanitized real-activity
+7. Process one real production Xiaoman activity and retain sanitized real-activity
    evidence with the release-local exporter:
 
    ```bash
@@ -123,7 +123,7 @@ These are useful but not completion:
      <qiwe-group-arrival-confirmation-output.txt>
    ```
 
-9. Fill the non-secret completion manifest and run the full completion checker before
+8. Fill the non-secret completion manifest and run the full completion checker before
    changing any Release classification to `production-complete`.
 
 ## Production Boundary

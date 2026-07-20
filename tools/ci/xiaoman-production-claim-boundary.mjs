@@ -1,6 +1,8 @@
 export const requiredXiaomanProductionCompletionEvidenceRefs = [
   "docs/plans/active/xiaoman-production-completion-gate.md",
   "tools/deploy/check-xiaoman-production-completion-evidence.mjs",
+  "tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs",
+  "--qiwe-group-arrival-confirmation",
   "xiaoman-production-completion-evidence-v1",
   "owner-retained evidence",
 ];
