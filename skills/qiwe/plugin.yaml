@@ -301,16 +301,27 @@ optional_env:
     password: false
   - name: QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED
     description:
-      "Enable the staging-only memory bridge for async image callbacks; defaults to 0"
-    prompt: "Enable staging image callback processor? (0/1)"
+      "Enable the memory-only bridge for async image callbacks; defaults to 0 and
+      requires an explicit staging or production processor mode"
+    prompt: "Enable image callback processor? (0/1)"
+    password: false
+  - name: QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE
+    description:
+      "Callback processor boundary: staging uses the immutable staging release root;
+      production requires release/current and the production apply gate"
+    prompt: "Image callback processor mode (staging/production)"
     password: false
   - name: QINTOPIA_QIWE_IMAGE_SEND_ENABLED
-    description: "Staging Rust image-send gate; keep unset or 0 in production"
-    prompt: "Enable staging Rust image send? (0/1)"
+    description:
+      "Rust image-send apply gate; production use also requires the production owner
+      approval phrase, database URL hash, and release-local callback processor"
+    prompt: "Enable Rust image send? (0/1)"
     password: false
   - name: QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY
-    description: "Confirm the isolated staging webhook callback route is ready"
-    prompt: "Is staging image callback webhook ready? (0/1)"
+    description:
+      "Confirm the reviewed QiWe async-image callback route is ready for the selected
+      processor mode"
+    prompt: "Is image callback webhook ready? (0/1)"
     password: false
   - name: QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL
     description: "Exact one-shot owner approval phrase for the staging Rust adapter"
@@ -320,19 +331,29 @@ optional_env:
     description: "Canonical owner-approved staging database URL SHA-256"
     prompt: "Approved staging database URL SHA-256"
     password: false
+  - name: QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL
+    description: "Exact owner approval phrase for the production Rust adapter"
+    prompt: "Production image-send owner approval phrase"
+    password: false
+  - name: QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256
+    description: "Canonical owner-approved production database URL SHA-256"
+    prompt: "Approved production database URL SHA-256"
+    password: false
   - name: QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN
     description:
-      "Exact sidecar executable under the fixed owner-reviewed staging release root"
-    prompt: "Staging image callback sidecar path"
+      "Exact sidecar executable for the selected mode; production must be
+      /home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar"
+    prompt: "Image callback sidecar path"
     password: false
   - name: QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT
     description:
-      "Exact immutable staging release directory named by its 40-hex commit SHA"
-    prompt: "Staging image callback release directory"
+      "Exact release directory for the selected mode; production must be
+      /home/ubuntu/qintopia-agent-os-releases/current"
+    prompt: "Image callback release directory"
     password: false
   - name: QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256
-    description: "Canonical SHA-256 of the approved staging sidecar executable"
-    prompt: "Approved staging image callback sidecar SHA-256"
+    description: "Canonical SHA-256 of the approved sidecar executable"
+    prompt: "Approved image callback sidecar SHA-256"
     password: false
   - name: QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_TIMEOUT_SECONDS
     description: "Bounded callback processor timeout in seconds; defaults to 30"

@@ -518,6 +518,23 @@ Use `rg` and `rg --files` for search.
   file, but it must not pass database/QiWe secrets to observation children, bypass the
   async callback/send state machine, write Feishu as part of sending, or treat staging
   evidence as production completion.
+- The Hermes QiWe image callback bridge is a memory-only callback ingress, not a
+  scheduler or release activation path. Production mode must require
+  `QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE=production`, exact production owner
+  approval, canonical production database URL hash, image-send/webhook readiness, and
+  the exact
+  `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`
+  binary with root `/home/ubuntu/qintopia-agent-os-releases/current`. It must reject
+  direct release-directory paths, mutable checkout binaries, staging roots, missing
+  `current` symlinks, unsafe ownership or group/world-writable paths, and sidecar
+  SHA-256 drift. Staging mode must continue to use only the fixed staging release root
+  and staging owner/database gates. The child process may receive only the reviewed
+  database, QiWe, target allowlist, and Huabaosi Feishu primary-storage delivery
+  environment for its selected mode; do not inherit Hermes, NATS, proxy, unrelated
+  runtime state, callback credentials, or raw provider values. Callback bytes may flow
+  only through bounded stdin, and bridge enablement must never approve artifacts, enable
+  timers, publish a Release, write Feishu by itself, or bypass the Rust production apply
+  gate.
 - A real Xiaoman activity may be described as production-complete only after the
   retained sanitized evidence passes
   `tools/deploy/check-xiaoman-real-activity-production-evidence.mjs` and the full

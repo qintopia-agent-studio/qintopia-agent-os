@@ -13,6 +13,7 @@ import image_callback_bridge
 from image_callback_bridge import (
     MAX_REPORT_BYTES,
     PROCESSOR_ENV_ALLOWLIST,
+    PRODUCTION_PROCESSOR_ENV_ALLOWLIST,
     CallbackBridgeResult,
     QiWeImageCallbackBridge,
     is_async_image_callback,
@@ -94,6 +95,42 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
         path.chmod(0o700)
         return path.resolve()
 
+    def make_production_processor(
+        self,
+        releases_root: Path,
+        output: str,
+        *,
+        check_environment: bool = False,
+    ) -> Path:
+        releases_root.mkdir(parents=True, exist_ok=True)
+        releases_root.chmod(0o700)
+        release_dir = releases_root / ("c" * 40)
+        path = release_dir / "sidecar" / "qintopia-message-sidecar"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"#!{sys.executable}\n"
+            "import os, sys\n"
+            "body = sys.stdin.buffer.read()\n"
+            "expected = ['process-qiwe-image-send-callback', '--apply']\n"
+            "if sys.argv[1:] != expected or b'raw-aes-secret' not in body:\n"
+            "    raise SystemExit(7)\n"
+            f"if {check_environment!r}:\n"
+            "    if os.environ.get('QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL') != 'approved-production-qiwe-image-send':\n"
+            "        raise SystemExit(8)\n"
+            "    if os.environ.get('QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN') != 'bascnReviewed':\n"
+            "        raise SystemExit(9)\n"
+            "    if 'QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL' in os.environ:\n"
+            "        raise SystemExit(10)\n"
+            "    if 'QINTOPIA_UNRELATED_RUNTIME_SECRET' in os.environ:\n"
+            "        raise SystemExit(11)\n"
+            f"sys.stdout.write({output!r})\n",
+            encoding="utf-8",
+        )
+        path.chmod(0o700)
+        current = releases_root / "current"
+        current.symlink_to(release_dir.name)
+        return current / "sidecar" / "qintopia-message-sidecar"
+
     def bridge(self, processor: Path) -> QiWeImageCallbackBridge:
         return QiWeImageCallbackBridge(
             enabled=True,
@@ -103,6 +140,20 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
             timeout_seconds=5.0,
             staging_approval="approved-staging-qiwe-image-send",
             staging_database_url_sha256="a" * 64,
+            image_send_enabled="1",
+            webhook_ready="1",
+        )
+
+    def production_bridge(self, processor: Path) -> QiWeImageCallbackBridge:
+        return QiWeImageCallbackBridge(
+            enabled=True,
+            processor_bin=str(processor),
+            processor_root=str(processor.parent.parent),
+            processor_sha256=hashlib.sha256(processor.read_bytes()).hexdigest(),
+            processor_mode="production",
+            timeout_seconds=5.0,
+            production_approval="approved-production-qiwe-image-send",
+            production_database_url_sha256="c" * 64,
             image_send_enabled="1",
             webhook_ready="1",
         )
@@ -243,6 +294,81 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
 
         self.assertTrue(result.processed)
 
+    def test_production_processor_environment_is_exactly_allowlisted(self) -> None:
+        self.assertEqual(
+            set(PRODUCTION_PROCESSOR_ENV_ALLOWLIST),
+            {
+                "QINTOPIA_SIDECAR_DATABASE_URL",
+                "QINTOPIA_SIDECAR_DB_MAX_CONNECTIONS",
+                "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
+                "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
+                "QIWE_API_URL",
+                "QIWE_TOKEN",
+                "QIWE_GUID",
+                "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
+                "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+                "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+                "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
+                "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
+                "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+                "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+                "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+                "QINTOPIA_DEPLOYED_COMMIT_SHA",
+                "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+                "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+                "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+                "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+                "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+                "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+                "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+                "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
+            },
+        )
+        names = [
+            "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
+            "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+            "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL",
+            "QINTOPIA_UNRELATED_RUNTIME_SECRET",
+        ]
+        original = {name: os.environ.get(name) for name in names}
+        try:
+            os.environ["QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL"] = (
+                "approved-production-qiwe-image-send"
+            )
+            os.environ["QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN"] = "bascnReviewed"
+            os.environ["QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL"] = (
+                "approved-staging-qiwe-image-send"
+            )
+            os.environ["QINTOPIA_UNRELATED_RUNTIME_SECRET"] = "must-not-reach-child"
+            with tempfile.TemporaryDirectory() as tmp:
+                releases_root = Path(tmp)
+                with (
+                    mock.patch.object(
+                        image_callback_bridge, "PRODUCTION_RELEASES_ROOT", releases_root
+                    ),
+                    mock.patch.object(
+                        image_callback_bridge,
+                        "PRODUCTION_RELEASE_CURRENT_DIR",
+                        releases_root / "current",
+                    ),
+                ):
+                    processor = self.make_production_processor(
+                        releases_root,
+                        json.dumps(callback_report(), separators=(",", ":")),
+                        check_environment=True,
+                    )
+                    result = asyncio.run(
+                        self.production_bridge(processor).process(callback_body())
+                    )
+        finally:
+            for name, value in original.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        self.assertTrue(result.processed)
+
     def test_unknown_report_fields_and_oversized_stdout_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             releases_root = Path(tmp)
@@ -339,6 +465,85 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.bridge(outside)
 
+    def test_production_processor_requires_release_current_digest_and_safe_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            releases_root = Path(tmp)
+            with (
+                mock.patch.object(
+                    image_callback_bridge, "PRODUCTION_RELEASES_ROOT", releases_root
+                ),
+                mock.patch.object(
+                    image_callback_bridge,
+                    "PRODUCTION_RELEASE_CURRENT_DIR",
+                    releases_root / "current",
+                ),
+            ):
+                processor = self.make_production_processor(
+                    releases_root, json.dumps(callback_report())
+                )
+                digest = hashlib.sha256(processor.read_bytes()).hexdigest()
+
+                self.production_bridge(processor)
+                with self.assertRaises(ValueError):
+                    QiWeImageCallbackBridge(
+                        enabled=True,
+                        processor_bin=str(processor),
+                        processor_root=str(processor.parent.parent),
+                        processor_sha256=digest,
+                        processor_mode="production",
+                        staging_approval="approved-staging-qiwe-image-send",
+                        staging_database_url_sha256="a" * 64,
+                        image_send_enabled="1",
+                        webhook_ready="1",
+                    )
+                with self.assertRaises(ValueError):
+                    QiWeImageCallbackBridge(
+                        enabled=True,
+                        processor_bin=str(processor),
+                        processor_root=str(processor.parent.parent),
+                        processor_sha256="d" * 64,
+                        processor_mode="production",
+                        production_approval="approved-production-qiwe-image-send",
+                        production_database_url_sha256="c" * 64,
+                        image_send_enabled="1",
+                        webhook_ready="1",
+                    )
+
+                processor.parent.chmod(0o770)
+                with self.assertRaises(ValueError):
+                    self.production_bridge(processor)
+                processor.parent.chmod(0o755)
+
+                outside = self.make_processor(
+                    releases_root / "staging-like", json.dumps(callback_report())
+                )
+                with self.assertRaises(ValueError):
+                    QiWeImageCallbackBridge(
+                        enabled=True,
+                        processor_bin=str(outside),
+                        processor_root=str(outside.parent.parent),
+                        processor_sha256=hashlib.sha256(outside.read_bytes()).hexdigest(),
+                        processor_mode="production",
+                        production_approval="approved-production-qiwe-image-send",
+                        production_database_url_sha256="c" * 64,
+                        image_send_enabled="1",
+                        webhook_ready="1",
+                    )
+
+                direct_release_path = processor.resolve()
+                with self.assertRaises(ValueError):
+                    QiWeImageCallbackBridge(
+                        enabled=True,
+                        processor_bin=str(direct_release_path),
+                        processor_root=str(direct_release_path.parent.parent),
+                        processor_sha256=digest,
+                        processor_mode="production",
+                        production_approval="approved-production-qiwe-image-send",
+                        production_database_url_sha256="c" * 64,
+                        image_send_enabled="1",
+                        webhook_ready="1",
+                    )
+
     def test_processor_digest_is_rechecked_immediately_before_spawn(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             releases_root = Path(tmp)
@@ -359,12 +564,15 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
     def test_environment_enablement_is_exact_and_defaults_disabled(self) -> None:
         names = [
             "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED",
+            "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE",
             "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN",
             "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT",
             "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256",
             "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_TIMEOUT_SECONDS",
             "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL",
             "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256",
+            "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
+            "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
             "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
             "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
         ]
