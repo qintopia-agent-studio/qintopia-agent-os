@@ -4984,7 +4984,7 @@ async fn validate_apply_policy(
         let artifact_id = approved_artifact_id(request)?;
         let row = sqlx::query(
             r#"
-            SELECT artifact_type, review_status
+            SELECT artifact_type, review_status, content_hash
             FROM qintopia_agent_os.artifacts
             WHERE id = $1
             "#,
@@ -4996,17 +4996,58 @@ async fn validate_apply_policy(
         .ok_or_else(|| anyhow::anyhow!("approved_artifact_id does not exist"))?;
         let artifact_type: String = row.get("artifact_type");
         let review_status: String = row.get("review_status");
+        let content_hash: Option<String> = row.get("content_hash");
         if review_status != "approved" {
             bail!("approved_artifact_id must reference an approved artifact");
         }
-        if request.payload.get("workflow_type").and_then(Value::as_str)
-            == Some("activity_promotion")
-            && artifact_type != "generated_image"
+        if let Some(required_artifact_type) = group_message_required_artifact_type(&request.payload)
         {
-            bail!("activity promotion group message requests require an approved generated_image");
+            if artifact_type != required_artifact_type {
+                bail!("group message request requires an approved {required_artifact_type}");
+            }
+        }
+        if artifact_type == "text_announcement" {
+            validate_text_announcement_artifact_binding(content_hash.as_deref(), &request.payload)?;
         }
     }
     Ok(())
+}
+
+fn group_message_required_artifact_type(payload: &Value) -> Option<&'static str> {
+    match payload.get("workflow_type").and_then(Value::as_str) {
+        Some("activity_promotion") => Some("generated_image"),
+        Some("text_activity_announcement") => Some("text_announcement"),
+        _ => None,
+    }
+}
+
+fn validate_text_announcement_artifact_binding(
+    artifact_content_hash: Option<&str>,
+    payload: &Value,
+) -> Result<()> {
+    let approved_content_hash = payload
+        .get("approved_artifact_content_hash")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    validate_canonical_sha256(
+        approved_content_hash,
+        "approved text announcement content hash",
+    )?;
+    if artifact_content_hash != Some(approved_content_hash) {
+        bail!("approved_artifact_content_hash must match the approved text_announcement");
+    }
+    let message_text = payload
+        .get("message_text")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if content_hash_for_text(message_text) != approved_content_hash {
+        bail!("message_text must match the approved text_announcement content hash");
+    }
+    Ok(())
+}
+
+fn content_hash_for_text(value: &str) -> String {
+    format!("sha256:{:x}", Sha256::digest(value.as_bytes()))
 }
 
 fn normalize_review_request(request: &mut ArtifactReviewDecisionRequest) {
@@ -7102,6 +7143,59 @@ mod tests {
         assert_eq!(report.risk_level, "high");
         assert_eq!(report.review_policy, "human_final_confirmation");
         assert_eq!(report.current_status, "awaiting_publish");
+    }
+
+    #[test]
+    fn group_message_required_artifact_type_binds_text_announcements() {
+        assert_eq!(
+            group_message_required_artifact_type(&json!({
+                "workflow_type": "activity_promotion"
+            })),
+            Some("generated_image")
+        );
+        assert_eq!(
+            group_message_required_artifact_type(&json!({
+                "workflow_type": "text_activity_announcement"
+            })),
+            Some("text_announcement")
+        );
+        assert_eq!(group_message_required_artifact_type(&json!({})), None);
+    }
+
+    #[test]
+    fn text_announcement_group_message_binds_approved_content_hash() {
+        let message_text = "明天下午 3 点木作体验课在秦托邦工坊集合。";
+        let content_hash = content_hash_for_text(message_text);
+        validate_text_announcement_artifact_binding(
+            Some(&content_hash),
+            &json!({
+                "approved_artifact_content_hash": content_hash,
+                "message_text": message_text
+            }),
+        )
+        .expect("matching text announcement hash should validate");
+
+        let err = validate_text_announcement_artifact_binding(
+            Some(&content_hash_for_text("另一段已审批文本")),
+            &json!({
+                "approved_artifact_content_hash": content_hash,
+                "message_text": message_text
+            }),
+        )
+        .expect_err("artifact hash drift should fail");
+        assert!(err
+            .to_string()
+            .contains("approved_artifact_content_hash must match"));
+
+        let err = validate_text_announcement_artifact_binding(
+            Some(&content_hash),
+            &json!({
+                "approved_artifact_content_hash": content_hash,
+                "message_text": "未审批的替换文本"
+            }),
+        )
+        .expect_err("message hash drift should fail");
+        assert!(err.to_string().contains("message_text must match"));
     }
 
     #[test]

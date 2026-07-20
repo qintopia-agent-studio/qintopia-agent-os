@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 import tempfile
@@ -561,6 +562,78 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertFalse(third["external_send_executed"])
         self.assertFalse(third["safe_for_member_chat"])
         self.assertNotIn("record_ref", json.dumps(third, ensure_ascii=False))
+
+    def test_xiaoman_activity_text_group_message_request_prepare_requires_approved_artifact(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
+                {
+                    "source_record_id": "activity_plan:abc123def456",
+                    "approved_artifact_id": "44444444-4444-4444-8444-444444444444",
+                    "message_text": "明天下午 3 点木作体验课在秦托邦工坊集合。",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["dry_run"])
+        self.assertTrue(report["requires_approved_artifact"])
+        self.assertTrue(report["requires_human_final_confirmation"])
+        self.assertFalse(report["external_send_executed"])
+        self.assertEqual(report["action"]["command"][1], "operations-create")
+        self.assertEqual(report["action"]["command"][-1], "--dry-run")
+        payload = json.loads(report["action"]["command"][3])
+        expected_hash = "sha256:" + hashlib.sha256(
+            "明天下午 3 点木作体验课在秦托邦工坊集合。".encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(payload["requester_agent"], "xiaoman")
+        self.assertEqual(payload["target_agent"], "erhua")
+        self.assertEqual(payload["capability_key"], "erhua.send_group_message")
+        self.assertEqual(payload["work_item_type"], "group_message_request")
+        self.assertEqual(
+            payload["approved_artifact_id"],
+            "44444444-4444-4444-8444-444444444444",
+        )
+        self.assertEqual(payload["payload"]["approved_artifact_type"], "text_announcement")
+        self.assertEqual(payload["payload"]["approved_artifact_content_hash"], expected_hash)
+        self.assertEqual(payload["payload"]["target_channel"], "qiwe")
+        self.assertEqual(payload["payload"]["target_group_alias"], "community_activity_group")
+        self.assertFalse(payload["payload"]["send_executed"])
+
+    def test_xiaoman_activity_text_group_message_request_prepare_rejects_missing_artifact(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
+                {
+                    "source_record_id": "activity_plan:abc123def456",
+                    "message_text": "明天下午 3 点木作体验课在秦托邦工坊集合。",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertEqual(report["error"], "approved_artifact_id must be a uuid")
+
+    def test_xiaoman_activity_text_group_message_request_prepare_rejects_sensitive_text(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
+                {
+                    "source_record_id": "activity_plan:abc123def456",
+                    "approved_artifact_id": "44444444-4444-4444-8444-444444444444",
+                    "message_text": "请查看 https://example.test/raw-record",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertEqual(
+            report["error"],
+            "message_text contains disallowed sensitive or raw internal content",
+        )
 
     def test_xiaoman_activity_announcement_prepare_rejects_non_integer_material_followup(self):
         self.enable_xiaoman_activity_wrappers()
@@ -1512,6 +1585,15 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("activity", draft_schema["properties"])
         self.assertNotIn("send", draft_schema["properties"])
         self.assertNotIn("feishu_record_id", draft_schema["properties"])
+
+        text_group_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA[
+            "parameters"
+        ]
+        self.assertEqual(
+            text_group_schema["required"],
+            ["source_record_id", "approved_artifact_id", "message_text"],
+        )
+        self.assertNotIn("target_group_id", text_group_schema["properties"])
 
         status_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_STATUS_UPDATE_SCHEMA["parameters"]
         self.assertEqual(status_schema["required"], ["event_signal_id", "mutation_id", "status"])
