@@ -2251,7 +2251,7 @@ fn apply_config(cli: &Cli) -> Result<AdapterConfig> {
     }
     #[cfg(feature = "qiwe-staging-adapter")]
     {
-        return staging_apply_config(cli);
+        staging_apply_config(cli)
     }
     #[cfg(not(feature = "qiwe-staging-adapter"))]
     {
