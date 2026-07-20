@@ -92,6 +92,11 @@ if ! "$SYSTEMCTL" cat "$PROVIDER_TIMER" >/dev/null 2>&1; then
   echo "Huabaosi production provider timer is not installed" >&2
   exit 1
 fi
+timer_enabled_state="$("$SYSTEMCTL" is-enabled "$PROVIDER_TIMER" 2>/dev/null || true)"
+if [[ "$timer_enabled_state" != "disabled" ]]; then
+  echo "Huabaosi production provider timer must be disabled during one-shot canary" >&2
+  exit 1
+fi
 if "$SYSTEMCTL" is-active --quiet "$PROVIDER_TIMER" >/dev/null 2>&1; then
   echo "Huabaosi production provider timer must be inactive during one-shot canary" >&2
   exit 1
