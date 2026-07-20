@@ -7,6 +7,7 @@ and the sanitized evidence output passes:
 
 ```bash
 QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256='<approved production sidecar binary sha256>' \
+QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256='<approved production database URL sha256>' \
 qintopia-message-sidecar xiaoman-real-activity-production-evidence \
   --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
 node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>
@@ -26,6 +27,7 @@ the intended group.
 - Release-local binary verified: yes/no.
 - Owner-approved sidecar SHA-256 matched: yes/no.
 - Production database URL SHA-256:
+- Owner-approved database URL SHA-256 matched: yes/no.
 - Xiaoman source event signal UUID:
 - AgentOS workflow root UUID:
 - Image-generation work item UUID:
@@ -61,6 +63,7 @@ the intended group.
 - `release_binary_verified`: `true`
 - `approved_sidecar_sha256_matched`: `true`
 - `database_url_sha256`:
+- `approved_database_url_sha256_matched`: `true`
 - `source_event_signal_id`:
 - `workflow_root_id`:
 - `generated_image_artifact_id`:

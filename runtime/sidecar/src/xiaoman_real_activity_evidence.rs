@@ -16,6 +16,8 @@ const GENERATED_IMAGE_WORKER: &str = "huabaosi-image-generation-worker";
 const EVIDENCE_WORKER: &str = "xiaoman-real-activity-production-evidence";
 const PRODUCTION_RELEASE_CURRENT_DIR: &str = "/home/ubuntu/qintopia-agent-os-releases/current";
 const EXPECTED_SIDECAR_SHA_ENV: &str = "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256";
+const EXPECTED_DATABASE_URL_SHA_ENV: &str =
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256";
 const GENERATED_IMAGE_EVIDENCE_SQL: &str = r#"
         SELECT
             image_request.id AS image_generation_work_item_id,
@@ -87,6 +89,7 @@ struct ProductionBoundary {
     database_url_sha256: String,
     release_binary_verified: bool,
     approved_sidecar_sha256_matched: bool,
+    approved_database_url_sha256_matched: bool,
 }
 
 impl ProductionBoundary {
@@ -101,6 +104,15 @@ impl ProductionBoundary {
         if !is_lower_hex(&expected_sidecar_sha256, 64) {
             bail!("{EXPECTED_SIDECAR_SHA_ENV} must be a canonical lowercase SHA-256");
         }
+        let expected_database_url_sha256 = env::var(EXPECTED_DATABASE_URL_SHA_ENV)
+            .with_context(|| format!("{EXPECTED_DATABASE_URL_SHA_ENV} is required"))?;
+        if !is_lower_hex(&expected_database_url_sha256, 64) {
+            bail!("{EXPECTED_DATABASE_URL_SHA_ENV} must be a canonical lowercase SHA-256");
+        }
+        let database_url_sha256 = sha256_hex(database_url.as_bytes());
+        if database_url_sha256 != expected_database_url_sha256 {
+            bail!("configured database URL does not match the owner-approved SHA-256");
+        }
         let sidecar_path = env::current_exe().context("resolve current sidecar binary path")?;
         verify_release_binary_path(&sidecar_path, &production_release_sha)?;
         let sidecar_bytes = fs::read(&sidecar_path).context("read current sidecar binary")?;
@@ -111,9 +123,10 @@ impl ProductionBoundary {
         Ok(Self {
             production_release_sha,
             sidecar_binary_sha256,
-            database_url_sha256: sha256_hex(database_url.as_bytes()),
+            database_url_sha256,
             release_binary_verified: true,
             approved_sidecar_sha256_matched: true,
+            approved_database_url_sha256_matched: true,
         })
     }
 
@@ -128,6 +141,7 @@ impl ProductionBoundary {
             "database_url_sha256": self.database_url_sha256,
             "release_binary_verified": self.release_binary_verified,
             "approved_sidecar_sha256_matched": self.approved_sidecar_sha256_matched,
+            "approved_database_url_sha256_matched": self.approved_database_url_sha256_matched,
             "safe_for_chat": false,
         })
     }
@@ -683,6 +697,7 @@ mod tests {
             database_url_sha256: "c".repeat(64),
             release_binary_verified: true,
             approved_sidecar_sha256_matched: true,
+            approved_database_url_sha256_matched: true,
         }
     }
 

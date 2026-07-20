@@ -88,6 +88,7 @@ const commonKeys = [
   "database_url_sha256",
   "release_binary_verified",
   "approved_sidecar_sha256_matched",
+  "approved_database_url_sha256_matched",
   "safe_for_chat",
 ];
 
@@ -214,7 +215,8 @@ for (const record of records) {
     !isSha256(record.sidecar_binary_sha256) ||
     !isSha256(record.database_url_sha256) ||
     record.release_binary_verified !== true ||
-    record.approved_sidecar_sha256_matched !== true
+    record.approved_sidecar_sha256_matched !== true ||
+    record.approved_database_url_sha256_matched !== true
   ) {
     fail(`${record.phase} evidence does not satisfy the shared production boundary`);
   }

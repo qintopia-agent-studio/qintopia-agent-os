@@ -95,6 +95,16 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /shared production boundary/);
 
+  const databaseHashMismatchEvidence = path.join(tmpRoot, "database-hash.txt");
+  fs.writeFileSync(
+    databaseHashMismatchEvidence,
+    productionOutput({ approvedDatabaseUrlSha256Matched: false }),
+    "utf8"
+  );
+  result = runChecker(databaseHashMismatchEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
+
   const extraPhaseEvidence = path.join(tmpRoot, "extra-phase.txt");
   fs.writeFileSync(
     extraPhaseEvidence,
@@ -108,6 +118,7 @@ try {
       database_url_sha256: databaseHash,
       release_binary_verified: true,
       approved_sidecar_sha256_matched: true,
+      approved_database_url_sha256_matched: true,
       safe_for_chat: false,
     })}\n`,
     "utf8"
@@ -141,6 +152,8 @@ function productionOutput(overrides = {}) {
     database_url_sha256: databaseHash,
     release_binary_verified: overrides.releaseBinaryVerified ?? true,
     approved_sidecar_sha256_matched: overrides.approvedSidecarSha256Matched ?? true,
+    approved_database_url_sha256_matched:
+      overrides.approvedDatabaseUrlSha256Matched ?? true,
     safe_for_chat: false,
   };
   const records = [

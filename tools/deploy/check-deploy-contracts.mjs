@@ -1786,6 +1786,7 @@ if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
     "raw_secret_fields_retained",
     "release_binary_verified",
     "approved_sidecar_sha256_matched",
+    "approved_database_url_sha256_matched",
     "forbidden sensitive fragment",
     "Xiaoman real activity production evidence check passed.",
   ]) {
@@ -1808,13 +1809,16 @@ if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {
     "xiaoman_real_activity_production_evidence=",
     "QINTOPIA_DEPLOYED_COMMIT_SHA",
     "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256",
     "/home/ubuntu/qintopia-agent-os-releases/current",
     "current_exe",
     "canonicalize",
     "owner-approved SHA-256",
+    "configured database URL does not match the owner-approved SHA-256",
     "database_url_sha256",
     "release_binary_verified",
     "approved_sidecar_sha256_matched",
+    "approved_database_url_sha256_matched",
     "signal_intake",
     "image_generation",
     "human_approval",
@@ -1946,6 +1950,7 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
   const template = readText(xiaomanRealActivityProductionEvidenceTemplatePath);
   for (const fragment of [
     "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256='<approved production sidecar binary sha256>'",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256='<approved production database URL sha256>'",
     "qintopia-message-sidecar xiaoman-real-activity-production-evidence",
     "--workflow-root-id <completed-xiaoman-activity-root-uuid>",
     "node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>",
@@ -1953,6 +1958,7 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
     "Release-local binary verified",
     "Owner-approved sidecar SHA-256 matched",
     "Production database URL SHA-256",
+    "Owner-approved database URL SHA-256 matched",
     "Xiaoman source event signal UUID",
     "Generated-image artifact UUID",
     "Send-ready work item UUID",
@@ -1967,6 +1973,7 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
     "sanitized_evidence_retention",
     "`release_binary_verified`: `true`",
     "`approved_sidecar_sha256_matched`: `true`",
+    "`approved_database_url_sha256_matched`: `true`",
     "Do not record QiWe token, GUID, API secret material, target group id, database URL",
   ]) {
     requireFragment(

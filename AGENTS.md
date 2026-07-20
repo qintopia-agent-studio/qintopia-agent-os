@@ -117,6 +117,7 @@
 
   ```bash
   QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-production-sidecar-sha256> \
+  QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256=<approved-production-database-url-sha256> \
   qintopia-message-sidecar xiaoman-real-activity-production-evidence \
     --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
   ```
@@ -496,12 +497,15 @@ Use `rg` and `rg --files` for search.
   `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`
   binary whose resolved release directory matches `QINTOPIA_DEPLOYED_COMMIT_SHA` and
   whose SHA-256 matches `QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256`. It
-  may read Postgres, hash the configured database URL, hash the verified release-local
-  sidecar binary, and emit the fixed `xiaoman_real_activity_production_evidence=`
-  records for one already completed Xiaoman activity chain. It must not run from a
-  mutable checkout, write Postgres or Feishu, approve artifacts, call QiWe, publish,
-  send, expose raw group ids, request ids, callback bodies, file credentials, message
-  ids, media URLs, database URLs, provider responses, raw chat, or logs.
+  must hash the configured database URL and match
+  `QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256` before opening a
+  database connection. It may read Postgres, hash the verified release-local sidecar
+  binary, and emit the fixed `xiaoman_real_activity_production_evidence=` records for
+  one already completed Xiaoman activity chain. It must not run from a mutable checkout,
+  connect to a database whose URL hash is not owner-approved, write Postgres or Feishu,
+  approve artifacts, call QiWe, publish, send, expose raw group ids, request ids,
+  callback bodies, file credentials, message ids, media URLs, database URLs, provider
+  responses, raw chat, or logs.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
