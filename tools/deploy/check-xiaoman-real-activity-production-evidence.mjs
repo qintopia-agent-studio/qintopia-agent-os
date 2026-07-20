@@ -235,6 +235,7 @@ if (
   !isUuid(signal.workflow_root_id) ||
   !["pre_event", "post_event"].includes(signal.activity_phase) ||
   !["activity_promotion", "activity_recap"].includes(signal.activity_route) ||
+  !activityRouteMatchesPhase(signal.activity_phase, signal.activity_route) ||
   signal.external_send_executed !== false
 ) {
   fail("signal intake evidence does not prove one real Xiaoman activity root");
@@ -421,6 +422,13 @@ function isSha256(value) {
 
 function isCanonicalContentHash(value) {
   return /^sha256:[0-9a-f]{64}$/.test(String(value ?? ""));
+}
+
+function activityRouteMatchesPhase(phase, route) {
+  return (
+    (phase === "pre_event" && route === "activity_promotion") ||
+    (phase === "post_event" && route === "activity_recap")
+  );
 }
 
 function fail(message) {
