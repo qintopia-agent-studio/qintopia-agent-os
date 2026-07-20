@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.18](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.17...v0.2.18) (2026-07-20)
+
+
+### Features
+
+* add xiaoman promotion review draft ([#221](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/221)) ([d77448c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d77448c680f4d3309d640d763fab18581d804530))
+* add xiaoman text announcement mvp ([#218](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/218)) ([4f120c3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4f120c379ea61cc36012ac6ddce184f6efcf997b))
+
+
+### Bug Fixes
+
+* align huabaosi canary env ownership ([#219](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/219)) ([e948d87](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e948d874f7040293329f35a9b4532adcd1d15bee))
+* harden xiaoman evidence record parsing ([#216](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/216)) ([822eed1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/822eed17068a16e8e2cb14f6abae9482e4b0854f))
+
 ## [0.2.17](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.16...v0.2.17) (2026-07-20)
 
 
