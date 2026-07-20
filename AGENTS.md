@@ -388,7 +388,9 @@ Use `rg` and `rg --files` for search.
   `approved_artifact_id`, bind `message_text` to the approved artifact `content_hash`,
   keep the request before human final confirmation, and must not queue, run send-ready,
   call Erhua, call QiWe, publish, send, or accept raw group ids, URLs, Feishu/Base ids,
-  secrets, or unapproved text.
+  secrets, or unapproved text. Text announcement MVP evidence must not be used as
+  Xiaoman production-complete evidence or as proof of QiWe group delivery; production
+  completion still requires the image/send-ready/QiWe arrival evidence checkers.
 - Xiaoman activity lifecycle phase is a Postgres `event_signals` fact. Allowed values
   are `pre_event`, `in_event`, and `post_event`; transitions are forward-only and each
   phase maps to its fixed root/child route. Event-signal root creation must lock and

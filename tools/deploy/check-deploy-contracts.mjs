@@ -2124,6 +2124,43 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
   }
 }
 
+const xiaomanTextAnnouncementMvpPath =
+  "docs/plans/active/xiaoman-text-announcement-mvp.md";
+if (!exists(xiaomanTextAnnouncementMvpPath)) {
+  addError(`${xiaomanTextAnnouncementMvpPath}: missing Xiaoman text MVP plan`);
+} else {
+  const plan = readText(xiaomanTextAnnouncementMvpPath);
+  for (const fragment of [
+    "No QiWe call, group delivery, publish, or send-ready mutation.",
+    "The request",
+    "remains `awaiting_publish`",
+    "external_send_executed=false",
+    "not a production-complete evidence path",
+    "does not prove image generation",
+    "Huabaosi/Feishu approval, QiWe adapter execution, visible group arrival",
+    "production completion retention",
+    "check-xiaoman-real-activity-production-evidence.mjs",
+    "check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs",
+    "full completion",
+    "manifest checker",
+    "cannot be reported as Xiaoman production-complete or QiWe group-delivered",
+    "evidence.",
+  ]) {
+    requireFragment(xiaomanTextAnnouncementMvpPath, plan, fragment);
+  }
+  for (const fragment of [
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+  ]) {
+    forbidFragment(xiaomanTextAnnouncementMvpPath, plan, fragment);
+  }
+}
+
 const xiaomanRealActivityEvidenceRuntimePath =
   "runtime/sidecar/src/xiaoman_real_activity_evidence.rs";
 if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {

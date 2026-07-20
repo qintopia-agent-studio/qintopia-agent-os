@@ -86,6 +86,9 @@ These are useful but not completion:
 - Feishu mirror units installed but timer disabled or first-record evidence missing;
 - QiWe staging evidence without a reviewed production enablement PR;
 - a Release that deploys internal timers but still leaves QiWe delivery disabled;
+- Xiaoman text announcement MVP output, an approved `text_announcement`, or a prepared
+  text `group_message_request` without the image/send-ready/QiWe arrival evidence
+  bundle;
 - passing PR CI or PR-Agent review without the owner-retained production evidence bundle
   above.
 
