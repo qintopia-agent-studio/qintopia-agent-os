@@ -64,6 +64,7 @@ const requiredDocs = [
   "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -135,7 +136,15 @@ const git = (args) =>
 const gitFileMode = (relativePath) => {
   try {
     const output = git(["ls-files", "-s", "--", relativePath]);
-    return output.split(/\s+/)[0] || "";
+    const mode = output.split(/\s+/)[0] || "";
+    if (mode) {
+      return mode;
+    }
+  } catch {}
+  try {
+    return `100${(fs.statSync(path.join(repoRoot, relativePath)).mode & 0o777)
+      .toString(8)
+      .padStart(3, "0")}`;
   } catch {
     return "";
   }
@@ -187,6 +196,7 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -663,6 +673,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
+    "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",

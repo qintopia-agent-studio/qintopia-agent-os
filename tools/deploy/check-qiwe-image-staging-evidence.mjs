@@ -85,6 +85,7 @@ if (entries.length === 0) {
 const allowedPreflightKeys = new Set([
   "action_status",
   "adapter_compiled",
+  "feishu_delivery_bridge_compiled",
   "allowed_group_count",
   "allowed_host_count",
   "config_valid",
@@ -164,6 +165,7 @@ for (const entry of entries) {
     if (
       entry.action_status !== "staging_adapter_ready" ||
       entry.adapter_compiled !== true ||
+      entry.feishu_delivery_bridge_compiled !== true ||
       entry.send_enabled !== true ||
       entry.config_valid !== true ||
       entry.database_boundary_valid !== true ||

@@ -428,6 +428,7 @@ evidence = {
 if evidence_kind == "preflight":
     evidence.update({
         "adapter_compiled": payload["adapter_compiled"],
+        "feishu_delivery_bridge_compiled": payload["feishu_delivery_bridge_compiled"],
         "allowed_group_count": payload["allowed_group_count"],
         "allowed_host_count": payload["allowed_host_count"],
         "config_valid": payload["config_valid"],
@@ -470,8 +471,9 @@ import sys
 payload = json.load(sys.stdin)
 
 assert set(payload) == {
-    "success", "worker", "action_status", "adapter_compiled", "send_enabled",
-    "owner_approval_valid", "config_valid", "database_boundary_valid",
+    "success", "worker", "action_status", "adapter_compiled",
+    "feishu_delivery_bridge_compiled", "send_enabled", "owner_approval_valid",
+    "config_valid", "database_boundary_valid",
     "webhook_ready", "allowed_host_count", "media_allowed_host_count",
     "allowed_group_count", "missing_configuration", "protocol", "safe_for_chat",
     "limitations", "guardrails",
@@ -480,6 +482,7 @@ assert payload["success"] is True
 assert payload["worker"] == "qiwe-image-send-adapter"
 assert payload["action_status"] == "staging_adapter_ready"
 assert payload["adapter_compiled"] is True
+assert payload["feishu_delivery_bridge_compiled"] is True
 assert payload["send_enabled"] is True
 assert payload["owner_approval_valid"] is True
 assert payload["config_valid"] is True

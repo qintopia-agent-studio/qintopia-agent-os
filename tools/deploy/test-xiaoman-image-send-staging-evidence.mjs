@@ -191,6 +191,7 @@ function qiweOutput(hash) {
     `qiwe_image_send_staging_evidence=${JSON.stringify({
       action_status: "staging_adapter_ready",
       adapter_compiled: true,
+      feishu_delivery_bridge_compiled: true,
       allowed_group_count: 1,
       allowed_host_count: 1,
       config_valid: true,

@@ -74,7 +74,7 @@ case "$1" in
     if IFS= read -r -t 0.1 unexpected_input; then
       exit 65
     fi
-    printf '%s\n' '{"success":true,"worker":"qiwe-image-send-adapter","action_status":"staging_adapter_ready","adapter_compiled":true,"send_enabled":true,"owner_approval_valid":true,"config_valid":true,"database_boundary_valid":true,"webhook_ready":true,"allowed_host_count":1,"media_allowed_host_count":1,"allowed_group_count":1,"missing_configuration":[],"protocol":"qiwe_async_url_upload_then_send_image_staging_v1","safe_for_chat":false,"limitations":[],"guardrails":[]}'
+    printf '%s\n' '{"success":true,"worker":"qiwe-image-send-adapter","action_status":"staging_adapter_ready","adapter_compiled":true,"feishu_delivery_bridge_compiled":true,"send_enabled":true,"owner_approval_valid":true,"config_valid":true,"database_boundary_valid":true,"webhook_ready":true,"allowed_host_count":1,"media_allowed_host_count":1,"allowed_group_count":1,"missing_configuration":[],"protocol":"qiwe_feishu_temp_storage_then_async_upload_then_send_image_staging_v1","safe_for_chat":false,"limitations":[],"guardrails":[]}'
     if [[ -f "${tamperAfterPreflightFlag}" ]]; then
       chmod u+w "$0" "$(dirname "$0")"
       printf '%s\n' '#!/usr/bin/env bash' 'echo tampered sidecar executed >&2' 'exit 99' >"$0"
@@ -188,6 +188,7 @@ esac
   if (
     preflightEvidence.length !== 1 ||
     preflightEvidence[0].action_status !== "staging_adapter_ready" ||
+    preflightEvidence[0].feishu_delivery_bridge_compiled !== true ||
     preflightEvidence[0].allowed_group_count !== 1 ||
     preflightEvidence[0].send_enabled !== true ||
     preflightEvidence[0].webhook_ready !== true ||

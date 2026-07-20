@@ -111,6 +111,9 @@
     deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh
   ```
 
+- QiWe image-send production observation smoke:
+  `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh`
+
 - Combined Huabaosi/QiWe staging runtime readiness evidence:
 
   ```bash
@@ -450,24 +453,26 @@ Use `rg` and `rg --files` for search.
   outcome and must become terminal `ambiguous` with `automatic_retry_allowed=false`;
   never requeue it automatically. Dry-run and disabled previews must enforce the same
   exact target-group and media-host allowlists as apply.
-- Default and production sidecar builds must not compile the non-default
-  `qiwe-staging-adapter` feature. In those builds, QiWe upload/callback apply must fail
-  before configuration, Postgres claim/mutation, or network access even if runtime
-  enable flags are misconfigured; callback apply must also fail before reading stdin.
-  Production artifact manifests must record only
+- Default and production sidecar builds must fail QiWe upload/callback apply before
+  configuration, Postgres claim/mutation, or network access even if runtime enable flags
+  are misconfigured; callback apply must also fail before reading stdin. Production
+  artifact manifests must record exactly
   `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`;
-  artifact and server-source build checks must reject QiWe staging and all-features
-  builds. The Huabaosi production feature must not make QiWe live helpers available.
+  artifact and server-source build checks must reject `qiwe-staging-adapter` and
+  all-features builds. The Huabaosi production feature alone must not make QiWe live
+  helpers available.
 - CI must execute non-ignored sidecar tests with all Cargo features so staging-only
   adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
-  remain in the disposable integration job. Production artifacts must still use exactly
-  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`; an
-  all-features CI build must never be promoted or treated as a production artifact.
-- As of 2026-07-15, QiWe final image sending is not on production. Staging smoke,
-  callback bridge, and the Postgres state machine are implementation evidence only; do
-  not add a production listener, service, timer, live-adapter production build, or
-  production enablement until isolated staging proves upload, `cmd=20000` callback, and
-  `/msg/sendImage` with the reviewed final JPEG.
+  remain in the disposable integration job. Production artifacts must still use only
+  reviewed production features; an all-features CI build must never be promoted or
+  treated as a production artifact.
+- As of 2026-07-20, QiWe image-send production observation may inspect the immutable
+  release/current binary and fixed production env file to confirm production send
+  remains disabled. It must not accept production env/release/systemctl overrides, add a
+  production callback listener, service, timer, live-adapter production artifact,
+  broaden group allowlists, pass database/QiWe secrets to observation children, bypass
+  the async callback/send state machine, write Feishu as part of sending, or treat
+  staging evidence as production completion.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
@@ -479,11 +484,11 @@ Use `rg` and `rg --files` for search.
   `process-qiwe-image-send-callback` must read one bounded callback from stdin, keep
   file credentials memory-only, require callback filename/MD5/byte size to match the
   approved final JPEG before committing `sending`, commit that state before one send
-  call, and terminalize every outcome. Neither command may be scheduled or
-  production-enabled without approved staging evidence, isolated group allowlists, and
-  rollback.
+  call, and terminalize every outcome. Scheduling or production enablement must remain
+  bound to approved staging evidence, isolated group allowlists, release/database hash
+  gates, and rollback.
 - The Feishu-backed QiWe staging bridge may claim `feishu-base://` generated images only
-  when the immutable staging binary contains both `huabaosi-staging-adapter` and
+  when the immutable staging artifact contains both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter`. It must commit the existing `uploading` attempt before Feishu
   or QiWe I/O, authenticated-readback the approved JPEG, upload those bytes only to the
   non-deprecated QiWe SDK temporary-storage endpoint, keep the returned `cloudUrl`
@@ -522,14 +527,14 @@ Use `rg` and `rg --files` for search.
   `artifact_content_hash` for Huabaosi/QiWe hash matching; it must not retain media URI,
   filename, MD5 value, file size, or callback credentials. It must not install a
   listener, service, timer, production feature build, Feishu write, or broad group send.
-- Before any QiWe production-enablement PR, the retained Huabaosi staging
-  generated-image evidence and QiWe staging send evidence must pass
+- A QiWe production-enablement PR must retain Huabaosi staging generated-image evidence
+  and QiWe staging send evidence that pass
   `tools/deploy/check-xiaoman-image-send-staging-evidence.mjs`, proving the Huabaosi
   final JPEG `content_hash` equals the QiWe `artifact_content_hash` without recording
   media URI, filename, MD5 value, callback credentials, group id, database URL, or raw
   provider output. Record that cross-flow result only in
-  `docs/reports/templates/xiaoman-image-send-staging-evidence.md`; it must remain a
-  staging evidence template, not production enablement.
+  `docs/reports/templates/xiaoman-image-send-staging-evidence.md`; staging evidence is a
+  prerequisite, not proof that production sending is complete.
 - The staging-only sidecar artifact `qintopia-message-sidecar-staging-linux-x86_64-gnu`
   may be built only by manual artifact workflow dispatch or
   `pnpm artifact:sidecar:staging`. It must compile exactly `huabaosi-staging-adapter`
@@ -627,15 +632,14 @@ Use `rg` and `rg --files` for search.
   migration evidence. Do not add them to release bundles or apply them to production;
   migrate each accepted behavior into an owned package with focused tests and a separate
   cutover PR.
-- Huabaosi live provider/media helpers may compile only with one reviewed live feature:
-  `huabaosi-staging-adapter` for guarded staging or `huabaosi-production-adapter` for
-  production. A build containing neither or both must reject apply before Postgres or
-  network access. Staging keeps its one-shot owner phrase and reviewed staging database
-  hash gate. Production must bind explicit enablement to the deployed release SHA and
-  production database URL hash before connecting to Postgres. Production artifacts must
-  record exactly
-  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]` and
-  must never contain staging or QiWe adapter features.
+- Huabaosi live provider/media helpers may compile only with one reviewed Huabaosi live
+  feature: `huabaosi-staging-adapter` for guarded staging or
+  `huabaosi-production-adapter` for production. A build containing neither or both must
+  reject apply before Postgres or network access. Staging keeps its one-shot owner
+  phrase and reviewed staging database hash gate. Production must bind explicit
+  enablement to the deployed release SHA and production database URL hash before
+  connecting to Postgres. Production artifacts must not contain QiWe live adapter
+  features until a separate owner-approved production send boundary exists.
 - The Huabaosi production image-generation service and timer may be installed from the
   immutable release but must not be enabled by the ordinary release installer. After the
   owner manually publishes the Release, the reviewed activation command must run the
@@ -777,18 +781,18 @@ Use `rg` and `rg --files` for search.
   send-ready systemd timer, unit commands, and sanitized journal output. It must not run
   the worker, record final confirmation, write Postgres, call QiWe, or send externally.
 - `qiwe-image-send-preflight` may only validate the disabled async URL-upload/send-image
-  contract from local configuration. It must report whether the staging-only adapter was
-  compiled and fail the production preflight when it was. It must not open network or
-  database connections, emit tokens, device/group ids, media URLs, file credentials, or
-  message identifiers, write Feishu, or send externally. Do not compile the live adapter
-  into a production artifact or add a QiWe timer until staging proves the deterministic
-  final JPEG media path and complete `cmd=20000` callback credentials. Final request
-  construction must recheck the target group allowlist, response parsing must fail
-  closed unless both `code=0` and `isSendSuccess=1`, and this disabled-state preflight
-  must fail when the send-enable flag is `1`. All future outbound header values must
-  reject every control character before socket connection. Its `missing_configuration`
-  field follows the same public-name-only rule as the image preflight and must never
-  include enable flags or configuration values.
+  contract from local configuration. It must report whether a live adapter was compiled
+  and fail production release checks when any QiWe live adapter is present. It must not
+  open network or database connections, emit tokens, device/group ids, media URLs, file
+  credentials, or message identifiers, write Feishu, or send externally. Do not compile
+  the live adapter into a production artifact or add a QiWe timer until staging proves
+  the deterministic final JPEG media path and complete `cmd=20000` callback credentials.
+  Final request construction must recheck the target group allowlist, response parsing
+  must fail closed unless both `code=0` and `isSendSuccess=1`, and this disabled-state
+  preflight must fail when the send-enable flag is `1`. All future outbound header
+  values must reject every control character before socket connection. Its
+  `missing_configuration` field follows the same public-name-only rule as the image
+  preflight and must never include enable flags or configuration values.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
   timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
   evidence/visual preview, and the group send-ready timer observation. It must not set

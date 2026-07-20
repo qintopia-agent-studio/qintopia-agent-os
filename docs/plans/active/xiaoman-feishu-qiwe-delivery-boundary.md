@@ -28,12 +28,13 @@ call Feishu or QiWe, install a listener or timer, or send externally.
   for an explicit manual `approved` apply. Rejection and changes-requested decisions
   remain available without Feishu I/O, and a Feishu field or automation event alone is
   still not approval.
-- The combined staging build containing both `huabaosi-staging-adapter` and
-  `qiwe-staging-adapter` can deliver an exact `feishu-base://` artifact by committing
-  the existing `uploading` attempt, reading the authenticated Feishu bytes, uploading
-  those bytes to QiWe SDK temporary storage, reading the returned temporary URL back,
-  and then invoking the existing async URL upload path. Default, production, Huabaosi
-  only, and QiWe-only builds continue to reject this route.
+- A combined live build containing both the Huabaosi Feishu primary-storage path and a
+  reviewed QiWe live adapter can deliver an exact `feishu-base://` artifact by
+  committing the existing `uploading` attempt, reading the authenticated Feishu bytes,
+  uploading those bytes to QiWe SDK temporary storage, reading the returned temporary
+  URL back, and then invoking the existing async URL upload path. Default,
+  Huabaosi-only, QiWe-only, and production builds continue to reject this route. Staging
+  requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`.
 - The reviewed QiWe protocol plan says the synchronous local and URL upload APIs are
   marked for deprecation and must not become the production foundation.
 
@@ -115,9 +116,10 @@ The boundary was implemented in reviewed phases, but runtime evidence is still p
    - The Postgres `uploading` attempt must be committed before authenticated Feishu
      readback or either QiWe upload call. Interrupted external work remains terminal
      ambiguous and is never retried automatically.
-   - Only a combined staging artifact containing both `huabaosi-staging-adapter` and
-     `qiwe-staging-adapter` may claim a `feishu-base://` artifact. Default, production,
-     Huabaosi-only, and QiWe-only builds must continue to reject it.
+   - Only a combined live artifact containing both the Huabaosi Feishu primary-storage
+     path and a reviewed QiWe staging live adapter may claim a `feishu-base://`
+     artifact. Default, production, Huabaosi-only, and QiWe-only builds must continue to
+     reject it. Staging requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`.
    - The revalidated JPEG bytes, multipart body, returned `cloudUrl`, and readback bytes
      remain memory-only and are zeroized. No temporary URL or attachment credential may
      enter Postgres, reports, logs, CLI arguments, or environment-derived output.
