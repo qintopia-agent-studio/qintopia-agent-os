@@ -467,7 +467,8 @@ Use `rg` and `rg --files` for search.
   reviewed production features; an all-features CI build must never be promoted or
   treated as a production artifact.
 - As of 2026-07-20, QiWe image-send production observation may inspect the immutable
-  release/current binary and confirm production send remains disabled. It must not add a
+  release/current binary and fixed production env file to confirm production send
+  remains disabled. It must not accept production env/release/systemctl overrides, add a
   production callback listener, service, timer, live-adapter production artifact,
   broaden group allowlists, pass database/QiWe secrets to observation children, bypass
   the async callback/send state machine, write Feishu as part of sending, or treat

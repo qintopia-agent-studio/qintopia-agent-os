@@ -8,15 +8,60 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
-RELEASE_CURRENT_DIR="${QINTOPIA_RELEASE_CURRENT_DIR:-/home/ubuntu/qintopia-agent-os-releases/current}"
+DEFAULT_ENV_FILE="/etc/qintopia/message-sidecar.env"
+DEFAULT_RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
+ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-$DEFAULT_ENV_FILE}"
+RELEASE_CURRENT_DIR="${QINTOPIA_RELEASE_CURRENT_DIR:-$DEFAULT_RELEASE_CURRENT_DIR}"
 WORKER_SERVICE_NAME="qintopia-agentos-qiwe-image-send-worker.service"
 WORKER_TIMER_NAME="qintopia-agentos-qiwe-image-send-worker.timer"
 WORKER_PREFLIGHT_NAME="qintopia-agentos-qiwe-image-send-preflight.service"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 EXPECTED_STATE="${QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE:-auto}"
+TEST_MODE="${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_TEST_MODE:-0}"
+TEST_ROOT="${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_TEST_ROOT:-}"
 
 cd "$MONOREPO_ROOT"
+
+if [[ "$TEST_MODE" != "1" ]]; then
+  if [[ "$ENV_FILE" != "$DEFAULT_ENV_FILE" ]]; then
+    echo "QiWe image-send production observation requires the fixed production env file" >&2
+    exit 1
+  fi
+  if [[ "$RELEASE_CURRENT_DIR" != "$DEFAULT_RELEASE_CURRENT_DIR" ]]; then
+    echo "QiWe image-send production observation requires the fixed production release/current path" >&2
+    exit 1
+  fi
+  if [[ "$SYSTEMCTL" != "systemctl" ]]; then
+    echo "QiWe image-send production observation requires the real systemctl command" >&2
+    exit 1
+  fi
+else
+  if [[ "$TEST_ROOT" != /tmp/* && "$TEST_ROOT" != /private/tmp/* ]]; then
+    echo "QiWe image-send production observation test mode requires a /tmp test root" >&2
+    exit 1
+  fi
+  case "$ENV_FILE" in
+    "$TEST_ROOT"/*) ;;
+    *)
+      echo "QiWe image-send production observation test env must stay under the test root" >&2
+      exit 1
+      ;;
+  esac
+  case "$RELEASE_CURRENT_DIR" in
+    "$TEST_ROOT"/*) ;;
+    *)
+      echo "QiWe image-send production observation test release must stay under the test root" >&2
+      exit 1
+      ;;
+  esac
+  case "$SYSTEMCTL" in
+    "$TEST_ROOT"/*) ;;
+    *)
+      echo "QiWe image-send production observation test systemctl must stay under the test root" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
   SIDECAR_BIN="$QINTOPIA_SIDECAR_BIN"

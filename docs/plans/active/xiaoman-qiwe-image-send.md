@@ -237,8 +237,9 @@ evidence template lives in
 Default execution does not contain the live QiWe adapter and cannot contact QiWe or send
 messages. Production image-send artifacts must not contain `qiwe-staging-adapter` or
 all-features builds. The production observation smoke accepts only the immutable
-release/current binary, parses only the non-secret send enable flag without evaluating
-shell, and confirms the production apply service/timer is absent, inactive, and
-disabled. It must not pass database/QiWe secrets to a child process, run sidecar
-commands, run `--apply`, or process callbacks. Rollback is to retain
+release/current binary, parses only the non-secret send enable flag from the fixed
+production env file without evaluating shell, and confirms the production apply
+service/timer is absent, inactive, and disabled. It must not accept production
+env/release/systemctl overrides, pass database/QiWe secrets to a child process, run
+sidecar commands, run `--apply`, or process callbacks. Rollback is to retain
 `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and keep QiWe image-send production units absent.

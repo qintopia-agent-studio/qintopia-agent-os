@@ -154,9 +154,10 @@ booleans. They must use `safe_for_chat=false` and must not include:
 Production image-send observation may inspect the immutable release/current artifact and
 confirm send remains disabled, but it must not install a worker service/timer, compile a
 QiWe live adapter into the production artifact, install a callback listener, broaden
-group allowlists, pass database/QiWe secrets to observation children, or contact QiWe.
-Production artifact builders are checked to exclude `qiwe-staging-adapter` and
-all-features builds; their manifest records exactly
+group allowlists, accept production env/release/systemctl overrides, pass database/QiWe
+secrets to observation children, or contact QiWe. Production artifact builders are
+checked to exclude `qiwe-staging-adapter` and all-features builds; their manifest
+records exactly
 `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`.
 Rollback keeps `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0` and QiWe image-send production units
 absent.

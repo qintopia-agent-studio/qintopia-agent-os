@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-qiwe-observation-"));
+const tmpParent = fs.existsSync("/private/tmp") ? "/private/tmp" : "/tmp";
+const tmpRoot = fs.mkdtempSync(path.join(tmpParent, "qintopia-qiwe-observation-"));
 const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh"
@@ -134,6 +134,8 @@ exit 70
       env: {
         ...process.env,
         QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE: "1",
+        QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_TEST_MODE: "1",
+        QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_TEST_ROOT: tmpRoot,
         QINTOPIA_RELEASE_CURRENT_DIR: currentRelease,
         QINTOPIA_SIDECAR_BIN: "",
         QINTOPIA_SIDECAR_ENV_FILE: disabledEnv,
@@ -142,6 +144,26 @@ exit 70
       },
       encoding: "utf8",
     });
+
+  const productionOverride = spawnSync("bash", [script], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE: "1",
+      QINTOPIA_RELEASE_CURRENT_DIR: currentRelease,
+      QINTOPIA_SIDECAR_ENV_FILE: disabledEnv,
+      SYSTEMCTL: systemctl,
+    },
+    encoding: "utf8",
+  });
+  if (productionOverride.status === 0) {
+    throw new Error("production observation accepted test overrides without test mode");
+  }
+  if (!productionOverride.stderr.includes("fixed production env file")) {
+    throw new Error(
+      "production override failure did not explain the fixed env boundary"
+    );
+  }
 
   const missingRelease = run({
     QINTOPIA_RELEASE_CURRENT_DIR: path.join(tmpRoot, "missing-current"),

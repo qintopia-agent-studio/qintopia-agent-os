@@ -1354,8 +1354,13 @@ if (!exists(qiweImageProductionObservationPath)) {
   for (const fragment of [
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE",
     "/home/ubuntu/qintopia-agent-os-releases/current",
+    "/etc/qintopia/message-sidecar.env",
     "sidecar/qintopia-message-sidecar",
     "artifact-manifest.json",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_TEST_MODE",
+    "requires the fixed production env file",
+    "requires the fixed production release/current path",
+    "requires the real systemctl command",
     '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
