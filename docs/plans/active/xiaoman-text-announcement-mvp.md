@@ -48,6 +48,14 @@ text content hash so the message body cannot be swapped after approval. The requ
 remains `awaiting_publish`; a separate human final confirmation is still required before
 queueing, send-ready, QiWe, or external delivery.
 
+This text path is intentionally not a production-complete evidence path. It can support
+Liu Shan's minimum operational review loop, but it does not prove image generation,
+Huabaosi/Feishu approval, QiWe adapter execution, visible group arrival, or sanitized
+production completion retention. The production-complete claim still requires
+`check-xiaoman-real-activity-production-evidence.mjs`,
+`check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs`, and the full completion
+manifest checker.
+
 For post-event material follow-up, callers may pass `post_event_elapsed_hours` or an
 explicit `material_followup_attempt`. The tool can draft the first, second, and third
 material reminders, and the third reminder is only a suggested operations-lead
@@ -60,6 +68,8 @@ escalation. It does not mark work omissions or update activity records.
 - The text group-message request wrapper requires `approved_artifact_id`, binds the
   approved text content hash, emits an `operations-create` command only, and retains
   `external_send_executed=false`.
+- The MVP cannot be reported as Xiaoman production-complete or QiWe group-delivered
+  evidence.
 - Temporary meal records are skipped by default.
 - Paid planned activities are preserved in the announcement draft.
 - Post-event material follow-up returns first, second, and third reminder drafts; the
