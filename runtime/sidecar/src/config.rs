@@ -1118,6 +1118,8 @@ pub enum Command {
     QiweImageSendPreflight,
     /// Validate the enabled QiWe staging adapter without stdin, network, or database access.
     QiweImageSendStagingPreflight,
+    /// Validate the enabled QiWe production adapter gate before timer activation.
+    QiweImageSendProductionPreflight,
     /// Claim one reviewed QiWe image-send request and submit its asynchronous URL upload.
     RunQiweImageSendWorker {
         /// Process one work item and exit.

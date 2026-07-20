@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
@@ -12,8 +13,10 @@ const script = path.join(
   "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh"
 );
 const scriptText = fs.readFileSync(script, "utf8");
+const fixtureParent =
+  process.platform === "darwin" ? fs.realpathSync(os.tmpdir()) : repoRoot;
 const tmpRoot = fs.mkdtempSync(
-  path.join(repoRoot, ".tmp-fetch-staging-sidecar-artifact-")
+  path.join(fixtureParent, "qintopia-fetch-staging-sidecar-artifact-")
 );
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 const artifactName = "qintopia-message-sidecar-staging-linux-x86_64-gnu";

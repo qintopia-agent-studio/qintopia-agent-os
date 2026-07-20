@@ -4,6 +4,7 @@ mod activity_lifecycle;
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
     feature = "huabaosi-feishu-mirror-adapter",
+    feature = "qiwe-production-adapter",
     feature = "qiwe-staging-adapter"
 ))]
 mod bounded_http;
@@ -571,6 +572,9 @@ async fn main() -> Result<()> {
         }
         Command::QiweImageSendPreflight => qiwe_image_send::run_preflight(),
         Command::QiweImageSendStagingPreflight => qiwe_image_send::run_staging_preflight(&cli),
+        Command::QiweImageSendProductionPreflight => {
+            qiwe_image_send::run_production_preflight(&cli)
+        }
         Command::RunQiweImageSendWorker {
             once,
             work_item_id,

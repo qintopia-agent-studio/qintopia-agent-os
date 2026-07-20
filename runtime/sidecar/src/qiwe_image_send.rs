@@ -4,7 +4,11 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 use md5::Md5;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,11 +16,19 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 use crate::bounded_http::{HttpClient, HttpResponse};
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 use crate::qiwe_image_send_state::QiweUploadClaim;
-#[cfg(feature = "qiwe-staging-adapter")]
+#[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 use crate::qiwe_image_send_state::{
     CallbackClaimOutcome, QiweCallbackFileIdentity, SendFailureDisposition,
     UploadFailureDisposition,
@@ -26,12 +38,24 @@ use url::Url;
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
 const ASYNC_UPLOAD_METHOD: &str = "/cloud/cdnUploadByUrlAsync";
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 const TEMPORARY_STORAGE_UPLOAD_METHOD: &str = "/cloud/cloudUpload";
 const SEND_IMAGE_METHOD: &str = "/msg/sendImage";
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 const FILE_API_PATH: &str = "/qiwe/api/qw/doFileApi";
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 const FEISHU_PRIMARY_STORAGE_URI_PREFIX: &str = "feishu-base://huabaosi-generated-image/";
 const IMAGE_FILE_TYPE: u8 = 1;
 const ASYNC_EVENT_COMMAND: i64 = 20_000;
@@ -41,6 +65,13 @@ const MAX_CALLBACK_INPUT_BYTES: usize = 64 * 1024;
 const STAGING_APPROVAL_ENV: &str = "QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL";
 const STAGING_APPROVAL_PHRASE: &str = "approved-staging-qiwe-image-send";
 const STAGING_DATABASE_URL_SHA256_ENV: &str = "QINTOPIA_QIWE_IMAGE_STAGING_DATABASE_URL_SHA256";
+#[cfg(feature = "qiwe-production-adapter")]
+const PRODUCTION_APPROVAL_ENV: &str = "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL";
+#[cfg(feature = "qiwe-production-adapter")]
+const PRODUCTION_APPROVAL_PHRASE: &str = "approved-production-qiwe-image-send";
+#[cfg(feature = "qiwe-production-adapter")]
+const PRODUCTION_DATABASE_URL_SHA256_ENV: &str =
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256";
 const REQUIRED_QIWE_IMAGE_SEND_CONFIGURATION: &[&str] = &[
     "QIWE_API_URL",
     "QIWE_TOKEN",
@@ -130,11 +161,23 @@ pub struct QiweImageSendWorkerReport {
 
 #[derive(Clone)]
 struct AdapterConfig {
-    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+    #[cfg(any(
+        test,
+        feature = "qiwe-staging-adapter",
+        feature = "qiwe-production-adapter"
+    ))]
     api_url: Url,
-    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+    #[cfg(any(
+        test,
+        feature = "qiwe-staging-adapter",
+        feature = "qiwe-production-adapter"
+    ))]
     token: String,
-    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+    #[cfg(any(
+        test,
+        feature = "qiwe-staging-adapter",
+        feature = "qiwe-production-adapter"
+    ))]
     guid: String,
     allowed_hosts: BTreeSet<String>,
     media_allowed_hosts: BTreeSet<String>,
@@ -168,7 +211,11 @@ impl SendBoundaryPolicy {
 
 impl Drop for AdapterConfig {
     fn drop(&mut self) {
-        #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+        #[cfg(any(
+            test,
+            feature = "qiwe-staging-adapter",
+            feature = "qiwe-production-adapter"
+        ))]
         {
             self.token.zeroize();
             self.guid.zeroize();
@@ -217,17 +264,29 @@ struct UploadAcceptedData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 struct TemporaryStorageAcceptedData {
     cloud_url: String,
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 struct SensitiveUrl {
     raw: Zeroizing<String>,
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 impl SensitiveUrl {
     fn new(raw: Zeroizing<String>) -> Self {
         Self { raw }
@@ -261,7 +320,11 @@ struct CallbackEvent {
 struct ParsedCallback {
     request_id: String,
     credential_shape: CallbackCredentialShape,
-    #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+    #[cfg(any(
+        test,
+        feature = "qiwe-staging-adapter",
+        feature = "qiwe-production-adapter"
+    ))]
     credentials: QiweImageCredentials,
 }
 
@@ -320,14 +383,22 @@ impl Drop for QiweSendReceipt {
     }
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UploadCallFailure {
     Rejected,
     OutcomeUnknown,
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SendCallFailure {
     NotSent,
@@ -375,7 +446,7 @@ struct StagingPreflightReportState {
 pub fn run_preflight() -> Result<()> {
     validate_contract()?;
     let send_enabled = env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")?;
-    let adapter_compiled = qiwe_staging_adapter_compiled();
+    let adapter_compiled = qiwe_live_adapter_compiled();
     let report = match AdapterConfig::from_env() {
         Ok(config) => preflight_report(PreflightReportState {
             config_valid: true,
@@ -409,27 +480,46 @@ pub fn run_preflight() -> Result<()> {
 }
 
 pub fn run_staging_preflight(cli: &Cli) -> Result<()> {
+    run_live_preflight(
+        LivePreflightMode::Staging,
+        validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())
+            .is_ok(),
+        cli.database_url_required()
+            .and_then(validate_staging_database_boundary)
+            .is_ok(),
+        feishu_delivery_config_valid(cli),
+        missing_qiwe_image_staging_configuration(cli),
+    )
+}
+
+pub fn run_production_preflight(cli: &Cli) -> Result<()> {
+    run_live_preflight(
+        LivePreflightMode::Production,
+        production_owner_approval_valid(),
+        production_database_boundary_valid(cli),
+        feishu_delivery_config_valid(cli),
+        missing_qiwe_image_production_configuration(cli),
+    )
+}
+
+fn run_live_preflight(
+    mode: LivePreflightMode,
+    owner_approval_valid: bool,
+    database_boundary_valid: bool,
+    feishu_delivery_config_valid: bool,
+    missing_configuration: Vec<&'static str>,
+) -> Result<()> {
     validate_contract()?;
-    let adapter_compiled = qiwe_staging_adapter_compiled();
+    let adapter_compiled = qiwe_live_adapter_compiled();
     let feishu_delivery_bridge_compiled = feishu_delivery_bridge_compiled();
     let send_enabled = env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED").unwrap_or(false);
-    let owner_approval_valid =
-        validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())
-            .is_ok();
-    let database_boundary_valid = cli
-        .database_url_required()
-        .and_then(validate_staging_database_boundary)
-        .is_ok();
     let (
-        config_valid,
+        adapter_config_valid,
         webhook_ready,
         allowed_host_count,
         media_allowed_host_count,
         allowed_group_count,
-    ) = match AdapterConfig::from_env().and_then(|config| {
-        validate_feishu_delivery_config(cli.database_url_required()?)?;
-        Ok(config)
-    }) {
+    ) = match AdapterConfig::from_env() {
         Ok(config) => (
             true,
             config.webhook_ready,
@@ -439,25 +529,35 @@ pub fn run_staging_preflight(cli: &Cli) -> Result<()> {
         ),
         Err(_) => (false, false, 0, 0, 0),
     };
-    let report = staging_preflight_report(StagingPreflightReportState {
+    let report_state = StagingPreflightReportState {
         adapter_compiled,
         feishu_delivery_bridge_compiled,
         send_enabled,
         owner_approval_valid,
-        config_valid,
+        config_valid: adapter_config_valid && feishu_delivery_config_valid,
         database_boundary_valid,
         webhook_ready,
         allowed_host_count,
         media_allowed_host_count,
         allowed_group_count,
-        missing_configuration: missing_qiwe_image_staging_configuration(cli),
-    });
+        missing_configuration,
+    };
+    let report = match mode {
+        LivePreflightMode::Staging => staging_preflight_report(report_state),
+        LivePreflightMode::Production => production_preflight_report(report_state),
+    };
     println!("{}", serde_json::to_string_pretty(&report)?);
     if report.success {
         Ok(())
     } else {
-        bail!("QiWe image send staging preflight is not approved")
+        bail!("QiWe image send live preflight is not approved")
     }
+}
+
+#[derive(Clone, Copy)]
+enum LivePreflightMode {
+    Staging,
+    Production,
 }
 
 pub async fn run_upload_worker(
@@ -530,7 +630,7 @@ pub async fn run_upload_worker(
         return Ok(());
     }
 
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
     {
         let report = worker_report(WorkerReportState {
             success: false,
@@ -547,7 +647,7 @@ pub async fn run_upload_worker(
         bail!("QiWe staging adapter is not compiled into this binary");
     }
 
-    #[cfg(feature = "qiwe-staging-adapter")]
+    #[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
     {
         if !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
             let policy = match SendBoundaryPolicy::from_env() {
@@ -595,9 +695,9 @@ pub async fn run_upload_worker(
     }
 }
 
-#[cfg(feature = "qiwe-staging-adapter")]
+#[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Result<()> {
-    let config = match staging_apply_config(cli) {
+    let config = match apply_config(cli) {
         Ok(config) => config,
         Err(_) => {
             let report = worker_report(WorkerReportState {
@@ -758,7 +858,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         bail!("use either --apply or --dry-run, not both");
     }
     let apply_requested = apply && !dry_run;
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
     if apply_requested {
         let _ = cli;
         let report = worker_report(WorkerReportState {
@@ -775,7 +875,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         println!("{}", serde_json::to_string_pretty(&report)?);
         bail!("QiWe staging adapter is not compiled into this binary");
     }
-    #[cfg(feature = "qiwe-staging-adapter")]
+    #[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
     if apply_requested && !env_flag("QINTOPIA_QIWE_IMAGE_SEND_ENABLED")? {
         let report = worker_report(WorkerReportState {
             success: true,
@@ -791,9 +891,9 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
-    #[cfg(feature = "qiwe-staging-adapter")]
+    #[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
     let config = if apply_requested {
-        match staging_apply_config(cli) {
+        match apply_config(cli) {
             Ok(config) => Some(config),
             Err(_) => {
                 let report = worker_report(WorkerReportState {
@@ -835,7 +935,7 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         return Ok(());
     }
 
-    #[cfg(feature = "qiwe-staging-adapter")]
+    #[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
     {
         run_enabled_callback_processor(
             cli,
@@ -846,14 +946,14 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
         .await
     }
 
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
     {
         drop(parsed);
         bail!("QiWe staging adapter is not compiled into this binary")
     }
 }
 
-#[cfg(feature = "qiwe-staging-adapter")]
+#[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 async fn run_enabled_callback_processor(
     cli: &Cli,
     config: AdapterConfig,
@@ -1018,7 +1118,7 @@ async fn run_enabled_callback_processor(
     Ok(())
 }
 
-#[cfg(feature = "qiwe-staging-adapter")]
+#[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 async fn prepare_feishu_delivery_bytes(
     pool: &sqlx::PgPool,
     claim: &QiweUploadClaim,
@@ -1031,13 +1131,25 @@ async fn prepare_feishu_delivery_bytes(
         return Ok(None);
     }
 
-    #[cfg(not(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter")))]
+    #[cfg(not(any(
+        all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
+        all(
+            feature = "huabaosi-feishu-mirror-adapter",
+            feature = "qiwe-production-adapter"
+        )
+    )))]
     {
         let _ = (pool, database_url);
         bail!("Feishu delivery bridge requires the combined staging feature build");
     }
 
-    #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+    #[cfg(any(
+        all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
+        all(
+            feature = "huabaosi-feishu-mirror-adapter",
+            feature = "qiwe-production-adapter"
+        )
+    ))]
     {
         let artifact =
             crate::huabaosi_feishu_artifact_mirror::revalidate_primary_storage_for_delivery(
@@ -1051,7 +1163,13 @@ async fn prepare_feishu_delivery_bytes(
     }
 }
 
-#[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
+    all(
+        feature = "huabaosi-feishu-mirror-adapter",
+        feature = "qiwe-production-adapter"
+    )
+))]
 fn validate_feishu_delivery_artifact(
     claim: &QiweUploadClaim,
     artifact: &crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageDeliveryArtifact,
@@ -1067,7 +1185,11 @@ fn validate_feishu_delivery_artifact(
     Ok(())
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn request_claim_upload_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
@@ -1087,7 +1209,11 @@ fn request_claim_upload_with(
     }
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn request_async_upload_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
@@ -1104,7 +1230,11 @@ fn request_async_upload_with(
     )
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn request_async_upload_url_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
@@ -1153,7 +1283,11 @@ fn request_async_upload_url_with(
     parse_upload_acceptance_for_call(&response)
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn request_feishu_bridge_upload_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
@@ -1177,7 +1311,11 @@ fn request_feishu_bridge_upload_with(
     async_upload.map_err(|_| UploadCallFailure::OutcomeUnknown)
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn request_temporary_storage_upload_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
@@ -1221,7 +1359,11 @@ fn request_temporary_storage_upload_with(
     )
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn parse_temporary_storage_acceptance_for_call(
     response: &HttpResponse,
     allowed_hosts: &BTreeSet<String>,
@@ -1240,7 +1382,11 @@ fn parse_temporary_storage_acceptance_for_call(
     Ok(Zeroizing::new(cloud_url.as_str().to_string()))
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn readback_temporary_storage_with(
     config: &AdapterConfig,
     claim: &QiweUploadClaim,
@@ -1273,7 +1419,11 @@ fn readback_temporary_storage_with(
     validate_claim_bytes(claim, &response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn parse_upload_acceptance_for_call(
     response: &HttpResponse,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
@@ -1288,7 +1438,11 @@ fn parse_upload_acceptance_for_call(
     Ok(Zeroizing::new(response.data.request_id))
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn request_send_image_with(
     config: &AdapterConfig,
     body: &[u8],
@@ -1319,7 +1473,11 @@ fn request_send_image_with(
     parse_send_response_for_call(&response)
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn parse_send_response_for_call(
     response: &HttpResponse,
 ) -> std::result::Result<QiweSendReceipt, SendCallFailure> {
@@ -1379,12 +1537,20 @@ fn parse_single_async_upload_callback(body: &[u8]) -> Result<ParsedCallback> {
     let credentials: QiweImageCredentials = serde_json::from_value(msg_data)
         .map_err(|_| anyhow!("QiWe async upload callback credentials are invalid"))?;
     credentials.validate()?;
-    #[cfg(not(any(test, feature = "qiwe-staging-adapter")))]
+    #[cfg(not(any(
+        test,
+        feature = "qiwe-staging-adapter",
+        feature = "qiwe-production-adapter"
+    )))]
     drop(credentials);
     Ok(ParsedCallback {
         request_id: event.request_id,
         credential_shape,
-        #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+        #[cfg(any(
+            test,
+            feature = "qiwe-staging-adapter",
+            feature = "qiwe-production-adapter"
+        ))]
         credentials,
     })
 }
@@ -1579,6 +1745,64 @@ fn preflight_report(state: PreflightReportState) -> QiweImageSendPreflightReport
 fn staging_preflight_report(
     state: StagingPreflightReportState,
 ) -> QiweImageSendStagingPreflightReport {
+    live_preflight_report(state, LivePreflightMode::Staging)
+}
+
+fn production_preflight_report(
+    state: StagingPreflightReportState,
+) -> QiweImageSendStagingPreflightReport {
+    live_preflight_report(state, LivePreflightMode::Production)
+}
+
+fn live_preflight_report(
+    state: StagingPreflightReportState,
+    mode: LivePreflightMode,
+) -> QiweImageSendStagingPreflightReport {
+    let (not_compiled, not_enabled, owner_required, database_not_approved, ready_status) =
+        match mode {
+            LivePreflightMode::Staging => (
+                "staging_adapter_not_compiled",
+                "staging_send_not_enabled",
+                "staging_owner_approval_required",
+                "staging_database_not_approved",
+                "staging_adapter_ready",
+            ),
+            LivePreflightMode::Production => (
+                "production_adapter_not_compiled",
+                "production_send_not_enabled",
+                "production_owner_approval_required",
+                "production_database_not_approved",
+                "production_adapter_ready",
+            ),
+        };
+    let (protocol, limitations, guardrails) = match mode {
+        LivePreflightMode::Staging => (
+            "qiwe_feishu_temp_storage_then_async_upload_then_send_image_staging_v1",
+            vec![
+                "staging preflight validates local configuration only; it does not connect to Postgres, read callback stdin, upload media, or send a message".to_string(),
+                "the callback phase must receive one owner-approved callback directly from bounded stdin".to_string(),
+            ],
+            vec![
+                "staging apply requires the exact owner phrase and expected database URL hash before Postgres, callback stdin, or network access".to_string(),
+                "API hosts, media hosts, and target group ids use exact reviewed allowlists".to_string(),
+                "Feishu primary-storage delivery requires the combined Huabaosi and QiWe staging feature build and same-byte temporary-storage readback".to_string(),
+                "production artifacts exclude the staging adapter; callback listener enablement remains a separate reviewed boundary".to_string(),
+            ],
+        ),
+        LivePreflightMode::Production => (
+            "qiwe_feishu_temp_storage_then_async_upload_then_send_image_production_v1",
+            vec![
+                "production preflight validates the apply gate without claiming work, reading callback stdin, uploading media, or sending a message".to_string(),
+                "the timer may be enabled only after this release-local preflight validates owner approval, database URL hash, and Feishu delivery configuration".to_string(),
+            ],
+            vec![
+                "production apply requires the exact owner phrase and expected database URL hash before Postgres claim/mutation, callback stdin, or network access".to_string(),
+                "API hosts, media hosts, and target group ids use exact reviewed allowlists".to_string(),
+                "Feishu primary-storage delivery requires the combined Huabaosi Feishu mirror and QiWe production feature build with same-byte temporary-storage readback".to_string(),
+                "activation must run this production-gated preflight before enabling the timer".to_string(),
+            ],
+        ),
+    };
     let success = state.adapter_compiled
         && state.feishu_delivery_bridge_compiled
         && state.send_enabled
@@ -1590,19 +1814,19 @@ fn staging_preflight_report(
         success,
         worker: WORKER_ID,
         action_status: if !state.adapter_compiled {
-            "staging_adapter_not_compiled"
+            not_compiled
         } else if !state.feishu_delivery_bridge_compiled {
             "feishu_delivery_bridge_not_compiled"
         } else if !state.send_enabled {
-            "staging_send_not_enabled"
+            not_enabled
         } else if !state.owner_approval_valid {
-            "staging_owner_approval_required"
+            owner_required
         } else if !state.database_boundary_valid {
-            "staging_database_not_approved"
+            database_not_approved
         } else if !state.config_valid || !state.webhook_ready {
             "adapter_not_configured"
         } else {
-            "staging_adapter_ready"
+            ready_status
         },
         adapter_compiled: state.adapter_compiled,
         feishu_delivery_bridge_compiled: state.feishu_delivery_bridge_compiled,
@@ -1615,29 +1839,30 @@ fn staging_preflight_report(
         media_allowed_host_count: state.media_allowed_host_count,
         allowed_group_count: state.allowed_group_count,
         missing_configuration: state.missing_configuration,
-        protocol: "qiwe_feishu_temp_storage_then_async_upload_then_send_image_staging_v1",
+        protocol,
         safe_for_chat: false,
-        limitations: vec![
-            "staging preflight validates local configuration only; it does not connect to Postgres, read callback stdin, upload media, or send a message".to_string(),
-            "the callback phase must receive one owner-approved callback directly from bounded stdin".to_string(),
-        ],
-        guardrails: vec![
-            "staging apply requires the exact owner phrase and expected database URL hash before Postgres, callback stdin, or network access".to_string(),
-            "API hosts, media hosts, and target group ids use exact reviewed allowlists".to_string(),
-            "Feishu primary-storage delivery requires the combined Huabaosi and QiWe staging feature build and same-byte temporary-storage readback".to_string(),
-            "production artifacts exclude the staging adapter; callback listener enablement remains a separate reviewed boundary".to_string(),
-        ],
+        limitations,
+        guardrails,
     }
 }
 
-const fn qiwe_staging_adapter_compiled() -> bool {
-    cfg!(feature = "qiwe-staging-adapter")
+const fn qiwe_live_adapter_compiled() -> bool {
+    cfg!(any(
+        feature = "qiwe-staging-adapter",
+        feature = "qiwe-production-adapter"
+    ))
 }
 
 const fn feishu_delivery_bridge_compiled() -> bool {
-    cfg!(all(
-        feature = "huabaosi-staging-adapter",
-        feature = "qiwe-staging-adapter"
+    cfg!(any(
+        all(
+            feature = "huabaosi-staging-adapter",
+            feature = "qiwe-staging-adapter"
+        ),
+        all(
+            feature = "huabaosi-feishu-mirror-adapter",
+            feature = "qiwe-production-adapter"
+        )
     ))
 }
 
@@ -1664,15 +1889,31 @@ impl AdapterConfig {
         }
 
         // Production still validates the URL and allowlist although it omits the live client.
-        #[cfg(not(any(test, feature = "qiwe-staging-adapter")))]
+        #[cfg(not(any(
+            test,
+            feature = "qiwe-staging-adapter",
+            feature = "qiwe-production-adapter"
+        )))]
         drop(api_url);
 
         Ok(Self {
-            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+            #[cfg(any(
+                test,
+                feature = "qiwe-staging-adapter",
+                feature = "qiwe-production-adapter"
+            ))]
             api_url,
-            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+            #[cfg(any(
+                test,
+                feature = "qiwe-staging-adapter",
+                feature = "qiwe-production-adapter"
+            ))]
             token: token.to_string(),
-            #[cfg(any(test, feature = "qiwe-staging-adapter"))]
+            #[cfg(any(
+                test,
+                feature = "qiwe-staging-adapter",
+                feature = "qiwe-production-adapter"
+            ))]
             guid: guid.to_string(),
             allowed_hosts,
             media_allowed_hosts: boundary_policy.media_allowed_hosts,
@@ -1682,7 +1923,11 @@ impl AdapterConfig {
     }
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn build_temporary_storage_upload_body(
     boundary: &str,
     guid: &str,
@@ -1734,7 +1979,11 @@ fn build_temporary_storage_upload_body(
     Ok(body)
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn append_multipart_text(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
     body.extend_from_slice(
         format!(
@@ -1744,7 +1993,11 @@ fn append_multipart_text(body: &mut Vec<u8>, boundary: &str, name: &str, value: 
     );
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn file_api_url_from_api_url(api_url: &Url) -> Result<Url> {
     if api_url.path() != "/qiwe/api/qw/doApi"
         || api_url.query().is_some()
@@ -1757,7 +2010,11 @@ fn file_api_url_from_api_url(api_url: &Url) -> Result<Url> {
     Ok(file_api_url)
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn strict_temporary_storage_url(
     value: &str,
     allowed_hosts: &BTreeSet<String>,
@@ -1788,7 +2045,11 @@ fn strict_temporary_storage_url(
     Ok(SensitiveUrl::new(Zeroizing::new(value.to_string())))
 }
 
-#[cfg(any(test, feature = "qiwe-staging-adapter"))]
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn validate_claim_bytes(claim: &QiweUploadClaim, bytes: &[u8]) -> Result<()> {
     if u64::try_from(bytes.len()).ok() != Some(claim.artifact_byte_size)
         || format!("sha256:{:x}", Sha256::digest(bytes)) != claim.artifact_content_hash
@@ -1975,7 +2236,23 @@ fn required_env(name: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("required QiWe image-send configuration is missing"))
 }
 
-#[cfg(feature = "qiwe-staging-adapter")]
+#[cfg(feature = "qiwe-production-adapter")]
+fn apply_config(cli: &Cli) -> Result<AdapterConfig> {
+    production_apply_config(cli)
+}
+
+#[cfg(all(
+    not(feature = "qiwe-production-adapter"),
+    feature = "qiwe-staging-adapter"
+))]
+fn apply_config(cli: &Cli) -> Result<AdapterConfig> {
+    staging_apply_config(cli)
+}
+
+#[cfg(all(
+    not(feature = "qiwe-production-adapter"),
+    feature = "qiwe-staging-adapter"
+))]
 fn staging_apply_config(cli: &Cli) -> Result<AdapterConfig> {
     validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
     let database_url = cli.database_url_required()?;
@@ -1984,8 +2261,23 @@ fn staging_apply_config(cli: &Cli) -> Result<AdapterConfig> {
     AdapterConfig::from_env()
 }
 
+#[cfg(feature = "qiwe-production-adapter")]
+fn production_apply_config(cli: &Cli) -> Result<AdapterConfig> {
+    validate_production_owner_approval(std::env::var(PRODUCTION_APPROVAL_ENV).ok().as_deref())?;
+    let database_url = cli.database_url_required()?;
+    validate_production_database_boundary(database_url)?;
+    validate_feishu_delivery_config(database_url)?;
+    AdapterConfig::from_env()
+}
+
 fn validate_feishu_delivery_config(database_url: &str) -> Result<()> {
-    #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+    #[cfg(any(
+        all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
+        all(
+            feature = "huabaosi-feishu-mirror-adapter",
+            feature = "qiwe-production-adapter"
+        )
+    ))]
     {
         let _ = crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageConfig::from_env(
             database_url,
@@ -1993,10 +2285,16 @@ fn validate_feishu_delivery_config(database_url: &str) -> Result<()> {
         Ok(())
     }
 
-    #[cfg(not(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter")))]
+    #[cfg(not(any(
+        all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
+        all(
+            feature = "huabaosi-feishu-mirror-adapter",
+            feature = "qiwe-production-adapter"
+        )
+    )))]
     {
         let _ = database_url;
-        bail!("Feishu delivery bridge requires the combined staging feature build")
+        bail!("Feishu delivery bridge requires a matching Huabaosi and QiWe live feature build")
     }
 }
 
@@ -2005,6 +2303,25 @@ fn validate_staging_owner_approval(value: Option<&str>) -> Result<()> {
         bail!("QiWe image send staging owner approval is required");
     }
     Ok(())
+}
+
+#[cfg(feature = "qiwe-production-adapter")]
+fn validate_production_owner_approval(value: Option<&str>) -> Result<()> {
+    if value != Some(PRODUCTION_APPROVAL_PHRASE) {
+        bail!("QiWe image send production owner approval is required");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "qiwe-production-adapter")]
+fn production_owner_approval_valid() -> bool {
+    validate_production_owner_approval(std::env::var(PRODUCTION_APPROVAL_ENV).ok().as_deref())
+        .is_ok()
+}
+
+#[cfg(not(feature = "qiwe-production-adapter"))]
+fn production_owner_approval_valid() -> bool {
+    false
 }
 
 fn validate_staging_database_boundary(database_url: &str) -> Result<()> {
@@ -2016,35 +2333,74 @@ fn validate_staging_database_boundary(database_url: &str) -> Result<()> {
     validate_staging_database_boundary_with_expected_hash(database_url, &expected_hash)
 }
 
+#[cfg(feature = "qiwe-production-adapter")]
+fn validate_production_database_boundary(database_url: &str) -> Result<()> {
+    let expected_hash = std::env::var(PRODUCTION_DATABASE_URL_SHA256_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("QiWe production database URL hash is required"))?;
+    validate_database_boundary_with_expected_hash(database_url, &expected_hash, false)
+}
+
+#[cfg(feature = "qiwe-production-adapter")]
+fn production_database_boundary_valid(cli: &Cli) -> bool {
+    cli.database_url_required()
+        .and_then(validate_production_database_boundary)
+        .is_ok()
+}
+
+#[cfg(not(feature = "qiwe-production-adapter"))]
+fn production_database_boundary_valid(_cli: &Cli) -> bool {
+    false
+}
+
+fn feishu_delivery_config_valid(cli: &Cli) -> bool {
+    cli.database_url_required()
+        .and_then(validate_feishu_delivery_config)
+        .is_ok()
+}
+
 fn validate_staging_database_boundary_with_expected_hash(
     database_url: &str,
     expected_hash: &str,
 ) -> Result<()> {
+    validate_database_boundary_with_expected_hash(database_url, expected_hash, true)
+}
+
+fn validate_database_boundary_with_expected_hash(
+    database_url: &str,
+    expected_hash: &str,
+    require_staging_database: bool,
+) -> Result<()> {
     if database_url.is_empty() || database_url.chars().any(char::is_control) {
-        bail!("QiWe staging database URL is invalid");
+        bail!("QiWe database URL is invalid");
     }
     if expected_hash.len() != 64
         || !expected_hash
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
     {
-        bail!("QiWe staging database URL hash must be canonical SHA-256");
+        bail!("QiWe database URL hash must be canonical SHA-256");
     }
     let actual_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
     if actual_hash != expected_hash {
-        bail!("QiWe staging database URL hash does not match the approved command");
+        bail!("QiWe database URL hash does not match the approved command");
     }
-    let parsed = Url::parse(database_url).context("parse QiWe staging database URL")?;
+    let parsed = Url::parse(database_url).context("parse QiWe database URL")?;
     if !matches!(parsed.scheme(), "postgres" | "postgresql") || parsed.host_str().is_none() {
-        bail!("QiWe staging database URL must use PostgreSQL and include a host");
+        bail!("QiWe database URL must use PostgreSQL and include a host");
     }
     let database_name = parsed
         .path()
         .strip_prefix('/')
         .filter(|value| !value.is_empty() && !value.contains('/'))
-        .ok_or_else(|| anyhow!("QiWe staging database URL must name exactly one database"))?;
-    if !database_name.to_ascii_lowercase().contains("staging") {
+        .ok_or_else(|| anyhow!("QiWe database URL must name exactly one database"))?;
+    if require_staging_database && !database_name.to_ascii_lowercase().contains("staging") {
         bail!("QiWe image send apply requires a staging database");
+    }
+    if !require_staging_database && database_name.to_ascii_lowercase().contains("staging") {
+        bail!("QiWe image send production apply rejects staging databases");
     }
     Ok(())
 }
@@ -2071,6 +2427,40 @@ fn missing_qiwe_image_staging_configuration(cli: &Cli) -> Vec<&'static str> {
         .is_none_or(|value| value.trim().is_empty())
     {
         missing.push(STAGING_DATABASE_URL_SHA256_ENV);
+    }
+    missing
+}
+
+fn missing_qiwe_image_production_configuration(cli: &Cli) -> Vec<&'static str> {
+    let mut missing = missing_qiwe_image_send_configuration();
+    if feishu_delivery_bridge_compiled() {
+        missing.extend(missing_required_configuration_with(
+            REQUIRED_FEISHU_DELIVERY_CONFIGURATION,
+            |name| std::env::var(name).ok(),
+        ));
+    }
+    if cli.database_url_required().is_err() {
+        missing.push("QINTOPIA_SIDECAR_DATABASE_URL");
+    }
+    #[cfg(feature = "qiwe-production-adapter")]
+    {
+        if std::env::var(PRODUCTION_APPROVAL_ENV)
+            .ok()
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            missing.push(PRODUCTION_APPROVAL_ENV);
+        }
+        if std::env::var(PRODUCTION_DATABASE_URL_SHA256_ENV)
+            .ok()
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            missing.push(PRODUCTION_DATABASE_URL_SHA256_ENV);
+        }
+    }
+    #[cfg(not(feature = "qiwe-production-adapter"))]
+    {
+        missing.push("QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL");
+        missing.push("QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256");
     }
     missing
 }
@@ -2189,7 +2579,13 @@ mod tests {
         time::Duration,
     };
 
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    use std::ffi::OsString;
+
+    #[cfg(any(
+        not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")),
+        all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter")
+    ))]
     use clap::Parser;
 
     use super::*;
@@ -2226,6 +2622,10 @@ mod tests {
             allowed_group_count: 1,
             missing_configuration: Vec::new(),
         }
+    }
+
+    fn ready_production_preflight_state() -> StagingPreflightReportState {
+        ready_staging_preflight_state()
     }
 
     fn test_callback_body(
@@ -2826,6 +3226,52 @@ mod tests {
     }
 
     #[test]
+    fn production_preflight_reports_each_apply_gate_without_configuration_values() {
+        let ready = production_preflight_report(ready_production_preflight_state());
+        assert!(ready.success);
+        assert_eq!(ready.action_status, "production_adapter_ready");
+        assert_eq!(
+            ready.protocol,
+            "qiwe_feishu_temp_storage_then_async_upload_then_send_image_production_v1"
+        );
+
+        let cases = [
+            ("production_adapter_not_compiled", 0),
+            ("feishu_delivery_bridge_not_compiled", 1),
+            ("production_send_not_enabled", 2),
+            ("production_owner_approval_required", 3),
+            ("production_database_not_approved", 4),
+            ("adapter_not_configured", 5),
+        ];
+        for (expected_status, gate) in cases {
+            let mut state = ready_production_preflight_state();
+            match gate {
+                0 => state.adapter_compiled = false,
+                1 => state.feishu_delivery_bridge_compiled = false,
+                2 => state.send_enabled = false,
+                3 => state.owner_approval_valid = false,
+                4 => state.database_boundary_valid = false,
+                5 => state.config_valid = false,
+                _ => unreachable!(),
+            }
+            let report = production_preflight_report(state);
+            assert!(!report.success);
+            assert_eq!(report.action_status, expected_status);
+        }
+
+        let serialized = serde_json::to_string(&ready).expect("serialize production preflight");
+        for sensitive in [
+            "postgres://production-user:secret@127.0.0.1/qintopia",
+            "private-token",
+            "private-device-guid",
+            "private-group-id",
+            "https://private-media.example/poster.jpg",
+        ] {
+            assert!(!serialized.contains(sensitive));
+        }
+    }
+
+    #[test]
     fn enabled_preflight_fails_closed() {
         let report = test_preflight_report(true, true, false);
 
@@ -2847,31 +3293,175 @@ mod tests {
         );
     }
 
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
     #[test]
     fn default_build_excludes_qiwe_staging_adapter() {
-        assert!(!qiwe_staging_adapter_compiled());
+        assert!(!qiwe_live_adapter_compiled());
         assert!(!feishu_delivery_bridge_compiled());
     }
 
     #[cfg(all(
-        feature = "qiwe-staging-adapter",
-        not(feature = "huabaosi-staging-adapter")
+        any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"),
+        not(any(
+            all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
+            all(
+                feature = "huabaosi-feishu-mirror-adapter",
+                feature = "qiwe-production-adapter"
+            )
+        ))
     ))]
     #[test]
-    fn qiwe_only_build_excludes_feishu_delivery_bridge() {
-        assert!(qiwe_staging_adapter_compiled());
+    fn qiwe_without_matching_huabaosi_feature_excludes_feishu_delivery_bridge() {
+        assert!(qiwe_live_adapter_compiled());
         assert!(!feishu_delivery_bridge_compiled());
     }
 
-    #[cfg(all(feature = "qiwe-staging-adapter", feature = "huabaosi-staging-adapter"))]
+    #[cfg(all(
+        any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"),
+        feature = "huabaosi-staging-adapter"
+    ))]
     #[test]
     fn combined_staging_build_contains_feishu_delivery_bridge() {
-        assert!(qiwe_staging_adapter_compiled());
+        assert!(qiwe_live_adapter_compiled());
         assert!(feishu_delivery_bridge_compiled());
     }
 
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[cfg(all(
+        feature = "qiwe-production-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    #[test]
+    fn combined_production_build_contains_feishu_delivery_bridge() {
+        assert!(qiwe_live_adapter_compiled());
+        assert!(feishu_delivery_bridge_compiled());
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    struct EnvRestore {
+        key: &'static str,
+        value: Option<OsString>,
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    impl EnvRestore {
+        fn capture(key: &'static str) -> Self {
+            Self {
+                key,
+                value: std::env::var_os(key),
+            }
+        }
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.value {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    #[cfg(all(feature = "qiwe-production-adapter", feature = "qiwe-staging-adapter"))]
+    #[test]
+    fn production_feature_apply_never_falls_back_to_staging_gate() {
+        let _staging_approval = EnvRestore::capture(STAGING_APPROVAL_ENV);
+        let _production_approval = EnvRestore::capture(PRODUCTION_APPROVAL_ENV);
+        unsafe {
+            std::env::set_var(STAGING_APPROVAL_ENV, STAGING_APPROVAL_PHRASE);
+            std::env::remove_var(PRODUCTION_APPROVAL_ENV);
+        }
+        let cli = Cli::parse_from(["qintopia-message-sidecar", "check"]);
+
+        let error = match apply_config(&cli) {
+            Ok(_) => panic!("production feature must require production gate"),
+            Err(error) => error,
+        };
+
+        assert!(error
+            .to_string()
+            .contains("production owner approval is required"));
+    }
+
+    #[cfg(all(
+        feature = "qiwe-production-adapter",
+        feature = "qiwe-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    #[test]
+    fn live_preflight_feishu_delivery_gate_rejects_invalid_values() {
+        let env_keys = [
+            "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+            "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+            "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+            "QINTOPIA_DEPLOYED_COMMIT_SHA",
+            "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+            "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+            "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+            "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+            "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+            "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+            "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+            "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+        ];
+        let _restore: Vec<_> = env_keys
+            .iter()
+            .map(|key| EnvRestore::capture(key))
+            .collect();
+        let database_url = "postgres://production-user:secret@127.0.0.1:5432/qintopia";
+        let database_hash = format!("{:x}", Sha256::digest(database_url.as_bytes()));
+        let release_sha = "0123456789abcdef0123456789abcdef01234567";
+        unsafe {
+            std::env::set_var("QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED", "1");
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+                "approved-huabaosi-feishu-artifact-mirror",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+                release_sha,
+            );
+            std::env::set_var("QINTOPIA_DEPLOYED_COMMIT_SHA", release_sha);
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+                database_hash,
+            );
+            std::env::set_var("QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN", "bascnReviewed");
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+                "bascnReviewed",
+            );
+            std::env::set_var("QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID", "tblReviewed");
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+                "tblDifferent",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+                "/etc/qintopia/huabaosi-profile.env",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+                "huabaosi-generated-image-v1",
+            );
+            std::env::set_var(
+                "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+                "media.example.test",
+            );
+        }
+        let cli = Cli::parse_from([
+            "qintopia-message-sidecar",
+            "--database-url",
+            database_url,
+            "check",
+        ]);
+
+        assert!(!feishu_delivery_config_valid(&cli));
+    }
+
+    #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
     #[tokio::test]
     async fn default_upload_apply_stops_before_database_and_network() {
         let cli = Cli::parse_from(["qintopia-message-sidecar", "check"]);
@@ -2883,7 +3473,7 @@ mod tests {
         assert!(error.to_string().contains("not compiled"));
     }
 
-    #[cfg(not(feature = "qiwe-staging-adapter"))]
+    #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
     #[tokio::test]
     async fn default_callback_apply_stops_before_stdin_database_and_network() {
         let cli = Cli::parse_from(["qintopia-message-sidecar", "check"]);
@@ -3152,7 +3742,13 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
+    #[cfg(any(
+        all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
+        all(
+            feature = "huabaosi-feishu-mirror-adapter",
+            feature = "qiwe-production-adapter"
+        )
+    ))]
     #[test]
     fn feishu_delivery_identity_must_match_the_locked_qiwe_claim() {
         use crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageDeliveryArtifact;

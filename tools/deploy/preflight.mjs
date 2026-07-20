@@ -65,6 +65,8 @@ const requiredDocs = [
   "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
+  "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -197,6 +199,8 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
+  "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -267,6 +271,7 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
     "openssl",
     "jwt_path",
     "huabaosi-production-adapter",
+    "qiwe-production-adapter",
   ]) {
     if (!artifactFetchScript.includes(requiredFragment)) {
       addError(
@@ -336,6 +341,7 @@ if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
     'workflow="${GITHUB_WORKFLOW',
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
     "systemctl enable",
     "systemctl start",
     "gh release",
@@ -443,6 +449,7 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     'tar --no-same-owner -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir"',
     "qintopia-message-sidecar",
     "huabaosi-production-adapter",
+    "qiwe-production-adapter",
     "sha256sum -c SHA256SUMS",
   ]) {
     if (!cosFetchScript.includes(requiredFragment)) {
@@ -484,6 +491,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const approvedCargoFeatures = [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
   ];
   const cargoFeaturesMatch = buildArtifactScript.match(
     /const cargoFeatures = \[([\s\S]*?)\];/
@@ -603,6 +611,7 @@ if (exists("tools/deploy/build-staging-sidecar-artifact.mjs")) {
   for (const forbiddenFragment of [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
     '"--all-features"',
   ]) {
     if (stagingArtifactScript.includes(forbiddenFragment)) {
@@ -674,6 +683,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
+    "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",

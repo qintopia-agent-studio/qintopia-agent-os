@@ -108,6 +108,7 @@ if (!exists(stagingArtifactProvisionPath)) {
     'workflow="${GITHUB_WORKFLOW',
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
     "systemctl enable",
     "systemctl start",
     "gh release",
@@ -1294,6 +1295,64 @@ if (!exists(huabaosiFeishuMirrorActivationPath)) {
   }
 }
 
+const qiweImageSendProductionActivationPath =
+  "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh";
+if (!exists(qiweImageSendProductionActivationPath)) {
+  addError(
+    `${qiweImageSendProductionActivationPath}: missing production activation command`
+  );
+} else {
+  const activation = readText(qiweImageSendProductionActivationPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION",
+    "approved-production-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
+    "qintopia-agentos-qiwe-image-send-preflight.service",
+    "qintopia-agentos-qiwe-image-send-worker.timer",
+    '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
+    '"$SYSTEMCTL" enable --now "$WORKER_TIMER"',
+    '"$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"',
+    '"$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"',
+  ]) {
+    requireFragment(qiweImageSendProductionActivationPath, activation, fragment);
+  }
+  for (const fragment of [
+    "run-qiwe-image-send-worker",
+    "--apply",
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+  ]) {
+    forbidFragment(qiweImageSendProductionActivationPath, activation, fragment);
+  }
+}
+
+const qiweImageSendProductionRollbackPath =
+  "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh";
+if (!exists(qiweImageSendProductionRollbackPath)) {
+  addError(
+    `${qiweImageSendProductionRollbackPath}: missing production rollback command`
+  );
+} else {
+  const rollback = readText(qiweImageSendProductionRollbackPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK",
+    "approved-production-qiwe-image-send-rollback",
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
+    "qintopia-agentos-qiwe-image-send-worker.service",
+    "qintopia-agentos-qiwe-image-send-worker.timer",
+    '"$SYSTEMCTL" disable --now "$WORKER_TIMER"',
+  ]) {
+    requireFragment(qiweImageSendProductionRollbackPath, rollback, fragment);
+  }
+  for (const fragment of ["rm -", "source ", "eval ", "QIWE_TOKEN"]) {
+    forbidFragment(qiweImageSendProductionRollbackPath, rollback, fragment);
+  }
+}
+
 const huabaosiFeishuMirrorRollbackPath =
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh";
 if (exists(huabaosiFeishuMirrorRollbackPath)) {
@@ -1308,6 +1367,23 @@ if (exists(huabaosiFeishuMirrorRollbackPath)) {
     rollback,
     "QINTOPIA_SIDECAR_ENV_FILE"
   );
+}
+
+const renderSystemdUnitsPath = "deploy/sidecar/scripts/render-systemd-units.sh";
+if (!exists(renderSystemdUnitsPath)) {
+  addError(`${renderSystemdUnitsPath}: missing systemd unit renderer`);
+} else {
+  const renderer = readText(renderSystemdUnitsPath);
+  for (const fragment of [
+    "qintopia-agentos-qiwe-image-send-preflight.service",
+    "qiwe-image-send-production-preflight",
+    "qintopia-agentos-qiwe-image-send-worker.service",
+    "run-qiwe-image-send-worker --once --apply",
+    "qintopia-agentos-qiwe-image-send-worker.timer",
+  ]) {
+    requireFragment(renderSystemdUnitsPath, renderer, fragment);
+  }
+  forbidFragment(renderSystemdUnitsPath, renderer, '"qiwe-image-send-preflight"');
 }
 
 const qiweImageStagingSmokePath =
@@ -1387,12 +1463,14 @@ if (!exists(qiweImageProductionObservationPath)) {
     "requires the real systemctl command",
     '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
+    '"qiwe-production-adapter"',
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
     "parse_send_enablement",
-    "currently supports only disabled state",
-    "production apply unit is installed but not approved",
-    "production apply unit is active but not approved",
-    "production apply unit is enabled but not approved",
+    "expected state must be disabled, enabled, or auto",
+    "production timer must be active",
+    "production timer must not be active",
     "qiwe_image_send_production_observation_state=",
   ]) {
     requireFragment(qiweImageProductionObservationPath, observation, fragment);
@@ -1455,6 +1533,7 @@ if (!exists(stagingSidecarArtifactBuilderPath)) {
   for (const fragment of [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
     '"--all-features"',
   ]) {
     forbidFragment(stagingSidecarArtifactBuilderPath, builder, fragment);
@@ -1469,10 +1548,16 @@ if (exists(productionSidecarArtifactBuilderPath)) {
     "resolveApprovedTarget",
     "resolveContainedArtifactDir",
     "manifestSha256",
+    '"huabaosi-production-adapter"',
+    '"huabaosi-feishu-mirror-adapter"',
+    '"qiwe-production-adapter"',
     "`${bundleSha256}  ${bundleName}`",
     "`${manifestSha256}  artifact-manifest.json`",
   ]) {
     requireFragment(productionSidecarArtifactBuilderPath, builder, fragment);
+  }
+  for (const fragment of ['"qiwe-staging-adapter"', '"huabaosi-staging-adapter"']) {
+    forbidFragment(productionSidecarArtifactBuilderPath, builder, fragment);
   }
 }
 
