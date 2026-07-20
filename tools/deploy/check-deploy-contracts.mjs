@@ -2047,6 +2047,34 @@ if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
   }
 }
 
+const xiaomanQiweArrivalConfirmationEvidenceCheckPath =
+  "tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs";
+if (!exists(xiaomanQiweArrivalConfirmationEvidenceCheckPath)) {
+  addError(
+    `${xiaomanQiweArrivalConfirmationEvidenceCheckPath}: missing Xiaoman QiWe group arrival confirmation evidence checker`
+  );
+} else {
+  const checker = readText(xiaomanQiweArrivalConfirmationEvidenceCheckPath);
+  for (const fragment of [
+    "xiaoman_qiwe_group_arrival_confirmation_evidence=",
+    "xiaoman-qiwe-group-arrival-confirmation-evidence-v1",
+    "check-xiaoman-real-activity-production-evidence.mjs",
+    "human_visible_group_check",
+    "community_activity_group",
+    "send_ready_work_item_id",
+    "generated_image_artifact_id",
+    "artifact_content_hash",
+    "raw_secret_fields_retained",
+    "forbidden sensitive fragment",
+    "Xiaoman QiWe group arrival confirmation evidence check passed.",
+  ]) {
+    requireFragment(xiaomanQiweArrivalConfirmationEvidenceCheckPath, checker, fragment);
+  }
+  for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
+    forbidFragment(xiaomanQiweArrivalConfirmationEvidenceCheckPath, checker, fragment);
+  }
+}
+
 const xiaomanProductionCompletionEvidenceCheckPath =
   "tools/deploy/check-xiaoman-production-completion-evidence.mjs";
 if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
@@ -2287,6 +2315,41 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
   }
 }
 
+const xiaomanQiweArrivalConfirmationTemplatePath =
+  "docs/reports/templates/xiaoman-qiwe-group-arrival-confirmation-evidence.md";
+if (!exists(xiaomanQiweArrivalConfirmationTemplatePath)) {
+  addError(
+    `${xiaomanQiweArrivalConfirmationTemplatePath}: missing Xiaoman QiWe group arrival confirmation evidence template`
+  );
+} else {
+  const template = readText(xiaomanQiweArrivalConfirmationTemplatePath);
+  for (const fragment of [
+    "xiaoman_qiwe_group_arrival_confirmation_evidence=",
+    "xiaoman-qiwe-group-arrival-confirmation-evidence-v1",
+    "human_visible_group_check",
+    "community_activity_group",
+    "send_ready_work_item_id",
+    "generated_image_artifact_id",
+    "artifact_content_hash",
+    "raw_secret_fields_retained",
+    "Do not record QiWe token, GUID",
+  ]) {
+    requireFragment(xiaomanQiweArrivalConfirmationTemplatePath, template, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+    "callback.json",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(xiaomanQiweArrivalConfirmationTemplatePath, template, fragment);
+  }
+}
+
 const xiaomanImageSendStagingEvidenceTestPath =
   "tools/deploy/test-xiaoman-image-send-staging-evidence.mjs";
 if (!exists(xiaomanImageSendStagingEvidenceTestPath)) {
@@ -2304,6 +2367,25 @@ if (!exists(xiaomanImageSendStagingEvidenceTestPath)) {
     "Xiaoman image-send staging evidence test passed.",
   ]) {
     requireFragment(xiaomanImageSendStagingEvidenceTestPath, test, fragment);
+  }
+}
+
+const xiaomanQiweArrivalConfirmationEvidenceTestPath =
+  "tools/deploy/test-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs";
+if (!exists(xiaomanQiweArrivalConfirmationEvidenceTestPath)) {
+  addError(
+    `${xiaomanQiweArrivalConfirmationEvidenceTestPath}: missing Xiaoman QiWe group arrival confirmation evidence checker test`
+  );
+} else {
+  const test = readText(xiaomanQiweArrivalConfirmationEvidenceTestPath);
+  for (const fragment of [
+    "check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs",
+    "does not bind to the real activity send",
+    "forbidden sensitive fragment",
+    "production real activity evidence failed",
+    "Xiaoman QiWe group arrival confirmation evidence test passed.",
+  ]) {
+    requireFragment(xiaomanQiweArrivalConfirmationEvidenceTestPath, test, fragment);
   }
 }
 

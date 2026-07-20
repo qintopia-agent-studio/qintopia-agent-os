@@ -133,6 +133,9 @@
 
 - Real Xiaoman activity production evidence validation:
   `node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>`
+- Xiaoman QiWe group-arrival human confirmation evidence validation after a real
+  activity send:
+  `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`
 - Full Xiaoman production completion evidence validation after all completion gates have
   retained sanitized evidence:
 
