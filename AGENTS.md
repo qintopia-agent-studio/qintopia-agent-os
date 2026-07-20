@@ -113,6 +113,8 @@
 
 - QiWe image-send production observation smoke:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh`
+- QiWe image callback bridge production observation smoke:
+  `QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh`
 - QiWe image-send production activation after manual Release publish and production env
   approval:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`

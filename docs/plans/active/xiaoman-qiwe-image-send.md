@@ -257,6 +257,20 @@ It streams the bounded callback only through child stdin and never via argv, env
 NATS, logs, or HTTP response bodies. It does not publish a Release, enable timers,
 approve images, or bypass the Rust production apply gate.
 
+The release-local callback bridge production observation is read-only:
+
+```bash
+QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 \
+  deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh
+```
+
+It verifies that Erhua's QiWe plugin symlink resolves to `release/current`, the bridge
+configuration is either explicitly disabled or bound to production mode, the configured
+sidecar path/hash match the immutable release binary, and the approved production
+database URL SHA-256 matches the runtime database URL without printing that URL. It does
+not process callbacks, start services, enable timers, read Feishu, write Postgres, call
+QiWe, or publish.
+
 Until a new immutable Release is owner-published, deployed, activated, and backed by one
 real Xiaoman activity evidence bundle, QiWe image send remains code-ready rather than a
 completed production workflow.
