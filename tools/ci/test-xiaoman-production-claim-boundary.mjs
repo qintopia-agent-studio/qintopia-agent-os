@@ -44,6 +44,13 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  positiveXiaomanProductionCompletionClaimLines(
+    "Xiaoman production-ready workflow is now available."
+  ),
+  ["Xiaoman production-ready workflow is now available."]
+);
+
+assert.deepEqual(
   positiveXiaomanProductionCompletionClaimLines("小满生产闭环已完成。"),
   ["小满生产闭环已完成。"]
 );
@@ -61,14 +68,14 @@ for (const fragment of requiredXiaomanProductionCompletionEvidenceRefs) {
 const reversedOrderErrors = validateXiaomanProductionCompletionClaimBoundary({
   pullRequestBody:
     "This PR was generated with [Release Please]\n\nProduction-complete Xiaoman workflow is now available.",
-  changelog: "# Changelog\n\n## [1.2.3]\n\n- feat: production ready Xiaoman workflow",
+  changelog: "# Changelog\n\n## [1.2.3]\n\n- feat: production-ready Xiaoman workflow",
 });
 assert.equal(reversedOrderErrors.length, 1);
 assert.match(
   reversedOrderErrors[0],
   /Production-complete Xiaoman workflow is now available/
 );
-assert.match(reversedOrderErrors[0], /production ready Xiaoman workflow/);
+assert.match(reversedOrderErrors[0], /production-ready Xiaoman workflow/);
 
 assert.deepEqual(
   validateXiaomanProductionCompletionClaimBoundary({
