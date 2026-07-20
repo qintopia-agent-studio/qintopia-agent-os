@@ -565,9 +565,10 @@ Use `rg` and `rg --files` for search.
   `tools/deploy/check-xiaoman-production-completion-evidence.mjs`. The report may keep
   only the fixed schema ids, AgentOS UUIDs, release/database hashes, the owner-approved
   sidecar binary hash, release-binary verification booleans, `artifact_content_hash`,
-  reviewed PR numbers/head SHAs, and boolean execution facts; it must not retain raw
-  QiWe callback bodies, request ids, file credentials, group ids, message ids, media
-  URLs, database URLs, provider responses, raw chat, or raw logs.
+  reviewed PR numbers/head SHAs, production Release commit binding, and boolean
+  execution facts; it must not retain raw QiWe callback bodies, request ids, file
+  credentials, group ids, message ids, media URLs, database URLs, provider responses,
+  raw chat, or raw logs.
 - `xiaoman-real-activity-production-evidence` is a read-only retention exporter. It may
   run only from the immutable
   `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`

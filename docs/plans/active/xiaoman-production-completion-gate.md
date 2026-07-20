@@ -42,7 +42,8 @@ Only `production-complete` may be described as Xiaoman fully usable in productio
 All gates are required before a Release is called Xiaoman production complete:
 
 1. Release Please validation passes on the exact release PR head, including the manual
-   CI dispatch required for bot-authored release PRs.
+   CI dispatch required for bot-authored release PRs, and the completion manifest binds
+   the published production Release commit to the deployed production evidence.
 2. The staging sidecar artifact is built and provisioned under the fixed immutable
    staging release root with reviewed release SHA, sidecar SHA-256, and rollback owner.
 3. Huabaosi staging generation produces one reviewed final JPEG and retains only the
@@ -52,7 +53,9 @@ All gates are required before a Release is called Xiaoman production complete:
 5. The cross-flow evidence checker proves the Huabaosi final JPEG `content_hash` equals
    the QiWe `artifact_content_hash`.
 6. A separate QiWe production enablement PR adds reviewed listener/service/timer,
-   observation, rollback, exact allowlists, and production feature boundaries.
+   observation, rollback, exact allowlists, and production feature boundaries, and the
+   final manifest records that the reviewed enablement was included in the same
+   production Release commit used for the real-activity evidence.
 7. Huabaosi production generation and Feishu mirror activation pass release-local
    observation, explicit activation, and first-record canary evidence retained as a
    separate sanitized output.
