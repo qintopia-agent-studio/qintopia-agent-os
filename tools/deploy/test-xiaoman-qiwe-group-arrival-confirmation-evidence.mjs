@@ -29,6 +29,19 @@ try {
     /Xiaoman QiWe group arrival confirmation evidence check passed/
   );
 
+  const templateText = writeCase("template-text");
+  fs.appendFileSync(
+    templateText.confirmation,
+    [
+      "## Exclusions",
+      "Do not record QiWe token, GUID, API secret material, raw target group id, message id, request id, callback event id, file id, MD5 value, AES key, file size, filename, media URL, database URL, database credentials, raw chat content, screenshots containing member profiles, shell logs, or response bodies.",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  result = runChecker(templateText);
+  assert.equal(result.status, 0, result.stderr);
+
   const hashDrift = writeCase("hash-drift", {
     confirmation: { artifact_content_hash: otherContentHash },
   });
@@ -50,12 +63,9 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /forbidden sensitive fragment/);
 
-  const leakedUrl = writeCase("leaked-url");
-  fs.appendFileSync(
-    leakedUrl.confirmation,
-    '{"artifact_uri":"https://media.example/private.jpg"}\n',
-    "utf8"
-  );
+  const leakedUrl = writeCase("leaked-url", {
+    confirmation: { artifact_uri: "https://media.example/private.jpg" },
+  });
   result = runChecker(leakedUrl);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /forbidden sensitive fragment/);

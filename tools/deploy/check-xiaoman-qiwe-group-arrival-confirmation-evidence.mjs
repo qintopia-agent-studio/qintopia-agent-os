@@ -17,6 +17,14 @@ const productionEvidenceFile = path.resolve(args[0]);
 const confirmationEvidenceFile = path.resolve(args[1]);
 const productionText = fs.readFileSync(productionEvidenceFile, "utf8");
 const confirmationText = fs.readFileSync(confirmationEvidenceFile, "utf8");
+const productionEvidenceLines = prefixedLines(
+  productionText,
+  "xiaoman_real_activity_production_evidence="
+);
+const confirmationEvidenceLines = prefixedLines(
+  confirmationText,
+  "xiaoman_qiwe_group_arrival_confirmation_evidence="
+);
 
 const forbiddenPatterns = [
   /https?:\/\//i,
@@ -49,8 +57,8 @@ const forbiddenPatterns = [
 ];
 
 for (const [label, text] of [
-  ["production evidence", productionText],
-  ["group arrival confirmation evidence", confirmationText],
+  ["production evidence records", productionEvidenceLines.join("\n")],
+  ["group arrival confirmation evidence records", confirmationEvidenceLines.join("\n")],
 ]) {
   for (const pattern of forbiddenPatterns) {
     if (pattern.test(text)) {
@@ -74,7 +82,7 @@ if (productionCheck.status !== 0) {
 }
 
 const productionRecords = prefixedRecords(
-  productionText,
+  productionEvidenceLines,
   "xiaoman_real_activity_production_evidence="
 );
 const sendReady = singlePhase(productionRecords, "send_ready");
@@ -82,7 +90,7 @@ const qiweCallback = singlePhase(productionRecords, "qiwe_callback_send");
 const retention = singlePhase(productionRecords, "sanitized_evidence_retention");
 const confirmation = singleRecord(
   prefixedRecords(
-    confirmationText,
+    confirmationEvidenceLines,
     "xiaoman_qiwe_group_arrival_confirmation_evidence="
   ),
   "expected one QiWe group arrival confirmation evidence record"
@@ -137,22 +145,23 @@ if (
 
 console.log("Xiaoman QiWe group arrival confirmation evidence check passed.");
 
-function prefixedRecords(text, prefix) {
-  return text
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith(prefix))
-    .map((line, index) => {
-      let record;
-      try {
-        record = JSON.parse(line.slice(prefix.length));
-      } catch (error) {
-        fail(`evidence line ${index + 1} is not valid JSON: ${error.message}`);
-      }
-      if (!record || typeof record !== "object" || Array.isArray(record)) {
-        fail(`evidence line ${index + 1} must be a JSON object`);
-      }
-      return record;
-    });
+function prefixedLines(text, prefix) {
+  return text.split(/\r?\n/).filter((line) => line.startsWith(prefix));
+}
+
+function prefixedRecords(lines, prefix) {
+  return lines.map((line, index) => {
+    let record;
+    try {
+      record = JSON.parse(line.slice(prefix.length));
+    } catch (error) {
+      fail(`evidence line ${index + 1} is not valid JSON: ${error.message}`);
+    }
+    if (!record || typeof record !== "object" || Array.isArray(record)) {
+      fail(`evidence line ${index + 1} must be a JSON object`);
+    }
+    return record;
+  });
 }
 
 function singleRecord(records, message) {
