@@ -175,6 +175,7 @@ assertExactKeys(
   new Set([
     "action_status",
     "adapter_compiled",
+    "feishu_delivery_bridge_compiled",
     "allowed_group_count",
     "allowed_host_count",
     "config_valid",
@@ -234,6 +235,7 @@ if (
   qiwePreflight.worker !== "qiwe-image-send-adapter" ||
   qiwePreflight.action_status !== "staging_adapter_ready" ||
   qiwePreflight.adapter_compiled !== true ||
+  qiwePreflight.feishu_delivery_bridge_compiled !== true ||
   qiwePreflight.send_enabled !== true ||
   qiwePreflight.config_valid !== true ||
   qiwePreflight.database_boundary_valid !== true ||

@@ -248,10 +248,12 @@ records and checker results.
    check. The combined staging artifact may consume a `feishu-base://` artifact only by
    authenticated Feishu readback, memory-only QiWe SDK temporary-storage upload,
    same-byte temporary URL readback, and the existing async URL upload/callback gate.
-   Default, production, Huabaosi-only, and QiWe-only builds must continue to fail closed
-   for `feishu-base://`. Do not solve failures by exposing Feishu attachment tokens,
-   adding an unreviewed public proxy/upload service, or falling back to QiWe synchronous
-   upload APIs marked deprecated in the reviewed protocol plan.
+   Default, Huabaosi-only, and QiWe-only builds must continue to fail closed for
+   `feishu-base://`; production delivery requires the reviewed combined production
+   artifact and remains outside staging provisioning. Do not solve failures by exposing
+   Feishu attachment tokens, adding an unreviewed public proxy/upload service, or
+   falling back to QiWe synchronous upload APIs marked deprecated in the reviewed
+   protocol plan.
 
 Hold immediately if any readiness report says the env file is missing, the release root
 is missing, the binary hash mismatches, the staging database URL hash is absent, an

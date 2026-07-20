@@ -605,7 +605,7 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
                 dry_run: false,
                 apply_requested: true,
                 phase: "upload",
-                action_status: "staging_boundary_not_approved".to_string(),
+                action_status: "boundary_not_approved".to_string(),
                 work_item_id,
                 external_upload_requested: false,
                 callback_received: false,
@@ -801,14 +801,14 @@ pub async fn run_callback_processor(cli: &Cli, apply: bool, dry_run: bool) -> Re
                     dry_run: false,
                     apply_requested: true,
                     phase: "callback",
-                    action_status: "staging_boundary_not_approved".to_string(),
+                    action_status: "boundary_not_approved".to_string(),
                     work_item_id: None,
                     external_upload_requested: false,
                     callback_received: false,
                     external_send_executed: Some(false),
                 });
                 println!("{}", serde_json::to_string_pretty(&report)?);
-                bail!("QiWe image-send callback staging boundary is not approved");
+                bail!("QiWe image-send callback boundary is not approved");
             }
         }
     } else {
@@ -1022,13 +1022,13 @@ async fn prepare_feishu_delivery_bytes(
         return Ok(None);
     }
 
-    #[cfg(not(feature = "huabaosi-staging-adapter"))]
+    #[cfg(not(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter")))]
     {
         let _ = (pool, database_url);
         bail!("Feishu delivery bridge requires the combined staging feature build");
     }
 
-    #[cfg(feature = "huabaosi-staging-adapter")]
+    #[cfg(all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"))]
     {
         let artifact =
             crate::huabaosi_feishu_artifact_mirror::revalidate_primary_storage_for_delivery(
@@ -1616,7 +1616,7 @@ fn staging_preflight_report(
             "staging apply requires the exact owner phrase and expected database URL hash before Postgres, callback stdin, or network access".to_string(),
             "API hosts, media hosts, and target group ids use exact reviewed allowlists".to_string(),
             "Feishu primary-storage delivery requires the combined Huabaosi and QiWe staging feature build and same-byte temporary-storage readback".to_string(),
-            "production artifacts exclude the staging adapter and no listener, service, or timer is installed".to_string(),
+            "production artifacts exclude the staging adapter; callback listener enablement remains a separate reviewed boundary".to_string(),
         ],
     }
 }
