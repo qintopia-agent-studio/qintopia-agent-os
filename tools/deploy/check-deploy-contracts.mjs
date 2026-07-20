@@ -309,6 +309,8 @@ if (!exists(xiaomanPreflightPath)) {
     "QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1",
     "xiaoman-activity-signal-timer-observation-smoke.sh",
+    "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
+    "xiaoman-legacy-cron-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1",
     "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
     "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1",
@@ -384,6 +386,42 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
     "raw_body",
   ]) {
     forbidFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
+  }
+}
+
+const xiaomanLegacyCronObservationPath =
+  "deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh";
+if (!exists(xiaomanLegacyCronObservationPath)) {
+  addError(
+    `${xiaomanLegacyCronObservationPath}: missing Xiaoman legacy cron observation`
+  );
+} else {
+  const smoke = readText(xiaomanLegacyCronObservationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE",
+    "/home/ubuntu/.hermes/profiles/xiaoman",
+    "/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json",
+    "no_legacy_cron_jobs",
+    "cron_decl_count",
+    "live_profile_modified",
+    "external_calls_executed",
+    "Xiaoman legacy cron observation found runtime cron job declarations",
+  ]) {
+    requireFragment(xiaomanLegacyCronObservationPath, smoke, fragment);
+  }
+  for (const fragment of [
+    "systemctl",
+    "rm ",
+    "mv ",
+    "cp ",
+    "source ",
+    "eval ",
+    "run-",
+    "send_executed=true",
+    "QIWE_TOKEN",
+    "tenant_access_token",
+  ]) {
+    forbidFragment(xiaomanLegacyCronObservationPath, smoke, fragment);
   }
 }
 

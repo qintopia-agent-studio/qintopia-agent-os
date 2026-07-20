@@ -210,12 +210,12 @@ report shape without writing.
 
 `deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh` is the aggregate
 read-only production preflight for this path. It composes the Xiaoman signal timer
-observation, promotion starter timer observation, shared evidence/visual timer
-observation, Xiaoman downstream evidence/visual preview, image-generation starter
-observation, Huabaosi provider disabled-state observation, send request starter
-observation, and group send-ready timer observation. It runs the image worker only in
-dry-run and does not run the send-ready worker, deploy, write Postgres or Feishu, call
-provider/media endpoints or QiWe, publish, or send externally.
+observation, legacy Hermes cron observation, promotion starter timer observation, shared
+evidence/visual timer observation, Xiaoman downstream evidence/visual preview,
+image-generation starter observation, Huabaosi provider disabled-state observation, send
+request starter observation, and group send-ready timer observation. It runs the image
+worker only in dry-run and does not run the send-ready worker, deploy, write Postgres or
+Feishu, call provider/media endpoints or QiWe, publish, or send externally.
 
 `xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
 the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
