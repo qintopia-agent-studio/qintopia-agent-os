@@ -111,7 +111,7 @@ if manifest.get("commit_sha") != release_sha:
 print(release_sha)
 PY
 )"; then
-  echo "QiWe image-send production observation requires the immutable release/current sidecar binary without QiWe live adapter features" >&2
+  echo "QiWe image-send production observation requires the immutable release/current sidecar binary with reviewed production adapter features" >&2
   exit 1
 fi
 
