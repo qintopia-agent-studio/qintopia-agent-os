@@ -79,6 +79,7 @@ DAILY_DIGEST_PUBLISH_TOOL = "qintopia_daily_digest_publish"
 XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_record_get",
     "qintopia_xiaoman_activity_list_by_date",
+    "qintopia_xiaoman_activity_announcement_prepare",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_phase_update",
@@ -87,6 +88,7 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
 ]
 XIAOMAN_ACTIVITY_TABLE_ROLES = ["activity_plan", "activity_occurrence"]
 XIAOMAN_ACTIVITY_PHASES = ["pre_event", "in_event", "post_event"]
+XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES = ["next_day_preview", "same_day_preview", "post_event_followup"]
 XIAOMAN_ACTIVITY_HANDOFF_TYPES = ["visual_asset_request"]
 XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
 XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
@@ -722,6 +724,55 @@ QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA = {
             "timezone": {
                 "type": "string",
                 "description": "IANA timezone. Defaults to Asia/Shanghai.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["date"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_ANNOUNCEMENT_PREPARE_SCHEMA = {
+    "description": (
+        "Prepare a human-confirmed Xiaoman text activity announcement package from "
+        "sanitized activity records. It drafts operations review text and an Erhua "
+        "handoff draft but never sends, publishes, writes Feishu, or calls QiWe."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "date": {"type": "string", "description": "Local activity date in YYYY-MM-DD format."},
+            "mode": {
+                "type": "string",
+                "enum": XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES,
+                "description": "Announcement package mode. Defaults to next_day_preview.",
+            },
+            "table_role": {
+                "type": "string",
+                "enum": XIAOMAN_ACTIVITY_TABLE_ROLES,
+                "description": "Source table role used when records must be read through.",
+            },
+            "timezone": {
+                "type": "string",
+                "description": "IANA timezone. Defaults to Asia/Shanghai.",
+            },
+            "operator_name": {
+                "type": "string",
+                "description": "Human operations reviewer name. Defaults to 刘珊.",
+            },
+            "community_audience": {
+                "type": "string",
+                "description": "Plain Chinese audience label for the draft.",
+            },
+            "records": {
+                "type": "array",
+                "description": "Already sanitized activity records, usually from qintopia_xiaoman_activity_list_by_date.",
+                "items": {"type": "object", "additionalProperties": True},
+            },
+            "include_temporary_meals": {
+                "type": "boolean",
+                "description": "Include temporary meal records. Defaults to false for the MVP boundary.",
             },
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
@@ -3625,6 +3676,170 @@ def _xiaoman_activity_summaries_from_records(records: list[dict[str, str]]) -> l
     return summaries
 
 
+def _xiaoman_activity_announcement_records(args: dict[str, Any], actor_agent: str) -> tuple[list[dict[str, str]], str, str]:
+    raw_records = args.get("records")
+    if isinstance(raw_records, list):
+        return _xiaoman_activity_sanitize_records(raw_records), "provided_records", ""
+
+    if not _xiaoman_activity_read_through_enabled():
+        return [], "missing_records", "records are required unless read-through is enabled"
+
+    list_report = json.loads(
+        handle_qintopia_xiaoman_activity_list_by_date(
+            {
+                "date": _clean_text(args.get("date"), max_len=40),
+                "table_role": _clean_text(args.get("table_role") or "activity_plan", max_len=80),
+                "timezone": _clean_text(args.get("timezone") or "Asia/Shanghai", max_len=80),
+                "actor_agent": actor_agent,
+                "dry_run": False,
+            }
+        )
+    )
+    if not list_report.get("success") or not list_report.get("read_through"):
+        return [], "read_through_failed", "activity records could not be read through"
+    return _xiaoman_activity_sanitize_records(list_report.get("records")), "read_through", ""
+
+
+def _xiaoman_activity_is_temporary_meal(record: dict[str, str]) -> bool:
+    text = " ".join(
+        record.get(key, "")
+        for key in ["title", "notes", "gap_summary", "material_summary"]
+    )
+    return bool(re.search(r"临时.{0,6}(约饭|吃饭|聚餐|晚餐|午餐)", text))
+
+
+def _xiaoman_activity_display_title(record: dict[str, str], index: int) -> str:
+    return record.get("title") or f"未命名活动 {index}"
+
+
+def _xiaoman_activity_time_text(record: dict[str, str]) -> str:
+    start = record.get("start_time", "")
+    end = record.get("end_time", "")
+    if start and end:
+        return f"{start}-{end}"
+    if start:
+        return start
+    if end:
+        return f"截至 {end}"
+    return "时间待确认"
+
+
+def _xiaoman_activity_owner_text(record: dict[str, str]) -> str:
+    return record.get("owner_name") or record.get("initiator_name") or "负责人待确认"
+
+
+def _xiaoman_activity_missing_fields(record: dict[str, str], mode: str) -> list[str]:
+    missing = []
+    if not record.get("title"):
+        missing.append("活动名称")
+    if not record.get("start_time") and not record.get("end_time"):
+        missing.append("活动时间")
+    if not record.get("location"):
+        missing.append("地点")
+    if not record.get("owner_name") and not record.get("initiator_name"):
+        missing.append("负责人")
+    if mode == "post_event_followup" and not record.get("material_summary"):
+        missing.append("活动素材")
+    return missing
+
+
+def _xiaoman_activity_announcement_line(record: dict[str, str], index: int) -> str:
+    title = _xiaoman_activity_display_title(record, index)
+    pieces = [
+        f"{index}. {title}",
+        f"时间：{_xiaoman_activity_time_text(record)}",
+        f"地点：{record.get('location') or '待确认'}",
+        f"负责人：{_xiaoman_activity_owner_text(record)}",
+    ]
+    status = record.get("promotion_status") or record.get("status")
+    if status:
+        pieces.append(f"状态：{status}")
+    notes = record.get("notes")
+    if notes:
+        pieces.append(f"备注：{notes}")
+    return "\n".join(pieces)
+
+
+def _xiaoman_activity_announcement_header(mode: str, date: str, audience: str) -> str:
+    if mode == "same_day_preview":
+        return f"{date} 今日活动预告"
+    if mode == "post_event_followup":
+        return f"{date} 活动素材回填提醒"
+    return f"{date} 明日活动预告"
+
+
+def _xiaoman_activity_build_announcement(
+    *,
+    date: str,
+    mode: str,
+    operator_name: str,
+    community_audience: str,
+    records: list[dict[str, str]],
+    include_temporary_meals: bool,
+) -> dict[str, Any]:
+    publishable = []
+    skipped = []
+    missing_followups = []
+    for record in records[:20]:
+        if not include_temporary_meals and _xiaoman_activity_is_temporary_meal(record):
+            skipped.append(
+                {
+                    "title": _xiaoman_activity_display_title(record, len(skipped) + 1),
+                    "reason": "temporary_meal_no_promotion",
+                }
+            )
+            continue
+        missing = _xiaoman_activity_missing_fields(record, mode)
+        if missing:
+            missing_followups.append(
+                {
+                    "title": _xiaoman_activity_display_title(record, len(missing_followups) + 1),
+                    "missing_fields": missing,
+                    "reminder_text": f"还差：{'、'.join(missing)}。补齐后我再整理可发版本。",
+                }
+            )
+        publishable.append(record)
+
+    header = _xiaoman_activity_announcement_header(mode, date, community_audience)
+    if publishable:
+        body = "\n\n".join(
+            _xiaoman_activity_announcement_line(record, index)
+            for index, record in enumerate(publishable, start=1)
+        )
+        announcement_text = f"{header}\n\n{body}"
+    else:
+        announcement_text = f"{header}\n\n暂无需要宣发的计划类活动。"
+
+    if missing_followups:
+        gap_lines = "\n".join(
+            f"- {item['title']}：{'、'.join(item['missing_fields'])}"
+            for item in missing_followups
+        )
+        gap_text = f"\n\n待补齐：\n{gap_lines}"
+    else:
+        gap_text = "\n\n信息齐，可以先给你确认文案。"
+
+    operator_review_message = (
+        f"{operator_name}，我先把 {date} 的活动文字预告整理好了。"
+        "可以发就回复“发”，要改就直接说改哪里；我不会自动发群。"
+        f"\n\n{announcement_text}{gap_text}"
+    )
+    erhua_handoff_draft = (
+        f"给{community_audience}的待确认文案如下。只有在{operator_name}确认“发”之后，"
+        f"才交给二花执行：\n\n{announcement_text}"
+    )
+
+    return {
+        "announcement_text": announcement_text,
+        "operator_review_message": operator_review_message,
+        "erhua_handoff_draft": erhua_handoff_draft,
+        "missing_followups": missing_followups,
+        "skipped_records": skipped,
+        "publishable_count": len(publishable),
+        "skipped_count": len(skipped),
+    }
+
+
 def _xiaoman_activity_sanitize_record_value(key: str, raw_value: Any, max_len: int) -> str:
     value = _clean_text(raw_value, max_len=max_len)
     if not value:
@@ -3693,6 +3908,82 @@ def handle_qintopia_xiaoman_activity_list_by_date(args: dict[str, Any], **_: Any
         payload=payload,
         required=["date", "table_role"],
         writes_business_state=False,
+    )
+
+
+def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], **_: Any) -> str:
+    skill = "qintopia_xiaoman_activity_announcement_prepare"
+    actor_agent = _xiaoman_activity_actor(args)
+    if actor_agent != "xiaoman":
+        return _xiaoman_activity_error(skill, "actor_agent must be xiaoman", actor_agent=actor_agent)
+    if not _xiaoman_activity_wrappers_enabled():
+        return _xiaoman_activity_error(
+            skill,
+            "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1 is required",
+            actor_agent=actor_agent,
+        )
+
+    date = _clean_text(args.get("date"), max_len=40)
+    if not date:
+        return _xiaoman_activity_error(skill, "date is required", actor_agent=actor_agent)
+    mode = _clean_text(args.get("mode") or "next_day_preview", max_len=80)
+    if mode not in XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES:
+        return _xiaoman_activity_error(skill, "mode is not allowed", actor_agent=actor_agent, mode=mode)
+
+    records, record_source, record_error = _xiaoman_activity_announcement_records(args, actor_agent)
+    if record_error:
+        return _xiaoman_activity_error(
+            skill,
+            record_error,
+            actor_agent=actor_agent,
+            record_source=record_source,
+            action={
+                "tool": "qintopia_xiaoman_activity_list_by_date",
+                "requires_local_execution": True,
+                "external_send_executed": False,
+            },
+        )
+
+    operator_name = _clean_text(args.get("operator_name") or "刘珊", max_len=80)
+    community_audience = _clean_text(args.get("community_audience") or "社区群成员", max_len=120)
+    draft = _xiaoman_activity_build_announcement(
+        date=date,
+        mode=mode,
+        operator_name=operator_name,
+        community_audience=community_audience,
+        records=records,
+        include_temporary_meals=bool(args.get("include_temporary_meals", False)),
+    )
+
+    return _json(
+        {
+            "success": True,
+            "skill": skill,
+            "actor_agent": actor_agent,
+            "mode": mode,
+            "date": date,
+            "record_source": record_source,
+            "record_count": len(records),
+            **draft,
+            "safe_for_operations_chat": True,
+            "safe_for_member_chat": False,
+            "requires_human_confirmation": True,
+            "external_send_executed": False,
+            "actions": [
+                {
+                    "tool": "none",
+                    "reason": "MVP prepares text only; Liu Shan must confirm before any Erhua handoff or group send",
+                    "requires_human_confirmation": True,
+                    "external_send_executed": False,
+                }
+            ],
+            "guardrails": [
+                "text-only MVP for operations review",
+                "temporary meal records are skipped unless explicitly included",
+                "paid planned activities remain in the scheduling pool",
+                "does not create work items, write Feishu, call Huabaosi, call Erhua, call QiWe, publish, or send",
+            ],
+        }
     )
 
 
@@ -4340,6 +4631,15 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA["description"],
         emoji="📅",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_activity_announcement_prepare",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_ACTIVITY_ANNOUNCEMENT_PREPARE_SCHEMA,
+        handler=handle_qintopia_xiaoman_activity_announcement_prepare,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_ACTIVITY_ANNOUNCEMENT_PREPARE_SCHEMA["description"],
+        emoji="📣",
     )
     ctx.register_tool(
         name="qintopia_xiaoman_activity_status_update",
