@@ -116,7 +116,10 @@
 - QiWe image callback bridge production observation smoke:
   `QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh`
 - QiWe image-send production activation after manual Release publish and production env
-  approval:
+  approval. The activation script must fail before preflight or timer changes unless the
+  persistent `QINTOPIA_SIDECAR_DATABASE_URL` hashes to the approved
+  `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256`; never weaken this to a
+  format-only hash check:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`
 - QiWe image-send immediate timer rollback:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK=approved-production-qiwe-image-send-rollback deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh`

@@ -1393,6 +1393,9 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "database URL hash does not match the approved production hash",
+    "sha256sum",
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.timer",
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
@@ -1408,7 +1411,6 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "source ",
     "eval ",
     "QIWE_TOKEN",
-    "QINTOPIA_SIDECAR_DATABASE_URL",
   ]) {
     forbidFragment(qiweImageSendProductionActivationPath, activation, fragment);
   }
