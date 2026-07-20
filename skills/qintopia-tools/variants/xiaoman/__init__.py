@@ -80,6 +80,7 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_record_get",
     "qintopia_xiaoman_activity_list_by_date",
     "qintopia_xiaoman_activity_announcement_prepare",
+    "qintopia_xiaoman_activity_text_group_message_request_prepare",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_phase_update",
@@ -794,6 +795,49 @@ QINTOPIA_XIAOMAN_ACTIVITY_ANNOUNCEMENT_PREPARE_SCHEMA = {
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
         "required": ["date"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA = {
+    "description": (
+        "Prepare a controlled Erhua group-message work-item command for a human-confirmed "
+        "Xiaoman text activity announcement. It requires an approved text artifact and "
+        "never confirms, queues, runs send-ready, calls QiWe, publishes, or sends."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source_record_id": {
+                "type": "string",
+                "description": "Sanitized source activity record ref such as activity_plan:<12 hex chars>.",
+            },
+            "approved_artifact_id": {
+                "type": "string",
+                "description": "Approved text announcement artifact UUID.",
+            },
+            "message_text": {
+                "type": "string",
+                "description": "Human-confirmed text announcement body for Erhua review.",
+            },
+            "target_group_alias": {
+                "type": "string",
+                "description": "Allowed group alias. Defaults to community_activity_group.",
+            },
+            "brief_summary": {
+                "type": "string",
+                "description": "Safe summary for the operations work item.",
+            },
+            "human_owner": {
+                "type": "string",
+                "description": "Human owner for final confirmation follow-up.",
+            },
+            "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+            "source_event_signal_id": {"type": "string"},
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["source_record_id", "approved_artifact_id", "message_text"],
         "additionalProperties": False,
     },
 }
@@ -4355,6 +4399,195 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
     )
 
 
+def _xiaoman_activity_message_text_is_sensitive(value: str) -> bool:
+    lower = value.lower()
+    if re.search(r"https?://", lower):
+        return True
+    if re.search(r"\b(?:tbl|rec)[A-Za-z0-9]{8,}\b", value):
+        return True
+    return any(
+        token in lower
+        for token in [
+            "postgres://",
+            "postgresql://",
+            "tenant_access_token",
+            "access_token",
+            "refresh_token",
+            "api_key",
+            "app_secret",
+            "client_secret",
+            "authorization",
+            "bearer ",
+            "qiwe_token",
+            "qiwe_guid",
+            "feishu_app_secret",
+            "lark_app_secret",
+            "base_token",
+            "table_id",
+        ]
+    )
+
+
+def handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
+    args: dict[str, Any], **_: Any
+) -> str:
+    skill = "qintopia_xiaoman_activity_text_group_message_request_prepare"
+    actor_agent = _xiaoman_activity_actor(args)
+    if actor_agent != "xiaoman":
+        return _xiaoman_activity_error(
+            skill,
+            "actor_agent must be xiaoman",
+            actor_agent=actor_agent,
+        )
+    if not _xiaoman_activity_wrappers_enabled():
+        return _xiaoman_activity_error(
+            skill,
+            "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1 is required",
+            actor_agent=actor_agent,
+        )
+
+    source_record_id = _clean_text(args.get("source_record_id"), max_len=160)
+    if not re.fullmatch(r"(activity_plan|activity_occurrence):[0-9a-f]{12}", source_record_id):
+        return _xiaoman_activity_error(
+            skill,
+            "source_record_id must be a sanitized Xiaoman activity record ref",
+            actor_agent=actor_agent,
+        )
+    approved_artifact_id = _clean_text(args.get("approved_artifact_id"), max_len=80)
+    if not re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        approved_artifact_id,
+    ):
+        return _xiaoman_activity_error(
+            skill,
+            "approved_artifact_id must be a uuid",
+            actor_agent=actor_agent,
+    )
+    message_text = _body_text(args.get("message_text"), max_len=1800)
+    if not message_text:
+        return _xiaoman_activity_error(
+            skill,
+            "message_text is required",
+            actor_agent=actor_agent,
+        )
+    if _xiaoman_activity_message_text_is_sensitive(message_text):
+        return _xiaoman_activity_error(
+            skill,
+            "message_text contains disallowed sensitive or raw internal content",
+            actor_agent=actor_agent,
+        )
+
+    target_group_alias = _clean_text(
+        args.get("target_group_alias") or "community_activity_group",
+        max_len=80,
+    )
+    if target_group_alias != "community_activity_group":
+        return _xiaoman_activity_error(
+            skill,
+            "target_group_alias is not allowed for Xiaoman text announcements",
+            actor_agent=actor_agent,
+        )
+    priority = _clean_text(args.get("priority") or "medium", max_len=80)
+    if priority not in {"low", "medium", "high"}:
+        return _xiaoman_activity_error(
+            skill,
+            "priority is not allowed",
+            actor_agent=actor_agent,
+        )
+    dry_run = args.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        return _xiaoman_activity_error(
+            skill,
+            "dry_run must be a boolean",
+            actor_agent=actor_agent,
+        )
+    source_event_signal_id = _clean_text(args.get("source_event_signal_id"), max_len=80)
+    if source_event_signal_id and not re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        source_event_signal_id,
+    ):
+        return _xiaoman_activity_error(
+            skill,
+            "source_event_signal_id must be a uuid",
+            actor_agent=actor_agent,
+        )
+
+    approved_artifact_content_hash = f"sha256:{hashlib.sha256(message_text.encode('utf-8')).hexdigest()}"
+    idempotency_seed = hashlib.sha256(
+        f"{source_record_id}:{approved_artifact_id}:{approved_artifact_content_hash}".encode("utf-8")
+    ).hexdigest()[:24]
+    request = {
+        "requester_agent": "xiaoman",
+        "target_agent": "erhua",
+        "capability_key": "erhua.send_group_message",
+        "work_item_type": "group_message_request",
+        "brief_summary": _body_text(
+            args.get("brief_summary") or "发送已确认的小满活动文字预告到社区活动群",
+            max_len=500,
+        ),
+        "purpose": "xiaoman_text_activity_announcement_group_message",
+        "human_owner": _clean_text(args.get("human_owner") or "刘珊", max_len=120),
+        "priority": priority,
+        "source_type": "xiaoman_activity",
+        "source_refs": {"source_record_ref": source_record_id},
+        "approved_artifact_id": approved_artifact_id,
+        "payload": {
+            "workflow_type": "text_activity_announcement",
+            "planner_intent": "send_text_activity_announcement_after_final_confirmation",
+            "approved_artifact_id": approved_artifact_id,
+            "approved_artifact_type": "text_announcement",
+            "approved_artifact_content_hash": approved_artifact_content_hash,
+            "target_channel": "qiwe",
+            "target_group_alias": target_group_alias,
+            "message_text": message_text,
+            "send_executed": False,
+        },
+        "metadata": {
+            "created_by_wrapper": skill,
+            "requires_human_final_confirmation": True,
+            "external_send_executed": False,
+        },
+        "idempotency_key": f"{skill}:{idempotency_seed}",
+    }
+    if source_event_signal_id:
+        request["source_event_signal_id"] = source_event_signal_id
+        request["source_refs"]["source_event_signal_id"] = source_event_signal_id
+
+    payload_json = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
+    command = [
+        _xiaoman_activity_worker_bin(),
+        "operations-create",
+        "--payload-json",
+        payload_json,
+        "--dry-run" if dry_run else "--apply",
+    ]
+    return _json(
+        {
+            "success": True,
+            "skill": skill,
+            "actor_agent": actor_agent,
+            "operation": "text-group-message-request-prepare",
+            "dry_run": dry_run,
+            "writes_business_state": not dry_run,
+            "requires_approved_artifact": True,
+            "requires_human_final_confirmation": True,
+            "external_send_executed": False,
+            "payload": request,
+            "action": {
+                "tool": "agentos_worker_command",
+                "command": command,
+                "shell_preview": " ".join(shlex.quote(part) for part in command),
+                "requires_local_execution": True,
+            },
+            "guardrails": [
+                "approved text announcement artifact is required before creating the group_message_request",
+                "created group_message_request remains awaiting_publish until human final confirmation",
+                "this wrapper does not queue, run send-ready, call Erhua, call QiWe, publish, or send",
+            ],
+        }
+    )
+
+
 def handle_qintopia_xiaoman_activity_status_update(args: dict[str, Any], **_: Any) -> str:
     payload = {
         "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=64),
@@ -5007,6 +5240,15 @@ def register(ctx) -> None:
         handler=handle_qintopia_xiaoman_activity_announcement_prepare,
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_ANNOUNCEMENT_PREPARE_SCHEMA["description"],
+        emoji="📣",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_activity_text_group_message_request_prepare",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA,
+        handler=handle_qintopia_xiaoman_activity_text_group_message_request_prepare,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA["description"],
         emoji="📣",
     )
     ctx.register_tool(
