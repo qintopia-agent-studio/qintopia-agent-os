@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -18,6 +19,9 @@ const rollbackScript = path.join(
 );
 
 try {
+  const databaseUrl =
+    "postgres://fixture-user:fixture-password@127.0.0.1:55432/qintopia";
+  const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex");
   const logPath = path.join(tmpRoot, "systemctl.log");
   const envFile = path.join(tmpRoot, "message-sidecar.env");
   const systemctl = path.join(tmpRoot, "systemctl");
@@ -39,8 +43,9 @@ fi
       envFile,
       [
         `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=${flag}`,
+        `QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`,
         "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
-        `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+        `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${databaseHash}`,
         "",
       ].join("\n"),
       "utf8"
@@ -82,8 +87,9 @@ fi
     envFile,
     [
       "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      `QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`,
       "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
-      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${databaseHash}`,
       "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=not-a-hash",
       "",
     ].join("\n"),
@@ -97,6 +103,69 @@ fi
   if (duplicateDatabaseHash.status === 0 || fs.readFileSync(logPath, "utf8") !== "") {
     throw new Error(
       "activation must fail before systemctl when production database hash is duplicated"
+    );
+  }
+
+  fs.writeFileSync(
+    envFile,
+    [
+      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      `QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`,
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"b".repeat(64)}`,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(logPath, "", "utf8");
+  const databaseHashMismatch = run(activationScript, {
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
+      "approved-production-qiwe-image-send",
+  });
+  if (
+    databaseHashMismatch.status === 0 ||
+    fs.readFileSync(logPath, "utf8") !== "" ||
+    !databaseHashMismatch.stderr.includes(
+      "database URL hash does not match the approved production hash"
+    ) ||
+    `${databaseHashMismatch.stdout}\n${databaseHashMismatch.stderr}`.includes(
+      databaseUrl
+    )
+  ) {
+    throw new Error(
+      "activation must fail closed without leaking the database URL when the database hash does not match"
+    );
+  }
+
+  fs.writeFileSync(
+    envFile,
+    [
+      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      `QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`,
+      "QINTOPIA_SIDECAR_DATABASE_URL=postgres://duplicate-secret@127.0.0.1:55432/qintopia",
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${databaseHash}`,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(logPath, "", "utf8");
+  const duplicateDatabaseUrl = run(activationScript, {
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
+      "approved-production-qiwe-image-send",
+  });
+  if (
+    duplicateDatabaseUrl.status === 0 ||
+    fs.readFileSync(logPath, "utf8") !== "" ||
+    !duplicateDatabaseUrl.stderr.includes(
+      "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL"
+    ) ||
+    `${duplicateDatabaseUrl.stdout}\n${duplicateDatabaseUrl.stderr}`.includes(
+      "duplicate-secret"
+    )
+  ) {
+    throw new Error(
+      "activation must fail before systemctl when the database URL env line is duplicated"
     );
   }
 
