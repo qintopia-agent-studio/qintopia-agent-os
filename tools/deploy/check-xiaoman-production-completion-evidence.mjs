@@ -144,6 +144,7 @@ if (huabaosiGeneration.content_hash !== qiweCallback.artifact_content_hash) {
 }
 
 const production = completion.huabaosi_production_activation;
+assertCompletionReleaseBinding(completion, production.release_sha);
 if (
   production.release_sha !== productionRetention.production_release_sha ||
   production.sidecar_binary_sha256 !== productionRetention.sidecar_binary_sha256 ||
@@ -448,6 +449,7 @@ function assertReleasePlease(record) {
       "status",
       "pr_number",
       "head_sha",
+      "released_commit_sha",
       "manual_ci_workflow",
       "release_please_status",
     ]),
@@ -457,6 +459,7 @@ function assertReleasePlease(record) {
     record.status !== "passed" ||
     !positiveInteger(record.pr_number) ||
     !isGitSha(record.head_sha) ||
+    !isGitSha(record.released_commit_sha) ||
     record.manual_ci_workflow !== "ci.yml" ||
     record.release_please_status !== "success"
   ) {
@@ -471,6 +474,7 @@ function assertQiweProductionEnablement(record) {
       "status",
       "pr_number",
       "head_sha",
+      "included_in_release_sha",
       "listener_service_timer_reviewed",
       "observation_reviewed",
       "rollback_reviewed",
@@ -483,6 +487,7 @@ function assertQiweProductionEnablement(record) {
     record.status !== "merged" ||
     !positiveInteger(record.pr_number) ||
     !isGitSha(record.head_sha) ||
+    !isGitSha(record.included_in_release_sha) ||
     record.listener_service_timer_reviewed !== true ||
     record.observation_reviewed !== true ||
     record.rollback_reviewed !== true ||
@@ -490,6 +495,17 @@ function assertQiweProductionEnablement(record) {
     record.production_feature_boundary_reviewed !== true
   ) {
     fail("QiWe production enablement evidence is incomplete");
+  }
+}
+
+function assertCompletionReleaseBinding(manifest, productionReleaseSha) {
+  if (
+    manifest.release_please_validation.released_commit_sha !== productionReleaseSha ||
+    manifest.qiwe_production_enablement.included_in_release_sha !== productionReleaseSha
+  ) {
+    fail(
+      "completion manifest release facts do not bind to the deployed production release"
+    );
   }
 }
 

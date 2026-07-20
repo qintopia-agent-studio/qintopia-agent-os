@@ -53,6 +53,28 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /QiWe production enablement evidence is incomplete/);
 
+  const releasePleaseDrift = writeEvidenceFiles({
+    manifest: {
+      release_please_validation: {
+        released_commit_sha: releaseSha,
+      },
+    },
+  });
+  result = runChecker(releasePleaseDrift);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /release facts do not bind/);
+
+  const qiweEnablementReleaseDrift = writeEvidenceFiles({
+    manifest: {
+      qiwe_production_enablement: {
+        included_in_release_sha: releaseSha,
+      },
+    },
+  });
+  result = runChecker(qiweEnablementReleaseDrift);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /release facts do not bind/);
+
   const testModeReadiness = writeEvidenceFiles({
     stagingRuntime: { test_mode: true },
   });
@@ -254,6 +276,7 @@ function completionManifest() {
       status: "passed",
       pr_number: 180,
       head_sha: releaseSha,
+      released_commit_sha: productionReleaseSha,
       manual_ci_workflow: "ci.yml",
       release_please_status: "success",
     },
@@ -261,6 +284,7 @@ function completionManifest() {
       status: "merged",
       pr_number: 215,
       head_sha: releaseSha,
+      included_in_release_sha: productionReleaseSha,
       listener_service_timer_reviewed: true,
       observation_reviewed: true,
       rollback_reviewed: true,

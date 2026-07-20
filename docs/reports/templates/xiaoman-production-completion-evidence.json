@@ -4,6 +4,7 @@
     "status": "passed",
     "pr_number": 0,
     "head_sha": "<release-please-head-sha>",
+    "released_commit_sha": "<published-production-release-sha>",
     "manual_ci_workflow": "ci.yml",
     "release_please_status": "success"
   },
@@ -11,6 +12,7 @@
     "status": "merged",
     "pr_number": 0,
     "head_sha": "<qiwe-production-enablement-head-sha>",
+    "included_in_release_sha": "<published-production-release-sha>",
     "listener_service_timer_reviewed": true,
     "observation_reviewed": true,
     "rollback_reviewed": true,
