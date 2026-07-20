@@ -93,6 +93,11 @@ exit 70
   const disabledEnv = path.join(tmpRoot, "disabled.env");
   const enabledEnv = path.join(tmpRoot, "enabled.env");
   const unapprovedEnabledEnv = path.join(tmpRoot, "unapproved-enabled.env");
+  const duplicateApprovalEnabledEnv = path.join(
+    tmpRoot,
+    "duplicate-approval-enabled.env"
+  );
+  const duplicateHashEnabledEnv = path.join(tmpRoot, "duplicate-hash-enabled.env");
   const secretEnv = path.join(tmpRoot, "secret.env");
   const maliciousEnv = path.join(tmpRoot, "malicious.env");
   fs.writeFileSync(
@@ -114,6 +119,30 @@ exit 70
   fs.writeFileSync(
     unapprovedEnabledEnv,
     ["QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1", ...qiweConfigLines, ""].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    duplicateApprovalEnabledEnv,
+    [
+      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=not-approved",
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+      ...qiweConfigLines,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    duplicateHashEnabledEnv,
+    [
+      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=not-a-hash",
+      ...qiweConfigLines,
+      "",
+    ].join("\n"),
     "utf8"
   );
   fs.writeFileSync(
@@ -263,6 +292,24 @@ exit 70
     throw new Error(
       "enabled observation must require production approval before success"
     );
+  }
+
+  for (const [name, envPath, expected] of [
+    [
+      "duplicate approval",
+      duplicateApprovalEnabledEnv,
+      "approval flag is missing or duplicated",
+    ],
+    [
+      "duplicate database hash",
+      duplicateHashEnabledEnv,
+      "database hash flag is missing or duplicated",
+    ],
+  ]) {
+    const rejected = run({ QINTOPIA_SIDECAR_ENV_FILE: envPath });
+    if (rejected.status === 0 || !rejected.stderr.includes(expected)) {
+      throw new Error(`enabled observation accepted ${name}`);
+    }
   }
 
   const installedDisabledUnit = run({

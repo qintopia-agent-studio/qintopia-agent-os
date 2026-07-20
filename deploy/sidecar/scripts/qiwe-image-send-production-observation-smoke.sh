@@ -185,12 +185,20 @@ if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
 fi
 
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then
+  if [[ "$(grep -Ec '^QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=' "$ENV_FILE" || true)" != "1" ]]; then
+    echo "QiWe image-send production approval flag is missing or duplicated" >&2
+    exit 1
+  fi
   if ! grep -Fxq "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send" "$ENV_FILE"; then
-    echo "QiWe image-send production approval flag is missing" >&2
+    echo "QiWe image-send production approval flag is invalid" >&2
+    exit 1
+  fi
+  if [[ "$(grep -Ec '^QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=' "$ENV_FILE" || true)" != "1" ]]; then
+    echo "QiWe image-send production database hash flag is missing or duplicated" >&2
     exit 1
   fi
   if [[ "$(grep -Ec '^QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=[0-9a-f]{64}$' "$ENV_FILE" || true)" != "1" ]]; then
-    echo "QiWe image-send production database hash flag is missing" >&2
+    echo "QiWe image-send production database hash flag is invalid" >&2
     exit 1
   fi
   for unit in "$WORKER_PREFLIGHT_NAME" "$WORKER_SERVICE_NAME" "$WORKER_TIMER_NAME"; do
