@@ -53,7 +53,8 @@ All gates are required before a Release is called Xiaoman production complete:
 6. A separate QiWe production enablement PR adds reviewed listener/service/timer,
    observation, rollback, exact allowlists, and production feature boundaries.
 7. Huabaosi production generation and Feishu mirror activation pass release-local
-   observation, explicit activation, and first-record evidence.
+   observation, explicit activation, and first-record canary evidence retained as a
+   separate sanitized output.
 8. One real Xiaoman activity is observed from signal intake through image generation,
    human approval, send-ready, QiWe group-send arrival, and sanitized production
    evidence retention.
@@ -66,6 +67,7 @@ All gates are required before a Release is called Xiaoman production complete:
      --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
      --huabaosi-staging <huabaosi-staging-output.txt> \
      --qiwe-staging <qiwe-staging-output.txt> \
+     --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
      --production-real-activity <production-real-activity-output.txt>
    ```
 
@@ -96,7 +98,15 @@ These are useful but not completion:
 5. Run Huabaosi and QiWe staging evidence smokes, then the cross-flow checker.
 6. Confirm QiWe production enablement and Huabaosi production activation evidence are
    merged, deployed, and owner-approved.
-7. Process one real production Xiaoman activity and retain sanitized real-activity
+7. After the Huabaosi one-shot production canary creates one pending Feishu-backed JPEG,
+   retain its sanitized output and validate it before using it as first-record evidence:
+
+   ```bash
+   node tools/deploy/check-huabaosi-image-production-canary-evidence.mjs \
+     <production-canary-output.txt>
+   ```
+
+8. Process one real production Xiaoman activity and retain sanitized real-activity
    evidence with the release-local exporter:
 
    ```bash
@@ -107,7 +117,7 @@ These are useful but not completion:
    node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>
    ```
 
-8. Fill the non-secret completion manifest and run the full completion checker before
+9. Fill the non-secret completion manifest and run the full completion checker before
    changing any Release classification to `production-complete`.
 
 ## Production Boundary
