@@ -1764,6 +1764,88 @@ if (!exists(xiaomanImageSendStagingEvidenceCheckPath)) {
   }
 }
 
+const xiaomanRealActivityProductionEvidenceCheckPath =
+  "tools/deploy/check-xiaoman-real-activity-production-evidence.mjs";
+if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
+  addError(
+    `${xiaomanRealActivityProductionEvidenceCheckPath}: missing Xiaoman real activity production evidence checker`
+  );
+} else {
+  const checker = readText(xiaomanRealActivityProductionEvidenceCheckPath);
+  for (const fragment of [
+    "xiaoman_real_activity_production_evidence=",
+    "signal_intake",
+    "image_generation",
+    "human_approval",
+    "send_ready",
+    "qiwe_upload",
+    "qiwe_callback_send",
+    "sanitized_evidence_retention",
+    "artifact_content_hash",
+    "callback_credential_schema",
+    "raw_secret_fields_retained",
+    "release_binary_verified",
+    "approved_sidecar_sha256_matched",
+    "approved_database_url_sha256_matched",
+    "forbidden sensitive fragment",
+    "Xiaoman real activity production evidence check passed.",
+  ]) {
+    requireFragment(xiaomanRealActivityProductionEvidenceCheckPath, checker, fragment);
+  }
+  for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
+    forbidFragment(xiaomanRealActivityProductionEvidenceCheckPath, checker, fragment);
+  }
+}
+
+const xiaomanRealActivityEvidenceRuntimePath =
+  "runtime/sidecar/src/xiaoman_real_activity_evidence.rs";
+if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {
+  addError(
+    `${xiaomanRealActivityEvidenceRuntimePath}: missing Xiaoman production evidence exporter`
+  );
+} else {
+  const source = readText(xiaomanRealActivityEvidenceRuntimePath);
+  for (const fragment of [
+    "xiaoman_real_activity_production_evidence=",
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256",
+    "/home/ubuntu/qintopia-agent-os-releases/current",
+    "current_exe",
+    "canonicalize",
+    "owner-approved SHA-256",
+    "configured database URL does not match the owner-approved SHA-256",
+    "database_url_sha256",
+    "release_binary_verified",
+    "approved_sidecar_sha256_matched",
+    "approved_database_url_sha256_matched",
+    "signal_intake",
+    "image_generation",
+    "human_approval",
+    "send_ready",
+    "qiwe_upload",
+    "qiwe_callback_send",
+    "sanitized_evidence_retention",
+    "callback_credential_schema",
+    "target_group_alias",
+    "community_activity_group",
+  ]) {
+    requireFragment(xiaomanRealActivityEvidenceRuntimePath, source, fragment);
+  }
+  for (const fragment of [
+    "reqwest",
+    "HttpClient",
+    "systemctl",
+    "INSERT INTO",
+    "UPDATE qintopia_agent_os",
+    'target_group_id":',
+    'artifact_uri":',
+    'provider_message_id_sha256":',
+  ]) {
+    forbidFragment(xiaomanRealActivityEvidenceRuntimePath, source, fragment);
+  }
+}
+
 const qiweImageStagingEvidenceTemplatePath =
   "docs/reports/templates/qiwe-image-send-staging-evidence.md";
 if (!exists(qiweImageStagingEvidenceTemplatePath)) {
@@ -1855,6 +1937,66 @@ if (!exists(xiaomanImageSendStagingEvidenceTemplatePath)) {
     "gh release",
   ]) {
     forbidFragment(xiaomanImageSendStagingEvidenceTemplatePath, template, fragment);
+  }
+}
+
+const xiaomanRealActivityProductionEvidenceTemplatePath =
+  "docs/reports/templates/xiaoman-real-activity-production-evidence.md";
+if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
+  addError(
+    `${xiaomanRealActivityProductionEvidenceTemplatePath}: missing Xiaoman real activity production evidence template`
+  );
+} else {
+  const template = readText(xiaomanRealActivityProductionEvidenceTemplatePath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256='<approved production sidecar binary sha256>'",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256='<approved production database URL sha256>'",
+    "qintopia-message-sidecar xiaoman-real-activity-production-evidence",
+    "--workflow-root-id <completed-xiaoman-activity-root-uuid>",
+    "node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>",
+    "Production release SHA",
+    "Release-local binary verified",
+    "Owner-approved sidecar SHA-256 matched",
+    "Production database URL SHA-256",
+    "Owner-approved database URL SHA-256 matched",
+    "Xiaoman source event signal UUID",
+    "Generated-image artifact UUID",
+    "Send-ready work item UUID",
+    "Final JPEG `artifact_content_hash`",
+    "QiWe group arrival confirmed by human operator",
+    "signal_intake",
+    "image_generation",
+    "human_approval",
+    "send_ready",
+    "qiwe_upload",
+    "qiwe_callback_send",
+    "sanitized_evidence_retention",
+    "`release_binary_verified`: `true`",
+    "`approved_sidecar_sha256_matched`: `true`",
+    "`approved_database_url_sha256_matched`: `true`",
+    "Do not record QiWe token, GUID, API secret material, target group id, database URL",
+  ]) {
+    requireFragment(
+      xiaomanRealActivityProductionEvidenceTemplatePath,
+      template,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+    "callback.json",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(
+      xiaomanRealActivityProductionEvidenceTemplatePath,
+      template,
+      fragment
+    );
   }
 }
 

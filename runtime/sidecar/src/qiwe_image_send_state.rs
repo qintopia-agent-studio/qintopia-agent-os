@@ -65,6 +65,12 @@ pub struct QiweCallbackFileIdentity<'a> {
     pub file_size: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct QiweCallbackCredentialShapeEvidence {
+    pub schema_id: &'static str,
+    pub additional_field_count: usize,
+}
+
 impl Drop for QiweCallbackSendClaim {
     fn drop(&mut self) {
         self.claim_token.zeroize();
@@ -824,6 +830,7 @@ pub async fn record_send_success(
     pool: &PgPool,
     claim: &QiweCallbackSendClaim,
     receipt: &QiweSendReceipt,
+    credential_shape: Option<QiweCallbackCredentialShapeEvidence>,
 ) -> Result<()> {
     if receipt.is_send_success != 1 {
         bail!("QiWe send receipt does not confirm success");
@@ -833,6 +840,15 @@ pub async fn record_send_success(
         "QiWe provider message identifier",
     )?;
     let provider_message_id_sha256 = sha256_marker(receipt.message_identifier.as_bytes());
+    let mut success_metadata = json!({
+        "provider_confirmed_success": true,
+        "callback_credentials_persisted": false,
+        "external_send_executed": true
+    });
+    if let Some(shape) = credential_shape {
+        success_metadata["callback_credential_schema"] = json!(shape.schema_id);
+        success_metadata["callback_additional_field_count"] = json!(shape.additional_field_count);
+    }
     let mut tx = pool
         .begin()
         .await
@@ -854,11 +870,7 @@ pub async fn record_send_success(
     )
     .bind(claim.attempt_id)
     .bind(&provider_message_id_sha256)
-    .bind(json!({
-        "provider_confirmed_success": true,
-        "callback_credentials_persisted": false,
-        "external_send_executed": true
-    }))
+    .bind(success_metadata)
     .bind(&claim.claim_token)
     .execute(&mut *tx)
     .await
@@ -2617,6 +2629,7 @@ mod tests {
                 sequence: 1,
                 timestamp: 2,
             },
+            None,
         )
         .await
         .expect_err("provider non-success must not be recorded");
@@ -2631,6 +2644,7 @@ mod tests {
                 sequence: 1,
                 timestamp: 2,
             },
+            None,
         )
         .await
         .expect_err("provider identifiers with control characters must be rejected");
@@ -2767,6 +2781,10 @@ mod tests {
                 sequence: 7,
                 timestamp: 8,
             },
+            Some(QiweCallbackCredentialShapeEvidence {
+                schema_id: "fileAesKey+fileId+fileMd5+fileSize+filename",
+                additional_field_count: 0,
+            }),
         )
         .await
         .expect("record send success");
@@ -2796,6 +2814,14 @@ mod tests {
         assert_eq!(stored.0, "sent");
         assert_eq!(stored.1, "completed");
         assert!(stored.2.starts_with("sha256:"));
+        assert_eq!(
+            stored.3["attempt"]["audit_metadata"]["callback_credential_schema"],
+            "fileAesKey+fileId+fileMd5+fileSize+filename"
+        );
+        assert_eq!(
+            stored.3["attempt"]["audit_metadata"]["callback_additional_field_count"],
+            0
+        );
         let serialized = serde_json::to_string(&stored.3).expect("serialize stored state");
         for sensitive in [
             request_id,

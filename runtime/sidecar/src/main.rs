@@ -51,6 +51,7 @@ mod smoke;
 mod url_policy;
 mod workbench;
 mod xiaoman_activity;
+mod xiaoman_real_activity_evidence;
 
 use anyhow::Result;
 use clap::Parser;
@@ -578,6 +579,13 @@ async fn main() -> Result<()> {
         } => qiwe_image_send::run_upload_worker(&cli, once, work_item_id, apply, dry_run).await,
         Command::ProcessQiweImageSendCallback { apply, dry_run } => {
             qiwe_image_send::run_callback_processor(&cli, apply, dry_run).await
+        }
+        Command::XiaomanRealActivityProductionEvidence {
+            workflow_root_id,
+            source_event_signal_id,
+        } => {
+            xiaoman_real_activity_evidence::run(&cli, workflow_root_id, source_event_signal_id)
+                .await
         }
         Command::RunEvidenceWorker {
             once,
