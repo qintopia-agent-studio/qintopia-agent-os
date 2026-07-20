@@ -14,6 +14,48 @@ const RETAINED_REPORT_SCHEMA: &str = "xiaoman-real-activity-production-evidence-
 const TARGET_GROUP_ALIAS: &str = "community_activity_group";
 const GENERATED_IMAGE_WORKER: &str = "huabaosi-image-generation-worker";
 const EVIDENCE_WORKER: &str = "xiaoman-real-activity-production-evidence";
+const GENERATED_IMAGE_EVIDENCE_SQL: &str = r#"
+        SELECT
+            image_request.id AS image_generation_work_item_id,
+            artifact.id AS generated_image_artifact_id,
+            artifact.content_hash,
+            artifact.metadata,
+            creation.data AS creation_data,
+            review.data AS review_data
+        FROM qintopia_agent_os.artifacts artifact
+        JOIN qintopia_agent_os.work_items image_request
+          ON image_request.id = artifact.work_item_id
+         AND image_request.capability_key = 'huabaosi.generate_image_asset'
+         AND image_request.work_item_type = 'image_generation_request'
+         AND image_request.status = 'completed'
+        JOIN qintopia_agent_os.work_items visual_request
+          ON visual_request.id = image_request.parent_work_item_id
+         AND visual_request.parent_work_item_id = $1
+         AND visual_request.capability_key = 'huabaosi.create_visual_asset'
+         AND visual_request.work_item_type = 'visual_asset_request'
+         AND visual_request.status = 'completed'
+        JOIN qintopia_agent_os.work_item_events creation
+          ON creation.work_item_id = image_request.id
+         AND creation.artifact_id = artifact.id
+         AND creation.event_type = 'generated_image_created'
+         AND creation.actor_type = 'worker'
+         AND creation.actor_id = $4
+        JOIN qintopia_agent_os.work_item_events review
+          ON review.work_item_id = image_request.id
+         AND review.artifact_id = artifact.id
+         AND review.event_type = 'review_decision_recorded'
+         AND review.actor_type = 'human'
+         AND review.data->>'previous_review_status' = 'pending'
+         AND review.data->>'review_status' = 'approved'
+         AND review.data->>'authenticated_feishu_revalidation' = 'true'
+         AND review.data->>'does_not_publish' = 'true'
+        WHERE artifact.id = $2
+          AND artifact.artifact_type = 'generated_image'
+          AND artifact.review_status = 'approved'
+          AND artifact.content_hash = $3
+        ORDER BY review.created_at DESC, review.id DESC
+        LIMIT 1
+        "#;
 
 pub async fn run(
     cli: &Cli,
@@ -406,52 +448,15 @@ async fn load_generated_image(
     artifact_id: Uuid,
     content_hash: &str,
 ) -> Result<GeneratedImageEvidence> {
-    let row = sqlx::query(
-        r#"
-        SELECT
-            image_request.id AS image_generation_work_item_id,
-            artifact.id AS generated_image_artifact_id,
-            artifact.content_hash,
-            artifact.metadata,
-            creation.data AS creation_data,
-            review.data AS review_data
-        FROM qintopia_agent_os.artifacts artifact
-        JOIN qintopia_agent_os.work_items image_request
-          ON image_request.id = artifact.work_item_id
-         AND image_request.capability_key = 'huabaosi.generate_image_asset'
-         AND image_request.work_item_type = 'image_generation_request'
-         AND image_request.status = 'completed'
-        JOIN qintopia_agent_os.work_items visual_request
-          ON visual_request.id = image_request.parent_work_item_id
-         AND visual_request.parent_work_item_id = $1
-         AND visual_request.capability_key = 'huabaosi.create_visual_asset'
-         AND visual_request.work_item_type = 'visual_asset_request'
-         AND visual_request.status = 'completed'
-        JOIN qintopia_agent_os.work_item_events creation
-          ON creation.work_item_id = image_request.id
-         AND creation.artifact_id = artifact.id
-         AND creation.event_type = 'generated_image_created'
-         AND creation.actor_type = 'worker'
-         AND creation.actor_id = $4
-        JOIN qintopia_agent_os.work_item_events review
-          ON review.work_item_id = image_request.id
-         AND review.artifact_id = artifact.id
-         AND review.event_type = 'review_decision_recorded'
-         AND review.actor_type = 'human'
-        WHERE artifact.id = $2
-          AND artifact.artifact_type = 'generated_image'
-          AND artifact.review_status = 'approved'
-          AND artifact.content_hash = $3
-        "#,
-    )
-    .bind(root_id)
-    .bind(artifact_id)
-    .bind(content_hash)
-    .bind(GENERATED_IMAGE_WORKER)
-    .fetch_optional(pool)
-    .await
-    .context("load approved generated image evidence")?
-    .context("generated image evidence is missing or not bound to the activity root")?;
+    let row = sqlx::query(GENERATED_IMAGE_EVIDENCE_SQL)
+        .bind(root_id)
+        .bind(artifact_id)
+        .bind(content_hash)
+        .bind(GENERATED_IMAGE_WORKER)
+        .fetch_optional(pool)
+        .await
+        .context("load approved generated image evidence")?
+        .context("generated image evidence is missing or not bound to the activity root")?;
 
     let metadata: Value = row.try_get("metadata")?;
     let creation_data: Value = row.try_get("creation_data")?;
@@ -714,5 +719,22 @@ mod tests {
             &format!("sha256:{}", "f".repeat(64)),
         )
         .is_err());
+    }
+
+    #[test]
+    fn generated_image_query_selects_the_final_human_approval_event() {
+        for fragment in [
+            "review.data->>'previous_review_status' = 'pending'",
+            "review.data->>'review_status' = 'approved'",
+            "review.data->>'authenticated_feishu_revalidation' = 'true'",
+            "review.data->>'does_not_publish' = 'true'",
+            "ORDER BY review.created_at DESC, review.id DESC",
+            "LIMIT 1",
+        ] {
+            assert!(
+                GENERATED_IMAGE_EVIDENCE_SQL.contains(fragment),
+                "generated image evidence query is missing {fragment}"
+            );
+        }
     }
 }
