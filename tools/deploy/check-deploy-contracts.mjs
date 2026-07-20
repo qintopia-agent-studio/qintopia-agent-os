@@ -150,6 +150,11 @@ if (!exists(deployRunnerCheckPath)) {
     readText(deployRunnerCheckPath),
     "tools/deploy/test-huabaosi-image-production-canary.mjs"
   );
+  requireFragment(
+    deployRunnerCheckPath,
+    readText(deployRunnerCheckPath),
+    "tools/deploy/test-huabaosi-image-production-canary-evidence.mjs"
+  );
 }
 
 const stagingValuesTemplatePath =
@@ -1067,6 +1072,10 @@ if (!exists(stagingRuntimeProvisioningRunbookPath)) {
 const aliangStagingSmokeTestPath = "tools/deploy/test-huabaosi-image-staging-smoke.mjs";
 const aliangProductionCanaryTestPath =
   "tools/deploy/test-huabaosi-image-production-canary.mjs";
+const huabaosiProductionCanaryEvidenceCheckPath =
+  "tools/deploy/check-huabaosi-image-production-canary-evidence.mjs";
+const huabaosiProductionCanaryEvidenceTestPath =
+  "tools/deploy/test-huabaosi-image-production-canary-evidence.mjs";
 const aliangStagingReadinessTestPath =
   "tools/deploy/test-huabaosi-image-staging-readiness.mjs";
 const stagingRuntimePrerequisiteObservationTestPath =
@@ -1290,6 +1299,60 @@ if (!exists(aliangProductionCanaryTestPath)) {
     "Huabaosi image production canary test passed.",
   ]) {
     requireFragment(aliangProductionCanaryTestPath, test, fragment);
+  }
+}
+
+if (!exists(huabaosiProductionCanaryEvidenceCheckPath)) {
+  addError(
+    `${huabaosiProductionCanaryEvidenceCheckPath}: missing Huabaosi production canary evidence checker`
+  );
+} else {
+  const checker = readText(huabaosiProductionCanaryEvidenceCheckPath);
+  for (const fragment of [
+    "huabaosi_image_generation_production_canary_evidence=",
+    "Huabaosi production canary passed: one Feishu-backed JPEG remains pending human review; no generated-image approval, mirror, publish, QiWe, or send was executed",
+    "preflight",
+    "brief_review",
+    "request_intake",
+    "generation",
+    "revalidation",
+    'reviewer_id !== "trainer"',
+    'generation.review_status !== "pending"',
+    'generation.storage_backend !== "feishu-base"',
+    "revalidation.database_writes_executed !== false",
+    "revalidation.external_calls_executed !== true",
+    '"artifact_uri"',
+    '"provider_response"',
+    '"target_group_id"',
+    "authenticated same-byte readback",
+    "Huabaosi image production canary evidence check passed.",
+  ]) {
+    requireFragment(huabaosiProductionCanaryEvidenceCheckPath, checker, fragment);
+  }
+}
+
+if (!exists(huabaosiProductionCanaryEvidenceTestPath)) {
+  addError(
+    `${huabaosiProductionCanaryEvidenceTestPath}: missing Huabaosi production canary evidence checker test`
+  );
+} else {
+  const test = readText(huabaosiProductionCanaryEvidenceTestPath);
+  for (const fragment of [
+    "check-huabaosi-image-production-canary-evidence.mjs",
+    "hash-mismatch.txt",
+    "raw-secret.txt",
+    "missing-phase.txt",
+    "request-drift.txt",
+    "send-leak.txt",
+    "missing-completion.txt",
+    "authenticated same-byte readback",
+    "forbidden sensitive fragment",
+    "exactly five fixed phase records",
+    "does not bind the approved brief",
+    "unexpected key",
+    "Huabaosi image production canary evidence test passed.",
+  ]) {
+    requireFragment(huabaosiProductionCanaryEvidenceTestPath, test, fragment);
   }
 }
 
@@ -2001,6 +2064,8 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
     "check-xiaoman-image-send-staging-evidence.mjs",
     "check-xiaoman-real-activity-production-evidence.mjs",
     "staging_runtime_readiness_evidence=",
+    "huabaosi_image_generation_production_canary_evidence=",
+    "--huabaosi-production-canary",
     "prerequisite",
     "huabaosi_readiness",
     "qiwe_readiness",
@@ -2010,6 +2075,10 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
     "production_feature_boundary_reviewed",
     "huabaosi_production_activation",
     "first_record_evidence_retained",
+    "brief_review",
+    "request_intake",
+    "feishu_primary_storage_revalidated",
+    "Huabaosi production canary first record does not bind to real activity image",
     "qiwe_group_arrival_confirmed",
     "release_binary_verified",
     "approved_sidecar_sha256_matched",

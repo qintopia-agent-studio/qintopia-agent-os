@@ -83,6 +83,8 @@
     deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh
   ```
 
+- Huabaosi image generation production canary evidence validation:
+  `node tools/deploy/check-huabaosi-image-production-canary-evidence.mjs <production-canary-output.txt>`
 - Huabaosi Feishu-backed generated-image read-only revalidation:
   `qintopia-message-sidecar huabaosi-feishu-primary-storage-revalidate --artifact-id <generated-image-uuid>`
 - Huabaosi generated-image Feishu mirror production observation smoke:
@@ -143,6 +145,7 @@
     --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
     --huabaosi-staging <huabaosi-staging-output.txt> \
     --qiwe-staging <qiwe-staging-output.txt> \
+    --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
     --production-real-activity <production-evidence-output.txt>
   ```
 
