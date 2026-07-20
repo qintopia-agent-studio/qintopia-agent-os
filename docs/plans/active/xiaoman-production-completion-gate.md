@@ -53,7 +53,8 @@ All gates are required before a Release is called Xiaoman production complete:
 6. A separate QiWe production enablement PR adds reviewed listener/service/timer,
    observation, rollback, exact allowlists, and production feature boundaries.
 7. Huabaosi production generation and Feishu mirror activation pass release-local
-   observation, explicit activation, and first-record evidence.
+   observation, explicit activation, and first-record canary evidence retained as a
+   separate sanitized output.
 8. One real Xiaoman activity is observed from signal intake through image generation,
    human approval, send-ready, QiWe group-send arrival, and sanitized production
    evidence retention.
@@ -66,6 +67,7 @@ All gates are required before a Release is called Xiaoman production complete:
      --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
      --huabaosi-staging <huabaosi-staging-output.txt> \
      --qiwe-staging <qiwe-staging-output.txt> \
+     --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
      --production-real-activity <production-real-activity-output.txt>
    ```
 

@@ -75,6 +75,10 @@ const qiweRecords = prefixedRecords(
   options.qiweStaging,
   "qiwe_image_send_staging_evidence="
 );
+const huabaosiProductionCanaryRecords = prefixedRecords(
+  options.huabaosiProductionCanary,
+  "huabaosi_image_generation_production_canary_evidence="
+);
 const productionRecords = prefixedRecords(
   options.productionRealActivity,
   "xiaoman_real_activity_production_evidence="
@@ -92,9 +96,16 @@ const productionRetention = single(
   productionRecords.filter((record) => record.phase === "sanitized_evidence_retention"),
   "expected one production sanitized evidence retention record"
 );
+const productionImageGeneration = single(
+  productionRecords.filter((record) => record.phase === "image_generation"),
+  "expected one production image generation record"
+);
 const productionSignal = single(
   productionRecords.filter((record) => record.phase === "signal_intake"),
   "expected one production signal intake record"
+);
+const huabaosiProductionCanary = assertHuabaosiProductionCanary(
+  huabaosiProductionCanaryRecords
 );
 
 assertCompletionManifest(completion);
@@ -119,9 +130,24 @@ const production = completion.huabaosi_production_activation;
 if (
   production.release_sha !== productionRetention.production_release_sha ||
   production.sidecar_binary_sha256 !== productionRetention.sidecar_binary_sha256 ||
-  production.database_url_sha256 !== productionRetention.database_url_sha256
+  production.database_url_sha256 !== productionRetention.database_url_sha256 ||
+  production.release_sha !== huabaosiProductionCanary.release_sha ||
+  production.sidecar_binary_sha256 !== huabaosiProductionCanary.sidecar_binary_sha256 ||
+  production.database_url_sha256 !== huabaosiProductionCanary.database_url_sha256
 ) {
-  fail("Huabaosi production activation facts do not bind to real activity evidence");
+  fail("Huabaosi production activation facts do not bind to retained evidence");
+}
+
+if (
+  huabaosiProductionCanary.artifact_id !==
+    productionImageGeneration.generated_image_artifact_id ||
+  huabaosiProductionCanary.content_hash !==
+    productionImageGeneration.artifact_content_hash ||
+  huabaosiProductionCanary.artifact_id !==
+    productionRetention.generated_image_artifact_id ||
+  huabaosiProductionCanary.content_hash !== productionRetention.artifact_content_hash
+) {
+  fail("Huabaosi production canary first record does not bind to real activity image");
 }
 
 if (
@@ -161,6 +187,7 @@ function parseArgs(argv) {
     "staging-runtime-readiness",
     "huabaosi-staging",
     "qiwe-staging",
+    "huabaosi-production-canary",
     "production-real-activity",
   ];
   for (const key of required) {
@@ -173,14 +200,203 @@ function parseArgs(argv) {
     stagingRuntimeReadiness: parsed["staging-runtime-readiness"],
     huabaosiStaging: parsed["huabaosi-staging"],
     qiweStaging: parsed["qiwe-staging"],
+    huabaosiProductionCanary: parsed["huabaosi-production-canary"],
     productionRealActivity: parsed["production-real-activity"],
   };
 }
 
 function usage() {
   fail(
-    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completion-manifest.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --production-real-activity <production-output.txt>"
+    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completion-manifest.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-output.txt>"
   );
+}
+
+function assertHuabaosiProductionCanary(records) {
+  const expectedPhases = [
+    "preflight",
+    "brief_review",
+    "request_intake",
+    "generation",
+    "revalidation",
+  ];
+  if (records.length !== expectedPhases.length) {
+    fail("Huabaosi production canary evidence must contain five fixed phases");
+  }
+  for (const [index, phase] of expectedPhases.entries()) {
+    if (records[index]?.phase !== phase) {
+      fail(`unexpected Huabaosi production canary phase at index ${index + 1}`);
+    }
+  }
+
+  const [preflight, briefReview, requestIntake, generation, revalidation] = records;
+  for (const record of records) {
+    if (
+      record.success !== true ||
+      !isGitSha(record.release_sha) ||
+      !isSha256(record.sidecar_binary_sha256) ||
+      !isSha256(record.database_url_sha256)
+    ) {
+      fail("Huabaosi production canary shared production boundary is incomplete");
+    }
+  }
+  for (const key of ["release_sha", "sidecar_binary_sha256", "database_url_sha256"]) {
+    if (!records.every((record) => record[key] === records[0][key])) {
+      fail(`Huabaosi production canary ${key} differs across phases`);
+    }
+  }
+
+  assertExactKeys(
+    preflight,
+    new Set([
+      "database_url_sha256",
+      "phase",
+      "release_sha",
+      "sidecar_binary_sha256",
+      "success",
+      "action_status",
+      "timer_active",
+    ]),
+    "Huabaosi production canary preflight"
+  );
+  if (
+    preflight.action_status !== "adapter_config_ready" ||
+    preflight.timer_active !== false
+  ) {
+    fail(
+      "Huabaosi production canary preflight does not prove disabled timer readiness"
+    );
+  }
+
+  assertExactKeys(
+    briefReview,
+    new Set([
+      "database_url_sha256",
+      "phase",
+      "release_sha",
+      "sidecar_binary_sha256",
+      "success",
+      "action_status",
+      "brief_artifact_id",
+      "brief_work_item_id",
+      "review_status",
+      "reviewer_id",
+    ]),
+    "Huabaosi production canary brief review"
+  );
+  if (
+    briefReview.action_status !== "review_recorded" ||
+    !isUuid(briefReview.brief_artifact_id) ||
+    !isUuid(briefReview.brief_work_item_id) ||
+    briefReview.review_status !== "approved" ||
+    briefReview.reviewer_id !== "trainer"
+  ) {
+    fail("Huabaosi production canary brief review evidence is incomplete");
+  }
+
+  assertExactKeys(
+    requestIntake,
+    new Set([
+      "database_url_sha256",
+      "phase",
+      "release_sha",
+      "sidecar_binary_sha256",
+      "success",
+      "action_status",
+      "brief_artifact_id",
+      "brief_work_item_id",
+      "image_generation_work_item_id",
+      "request_created",
+    ]),
+    "Huabaosi production canary request intake"
+  );
+  if (
+    requestIntake.action_status !== "image_generation_requests_created" ||
+    requestIntake.brief_artifact_id !== briefReview.brief_artifact_id ||
+    requestIntake.brief_work_item_id !== briefReview.brief_work_item_id ||
+    !isUuid(requestIntake.image_generation_work_item_id) ||
+    requestIntake.request_created !== true
+  ) {
+    fail("Huabaosi production canary request intake does not bind approved brief");
+  }
+
+  assertExactKeys(
+    generation,
+    new Set([
+      "database_url_sha256",
+      "phase",
+      "release_sha",
+      "sidecar_binary_sha256",
+      "success",
+      "action_status",
+      "artifact_id",
+      "byte_size",
+      "content_hash",
+      "height",
+      "image_generation_work_item_id",
+      "mime_type",
+      "review_status",
+      "storage_backend",
+      "width",
+    ]),
+    "Huabaosi production canary generation"
+  );
+  if (
+    generation.action_status !== "generated_image_created" ||
+    !isUuid(generation.artifact_id) ||
+    !Number.isInteger(generation.byte_size) ||
+    generation.byte_size <= 0 ||
+    generation.byte_size > 10 * 1024 * 1024 ||
+    !isCanonicalContentHash(generation.content_hash) ||
+    generation.width !== 1024 ||
+    generation.height !== 1024 ||
+    generation.image_generation_work_item_id !==
+      requestIntake.image_generation_work_item_id ||
+    generation.mime_type !== "image/jpeg" ||
+    generation.review_status !== "pending" ||
+    generation.storage_backend !== "feishu-base"
+  ) {
+    fail("Huabaosi production canary generation does not prove a pending JPEG");
+  }
+
+  assertExactKeys(
+    revalidation,
+    new Set([
+      "database_url_sha256",
+      "phase",
+      "release_sha",
+      "sidecar_binary_sha256",
+      "success",
+      "action_status",
+      "artifact_id",
+      "byte_size",
+      "content_hash",
+      "database_writes_executed",
+      "external_calls_executed",
+      "height",
+      "width",
+    ]),
+    "Huabaosi production canary revalidation"
+  );
+  if (
+    revalidation.action_status !== "feishu_primary_storage_revalidated" ||
+    revalidation.artifact_id !== generation.artifact_id ||
+    revalidation.byte_size !== generation.byte_size ||
+    revalidation.content_hash !== generation.content_hash ||
+    revalidation.width !== generation.width ||
+    revalidation.height !== generation.height ||
+    revalidation.database_writes_executed !== false ||
+    revalidation.external_calls_executed !== true
+  ) {
+    fail("Huabaosi production canary revalidation does not prove same-byte readback");
+  }
+
+  return {
+    artifact_id: generation.artifact_id,
+    content_hash: generation.content_hash,
+    database_url_sha256: generation.database_url_sha256,
+    release_sha: generation.release_sha,
+    sidecar_binary_sha256: generation.sidecar_binary_sha256,
+  };
 }
 
 function runChecker(label, checkerArgs) {
@@ -431,6 +647,16 @@ function positiveInteger(value) {
 
 function isSafeLabel(value) {
   return /^[a-z0-9][a-z0-9_-]{1,63}$/i.test(String(value ?? ""));
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value ?? "")
+  );
+}
+
+function isCanonicalContentHash(value) {
+  return /^sha256:[0-9a-f]{64}$/.test(String(value ?? ""));
 }
 
 function isUtcSecondTimestamp(value) {
