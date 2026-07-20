@@ -54,6 +54,8 @@ for (const requiredPath of [
   "tools/ci/check-commit-messages.mjs",
   "tools/ci/check-pr-body.mjs",
   "tools/ci/check-release-please-pr.mjs",
+  "tools/ci/xiaoman-production-claim-boundary.mjs",
+  "tools/ci/test-xiaoman-production-claim-boundary.mjs",
   "tools/agents/pr-body.mjs",
   "tools/agents/pr-doctor.mjs",
   "tools/agents/pr-bootstrap.mjs",
@@ -186,10 +188,34 @@ for (const requiredFragment of [
   "This PR was generated with [Release Please]",
   ".release-please-manifest.json",
   "CHANGELOG.md",
+  "validateXiaomanProductionCompletionClaimBoundary",
 ]) {
   if (releasePleaseCheck && !releasePleaseCheck.includes(requiredFragment)) {
     errors.push(
       `tools/ci/check-release-please-pr.mjs: must include ${requiredFragment}`
+    );
+  }
+}
+
+const xiaomanProductionClaimBoundary = fs.existsSync(
+  path.join(repoRoot, "tools/ci/xiaoman-production-claim-boundary.mjs")
+)
+  ? readText("tools/ci/xiaoman-production-claim-boundary.mjs")
+  : "";
+for (const requiredFragment of [
+  "requiredXiaomanProductionCompletionEvidenceRefs",
+  "docs/plans/active/xiaoman-production-completion-gate.md",
+  "tools/deploy/check-xiaoman-production-completion-evidence.mjs",
+  "xiaoman-production-completion-evidence-v1",
+  "owner-retained evidence",
+  "positiveXiaomanProductionCompletionClaimLines",
+]) {
+  if (
+    xiaomanProductionClaimBoundary &&
+    !xiaomanProductionClaimBoundary.includes(requiredFragment)
+  ) {
+    errors.push(
+      `tools/ci/xiaoman-production-claim-boundary.mjs: must include ${requiredFragment}`
     );
   }
 }
