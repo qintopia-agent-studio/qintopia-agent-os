@@ -56,9 +56,12 @@ The existing `run-xiaoman-activity-promotion-starter-worker` name is retained fo
 runtime compatibility, but its internal route is phase-aware. It may create only the
 child capabilities in this table.
 
-The `post_event` visual child produces a reviewable recap brief. This PR does not
-automatically create an image-generation request, publish the recap, or send it. The
-`in_event` route does not create a visual or message-send request.
+The `post_event` visual child produces a reviewable recap brief. After that brief is
+approved, the same reviewed internal starter path may create one image-generation
+request, and after the generated image is approved it may create one awaiting-publish
+group-message request. Those starter steps only create AgentOS work items; they do not
+call an image provider, confirm, queue, publish, write Feishu, call QiWe, or send. The
+`in_event` route does not create a visual, image-generation, or message-send request.
 
 ## Compatibility
 
@@ -79,7 +82,8 @@ automatically create an image-generation request, publish the recap, or send it.
 - Signal intake records both `activity_phase` and `activity_route`.
 - The starter creates exactly the allowlisted child set for each phase.
 - Replays do not duplicate roots, children, or mutation audit rows.
-- No route writes Feishu, calls a provider, publishes, or sends QiWe messages.
+- No starter route writes Feishu, calls a provider, records final confirmation,
+  publishes, or sends QiWe messages.
 
 ## Production Boundary
 
