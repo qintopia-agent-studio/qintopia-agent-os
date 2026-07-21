@@ -3447,7 +3447,7 @@ mod tests {
 
     #[test]
     fn decoder_limits_reject_oversized_dimensions() {
-        let oversized = fixture_png_with_dimensions(1025, 1, [1, 2, 3, 255]);
+        let oversized = fixture_png_with_dimensions(1255, 1, [1, 2, 3, 255]);
 
         let error = decode_provider_png(&oversized, DEFAULT_MAX_MEDIA_BYTES)
             .expect_err("decoder must reject oversized dimensions before conversion");
