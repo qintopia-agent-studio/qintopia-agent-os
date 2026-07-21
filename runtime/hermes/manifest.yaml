@@ -34,6 +34,8 @@ tags:
   - profile-bundle
   - runtime-template
 next_actions:
+  - Review the Erhua Livecool redacted dry run before any production model overlay
+    activation.
   - Deploy the observation-only Xiaoman bundle, run the owner-approved one-time values
     migration, and record production parity before any live profile repoint.
   - Add first-cutover backup and rollback behavior in a separate reviewed PR.

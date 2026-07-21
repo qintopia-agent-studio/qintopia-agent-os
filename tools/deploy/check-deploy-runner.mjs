@@ -55,9 +55,11 @@ const requiredFiles = [
   "deploy/runner/deploy-result.schema.json",
   "deploy/runner/install-release-systemd-units.sh",
   "deploy/runner/qintopia-agent-os-deploy-runner",
+  "deploy/runner/activate-erhua-profile.sh",
   "deploy/runner/poll-deploy-requests.sh",
   "deploy/runner/promote-release.sh",
   "deploy/runner/rollback-release.sh",
+  "deploy/runner/rollback-erhua-profile.sh",
   "deploy/runner/smoke-release.sh",
   "deploy/runner/upload-deploy-request.sh",
   "deploy/runner/wait-deploy-result.sh",
@@ -264,6 +266,43 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       )}`
     );
   }
+  const profileRequest = {
+    ...sampleRequest,
+    release_scope: ["hermes-profile-erhua"],
+    restart_targets: ["hermes-erhua"],
+  };
+  if (!validateRequest(profileRequest)) {
+    addError("deploy request schema must accept fixed Erhua profile coupling");
+  }
+  for (const restart_targets of [
+    ["hermes-xiaoman"],
+    ["hermes-erhua", "hermes-xiaoman"],
+  ]) {
+    if (validateRequest({ ...profileRequest, restart_targets })) {
+      addError("deploy request schema must reject non-exclusive Erhua restart targets");
+    }
+  }
+  if (validateRequest({ ...profileRequest, rollback_on_smoke_failure: false })) {
+    addError(
+      "deploy request schema must require Erhua profile rollback on smoke failure"
+    );
+  }
+  const profileActivationRequest = {
+    ...profileRequest,
+    dry_run: false,
+    profile_dry_run_request_id: "deploy-20260706T000000Z-0123456789ab",
+  };
+  if (!validateRequest(profileActivationRequest)) {
+    addError("deploy request schema must accept an activation bound to a dry run");
+  }
+  if (
+    validateRequest({
+      ...profileActivationRequest,
+      profile_dry_run_request_id: undefined,
+    })
+  ) {
+    addError("deploy request schema must bind profile activation to a dry-run request");
+  }
 }
 
 if (exists("deploy/runner/deploy-result.schema.json")) {
@@ -277,6 +316,7 @@ if (exists("deploy/runner/deploy-result.schema.json")) {
     started_at: "2026-07-06T00:00:00Z",
     finished_at: "2026-07-06T00:01:00Z",
     release_sha: "abcdef0123456789abcdef0123456789abcdef01",
+    release_scope: ["deploy-bundle"],
     previous_sha: "0123456789abcdef0123456789abcdef01234567",
     current_target: "/home/ubuntu/qintopia-agent-os-releases/current",
     restart_targets: ["qintopia-system-services"],
@@ -416,6 +456,7 @@ if (exists(".github/workflows/deploy-production.yml")) {
     'restart_targets="$(normalize_csv_allowlist',
     'dry_run="$(normalize_boolean "dry_run" "$dry_run")',
     'rollback_on_smoke_failure="$(normalize_boolean',
+    "rollback_on_smoke_failure=true",
     "build-release-artifacts:",
     "Download release build artifact",
     "Build release sidecar artifact",
@@ -620,11 +661,17 @@ for (const fragment of [
   'previous_sha="${previous_target##*/}"',
   "promoted_current=true",
   'promote-release.sh \\\n    "${promote_args[@]}" || return $?',
-  'smoke-release.sh --restart-targets "$restart_targets" || return $?',
+  'smoke-release.sh \\\n      --release-root "$RELEASE_ROOT" \\\n      --restart-targets "$restart_targets" \\\n      --log-since "$started_at" || return $?',
   "run_promotion\n  status=$?",
   'if [[ "$promoted_current" == "true"',
   "rollback failed",
   "rollback succeeded",
+  "hermes-profile-erhua requires exactly hermes-erhua",
+  "validate_current_profile_release",
+  "activate-erhua-profile.sh",
+  "rollback-erhua-profile.sh",
+  "assert_current_profile_release",
+  ".smoke.json",
 ]) {
   if (!runnerText.includes(fragment)) {
     addError(`deploy/runner/qintopia-agent-os-deploy-runner: missing ${fragment}`);
@@ -760,10 +807,61 @@ for (const fragment of [
   "hermes-gateway-huabaosi.service",
   "hermes-gateway-guanerye.service",
   "unsupported restart target",
+  "smoke_erhua_profile",
+  "--profile erhua doctor",
+  "not a recognized provider",
+  "unknown provider",
+  "--evidence-output",
+  '"doctor_succeeded"',
+  "verify_runtime_provider.py",
+  "verify-activated",
 ]) {
   if (!smokeText.includes(fragment)) {
     addError(`deploy/runner/smoke-release.sh: missing ${fragment}`);
   }
+}
+
+const activateErhuaText = exists("deploy/runner/activate-erhua-profile.sh")
+  ? readText("deploy/runner/activate-erhua-profile.sh")
+  : "";
+for (const fragment of [
+  "--release-sha",
+  "profile-dry-runs",
+  "matching Erhua dry-run evidence is required before activation",
+  "Erhua runtime state changed after the reviewed dry run",
+  "requires PyYAML for the root Python runtime",
+  "--expected-config-sha",
+  "--dry-run-request-id",
+  "older than 24 hours",
+  "verify_runtime_provider.py",
+]) {
+  if (activateErhuaText && !activateErhuaText.includes(fragment)) {
+    addError(`deploy/runner/activate-erhua-profile.sh: missing ${fragment}`);
+  }
+}
+const rollbackReleaseText = exists("deploy/runner/rollback-release.sh")
+  ? readText("deploy/runner/rollback-release.sh")
+  : "";
+for (const fragment of [
+  "os.replace",
+  "os.fsync",
+  "rollback current target verification failed",
+]) {
+  if (rollbackReleaseText && !rollbackReleaseText.includes(fragment)) {
+    addError(`deploy/runner/rollback-release.sh: missing ${fragment}`);
+  }
+}
+
+const runnerServiceText = exists(
+  "deploy/runner/qintopia-agent-os-deploy-runner.service"
+)
+  ? readText("deploy/runner/qintopia-agent-os-deploy-runner.service")
+  : "";
+if (
+  runnerServiceText &&
+  !runnerServiceText.includes("ReadWritePaths=/home/ubuntu/.hermes/profiles/erhua ")
+) {
+  addError("deploy runner service must explicitly allow governed Erhua profile writes");
 }
 if (
   smokeText.includes('echo "Smoke checks passed') &&
@@ -927,6 +1025,12 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/upload-deploy-request.sh"], {
     cwd: repoRoot,
   });
+  execFileSync("bash", ["-n", "deploy/runner/activate-erhua-profile.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync("bash", ["-n", "deploy/runner/rollback-erhua-profile.sh"], {
+    cwd: repoRoot,
+  });
   execFileSync("bash", ["-n", "deploy/runner/wait-deploy-result.sh"], {
     cwd: repoRoot,
   });
@@ -1039,6 +1143,11 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/runner/poll-deploy-requests.sh",
     "deploy/runner/install-release-systemd-units.sh",
     "deploy/runner/deploy-request.schema.json",
+    "agents/erhua/config.template.yaml",
+    "runtime/hermes/render_profile_overlay.py",
+    "runtime/hermes/migrate_erhua_livecool_env.py",
+    "runtime/hermes/profile_transaction.py",
+    "runtime/hermes/verify_runtime_provider.py",
     "deploy/runner/wait-deploy-result.sh",
     "deploy/restart-target-rules.yaml",
     "tools/deploy/collect-release-deploy-results.mjs",

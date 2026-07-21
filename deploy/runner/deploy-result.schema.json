@@ -12,6 +12,7 @@
     "started_at",
     "finished_at",
     "release_sha",
+    "release_scope",
     "previous_sha",
     "current_target",
     "restart_targets",
@@ -26,6 +27,19 @@
     "started_at": { "type": "string", "format": "date-time" },
     "finished_at": { "type": "string", "format": "date-time" },
     "release_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "release_scope": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "sidecar-runtime",
+          "deploy-bundle",
+          "hermes-plugins",
+          "hermes-profile-erhua"
+        ]
+      }
+    },
     "previous_sha": { "type": "string" },
     "current_target": { "type": "string" },
     "restart_targets": {

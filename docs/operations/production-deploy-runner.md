@@ -215,7 +215,7 @@ until the package contract and restart target rule are added.
 
 The deploy request prefix is not configurable. It is fixed to `qintopia-agent-os` so the
 GitHub workflow, JSON schema, server-side validator, and COS poller share one production
-queue contract.
+request-pointer contract.
 
 `DEPLOY_REQUEST_SIGNING_KEY` and `DEPLOY_REQUEST_SIGNING_KEY_ID` must also be present on
 the production server, normally in `/etc/qintopia/cos-artifacts.env`. COS write
@@ -234,11 +234,13 @@ The runner must not:
 - trust COS request JSON without server-side validation;
 - trust COS request JSON without HMAC signature verification;
 - process expired requests;
-- repeatedly process the same current pointer after it has been archived locally;
+- repeatedly process a request referenced by `current.json` after its local state has
+  been archived;
 - roll back before `current` has been switched;
 - report rollback success when `rollback-release.sh` failed;
 - deploy a SHA that was not requested explicitly;
-- edit files under `.hermes` directly;
+- edit files under `.hermes` outside a fixed, reviewed profile transaction with backup,
+  smoke, and rollback;
 - run `git fetch`, `git checkout`, or local Rust builds for routine releases.
 
 Hermes restart targets map to ubuntu user-level systemd services such as
@@ -281,6 +283,10 @@ qintopia-agent-os/deploy-results/production/<request-id>.json
 The request schema is `deploy/runner/deploy-request.schema.json`. The result schema is
 `deploy/runner/deploy-result.schema.json`.
 
+Profile activation requests identify the exact reviewed dry-run request. Results retain
+the fixed release scope, restart target, smoke phase, and restore evidence so approval
+and rollback can be audited independently.
+
 The server runner intentionally does not list `deploy-requests/production/pending/`.
 Tencent COS is object storage, not a queue, and ListBucket/prefix listing can be slower
 or less reliable than reading a known object. GitHub writes `current.json`; the server
@@ -319,6 +325,17 @@ bundle:
 
 Do not enable production non-dry-run deployment until the dry-run proves request
 polling, artifact download, manifest validation, result upload, and smoke behavior.
+
+## Runner Unit Upgrades
+
+The installed runner unit is a static root-owned file under `/etc/systemd/system`; a
+release symlink switch does not update its sandbox. Any later unit change must therefore
+use an owner-approved immutable release file, back up the installed unit under the
+deploy state directory, run `systemd-analyze verify` before installation, then run
+`systemctl daemon-reload` and inspect the effective properties with `systemctl show`.
+
+If verification fails, restore the backed-up unit and reload systemd. Do not edit the
+installed unit in place and do not source it from an unverified working tree.
 
 ## Validation
 

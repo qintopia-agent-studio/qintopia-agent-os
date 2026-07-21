@@ -24,7 +24,8 @@ on:
         type: string
       release_scope:
         description:
-          "Comma-separated scope: sidecar-runtime,deploy-bundle,hermes-plugins."
+          "Comma-separated scope:
+          sidecar-runtime,deploy-bundle,hermes-plugins,hermes-profile-erhua."
         required: true
         default: deploy-bundle,hermes-plugins
         type: string
@@ -39,6 +40,10 @@ on:
         required: true
         default: true
         type: boolean
+      profile_dry_run_request_id:
+        description: Required for non-dry-run Erhua profile activation.
+        required: false
+        type: string
       rollback_on_smoke_failure:
         description: Roll back current if post-promotion smoke fails.
         required: true
@@ -194,6 +199,8 @@ jobs:
           INPUT_RELEASE_SCOPE: ${{ github.event.inputs.release_scope || '' }}
           INPUT_RESTART_TARGETS: ${{ github.event.inputs.restart_targets || '' }}
           INPUT_DRY_RUN: ${{ github.event.inputs.dry_run || '' }}
+          INPUT_PROFILE_DRY_RUN_REQUEST_ID:
+            ${{ github.event.inputs.profile_dry_run_request_id || '' }}
           INPUT_ROLLBACK_ON_SMOKE_FAILURE:
             ${{ github.event.inputs.rollback_on_smoke_failure || '' }}
           INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
@@ -383,6 +390,7 @@ jobs:
             fi
             dry_run="$RELEASE_DEPLOY_DRY_RUN"
             rollback_on_smoke_failure="true"
+            profile_dry_run_request_id=""
             notes="GitHub Release ${RELEASE_TAG_NAME}: ${RELEASE_HTML_URL}"
             echo "release-tag=${RELEASE_TAG_NAME}" >> "$GITHUB_OUTPUT"
             echo "build-artifacts=true" >> "$GITHUB_OUTPUT"
@@ -396,6 +404,7 @@ jobs:
             restart_targets="${INPUT_RESTART_TARGETS:-qintopia-system-services}"
             dry_run="${INPUT_DRY_RUN:-true}"
             rollback_on_smoke_failure="${INPUT_ROLLBACK_ON_SMOKE_FAILURE:-true}"
+            profile_dry_run_request_id="$INPUT_PROFILE_DRY_RUN_REQUEST_ID"
             notes="$INPUT_NOTES"
             echo "release-tag=" >> "$GITHUB_OUTPUT"
             echo "build-artifacts=false" >> "$GITHUB_OUTPUT"
@@ -419,7 +428,7 @@ jobs:
           release_scope="$(normalize_csv_allowlist \
             "release_scope" \
             "$release_scope" \
-            "sidecar-runtime,deploy-bundle,hermes-plugins")"
+            "sidecar-runtime,deploy-bundle,hermes-plugins,hermes-profile-erhua")"
           restart_targets="$(normalize_csv_allowlist \
             "restart_targets" \
             "$restart_targets" \
@@ -428,6 +437,16 @@ jobs:
           rollback_on_smoke_failure="$(normalize_boolean \
             "rollback_on_smoke_failure" \
             "$rollback_on_smoke_failure")"
+          if [[ "$release_scope" == *"hermes-profile-erhua"* ]]; then
+            if [[ "$release_scope" != "hermes-profile-erhua" || "$restart_targets" != "hermes-erhua" || "$rollback_on_smoke_failure" != "true" ]]; then
+              echo "hermes-profile-erhua requires exclusive scope, exactly hermes-erhua, and rollback_on_smoke_failure=true." >&2
+              exit 2
+            fi
+            if [[ "$dry_run" == "false" && ! "$profile_dry_run_request_id" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]]; then
+              echo "Non-dry-run Erhua profile activation requires a valid profile_dry_run_request_id." >&2
+              exit 2
+            fi
+          fi
 
           git fetch --no-tags origin master
           git cat-file -e "${commit_sha}^{commit}"
@@ -443,6 +462,7 @@ jobs:
             echo "restart-targets=${restart_targets}"
             echo "dry-run=${dry_run}"
             echo "rollback-on-smoke-failure=${rollback_on_smoke_failure}"
+            echo "profile-dry-run-request-id=${profile_dry_run_request_id}"
             echo "notes<<${notes_delimiter}"
             echo "$notes"
             echo "${notes_delimiter}"
@@ -528,6 +548,8 @@ jobs:
           DEPLOY_DRY_RUN: ${{ steps.resolve.outputs.dry-run }}
           DEPLOY_ROLLBACK_ON_SMOKE_FAILURE:
             ${{ steps.resolve.outputs.rollback-on-smoke-failure }}
+          DEPLOY_PROFILE_DRY_RUN_REQUEST_ID:
+            ${{ steps.resolve.outputs.profile-dry-run-request-id }}
           DEPLOY_NOTES: ${{ steps.resolve.outputs.notes }}
           GITHUB_ACTOR: ${{ github.actor }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}

@@ -92,10 +92,14 @@ Important fields:
   `deploy_bundle_sha` when only operator/plugin files changed, or the target commit SHA
   when runtime and deploy bundle were built together.
 - `release_scope`: one or more of `sidecar-runtime`, `deploy-bundle`, and
-  `hermes-plugins`.
+  `hermes-plugins`. The fixed `hermes-profile-erhua` scope is exclusive and requires
+  exactly the `hermes-erhua` restart target.
 - `restart_targets`: fixed restart groups. The runner must not accept arbitrary service
   names.
 - `dry_run`: validate and assemble without switching `current` or restarting services.
+- `profile_dry_run_request_id`: required only for non-dry-run `hermes-profile-erhua`;
+  names the reviewed dry run and must still be fresh.
+- `rollback_on_smoke_failure`: must be `true` for `hermes-profile-erhua`.
 - `signature`: HMAC-SHA256 signature over the unsigned request body. The GitHub
   `production` environment and the server must share `DEPLOY_REQUEST_SIGNING_KEY` and
   `DEPLOY_REQUEST_SIGNING_KEY_ID`.
@@ -106,13 +110,24 @@ and endpoint can vary by environment; the production queue path cannot.
 COS write access alone is not sufficient to trigger deployment. The server rejects
 unsigned requests and requests signed with the wrong key.
 
-Rollback is attempted only after `current` has been switched and the post-promotion
-smoke path fails. Artifact download, request validation, or staging failures must not
-move a healthy `current` symlink back to `previous`.
+For ordinary releases, rollback is attempted only after `current` has been switched and
+the post-promotion smoke path fails. Artifact download, request validation, or staging
+failures must not move a healthy `current` symlink back to `previous`. Erhua profile
+requests never switch release links; their rollback restores only the backed-up profile
+files before restarting Erhua.
 
 Rollback result records must distinguish rollback success from rollback failure. A
 failed rollback is recorded as deployment `failed` with `rollback.status: failed`, not
 as `rolled_back`.
+
+Erhua profile activation additionally requires a matching reviewed dry-run, backs up and
+restores the runtime-local config and `.env`, verifies hashes, modes, and ownership,
+restarts only Erhua, requires affirmative resolution through Hermes's own provider
+resolver, and records non-sending provider smoke evidence. It validates against the
+active release and never moves `current` or `previous`. The initial rollout is
+deliberately two-stage because the old runner must first be upgraded through an existing
+scope. See the Erhua Livecool profile overlay runbook under
+`docs/operations/profile-bundles/`.
 
 ## Restart Target Resolution
 
@@ -158,6 +173,8 @@ The target server currently has:
 - systemd services running from `release/current`
 - Hermes plugin symlinks pointing into release directories
 - `/etc/qintopia/cos-artifacts.env`
+- root `python3` with PyYAML
+- runner `ReadWritePaths` access to `/home/ubuntu/.hermes/profiles/erhua`
 
 The COS env file was observed as `root:ubuntu 0600`, so the production runner should run
 as a root-owned system service and execute only the fixed runner scripts. If a dedicated

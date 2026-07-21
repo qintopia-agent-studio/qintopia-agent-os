@@ -26,8 +26,41 @@ if [[ -z "$previous_target" || ! -d "$previous_target" ]]; then
   echo "previous release target is missing" >&2
   exit 1
 fi
+if [[ -z "$current_target" || ! -d "$current_target" ]]; then
+  echo "current release target is missing" >&2
+  exit 1
+fi
 
-ln -sfn "$current_target" "${release_root}/rollback-from"
-ln -sfn "$previous_target" "${release_root}/current"
+atomic_symlink() {
+  python3 - "$release_root" "$1" "$2" <<'PY'
+import os
+import secrets
+import sys
+
+root, name, target = sys.argv[1:4]
+temporary = os.path.join(root, f".{name}.{os.getpid()}.{secrets.token_hex(8)}")
+try:
+    os.symlink(target, temporary)
+    os.replace(temporary, os.path.join(root, name))
+    descriptor = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+finally:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+PY
+}
+
+atomic_symlink rollback-from "$current_target"
+atomic_symlink current "$previous_target"
+
+if [[ "$(readlink -f "${release_root}/current" 2>/dev/null || true)" != "$previous_target" ]]; then
+  echo "rollback current target verification failed" >&2
+  exit 1
+fi
 
 echo "Rolled back current to ${previous_target}"

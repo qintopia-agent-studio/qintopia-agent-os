@@ -42,6 +42,7 @@ no_restart_paths:
   - "agents/xiaoman/profile.template.yaml"
   - "agents/xiaoman/profile-bundle/**"
   - "runtime/hermes/manifest.yaml"
+  - "runtime/hermes/tests/**"
 
 production_adjacent_paths:
   - "agents/**"
@@ -63,6 +64,10 @@ rules:
       Erhua profile, QiWe consultation, context MCP, weather, and Erhua plugin behavior.
     paths:
       - "agents/erhua/**"
+      - "runtime/hermes/migrate_erhua_livecool_env.py"
+      - "runtime/hermes/profile_transaction.py"
+      - "runtime/hermes/render_profile_overlay.py"
+      - "runtime/hermes/verify_runtime_provider.py"
       - "runtime/sidecar/**"
       - "skills/postgres-context/**"
       - "mcp/postgres/**"

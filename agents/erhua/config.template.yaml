@@ -1,31 +1,16 @@
-profile_template_version: 1
+profile_overlay_version: 1
 agent_id: erhua
-runtime: hermes
-status: draft
+managed:
+  model:
+    default: gpt-5.5
+    provider: custom:livecool.net
+    base_url: ""
+  custom_provider:
+    name: Livecool.net
+    base_url: https://livecool.net/v1
+    model: gpt-5.5
+    key_env: LIVECOOL_API_KEY
+    api_mode: chat_completions
 
-plugins:
-  required:
-    - qiwe-platform
-    - qintopia-tools
-
-mcp:
-  required:
-    - qintopia-context
-
-toolsets:
-  allowed:
-    - qiwe
-    - qintopia
-
-excluded_runtime_state:
-  - .env
-  - sessions
-  - logs
-  - cache
-  - auth
-  - memory
-  - state.db
-
-notes:
-  - This template is a reviewed bundle input, not the live Hermes config.
-  - Secrets and server-local overrides must be provided by runtime environment only.
+# This is a field-limited overlay, not a complete Hermes config. The credential is
+# migrated into the runtime-local Erhua .env by the deploy runner and never enters Git.

@@ -58,11 +58,15 @@ fi
 json_get() {
   python3 - "$request_file" "$1" <<'PY'
 import json
+import os
 import sys
 with open(sys.argv[1], encoding="utf-8") as fh:
     data = json.load(fh)
 value = data
 for part in sys.argv[2].split("."):
+    if not isinstance(value, dict) or part not in value:
+        value = ""
+        break
     value = value[part]
 if isinstance(value, list):
     print(",".join(value))
@@ -82,7 +86,7 @@ import sys
 from datetime import datetime, timezone
 
 path = sys.argv[1]
-allowed_scope = {"sidecar-runtime", "deploy-bundle", "hermes-plugins"}
+allowed_scope = {"sidecar-runtime", "deploy-bundle", "hermes-plugins", "hermes-profile-erhua"}
 allowed_targets = {
     "qintopia-system-services",
     "hermes-erhua",
@@ -159,6 +163,19 @@ if not isinstance(restart_targets, list) or not restart_targets:
     fail("restart_targets must be a non-empty list")
 if set(restart_targets) - allowed_targets or len(set(restart_targets)) != len(restart_targets):
     fail("restart_targets contains unsupported or duplicate entries")
+if "hermes-profile-erhua" in release_scope:
+    if release_scope != ["hermes-profile-erhua"]:
+        fail("hermes-profile-erhua must be the only release scope")
+    if restart_targets != ["hermes-erhua"]:
+        fail("hermes-profile-erhua requires exactly hermes-erhua")
+    if data.get("rollback_on_smoke_failure") is not True:
+        fail("hermes-profile-erhua requires rollback_on_smoke_failure=true")
+    dry_run_reference = data.get("profile_dry_run_request_id")
+    if data.get("dry_run") is False:
+        if not isinstance(dry_run_reference, str) or not request_id.fullmatch(dry_run_reference):
+            fail("non-dry-run Erhua profile activation requires profile_dry_run_request_id")
+    elif dry_run_reference is not None:
+        fail("dry-run Erhua profile request must not set profile_dry_run_request_id")
 
 for key in ("rollback_on_smoke_failure", "dry_run"):
     if not isinstance(data.get(key), bool):
@@ -226,9 +243,11 @@ request_id="$(json_get request_id)"
 release_sha="$(json_get release_sha)"
 runtime_sha="$(json_get runtime_sha)"
 deploy_bundle_sha="$(json_get deploy_bundle_sha)"
+release_scope="$(json_get release_scope)"
 restart_targets="$(json_get restart_targets)"
 dry_run="$(json_get dry_run)"
 rollback_on_smoke_failure="$(json_get rollback_on_smoke_failure)"
+profile_dry_run_request_id="$(json_get profile_dry_run_request_id)"
 if [[ "$force_dry_run" == true ]]; then
   dry_run=true
 fi
@@ -254,8 +273,11 @@ write_result() {
   python3 - "$result_file" "$request_id" "$status" "$started_at" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_sha" \
     "$current_target" "$restart_targets" "$error" "$rollback_attempted" \
-    "$rollback_status" "$rollback_target" <<'PY'
+    "$rollback_status" "$rollback_target" "${RESULT_DIR}/${request_id}.profile.json" \
+    "${RESULT_DIR}/${request_id}.smoke.json" "${RESULT_DIR}/${request_id}.restore.json" \
+    "$release_scope" <<'PY'
 import json
+import os
 import sys
 
 (
@@ -272,7 +294,11 @@ import sys
     rollback_attempted,
     rollback_status,
     rollback_target,
-) = sys.argv[1:14]
+    profile_evidence_path,
+    smoke_evidence_path,
+    restore_evidence_path,
+    release_scope,
+) = sys.argv[1:18]
 
 result = {
     "schema_version": 1,
@@ -282,6 +308,7 @@ result = {
     "started_at": started_at,
     "finished_at": finished_at,
     "release_sha": release_sha,
+    "release_scope": [item for item in release_scope.split(",") if item],
     "previous_sha": previous_sha,
     "current_target": current_target,
     "restart_targets": [item for item in restart_targets.split(",") if item],
@@ -291,6 +318,31 @@ result = {
         "status": rollback_status,
     },
 }
+if os.path.isfile(profile_evidence_path):
+    with open(profile_evidence_path, encoding="utf-8") as fh:
+        profile_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "erhua-profile-overlay",
+        "status": "passed" if status.endswith("succeeded") else "failed",
+        "detail": json.dumps(profile_evidence, separators=(",", ":")),
+    })
+expected_smoke_phase = "activation" if status == "succeeded" else "rollback" if status == "rolled_back" else ""
+if expected_smoke_phase and os.path.isfile(smoke_evidence_path):
+    with open(smoke_evidence_path, encoding="utf-8") as fh:
+        smoke_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "erhua-profile-smoke",
+        "status": "passed" if smoke_evidence.get("phase") == expected_smoke_phase else "failed",
+        "detail": json.dumps(smoke_evidence, separators=(",", ":")),
+    })
+if status == "rolled_back" and os.path.isfile(restore_evidence_path):
+    with open(restore_evidence_path, encoding="utf-8") as fh:
+        restore_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "erhua-profile-restore",
+        "status": "passed" if restore_evidence.get("phase") == "restored" else "failed",
+        "detail": json.dumps(restore_evidence, separators=(",", ":")),
+    })
 if rollback_target:
     result["rollback"]["target"] = rollback_target
 if error:
@@ -301,7 +353,85 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 }
 
+profile_release_dir=""
+validate_current_profile_release() {
+  local current_release=""
+  current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -z "$current_release" || ! -d "$current_release" ]]; then
+    echo "current release is unavailable for Erhua profile activation" >&2
+    return 1
+  fi
+  python3 - "$request_file" "${current_release}/manifest.json" "$current_release" <<'PY'
+import json
+import os
+import sys
+
+request_path, manifest_path, current_release = sys.argv[1:4]
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if os.path.basename(current_release) != request["release_sha"]:
+    raise SystemExit("Erhua profile request must target the current release SHA")
+for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
+    if manifest.get(key) != request.get(key):
+        raise SystemExit(f"current release manifest {key} mismatch")
+PY
+  profile_release_dir="$current_release"
+}
+
+assert_current_profile_release() {
+  local current_release=""
+  current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -z "$profile_release_dir" || "$current_release" != "$profile_release_dir" ]]; then
+    echo "current release changed during Erhua profile transaction" >&2
+    return 1
+  fi
+}
+
 run_promotion() {
+  if [[ "$release_scope" == "hermes-profile-erhua" ]]; then
+    validate_current_profile_release || return $?
+    profile_args=(
+      --release-dir "$profile_release_dir"
+      --state-dir "$STATE_DIR"
+      --request-id "$request_id"
+      --release-sha "$release_sha"
+    )
+    if [[ "$dry_run" == "true" ]]; then
+      profile_args+=(--dry-run)
+    else
+      profile_args+=(--dry-run-request-id "$profile_dry_run_request_id")
+    fi
+    profile_status=0
+    "$profile_release_dir/deploy/runner/activate-erhua-profile.sh" \
+      "${profile_args[@]}" || profile_status=$?
+    if [[ "$dry_run" != "true" && -f "${STATE_DIR}/profile-backups/${request_id}/metadata.json" ]]; then
+      profile_activation_attempted=true
+    fi
+    if [[ "$profile_status" -ne 0 ]]; then
+      return "$profile_status"
+    fi
+    if [[ "$dry_run" == "true" ]]; then
+      write_result dry_run_succeeded
+      return
+    fi
+    profile_activation_attempted=true
+    assert_current_profile_release || return $?
+    rm -f "${RESULT_DIR}/${request_id}.smoke.json"
+    "$profile_release_dir/deploy/runner/smoke-release.sh" \
+      --release-root "$RELEASE_ROOT" \
+      --profile-release-dir "$profile_release_dir" \
+      --profile-metadata "${STATE_DIR}/profile-backups/${request_id}/metadata.json" \
+      --restart-targets "$restart_targets" \
+      --log-since "$started_at" \
+      --evidence-output "${RESULT_DIR}/${request_id}.smoke.json" \
+      --evidence-phase activation || return $?
+    assert_current_profile_release || return $?
+    write_result succeeded
+    return
+  fi
+
   promote_args=(
     --request-file "$request_file"
     --release-root "$RELEASE_ROOT"
@@ -318,7 +448,10 @@ run_promotion() {
     deploy/runner/install-release-systemd-units.sh \
       --release-root "$RELEASE_ROOT" \
       --release-sha "$release_sha" || return $?
-    deploy/runner/smoke-release.sh --restart-targets "$restart_targets" || return $?
+    deploy/runner/smoke-release.sh \
+      --release-root "$RELEASE_ROOT" \
+      --restart-targets "$restart_targets" \
+      --log-since "$started_at" || return $?
     write_result succeeded
   fi
 }
@@ -329,14 +462,52 @@ run_promotion() {
     exit 75
   }
   promoted_current=false
+  profile_activation_attempted=false
   set +e
   run_promotion
   status=$?
   set -e
   if [[ "$status" -ne 0 ]]; then
-    if [[ "$promoted_current" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
+    if [[ "$release_scope" == "hermes-profile-erhua" && "$profile_activation_attempted" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
+      rollback_target="$profile_release_dir"
+      rollback_ok=true
+      assert_current_profile_release || rollback_ok=false
+      "$profile_release_dir/deploy/runner/rollback-erhua-profile.sh" \
+        --release-dir "$profile_release_dir" \
+        --state-dir "$STATE_DIR" \
+        --request-id "$request_id" \
+        --evidence-output "${RESULT_DIR}/${request_id}.restore.json" || rollback_ok=false
+      assert_current_profile_release || rollback_ok=false
+      rm -f "${RESULT_DIR}/${request_id}.smoke.json"
+      "$profile_release_dir/deploy/runner/smoke-release.sh" \
+        --release-root "$RELEASE_ROOT" \
+        --profile-release-dir "$profile_release_dir" \
+        --restart-targets "$restart_targets" \
+        --skip-erhua-provider-check \
+        --log-since "$started_at" \
+        --evidence-output "${RESULT_DIR}/${request_id}.smoke.json" \
+        --evidence-phase rollback || rollback_ok=false
+      assert_current_profile_release || rollback_ok=false
+      if [[ "$rollback_ok" == "true" ]]; then
+        write_result rolled_back "profile activation failed and rollback succeeded" \
+          true succeeded "$rollback_target"
+      else
+        write_result failed "profile activation failed and rollback failed" \
+          true failed "$rollback_target"
+      fi
+    elif [[ "$promoted_current" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
       rollback_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
-      if deploy/runner/rollback-release.sh --release-root "$RELEASE_ROOT"; then
+      rollback_ok=true
+      deploy/runner/rollback-release.sh --release-root "$RELEASE_ROOT" || rollback_ok=false
+      deploy/runner/smoke-release.sh \
+        --release-root "$RELEASE_ROOT" \
+        --restart-targets "$restart_targets" \
+        --skip-erhua-provider-check \
+        --log-since "$started_at" || rollback_ok=false
+      if [[ "$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)" != "$rollback_target" ]]; then
+        rollback_ok=false
+      fi
+      if [[ "$rollback_ok" == "true" ]]; then
         write_result rolled_back "deployment failed and rollback succeeded" \
           true succeeded "$rollback_target"
       else
