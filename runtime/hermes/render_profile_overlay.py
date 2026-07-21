@@ -263,10 +263,17 @@ def verify_command(args: argparse.Namespace) -> None:
     if changed or candidate != config:
         raise ValueError("rendered config does not satisfy the approved overlay")
     provider = next(
-        item
-        for item in candidate["custom_providers"]
-        if item.get("name", "").lower() == "livecool.net"
+        (
+            item
+            for item in candidate["custom_providers"]
+            if item.get("name", "").lower() == "livecool.net"
+        ),
+        None,
     )
+    if provider is None:
+        raise ValueError(
+            "rendered config custom_providers must contain a Livecool.net entry"
+        )
     if "api_key" in provider or "api_key_env" in provider:
         raise ValueError("rendered provider must not contain an inline credential")
     forbidden = set(provider) & FORBIDDEN_PROVIDER_FIELDS
