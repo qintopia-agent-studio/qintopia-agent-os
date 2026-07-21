@@ -6,6 +6,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.19](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.18...v0.2.19) (2026-07-21)
+
+
+### Features
+
+* add qiwe image send production activation ([#220](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/220)) ([8cd47bd](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8cd47bda6f8f0cf885f381b1524ce17978522308))
+* add qiwe production callback bridge ([#223](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/223)) ([0918b40](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0918b408bd3a4dd534f182a3db4f2dd1813406c3))
+* add xiaoman legacy cron observation ([#224](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/224)) ([463414f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/463414f30cb85563f1495e433f50c059d9565873))
+* add xiaoman material follow-up drafts ([#225](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/225)) ([f3574c3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f3574c3ffd40d0636fb709729d89074d0c83b6b7))
+* check huabaosi production canary evidence ([#227](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/227)) ([98e4f85](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/98e4f85e55615dbca0d87f20c78f6d8e99bcd67c))
+* check qiwe group arrival evidence ([#230](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/230)) ([a039cdc](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a039cdc07c08689e5342cc0c112c392886ce4774))
+* extend xiaoman recap starter path ([#239](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/239)) ([d7b4e65](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d7b4e6561b5f6cac72f56d61ff14afbe8255bc63))
+* prepare xiaoman text group message requests ([#235](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/235)) ([713d9bf](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/713d9bf85f6439eda5cf0c66840967a902d31eb8))
+
+
+### Bug Fixes
+
+* bind qiwe activation database hash ([#229](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/229)) ([4518bda](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4518bda4bdb73cfd387a64bff210d67a847bf8b2))
+* bind xiaoman completion evidence to release ([#238](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/238)) ([fe2a69b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/fe2a69b1c517648feebdacc55c6e94dd9cb863a6))
+* bind xiaoman evidence route phases ([#226](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/226)) ([7bfa2ec](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7bfa2ece53e579172a82e05725b5a1ffcae7d3e8))
+* bind xiaoman send-ready evidence chain ([#232](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/232)) ([4625160](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/462516072eacb6c7fbc97101650af4b92695dfe0))
+* exclude production-ready from xiaoman completion claim detection ([#241](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/241)) ([#241](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/241)) ([ce1891b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ce1891b4ed1b2b21050c19ad55feed0c5ffad0f3))
+* require huabaosi canary completion evidence ([#228](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/228)) ([eb64a74](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/eb64a747bf4deaf4c25f595a5289f6894992edf5))
+* require qiwe arrival completion evidence ([#233](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/233)) ([43dc09f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/43dc09f91852cedf714cae9c2f112407a19854d4))
+* retain huabaosi canary release boundary evidence ([#237](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/237)) ([cac58ee](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cac58eee10cf0653a8c02253903989d28d43cc34))
+* treat guard/protect/prevent as negation in xiaoman claim detection ([#242](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/242)) ([5275bb1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5275bb1942773267cfb9b7728106485ca7785378))
+
+
+### CI / Deployment
+
+* guard xiaoman production-complete release claims ([#231](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/231)) ([528d561](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/528d561ee6508b4d36a41afce41731d2a8e16aab))
+* require qiwe arrival release evidence ([#234](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/234)) ([462f149](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/462f149bf39c718aaea9177a35fb4c07e13279c9))
+
+
+### Documentation
+
+* guard xiaoman text mvp completion boundary ([#236](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/236)) ([2c76b5b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2c76b5ba60e61aa7eccd601984da012d7c816f53))
+* mark xiaoman AgentOS-only path as production-ready MVP ([#240](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/240)) ([98f3ea3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/98f3ea3950bd6fbc0d455a76ce88c4fd84f777c7))
+
 ## [0.2.18](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.17...v0.2.18) (2026-07-20)
 
 
