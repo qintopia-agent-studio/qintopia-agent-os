@@ -34,6 +34,21 @@ Profile bundles should render into immutable release directories under
 Do not replace a live Hermes profile `SOUL.md` or `config.yaml` directly from a feature
 branch.
 
+## Erhua Model Overlay
+
+`render_profile_overlay.py` applies the reviewed Erhua model overlay to a sanitized or
+runtime-local base config. It rejects aliases, duplicate keys/providers, forbidden
+overlay fields, and path aliasing. Reports contain changed field paths and file hashes,
+not values. `migrate_erhua_livecool_env.py` creates or checks the server-local
+`LIVECOOL_API_KEY` binding without printing credential material.
+`verify_runtime_provider.py` runs inside the installed Hermes interpreter during both
+dry-run and activation smoke. It requires Hermes's own provider resolver to return the
+approved named provider and base URL.
+
+The deploy runner is the only production caller. It supplies fixed profile paths; deploy
+requests cannot supply paths. See
+`docs/operations/profile-bundles/erhua-livecool-profile-overlay-runbook.md`.
+
 ## Validation
 
 ```bash

@@ -19,6 +19,38 @@ const readText = (relativePath) =>
 
 const readYaml = (relativePath) => YAML.parse(readText(relativePath));
 
+if (exists("agents/erhua/config.template.yaml")) {
+  const overlay = readYaml("agents/erhua/config.template.yaml");
+  const expected = {
+    profile_overlay_version: 1,
+    agent_id: "erhua",
+    managed: {
+      model: {
+        default: "gpt-5.5",
+        provider: "custom:livecool.net",
+        base_url: "",
+      },
+      custom_provider: {
+        name: "Livecool.net",
+        base_url: "https://livecool.net/v1",
+        model: "gpt-5.5",
+        key_env: "LIVECOOL_API_KEY",
+        api_mode: "chat_completions",
+      },
+    },
+  };
+  if (JSON.stringify(overlay) !== JSON.stringify(expected)) {
+    addError(
+      "agents/erhua/config.template.yaml: must match the approved field-limited overlay"
+    );
+  }
+  if (/\bapi_key\s*:/.test(readText("agents/erhua/config.template.yaml"))) {
+    addError(
+      "agents/erhua/config.template.yaml: must not contain an inline credential"
+    );
+  }
+}
+
 const forbiddenRuntimeMounts = new Set([
   ".env",
   "auth.json",
@@ -91,6 +123,19 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     if (deployBundle.includes(fragment)) {
       addError(
         `tools/deploy/build-deploy-bundle.mjs: unreviewed live profile file must not be packaged (${fragment})`
+      );
+    }
+  }
+  for (const required of [
+    "agents/erhua/config.template.yaml",
+    "runtime/hermes/render_profile_overlay.py",
+    "runtime/hermes/migrate_erhua_livecool_env.py",
+    "runtime/hermes/profile_transaction.py",
+    "runtime/hermes/verify_runtime_provider.py",
+  ]) {
+    if (!deployBundle.includes(required)) {
+      addError(
+        `tools/deploy/build-deploy-bundle.mjs: missing reviewed Erhua input ${required}`
       );
     }
   }

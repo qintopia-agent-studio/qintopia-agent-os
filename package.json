@@ -23,7 +23,7 @@
     "workflows:check": "node tools/workflows/check-workflows.mjs",
     "mcp:adapters:check": "node tools/mcp/check-adapters.mjs",
     "runtime:contracts:check": "node tools/runtime/check-runtime-contracts.mjs",
-    "runtime:hermes:check": "node tools/runtime/check-runtime-contracts.mjs",
+    "runtime:hermes:check": "node tools/runtime/check-runtime-contracts.mjs && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s runtime/hermes/tests -v",
     "runtime:systemd:check": "node tools/runtime/check-runtime-contracts.mjs",
     "runtime:nginx:check": "node tools/runtime/check-runtime-contracts.mjs",
     "deploy:contracts:check": "node tools/deploy/check-deploy-contracts.mjs",

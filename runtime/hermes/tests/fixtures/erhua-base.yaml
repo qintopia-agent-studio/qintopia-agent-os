@@ -1,0 +1,14 @@
+model:
+  default: ark-code-latest
+  provider: custom:ark.cn-beijing.volces.com
+  base_url: ""
+  temperature: 0.3
+custom_providers:
+  - name: Ark.cn-beijing.volces.com
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    model: ark-code-latest
+    key_env: ARK_API_KEY
+channel:
+  qiwe:
+    enabled: true
+unrelated_flag: preserve-me

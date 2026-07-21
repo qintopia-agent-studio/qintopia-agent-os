@@ -1,9 +1,11 @@
 # M10-F Profile Template And Symlink Plan
 
-Updated: 2026-07-05
+Updated: 2026-07-21
 
 M10-F defines how Hermes profile files should move toward the release/current model. It
-does not repoint `SOUL.md`, `config.yaml`, or whole profile directories yet.
+does not repoint `SOUL.md`, `config.yaml`, or whole profile directories yet. The
+field-limited Erhua Livecool overlay is the first governed exception; it atomically
+updates only approved model fields while keeping the profile runtime-local.
 
 ## Current State
 
@@ -43,6 +45,11 @@ bundle with:
 
 The current `agents/*/profile.template.yaml` files remain package contracts and planning
 inputs. They are not live profile files.
+
+Erhua's approved exception is governed by
+`docs/operations/profile-bundles/erhua-livecool-profile-overlay-runbook.md`. It
+satisfies the review, diff, rollback, smoke, and owner-approval gates above without
+adopting the future whole-file symlink shape.
 
 ## Target Shape
 
@@ -97,14 +104,14 @@ This symlink shape is a future target, not current M10-F execution.
 
 ## Per-Profile M10-F Status
 
-| Profile   | Current M10-F disposition | Notes                                                                  |
-| --------- | ------------------------- | ---------------------------------------------------------------------- |
-| Erhua     | template only             | External sends and trainer memory make direct config repoint high risk |
-| Xiaoman   | template only             | Activity workflow config depends on runtime `.env` and local state     |
-| Wenyuange | template only             | Evidence/message-store access must preserve disclosure boundaries      |
-| Huabaosi  | review-pool template      | Visual adapter/Rust/shadow material remains unapproved direction       |
-| Silaoshi  | template only             | Temporary scripts remain separate workflow/script candidates           |
-| Guanerye  | template only             | No immediate plugin/MCP migration observed                             |
+| Profile   | Current M10-F disposition | Notes                                                              |
+| --------- | ------------------------- | ------------------------------------------------------------------ |
+| Erhua     | governed field overlay    | Livecool model fields only; no whole config or prompt repoint      |
+| Xiaoman   | template only             | Activity workflow config depends on runtime `.env` and local state |
+| Wenyuange | template only             | Evidence/message-store access must preserve disclosure boundaries  |
+| Huabaosi  | review-pool template      | Visual adapter/Rust/shadow material remains unapproved direction   |
+| Silaoshi  | template only             | Temporary scripts remain separate workflow/script candidates       |
+| Guanerye  | template only             | No immediate plugin/MCP migration observed                         |
 
 ## M10-F Exit Criteria
 
@@ -119,7 +126,8 @@ M10-F is complete when:
 
 ## Next Production Step
 
-The first real profile-file repoint should be a separate future migration after M11/M12
+The first whole profile-file repoint should be a separate future migration after M11/M12
 planning, not part of M10-F. It should start with one low-risk profile, generate a
 rendered profile bundle, compare it against live `SOUL.md`/`config.yaml`, and run a
-profile-specific smoke before switching symlinks.
+profile-specific smoke before switching symlinks. The Erhua field overlay does not
+authorize that broader migration.

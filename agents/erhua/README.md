@@ -28,11 +28,16 @@ memory submission through audited backend paths.
 - Related active package: `skills/qiwe`
 - Runtime `.env`, memories, identities, caches, locks, logs, and state databases are
   excluded from this package.
+- `config.template.yaml` is a non-secret, field-limited model overlay. It is rendered
+  against the runtime-local config by the governed deploy runner; it is not a complete
+  Hermes config and must never receive an inline credential.
 
 ## Validation
 
 ```bash
 pnpm test:qiwe
+pnpm runtime:hermes:check
+pnpm agents:profile-bundles:check
 pnpm registry:check
 pnpm policy:check
 ```

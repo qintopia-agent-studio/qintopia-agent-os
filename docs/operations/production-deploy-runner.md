@@ -160,6 +160,10 @@ qintopia-agent-os/deploy-results/production/<request-id>.json
 The request schema is `deploy/runner/deploy-request.schema.json`. The result schema is
 `deploy/runner/deploy-result.schema.json`.
 
+Profile activation requests identify the exact reviewed dry-run request. Results retain
+the fixed release scope, restart target, smoke phase, and restore evidence so approval
+and rollback can be audited independently.
+
 ## First Server Installation
 
 After this repository change is merged and a GitHub Release has published a deploy
@@ -175,6 +179,17 @@ bundle:
 
 Do not enable production non-dry-run deployment until the dry-run proves request
 polling, artifact download, manifest validation, result upload, and smoke behavior.
+
+## Runner Unit Upgrades
+
+The installed runner unit is a static root-owned file under `/etc/systemd/system`; a
+release symlink switch does not update its sandbox. Any later unit change must therefore
+use an owner-approved immutable release file, back up the installed unit under the
+deploy state directory, run `systemd-analyze verify` before installation, then run
+`systemctl daemon-reload` and inspect the effective properties with `systemctl show`.
+
+If verification fails, restore the backed-up unit and reload systemd. Do not edit the
+installed unit in place and do not source it from an unverified working tree.
 
 ## Validation
 

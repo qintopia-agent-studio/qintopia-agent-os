@@ -1,0 +1,5 @@
+custom_providers:
+  - name: Livecool.net
+    base_url: https://livecool.net/v1
+    model: gpt-5.5
+    api_key: fixture-livecool-key-not-real

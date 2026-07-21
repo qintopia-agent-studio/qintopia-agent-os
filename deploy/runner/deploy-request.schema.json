@@ -43,7 +43,12 @@
       "minItems": 1,
       "uniqueItems": true,
       "items": {
-        "enum": ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]
+        "enum": [
+          "sidecar-runtime",
+          "deploy-bundle",
+          "hermes-plugins",
+          "hermes-profile-erhua"
+        ]
       }
     },
     "restart_targets": {
@@ -64,6 +69,10 @@
     },
     "rollback_on_smoke_failure": { "type": "boolean" },
     "dry_run": { "type": "boolean" },
+    "profile_dry_run_request_id": {
+      "type": "string",
+      "pattern": "^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$"
+    },
     "cos": {
       "type": "object",
       "additionalProperties": false,
@@ -106,5 +115,34 @@
       }
     },
     "notes": { "type": "string" }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "contains": { "const": "hermes-profile-erhua" }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "release_scope": { "const": ["hermes-profile-erhua"] },
+          "restart_targets": { "const": ["hermes-erhua"] },
+          "rollback_on_smoke_failure": { "const": true }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": { "const": ["hermes-profile-erhua"] },
+          "dry_run": { "const": false }
+        },
+        "required": ["release_scope", "dry_run"]
+      },
+      "then": { "required": ["profile_dry_run_request_id"] }
+    }
+  ]
 }

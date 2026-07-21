@@ -140,6 +140,10 @@ const requestedBy = requireValue(
   argValue("--requested-by", process.env.GITHUB_ACTOR || os.userInfo().username)
 );
 const notes = argValue("--notes", process.env.DEPLOY_NOTES || "");
+const profileDryRunRequestId = argValue(
+  "--profile-dry-run-request-id",
+  process.env.DEPLOY_PROFILE_DRY_RUN_REQUEST_ID || ""
+);
 const signingKey = requireValue(
   "DEPLOY_REQUEST_SIGNING_KEY",
   argValue("--signing-key", process.env.DEPLOY_REQUEST_SIGNING_KEY || "")
@@ -188,6 +192,9 @@ const request = {
   },
   notes,
 };
+if (profileDryRunRequestId) {
+  request.profile_dry_run_request_id = profileDryRunRequestId;
+}
 
 const signatureMetadata = {
   algorithm: "hmac-sha256",

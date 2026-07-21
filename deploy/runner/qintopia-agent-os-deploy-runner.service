@@ -14,4 +14,4 @@ ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/deploy/runner/poll-dep
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/qintopia-agent-os-releases /var/lib/qintopia-agent-os-deploy /tmp
+ReadWritePaths=/home/ubuntu/.hermes/profiles/erhua /home/ubuntu/qintopia-agent-os-releases /var/lib/qintopia-agent-os-deploy /tmp
