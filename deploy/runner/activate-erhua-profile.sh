@@ -74,6 +74,10 @@ cleanup() {
     if [[ "$cleanup_evidence_on_rollback" == "true" && -f "$evidence_path" ]]; then
       rm -f "$evidence_path" || true
     fi
+    local used_marker="${dry_run_marker}.used-${request_id}"
+    if [[ -n "${dry_run_marker:-}" && -f "$used_marker" ]]; then
+      mv "$used_marker" "$dry_run_marker" || true
+    fi
   fi
   rm -rf "$work_dir"
   return "$status"
@@ -247,7 +251,7 @@ python3 "$transaction" activate --config "$config_path" --env "$env_path" \
   --candidate-config "$candidate_config" --candidate-env "$candidate_env"
 python3 "$renderer" verify --config "$config_path" --overlay "$overlay"
 python3 "$migrator" check --env "$env_path"
-mv "$dry_run_marker" "${dry_run_marker}.used-${request_id}"
 write_evidence activated "$metadata" "$dry_run_request_id"
 cleanup_evidence_on_rollback=true
+mv "$dry_run_marker" "${dry_run_marker}.used-${request_id}"
 rollback_on_exit=false

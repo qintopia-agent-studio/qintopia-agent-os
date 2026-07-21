@@ -8,8 +8,6 @@ import os
 from pathlib import Path
 
 import yaml
-from hermes_cli.config import get_compatible_custom_providers
-from hermes_cli.providers import resolve_provider_full
 
 
 EXPECTED_PROVIDER = "custom:livecool.net"
@@ -21,6 +19,9 @@ def main() -> int:
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
     try:
+        from hermes_cli.config import get_compatible_custom_providers
+        from hermes_cli.providers import resolve_provider_full
+
         config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8")) or {}
         model = config.get("model") if isinstance(config, dict) else None
         if not isinstance(model, dict) or model.get("provider") != EXPECTED_PROVIDER:
