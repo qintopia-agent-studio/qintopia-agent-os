@@ -20,6 +20,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -z "$release_dir" ]]; then
+  echo "Erhua activation requires --release-dir" >&2
+  exit 2
+fi
+if [[ -z "$state_dir" ]]; then
+  echo "Erhua activation requires --state-dir" >&2
+  exit 2
+fi
 if [[ ! "$request_id" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]]; then
   echo "invalid request id for Erhua activation" >&2
   exit 2
