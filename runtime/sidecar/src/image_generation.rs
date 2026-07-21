@@ -67,7 +67,7 @@ use crate::bounded_http::{
 const WORKER_ID: &str = "huabaosi-image-generation-worker";
 const CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const WORK_ITEM_TYPE: &str = "image_generation_request";
-const SPECIFICATION: &str = "community_poster_1254x1254";
+const SPECIFICATION: &str = "community_poster_1024x1024";
 const IMAGE_WIDTH: u32 = 1254;
 const IMAGE_HEIGHT: u32 = 1254;
 const IMAGE_SIZE: &str = "1254x1254";
