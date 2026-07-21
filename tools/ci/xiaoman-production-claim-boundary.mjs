@@ -14,7 +14,7 @@ const positiveClaimPatterns = [
 ];
 
 const negatedClaimPattern =
-  /\b(?:not|never|must not|do not|does not|cannot|can't|is not|isn't|remains? not|missing|blocked|incomplete|not complete|not production[- ]complete)\b|未|不|不能|尚未|缺失|未完成|不可|没有/iu;
+  /\b(?:not|never|must not|do not|does not|cannot|can't|is not|isn't|remains? not|missing|blocked|incomplete|not complete|not production[- ]complete|guard|prevent|protect)\b|未|不|不能|尚未|缺失|未完成|不可|没有/iu;
 
 export const positiveXiaomanProductionCompletionClaimLines = (text) =>
   String(text || "")
