@@ -57,12 +57,31 @@ if [[ ! -d "$profile_dir" || -L "$profile_dir" || "$(realpath "$profile_dir" 2>/
   exit 1
 fi
 
-for path in "$config_path" "$env_path" "$default_config" "$overlay" "$renderer" "$migrator" "$transaction" "$runtime_verifier" "$hermes_python"; do
+for path in "$config_path" "$env_path" "$default_config" "$overlay" "$renderer" "$migrator" "$transaction" "$runtime_verifier"; do
   if [[ ! -f "$path" || -L "$path" ]]; then
     echo "Erhua profile prerequisite is missing or aliased" >&2
     exit 1
   fi
 done
+hermes_python_real="$hermes_python"
+if [[ -L "$hermes_python" ]]; then
+  hermes_python_real="$(readlink -f "$hermes_python" 2>/dev/null || true)"
+  if [[ -z "$hermes_python_real" || ! -f "$hermes_python_real" || -L "$hermes_python_real" ]]; then
+    echo "Erhua Hermes Python symlink target is missing or aliased" >&2
+    exit 1
+  fi
+fi
+if [[ ! -x "$hermes_python_real" ]]; then
+  echo "Erhua Hermes Python is not executable" >&2
+  exit 1
+fi
+if [[ -z "${QINTOPIA_HERMES_PYTHON:-}" ]]; then
+  allowed_venv_root="/home/ubuntu/.hermes/hermes-agent/venv"
+  if [[ "$hermes_python_real" != "${allowed_venv_root}"/* ]]; then
+    echo "Erhua Hermes Python must resolve within the allowed venv boundary" >&2
+    exit 1
+  fi
+fi
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
   echo "Erhua profile activation requires PyYAML for the root Python runtime" >&2
   exit 1

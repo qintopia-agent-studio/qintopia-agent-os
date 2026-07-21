@@ -166,6 +166,12 @@ def verify_originals(config: Path, env: Path, data: dict) -> None:
 
 
 def restore_files(config: Path, env: Path, backup_dir: Path, data: dict) -> None:
+    for key, path in (("config", config), ("env", env)):
+        if str(path) != data["files"][key]["path"]:
+            raise ValueError(f"{key} path does not match backup metadata")
+    for _, path in (("config", config), ("env", env)):
+        if path.is_symlink() or path.parent.is_symlink():
+            raise ValueError(f"symlinked restore target is not allowed: {path}")
     for key, target in (("config", config), ("env", env)):
         source = backup_dir / data["files"][key]["backup"]
         require_regular_input(source)
