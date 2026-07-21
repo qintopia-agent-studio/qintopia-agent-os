@@ -409,6 +409,7 @@ struct XiaomanActivityPromotionCandidate {
 #[derive(Debug, Clone)]
 struct XiaomanActivitySendRequestCandidate {
     parent_id: Uuid,
+    activity_phase: ActivityPhase,
     visual_work_item_id: Uuid,
     image_generation_work_item_id: Uuid,
     approved_artifact_id: Uuid,
@@ -422,6 +423,7 @@ struct XiaomanActivitySendRequestCandidate {
 
 #[derive(Debug, Clone)]
 struct XiaomanActivityImageGenerationCandidate {
+    activity_phase: ActivityPhase,
     visual_work_item_id: Uuid,
     approved_artifact_id: Uuid,
     approved_brief_hash: String,
@@ -1427,6 +1429,11 @@ async fn load_xiaoman_activity_send_request_candidates(
         r#"
         SELECT
             parent.id AS parent_id,
+            CASE
+                WHEN parent.work_item_type = 'activity_recap_request'
+                    THEN 'post_event'
+                ELSE 'pre_event'
+            END AS activity_phase,
             visual.id AS visual_work_item_id,
             image_request.id AS image_generation_work_item_id,
             generated_image.id AS approved_artifact_id,
@@ -1457,7 +1464,10 @@ async fn load_xiaoman_activity_send_request_candidates(
             LIMIT 1
         ) generated_image ON true
         WHERE parent.capability_key = 'xiaoman.create_activity_request'
-          AND parent.work_item_type = 'activity_promotion_request'
+          AND parent.work_item_type IN (
+              'activity_promotion_request',
+              'activity_recap_request'
+          )
           AND parent.target_agent = 'xiaoman'
           AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1 OR image_request.id = $1)
           AND NOT EXISTS (
@@ -1479,8 +1489,11 @@ async fn load_xiaoman_activity_send_request_candidates(
 
     rows.into_iter()
         .map(|row| {
+            let activity_phase: String = row.try_get("activity_phase")?;
             Ok(XiaomanActivitySendRequestCandidate {
                 parent_id: row.try_get("parent_id")?,
+                activity_phase: ActivityPhase::parse(&activity_phase)
+                    .context("activity send candidate has invalid activity_phase")?,
                 visual_work_item_id: row.try_get("visual_work_item_id")?,
                 image_generation_work_item_id: row.try_get("image_generation_work_item_id")?,
                 approved_artifact_id: row.try_get("approved_artifact_id")?,
@@ -1503,6 +1516,11 @@ async fn load_xiaoman_activity_image_generation_candidates(
     let rows = sqlx::query(
         r#"
         SELECT
+            CASE
+                WHEN parent.work_item_type = 'activity_recap_request'
+                    THEN 'post_event'
+                ELSE 'pre_event'
+            END AS activity_phase,
             visual.id AS visual_work_item_id,
             artifact.id AS approved_artifact_id,
             artifact.content_hash AS approved_brief_hash,
@@ -1517,7 +1535,10 @@ async fn load_xiaoman_activity_image_generation_candidates(
         JOIN qintopia_agent_os.work_items parent
           ON parent.id = visual.parent_work_item_id
          AND parent.capability_key = 'xiaoman.create_activity_request'
-         AND parent.work_item_type = 'activity_promotion_request'
+         AND parent.work_item_type IN (
+             'activity_promotion_request',
+             'activity_recap_request'
+         )
          AND parent.target_agent = 'xiaoman'
         JOIN LATERAL (
             SELECT id, content_hash, metadata
@@ -1554,7 +1575,10 @@ async fn load_xiaoman_activity_image_generation_candidates(
 
     rows.into_iter()
         .map(|row| {
+            let activity_phase: String = row.try_get("activity_phase")?;
             Ok(XiaomanActivityImageGenerationCandidate {
+                activity_phase: ActivityPhase::parse(&activity_phase)
+                    .context("activity image-generation candidate has invalid activity_phase")?,
                 visual_work_item_id: row.try_get("visual_work_item_id")?,
                 approved_artifact_id: row.try_get("approved_artifact_id")?,
                 approved_brief_hash: row.try_get("approved_brief_hash")?,
@@ -4677,6 +4701,8 @@ fn xiaoman_activity_send_request(
     target_group_alias: &str,
     message_text: &str,
 ) -> Result<WorkItemCreateRequest> {
+    let workflow_type = candidate.activity_phase.workflow_type();
+    let activity_route = candidate.activity_phase.route();
     let target_group_alias = normalize_key(target_group_alias);
     let message_text = message_text.trim();
     require_non_empty("target_group_alias", &target_group_alias)?;
@@ -4701,7 +4727,9 @@ fn xiaoman_activity_send_request(
         source_refs: candidate.source_refs.clone(),
         source_event_signal_id: candidate.source_event_signal_id,
         payload: json!({
-            "workflow_type": "activity_promotion",
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
             "planner_intent": "send_group_message_after_final_confirmation",
             "approved_artifact_id": candidate.approved_artifact_id,
             "approved_artifact_type": "generated_image",
@@ -4714,12 +4742,14 @@ fn xiaoman_activity_send_request(
         }),
         payload_redaction_policy: "summary_only".to_string(),
         idempotency_key: format!(
-            "xiaoman_activity_promotion:{}:group-message-child",
-            candidate.parent_id
+            "xiaoman_{}:{}:group-message-child",
+            workflow_type, candidate.parent_id
         ),
         dedupe_key: String::new(),
         metadata: json!({
-            "workflow_type": "activity_promotion",
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
             "workflow_starter": "run-xiaoman-activity-send-request-starter-worker",
             "workflow_step": "group_message",
             "parent_activity_request_work_item_id": candidate.parent_id,
@@ -4739,6 +4769,8 @@ fn xiaoman_activity_image_generation_request(
     candidate: &XiaomanActivityImageGenerationCandidate,
 ) -> WorkItemCreateRequest {
     const SPECIFICATION: &str = "community_poster_1024x1024";
+    let workflow_type = candidate.activity_phase.workflow_type();
+    let activity_route = candidate.activity_phase.route();
     let prompt_hash = format!(
         "sha256:{}",
         content_hash_text(&format!(
@@ -4759,7 +4791,9 @@ fn xiaoman_activity_image_generation_request(
         source_refs: candidate.source_refs.clone(),
         source_event_signal_id: candidate.source_event_signal_id,
         payload: json!({
-            "workflow_type": "activity_promotion",
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
             "planner_intent": "generate_image_after_approved_poster_brief",
             "approved_brief_artifact_id": candidate.approved_artifact_id,
             "approved_brief_content_hash": candidate.approved_brief_hash,
@@ -4775,7 +4809,9 @@ fn xiaoman_activity_image_generation_request(
         ),
         dedupe_key: String::new(),
         metadata: json!({
-            "workflow_type": "activity_promotion",
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
             "workflow_starter": "run-xiaoman-activity-image-generation-starter-worker",
             "workflow_step": "image_generation",
             "visual_work_item_id": candidate.visual_work_item_id,
@@ -5015,7 +5051,7 @@ async fn validate_apply_policy(
 
 fn group_message_required_artifact_type(payload: &Value) -> Option<&'static str> {
     match payload.get("workflow_type").and_then(Value::as_str) {
-        Some("activity_promotion") => Some("generated_image"),
+        Some("activity_promotion" | "activity_recap") => Some("generated_image"),
         Some("text_activity_announcement") => Some("text_announcement"),
         _ => None,
     }
@@ -6464,6 +6500,7 @@ mod tests {
     fn xiaoman_send_candidate() -> XiaomanActivitySendRequestCandidate {
         XiaomanActivitySendRequestCandidate {
             parent_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            activity_phase: ActivityPhase::Pre,
             visual_work_item_id: Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap(),
             image_generation_work_item_id: Uuid::parse_str("55555555-5555-4555-8555-555555555555")
                 .unwrap(),
@@ -6481,6 +6518,7 @@ mod tests {
 
     fn xiaoman_image_candidate() -> XiaomanActivityImageGenerationCandidate {
         XiaomanActivityImageGenerationCandidate {
+            activity_phase: ActivityPhase::Pre,
             visual_work_item_id: Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap(),
             approved_artifact_id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
             approved_brief_hash: "sha256:approved-poster-brief".to_string(),
@@ -6680,6 +6718,24 @@ mod tests {
         assert!(!payload.contains("api_key"));
         assert!(!payload.contains("table_id"));
         assert!(!metadata.contains("message_id"));
+    }
+
+    #[test]
+    fn xiaoman_post_event_image_generation_request_preserves_recap_route() {
+        let mut candidate = xiaoman_image_candidate();
+        candidate.activity_phase = ActivityPhase::Post;
+        candidate.brief_summary = "AgentOS 小满活动复盘".to_string();
+        let request = xiaoman_activity_image_generation_request(&candidate);
+        let report = create_work_item_dry_run(request.clone())
+            .expect("recap image generation request should validate");
+
+        assert_eq!(report.current_status, "queued");
+        assert_eq!(request.payload["workflow_type"], "activity_recap");
+        assert_eq!(request.payload["activity_phase"], "post_event");
+        assert_eq!(request.payload["activity_route"], "activity_recap");
+        assert_eq!(request.metadata["workflow_type"], "activity_recap");
+        assert_eq!(request.metadata["activity_phase"], "post_event");
+        assert_eq!(request.metadata["activity_route"], "activity_recap");
     }
 
     #[test]
@@ -6963,6 +7019,35 @@ mod tests {
     }
 
     #[test]
+    fn xiaoman_post_event_send_request_preserves_recap_route() {
+        let mut candidate = xiaoman_send_candidate();
+        candidate.activity_phase = ActivityPhase::Post;
+        candidate.brief_summary = "AgentOS 小满活动复盘".to_string();
+        let request = xiaoman_activity_send_request(
+            &candidate,
+            "community_activity_group",
+            "活动复盘图片已审核，请确认是否发送。",
+        )
+        .expect("recap send request should build");
+        let report =
+            create_work_item_dry_run(request.clone()).expect("recap send request should validate");
+
+        assert_eq!(report.current_status, "awaiting_publish");
+        assert_eq!(request.payload["workflow_type"], "activity_recap");
+        assert_eq!(request.payload["activity_phase"], "post_event");
+        assert_eq!(request.payload["activity_route"], "activity_recap");
+        assert_eq!(
+            report.idempotency_key,
+            format!(
+                "xiaoman_activity_recap:{}:group-message-child",
+                candidate.parent_id
+            )
+        );
+        assert_eq!(request.metadata["workflow_type"], "activity_recap");
+        assert_eq!(request.metadata["activity_phase"], "post_event");
+    }
+
+    #[test]
     fn xiaoman_send_request_starter_rejects_sensitive_message_text() {
         let candidate = xiaoman_send_candidate();
         let err = xiaoman_activity_send_request(
@@ -7150,6 +7235,12 @@ mod tests {
         assert_eq!(
             group_message_required_artifact_type(&json!({
                 "workflow_type": "activity_promotion"
+            })),
+            Some("generated_image")
+        );
+        assert_eq!(
+            group_message_required_artifact_type(&json!({
+                "workflow_type": "activity_recap"
             })),
             Some("generated_image")
         );
