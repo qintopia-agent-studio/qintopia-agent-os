@@ -1,8 +1,8 @@
 id: agents/xiaoman
 type: agent
 name: Xiaoman
-owner: TBD
-status: adopting
+owner: PatrickLiveCool
+status: active
 risk_level: medium
 description:
   Activity and community-event operations Agent that creates governed work items from
@@ -34,9 +34,8 @@ tags:
   - activity-ops
   - hermes-profile
 next_actions:
-  - After an owner-approved Release, run the root-only no-clobber values migration and
-    record byte-for-byte SOUL and profile parity from the immutable artifact.
-  - Add live profile symlinks only in a later PR with first-cutover backup and rollback
-    evidence; keep config, webhook, channel, cron, secrets, and state runtime-local.
-  - Keep the production workflow on internal send-ready until Huabaosi generation and
-    QiWe delivery pass isolated owner-approved staging evidence.
+  - The AgentOS-only Xiaoman activity path is production-ready. External image
+    generation, Feishu writeback, and QiWe delivery remain disabled until their
+    separately reviewed production gates are satisfied.
+  - Keep live profile symlinks, config, webhook, channel, cron, and secrets
+    runtime-local.

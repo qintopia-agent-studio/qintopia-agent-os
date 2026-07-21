@@ -31,17 +31,10 @@ tags:
   - activity
   - signal
 next_actions:
-  - Observe audited event-signal status/gap/phase mutations only after the migration is
-    deployed; keep phase transitions forward-only and Feishu writeback disabled.
-  - Confirm pre-event, in-event, and post-event roots route only to their documented
-    internal child sets after each owner-approved deploy.
-  - Observe source-grounded Postgres evidence retrieval against the disposable apply
-    smoke before the next owner-approved production release.
+  - The AgentOS-only Xiaoman activity signal path is production-ready. Keep external
+    sends, image generation, Feishu writeback, and publication disabled until their
+    separately reviewed production gates are satisfied.
   - Re-run the aggregate Xiaoman production preflight smoke after each owner-approved
     deploy and record the observed queue counts and any blocking point.
-  - Observe the image-generation starter timer separately from the disabled image
-    provider worker; only run real generation through an owner-approved staging gate.
-  - Require the Huabaosi production disabled-state observation to prove the provider
-    worker remains off and unscheduled after internal-runtime deployments.
   - Keep Feishu writes behind reviewed adapters and do not make Feishu the source of
     truth.
