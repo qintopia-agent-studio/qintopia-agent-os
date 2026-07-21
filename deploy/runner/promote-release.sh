@@ -58,6 +58,72 @@ else:
 PY
 }
 
+validate_release_tree() {
+  local candidate="$1"
+  local expected_uid
+  expected_uid="$(id -u)"
+  python3 - "$candidate" "$expected_uid" <<'PY'
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+expected_uid = int(sys.argv[2])
+
+if not os.path.isdir(root) or os.path.islink(root):
+    raise SystemExit("release tree must be a non-symlink directory")
+
+paths = [root]
+for directory, directories, files in os.walk(root, followlinks=False):
+    paths.extend(os.path.join(directory, name) for name in directories)
+    paths.extend(os.path.join(directory, name) for name in files)
+
+for path in paths:
+    metadata = os.lstat(path)
+    relative = os.path.relpath(path, root)
+    if metadata.st_uid != expected_uid:
+        raise SystemExit(f"release tree owner mismatch: {relative}")
+    is_link = stat.S_ISLNK(metadata.st_mode)
+    is_directory = stat.S_ISDIR(metadata.st_mode)
+    is_regular = stat.S_ISREG(metadata.st_mode)
+    if not (is_link or is_directory or is_regular):
+        raise SystemExit(f"release tree contains unsupported file type: {relative}")
+    if not is_link and metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise SystemExit(f"release tree path is group/world writable: {relative}")
+    required_directory_access = (
+        stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
+    )
+    if (
+        is_directory
+        and metadata.st_mode & required_directory_access != required_directory_access
+    ):
+        raise SystemExit(f"release tree directory is not group/world accessible: {relative}")
+
+required = {
+    "sidecar/qintopia-message-sidecar": 0o755,
+    "sidecar/artifact-manifest.json": 0o444,
+    "sidecar/SHA256SUMS": 0o444,
+    "sidecar/qintopia-message-sidecar.tar.gz": 0o444,
+    "deploy-bundle/artifact-manifest.json": 0o444,
+    "deploy-bundle/SHA256SUMS": 0o444,
+    "deploy-bundle/qintopia-agent-os-deploy-bundle.tar.gz": 0o444,
+}
+for relative, expected_mode in required.items():
+    path = os.path.join(root, relative)
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        raise SystemExit(f"release tree required file is missing: {relative}") from None
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit(f"release tree required path is not a regular file: {relative}")
+    actual_mode = stat.S_IMODE(metadata.st_mode)
+    if actual_mode != expected_mode:
+        raise SystemExit(
+            f"release tree mode mismatch: {relative} expected {expected_mode:04o} got {actual_mode:04o}"
+        )
+PY
+}
+
 release_sha="$(json_get release_sha)"
 runtime_sha="$(json_get runtime_sha)"
 deploy_bundle_sha="$(json_get deploy_bundle_sha)"
@@ -66,9 +132,148 @@ release_dir="${release_root}/${release_sha}"
 staging_dir="${release_root}/.staging-${release_sha}"
 current_target="$(readlink -f "${release_root}/current" 2>/dev/null || true)"
 
-mkdir -p "$release_root"
+repair_existing_release_metadata() {
+  local existing_dir="$1"
+  local requested_dir="$2"
+
+  if [[ ! -d "$existing_dir" || -L "$existing_dir" ]]; then
+    echo "existing release path must be a non-symlink directory: ${existing_dir}" >&2
+    return 1
+  fi
+  if [[ ! -f "${existing_dir}/manifest.json" || -L "${existing_dir}/manifest.json" ]]; then
+    echo "existing release manifest must be a non-symlink regular file" >&2
+    return 1
+  fi
+
+  python3 - "$existing_dir" "$requested_dir" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+existing_root, requested_root = sys.argv[1:3]
+
+
+def digest(path):
+    value = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def inventory(root):
+    entries = {}
+    for directory, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        relative_directory = os.path.relpath(directory, root)
+        if relative_directory == ".":
+            relative_directory = ""
+
+        retained_directories = []
+        for name in sorted(dirnames):
+            path = os.path.join(directory, name)
+            relative = os.path.join(relative_directory, name)
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode):
+                entries[relative] = ("symlink", os.readlink(path))
+            elif stat.S_ISDIR(metadata.st_mode):
+                entries[relative] = ("directory",)
+                retained_directories.append(name)
+            else:
+                raise SystemExit(f"release tree contains unsupported path type: {relative}")
+        dirnames[:] = retained_directories
+
+        for name in sorted(filenames):
+            path = os.path.join(directory, name)
+            relative = os.path.join(relative_directory, name)
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode):
+                entries[relative] = ("symlink", os.readlink(path))
+            elif stat.S_ISREG(metadata.st_mode):
+                if relative == "manifest.json":
+                    entries[relative] = ("request-manifest",)
+                else:
+                    entries[relative] = ("file", digest(path))
+            else:
+                raise SystemExit(f"release tree contains unsupported path type: {relative}")
+    return entries
+
+
+existing = inventory(existing_root)
+requested = inventory(requested_root)
+if existing != requested:
+    missing = sorted(set(requested) - set(existing))
+    extra = sorted(set(existing) - set(requested))
+    changed = sorted(
+        path for path in set(existing) & set(requested) if existing[path] != requested[path]
+    )
+    details = []
+    if missing:
+        details.append(f"missing={','.join(missing[:5])}")
+    if extra:
+        details.append(f"extra={','.join(extra[:5])}")
+    if changed:
+        details.append(f"changed={','.join(changed[:5])}")
+    raise SystemExit(
+        "existing release content differs from freshly verified artifacts"
+        + (f": {'; '.join(details)}" if details else "")
+    )
+PY
+
+  (
+    cd "${existing_dir}/sidecar"
+    sha256sum -c SHA256SUMS
+  )
+  (
+    cd "${existing_dir}/deploy-bundle"
+    sha256sum -c SHA256SUMS
+  )
+
+  chown -hR root:root "$existing_dir"
+  python3 - "$existing_dir" "$requested_dir" <<'PY'
+import os
+import stat
+import sys
+
+existing_root, requested_root = sys.argv[1:3]
+directories = []
+
+for directory, dirnames, filenames in os.walk(requested_root, topdown=True, followlinks=False):
+    relative_directory = os.path.relpath(directory, requested_root)
+    if relative_directory == ".":
+        relative_directory = ""
+    directories.append((relative_directory, stat.S_IMODE(os.lstat(directory).st_mode)))
+
+    retained_directories = []
+    for name in dirnames:
+        path = os.path.join(directory, name)
+        if not stat.S_ISLNK(os.lstat(path).st_mode):
+            retained_directories.append(name)
+    dirnames[:] = retained_directories
+
+    for name in filenames:
+        source = os.path.join(directory, name)
+        metadata = os.lstat(source)
+        if stat.S_ISREG(metadata.st_mode):
+            relative = os.path.join(relative_directory, name)
+            os.chmod(
+                os.path.join(existing_root, relative),
+                stat.S_IMODE(metadata.st_mode),
+                follow_symlinks=False,
+            )
+
+for relative, mode in sorted(directories, key=lambda item: item[0].count(os.sep), reverse=True):
+    target = existing_root if not relative else os.path.join(existing_root, relative)
+    os.chmod(target, mode, follow_symlinks=False)
+PY
+}
+
+install -d -m 0755 "$release_root"
 rm -rf "$staging_dir"
-mkdir -p "$staging_dir"
+install -d -m 0755 \
+  "$staging_dir" \
+  "$staging_dir/sidecar" \
+  "$staging_dir/deploy-bundle"
 
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --artifact-type sidecar \
@@ -112,6 +317,7 @@ PY
 test -x "${staging_dir}/sidecar/qintopia-message-sidecar"
 test -f "${staging_dir}/manifest.json"
 test -d "${staging_dir}/deploy"
+validate_release_tree "$staging_dir"
 
 if [[ "$dry_run" == "true" ]]; then
   echo "Dry run assembled release at ${staging_dir}"
@@ -142,12 +348,15 @@ for key in keys:
     if manifest.get(key) != requested.get(key):
         raise SystemExit(f"existing release manifest {key} mismatch")
 PY
+  repair_existing_release_metadata "$release_dir" "$staging_dir"
+  validate_release_tree "$release_dir"
   rm -rf "$staging_dir"
 else
   mv "$staging_dir" "$release_dir"
 fi
 
-if [[ -n "$current_target" ]]; then
+release_target="$(readlink -f "$release_dir")"
+if [[ -n "$current_target" && "$current_target" != "$release_target" ]]; then
   ln -sfn "$current_target" "${release_root}/previous"
 fi
 ln -sfn "$release_dir" "${release_root}/current"

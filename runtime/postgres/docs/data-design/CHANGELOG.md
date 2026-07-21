@@ -3,6 +3,42 @@
 This file is the repository-side history for database design changes. The database-side
 history is `qintopia_agent_os.schema_change_log`.
 
+## `2026-07-14.003`
+
+Migration: `migrations/202607140003_qiwe_upload_attempt_lifecycle.sql` Design note:
+`docs/data-design/2026-07-14-qiwe-upload-attempt-lifecycle.md`
+
+Adds the pre-network `uploading` state and terminalizes stale or legacy unrecorded
+claims when AgentOS cannot prove that QiWe did not accept an upload. Unknown upload
+outcomes cannot be retried automatically.
+
+## `2026-07-14.002`
+
+Migration: `migrations/202607140002_qiwe_image_send_state.sql` Design note:
+`docs/data-design/2026-07-14-qiwe-image-send-state.md`
+
+Adds durable hashed QiWe image-upload correlation, callback idempotency, claim-token
+validation, and sanitized terminal send audit. The migration is additive and does not
+persist callback file credentials, enable the adapter, or send externally.
+
+## `2026-07-14.001`
+
+Migration: `migrations/202607140001_xiaoman_event_signal_mutations.sql` Design note:
+`docs/data-design/2026-07-14-xiaoman-event-signal-mutations.md`
+
+Adds a dedicated Xiaoman event-signal gap field and append-only mutation audit so
+status/gap updates write AgentOS facts with explicit idempotency instead of treating
+Feishu activity rows as the source of truth.
+
+## `2026-07-13.002`
+
+Migration: `migrations/202607130002_huabaosi_image_generation.sql` Design note:
+`docs/data-design/2026-07-13-huabaosi-image-generation.md`
+
+Registers the guarded `huabaosi.generate_image_asset` capability. The provider remains
+disabled by default, generated images remain pending review, and the migration does not
+enable external generation, media upload, publishing, or sending.
+
 ## `2026-06-30.007`
 
 Migration: `migrations/202606300007_operations_control_plane.sql` Design note:

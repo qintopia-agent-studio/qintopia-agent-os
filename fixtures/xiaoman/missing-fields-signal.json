@@ -1,0 +1,27 @@
+{
+  "case": "missing-fields-signal",
+  "input": {
+    "workflow": "workflows/xiaoman-activity-signal",
+    "actor_agent": "xiaoman",
+    "operation": "signal-ingest",
+    "event_signal_id": "33333333-3333-4333-8333-333333333333",
+    "signal_type": "活动/聚会",
+    "activity_phase": "pre_event",
+    "activity_title": "社区共学",
+    "signal_date": ""
+  },
+  "expected": {
+    "validation_status": "review_needed",
+    "action_status": "review_needed",
+    "capability_key": "xiaoman.create_activity_request",
+    "work_item_type": "activity_promotion_request",
+    "activity_phase": "pre_event",
+    "activity_route": "promotion_preparation",
+    "requester_agent": "default",
+    "target_agent": "xiaoman",
+    "idempotency_key": "xiaoman_activity_signal:33333333-3333-4333-8333-333333333333",
+    "review_needed": true,
+    "missing_required_fields": ["signal_date"],
+    "external_sends": false
+  }
+}

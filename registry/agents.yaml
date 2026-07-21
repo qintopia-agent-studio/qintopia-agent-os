@@ -14,8 +14,10 @@ entries:
   - id: agents/xiaoman
     path: agents/xiaoman
     manifest: agents/xiaoman/agent.yaml
-    status: adopting
-    notes: Activity and community-event operations Agent package contract.
+    status: active
+    notes:
+      Activity and community-event operations Agent; AgentOS-only path is
+      production-ready.
   - id: agents/wenyuange
     path: agents/wenyuange
     manifest: agents/wenyuange/agent.yaml

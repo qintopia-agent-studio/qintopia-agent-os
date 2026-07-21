@@ -1,0 +1,35 @@
+{
+  "schema_version": "huabaosi-generated-image-v1",
+  "table_role": "huabaosi_generated_image_versions",
+  "display_name": "阿靓图片产物版本表",
+  "idempotency_field": "AgentOS产物ID",
+  "attachment_field": "最终JPEG",
+  "fields": [
+    { "name": "产物标题", "type": "text", "primary": true },
+    { "name": "AgentOS产物ID", "type": "text", "required": true, "unique": true },
+    { "name": "Schema版本", "type": "text", "required": true },
+    { "name": "AgentOS工作项ID", "type": "text", "required": true },
+    { "name": "图片请求ID", "type": "text", "required": true },
+    { "name": "最终JPEG", "type": "attachment", "required": true },
+    { "name": "稳定媒体URI", "type": "url" },
+    { "name": "JPEG SHA-256", "type": "text", "required": true },
+    { "name": "文件MD5", "type": "text", "required": true },
+    { "name": "字节数", "type": "number", "required": true },
+    { "name": "宽度", "type": "number", "required": true },
+    { "name": "高度", "type": "number", "required": true },
+    { "name": "MIME类型", "type": "text", "required": true },
+    { "name": "源PNG SHA-256", "type": "text", "required": true },
+    { "name": "转换规则", "type": "text", "required": true },
+    {
+      "name": "审核状态",
+      "type": "single_select",
+      "required": true,
+      "options": ["待审核", "已通过", "已拒绝", "需调整"]
+    },
+    { "name": "审核人", "type": "text" },
+    { "name": "审核时间", "type": "datetime" },
+    { "name": "审核意见", "type": "text" },
+    { "name": "生成时间", "type": "datetime", "required": true },
+    { "name": "更新时间", "type": "datetime", "required": true }
+  ]
+}

@@ -1,0 +1,277 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published Release tag to roll production back to.
+        required: true
+        default: v0.2.0
+        type: choice
+        options:
+          - v0.2.0
+      restart_targets:
+        description: Restart target set after rollback promotion.
+        required: true
+        default: all-hermes-and-system
+        type: choice
+        options:
+          - all-hermes-and-system
+          - qintopia-system-services
+          - hermes-erhua
+          - hermes-wenyuange
+          - hermes-xiaoman
+          - hermes-silaoshi
+          - hermes-huabaosi
+          - hermes-guanerye
+      dry_run:
+        description:
+          Validate and assemble only; do not switch current or restart services.
+        required: true
+        default: true
+        type: boolean
+      notes:
+        description: Operator notes for the rollback request.
+        required: false
+        type: string
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.29.2"
+  TENCENT_COS_BUCKET:
+    ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
+  TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
+  TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
+  WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
+
+jobs:
+  request-rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve rollback target
+        id: resolve
+        shell: bash
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_RESTART_TARGETS: ${{ inputs.restart_targets }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_NOTES: ${{ inputs.notes || '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          require_single_line() {
+            local name="$1"
+            local value="$2"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "${name} must be a single-line value." >&2
+              exit 2
+            fi
+          }
+
+          normalize_boolean() {
+            local name="$1"
+            local value="$2"
+            require_single_line "$name" "$value"
+            case "$value" in
+              true|false)
+                printf '%s' "$value"
+                ;;
+              *)
+                echo "${name} must be true or false." >&2
+                exit 2
+                ;;
+            esac
+          }
+
+          normalize_restart_targets() {
+            local value="$1"
+            require_single_line "restart_targets" "$value"
+            case "$value" in
+              all-hermes-and-system)
+                printf '%s' "qintopia-system-services,hermes-erhua,hermes-wenyuange,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-guanerye"
+                ;;
+              qintopia-system-services|hermes-erhua|hermes-wenyuange|hermes-xiaoman|hermes-silaoshi|hermes-huabaosi|hermes-guanerye)
+                printf '%s' "$value"
+                ;;
+              *)
+                echo "restart_targets contains unsupported entry: ${value}" >&2
+                exit 2
+                ;;
+            esac
+          }
+
+          require_single_line "release_tag" "$INPUT_RELEASE_TAG"
+          if [[ ! "$INPUT_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release_tag must be a semver-style vX.Y.Z tag." >&2
+            exit 2
+          fi
+          if [[ "$INPUT_RELEASE_TAG" != "v0.2.0" ]]; then
+            echo "Rollback target must be v0.2.0 (verified candidate after v0.2.3 audit)." >&2
+            exit 2
+          fi
+
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}")"
+          release_draft="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.draft));')"
+          release_prerelease="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.prerelease));')"
+          release_url="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(release.html_url || "");')"
+          if [[ "$release_draft" == "true" || "$release_prerelease" == "true" ]]; then
+            echo "Rollback target must be a published non-prerelease GitHub Release." >&2
+            exit 2
+          fi
+
+          git fetch --no-tags origin master
+          git fetch --tags --force origin "refs/tags/${INPUT_RELEASE_TAG}:refs/tags/${INPUT_RELEASE_TAG}"
+          target_sha="$(git rev-list -n 1 "${INPUT_RELEASE_TAG}^{commit}")"
+          git cat-file -e "${target_sha}^{commit}"
+          git merge-base --is-ancestor "$target_sha" origin/master
+          if [[ "$target_sha" != "b24c3f714b19962c5a7b57a486f7aa18c4ae3e86" ]]; then
+            echo "Rollback target SHA must match the audited v0.2.0 release commit." >&2
+            exit 2
+          fi
+
+          restart_targets="$(normalize_restart_targets "$INPUT_RESTART_TARGETS")"
+          dry_run="$(normalize_boolean "dry_run" "$INPUT_DRY_RUN")"
+          notes="Rollback Production to ${INPUT_RELEASE_TAG} (${release_url}). ${INPUT_NOTES}"
+
+          notes_delimiter="rollback_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "release-tag=${INPUT_RELEASE_TAG}"
+            echo "target-sha=${target_sha}"
+            echo "restart-targets=${restart_targets}"
+            echo "dry-run=${dry_run}"
+            echo "notes<<${notes_delimiter}"
+            echo "$notes"
+            echo "${notes_delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Rollback Target"
+            echo
+            echo "- Release tag: ${INPUT_RELEASE_TAG}"
+            echo "- Target SHA: ${target_sha}"
+            echo "- Restart targets: ${restart_targets}"
+            echo "- Dry run: ${dry_run}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate deploy runner contracts
+        run: pnpm deploy:runner:check
+
+      - name: Validate Tencent COS upload configuration
+        shell: bash
+        env:
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TENCENT_COS_SECRET_ID" || -z "$TENCENT_COS_SECRET_KEY" || -z "$DEPLOY_REQUEST_SIGNING_KEY" ]]; then
+            echo "TENCENT_COS_SECRET_ID, TENCENT_COS_SECRET_KEY, and DEPLOY_REQUEST_SIGNING_KEY are required in the production environment." >&2
+            exit 2
+          fi
+
+      - name: Validate rollback artifacts in Tencent COS
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          deploy/sidecar/scripts/fetch-cos-artifact.sh \
+            --artifact-type sidecar \
+            --sha "${ROLLBACK_TARGET_SHA}" \
+            --output-dir "${temp_dir}/sidecar"
+          deploy/sidecar/scripts/fetch-cos-artifact.sh \
+            --artifact-type deploy-bundle \
+            --sha "${ROLLBACK_TARGET_SHA}" \
+            --output-dir "${temp_dir}/deploy-bundle"
+        env:
+          ROLLBACK_TARGET_SHA: ${{ steps.resolve.outputs.target-sha }}
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Create rollback deploy request
+        run:
+          node tools/deploy/create-deploy-request.mjs --output
+          dist/deploy-requests/request.json
+        env:
+          DEPLOY_COMMIT_SHA: ${{ steps.resolve.outputs.target-sha }}
+          DEPLOY_RUNTIME_SHA: ${{ steps.resolve.outputs.target-sha }}
+          DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.target-sha }}
+          DEPLOY_RELEASE_SHA: ${{ steps.resolve.outputs.target-sha }}
+          DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins
+          DEPLOY_RESTART_TARGETS: ${{ steps.resolve.outputs.restart-targets }}
+          DEPLOY_DRY_RUN: ${{ steps.resolve.outputs.dry-run }}
+          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: false
+          DEPLOY_NOTES: ${{ steps.resolve.outputs.notes }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
+
+      - name: Upload rollback request to Tencent COS
+        run:
+          deploy/runner/upload-deploy-request.sh --request-file
+          dist/deploy-requests/request.json
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Wait for server rollback result
+        if: ${{ env.WAIT_FOR_SERVER_DEPLOY_RESULT == 'true' }}
+        run:
+          deploy/runner/wait-deploy-result.sh --request-file
+          dist/deploy-requests/request.json
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          DEPLOY_RESULT_TIMEOUT_SECONDS:
+            ${{ vars.DEPLOY_RESULT_TIMEOUT_SECONDS || '900' }}
+          DEPLOY_RESULT_POLL_SECONDS: ${{ vars.DEPLOY_RESULT_POLL_SECONDS || '15' }}
+
+      - name: Upload rollback request audit artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-agent-os-rollback-request
+          path: dist/deploy-requests/request.json
+          retention-days: 30
+          if-no-files-found: error

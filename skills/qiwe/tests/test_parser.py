@@ -30,7 +30,9 @@ from adapter import (
     QiWeAdapter,
     SendResult,
     _answer_context_from_mcp_stdout,
+    _answer_context_mcp_request,
     _member_context_channel_prompt,
+    _mentioned_member_names_from_at_list,
     _training_note_mcp_request,
     parse_qiwe_payload,
     register,
@@ -38,6 +40,7 @@ from adapter import (
 )
 from passive_pipeline import PassiveEventPipeline, PassivePipelineConfig
 from nats_capture import build_capture_events
+from image_callback_bridge import CallbackBridgeResult, QiWeImageCallbackBridge
 from qiwe_events import normalized_event_from_parsed
 from solitaire.activity_service import ActivityService
 from solitaire.feishu_writer import FeishuActivityMapping, FeishuActivityWriter
@@ -353,6 +356,189 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(message_event["should_trigger"], True)
         self.assertEqual(message_event["trigger_reason"], "mentioned")
         self.assertGreaterEqual(len(message_event["mentions"]), 1)
+
+    def test_nats_capture_redacts_async_callback_before_publish(self) -> None:
+        callback = {
+            "code": 0,
+            "outerUnknown": "outer-callback-secret",
+            "data": [
+                {
+                    "requestId": "callback-request-secret",
+                    "cmd": 20000,
+                    "msgData": {
+                        "fileAesKey": "callback-aes-secret",
+                        "fileId": "callback-file-secret",
+                        "fileMd5": "callback-md5-secret",
+                        "fileSize": 48300,
+                        "filename": "callback-private.jpg",
+                        "cloudUrl": "https://media.example.test/private.jpg?token=secret",
+                        "unknownCredential": "callback-unknown-secret",
+                    },
+                }
+            ],
+        }
+        parsed = type(
+            "CallbackParsed",
+            (),
+            {
+                "message_id": "callback-message-secret",
+                "conversation_type": "direct",
+                "chat_id": "callback-chat-secret",
+                "sender_id": "callback-sender-secret",
+                "sender_name": "callback-name-secret",
+                "text": "callback-text-secret",
+                "content": "callback-content-secret",
+                "message_kind": "image",
+                "is_mentioned": True,
+                "should_trigger": True,
+                "reason": "not_cmd_15000",
+                "timestamp": None,
+                "raw_event": callback["data"][0],
+                "at_list": [{"userId": "callback-mention-secret"}],
+                "attachments": [{"file_id": "callback-attachment-secret"}],
+            },
+        )()
+        identity = adapter_module.QiWeIdentity(
+            user_id="callback-identity-secret",
+            display_name="callback-display-secret",
+            source="room_member",
+        )
+
+        raw_event, message_event, message_id = build_capture_events(
+            parsed,
+            json.dumps(callback).encode("utf-8"),
+            identity=identity,
+        )
+        stored = json.dumps(
+            {"raw_event": raw_event, "message_event": message_event},
+            ensure_ascii=False,
+        )
+
+        self.assertTrue(message_id.startswith("qiwe-callback:"))
+        self.assertEqual(raw_event["event_id"], message_id)
+        self.assertEqual(raw_event["payload"]["callback_event_count"], 1)
+        self.assertIs(raw_event["payload"]["credentials_redacted"], True)
+        self.assertIs(
+            raw_event["payload"]["callback_events"][0]["msg_data_summary"][
+                "required_fields_present"
+            ],
+            True,
+        )
+        self.assertEqual(message_event["message_id"], message_id)
+        self.assertEqual(message_event["raw"], raw_event["payload"])
+        self.assertEqual(message_event["message_kind"], "system")
+        self.assertEqual(message_event["trigger_reason"], "qiwe_async_callback_sanitized")
+        self.assertEqual(message_event["chat_id"], "")
+        self.assertEqual(message_event["sender_id"], "")
+        self.assertEqual(message_event["sender_name"], "")
+        self.assertEqual(message_event["text"], "")
+        self.assertEqual(message_event["mentions"], [])
+        self.assertEqual(message_event["attachments"], [])
+        for sensitive in (
+            "outer-callback-secret",
+            "callback-request-secret",
+            "callback-aes-secret",
+            "callback-file-secret",
+            "callback-md5-secret",
+            "callback-private.jpg",
+            "token=secret",
+            "callback-unknown-secret",
+            "callback-message-secret",
+            "callback-chat-secret",
+            "callback-sender-secret",
+            "callback-name-secret",
+            "callback-text-secret",
+            "callback-content-secret",
+            "callback-mention-secret",
+            "callback-attachment-secret",
+            "callback-identity-secret",
+            "callback-display-secret",
+        ):
+            self.assertNotIn(sensitive, stored)
+
+    def test_nats_capture_rebuilds_spoofed_redaction_marker(self) -> None:
+        callback = {
+            "source": "qiwe_async_callback",
+            "credentials_redacted": True,
+            "outerSecret": "spoofed-outer-secret",
+            "callback_events": [
+                {
+                    "cmd": 20000,
+                    "credentials_redacted": True,
+                    "request_id_sha256": f"sha256:{'A' * 64}",
+                    "eventSecret": "spoofed-event-secret",
+                    "msg_data_summary": {
+                        "field_presence": {
+                            "file_aes_key": True,
+                            "file_id": True,
+                            "file_md5": True,
+                            "file_size": True,
+                            "filename": True,
+                            "cloud_url": True,
+                            "summarySecret": "spoofed-summary-secret",
+                        },
+                        "msg_data_object": True,
+                        "msg_data_present": True,
+                        "required_fields_present": True,
+                        "unknown_field_count": 1,
+                    },
+                }
+            ],
+        }
+        parsed = type(
+            "CallbackParsed",
+            (),
+            {
+                "message_id": "qiwe-callback:spoofed-id-secret",
+                "conversation_type": "direct",
+                "chat_id": "spoofed-chat-secret",
+                "sender_id": "spoofed-sender-secret",
+                "sender_name": "spoofed-name-secret",
+                "text": "spoofed-text-secret",
+                "content": "spoofed-content-secret",
+                "message_kind": "image",
+                "is_mentioned": True,
+                "should_trigger": True,
+                "reason": "spoofed-reason-secret",
+                "timestamp": None,
+                "raw_event": callback,
+                "at_list": [],
+                "attachments": [],
+            },
+        )()
+
+        raw_event, message_event, _ = build_capture_events(
+            parsed,
+            json.dumps(callback).encode("utf-8"),
+        )
+        stored = json.dumps(
+            {"raw_event": raw_event, "message_event": message_event},
+            ensure_ascii=False,
+        )
+
+        self.assertEqual(raw_event["payload"]["callback_event_count"], 1)
+        self.assertNotEqual(raw_event["event_id"], "qiwe-callback:spoofed-id-secret")
+        self.assertEqual(len(raw_event["event_id"]), len("qiwe-callback:") + 64)
+        self.assertEqual(message_event["event_id"], raw_event["event_id"])
+        self.assertEqual(message_event["message_id"], raw_event["event_id"])
+        self.assertEqual(
+            raw_event["payload"]["callback_events"][0]["request_id_sha256"],
+            f"sha256:{'a' * 64}",
+        )
+        self.assertEqual(message_event["raw"], raw_event["payload"])
+        for sensitive in (
+            "spoofed-outer-secret",
+            "spoofed-event-secret",
+            "spoofed-summary-secret",
+            "spoofed-chat-secret",
+            "spoofed-sender-secret",
+            "spoofed-name-secret",
+            "spoofed-text-secret",
+            "spoofed-content-secret",
+            "spoofed-reason-secret",
+            "spoofed-id-secret",
+        ):
+            self.assertNotIn(sensitive, stored)
 
     def test_nats_capture_event_uses_resolved_identity_name(self) -> None:
         payload = load_fixture("group_mention.json")
@@ -1253,7 +1439,14 @@ class QiWeParserTests(unittest.TestCase):
         samples = [
             "⚠️ **Dangerous command requires approval:**\n```\nexecute_code <<'PY'\nprint(1)\nPY\n```",
             "Reply `/approve` to execute, `/approve session` to approve this pattern for the session.",
+            "⚡ Interrupting current task. I'll respond to your message shortly.",
+            "(Response formatting failed, plain text:)\n\n⚡ Interrupting current task. I'll respond to your message shortly.",
+            "⚡ 正在中断当前任务，稍后我会回复您的消息。",
+            "（响应格式设置失败，显示为纯文本：）\n\n⚡ 正在中断当前任务，稍后我会回复您的消息。",
             "⏳ Working — 3 min — iteration 2/90, execute_code",
+            "⏳ Retrying in 5.5s (attempt 2/3)...",
+            "API call failed after 3 retries: HTTP 503: Service temporarily unavailable",
+            "❌ API failed after 3 retries — HTTP 503: Service temporarily unavailable",
             'Traceback (most recent call last):\n  File "/home/ubuntu/.hermes/hermes-agent/foo.py", line 1',
             "record_id=recABCDEFG123456789 obj_token=secretish",
         ]
@@ -1271,6 +1464,39 @@ class QiWeParserTests(unittest.TestCase):
             self.assertIs(result.success, True)
             self.assertEqual(result.raw_response, {"skipped": "internal_process_message"})
             self.assertEqual(adapter.bodies, [])
+
+    def test_send_does_not_skip_normal_plain_text_discussion(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(type("Config", (), {"extra": {"send_enabled": False}})())
+                self.bodies = []
+
+            async def _post_qiwe_body(self, body):
+                self.bodies.append(body)
+                return SendResult(success=True, raw_response={"dryRun": True})
+
+        samples = [
+            "Please return the answer as plain text.",
+            "I will respond to your message shortly after checking the schedule.",
+            "Response formatting failed because the client requested plain text; here is the diagnosis.",
+            "这段内容会显示为纯文本，请保留。",
+            "响应格式设置失败的原因是什么？",
+            "响应格式设置失败时会显示为纯文本，这是客户端的降级策略。",
+        ]
+
+        for sample in samples:
+            adapter = RecordingAdapter()
+            result = asyncio.run(
+                adapter.send(
+                    "10733506388826175",
+                    sample,
+                    metadata={"sender_id": "7881303308049798"},
+                )
+            )
+
+            self.assertIs(result.success, True)
+            self.assertEqual(result.raw_response, {"dryRun": True})
+            self.assertEqual(len(adapter.bodies), 1)
 
     def test_location_body_uses_qiwe_send_location_shape(self) -> None:
         adapter = QiWeAdapter(type("Config", (), {"extra": {"send_enabled": False}})())
@@ -1680,6 +1906,27 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(context["mentioned_members"][0]["display_name"], "Cici（27-29止语）")
         self.assertIn("短期沟通状态", context["mentioned_members"][0]["safe_reply_hints"]["topics"])
 
+    def test_answer_context_request_passes_non_bot_at_list_names(self) -> None:
+        request = _answer_context_mcp_request(
+            chat_id="room_example",
+            sender_id="user_example",
+            message_text="@二花 @小乔 小乔是谁",
+            mentioned_member_names=_mentioned_member_names_from_at_list(
+                [
+                    {"nickname": "二花", "userId": "bot-user"},
+                    {"nickname": "小乔", "userId": "member-user"},
+                    {"nickname": "小乔", "userId": "member-user"},
+                ],
+                bot_user_id="bot-user",
+                bot_names=["二花"],
+            ),
+        )
+        lines = [json.loads(line) for line in request.splitlines() if line.strip()]
+        call = next(item for item in lines if item.get("id") == 2)
+        args = call["params"]["arguments"]
+
+        self.assertEqual(args["mentioned_member_names"], ["小乔"])
+
     def test_identity_cache_persists_and_loads_from_state_dir(self) -> None:
         class RecordingAdapter(QiWeAdapter):
             def __init__(self, state_dir: str, *, fail_lookup: bool = False) -> None:
@@ -1825,6 +2072,104 @@ class QiWeParserTests(unittest.TestCase):
             finally:
                 adapter_module.web = old_web
                 adapter_module.logger.disabled = old_disabled
+
+        asyncio.run(run_case())
+
+    def test_webhook_routes_async_callback_without_agent_dispatch(self) -> None:
+        callback = {
+            "code": 0,
+            "data": [
+                {
+                    "requestId": "callback-request-secret",
+                    "cmd": 20000,
+                    "msgData": {
+                        "fileAesKey": "callback-aes-secret",
+                        "fileId": "callback-file-secret",
+                        "fileMd5": "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                        "fileSize": 48300,
+                        "filename": "callback-private.jpg",
+                    },
+                }
+            ],
+        }
+
+        class FakeWeb:
+            @staticmethod
+            def json_response(data, status=200):
+                return type("Response", (), {"status": status, "text": json.dumps(data)})()
+
+        class FakeRequest:
+            async def read(self):
+                return json.dumps(callback).encode("utf-8")
+
+        class FakeBridge:
+            def __init__(self):
+                self.bodies = []
+
+            async def process(self, body):
+                self.bodies.append(body)
+                return CallbackBridgeResult(
+                    detected=True,
+                    enabled=True,
+                    processed=True,
+                    reason="processor_completed",
+                    action_status="image_send_completed",
+                    callback_credential_schema="fileAesKey+fileId+fileMd5+fileSize+filename",
+                    callback_additional_field_count=0,
+                    external_send_executed=True,
+                )
+
+        async def run_case():
+            old_web = adapter_module.web
+            old_parser = adapter_module.parse_qiwe_payload
+            adapter_module.web = FakeWeb
+
+            def reject_parser(*_args, **_kwargs):
+                raise AssertionError(
+                    "async callback must bypass ordinary message parsing"
+                )
+
+            adapter_module.parse_qiwe_payload = reject_parser
+            adapter = QiWeAdapter(
+                type(
+                    "Config",
+                    (),
+                    {"extra": {"send_enabled": False, "identity_lookup_enabled": False}},
+                )()
+            )
+            bridge = FakeBridge()
+            adapter._image_callback_bridge = bridge
+            dispatched = False
+
+            async def dispatch(_event):
+                nonlocal dispatched
+                dispatched = True
+
+            adapter.handle_message = dispatch
+            try:
+                response = await adapter._handle_webhook(FakeRequest())
+                adapter._image_callback_bridge = QiWeImageCallbackBridge(
+                    enabled=True, configuration_valid=False
+                )
+                invalid_response = await adapter._handle_webhook(FakeRequest())
+            finally:
+                adapter_module.web = old_web
+                adapter_module.parse_qiwe_payload = old_parser
+            self.assertEqual(response.status, 200)
+            self.assertIn("qiwe_image_callback_processed", response.text)
+            self.assertFalse(dispatched)
+            self.assertEqual(len(bridge.bodies), 1)
+            for secret in (
+                "callback-request-secret",
+                "callback-aes-secret",
+                "callback-file-secret",
+                "callback-private.jpg",
+            ):
+                self.assertNotIn(secret, response.text)
+
+            self.assertEqual(invalid_response.status, 503)
+            self.assertIn("qiwe_image_callback_processor_failed", invalid_response.text)
+            self.assertFalse(dispatched)
 
         asyncio.run(run_case())
 

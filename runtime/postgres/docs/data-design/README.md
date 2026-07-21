@@ -18,3 +18,13 @@ Agent OS data layer.
 - Change history: `CHANGELOG.md`
 - `2026-06-18.001`: `2026-06-18-message-capture-v1.md`
 - `2026-06-24.002`: `2026-06-24-agent-os-data-layer-v2.md`
+- `2026-06-26.003`: `2026-06-26-identity-observations-v3.md`
+- `2026-06-26.004`: `2026-06-26-profile-digest-archive-v1.md`
+- `2026-06-27.005`: `2026-06-27-event-signals-v2.md`
+- `2026-06-29.006`: `2026-06-29-erhua-training-memory.md`
+- `2026-06-30.007`: `2026-06-30-operations-control-plane.md`
+- `2026-07-02.001`: `2026-07-02-operations-human-actor-guards.md`
+- `2026-07-13.002`: `2026-07-13-huabaosi-image-generation.md`
+- `2026-07-14.001`: `2026-07-14-xiaoman-event-signal-mutations.md`
+- `2026-07-14.002`: `2026-07-14-qiwe-image-send-state.md`
+- `2026-07-14.003`: `2026-07-14-qiwe-upload-attempt-lifecycle.md`

@@ -16,6 +16,9 @@ production_boundary:
   database_writes: true
   runtime_profile: true
   secrets: true
+runtime:
+  restart_target: hermes-erhua
+  systemd_user_service: hermes-gateway-erhua.service
 validation:
   commands:
     - pnpm test:qiwe
@@ -23,6 +26,7 @@ validation:
     - pnpm policy:check
 dependencies:
   - skills/qiwe
+  - skills/qintopia-weather
   - mcp/context-server
   - mcp/message-store
   - runtime/sidecar
@@ -34,3 +38,5 @@ tags:
 next_actions:
   - Convert non-secret SOUL and config behavior into reviewed templates.
   - Keep trainer memory in audited Postgres-backed overlays, not free-form prompt edits.
+  - Inventory the 07:00 cron declaration and current weather script hashes before
+    activating the release-owned forecast-first broadcast entrypoint.

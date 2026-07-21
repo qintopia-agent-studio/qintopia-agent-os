@@ -115,12 +115,12 @@ records:
       kind: git-repository
       branch: main
       reference: c76d035c1
-      state: dirty
+      state: dirty-19-entries
     disposition: review-pool
     target:
       - runtime/hermes
-      - review-pool/hermes-agent-core-patches
-    owner: TBD
+      - docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch
+    owner: PatrickLiveCool
     risk_level: high
     production_boundary:
       external_sends: true
@@ -128,10 +128,15 @@ records:
       runtime_profile: true
       secrets: possible
     validation:
-      status: patch-extraction-required
-      commands: []
+      status: wecom-patch-extracted
+      commands:
+        - pnpm runtime:hermes:check
+        - pnpm secrets:check
     next_action:
-      - extract server-local patch stack into review docs before touching Hermes core
+      - migrate production Huabaosi WeCom routing through the reviewed Rust policy and
+        canary path in a separate PR
+      - classify webhook, generic message-media, and deprecated Kanban changes in
+        separate PRs if they are still needed
       - do not adopt dirty checkout wholesale
 
   - id: server.worktool-gateway

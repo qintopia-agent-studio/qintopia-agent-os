@@ -96,6 +96,7 @@ for (const entry of entries) {
   const manifest = readYaml(entry.manifest);
   const templatePath = `${agentDir}/profile.template.yaml`;
   const template = readYaml(templatePath);
+  const runtime = manifest.runtime ?? {};
 
   if (manifest.id !== entry.id) {
     addError(`${entry.manifest}: id must match registry entry ${entry.id}`);
@@ -107,6 +108,19 @@ for (const entry of entries) {
 
   if (template.runtime !== "hermes") {
     addError(`${templatePath}: runtime must be hermes`);
+  }
+
+  if (entry.id !== "agents/default") {
+    const expectedTarget = `hermes-${agentId}`;
+    const expectedService = `hermes-gateway-${agentId}.service`;
+    if (runtime.restart_target !== expectedTarget) {
+      addError(`${entry.manifest}: runtime.restart_target must be ${expectedTarget}`);
+    }
+    if (runtime.systemd_user_service !== expectedService) {
+      addError(
+        `${entry.manifest}: runtime.systemd_user_service must be ${expectedService}`
+      );
+    }
   }
 
   if (!template.profile_template_version) {

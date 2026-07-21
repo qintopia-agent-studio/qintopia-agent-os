@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, Stream};
+use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -543,17 +543,9 @@ impl EmbeddingClient {
 }
 
 fn tls_config() -> ClientConfig {
-    let mut root_store = RootCertStore::empty();
-    root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor| {
-        OwnedTrustAnchor::from_subject_spki_name_constraints(
-            anchor.subject,
-            anchor.spki,
-            anchor.name_constraints,
-        )
-    }));
+    let root_store = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
     ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(root_store)
         .with_no_client_auth()
 }
@@ -592,10 +584,11 @@ fn post_embedding_request(
          Connection: close\r\n\
          \r\n\
          {body}",
-        body.as_bytes().len()
+        body.len()
     );
 
-    let server_name = ServerName::try_from(host).context("validate embedding endpoint host")?;
+    let server_name =
+        ServerName::try_from(host.to_string()).context("validate embedding endpoint host")?;
     let mut connection =
         ClientConnection::new(tls_config, server_name).context("create TLS connection")?;
     let mut socket = TcpStream::connect((host, port)).context("connect embedding endpoint")?;

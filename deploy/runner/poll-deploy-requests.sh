@@ -10,8 +10,9 @@ usage() {
 Usage:
   deploy/runner/poll-deploy-requests.sh
 
-Polls Tencent COS for one pending production deploy request, runs the fixed deploy
-runner, uploads the deploy result, and archives the consumed request locally.
+Fetches the fixed production deploy request pointer from Tencent COS, runs the
+referenced deploy request once, uploads the deploy result, and records local
+idempotency state.
 USAGE
 }
 
@@ -100,35 +101,117 @@ fi
 "$coscli_path" config add "${bucket_config_args[@]}" >/dev/null
 
 prefix="qintopia-agent-os"
-pending_prefix="${prefix}/deploy-requests/production/pending/"
+pointer_key="${prefix}/deploy-requests/production/current.json"
+pointer_file="${STATE_DIR}/requests/current.json"
 
-request_key="$("$coscli_path" ls "cos://${bucket_alias}/${pending_prefix}" \
-  -c "$config_path" \
-  --disable-log 2>/dev/null | awk '$NF ~ /\.json$/ {print $NF}' | sort | head -n 1)"
+is_object_missing_error() {
+  [[ "$1" =~ (NoSuchKey|not[[:space:]]+found|not[[:space:]]+exist|does[[:space:]]+not[[:space:]]+exist|404|No[[:space:]]+such[[:space:]]+object|对象不存在) ]]
+}
 
-if [[ -z "$request_key" ]]; then
-  echo "No pending deploy request."
-  exit 0
+cos_cp_probe() {
+  local source="$1"
+  local destination="$2"
+  local output_file="$3"
+  "$coscli_path" cp "$source" "$destination" \
+    -c "$config_path" \
+    2>"$output_file" \
+    1>>"$output_file"
+}
+
+pointer_error="${tmp_dir}/pointer-cp.err"
+set +e
+cos_cp_probe "cos://${bucket_alias}/${pointer_key}" "$pointer_file" "$pointer_error"
+pointer_status=$?
+set -e
+if [[ "$pointer_status" -ne 0 ]]; then
+  pointer_error_text="$(tr '\n' ' ' <"$pointer_error")"
+  if is_object_missing_error "$pointer_error_text"; then
+    echo "No deploy request pointer found; idle: ${pointer_key}"
+    exit 0
+  fi
+  echo "Deploy request pointer download failed: ${pointer_key}" >&2
+  if [[ -n "$pointer_error_text" ]]; then
+    echo "$pointer_error_text" >&2
+  fi
+  exit "$pointer_status"
 fi
 
-request_name="$(basename "$request_key")"
-request_stem="${request_name%.json}"
-if [[ ! "$request_stem" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]]; then
-  request_stem="invalid-$(printf '%s' "$request_key" | sha256sum | awk '{print $1}' | cut -c1-16)"
-fi
-request_file="${STATE_DIR}/requests/pending/${request_name}"
-"$coscli_path" cp "cos://${bucket_alias}/${request_key}" "$request_file" \
-  -c "$config_path" \
-  --disable-log
-
-request_id="$request_stem"
-result_key="${prefix}/deploy-results/production/${request_id}.json"
-parsed_identity="$(python3 - "$request_file" "$request_stem" "$prefix" "$request_key" <<'PY'
+pointer_identity="$(python3 - "$pointer_file" "$prefix" <<'PY'
 import json
 import re
 import sys
 
-request_file, request_stem, prefix, actual_request_key = sys.argv[1:5]
+pointer_file, prefix = sys.argv[1:3]
+request_id_pattern = re.compile(r"^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$")
+try:
+    with open(pointer_file, encoding="utf-8") as fh:
+        pointer = json.load(fh)
+    request_id = pointer.get("request_id", "")
+    request_key = pointer.get("request_key", "")
+    result_key = pointer.get("result_key", "")
+    expected_request_key = f"{prefix}/deploy-requests/production/requests/{request_id}.json"
+    expected_result_key = f"{prefix}/deploy-results/production/{request_id}.json"
+    if (
+        pointer.get("schema_version") == 1
+        and pointer.get("environment") == "production"
+        and pointer.get("repository") == "qintopia-agent-studio/qintopia-agent-os"
+        and request_id_pattern.fullmatch(request_id)
+        and request_key == expected_request_key
+        and result_key == expected_result_key
+    ):
+        print(f"{request_id}\t{request_key}\t{result_key}")
+except Exception:
+    pass
+PY
+)"
+
+if [[ -z "$pointer_identity" ]]; then
+  echo "deploy request pointer is invalid" >&2
+  exit 2
+fi
+
+request_id="${pointer_identity%%$'\t'*}"
+remaining_identity="${pointer_identity#*$'\t'}"
+request_key="${remaining_identity%%$'\t'*}"
+result_key="${remaining_identity#*$'\t'}"
+request_name="${request_id}.json"
+request_file="${STATE_DIR}/requests/pending/${request_name}"
+remote_result_probe="${tmp_dir}/${request_id}-existing-result.json"
+remote_result_error="${tmp_dir}/${request_id}-result-cp.err"
+set +e
+cos_cp_probe "cos://${bucket_alias}/${result_key}" "$remote_result_probe" "$remote_result_error"
+remote_result_status=$?
+set -e
+if [[ "$remote_result_status" -eq 0 ]]; then
+  echo "Deploy request result already exists; idle: ${request_id}"
+  exit 0
+fi
+remote_result_error_text="$(tr '\n' ' ' <"$remote_result_error")"
+if ! is_object_missing_error "$remote_result_error_text"; then
+  echo "Deploy request result probe failed: ${result_key}" >&2
+  if [[ -n "$remote_result_error_text" ]]; then
+    echo "$remote_result_error_text" >&2
+  fi
+  exit "$remote_result_status"
+fi
+if [[ -e "${STATE_DIR}/requests/processed/${request_name}" ]]; then
+  echo "Deploy request already processed; idle: ${request_id}"
+  exit 0
+fi
+if [[ -e "${STATE_DIR}/requests/failed/${request_name}" ]]; then
+  echo "Deploy request already failed; idle until current.json changes: ${request_id}" >&2
+  exit 0
+fi
+"$coscli_path" cp "cos://${bucket_alias}/${request_key}" "$request_file" \
+  -c "$config_path" \
+  --disable-log
+
+parsed_identity="$(python3 - "$request_file" "$request_id" "$prefix" "$request_key" <<'PY'
+import json
+import re
+import sys
+
+request_file, expected_id, prefix, actual_request_key = sys.argv[1:5]
 request_id_pattern = re.compile(r"^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$")
 try:
     with open(request_file, encoding="utf-8") as fh:
@@ -136,10 +219,10 @@ try:
     request_id = data.get("request_id", "")
     request_key = data.get("cos", {}).get("request_key", "")
     result_key = data.get("cos", {}).get("result_key", "")
-    expected_request_key = f"{prefix}/deploy-requests/production/pending/{request_id}.json"
+    expected_request_key = f"{prefix}/deploy-requests/production/requests/{request_id}.json"
     expected_result_key = f"{prefix}/deploy-results/production/{request_id}.json"
     if (
-        request_id == request_stem
+        request_id == expected_id
         and request_id_pattern.fullmatch(request_id)
         and request_key == actual_request_key
         and request_key == expected_request_key
@@ -155,24 +238,12 @@ if [[ -n "$parsed_identity" ]]; then
   result_key="${parsed_identity#*$'\t'}"
 fi
 result_file="${STATE_DIR}/results/${request_id}.json"
-existing_result_key=""
-if [[ -n "$parsed_identity" ]]; then
-  existing_result_key="$("$coscli_path" ls "cos://${bucket_alias}/${prefix}/deploy-results/production/${request_id}.json" \
-    -c "$config_path" \
-    --disable-log 2>/dev/null | awk -v expected="${prefix}/deploy-results/production/${request_id}.json" '$NF == expected {print $NF; exit}' || true)"
-fi
 
 runner_status=0
 fallback_error="deploy request failed before promotion result was written"
 if [[ -z "$parsed_identity" ]]; then
   runner_status=2
   fallback_error="deploy request key or identity is invalid"
-elif [[ -e "${STATE_DIR}/requests/processed/${request_name}" || -e "${STATE_DIR}/requests/failed/${request_name}" ]]; then
-  runner_status=2
-  fallback_error="deploy request was already consumed"
-elif [[ -n "$existing_result_key" ]]; then
-  runner_status=2
-  fallback_error="deploy result already exists for request"
 else
   set +e
   "$RUNNER" --request-file "$request_file"
@@ -216,21 +287,9 @@ if [[ -f "$result_file" ]]; then
 fi
 
 if [[ "$runner_status" -eq 0 ]]; then
-  archive_key="${request_key/pending/processed}"
   archive_dir="${STATE_DIR}/requests/processed"
 else
-  archive_key="${request_key/pending/failed}"
   archive_dir="${STATE_DIR}/requests/failed"
-fi
-
-if "$coscli_path" cp "$request_file" "cos://${bucket_alias}/${archive_key}" \
-  -c "$config_path" \
-  --disable-log; then
-  "$coscli_path" rm "cos://${bucket_alias}/${request_key}" \
-    -c "$config_path" \
-    --disable-log
-else
-  echo "failed to archive consumed request; leaving pending request in COS" >&2
 fi
 
 mv "$request_file" "${archive_dir}/${request_name}"

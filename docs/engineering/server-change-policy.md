@@ -39,3 +39,12 @@ changed, why it changed, and how the canonical repository should be updated.
 
 Server documents may be read and summarized as evidence. Canonical documentation must be
 edited in this monorepo and reviewed through git.
+
+## Observation Records
+
+Production deployment, preflight, smoke, and CI integration failures must be recorded in
+the same remediation PR under `docs/reports/` and indexed by `docs/reports/README.md`.
+Each record must identify the observed evidence, root cause, resolution, validation,
+remaining safety boundary, and next owner action. Update the affected runbook, package
+README, manifest, or automated check in that same PR so the operating contract changes
+with the code.

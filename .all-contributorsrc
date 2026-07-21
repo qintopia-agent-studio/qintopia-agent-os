@@ -1,0 +1,41 @@
+{
+  "projectName": "qintopia-agent-os",
+  "projectOwner": "qintopia-agent-studio",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": ["README.md", "README.zh-CN.md"],
+  "imageSize": 100,
+  "commit": false,
+  "contributors": [
+    {
+      "login": "qiaopengjun5162",
+      "name": "Paxon Qiao",
+      "avatar_url": "https://avatars.githubusercontent.com/u/124650229?v=4",
+      "profile": "https://github.com/qiaopengjun5162",
+      "contributions": ["code", "doc", "infra", "test"]
+    },
+    {
+      "login": "detroxryo",
+      "name": "detroxryo",
+      "avatar_url": "https://github.com/detroxryo.png",
+      "profile": "https://github.com/detroxryo",
+      "contributions": ["review"]
+    },
+    {
+      "login": "noraincode",
+      "name": "noraincode",
+      "avatar_url": "https://github.com/noraincode.png",
+      "profile": "https://github.com/noraincode",
+      "contributions": ["review"]
+    },
+    {
+      "login": "PatrickLiveCool",
+      "name": "PatrickLiveCool",
+      "avatar_url": "https://github.com/PatrickLiveCool.png",
+      "profile": "https://github.com/PatrickLiveCool",
+      "contributions": ["review"]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "skipCi": true
+}

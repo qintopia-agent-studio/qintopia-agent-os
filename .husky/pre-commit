@@ -1,0 +1,11 @@
+set -e
+
+export PATH="node_modules/.bin:$PATH"
+
+prettier --check .
+markdownlint-cli2 "**/*.md" "!node_modules"
+node tools/workflows/check-workflows.mjs
+node tools/deploy/check-deploy-contracts.mjs
+node tools/deploy/check-xiaoman-preflight-readiness.mjs
+cargo fmt --check --manifest-path runtime/sidecar/Cargo.toml
+git diff --check

@@ -6,14 +6,24 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
+import {
+  assertContainedArtifactDirBoundary,
+  resolveApprovedTarget,
+  resolveContainedArtifactDir,
+} from "./sidecar-artifact-build-boundary.mjs";
 
 const repoRoot = process.cwd();
 const packageName = "qintopia-message-sidecar";
 const binaryName = "qintopia-message-sidecar";
-const targetTriple = process.env.QINTOPIA_ARTIFACT_TARGET ?? "linux-x86_64-gnu";
+const targetTriple = resolveApprovedTarget();
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactName = `${binaryName}-${targetTriple}`;
-const artifactDir = path.join(outputRoot, artifactName);
+const cargoFeatures = [
+  "huabaosi-production-adapter",
+  "huabaosi-feishu-mirror-adapter",
+  "qiwe-production-adapter",
+];
+const artifactDir = resolveContainedArtifactDir(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,
   "runtime",
@@ -27,6 +37,8 @@ const bundleName = `${binaryName}.tar.gz`;
 const bundlePath = path.join(artifactDir, bundleName);
 const manifestPath = path.join(artifactDir, "artifact-manifest.json");
 const checksumPath = path.join(artifactDir, "SHA256SUMS");
+const verifyArtifactBoundary = () =>
+  assertContainedArtifactDirBoundary(outputRoot, artifactName, artifactDir);
 
 const run = (command, args, options = {}) =>
   (
@@ -65,19 +77,37 @@ const ensureFile = (filePath, label) => {
   }
 };
 
+const worktreeStatus = gitOutput(["status", "--porcelain"], "unknown");
+if (worktreeStatus) {
+  throw new Error(
+    "refusing to build a release artifact from a dirty or unreadable git worktree"
+  );
+}
+
 const buildStartedAt = new Date().toISOString();
 
 run(
   "cargo",
-  ["build", "--release", "--locked", "--manifest-path", "runtime/sidecar/Cargo.toml"],
+  [
+    "build",
+    "--release",
+    "--locked",
+    "--manifest-path",
+    "runtime/sidecar/Cargo.toml",
+    "--features",
+    cargoFeatures.join(","),
+  ],
   { stdio: "inherit" }
 );
 ensureFile(binaryPath, "release binary");
 
+verifyArtifactBoundary();
 fs.rmSync(artifactDir, { recursive: true, force: true });
 fs.mkdirSync(artifactDir, { recursive: true });
+verifyArtifactBoundary();
 fs.copyFileSync(binaryPath, stagedBinaryPath);
 fs.chmodSync(stagedBinaryPath, 0o755);
+verifyArtifactBoundary();
 run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName]);
 
 const binarySha256 = sha256File(stagedBinaryPath);
@@ -121,6 +151,7 @@ const manifest = {
     },
   ],
   validation: {
+    cargo_features: cargoFeatures,
     required_workflow_jobs: ["check", "sidecar-artifact"],
     server_verification: [
       "download only from a successful CI workflow run for the approved commit SHA",
@@ -131,7 +162,15 @@ const manifest = {
 };
 
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-fs.writeFileSync(checksumPath, `${binarySha256}  ${binaryName}\n`);
+const manifestSha256 = sha256File(manifestPath);
+fs.writeFileSync(
+  checksumPath,
+  [
+    `${binarySha256}  ${binaryName}`,
+    `${bundleSha256}  ${bundleName}`,
+    `${manifestSha256}  artifact-manifest.json`,
+  ].join("\n") + "\n"
+);
 
 console.log(`Built ${artifactName}`);
 console.log(`Manifest: ${path.relative(repoRoot, manifestPath)}`);

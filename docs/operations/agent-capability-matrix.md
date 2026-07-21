@@ -1,19 +1,19 @@
 # Agent Capability Matrix
 
-Updated: 2026-07-03
+Updated: 2026-07-13
 
 This matrix summarizes the active Agent packages after M6.1. It is an operations view,
 not a permission implementation.
 
-| Agent       | Status            | Main capabilities                                                            | External send risk | Writes data | Requires approval                                                   |
-| ----------- | ----------------- | ---------------------------------------------------------------------------- | ------------------ | ----------- | ------------------------------------------------------------------- |
-| `default`   | adopting          | routing, coordination, escalation                                            | possible           | possible    | production, publication, spending, policy, member decisions         |
-| `erhua`     | adopting          | QiWe group replies, Public-safe context, consultation handoff, trainer notes | yes                | yes         | live ops, refunds, compensation, complaints, internal disclosure    |
-| `xiaoman`   | adopting          | activity signals, work-item creation, visual/evidence/send preparation       | yes                | yes         | publication, group sends, private material, unverified field claims |
-| `wenyuange` | adopting          | knowledge lookup, evidence, source quality, disclosure filtering             | no                 | yes         | member-scoped data, external/internal disclosure, writes            |
-| `silaoshi`  | adopting          | operations SOP, checklists, follow-up drafts, scheduled ops jobs             | yes                | yes         | announcements, budget, rules, member handling, production changes   |
-| `guanerye`  | adopting          | engineering analysis, dry-runs, validation, rollback, handoff                | yes                | yes         | production changes, secrets, destructive commands, migrations       |
-| `huabaosi`  | draft/review-pool | visual briefs, prompts, captions, internal creative artifacts                | no                 | yes         | external use, private material, production adapter changes          |
+| Agent                    | Status            | Main capabilities                                                            | External send risk | Writes data | Requires approval                                                   |
+| ------------------------ | ----------------- | ---------------------------------------------------------------------------- | ------------------ | ----------- | ------------------------------------------------------------------- |
+| `default`                | adopting          | routing, coordination, escalation                                            | possible           | possible    | production, publication, spending, policy, member decisions         |
+| `erhua`                  | adopting          | QiWe group replies, Public-safe context, consultation handoff, trainer notes | yes                | yes         | live ops, refunds, compensation, complaints, internal disclosure    |
+| `xiaoman`                | adopting          | activity signals, work-item creation, visual/evidence/send preparation       | yes                | yes         | publication, group sends, private material, unverified field claims |
+| `wenyuange`              | adopting          | knowledge lookup, evidence, source quality, disclosure filtering             | no                 | yes         | member-scoped data, external/internal disclosure, writes            |
+| `silaoshi`               | adopting          | operations SOP, checklists, follow-up drafts, scheduled ops jobs             | yes                | yes         | announcements, budget, rules, member handling, production changes   |
+| `guanerye`               | adopting          | engineering analysis, dry-runs, validation, rollback, handoff                | yes                | yes         | production changes, secrets, destructive commands, migrations       |
+| `huabaosi` (阿靓/画报司) | draft/review-pool | visual briefs, prompts, captions, internal creative artifacts                | no                 | yes         | external use, private material, production adapter changes          |
 
 ## Shared Rules
 
@@ -24,6 +24,10 @@ not a permission implementation.
 - `xiaoqin` is not an active Agent package in the current phase. Future Xiaoqin work
   requires a new non-WorkTool Agent contract and owner-approved registry change.
 - Huabaosi shadow/Rust material remains review-pool until owner approval.
+- Huabaosi's profile package and external image adapter remain draft/review-pool. The
+  separate AgentOS visual-brief control-plane workflow is active and may only create
+  internal `poster_brief` artifacts; it does not make the profile or image generation
+  production-approved.
 - Every active Agent template must declare `dry_run_expectations`.
 
 ## Minimum Checks

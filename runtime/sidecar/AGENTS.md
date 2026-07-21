@@ -20,9 +20,12 @@
 
 - Format: `cargo fmt`
 - Check: `cargo check`
-- Test: `cargo test`
+- Test: `RUST_MIN_STACK=33554432 cargo test`
 - Local readiness: `cargo run -- check`
 - Run consumer: `cargo run -- run`
+- Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
+- Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
+- Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`
 
 From the monorepo root, prefer:
 
@@ -33,7 +36,7 @@ From the monorepo root, prefer:
 
 - Keep the sidecar independent from 二花's reply path; NATS, sidecar, or Postgres
   failures must not be able to block Hermes webhook ACK or replies.
-- Keep compatibility with the server Rust toolchain: `rustc/cargo 1.75.0`.
+- Keep compatibility with the supported Rust toolchain: `rustc/cargo 1.96.0`.
 - Manage this project through the monorepo root git repository.
 - Treat `deploy/sidecar/docs/server-deployment.md` as historical rollback evidence, not
   the current deployment path.
@@ -44,7 +47,144 @@ From the monorepo root, prefer:
 - Every database schema migration must have a matching versioned design note under
   `../postgres/docs/data-design/` and must record itself in
   `qintopia_agent_os.schema_change_log` when that table exists.
+- Group-message send-readiness and policy-denial transitions must release the complete
+  claim tuple (`claimed_by`, `locked_at`, and `claim_expires_at`) and require exactly
+  one work-item update before appending the corresponding audit event.
+- The complete sidecar suite needs a 32 MiB test-thread stack. `pnpm test:sidecar` and
+  CI set `RUST_MIN_STACK=33554432`; this is test-only and must not be copied into the
+  production sidecar service environment.
+- The complete suite includes fake provider/media tests that bind ephemeral loopback
+  sockets. In restricted coding sandboxes, run the same `cargo test` command with
+  loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
+  environment failure and must be confirmed by an unsandboxed rerun, not hidden by
+  skipping tests.
+- Test helpers used only by a non-default adapter feature must carry the same feature
+  gate on their imports, types, and implementations; default-feature Clippy compiles
+  test targets and rejects otherwise-unused helpers.
+- Huabaosi live provider/media execution must compile with exactly one non-default live
+  feature: `huabaosi-staging-adapter` or `huabaosi-production-adapter`. A build with
+  neither or both must reject apply before Postgres. Staging keeps the exact owner
+  phrase and reviewed staging database hash. Production must verify the exact production
+  approval phrase, deployed release SHA binding, database URL hash binding, and adapter
+  policy before Postgres or external I/O; shell scripts cannot be the only enforcement
+  point.
+- Production sidecar artifacts compile exactly `huabaosi-production-adapter` plus the
+  guarded `huabaosi-feishu-mirror-adapter`; QiWe live adapters, staging adapters, and
+  all-features production artifacts remain forbidden. Mirror apply must still fail
+  before Postgres or external I/O unless the exact owner phrase, deployed release SHA,
+  database hash, fixed Base/table allowlists, schema, profile path, media host policy,
+  and persistent enable flag all pass. Ordinary release installation may install a
+  mirror preflight, worker, and timer, but only the explicit owner activation script may
+  enable the timer. Feishu primary storage for the first canary is part of the Huabaosi
+  production adapter path and still creates only pending AgentOS artifacts.
+- A canary review apply must provide expected artifact type and review status
+  preconditions. The sidecar must enforce them again under the artifact row lock before
+  changing review state, and before authenticated Feishu revalidation, so a mistaken
+  generated-image UUID cannot be approved through a poster-brief workflow.
+- Production mirror observation must discover
+  `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
+  only when it resolves to that same immutable binary with the approved production
+  features; source-tree `cargo run` fallback is forbidden. Its shell may parse only the
+  mirror enable flag; a direct child launcher may pass only that parsed flag and the
+  non-secret release SHA to the immutable binary without sourcing shell, importing
+  secrets into the shell, or writing a secret-bearing temporary file. It may run only
+  the non-secret mirror observation preflight, not full configuration preflight or
+  worker dry-run. Non-allowlisted env values must be ignored before mirror-flag value
+  validation. Activation must fail before preflight or timer mutation until persistent
+  mirror enablement is present exactly once and exactly `1`; timer rollback must stop
+  external work immediately and fail closed until it is present exactly once and exactly
+  `0` in the reviewed environment file.
+- The disposable operations smoke may enter the live retry path only with both the
+  Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
+  literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media
+  configuration.
+- Expired or incomplete Huabaosi image-generation `processing` claims must become a
+  sanitized terminal ambiguous outcome before new work is selected. Never infer from a
+  lost lease that provider generation or media upload stayed local, and never reclaim
+  that row for automatic external retry.
 - v1 only captures raw/normalized messages and creates pending processing jobs;
   embedding and graph extraction must remain separate workers.
+- Sanitize QiWe asynchronous `cmd=20000` callback credentials before raw-event
+  persistence. Dead letters may keep only payload length and digest; malformed payloads
+  must not become a bypass that stores callback credentials or raw private text. Only
+  preserve callback event/message ids matching `qiwe-callback:<64 hex SHA-256>`; hash
+  the complete id again when a prefixed value has any other suffix.
+- Callback credential-shape reports may expose only one fixed reviewed schema id and an
+  additional-field count. Reject canonical and alias spellings that appear together;
+  never report request ids, credential values, filenames, MD5 values, unknown field
+  names, or unknown values.
+- QiWe image-send state transitions must lock both the work item and attempt, recheck
+  the same unexpired claim plus approved artifact/target/final-confirmation facts, and
+  store only canonical hashes. The `sending` transition is the at-most-once boundary;
+  crashes or transport uncertainty after it require `ambiguous` human reconciliation,
+  never an automatic retry with callback credentials. A non-2xx or non-success business
+  response after the request may have been sent is also ambiguous without a reviewed
+  no-send failure-code allowlist. Treat QiWe target group ids as opaque and
+  case-sensitive, and match their allowlist exactly. An ambiguous send audit must use
+  `external_send_executed=null` and outcome `unknown`, never a definite false. Late
+  callbacks must atomically expire the awaiting attempt and requeue the same work item
+  before returning. After the send gate commits, terminal writes must still require the
+  exact attempt and claim token but must not fail only because its short TTL elapsed.
+  Before selecting new work, the claim transaction must expire and requeue a stale
+  `awaiting_callback` attempt even when no callback ever arrives; never apply that
+  timeout retry path to `sending`.
+- Persist an `uploading` attempt in the same transaction that claims the work item,
+  before any external socket can open. Expired `uploading` attempts and legacy claims
+  with no attempt row are unknown external outcomes: terminalize them as `ambiguous`
+  with automatic retry disabled. Worker previews must reuse the exact apply-side group
+  and media-host allowlists.
+- The QiWe upload worker and callback processor may compile live helpers for staging
+  only with `qiwe-staging-adapter`. Default and production builds must fail apply before
+  Postgres or network access, and callback apply must do so before reading stdin.
+  Runtime env flags are not a substitute for this compile gate. Callback JSON is
+  accepted from bounded stdin only, never CLI arguments or environment variables. File
+  credentials may open the send gate only when callback filename, canonical MD5, and
+  byte size exactly match the approved final JPEG identity snapshotted at upload.
+  Callback credentials, request ids, media URLs, target groups, tokens, device ids,
+  response bodies, and provider message ids must not appear in reports or logs;
+  sensitive in-memory buffers must be zeroized on drop.
+- A staging-feature callback apply must validate explicit enablement, API/media/group
+  allowlists, and webhook readiness before reading stdin. Upload apply must validate the
+  same adapter configuration before connecting to Postgres.
+- A staging-feature QiWe apply must require
+  `QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send` before
+  adapter configuration, stdin, Postgres, or network access. The Cargo feature, enable
+  flag, secrets, and allowlists do not substitute for this owner-reviewed one-shot gate.
+- CI must execute the non-ignored sidecar suite with all features so staging-only
+  adapter tests run, then run warning-denied Clippy once with no default features and
+  once with all features. The all-feature test/build is CI-only and cannot stand in for
+  the production feature set; ignored PostgreSQL tests stay in their disposable
+  integration job.
+- QiWe upload dry-run must use the same exact group/media allowlists and approved JPEG
+  identity validator as apply. It may skip locks and writes, but not policy checks.
+- External adapter modules must use `bounded_http`; do not add another raw socket HTTP
+  implementation. Test-only loopback HTTP is allowed, while production clients require
+  HTTPS and the reviewed endpoint/host allowlists.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.
+- `xiaoman-profile-bundle-observation-smoke.sh` may only verify reviewed source hashes
+  and byte parity after rendering into a temporary directory. It must not print
+  server-local identity values, create symlinks, edit live profile files, restart
+  Hermes, write Postgres/Feishu, use external adapters, or send.
+- `huabaosi-wecom-shadow-capture` is a preview-only migration command. It may read one
+  event from bounded stdin and emit only sanitized hashes, byte counts, field presence,
+  classification, and fixed guardrails. It must not gain an apply mode, connect to
+  Postgres or external services, send WeCom/QiWe messages, generate or upload media,
+  write Feishu, create artifacts, or print raw ids, user text, media URLs, filenames,
+  tokens, or callback credentials.
+- `huabaosi-wecom-policy-preview` is a preview-only migration command. It may read one
+  event from bounded stdin and emit only sanitized policy classifications, fixed
+  fallback copy, and hash-based idempotency metadata. It must not gain an apply mode,
+  connect to Postgres or external services, send WeCom/QiWe messages, generate or upload
+  media, write Feishu, create artifacts, or print raw ids, user text, media URLs,
+  filenames, tokens, or callback credentials. Internal-process suppression must use
+  narrow full-template matches with negative fixture coverage for ordinary user text
+  containing terms such as `plain text`.
+- `huabaosi-wecom-canary-preflight` is a local configuration preflight only. It must not
+  read stdin, open network or database connections, source env files, or emit
+  endpoint/token/id values. `huabaosi-wecom-canary-gateway --apply` is staging-only,
+  requires the non-default `huabaosi-wecom-canary-gateway` Cargo feature plus explicit
+  enablement, approval phrase, HTTPS endpoint, token, and exact Bot/chat/user
+  allowlists, and must remain unscheduled. Default builds must fail closed before stdin,
+  network, database, or send access. It must not change production routing, run image
+  generation, upload media, write Feishu/Postgres, or send outside the allowlist.

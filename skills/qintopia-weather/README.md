@@ -47,22 +47,95 @@ current-conditions report.
 
 Returned payloads include:
 
-- `daily_forecast`: primary day forecast structure for rain/umbrella windows,
-  thunderstorm windows, warning state, and concise outing advice.
-- `morning_reference`: current temperature, feels-like temperature, wind, humidity,
-  precipitation, and AQI as secondary morning context only.
+- `daily_forecast`: primary local-day forecast structure with an explicit availability
+  status and fixed midday, afternoon, and evening periods.
+- `morning_reference`: current temperature, feels-like temperature, wind, humidity, and
+  precipitation as secondary morning context only.
 - `warning_status`: one of `present`, `none`, or `unknown`.
-- `morning_broadcast`: short group-chat copy that starts with `秦托邦今日天气：` and
-  keeps `今早参考` last.
+- `air_quality`: the independent `鄠邑区` AQI result, or `null` when it is unknown.
+- `morning_broadcast`: deterministic group-chat copy of at most eight non-empty lines.
+
+`daily_forecast.forecast_date` is the `Asia/Shanghai` calendar date of the forecast, not
+a rolling 24-hour label. `daily_forecast.status` is one of:
+
+- `complete`: every fixed period has all of its expected hourly rows.
+- `partial`: at least one local-day hourly row is usable, but one or more periods are
+  incomplete or unknown.
+- `unknown`: there are no usable local-day hourly rows.
+
+`daily_forecast.periods` always contains these entries in this order:
+
+| `id`        | `label` | Local interval  | Expected hours |
+| ----------- | ------- | --------------- | -------------- |
+| `midday`    | 中午    | `11:00`–`13:59` | 3              |
+| `afternoon` | 下午    | `14:00`–`17:59` | 4              |
+| `evening`   | 晚上    | `18:00`–`22:59` | 5              |
+
+Every period includes `id`, `label`, `start_local`, `end_local`, `status`, `condition`,
+`temp_min_c`, `temp_max_c`, `max_precip_probability_pct`, `max_precip_mm`,
+`wind_summary`, and `coverage_hours`. A period is `complete` only when all expected
+local hours are available, `partial` when some are available, and `unknown` when none
+are available. Unknown measurements use `null`; they must not be invented from the
+current observation.
+
+Hourly forecast data is the whole-day baseline. Minutely precipitation may add a
+separate near-term hint for roughly the next two hours, but it must never replace or
+hide later hourly rain or thunderstorm windows. Only hourly rows whose local date equals
+`forecast_date` participate in the day periods, day temperature range, or day risk
+summary. In particular, next-day `00:00` and later rows must not be included in the
+current day's evening period or temperature range.
+
+The member-facing copy follows this information order, while omitting only genuinely
+unavailable optional detail:
+
+1. Local date and `秦托邦·栗峪口` title.
+2. Available whole-day trend.
+3. One `分时：` line containing 中午、下午、晚上 in the fixed order; an unavailable
+   period says `暂未确认`.
+4. Official warning state.
+5. Morning observation under `今早参考`.
+6. AQI under `空气（鄠邑区）`; missing AQI says `AQI 暂未确认`.
+7. A risk-matched reminder ending with `二花…播报完毕～`.
+
+The first line must not begin with `现在` or `此时`, and the complete broadcast must
+contain no more than eight non-empty lines. When hourly data is partial or unknown, the
+copy must say what is unconfirmed and must not use optimistic claims such as
+`降水信号不明显`, `天气稳`, or `轻松安排`.
 
 Warning copy rules:
 
-- `present`: include warning type, level, effective time, and a short action reminder.
+- `present`: sort alerts by red, orange, yellow, blue, then unknown severity; render at
+  most two high-priority alerts, translate provider colors such as `Red`, `Orange`,
+  `Yellow`, and `Blue` to Chinese, and append `另有 N 条` when more remain.
 - `none`: include `截至早上播报时，官方暂无秦托邦天气预警`.
 - `unknown`: include `官方预警数据暂未确认`; do not write this as no warning.
 
 The broadcast must not lead with copy like `现在：晴，约26°C...`. Current weather,
-feels-like temperature, wind, and AQI belong only under `今早参考`.
+feels-like temperature, humidity, wind, and precipitation belong only under `今早参考`.
+AQI is a separate line labeled `空气（鄠邑区）` because its city-based source is not the
+fixed-point forecast grid.
+
+Open-Meteo remains a limited fallback. It may populate only measurements actually
+returned by its response. It must keep official warning status `unknown`, AQI unknown,
+and minute-level precipitation unknown; it must never turn unavailable evidence into an
+official `none` or an optimistic weather conclusion.
+
+## Scheduled Broadcast Entrypoint
+
+`scripts/qintopia-erhua-weather-broadcast.py` is the release-owned, no-send entrypoint
+for Erhua's future 07:00 cron cutover. It calls
+`handle_qintopia_weather_lookup({"intent": "general", "hours": 24})` and writes only the
+returned top-level `morning_broadcast` to stdout.
+
+The entrypoint fails closed with empty stdout when the weather payload is unsuccessful,
+malformed, missing the fixed midday/afternoon/evening periods, over eight lines, or has
+regressed to current-first copy. It never falls back to `current` and never imports or
+calls the QiWe adapter. Hermes owns scheduling and `skills/qiwe` owns group delivery.
+
+This script is packaged in the immutable deploy bundle, but this package does not render
+or activate Erhua's live `cron/jobs.json`. Follow
+`docs/plans/active/erhua-weather-broadcast-runtime-adoption.md` for the read-only
+inventory and separate cutover gate.
 
 ## Validation
 

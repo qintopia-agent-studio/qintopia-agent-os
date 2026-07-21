@@ -55,6 +55,22 @@ const requiredDocs = [
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
+  "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
+  "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
+  "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
@@ -64,7 +80,13 @@ const requiredDocs = [
   "tools/skills/check-postgres-context.mjs",
   "tools/skills/check-feishu-base.mjs",
   "tools/agents/check-profile-bundles.mjs",
+  "agents/xiaoman/profile-bundle/bundle.json",
+  "agents/xiaoman/profile-bundle/migrate_values.py",
+  "agents/xiaoman/profile-bundle/render.py",
+  "agents/xiaoman/profile-bundle/templates/SOUL.md.template",
+  "agents/xiaoman/profile-bundle/templates/profile.yaml.template",
   "docs/operations/profile-bundles/m10f-profile-template-plan.md",
+  "docs/plans/active/xiaoman-profile-bundle-migration.md",
 ];
 
 const requiredCheckFragments = ["pnpm check:light", "pnpm check:runtime"];
@@ -116,7 +138,15 @@ const git = (args) =>
 const gitFileMode = (relativePath) => {
   try {
     const output = git(["ls-files", "-s", "--", relativePath]);
-    return output.split(/\s+/)[0] || "";
+    const mode = output.split(/\s+/)[0] || "";
+    if (mode) {
+      return mode;
+    }
+  } catch {}
+  try {
+    return `100${(fs.statSync(path.join(repoRoot, relativePath)).mode & 0o777)
+      .toString(8)
+      .padStart(3, "0")}`;
   } catch {
     return "";
   }
@@ -160,6 +190,21 @@ for (const scriptPath of [
   "deploy/sidecar/scripts/prune-cos-artifacts.sh",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
+  "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
+  "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
+  "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
+  "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
+  "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
+  "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "deploy/sidecar/scripts/github-app-git.sh",
   "deploy/sidecar/scripts/postgres-schema-preflight.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
@@ -225,10 +270,85 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
     "/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens",
     "openssl",
     "jwt_path",
+    "huabaosi-production-adapter",
+    "qiwe-production-adapter",
   ]) {
     if (!artifactFetchScript.includes(requiredFragment)) {
       addError(
         `deploy/sidecar/scripts/fetch-ci-artifact.sh: must support GitHub App credential path (${requiredFragment})`
+      );
+    }
+  }
+}
+
+if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
+  const stagingArtifactFetchScript = readText(
+    "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh"
+  );
+  for (const requiredFragment of [
+    "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL",
+    "approved-staging-sidecar-provision",
+    'repo="qintopia-agent-studio/qintopia-agent-os"',
+    'workflow="artifacts.yml"',
+    "GITHUB_REPOSITORY override is not allowed",
+    "GITHUB_WORKFLOW override is not allowed",
+    "validate_timeout_seconds",
+    "GITHUB_API_MAX_TIME",
+    "GITHUB_DOWNLOAD_MAX_TIME",
+    "signed_download_url",
+    '--write-out "%{redirect_url}"',
+    "GitHub artifact download did not return a signed redirect URL",
+    "validate_artifact_zip",
+    "artifact zip entry must stay under artifact root",
+    "artifact zip entry is not allowlisted",
+    "artifact zip entries must exactly match the staging allowlist",
+    "qintopia-message-sidecar-staging-linux-x86_64-gnu",
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+    "staging_only",
+    "production_eligible",
+    "/home/ubuntu/qintopia-agent-os-staging-releases",
+    "--artifact-zip is test-only",
+    "sha256sum -c SHA256SUMS",
+    "qintopia-message-sidecar.tar.gz",
+    "os.lstat(path)",
+    "stat.S_ISLNK",
+    "artifact entry must not be a symlink",
+    "artifact entry must not be hardlinked",
+    "SHA256SUMS entries must exactly match the staging allowlist",
+    "path component is a symlink",
+    "path component is group/world writable",
+    "path component has unexpected owner",
+    'mkdir -m 0755 "$release_root"',
+    'mkdir -m 0755 "$release_dir"',
+    'mkdir -m 0755 "$sidecar_dir"',
+    'rm -rf "$release_dir"',
+    'rmdir "$release_root"',
+    "sidecar_dir_created=1",
+    "release_dir_created=1",
+    "release_root_created=1",
+    "provision_complete=1",
+    "chmod 0555",
+  ]) {
+    if (!stagingArtifactFetchScript.includes(requiredFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh: must preserve staging artifact provision boundary (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenFragment of [
+    'repo="${GITHUB_REPOSITORY',
+    'workflow="${GITHUB_WORKFLOW',
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    if (stagingArtifactFetchScript.includes(forbiddenFragment)) {
+      addError(
+        `deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh: must not cross production or release boundaries (${forbiddenFragment})`
       );
     }
   }
@@ -325,8 +445,11 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     "artifact-manifest.json",
     "SHA256SUMS",
     "qintopia-message-sidecar.tar.gz",
-    'tar -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir"',
+    'tar --no-same-owner -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir"',
+    'tar --no-same-owner -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir"',
     "qintopia-message-sidecar",
+    "huabaosi-production-adapter",
+    "qiwe-production-adapter",
     "sha256sum -c SHA256SUMS",
   ]) {
     if (!cosFetchScript.includes(requiredFragment)) {
@@ -365,14 +488,182 @@ if (exists("deploy/sidecar/scripts/prune-cos-artifacts.sh")) {
 
 if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const buildArtifactScript = readText("tools/deploy/build-sidecar-artifact.mjs");
+  const approvedCargoFeatures = [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
+  ];
+  const cargoFeaturesMatch = buildArtifactScript.match(
+    /const cargoFeatures = \[([\s\S]*?)\];/
+  );
+  if (!cargoFeaturesMatch) {
+    addError(
+      "tools/deploy/build-sidecar-artifact.mjs: missing literal production cargoFeatures array"
+    );
+  } else {
+    const cargoFeaturesSource = cargoFeaturesMatch[1];
+    const cargoFeatures = [...cargoFeaturesSource.matchAll(/"([a-z0-9-]+)"/g)].map(
+      (match) => match[1]
+    );
+    const cargoFeaturesResidue = cargoFeaturesSource
+      .replace(/"[a-z0-9-]+"/g, "")
+      .replace(/[\s,]/g, "");
+    if (
+      cargoFeaturesResidue ||
+      JSON.stringify(cargoFeatures) !== JSON.stringify(approvedCargoFeatures)
+    ) {
+      addError(
+        "tools/deploy/build-sidecar-artifact.mjs: production cargoFeatures must exactly match the approved feature list"
+      );
+    }
+  }
   for (const requiredFragment of [
+    "assertContainedArtifactDirBoundary",
+    "resolveApprovedTarget",
+    "resolveContainedArtifactDir",
     "const bundleName = `${binaryName}.tar.gz`",
+    'gitOutput(["status", "--porcelain"], "unknown")',
+    "refusing to build a release artifact from a dirty or unreadable git worktree",
     'run("tar", ["-C", artifactDir, "-czf", bundlePath, binaryName])',
     "bundleSha256",
+    "manifestSha256",
+    "`${bundleSha256}  ${bundleName}`",
+    "`${manifestSha256}  artifact-manifest.json`",
+    "cargo_features: cargoFeatures",
+    '"--features"',
+    'cargoFeatures.join(",")',
   ]) {
     if (!buildArtifactScript.includes(requiredFragment)) {
       addError(
         `tools/deploy/build-sidecar-artifact.mjs: must include compressed sidecar bundle support (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenFragment of [
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+    '"--all-features"',
+  ]) {
+    if (buildArtifactScript.includes(forbiddenFragment)) {
+      addError(
+        `tools/deploy/build-sidecar-artifact.mjs: production sidecar artifacts must use only the reviewed production features (${forbiddenFragment})`
+      );
+    }
+  }
+}
+
+if (exists("tools/deploy/build-staging-sidecar-artifact.mjs")) {
+  const stagingArtifactScript = readText(
+    "tools/deploy/build-staging-sidecar-artifact.mjs"
+  );
+  const approvedStagingCargoFeatures = [
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+  ];
+  const cargoFeaturesMatch = stagingArtifactScript.match(
+    /const cargoFeatures = \[([\s\S]*?)\];/
+  );
+  if (!cargoFeaturesMatch) {
+    addError(
+      "tools/deploy/build-staging-sidecar-artifact.mjs: missing literal staging cargoFeatures array"
+    );
+  } else {
+    const cargoFeaturesSource = cargoFeaturesMatch[1];
+    const cargoFeatures = [...cargoFeaturesSource.matchAll(/"([a-z0-9-]+)"/g)].map(
+      (match) => match[1]
+    );
+    const cargoFeaturesResidue = cargoFeaturesSource
+      .replace(/"[a-z0-9-]+"/g, "")
+      .replace(/[\s,]/g, "");
+    if (
+      cargoFeaturesResidue ||
+      JSON.stringify(cargoFeatures) !== JSON.stringify(approvedStagingCargoFeatures)
+    ) {
+      addError(
+        "tools/deploy/build-staging-sidecar-artifact.mjs: staging cargoFeatures must exactly match the approved feature list"
+      );
+    }
+  }
+  for (const requiredFragment of [
+    "assertContainedArtifactDirBoundary",
+    "resolveApprovedTarget",
+    "resolveContainedArtifactDir",
+    "staging-${targetTriple}",
+    "huabaosi-image-generation-staging-smoke.sh",
+    "qiwe-image-send-staging-smoke.sh",
+    '"--no-default-features"',
+    '"--features"',
+    'cargoFeatures.join(",")',
+    "manifestSha256",
+    "`${bundleSha256}  ${bundleName}`",
+    "`${manifestSha256}  artifact-manifest.json`",
+    "staging_only: true",
+    "production_eligible: false",
+    "refusing to build a staging artifact from a dirty or unreadable git worktree",
+    "/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>",
+  ]) {
+    if (!stagingArtifactScript.includes(requiredFragment)) {
+      addError(
+        `tools/deploy/build-staging-sidecar-artifact.mjs: must preserve staging artifact boundary (${requiredFragment})`
+      );
+    }
+  }
+  for (const forbiddenFragment of [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
+    '"--all-features"',
+  ]) {
+    if (stagingArtifactScript.includes(forbiddenFragment)) {
+      addError(
+        `tools/deploy/build-staging-sidecar-artifact.mjs: staging artifacts must not use production or all features (${forbiddenFragment})`
+      );
+    }
+  }
+}
+
+if (exists("tools/deploy/sidecar-artifact-build-boundary.mjs")) {
+  const helper = readText("tools/deploy/sidecar-artifact-build-boundary.mjs");
+  for (const requiredFragment of [
+    'const approvedTarget = "linux-x86_64-gnu"',
+    "artifactNamePattern.test(artifactName)",
+    "QINTOPIA_ARTIFACT_TARGET must be",
+    'platform !== "linux"',
+    'arch !== "x64"',
+    "glibcVersionRuntime",
+    "linux x64 GNU runners",
+    'artifactName.includes("/")',
+    'artifactName.includes("\\\\")',
+    'artifactName.split("-").includes("..")',
+    "fs.lstatSync(currentPath)",
+    "stat.isSymbolicLink()",
+    "fs.mkdirSync(resolvedRoot, { recursive: true })",
+    "fs.realpathSync.native(currentPath)",
+    "artifact output path must match its real path",
+    "requireTerminalDirectory",
+    "artifact output root must be a directory",
+    "path.resolve(outputRoot)",
+    "!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)",
+  ]) {
+    if (!helper.includes(requiredFragment)) {
+      addError(
+        `tools/deploy/sidecar-artifact-build-boundary.mjs: must preserve artifact path and platform safety (${requiredFragment})`
+      );
+    }
+  }
+}
+
+if (exists("deploy/sidecar/scripts/server-deploy.sh")) {
+  const serverDeployScript = readText("deploy/sidecar/scripts/server-deploy.sh");
+  for (const forbiddenFragment of [
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+    "--features",
+    "--all-features",
+  ]) {
+    if (serverDeployScript.includes(forbiddenFragment)) {
+      addError(
+        `deploy/sidecar/scripts/server-deploy.sh: production source builds must use default Cargo features (${forbiddenFragment})`
       );
     }
   }
@@ -383,18 +674,33 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
   for (const requiredFragment of [
     "qintopia-agent-os-deploy-bundle",
     "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
+    "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
+    "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",
+    "deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh",
+    "deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh",
+    "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh",
+    "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
+    "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
+    "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
+    "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
+    "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
+    "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",
     "skills/qintopia-tools/variants",
     "skills/qintopia-tools/manifest.yaml",
     "skills/qintopia-weather/__init__.py",
     "skills/qintopia-weather/plugin.yaml",
+    "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
     "skills/qintopia-weather/tests",
     "skills/knowledge-retrieval/__init__.py",
     "skills/knowledge-retrieval/plugin.yaml",
     "skills/knowledge-retrieval/tests",
     "mcp/weather-provider/manifest.yaml",
     "skills/qiwe/adapter.py",
+    "skills/qiwe/image_callback_bridge.py",
     "skills/qiwe/plugin.yaml",
     "skills/qiwe/solitaire",
     "skills/feishu-base/__init__.py",
@@ -485,8 +791,14 @@ if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
   for (const requiredFragment of [
     "qintopia_agent_os.work_item_events",
     "qintopia_agent_os.capabilities",
+    "qintopia_agent_os.event_signal_mutations",
+    "gap_summary",
+    "activity_phase",
     "2026-06-30.007",
     "2026-07-02.001",
+    "2026-07-13.002",
+    "2026-07-14.001",
+    "2026-07-15.001",
     "PGHOST",
     "PGDATABASE",
   ]) {
@@ -636,7 +948,7 @@ for (const phrase of [
   "actions/setup-python@v6",
   "concurrency:",
   "cancel-in-progress: true",
-  "dtolnay/rust-toolchain@1.75.0",
+  "dtolnay/rust-toolchain@1.96.0",
   "components: rustfmt",
 ]) {
   if (!ciWorkflow.includes(phrase)) {
@@ -668,9 +980,10 @@ for (const phrase of [
   "secrets.TENCENT_COS_SECRET_ID",
   "actions: write",
   "node tools/deploy/prune-github-artifacts.mjs",
-  "retention-days: 14",
+  "QINTOPIA_ARTIFACT_KEEP_COUNT",
+  "QINTOPIA_COS_ARTIFACT_KEEP_COUNT",
   "qintopia-message-sidecar-linux-x86_64-gnu",
-  "dtolnay/rust-toolchain@1.75.0",
+  "dtolnay/rust-toolchain@1.96.0",
 ]) {
   if (!artifactsWorkflow.includes(phrase)) {
     addError(`.github/workflows/artifacts.yml: must include ${phrase}`);

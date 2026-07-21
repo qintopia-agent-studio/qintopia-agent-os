@@ -1,0 +1,409 @@
+# 阿靓真实图片生成 Adapter 计划
+
+Status: production enablement approved by the owner on 2026-07-15; implementation in
+progress on a dedicated PR
+
+Scope: 阿靓（画报司 / `huabaosi`）受控图片生成，不含飞书写回、企微发送或对外发布
+
+## Goal
+
+把已经存在的内部视觉 brief 路径扩展为可审计的真实图片生成路径：
+
+```text
+approved poster_brief
+  -> image_generation_request
+  -> reviewed image provider adapter
+  -> immutable generated_image artifact (pending review)
+  -> human approval
+```
+
+生成成功不等于允许发布。任何企微发送、飞书写回、公开发布或群发仍沿用各自独立的人工确认和 adapter
+allowlist。
+
+## Production Enablement Decision
+
+The owner approved production enablement on 2026-07-15. This approval authorizes the
+Huabaosi image-generation worker to consume eligible `image_generation_request` rows,
+call the reviewed provider and media services, and create a pending `generated_image`.
+It does not approve automatic artifact review, Feishu writeback, QiWe sends, or public
+publishing.
+
+Production execution remains a separate, explicit operation after the owner manually
+publishes the Release. The production artifact must contain the reviewed
+`huabaosi-production-adapter` live feature and may contain the independently guarded
+`huabaosi-feishu-mirror-adapter`; it must never contain the staging or QiWe adapter
+features. The release installer may install the fixed worker service and timer, but it
+must not enable the timer as part of an ordinary promotion. The first post-deploy run
+uses the release-local one-shot canary to bind one pending brief, reviewer `trainer`,
+one new request, one pending Feishu-backed JPEG, and authenticated revalidation to the
+exact release/binary/database hashes. Ongoing scheduling may be enabled through the
+reviewed activation script only after that evidence is accepted.
+
+The first production window is a canary: one queued request per timer invocation, one
+pending image per successful request, and all existing retry, claim, immutable-media,
+same-byte readback, and human-review gates remain unchanged. Rollback disables the timer
+immediately and then turns the generation enable flag off through reviewed runtime
+configuration; it does not delete artifacts or audit history.
+
+Implementation and validation evidence are recorded in the
+[production enablement report](../../reports/2026-07-15-aliang-production-enablement.md).
+
+## Current Baseline
+
+- `huabaosi.create_visual_asset` 目前只生成内部 `poster_brief`，不调用图片模型。
+- 小满活动推广路径需要先完成 `evidence_summary`，再生成 `poster_brief`。
+- `run-xiaoman-activity-image-generation-starter-worker` 只会从已审核的 `poster_brief`
+  创建幂等的 `image_generation_request`。
+- reviewed runtime deployment 会安装 starter timer，只自动创建内部
+  `image_generation_request`；它不会运行图片 provider worker。
+- `run-huabaosi-image-generation-worker` 目前只校验和预览请求；默认开关为
+  `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`，因此不会请求 provider、上传媒体或创建
+  `generated_image`。
+- 图片 request intake 于 `#93` 合并到 `master`，并随 `v0.2.7`
+  进入生产内部 intake 边界；image-generation starter
+  timer 已安装、启用并处于 waiting。它仍不能被表述为已上线图片生成能力，因为 Huabaosi
+  provider worker 仍默认 disabled、无 service/timer，不会调用 provider、上传媒体或创建
+  `generated_image`。
+- live adapter 受非默认 Cargo feature 和 Rust 内部 staging gate 约束；不能把 smoke
+  shell 约定当作生产边界，默认生产二进制不得编译 live adapter。
+- `qintopia_agent_os.artifacts` 已有
+  `artifact_uri`、审核状态、来源引用、风险标签和审计事件。
+- 已有 COS 工具只用于不可变发布构件和部署请求。不得复用发布构件 bucket/prefix 存储用户可见海报。
+- 只读运行态核查确认旧 Huabaosi profile 配置了 OpenAI-compatible HTTPS endpoint 和
+  `gpt-image-2`，并保留 Image2 工作目录。详见
+  [运行态核查记录](../../reports/2026-07-13-aliang-image-provider-runtime-inventory.md)。因此新 adapter 的实现目标为 OpenAI-compatible
+  `gpt-image-2`；这不授权复制旧 endpoint、使用旧密钥，也不等同于费用、存储方案或生产开关已经获批准。
+
+## Required Owner Decisions
+
+在实现或启用真实生成前，owner 必须在对应 PR 明确确认：
+
+1. 可供新 adapter 使用的 OpenAI-compatible endpoint/API 版本、`gpt-image-2`
+   account、费用上限和可用地域。
+2. 产物存储服务、独立 bucket/prefix、对象 ACL、保留周期和删除责任人。
+3. 可上传的参考素材范围，以及成员照片、肖像、私聊素材和版权材料的授权证明格式。
+4. 第一批 staging/test group、审核人 allowlist、失败升级人和灰度停止条件。
+5. 生产开关和 rollback owner。
+
+未确认这些项时，worker 只能返回 `image_generation_disabled`、 `adapter_not_configured`
+或 preview，不得尝试网络调用。
+
+## Target Contract
+
+新增一个专属 capability 和 worker，而不是扩展现有 `collaboration-worker` 执行外部调用：
+
+| Object      | Target value                                                                          |
+| ----------- | ------------------------------------------------------------------------------------- |
+| Capability  | `huabaosi.generate_image_asset`                                                       |
+| Work item   | `image_generation_request`                                                            |
+| Requester   | `xiaoman` 或授权的人类 owner                                                          |
+| Parent      | 已审核通过的 `poster_brief` 对应视觉 work item                                        |
+| Input       | approved brief id/hash、已完成 evidence id/hash、平台规格、已授权参考素材引用         |
+| Output      | `generated_image` artifact，初始 `review_status=pending`                              |
+| Idempotency | `huabaosi_image:<approved-brief-id>:<specification>:<prompt-hash>`                    |
+| Retry       | 仅可重试 provider 可恢复错误；每次尝试记录无敏感的 provider outcome 和 attempt number |
+
+`generated_image` 必须保存：内容 hash、MIME
+type、像素尺寸、字节大小、存储对象版本/不可变 URI、来源 brief/evidence
+hashes、模型标识的非敏感摘要、风险标签和审核状态。不得保存 API
+key、完整 prompt、私有原始素材、Base id、message id 或 provider 原始响应。
+
+## Storage Boundary
+
+生产 canary 的首存储边界是“画报司 | 设计产出库”的固定“阿靓图片产物版本表”。worker把最终 JPEG 上传到
+`最终JPEG` 附件字段，通过鉴权飞书媒体 API 回读精确字节并校验完整 identity，再创建
+`pending generated_image`。Postgres/AgentOS 仍是工作流和审核事实源；飞书是附件保存和人工协作面。发布构件 COS 路径只服务 release/deploy，不能承载海报。
+
+HTTP media upload/public URL backend 只保留给隔离 staging 和 loopback
+fixture；生产飞书 canary 不要求 owner 提供独立 media endpoint。
+
+运行时只接收以下形式的配置，不提交真实值：
+
+```text
+QINTOPIA_HUABAOSI_IMAGE_PROVIDER
+QINTOPIA_HUABAOSI_IMAGE_MODEL
+QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL
+QINTOPIA_HUABAOSI_IMAGE_API_KEY
+QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base
+QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1
+QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL
+QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA
+QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256
+QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN
+QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS
+QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID
+QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS
+QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH
+QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1
+QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0
+```
+
+图片生成调度开关 `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED` 默认 `0`。
+`QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1` 在这里表示允许 Feishu-backed generated-image
+storage/mirror 边界通过配置校验；它不自动启用 systemd timer。Base token 和 table
+id 必须精确 allowlist。table id 来自 owner-provided Feishu URL 的 `table`
+query 参数，不得把 live 值写入 git。上传前验证文件类型、尺寸、字节数和 hash，上传后通过官方 HTTPS
+API 鉴权回读并逐字节校验。任何失败都不得留下 `approved` 或 `completed` 产物状态。
+
+## Adapter Protocol
+
+The implementation target is an OpenAI-compatible HTTPS Images API. The worker sends
+only an approved `poster_brief`-derived prompt and requires a response shaped as:
+
+```json
+{ "data": [{ "b64_json": "<image-bytes-base64>" }] }
+```
+
+It intentionally does not fetch provider-hosted image URLs, so provider URLs, temporary
+download tokens, and redirect behavior cannot become an unreviewed storage boundary.
+
+The production Feishu storage adapter uploads the final JPEG to the fixed attachment
+field, downloads it through the authenticated media API, and verifies:
+
+1. final JPEG MIME type and dimensions match the transformed bytes;
+2. byte size stays within the configured limit;
+3. SHA-256 matches before upload, upload response, and readback; and
+4. the Base row is unique by the deterministic AgentOS artifact id.
+
+Provider JSON, Feishu API JSON, and readback bytes are size-capped while being read; the
+HTTP `Content-Length` and chunked-decoding paths use the same cap. A retry may reuse
+only an existing pending artifact with the same content hash. It must never update a
+reviewed artifact URI, metadata, or review status.
+
+All outbound header names and values reject control characters before a socket is
+opened. Each image-generation attempt owns a unique claim token. Before recording an
+artifact or failure, the worker locks the work item and requires the same unexpired
+token; the state update must affect exactly one row or the transaction rolls back.
+
+The only accepted provider source type is `image/png`; the only uploaded, reviewed, and
+downstream-referenced type is `image/jpeg`. This narrow protocol is covered by a local
+fake provider/media server. Production configuration remains disabled until a real
+isolated storage service accepts this contract.
+
+## JPEG Final Artifact Decision
+
+QiWe's reviewed asynchronous image-upload contract documents JPG input. The existing
+provider contract remains unchanged and continues to accept only a decoded 1024x1024 PNG
+from `b64_json`. Before media upload, the Rust worker will convert that source into the
+single final `generated_image` reviewed by humans and referenced downstream:
+
+```text
+provider b64_json PNG
+  -> validate bounded 1024x1024 PNG
+  -> decode RGBA
+  -> composite alpha over #ffffff with integer arithmetic
+  -> encode baseline JPEG at quality 92
+  -> validate 1024x1024 JPEG
+  -> upload and same-byte readback
+  -> pending generated_image (image/jpeg)
+```
+
+The source PNG is transient and is not uploaded or stored as an artifact. Its canonical
+SHA-256 is recorded as `provider_source_content_hash`; the final artifact hash is the
+SHA-256 of the exact JPEG bytes. Metadata and the creation audit must also match:
+
+- `provider_source_mime_type=image/png`;
+- final JPEG `file_md5` computed from the same bytes as the canonical SHA-256;
+- `media_transform=png_to_jpeg_white_background_q92_v1`;
+- `jpeg_quality=92`;
+- `alpha_background=#ffffff`; and
+- final `mime_type=image/jpeg`, dimensions, byte size, URI, and content hash.
+
+Pinning the Rust image codec version and transform identifier makes the conversion
+reproducible for a given source. Media-upload idempotency includes the prompt hash,
+transform identifier, and final content hash so a format migration or different provider
+result cannot reuse an older object accidentally.
+
+Human approval applies to the final JPEG bytes, not to the transient PNG. The approval
+transaction must verify the JPEG metadata, source PNG hash, transform metadata, and
+matching `generated_image_created` event. Renaming PNG bytes to `.jpg`, keeping a PNG
+artifact while sending an unreviewed JPEG, or silently falling back to PNG is forbidden.
+
+Conversion, JPEG validation, upload metadata mismatch, and readback mismatch are
+terminal failures. They must not be retried as provider availability failures. Rollback
+keeps the provider worker disabled; existing approved PNG fixtures remain historical
+data but are not eligible for the future QiWe JPG send contract.
+
+## Human Gates
+
+1. 人工审核 `poster_brief` 后，才可创建 `image_generation_request`。
+2. 图片生成后，`generated_image` 仍是
+   `pending`，由审核人检查事实、视觉质量、素材授权和渠道规格。批准命令还必须在同一事务中验证该 artifact 来自受控 Huabaosi
+   image worker，且 HTTPS URI、最终 JPEG sha256/尺寸/字节 metadata、源 PNG
+   hash、固定 transform、brief/prompt 来源和 `generated_image_created`
+   审计一致；手工或残缺 artifact 不能靠人工 decision 绕过系统 provenance。
+3. 审核通过只代表该图片可被下游受控流程引用，不代表发送或发布。
+4. 需要发送时，仍须经过现有 group-message final
+   confirmation 与 send-ready 边界。send-request starter 只引用 completed
+   image-generation request 下 approved `generated_image`；approved `poster_brief`
+   只能创建图片请求，不能直接创建群发请求。
+
+## Rollout And Rollback
+
+- Phase 1: fixture/provider fake server，验证 prompt
+  redaction、idempotency、媒体元数据和失败状态。
+- Phase 2: owner-approved
+  staging，使用隔离素材和测试媒体前缀；不连飞书、企微或发布 adapter。
+- Phase
+  3: 小范围生产生成，仅生成并进入人工审核队列；观察成功率、重复率、审核拒绝率和存储错误。
+- Rollback: 设置 generation enabled 为
+  `0`，禁用生成 timer，保留既有 artifact/audit 只读可查；不删除已审核产物或审计记录。
+
+## Required Validation
+
+- Rust unit tests：前置 brief/evidence/审核状态、prompt
+  redaction、稳定idempotency、错误分类、报告不泄露密钥或原始素材。
+- Disposable PostgreSQL integration smoke：generation disabled 时不写 artifact；受控
+  `generated_image` fixture 经人工审核后才能创建一次群发请求，重复运行不重复创建。
+- Local fake provider/media server：校验请求 schema、`b64_json`、MIME/尺寸/hash、upload
+  metadata、public path boundary，以及成功与失败的 same-byte readback。
+- Protected staging smoke：只在显式 enable、配置 test provider 和 test media
+  host 时调用外部服务；不发送、不写飞书、不发布。
+- Production observation：检查 timer
+  command、默认禁用开关、journal 脱敏、队列计数和 rollback 开关；不触发生成。
+
+## Implemented Boundary
+
+- 已加入 capability、迁移、starter、request preview 和受保护 PostgreSQL apply smoke。
+- starter 的 idempotency key 包含 approved brief id、规格和脱敏 prompt
+  hash；同一 brief 不会创建重复 request。
+- apply smoke 固定 generation enabled 为 `0`，断言 request 保持 `queued` 且没有
+  `generated_image` artifact。
+- guarded adapter 只接受 OpenAI-compatible `gpt-image-2` `b64_json`
+  PNG，完整解码后按 JPEG Final Artifact Decision 转成最终 JPEG 再上传；只有 JPEG
+  same-byte readback 成功，才会写入 `generated_image(review_status=pending)`
+  并将 request 置为 `awaiting_review`。任何失败只记录脱敏 failed 状态，不记录 provider
+  response、prompt 或凭据。
+- 下游 group-message starter 已收紧为 completed image request 下 approved
+  `generated_image`；approved `poster_brief` 不再足以触发群发请求。
+- `operations-artifact-review-decision` 在批准 `generated_image` 前会验证受控 worker
+  provenance、最终 JPEG 与源 PNG/transform metadata、来源 request 和 creation
+  audit；校验失败保持 artifact pending、保持 image request
+  awaiting-review，并追加脱敏 policy denial。
+- 同一 work item/final JPEG hash 的 pending artifact 只有在 URI、source
+  refs 和完整 immutable
+  metadata 与本次生成结果逐字段一致时才可复用；reviewed、陈旧或被修改的记录必须失败，不能被重跑覆盖。
+- adapter 默认仍禁用；生产 enablement
+  PR 安装但不自动启用固定 timer。仓库尚未执行 staging/prod 网络调用。已实现最多三次的有界 provider 重试：只有连接/读写失败和 HTTP
+  408、429、5xx 会按 60/120 秒延迟重新排队；认证、响应 payload、PNG、媒体上传/readback、持久化和 claim 失败都是终态。每次只审计脱敏的 attempt、stage、outcome 和 delay，不保存原始错误或响应。starter
+  timer 只负责内部 request intake。必须在 Required Owner
+  Decisions 有明确 PR 记录后，才可运行已实现的受保护 staging smoke。
+- A `processing` lease expiring after the worker starts cannot prove whether the image
+  provider or media service accepted a request. The worker therefore reconciles an
+  expired or incomplete claim to one terminal sanitized ambiguous outcome, clears the
+  complete claim tuple, and never automatically reclaims it for another external
+  attempt.
+- `huabaosi-image-generation-preflight`
+  可在 staging 环境只读取本地环境变量并输出脱敏配置状态。它不访问 provider、媒体存储、Postgres、飞书或企微；`adapter_config_ready`
+  只说明配置字段符合 adapter 合同，不代表 endpoint 可达，也不授予生成或发布权限。配置无效时它输出
+  `success=false`、`adapter_not_configured` 后以非零退出码失败，staging 自动化必须 fail
+  closed。报告的 `missing_configuration` 只可按固定顺序列出 `.env.example`
+  已公开的缺失必填变量名，不得输出值、URL、host、group id 或 enable flag；数组为空但
+  `config_valid=false` 表示字段存在但格式或 allowlist 校验失败。
+- `deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh`
+  是唯一允许的第一版 staging 真实生成入口。它要求显式 enable、审批短语、文件名含
+  `staging` 的独立 env、命令传入的 repository-reviewed staging database URL
+  SHA-256，以及一个明确的 image request UUID。它只按固定 env key allowlist 解析 staging
+  env file，不执行 shell；只运行一次 image worker 并断言得到一个
+  `pending generated_image`；不允许 timer、飞书、企微或发布 adapter。若将来的 worker
+  report 增加 `artifact_uri`，该 URI 只能是无 query/fragment/userinfo 且位于 allowlisted
+  public media base 下的 HTTPS 地址；provider/upload
+  endpoint、密钥和数据库 URL 仍必须拒绝输出。smoke stdout 必须包含
+  `huabaosi_image_generation_staging_evidence=<json>`
+  的 preflight 和 generation 两条脱敏记录，并通过
+  `tools/deploy/check-huabaosi-image-staging-evidence.mjs` 校验；记录只可保留 staging
+  database URL hash、work item UUID、最终 JPEG SHA-256、尺寸、字节数、MIME 和 pending
+  review 状态，不得包含媒体 URI、文件名、provider 响应、token 或数据库 URL。通过 checker 后，把脱敏结果记录到
+  `docs/reports/templates/huabaosi-image-generation-staging-evidence.md`，再作为 QiWe
+  staging 发送证据的上游 hash 输入。
+- `deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh`
+  是真实 staging 生成前的只读 gate。它只检查固定 staging env 文件、staging release
+  root、owner-reviewed release SHA 和 packaged sidecar
+  SHA-256；不读取 env 内容、不运行 sidecar/Cargo、不连接 Postgres、不调用 provider/media、飞书或企微。ready 只说明固定 staging
+  release binary 可用于后续 preflight/smoke，不证明 provider endpoint 可达。
+- `deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
+  只读验证生产开关和 provider timer 状态一致，并运行配置预检和
+  `run-huabaosi-image-generation-worker --once --dry-run` 队列预览。它不 claim work
+  item、不写 artifact、不调用 provider/media、飞书或企微。禁用状态通过只证明 adapter 安全关闭；启用状态通过只证明 production
+  gate 和 timer 已就绪，不替代真实 canary 产物审核。
+- The final production Release must include a one-shot canary runner that binds one
+  pending `poster_brief` to reviewer `trainer`, one newly created image request, one
+  pending Feishu-backed JPEG, and one authenticated same-byte revalidation. This is the
+  reviewed entrypoint for the first image after deployment; it does not approve the
+  generated image, enable scheduling, mirror, publish, call QiWe, or send.
+- Huabaosi provider/media calls now use the shared `bounded_http` Rust client also used
+  by the guarded QiWe adapter. The extraction preserves the existing response caps,
+  header validation, chunked limits, TLS policy, fake-server behavior, and timeout
+  classification while zeroizing request/response buffers on drop.
+- The first owner-approved production canary on 2026-07-19 created one correctly bound
+  image request, but all three provider attempts reached the shared 60-second socket
+  timeout and ended as sanitized `provider_transport` failures. No image or Feishu row
+  was created, and the production generation timer was rolled back to disabled and
+  inactive. The remediation keeps the shared default unchanged while giving this image
+  path a 180-second default bounded to 60-240 seconds. A transport or protocol failure
+  after request bytes may have been sent is recorded as an ambiguous provider outcome
+  and never retried automatically; see the
+  [production canary report](../../reports/2026-07-19-aliang-provider-timeout-canary.md).
+- The staging compile gate keeps staging provider/media execution behind the non-default
+  `huabaosi-staging-adapter` feature. A staging-feature apply must enforce the exact
+  owner phrase, repository-reviewed database URL hash allowlist, staging database name,
+  and adapter policy in Rust before Postgres or network access. Production artifact and
+  server-source builds must use only the reviewed `huabaosi-production-adapter` and
+  guarded `huabaosi-feishu-mirror-adapter` features.
+
+运行无网络预检：
+
+```bash
+huabaosi-image-generation-preflight
+```
+
+预检完成后，仍必须先记录 Required Owner Decisions，再运行只读 staging
+readiness；ready 后才可在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
+smoke。该 smoke 不得发送、发布或写飞书。
+
+2026-07-16 Asia/Shanghai 的只读 server 观察确认 `paxon-server` 尚无固定 staging env
+file 和 immutable staging release root；见
+`docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md`。因此下一步先是 owner-reviewed
+staging provisioning，再运行 readiness/smoke，而不是把本地 fake
+smoke 当成真实 staging 证据。Provisioning 步骤见
+`docs/operations/staging-runtime-provisioning-runbook.md`。
+
+```bash
+QINTOPIA_HUABAOSI_IMAGE_STAGING_READINESS_ENABLE=1 \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256='<approved staging sidecar binary sha256>' \
+deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh
+
+QINTOPIA_HUABAOSI_IMAGE_STAGING_SMOKE_ENABLE=1 \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_APPROVAL=approved-staging-image-generation \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_ENV_FILE=/etc/qintopia/message-sidecar-staging.env \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_DATABASE_URL_SHA256='<approved staging database URL sha256>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_RELEASE_SHA='<approved staging release sha>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_SIDECAR_SHA256='<same approved staging sidecar binary sha256>' \
+QINTOPIA_HUABAOSI_IMAGE_STAGING_WORK_ITEM_ID='<approved staging image request UUID>' \
+deploy/sidecar/scripts/huabaosi-image-generation-staging-smoke.sh
+```
+
+## Local Validation Evidence
+
+After rebasing onto the merge of PR #111 on 2026-07-14:
+
+- Rust format and strict all-target/all-feature Clippy passed;
+- the complete sidecar suite passed: 276 tests, 0 failed;
+- `cargo llvm-cov nextest --summary-only` passed with 41.62% total line coverage;
+- `image_generation.rs` reached 61.95% line and 69.50% region coverage; and
+- local fake provider/media tests exercised full PNG decode, decoder allocation limits,
+  deterministic white-background JPEG conversion, JPEG metadata, exact upload bytes, and
+  same-byte readback rejection.
+
+The guarded PostgreSQL apply smoke still requires the PR's disposable pgvector CI job;
+the local image pull failure and boundary are recorded in the indexed integration
+report.
+
+## Explicit Non-Goals
+
+- 自动发布、企微群发、飞书写回。
+- 将图片模型或存储密钥提交到 git。
+- 将 legacy `qintopia-collab` 的 raw prompt handoff 视为新 AgentOS 接口。
+- 使用 release/deploy COS artifacts 作为图片媒体库。

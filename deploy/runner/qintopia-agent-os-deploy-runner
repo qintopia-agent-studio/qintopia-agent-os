@@ -220,7 +220,7 @@ if not isinstance(cos, dict):
     fail("cos must be an object")
 if cos.get("prefix") != "qintopia-agent-os":
     fail("cos.prefix must be qintopia-agent-os")
-expected_request_key = f"qintopia-agent-os/deploy-requests/production/pending/{data['request_id']}.json"
+expected_request_key = f"qintopia-agent-os/deploy-requests/production/requests/{data['request_id']}.json"
 expected_result_key = f"qintopia-agent-os/deploy-results/production/{data['request_id']}.json"
 if cos.get("request_key") != expected_request_key:
     fail("cos.request_key does not match request_id")
@@ -263,8 +263,12 @@ write_result() {
   local rollback_target="${5:-}"
   local previous_target=""
   local current_target=""
-  previous_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
-  current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -e "${RELEASE_ROOT}/previous" || -L "${RELEASE_ROOT}/previous" ]]; then
+    previous_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
+  fi
+  if [[ -e "${RELEASE_ROOT}/current" || -L "${RELEASE_ROOT}/current" ]]; then
+    current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  fi
   previous_sha="${previous_target##*/}"
   python3 - "$result_file" "$request_id" "$status" "$started_at" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_sha" \
@@ -387,7 +391,7 @@ assert_current_profile_release() {
 
 run_promotion() {
   if [[ "$release_scope" == "hermes-profile-erhua" ]]; then
-    validate_current_profile_release
+    validate_current_profile_release || return $?
     profile_args=(
       --release-dir "$profile_release_dir"
       --state-dir "$STATE_DIR"
@@ -413,7 +417,7 @@ run_promotion() {
       return
     fi
     profile_activation_attempted=true
-    assert_current_profile_release
+    assert_current_profile_release || return $?
     rm -f "${RESULT_DIR}/${request_id}.smoke.json"
     "$profile_release_dir/deploy/runner/smoke-release.sh" \
       --release-root "$RELEASE_ROOT" \
@@ -422,8 +426,8 @@ run_promotion() {
       --restart-targets "$restart_targets" \
       --log-since "$started_at" \
       --evidence-output "${RESULT_DIR}/${request_id}.smoke.json" \
-      --evidence-phase activation
-    assert_current_profile_release
+      --evidence-phase activation || return $?
+    assert_current_profile_release || return $?
     write_result succeeded
     return
   fi
@@ -436,17 +440,18 @@ run_promotion() {
     promote_args+=(--dry-run)
   fi
   deploy/runner/promote-release.sh \
-    "${promote_args[@]}"
-  if [[ "$dry_run" != "true" ]]; then
-    promoted_current=true
-  fi
+    "${promote_args[@]}" || return $?
   if [[ "$dry_run" == "true" ]]; then
     write_result dry_run_succeeded
   else
+    promoted_current=true
+    deploy/runner/install-release-systemd-units.sh \
+      --release-root "$RELEASE_ROOT" \
+      --release-sha "$release_sha" || return $?
     deploy/runner/smoke-release.sh \
       --release-root "$RELEASE_ROOT" \
       --restart-targets "$restart_targets" \
-      --log-since "$started_at"
+      --log-since "$started_at" || return $?
     write_result succeeded
   fi
 }

@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, Stream};
+use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{postgres::PgPool, Row};
@@ -540,6 +540,10 @@ fn publish_guardrails() -> Vec<String> {
     ]
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the report mirrors the explicit publisher outcome contract"
+)]
 fn report_from_digest(
     digest: &DigestRow,
     options: &PublishOptions,
@@ -982,6 +986,10 @@ async fn record_publish_failure(
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the audit record fields remain explicit at the database boundary"
+)]
 async fn insert_audit(
     pool: &PgPool,
     digest: &DigestRow,
@@ -1124,7 +1132,7 @@ fn post_raw(
     }
     let mut request = format!(
         "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.as_bytes().len()
+        body.len()
     );
     for header in headers {
         request.push_str(header);
@@ -1136,7 +1144,7 @@ fn post_raw(
     if url.scheme() != "https" {
         bail!("Feishu API URL must use https");
     }
-    let server_name = ServerName::try_from(host).context("validate Feishu API host")?;
+    let server_name = ServerName::try_from(host.to_string()).context("validate Feishu API host")?;
     let mut connection =
         ClientConnection::new(tls_config, server_name).context("create TLS connection")?;
     let mut socket = TcpStream::connect((host, port)).context("connect Feishu API")?;
@@ -1169,7 +1177,7 @@ fn parse_http_response(response: &[u8]) -> Result<String> {
     }
     let is_chunked = head
         .lines()
-        .any(|line| line.to_ascii_lowercase() == "transfer-encoding: chunked");
+        .any(|line| line.eq_ignore_ascii_case("transfer-encoding: chunked"));
     if is_chunked {
         decode_chunked_body(body.as_bytes())
     } else {
@@ -1211,16 +1219,8 @@ fn find_crlf(bytes: &[u8], start: usize) -> Option<usize> {
 }
 
 fn tls_config() -> ClientConfig {
-    let mut roots = RootCertStore::empty();
-    roots.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor| {
-        OwnedTrustAnchor::from_subject_spki_name_constraints(
-            anchor.subject,
-            anchor.spki,
-            anchor.name_constraints,
-        )
-    }));
+    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(roots)
         .with_no_client_auth()
 }

@@ -80,6 +80,10 @@ except ImportError:  # pragma: no cover - local parser tests run outside Hermes
             return None
 
 try:
+    from .image_callback_bridge import (
+        QiWeImageCallbackBridge,
+        is_async_image_callback,
+    )
     from .passive_pipeline import PassiveEventPipeline, PassivePipelineConfig
     from .nats_capture import (
         QiWeNatsCaptureConfig,
@@ -90,6 +94,7 @@ try:
     from .solitaire.llm_parser import parser_from_context
     from .solitaire.reminder import ReminderWorker, ReminderWorkerConfig
 except ImportError:  # pragma: no cover - local tests import adapter.py directly
+    from image_callback_bridge import QiWeImageCallbackBridge, is_async_image_callback
     from nats_capture import (
         QiWeNatsCaptureConfig,
         QiWeNatsPublisher,
@@ -140,7 +145,23 @@ _RECENT_QIWE_MESSAGE_CONTEXTS: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]
 _INTERNAL_PROCESS_PATTERNS = (
     re.compile(r"Dangerous command requires approval", re.IGNORECASE),
     re.compile(r"Reply\s+[`'\"]?/approve\b", re.IGNORECASE),
+    re.compile(
+        r"^\s*(?:\(\s*Response\s+formatting\s+failed,\s*plain\s+text:\s*\)\s*)?"
+        r"(?:⚡\s*)?Interrupting\s+current\s+task\.\s*"
+        r"I(?:'|’)ll\s+respond\s+to\s+your\s+message\s+shortly\.\s*$",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"^\s*(?:[（(]\s*响应格式(?:设置)?失败[,，]\s*显示为纯文本[：:]\s*[）)]\s*)?"
+        r"(?:⚡\s*)?(?:我)?(?:正在)?中断当前的?任务[,，]\s*"
+        r"稍后(?:我)?(?:就)?会回复[您你]的消息[。.]?\s*$",
+        re.DOTALL,
+    ),
     re.compile(r"^\s*⏳\s*Working\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*⏳?\s*Retrying\s+in\s+\d+(?:\.\d+)?s\s+\(attempt\s+\d+/\d+\)", re.IGNORECASE),
+    re.compile(r"\bAPI\s+call\s+failed\s+after\s+\d+\s+retries\b", re.IGNORECASE),
+    re.compile(r"\bAPI\s+failed\s+after\s+\d+\s+retries\b", re.IGNORECASE),
+    re.compile(r"\bHTTP\s+503\b.*\bService\s+temporarily\s+unavailable\b", re.IGNORECASE),
     re.compile(r"\bexecute_code\b", re.IGNORECASE),
     re.compile(r"\bskill_view\b", re.IGNORECASE),
     re.compile(r"\btool_progress\b", re.IGNORECASE),
@@ -1077,7 +1098,19 @@ def _answer_context_mcp_request(
     chat_id: str,
     sender_id: str,
     message_text: str,
+    mentioned_member_names: Optional[Iterable[str]] = None,
 ) -> str:
+    arguments = {
+        "caller_profile": "erhua",
+        "platform": "qiwe",
+        "chat_id": chat_id,
+        "sender_id": sender_id,
+        "message_text": message_text,
+        "purpose": "prepare QiWe reply context",
+    }
+    names = _dedupe_texts(mentioned_member_names or [])
+    if names:
+        arguments["mentioned_member_names"] = names
     payloads = [
         {
             "jsonrpc": "2.0",
@@ -1096,18 +1129,31 @@ def _answer_context_mcp_request(
             "method": "tools/call",
             "params": {
                 "name": "qintopia_answer_context_prepare",
-                "arguments": {
-                    "caller_profile": "erhua",
-                    "platform": "qiwe",
-                    "chat_id": chat_id,
-                    "sender_id": sender_id,
-                    "message_text": message_text,
-                    "purpose": "prepare QiWe reply context",
-                },
+                "arguments": arguments,
             },
         },
     ]
     return "\n".join(json.dumps(item, ensure_ascii=False) for item in payloads) + "\n"
+
+
+def _mentioned_member_names_from_at_list(
+    at_list: Iterable[Dict[str, Any]],
+    *,
+    bot_user_id: str = "",
+    bot_names: Iterable[str] = (),
+) -> List[str]:
+    bot_name_set = set(_dedupe_texts(bot_names))
+    names: List[str] = []
+    for item in at_list or []:
+        if not isinstance(item, dict):
+            continue
+        if bot_user_id and _text(item.get("userId")) == _text(bot_user_id):
+            continue
+        name = _display_text(item.get("nickname") or item.get("displayName") or item.get("name"))
+        if not name or name in bot_name_set:
+            continue
+        names.append(name)
+    return _dedupe_texts(names)
 
 
 def _training_note_mcp_request(
@@ -1479,6 +1525,7 @@ class QiWeAdapter(BasePlatformAdapter):
         self._identity_resolver = QiWeIdentityResolver(self)
         self._auditor = QiWeAuditor(self.qiwe.state_dir, self.qiwe.audit_enabled)
         self._nats_capture = self._build_nats_capture()
+        self._image_callback_bridge = self._build_image_callback_bridge(config)
         self._passive_pipeline = PassiveEventPipeline(
             PassivePipelineConfig(
                 enabled=self.qiwe.pipeline_enabled,
@@ -1689,6 +1736,18 @@ class QiWeAdapter(BasePlatformAdapter):
             logger.warning("[qiwe] NATS capture disabled after config error: %s", exc)
             return None
 
+    @staticmethod
+    def _build_image_callback_bridge(config: Any) -> QiWeImageCallbackBridge:
+        extra = getattr(config, "extra", {}) or {}
+        try:
+            bridge = QiWeImageCallbackBridge.from_environment(extra)
+            if bridge.enabled and not bridge.configuration_valid:
+                logger.error("[qiwe] enabled image callback processor configuration is invalid")
+            return bridge
+        except ValueError:
+            logger.warning("[qiwe] image callback processor disabled after config error")
+            return QiWeImageCallbackBridge(enabled=False)
+
     async def connect(self) -> bool:
         if not AIOHTTP_AVAILABLE:
             logger.error("[qiwe] aiohttp is not installed")
@@ -1795,22 +1854,30 @@ class QiWeAdapter(BasePlatformAdapter):
         body = await request.read()
         if len(body) > self.qiwe.max_body_bytes:
             return web.json_response({"ok": False, "reason": "body_too_large"}, status=413)
-        try:
-            parsed = parse_qiwe_payload(
-                body,
-                bot_names=self.qiwe.bot_names,
-                bot_user_id=self.qiwe.bot_user_id,
-                direct_enabled=self.qiwe.direct_enabled,
-                direct_allow_all=self.qiwe.direct_allow_all,
-                direct_allowed_users=self.qiwe.direct_allowed_users,
-                active_attachment_preprocess_enabled=self.qiwe.active_attachment_preprocess_enabled,
+        image_callback = is_async_image_callback(body)
+        if image_callback:
+            parsed = ParsedQiWeMessage(
+                accepted=False,
+                reason="qiwe_async_callback",
+                message_id="qiwe-callback-source:" + hashlib.sha256(body).hexdigest(),
             )
-        except json.JSONDecodeError as exc:
-            logger.warning("[qiwe] invalid JSON webhook body: %s", exc)
-            return web.json_response({"ok": False, "reason": "invalid_json"}, status=400)
-        except Exception as exc:
-            logger.warning("[qiwe] failed to parse webhook body: %s", exc, exc_info=True)
-            return web.json_response({"ok": False, "reason": "parse_failed"}, status=400)
+        else:
+            try:
+                parsed = parse_qiwe_payload(
+                    body,
+                    bot_names=self.qiwe.bot_names,
+                    bot_user_id=self.qiwe.bot_user_id,
+                    direct_enabled=self.qiwe.direct_enabled,
+                    direct_allow_all=self.qiwe.direct_allow_all,
+                    direct_allowed_users=self.qiwe.direct_allowed_users,
+                    active_attachment_preprocess_enabled=self.qiwe.active_attachment_preprocess_enabled,
+                )
+            except json.JSONDecodeError as exc:
+                logger.warning("[qiwe] invalid JSON webhook body: %s", exc)
+                return web.json_response({"ok": False, "reason": "invalid_json"}, status=400)
+            except Exception as exc:
+                logger.warning("[qiwe] failed to parse webhook body: %s", exc, exc_info=True)
+                return web.json_response({"ok": False, "reason": "parse_failed"}, status=400)
 
         if parsed.group_id_mismatch:
             logger.warning(
@@ -1821,6 +1888,47 @@ class QiWeAdapter(BasePlatformAdapter):
             )
 
         self._schedule_nats_capture(parsed, body)
+
+        if image_callback:
+            result = await self._image_callback_bridge.process(body)
+            if not result.enabled:
+                logger.info("[qiwe] image callback processor is disabled")
+                return web.json_response(
+                    {
+                        "ok": True,
+                        "accepted": False,
+                        "triggered": False,
+                        "reason": "qiwe_image_callback_processor_disabled",
+                    }
+                )
+            if not result.processed:
+                logger.warning(
+                    "[qiwe] image callback processor failed reason=%s", result.reason
+                )
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "accepted": False,
+                        "triggered": False,
+                        "reason": "qiwe_image_callback_processor_failed",
+                    },
+                    status=503,
+                )
+            logger.info(
+                "[qiwe] image callback processor completed action_status=%s credential_schema=%s additional_field_count=%s external_send_executed=%s",
+                result.action_status,
+                result.callback_credential_schema,
+                result.callback_additional_field_count,
+                result.external_send_executed,
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "accepted": False,
+                    "triggered": False,
+                    "reason": "qiwe_image_callback_processed",
+                }
+            )
 
         if not parsed.accepted:
             logger.info("[qiwe] ignored webhook reason=%s message_id=%s", parsed.reason, parsed.message_id)
@@ -2011,6 +2119,11 @@ class QiWeAdapter(BasePlatformAdapter):
                 chat_id=parsed.chat_id,
                 sender_id=parsed.sender_id,
                 message_text=_text(parsed.text)[:1000],
+                mentioned_member_names=_mentioned_member_names_from_at_list(
+                    parsed.at_list,
+                    bot_user_id=self.qiwe.bot_user_id,
+                    bot_names=self.qiwe.bot_names,
+                ),
             )
             stdout, stderr = await asyncio.wait_for(process.communicate(request.encode("utf-8")), timeout=timeout)
         except asyncio.TimeoutError:

@@ -151,7 +151,7 @@ const signingKey = requireValue(
 const createdAt = isoNow();
 const timestamp = createdAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 const requestId = `deploy-${timestamp}-${commitSha.slice(0, 12)}`;
-const requestKey = `${prefix}/deploy-requests/production/pending/${requestId}.json`;
+const requestKey = `${prefix}/deploy-requests/production/requests/${requestId}.json`;
 const resultKey = `${prefix}/deploy-results/production/${requestId}.json`;
 const outputPath = path.resolve(
   argValue(

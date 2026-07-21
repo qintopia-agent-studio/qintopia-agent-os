@@ -9,37 +9,57 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{FixedOffset, TimeZone};
-use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, Stream};
+use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use sqlx::{postgres::PgPool, Row};
+use tokio::time::sleep;
+use uuid::Uuid;
 
 use crate::{
+    activity_lifecycle::ActivityPhase,
     config::Cli,
     operations::{self, WorkItemCreateReport, WorkItemCreateRequest},
 };
 
 const ACTOR_AGENT: &str = "xiaoman";
-const READ_ONLY_OPERATIONS: &[&str] = &["record-get", "list-by-date", "material-summary"];
-const WRITE_OPERATIONS: &[&str] = &["status-update", "gap-update", "handoff-create"];
+const EVENT_SIGNAL_STATUSES: &[&str] = &["待处理", "处理中", "已完成", "已关闭"];
+const ELIGIBLE_SIGNAL_WORKER_STATUSES: &[&str] = &["待处理", "处理中"];
+const READ_ONLY_OPERATIONS: &[&str] = &[
+    "record-get",
+    "list-by-date",
+    "material-summary",
+    "shadow-validate",
+];
+const WRITE_OPERATIONS: &[&str] = &[
+    "status-update",
+    "gap-update",
+    "phase-update",
+    "handoff-create",
+    "signal-ingest",
+];
 const TABLE_ROLES: &[&str] = &["activity_plan", "activity_occurrence"];
 const FEISHU_BASE_API: &str = "https://open.feishu.cn/open-apis/bitable/v1/apps";
 const FEISHU_AUTH_API: &str =
     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
-const HANDOFF_TYPES: &[&str] = &[
-    "visual_asset_request",
-    "ops_followup",
-    "member_notice",
-    "human_confirmation",
-    "activity_recap",
-];
-const HANDOFF_TARGETS: &[&str] = &["huabaosi", "silaoshi", "erhua", "default"];
+const HANDOFF_TYPES: &[&str] = &["visual_asset_request"];
+const HANDOFF_TARGETS: &[&str] = &["huabaosi"];
 const FEISHU_READ_LIMITATION: &str = "Feishu Base read is allowlisted and read-only; write parity, audit, and webhook shadow validation are still required before removing the legacy raw Base read path";
 
 #[derive(Debug, Clone)]
 pub struct ActivityRuntimeConfig {
     pub fixture_path: Option<PathBuf>,
     pub feishu_base: Option<ActivityFeishuBaseConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignalWorkerOptions {
+    pub check_only: bool,
+    pub once: bool,
+    pub apply: bool,
+    pub batch_size: i64,
+    pub poll_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -67,11 +87,35 @@ struct ActivityPayload {
     #[serde(default)]
     gap_summary: String,
     #[serde(default)]
+    activity_phase: String,
+    #[serde(default)]
     handoff_type: String,
     #[serde(default)]
     target_agent: String,
     #[serde(default)]
     brief_summary: String,
+    #[serde(default)]
+    event_signal_id: String,
+    #[serde(default)]
+    mutation_id: String,
+    #[serde(default)]
+    signal_type: String,
+    #[serde(default)]
+    activity_title: String,
+    #[serde(default)]
+    signal_date: String,
+    #[serde(default)]
+    chat_id: String,
+    #[serde(default)]
+    source_message_ids: Vec<String>,
+    #[serde(default)]
+    owner_name: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    location: String,
+    #[serde(default)]
+    related_member_names: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +184,86 @@ struct ActivityWorkerReport {
     records: Vec<ActivityRecordView>,
     summaries: Vec<String>,
     operations_work_item: Option<WorkItemCreateReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mutation_applied: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity_route: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    feishu_record_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_signal_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matched_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    missing_in_agentos: Option<Vec<ShadowItem>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    missing_in_feishu: Option<Vec<ShadowItem>>,
+    limitations: Vec<String>,
+    guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ActivityShadowReport {
+    action_status: String,
+    feishu_record_count: usize,
+    event_signal_count: usize,
+    matched_count: usize,
+    missing_in_agentos: Vec<ShadowItem>,
+    missing_in_feishu: Vec<ShadowItem>,
+}
+
+#[derive(Debug)]
+struct EventSignalMutationOutcome {
+    action_status: &'static str,
+    mutation_applied: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ShadowItem {
+    title: String,
+    normalized_title: String,
+    signal_date: String,
+}
+
+#[derive(Debug, Clone)]
+struct EventSignalActivity {
+    title: String,
+    signal_date: String,
+}
+
+#[derive(Debug, Clone)]
+struct EventSignalIngestCandidate {
+    id: Uuid,
+    signal_type: String,
+    title: String,
+    summary: String,
+    signal_date: String,
+    activity_phase: String,
+    chat_id: String,
+    source_message_ids: Vec<Uuid>,
+    owner_name: String,
+    priority: String,
+    related_member_names: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SignalWorkerReport {
+    success: bool,
+    worker: &'static str,
+    source: &'static str,
+    dry_run: bool,
+    apply_requested: bool,
+    check_only: bool,
+    batch_size: i64,
+    scanned_count: usize,
+    submitted_count: usize,
+    existing_count: usize,
+    review_needed_count: usize,
+    action_status: String,
+    safe_for_chat: bool,
+    work_items: Vec<WorkItemCreateReport>,
     limitations: Vec<String>,
     guardrails: Vec<String>,
 }
@@ -172,6 +296,31 @@ pub async fn run(
     Ok(())
 }
 
+pub async fn run_signal_worker(cli: &Cli, options: SignalWorkerOptions) -> Result<()> {
+    if options.check_only || options.once {
+        let report = run_signal_worker_batch(cli, &options).await?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+
+    let poll_seconds = options.poll_seconds.max(60);
+    loop {
+        match run_signal_worker_batch(cli, &options).await {
+            Ok(report) => tracing::info!(
+                scanned = report.scanned_count,
+                submitted = report.submitted_count,
+                existing = report.existing_count,
+                "xiaoman activity signal worker batch complete"
+            ),
+            Err(error) => tracing::warn!(
+                error = %error,
+                "xiaoman activity signal worker batch failed"
+            ),
+        }
+        sleep(StdDuration::from_secs(poll_seconds)).await;
+    }
+}
+
 async fn execute_with_config(
     cli: &Cli,
     operation: String,
@@ -184,7 +333,9 @@ async fn execute_with_config(
     let apply_requested = apply && !dry_run;
     let mut report = base_report(operation.clone(), &payload, apply_requested);
 
-    if operation_is_read && apply_requested {
+    if operation == "shadow-validate" {
+        execute_shadow_validate(cli, &mut report, &payload, apply_requested, config).await?;
+    } else if operation_is_read && apply_requested {
         execute_read_operation(&mut report, &operation, &payload, config)?;
     } else if operation_is_read {
         report.action_status = "dry_run_ok".to_string();
@@ -192,13 +343,15 @@ async fn execute_with_config(
             "read operation was validated only; use --apply with an approved source for replay"
                 .to_string(),
         );
+    } else if matches!(
+        operation.as_str(),
+        "status-update" | "gap-update" | "phase-update"
+    ) {
+        execute_event_signal_mutation(cli, &mut report, &payload, apply_requested).await?;
     } else if operation == "handoff-create" {
         execute_handoff_create(cli, &mut report, &payload, apply_requested).await?;
-    } else if apply_requested {
-        report.action_status = "apply_not_implemented".to_string();
-        report.limitations.push(
-            "status-update and gap-update writes are intentionally blocked until field allowlists, idempotency, and audit writes are implemented".to_string(),
-        );
+    } else if operation == "signal-ingest" {
+        execute_signal_ingest(cli, &mut report, &payload, apply_requested).await?;
     } else {
         report.action_status = "dry_run_ok".to_string();
     }
@@ -226,15 +379,347 @@ fn base_report(
         records: Vec::new(),
         summaries: Vec::new(),
         operations_work_item: None,
+        mutation_applied: None,
+        activity_phase: None,
+        activity_route: None,
+        feishu_record_count: None,
+        event_signal_count: None,
+        matched_count: None,
+        missing_in_agentos: None,
+        missing_in_feishu: None,
         limitations: Vec::new(),
         guardrails: vec![
             "validates wrapper payload before any data access".to_string(),
             "fixture replay is allowed for local acceptance only".to_string(),
-            "status-update and gap-update writes remain blocked until field allowlists and audit writes are implemented".to_string(),
+            "status-update, gap-update, and phase-update write one allowlisted AgentOS event-signal field with mutation audit".to_string(),
             "technical report is for logs, not WeCom users".to_string(),
             "record_ref is hashed; raw Base record ids are not included in records".to_string(),
         ],
     }
+}
+
+async fn execute_event_signal_mutation(
+    cli: &Cli,
+    report: &mut ActivityWorkerReport,
+    payload: &ActivityPayload,
+    apply_requested: bool,
+) -> Result<()> {
+    report.source = "agentos_event_signals".to_string();
+    report.safe_for_chat = false;
+    report.record_count = 1;
+    report.mutation_applied = Some(false);
+    if payload.operation == "phase-update" {
+        let phase = activity_phase(&payload.activity_phase)?;
+        report.activity_phase = Some(phase.as_str().to_string());
+        report.activity_route = Some(phase.route().to_string());
+    }
+    report
+        .guardrails
+        .push("event signal mutations never use Feishu record ids or write Feishu".to_string());
+    report.guardrails.push(
+        "mutation_id provides replay safety and each applied change writes an audit row"
+            .to_string(),
+    );
+
+    if !apply_requested {
+        report.action_status = match payload.operation.as_str() {
+            "status-update" => "event_signal_status_preview",
+            "gap-update" => "event_signal_gap_preview",
+            "phase-update" => "event_signal_phase_preview",
+            _ => unreachable!("mutation operation validated before execution"),
+        }
+        .to_string();
+        report
+            .summaries
+            .push("AgentOS event-signal mutation validated without database writes".to_string());
+        return Ok(());
+    }
+
+    let database_url = cli.database_url_required()?;
+    let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+    let outcome = apply_event_signal_mutation(&pool, payload).await?;
+    report.action_status = outcome.action_status.to_string();
+    report.mutation_applied = Some(outcome.mutation_applied);
+    report.summaries.push(if outcome.mutation_applied {
+        "AgentOS event-signal mutation and audit row were committed".to_string()
+    } else {
+        "Existing AgentOS event-signal mutation was returned idempotently".to_string()
+    });
+    Ok(())
+}
+
+async fn apply_event_signal_mutation(
+    pool: &PgPool,
+    payload: &ActivityPayload,
+) -> Result<EventSignalMutationOutcome> {
+    let event_signal_id = Uuid::parse_str(payload.event_signal_id.trim())
+        .context("event_signal_id must be a UUID")?;
+    let mutation_id =
+        Uuid::parse_str(payload.mutation_id.trim()).context("mutation_id must be a UUID")?;
+    let idempotency_key = event_signal_mutation_idempotency_key(event_signal_id, mutation_id);
+    let new_value = event_signal_mutation_value(payload)?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin event signal mutation transaction")?;
+    let row = sqlx::query(
+        r#"
+        SELECT status, gap_summary, signal_type, activity_phase
+        FROM qintopia_agent_os.event_signals
+        WHERE id = $1
+          AND owner_agent = 'xiaoman'
+        FOR UPDATE
+        "#,
+    )
+    .bind(event_signal_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .context("lock Xiaoman event signal for mutation")?
+    .context("event_signal_id does not reference a Xiaoman event signal")?;
+
+    let existing = sqlx::query(
+        r#"
+        SELECT event_signal_id, operation, new_value
+        FROM qintopia_agent_os.event_signal_mutations
+        WHERE mutation_id = $1
+           OR idempotency_key = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(mutation_id)
+    .bind(&idempotency_key)
+    .fetch_optional(&mut *tx)
+    .await
+    .context("load existing event signal mutation")?;
+    if let Some(existing) = existing {
+        let existing_event_signal_id: Uuid = existing.try_get("event_signal_id")?;
+        let existing_operation: String = existing.try_get("operation")?;
+        let existing_new_value: Value = existing.try_get("new_value")?;
+        if existing_event_signal_id != event_signal_id
+            || existing_operation != payload.operation
+            || existing_new_value != new_value
+        {
+            bail!("mutation_id was already used for a different event-signal mutation");
+        }
+        tx.commit()
+            .await
+            .context("commit idempotent event signal mutation transaction")?;
+        return Ok(EventSignalMutationOutcome {
+            action_status: "event_signal_mutation_idempotent_existing",
+            mutation_applied: false,
+        });
+    }
+
+    let previous_value = match payload.operation.as_str() {
+        "status-update" => {
+            let previous_status: String = row.try_get("status")?;
+            let next_status = payload.status.trim();
+            validate_status_transition(&previous_status, next_status)?;
+            let result = sqlx::query(
+                r#"
+                UPDATE qintopia_agent_os.event_signals
+                SET status = $2,
+                    updated_at = now()
+                WHERE id = $1
+                "#,
+            )
+            .bind(event_signal_id)
+            .bind(next_status)
+            .execute(&mut *tx)
+            .await
+            .context("update Xiaoman event signal status")?;
+            if result.rows_affected() != 1 {
+                bail!("event signal status update did not affect exactly one row");
+            }
+            json!({"status": previous_status})
+        }
+        "gap-update" => {
+            let previous_gap: String = row.try_get("gap_summary")?;
+            let next_gap = normalize_gap_summary(&payload.gap_summary)?;
+            let result = sqlx::query(
+                r#"
+                UPDATE qintopia_agent_os.event_signals
+                SET gap_summary = $2,
+                    updated_at = now()
+                WHERE id = $1
+                "#,
+            )
+            .bind(event_signal_id)
+            .bind(next_gap)
+            .execute(&mut *tx)
+            .await
+            .context("update Xiaoman event signal gap summary")?;
+            if result.rows_affected() != 1 {
+                bail!("event signal gap update did not affect exactly one row");
+            }
+            json!({"gap_summary": previous_gap})
+        }
+        "phase-update" => {
+            let signal_type: String = row.try_get("signal_type")?;
+            if signal_type != "活动/聚会" {
+                bail!("phase-update requires an activity event signal");
+            }
+            let previous_phase: Option<String> = row.try_get("activity_phase")?;
+            let next_phase = activity_phase(&payload.activity_phase)?;
+            validate_activity_phase_transition(previous_phase.as_deref(), next_phase)?;
+            let result = sqlx::query(
+                r#"
+                UPDATE qintopia_agent_os.event_signals
+                SET activity_phase = $2,
+                    updated_at = now()
+                WHERE id = $1
+                "#,
+            )
+            .bind(event_signal_id)
+            .bind(next_phase.as_str())
+            .execute(&mut *tx)
+            .await
+            .context("update Xiaoman event signal activity phase")?;
+            if result.rows_affected() != 1 {
+                bail!("event signal phase update did not affect exactly one row");
+            }
+            json!({
+                "activity_phase": previous_phase
+                    .as_deref()
+                    .unwrap_or(ActivityPhase::Pre.as_str())
+            })
+        }
+        _ => unreachable!("mutation operation validated before execution"),
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO qintopia_agent_os.event_signal_mutations
+            (event_signal_id, mutation_id, idempotency_key, operation, actor_agent,
+             previous_value, new_value, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(event_signal_id)
+    .bind(mutation_id)
+    .bind(idempotency_key)
+    .bind(&payload.operation)
+    .bind(ACTOR_AGENT)
+    .bind(previous_value)
+    .bind(new_value)
+    .bind(json!({
+        "source": "xiaoman-activity",
+        "feishu_write_executed": false,
+        "external_send_executed": false,
+    }))
+    .execute(&mut *tx)
+    .await
+    .context("append event signal mutation audit")?;
+    tx.commit()
+        .await
+        .context("commit event signal mutation transaction")?;
+
+    Ok(EventSignalMutationOutcome {
+        action_status: match payload.operation.as_str() {
+            "status-update" => "event_signal_status_updated",
+            "gap-update" => "event_signal_gap_updated",
+            "phase-update" => "event_signal_phase_updated",
+            _ => unreachable!("mutation operation validated before execution"),
+        },
+        mutation_applied: true,
+    })
+}
+
+fn event_signal_mutation_idempotency_key(event_signal_id: Uuid, mutation_id: Uuid) -> String {
+    format!("xiaoman_event_signal:{event_signal_id}:{mutation_id}")
+}
+
+fn event_signal_mutation_value(payload: &ActivityPayload) -> Result<Value> {
+    match payload.operation.as_str() {
+        "status-update" => Ok(json!({"status": payload.status.trim()})),
+        "gap-update" => Ok(json!({
+            "gap_summary": normalize_gap_summary(&payload.gap_summary)?
+        })),
+        "phase-update" => Ok(json!({
+            "activity_phase": activity_phase(&payload.activity_phase)?.as_str()
+        })),
+        _ => bail!("operation is not an event-signal mutation"),
+    }
+}
+
+fn validate_status_transition(previous: &str, next: &str) -> Result<()> {
+    if previous == next {
+        return Ok(());
+    }
+    let allowed = matches!(
+        (previous, next),
+        ("待处理", "处理中" | "已完成" | "已关闭") | ("处理中", "待处理" | "已完成" | "已关闭")
+    );
+    if !allowed {
+        bail!("event signal status transition is not allowed");
+    }
+    Ok(())
+}
+
+fn activity_phase(value: &str) -> Result<ActivityPhase> {
+    ActivityPhase::parse(value).context("activity_phase must be pre_event, in_event, or post_event")
+}
+
+fn activity_phase_or_pre_event(value: &str) -> Result<ActivityPhase> {
+    ActivityPhase::parse_or_pre_event(value)
+        .context("activity_phase must be pre_event, in_event, or post_event")
+}
+
+fn validate_activity_phase_transition(previous: Option<&str>, next: ActivityPhase) -> Result<()> {
+    let Some(previous) = previous else {
+        return Ok(());
+    };
+    let previous = activity_phase(previous)?;
+    if !previous.can_transition_to(next) {
+        bail!("activity phase transition must not move backward");
+    }
+    Ok(())
+}
+
+fn normalize_gap_summary(value: &str) -> Result<String> {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        bail!("gap_summary is required");
+    }
+    if normalized.chars().count() > 500 {
+        bail!("gap_summary must be 500 characters or fewer");
+    }
+    if contains_disallowed_mutation_text(&normalized) {
+        bail!("gap_summary contains disallowed sensitive or raw internal content");
+    }
+    Ok(normalized)
+}
+
+fn contains_disallowed_mutation_text(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    [
+        "app_token",
+        "tenant_access_token",
+        "authorization: bearer",
+        "base_token",
+        "table_id",
+        "message_id",
+        "chat_id",
+        "sender_id",
+        "system prompt",
+        "raw private chat",
+        "member dossier",
+        "http://",
+        "https://",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+        || value.contains('@')
+        || value
+            .split(|character: char| !character.is_ascii_digit())
+            .any(|digits| digits.len() >= 7)
+        || value.split_whitespace().any(|token| {
+            token.chars().count() >= 32
+                && token
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || "-_:".contains(character))
+        })
 }
 
 async fn execute_handoff_create(
@@ -265,6 +750,412 @@ async fn execute_handoff_create(
         .guardrails
         .push("Feishu Task board mirroring remains a separate sync worker boundary".to_string());
     Ok(())
+}
+
+async fn execute_signal_ingest(
+    cli: &Cli,
+    report: &mut ActivityWorkerReport,
+    payload: &ActivityPayload,
+    apply_requested: bool,
+) -> Result<()> {
+    let missing_fields = signal_missing_fields(payload);
+    let (phase, work_item_report) = if apply_requested {
+        let database_url = cli.database_url_required()?;
+        let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+        let phase = load_signal_activity_phase(&pool, payload).await?;
+        let request = signal_work_item_request_for_phase(payload, &missing_fields, phase);
+        let policy = operations::OperationsPolicy::from_cli(cli, true);
+        (
+            phase,
+            operations::create_work_item(&pool, request, true, &policy).await?,
+        )
+    } else {
+        let phase = activity_phase_or_pre_event(&payload.activity_phase)?;
+        let request = signal_work_item_request_for_phase(payload, &missing_fields, phase);
+        (phase, operations::create_work_item_dry_run(request)?)
+    };
+
+    report.source = "agentos_event_signal".to_string();
+    report.safe_for_chat = false;
+    report.activity_phase = Some(phase.as_str().to_string());
+    report.activity_route = Some(phase.route().to_string());
+    report.operations_work_item = Some(work_item_report);
+    if missing_fields.is_empty() {
+        report.action_status = report
+            .operations_work_item
+            .as_ref()
+            .map(|item| format!("operations_{}", item.action_status))
+            .unwrap_or_else(|| "operations_unavailable".to_string());
+    } else {
+        report.validation_status = "review_needed".to_string();
+        report.action_status = "review_needed".to_string();
+        report.limitations.push(format!(
+            "activity signal missing required fields: {}",
+            missing_fields.join(", ")
+        ));
+    }
+    report.guardrails.push(
+        "signal-ingest writes only AgentOS control-plane work items; it does not create visual assets or external sends".to_string(),
+    );
+    report
+        .guardrails
+        .push("duplicate signals use a stable event_signal_id idempotency key".to_string());
+    Ok(())
+}
+
+async fn load_signal_activity_phase(
+    pool: &PgPool,
+    payload: &ActivityPayload,
+) -> Result<ActivityPhase> {
+    let event_signal_id = Uuid::parse_str(payload.event_signal_id.trim())
+        .context("signal-ingest --apply requires an event_signal_id UUID")?;
+    let stored_phase: String = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(activity_phase, 'pre_event')
+        FROM qintopia_agent_os.event_signals
+        WHERE id = $1
+          AND owner_agent = 'xiaoman'
+          AND signal_type = '活动/聚会'
+        "#,
+    )
+    .bind(event_signal_id)
+    .fetch_optional(pool)
+    .await
+    .context("load Xiaoman activity signal phase")?
+    .context("event_signal_id does not reference a Xiaoman activity signal")?;
+    let stored_phase = activity_phase(&stored_phase)?;
+    validate_requested_activity_phase(&payload.activity_phase, stored_phase)?;
+    Ok(stored_phase)
+}
+
+fn validate_requested_activity_phase(requested: &str, stored_phase: ActivityPhase) -> Result<()> {
+    if requested.trim().is_empty() || activity_phase(requested)? == stored_phase {
+        return Ok(());
+    }
+    bail!("activity_phase does not match the current event signal phase")
+}
+
+async fn run_signal_worker_batch(
+    cli: &Cli,
+    options: &SignalWorkerOptions,
+) -> Result<SignalWorkerReport> {
+    let apply_requested = options.apply && !options.check_only;
+    let database_url = cli.database_url_required()?;
+    let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+    let candidates = load_signal_ingest_candidates(&pool, options.batch_size).await?;
+    let policy = operations::OperationsPolicy::from_cli(cli, true);
+    let mut work_items = Vec::new();
+    let mut review_needed_count = 0;
+
+    for candidate in &candidates {
+        let payload = candidate.to_activity_payload();
+        let missing_fields = signal_missing_fields(&payload);
+        if !missing_fields.is_empty() {
+            review_needed_count += 1;
+        }
+        let request = signal_work_item_request(&payload, &missing_fields)?;
+        let report = if apply_requested {
+            operations::create_work_item(&pool, request, true, &policy).await?
+        } else {
+            operations::create_work_item_dry_run(request)?
+        };
+        work_items.push(report);
+    }
+
+    let existing_count = work_items.iter().filter(|item| item.existing).count();
+    let submitted_count = work_items.len().saturating_sub(existing_count);
+    let action_status = if candidates.is_empty() {
+        "no_eligible_signals"
+    } else if apply_requested {
+        "signal_ingest_submitted"
+    } else {
+        "signal_ingest_preview"
+    }
+    .to_string();
+
+    Ok(SignalWorkerReport {
+        success: true,
+        worker: "xiaoman-activity-signal-worker",
+        source: "agentos_event_signals",
+        dry_run: !apply_requested,
+        apply_requested,
+        check_only: options.check_only,
+        batch_size: options.batch_size.max(1),
+        scanned_count: candidates.len(),
+        submitted_count,
+        existing_count,
+        review_needed_count,
+        action_status,
+        safe_for_chat: false,
+        work_items,
+        limitations: vec![
+            "worker submits only AgentOS signal-ingest work items; it does not write Feishu or send QiWe messages".to_string(),
+            "long-running production scheduling remains disabled until reviewed runtime config is added".to_string(),
+        ],
+        guardrails: vec![
+            "selects owner_agent=xiaoman activity event_signals only".to_string(),
+            "skips event_signals that already have a xiaoman.create_activity_request work item".to_string(),
+            "uses signal-ingest idempotency keys for replay safety".to_string(),
+            "technical report is for logs, not WeCom users".to_string(),
+        ],
+    })
+}
+
+async fn load_signal_ingest_candidates(
+    pool: &PgPool,
+    batch_size: i64,
+) -> Result<Vec<EventSignalIngestCandidate>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            signals.id,
+            signals.signal_type,
+            signals.title,
+            signals.summary,
+            signals.signal_date::text AS signal_date,
+            COALESCE(signals.activity_phase, 'pre_event') AS activity_phase,
+            signals.chat_id,
+            signals.source_message_ids,
+            signals.owner_name,
+            signals.priority,
+            signals.related_member_names
+        FROM qintopia_agent_os.event_signals signals
+        WHERE signals.owner_agent = 'xiaoman'
+          AND signals.signal_type = '活动/聚会'
+          AND signals.status = ANY($1::text[])
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_items work_items
+              WHERE work_items.source_event_signal_id = signals.id
+                AND work_items.capability_key = 'xiaoman.create_activity_request'
+                AND COALESCE(
+                    NULLIF(work_items.payload->>'activity_phase', ''),
+                    'pre_event'
+                ) = COALESCE(signals.activity_phase, 'pre_event')
+          )
+        ORDER BY signals.signal_date ASC, signals.created_at ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(ELIGIBLE_SIGNAL_WORKER_STATUSES)
+    .bind(batch_size.max(1))
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman event_signals for signal-ingest worker")?;
+
+    rows.into_iter()
+        .map(EventSignalIngestCandidate::from_row)
+        .collect()
+}
+
+async fn execute_shadow_validate(
+    cli: &Cli,
+    report: &mut ActivityWorkerReport,
+    payload: &ActivityPayload,
+    apply_requested: bool,
+    config: &ActivityRuntimeConfig,
+) -> Result<()> {
+    report.source = "feishu_agentos_shadow".to_string();
+    report.safe_for_chat = false;
+    report.guardrails.push(
+        "shadow-validate compares Feishu mirror coverage against AgentOS event_signals without treating Feishu as source of truth".to_string(),
+    );
+    report.guardrails.push(
+        "shadow-validate is read-only and must not write Feishu, QiWe, or AgentOS rows".to_string(),
+    );
+
+    if !apply_requested {
+        report.action_status = "dry_run_ok".to_string();
+        report.limitations.push(
+            "shadow-validate dry-run only validates payload shape; use --apply with explicit Feishu allowlist and database config for read-only comparison".to_string(),
+        );
+        return Ok(());
+    }
+
+    let Some(base_config) = config.feishu_base.as_ref() else {
+        report.action_status = "shadow_source_not_configured".to_string();
+        apply_shadow_report(report, ActivityShadowReport::not_configured());
+        report.limitations.push(
+            "set --use-feishu-base with the explicit Xiaoman Feishu allowlist before shadow validation".to_string(),
+        );
+        return Ok(());
+    };
+
+    let database_url = match cli.database_url.as_ref() {
+        Some(url) if !url.trim().is_empty() => url,
+        _ => {
+            report.action_status = "shadow_source_not_configured".to_string();
+            apply_shadow_report(report, ActivityShadowReport::not_configured());
+            report.limitations.push(
+                "QINTOPIA_SIDECAR_DATABASE_URL is required for AgentOS event_signals shadow validation".to_string(),
+            );
+            return Ok(());
+        }
+    };
+
+    let feishu_records = load_feishu_records_for_shadow(base_config)?;
+    let feishu_items = shadow_items_from_records(&feishu_records, &payload.date);
+    let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+    let event_signals = load_xiaoman_event_signals_for_shadow(&pool, &payload.date).await?;
+    let event_items = shadow_items_from_event_signals(&event_signals);
+    let shadow = compare_shadow_items(&feishu_items, &event_items);
+
+    report.action_status = shadow.action_status.clone();
+    report.record_count = shadow.feishu_record_count;
+    apply_shadow_report(report, shadow);
+    Ok(())
+}
+
+fn apply_shadow_report(report: &mut ActivityWorkerReport, shadow: ActivityShadowReport) {
+    report.feishu_record_count = Some(shadow.feishu_record_count);
+    report.event_signal_count = Some(shadow.event_signal_count);
+    report.matched_count = Some(shadow.matched_count);
+    report.missing_in_agentos = Some(shadow.missing_in_agentos);
+    report.missing_in_feishu = Some(shadow.missing_in_feishu);
+}
+
+fn signal_work_item_request(
+    payload: &ActivityPayload,
+    missing_fields: &[String],
+) -> Result<WorkItemCreateRequest> {
+    let phase = activity_phase_or_pre_event(&payload.activity_phase)?;
+    Ok(signal_work_item_request_for_phase(
+        payload,
+        missing_fields,
+        phase,
+    ))
+}
+
+fn signal_work_item_request_for_phase(
+    payload: &ActivityPayload,
+    missing_fields: &[String],
+    phase: ActivityPhase,
+) -> WorkItemCreateRequest {
+    let source_event_signal_id = signal_uuid(&payload.event_signal_id);
+    let source_refs = signal_source_refs(payload, source_event_signal_id);
+    let review_needed = !missing_fields.is_empty();
+    let brief_summary = if payload.brief_summary.trim().is_empty() {
+        signal_brief_summary(payload, review_needed)
+    } else {
+        payload.brief_summary.trim().to_string()
+    };
+
+    WorkItemCreateRequest {
+        requester_agent: "default".to_string(),
+        target_agent: "xiaoman".to_string(),
+        capability_key: "xiaoman.create_activity_request".to_string(),
+        work_item_type: phase.root_work_item_type().to_string(),
+        brief_summary,
+        purpose: "activity_signal_intake".to_string(),
+        human_owner: payload.owner_name.trim().to_string(),
+        priority: signal_priority(&payload.priority),
+        source_type: "event_signal".to_string(),
+        source_refs,
+        source_event_signal_id,
+        payload: json!({
+            "workflow": "workflows/xiaoman-activity-signal",
+            "requested_by": payload.actor_agent,
+            "signal_type": payload.signal_type,
+            "activity_title": payload.activity_title,
+            "signal_date": payload.signal_date,
+            "activity_phase": phase.as_str(),
+            "activity_route": phase.route(),
+            "location": payload.location,
+            "gap_summary": payload.gap_summary,
+            "review_needed": review_needed,
+            "missing_required_fields": missing_fields,
+        }),
+        payload_redaction_policy: "summary_only".to_string(),
+        idempotency_key: signal_idempotency_key(&payload.event_signal_id, phase),
+        dedupe_key: String::new(),
+        metadata: json!({
+            "created_by_wrapper": "xiaoman-activity",
+            "workflow": "workflows/xiaoman-activity-signal",
+            "activity_phase": phase.as_str(),
+            "activity_route": phase.route(),
+            "review_needed": review_needed,
+            "missing_required_fields": missing_fields,
+            "related_member_names_count": payload.related_member_names.len(),
+        }),
+        parent_work_item_id: None,
+        approved_artifact_id: None,
+    }
+}
+
+fn signal_source_refs(payload: &ActivityPayload, source_event_signal_id: Option<Uuid>) -> Value {
+    let event_ref = source_event_signal_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| payload.event_signal_id.trim().to_string());
+    let message_refs: Vec<String> = payload
+        .source_message_ids
+        .iter()
+        .map(|item| activity_record_ref("event_signal_message", item))
+        .collect();
+    json!({
+        "event_signal_id": event_ref,
+        "signal_type": payload.signal_type,
+        "signal_date": payload.signal_date,
+        "chat_ref": activity_record_ref("event_signal_chat", &payload.chat_id),
+        "source_message_refs": message_refs,
+    })
+}
+
+fn signal_missing_fields(payload: &ActivityPayload) -> Vec<String> {
+    [
+        ("event_signal_id", payload.event_signal_id.as_str()),
+        ("signal_type", payload.signal_type.as_str()),
+        ("activity_title", payload.activity_title.as_str()),
+        ("signal_date", payload.signal_date.as_str()),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| {
+        if value.trim().is_empty() {
+            Some(name.to_string())
+        } else {
+            None
+        }
+    })
+    .collect()
+}
+
+fn signal_uuid(value: &str) -> Option<Uuid> {
+    Uuid::parse_str(value.trim()).ok()
+}
+
+fn signal_idempotency_key(event_signal_id: &str, phase: ActivityPhase) -> String {
+    let base = format!("xiaoman_activity_signal:{}", event_signal_id.trim());
+    if phase == ActivityPhase::Pre {
+        base
+    } else {
+        format!("{base}:{}", phase.as_str())
+    }
+}
+
+fn signal_priority(value: &str) -> String {
+    match value.trim() {
+        "high" | "urgent" | "low" | "normal" => value.trim().to_string(),
+        "高" => "high".to_string(),
+        "低" => "low".to_string(),
+        _ => "normal".to_string(),
+    }
+}
+
+fn signal_brief_summary(payload: &ActivityPayload, review_needed: bool) -> String {
+    let title = if payload.activity_title.trim().is_empty() {
+        "未命名活动"
+    } else {
+        payload.activity_title.trim()
+    };
+    let date = if payload.signal_date.trim().is_empty() {
+        "日期待确认"
+    } else {
+        payload.signal_date.trim()
+    };
+    if review_needed {
+        format!("{title} 活动信号需要人工补齐字段")
+    } else {
+        format!("{title} 活动信号待小满跟进（{date}）")
+    }
 }
 
 fn handoff_work_item_request(payload: &ActivityPayload) -> Result<WorkItemCreateRequest> {
@@ -423,6 +1314,242 @@ fn load_feishu_records(
         .iter()
         .map(|record| ActivityRecord::from_feishu_value(record, table_role))
         .collect()
+}
+
+fn load_feishu_records_for_shadow(
+    config: &ActivityFeishuBaseConfig,
+) -> Result<Vec<ActivityRecord>> {
+    let mut records = Vec::new();
+    for table_role in TABLE_ROLES {
+        records.extend(load_feishu_records(config, table_role)?);
+    }
+    Ok(records)
+}
+
+async fn load_xiaoman_event_signals_for_shadow(
+    pool: &PgPool,
+    signal_date: &str,
+) -> Result<Vec<EventSignalActivity>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT title, signal_date::text AS signal_date
+        FROM qintopia_agent_os.event_signals
+        WHERE owner_agent = 'xiaoman'
+          AND signal_date = $1::date
+          AND status <> '已关闭'
+        ORDER BY title ASC, created_at ASC
+        "#,
+    )
+    .bind(signal_date)
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman event_signals for shadow validation")?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(EventSignalActivity {
+                title: row.try_get("title")?,
+                signal_date: row.try_get("signal_date")?,
+            })
+        })
+        .collect()
+}
+
+fn shadow_items_from_records(records: &[ActivityRecord], signal_date: &str) -> Vec<ShadowItem> {
+    let mut items = records
+        .iter()
+        .filter(|record| record.matches_date(signal_date))
+        .map(|record| ShadowItem::new(record.title.clone(), signal_date.to_string()))
+        .collect::<Vec<_>>();
+    sort_and_dedupe_shadow_items(&mut items);
+    items
+}
+
+fn shadow_items_from_event_signals(signals: &[EventSignalActivity]) -> Vec<ShadowItem> {
+    let mut items = signals
+        .iter()
+        .map(|signal| ShadowItem::new(signal.title.clone(), signal.signal_date.clone()))
+        .collect::<Vec<_>>();
+    sort_and_dedupe_shadow_items(&mut items);
+    items
+}
+
+fn compare_shadow_items(
+    feishu_items: &[ShadowItem],
+    event_items: &[ShadowItem],
+) -> ActivityShadowReport {
+    let missing_in_agentos = feishu_items
+        .iter()
+        .filter(|item| {
+            !event_items
+                .iter()
+                .any(|candidate| shadow_key_matches(item, candidate))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let missing_in_feishu = event_items
+        .iter()
+        .filter(|item| {
+            !feishu_items
+                .iter()
+                .any(|candidate| shadow_key_matches(item, candidate))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let matched_count = feishu_items
+        .iter()
+        .filter(|item| {
+            event_items
+                .iter()
+                .any(|candidate| shadow_key_matches(item, candidate))
+        })
+        .count();
+    let action_status = if missing_in_agentos.is_empty() && missing_in_feishu.is_empty() {
+        "shadow_match"
+    } else {
+        "shadow_mismatch"
+    }
+    .to_string();
+
+    ActivityShadowReport {
+        action_status,
+        feishu_record_count: feishu_items.len(),
+        event_signal_count: event_items.len(),
+        matched_count,
+        missing_in_agentos,
+        missing_in_feishu,
+    }
+}
+
+fn shadow_key_matches(left: &ShadowItem, right: &ShadowItem) -> bool {
+    left.signal_date == right.signal_date && left.normalized_title == right.normalized_title
+}
+
+fn sort_and_dedupe_shadow_items(items: &mut Vec<ShadowItem>) {
+    items.sort_by(|left, right| {
+        left.signal_date
+            .cmp(&right.signal_date)
+            .then_with(|| left.normalized_title.cmp(&right.normalized_title))
+    });
+    items.dedup_by(|left, right| shadow_key_matches(left, right));
+}
+
+fn normalize_shadow_title(value: &str) -> String {
+    value
+        .chars()
+        .filter_map(|ch| {
+            if ch.is_whitespace()
+                || matches!(
+                    ch,
+                    '，' | ','
+                        | '。'
+                        | '.'
+                        | '、'
+                        | '：'
+                        | ':'
+                        | '；'
+                        | ';'
+                        | '！'
+                        | '!'
+                        | '？'
+                        | '?'
+                        | '（'
+                        | ')'
+                        | '）'
+                        | '('
+                        | '【'
+                        | '】'
+                        | '['
+                        | ']'
+                        | '「'
+                        | '」'
+                        | '《'
+                        | '》'
+                        | '-'
+                        | '_'
+                        | '—'
+                )
+            {
+                None
+            } else {
+                Some(ch.to_lowercase().to_string())
+            }
+        })
+        .collect::<String>()
+}
+
+impl ActivityShadowReport {
+    fn not_configured() -> Self {
+        Self {
+            action_status: "shadow_source_not_configured".to_string(),
+            feishu_record_count: 0,
+            event_signal_count: 0,
+            matched_count: 0,
+            missing_in_agentos: Vec::new(),
+            missing_in_feishu: Vec::new(),
+        }
+    }
+}
+
+impl ShadowItem {
+    fn new(title: String, signal_date: String) -> Self {
+        let normalized_title = normalize_shadow_title(&title);
+        Self {
+            title,
+            normalized_title,
+            signal_date,
+        }
+    }
+}
+
+impl EventSignalIngestCandidate {
+    fn from_row(row: sqlx::postgres::PgRow) -> Result<Self> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            signal_type: row.try_get("signal_type")?,
+            title: row.try_get("title")?,
+            summary: row.try_get("summary")?,
+            signal_date: row.try_get("signal_date")?,
+            activity_phase: row.try_get("activity_phase")?,
+            chat_id: row.try_get("chat_id")?,
+            source_message_ids: row.try_get("source_message_ids")?,
+            owner_name: row.try_get("owner_name")?,
+            priority: row.try_get("priority")?,
+            related_member_names: row.try_get("related_member_names")?,
+        })
+    }
+
+    fn to_activity_payload(&self) -> ActivityPayload {
+        ActivityPayload {
+            actor_agent: ACTOR_AGENT.to_string(),
+            operation: "signal-ingest".to_string(),
+            record_id: String::new(),
+            source_record_id: String::new(),
+            date: String::new(),
+            table_role: String::new(),
+            status: String::new(),
+            gap_summary: String::new(),
+            activity_phase: self.activity_phase.clone(),
+            handoff_type: String::new(),
+            target_agent: String::new(),
+            brief_summary: self.summary.clone(),
+            event_signal_id: self.id.to_string(),
+            mutation_id: String::new(),
+            signal_type: self.signal_type.clone(),
+            activity_title: self.title.clone(),
+            signal_date: self.signal_date.clone(),
+            chat_id: self.chat_id.clone(),
+            source_message_ids: self
+                .source_message_ids
+                .iter()
+                .map(Uuid::to_string)
+                .collect(),
+            owner_name: self.owner_name.clone(),
+            priority: self.priority.clone(),
+            location: String::new(),
+            related_member_names: self.related_member_names.clone(),
+        }
+    }
 }
 
 fn activity_feishu_base_config(cli: &Cli) -> Result<ActivityFeishuBaseConfig> {
@@ -849,7 +1976,7 @@ fn post_raw(
     }
     let mut request = format!(
         "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.as_bytes().len()
+        body.len()
     );
     for header in headers {
         request.push_str(header);
@@ -861,7 +1988,7 @@ fn post_raw(
     if url.scheme() != "https" {
         bail!("Feishu API URL must use https");
     }
-    let server_name = ServerName::try_from(host).context("validate Feishu API host")?;
+    let server_name = ServerName::try_from(host.to_string()).context("validate Feishu API host")?;
     let mut connection =
         ClientConnection::new(tls_config, server_name).context("create TLS connection")?;
     let mut socket = TcpStream::connect((host, port)).context("connect Feishu API")?;
@@ -932,7 +2059,7 @@ fn parse_http_response(response: &[u8]) -> Result<String> {
     }
     let is_chunked = head
         .lines()
-        .any(|line| line.to_ascii_lowercase() == "transfer-encoding: chunked");
+        .any(|line| line.eq_ignore_ascii_case("transfer-encoding: chunked"));
     if is_chunked {
         decode_chunked_body(body)
     } else {
@@ -991,16 +2118,8 @@ fn find_crlf(bytes: &[u8], start: usize) -> Option<usize> {
 }
 
 fn tls_config() -> ClientConfig {
-    let mut roots = RootCertStore::empty();
-    roots.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor| {
-        OwnedTrustAnchor::from_subject_spki_name_constraints(
-            anchor.subject,
-            anchor.spki,
-            anchor.name_constraints,
-        )
-    }));
+    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(roots)
         .with_no_client_auth()
 }
@@ -1026,16 +2145,30 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
         "list-by-date" => {
             require_fields(&[("date", &payload.date), ("table_role", &payload.table_role)])?
         }
-        "status-update" => require_fields(&[
-            ("record_id", &payload.record_id),
-            ("table_role", &payload.table_role),
-            ("status", &payload.status),
-        ])?,
-        "gap-update" => require_fields(&[
-            ("record_id", &payload.record_id),
-            ("table_role", &payload.table_role),
-            ("gap_summary", &payload.gap_summary),
-        ])?,
+        "status-update" => {
+            require_fields(&[
+                ("event_signal_id", &payload.event_signal_id),
+                ("mutation_id", &payload.mutation_id),
+                ("status", &payload.status),
+            ])?;
+            validate_event_signal_mutation_payload(payload)?;
+        }
+        "phase-update" => {
+            require_fields(&[
+                ("event_signal_id", &payload.event_signal_id),
+                ("mutation_id", &payload.mutation_id),
+                ("activity_phase", &payload.activity_phase),
+            ])?;
+            validate_event_signal_mutation_payload(payload)?;
+        }
+        "gap-update" => {
+            require_fields(&[
+                ("event_signal_id", &payload.event_signal_id),
+                ("mutation_id", &payload.mutation_id),
+                ("gap_summary", &payload.gap_summary),
+            ])?;
+            validate_event_signal_mutation_payload(payload)?;
+        }
         "handoff-create" => {
             require_fields(&[
                 ("source_record_id", &payload.source_record_id),
@@ -1050,10 +2183,15 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
                 bail!("target_agent is not allowed");
             }
         }
+        "signal-ingest" => {
+            require_fields(&[("event_signal_id", &payload.event_signal_id)])?;
+            activity_phase_or_pre_event(&payload.activity_phase)?;
+        }
         "material-summary" => require_fields(&[
             ("record_id", &payload.record_id),
             ("table_role", &payload.table_role),
         ])?,
+        "shadow-validate" => require_fields(&[("date", &payload.date)])?,
         _ => unreachable!("operation allowlist checked above"),
     }
     Ok(())
@@ -1064,6 +2202,47 @@ fn require_fields(fields: &[(&str, &str)]) -> Result<()> {
         if value.trim().is_empty() {
             bail!("{name} is required");
         }
+    }
+    Ok(())
+}
+
+fn validate_event_signal_mutation_payload(payload: &ActivityPayload) -> Result<()> {
+    Uuid::parse_str(payload.event_signal_id.trim()).context("event_signal_id must be a UUID")?;
+    Uuid::parse_str(payload.mutation_id.trim()).context("mutation_id must be a UUID")?;
+    if !payload.record_id.trim().is_empty() || !payload.table_role.trim().is_empty() {
+        bail!("event-signal mutations must not use Feishu record_id or table_role");
+    }
+    match payload.operation.as_str() {
+        "status-update" => {
+            if !payload.gap_summary.trim().is_empty() {
+                bail!("status-update must not include gap_summary");
+            }
+            if !payload.activity_phase.trim().is_empty() {
+                bail!("status-update must not include activity_phase");
+            }
+            if !EVENT_SIGNAL_STATUSES.contains(&payload.status.trim()) {
+                bail!("status is not allowed for event-signal mutation");
+            }
+        }
+        "gap-update" => {
+            if !payload.status.trim().is_empty() {
+                bail!("gap-update must not include status");
+            }
+            if !payload.activity_phase.trim().is_empty() {
+                bail!("gap-update must not include activity_phase");
+            }
+            normalize_gap_summary(&payload.gap_summary)?;
+        }
+        "phase-update" => {
+            if !payload.status.trim().is_empty() {
+                bail!("phase-update must not include status");
+            }
+            if !payload.gap_summary.trim().is_empty() {
+                bail!("phase-update must not include gap_summary");
+            }
+            activity_phase(&payload.activity_phase)?;
+        }
+        _ => bail!("operation is not an event-signal mutation"),
     }
     Ok(())
 }
@@ -1189,6 +2368,260 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn signal_ingest_creates_activity_request_preview() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28",
+            "chat_id": "fixture-community-group",
+            "source_message_ids": ["22222222-2222-4222-8222-222222222222"],
+            "owner_name": "小满",
+            "priority": "高",
+            "location": "秦托邦共享厨房",
+            "gap_summary": "缺少海报主图和报名截止时间"
+        }));
+
+        validate("signal-ingest", &payload).expect("signal payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("signal ingest dry-run should succeed");
+
+        let work_item = report
+            .operations_work_item
+            .expect("signal ingest should create a work item preview");
+        assert_eq!(report.action_status, "operations_dry_run_ok");
+        assert_eq!(report.source, "agentos_event_signal");
+        assert_eq!(report.activity_phase.as_deref(), Some("pre_event"));
+        assert_eq!(
+            report.activity_route.as_deref(),
+            Some("promotion_preparation")
+        );
+        assert_eq!(work_item.capability_key, "xiaoman.create_activity_request");
+        assert_eq!(work_item.work_item_type, "activity_promotion_request");
+        assert_eq!(work_item.requester_agent, "default");
+        assert_eq!(work_item.target_agent, "xiaoman");
+        assert_eq!(
+            work_item.idempotency_key,
+            "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111"
+        );
+        assert_eq!(work_item.current_status, "queued");
+        assert!(!serde_json::to_string(&work_item)
+            .unwrap()
+            .contains("22222222-2222-4222-8222-222222222222"));
+    }
+
+    #[test]
+    fn signal_ingest_routes_each_phase_to_a_distinct_root() {
+        let roots = [
+            (
+                "pre_event",
+                "activity_promotion_request",
+                "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111",
+                "promotion_preparation",
+            ),
+            (
+                "in_event",
+                "activity_live_support_request",
+                "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111:in_event",
+                "live_support",
+            ),
+            (
+                "post_event",
+                "activity_recap_request",
+                "xiaoman_activity_signal:11111111-1111-4111-8111-111111111111:post_event",
+                "activity_recap",
+            ),
+        ];
+
+        for (phase, work_item_type, idempotency_key, route) in roots {
+            let payload = payload(json!({
+                "actor_agent": "xiaoman",
+                "operation": "signal-ingest",
+                "event_signal_id": "11111111-1111-4111-8111-111111111111",
+                "signal_type": "活动/聚会",
+                "activity_title": "周日共创晚餐",
+                "signal_date": "2026-06-28",
+                "activity_phase": phase
+            }));
+            let request = signal_work_item_request(&payload, &[])
+                .expect("phase route should produce a valid root request");
+
+            assert_eq!(request.work_item_type, work_item_type);
+            assert_eq!(request.idempotency_key, idempotency_key);
+            assert_eq!(request.payload["activity_phase"], phase);
+            assert_eq!(request.payload["activity_route"], route);
+            operations::create_work_item_dry_run(request)
+                .expect("phase root should pass capability policy");
+        }
+    }
+
+    #[test]
+    fn signal_ingest_rejects_an_unknown_phase() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28",
+            "activity_phase": "during"
+        }));
+
+        assert!(validate("signal-ingest", &payload)
+            .expect_err("unknown activity phase must fail")
+            .to_string()
+            .contains("activity_phase must be"));
+    }
+
+    #[test]
+    fn signal_ingest_apply_phase_must_match_the_agentos_fact() {
+        assert!(validate_requested_activity_phase("", ActivityPhase::In).is_ok());
+        assert!(validate_requested_activity_phase("in_event", ActivityPhase::In).is_ok());
+        assert!(
+            validate_requested_activity_phase("pre_event", ActivityPhase::In)
+                .expect_err("payload must not override the stored phase")
+                .to_string()
+                .contains("does not match the current event signal phase")
+        );
+    }
+
+    #[tokio::test]
+    async fn signal_ingest_duplicate_uses_same_idempotency_key() {
+        let first = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28"
+        }));
+        let duplicate = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "11111111-1111-4111-8111-111111111111",
+            "signal_type": "活动/聚会",
+            "activity_title": "周日共创晚餐",
+            "signal_date": "2026-06-28"
+        }));
+
+        let first_report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            first,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("first signal should preview");
+        let duplicate_report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            duplicate,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("duplicate signal should preview");
+
+        assert_eq!(
+            first_report.operations_work_item.unwrap().idempotency_key,
+            duplicate_report
+                .operations_work_item
+                .unwrap()
+                .idempotency_key
+        );
+    }
+
+    #[tokio::test]
+    async fn signal_ingest_missing_fields_marks_review_needed() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": "33333333-3333-4333-8333-333333333333",
+            "signal_type": "活动/聚会",
+            "activity_title": "社区共学",
+            "signal_date": ""
+        }));
+
+        validate("signal-ingest", &payload)
+            .expect("signal missing non-id fields should still validate");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "signal-ingest".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("missing fields should create review-needed preview");
+
+        let work_item = report
+            .operations_work_item
+            .expect("review-needed signal should still produce a work item preview");
+        assert_eq!(report.action_status, "review_needed");
+        assert_eq!(report.validation_status, "review_needed");
+        assert_eq!(work_item.capability_key, "xiaoman.create_activity_request");
+        assert_eq!(work_item.current_status, "queued");
+        assert!(report
+            .limitations
+            .iter()
+            .any(|item| item.contains("signal_date")));
+    }
+
+    #[test]
+    fn signal_worker_candidate_uses_signal_ingest_contract() {
+        let candidate = EventSignalIngestCandidate {
+            id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
+            signal_type: "活动/聚会".to_string(),
+            title: "周末共创晚餐".to_string(),
+            summary: "成员在群内讨论周末共创晚餐，需要小满跟进活动宣发。".to_string(),
+            signal_date: "2026-07-05".to_string(),
+            activity_phase: "pre_event".to_string(),
+            chat_id: "fixture-community-group".to_string(),
+            source_message_ids: vec![
+                Uuid::parse_str("55555555-5555-4555-8555-555555555555").unwrap()
+            ],
+            owner_name: "小满".to_string(),
+            priority: "高".to_string(),
+            related_member_names: vec!["阿城".to_string(), "小林".to_string()],
+        };
+
+        let payload = candidate.to_activity_payload();
+        let missing_fields = signal_missing_fields(&payload);
+        let request = signal_work_item_request(&payload, &missing_fields)
+            .expect("phase-aware signal request should be valid");
+        let source_refs_json = serde_json::to_string(&request.source_refs).unwrap();
+
+        assert!(missing_fields.is_empty());
+        assert_eq!(payload.actor_agent, "xiaoman");
+        assert_eq!(payload.operation, "signal-ingest");
+        assert_eq!(request.capability_key, "xiaoman.create_activity_request");
+        assert_eq!(request.work_item_type, "activity_promotion_request");
+        assert_eq!(request.payload["activity_phase"], "pre_event");
+        assert_eq!(request.payload["activity_route"], "promotion_preparation");
+        assert_eq!(request.source_event_signal_id, Some(candidate.id));
+        assert_eq!(
+            request.idempotency_key,
+            "xiaoman_activity_signal:44444444-4444-4444-8444-444444444444"
+        );
+        assert!(source_refs_json.contains("event_signal_message:"));
+        assert!(!source_refs_json.contains("55555555-5555-4555-8555-555555555555"));
+    }
+
     #[test]
     fn feishu_record_mapping_uses_table_role_and_hides_raw_id_in_view() {
         let value = json!({
@@ -1244,6 +2677,140 @@ mod tests {
     }
 
     #[test]
+    fn shadow_validation_matches_feishu_records_and_event_signals() {
+        let feishu = vec![
+            ActivityRecord {
+                record_id: "rec_plan_shadow_1".to_string(),
+                table_role: "activity_plan".to_string(),
+                title: "周日共创晚餐".to_string(),
+                activity_date: Some("2026-06-28".to_string()),
+                start_time: None,
+                end_time: None,
+                location: None,
+                status: None,
+                promotion_status: None,
+                owner_name: None,
+                initiator_name: None,
+                material_summary: None,
+                gap_summary: None,
+                notes: None,
+                updated_at: None,
+            },
+            ActivityRecord {
+                record_id: "rec_occurrence_shadow_1".to_string(),
+                table_role: "activity_occurrence".to_string(),
+                title: "社区共学".to_string(),
+                activity_date: None,
+                start_time: Some("2026-06-28 15:00".to_string()),
+                end_time: None,
+                location: None,
+                status: None,
+                promotion_status: None,
+                owner_name: None,
+                initiator_name: None,
+                material_summary: None,
+                gap_summary: None,
+                notes: None,
+                updated_at: None,
+            },
+        ];
+        let signals = vec![
+            EventSignalActivity {
+                title: "周日共创晚餐".to_string(),
+                signal_date: "2026-06-28".to_string(),
+            },
+            EventSignalActivity {
+                title: "社区共学".to_string(),
+                signal_date: "2026-06-28".to_string(),
+            },
+        ];
+
+        let shadow = compare_shadow_items(
+            &shadow_items_from_records(&feishu, "2026-06-28"),
+            &shadow_items_from_event_signals(&signals),
+        );
+
+        assert_eq!(shadow.action_status, "shadow_match");
+        assert_eq!(shadow.feishu_record_count, 2);
+        assert_eq!(shadow.event_signal_count, 2);
+        assert_eq!(shadow.matched_count, 2);
+        assert!(shadow.missing_in_agentos.is_empty());
+        assert!(shadow.missing_in_feishu.is_empty());
+    }
+
+    #[test]
+    fn shadow_validation_reports_missing_sides() {
+        let feishu = vec![ShadowItem::new(
+            "Feishu 只有的活动".to_string(),
+            "2026-06-28".to_string(),
+        )];
+        let agentos = vec![ShadowItem::new(
+            "AgentOS 只有的活动".to_string(),
+            "2026-06-28".to_string(),
+        )];
+
+        let shadow = compare_shadow_items(&feishu, &agentos);
+
+        assert_eq!(shadow.action_status, "shadow_mismatch");
+        assert_eq!(shadow.matched_count, 0);
+        assert_eq!(shadow.missing_in_agentos[0].title, "Feishu 只有的活动");
+        assert_eq!(shadow.missing_in_feishu[0].title, "AgentOS 只有的活动");
+    }
+
+    #[test]
+    fn shadow_title_normalization_handles_case_space_and_punctuation() {
+        let feishu = vec![ShadowItem::new(
+            " AgentOS：周日-共创 晚餐！".to_string(),
+            "2026-06-28".to_string(),
+        )];
+        let agentos = vec![ShadowItem::new(
+            "agentos周日共创晚餐".to_string(),
+            "2026-06-28".to_string(),
+        )];
+
+        let shadow = compare_shadow_items(&feishu, &agentos);
+
+        assert_eq!(shadow.action_status, "shadow_match");
+        assert_eq!(shadow.matched_count, 1);
+    }
+
+    #[test]
+    fn shadow_report_does_not_expose_raw_feishu_or_message_ids() {
+        let feishu = vec![ActivityRecord {
+            record_id: "rec_sensitive_shadow".to_string(),
+            table_role: "activity_plan".to_string(),
+            title: "安全输出活动".to_string(),
+            activity_date: Some("2026-06-28".to_string()),
+            start_time: None,
+            end_time: None,
+            location: None,
+            status: None,
+            promotion_status: None,
+            owner_name: None,
+            initiator_name: None,
+            material_summary: None,
+            gap_summary: None,
+            notes: None,
+            updated_at: None,
+        }];
+        let signals = vec![EventSignalActivity {
+            title: "安全输出活动".to_string(),
+            signal_date: "2026-06-28".to_string(),
+        }];
+        let shadow = compare_shadow_items(
+            &shadow_items_from_records(&feishu, "2026-06-28"),
+            &shadow_items_from_event_signals(&signals),
+        );
+        let raw = serde_json::to_string(&shadow.missing_in_agentos).unwrap()
+            + &serde_json::to_string(&shadow.missing_in_feishu).unwrap();
+
+        assert!(!raw.contains("rec_sensitive_shadow"));
+        assert!(!raw.contains("tbl_"));
+        assert!(!raw.contains("msg_"));
+        assert!(!raw.contains("app_token"));
+    }
+
+    #[test]
     fn feishu_config_maps_only_allowed_table_roles() {
         let config = feishu_config();
 
@@ -1284,13 +2851,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn status_update_apply_is_not_implemented_yet() {
+    async fn status_update_dry_run_targets_agentos_event_signal() {
         let payload = payload(json!({
             "actor_agent": "xiaoman",
             "operation": "status-update",
-            "record_id": "rec_activity_1",
-            "table_role": "activity_plan",
-            "status": "待人工确认"
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "status": "处理中"
         }));
 
         validate("status-update", &payload).expect("status-update payload should be valid");
@@ -1298,18 +2865,214 @@ mod tests {
             &Cli::parse_from(["qintopia-message-sidecar", "check"]),
             "status-update".to_string(),
             payload,
-            true,
             false,
+            true,
             &runtime_without_source(),
         )
         .await
-        .expect("write apply should stop at guardrail");
+        .expect("status update should preview without database access");
 
         assert!(report.success);
-        assert!(report.apply_requested);
-        assert!(!report.dry_run);
-        assert_eq!(report.action_status, "apply_not_implemented");
+        assert!(!report.apply_requested);
+        assert!(report.dry_run);
+        assert_eq!(report.source, "agentos_event_signals");
+        assert_eq!(report.action_status, "event_signal_status_preview");
+        assert_eq!(report.mutation_applied, Some(false));
         assert!(!report.safe_for_chat);
+    }
+
+    #[tokio::test]
+    async fn gap_update_dry_run_normalizes_without_exposing_gap_text() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "gap-update",
+            "event_signal_id": "88888888-8888-4888-8888-888888888888",
+            "mutation_id": "99999999-9999-4999-8999-999999999999",
+            "gap_summary": "缺少   报名截止时间"
+        }));
+
+        validate("gap-update", &payload).expect("gap-update payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "gap-update".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("gap update should preview without database access");
+
+        assert_eq!(report.action_status, "event_signal_gap_preview");
+        assert_eq!(report.mutation_applied, Some(false));
+        assert!(!serde_json::to_string(&report)
+            .expect("report should serialize")
+            .contains("报名截止时间"));
+    }
+
+    #[tokio::test]
+    async fn phase_update_dry_run_reports_the_derived_route() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "phase-update",
+            "event_signal_id": "88888888-8888-4888-8888-888888888888",
+            "mutation_id": "99999999-9999-4999-8999-999999999999",
+            "activity_phase": "in_event"
+        }));
+
+        validate("phase-update", &payload).expect("phase-update payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "phase-update".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("phase update should preview without database access");
+
+        assert_eq!(report.action_status, "event_signal_phase_preview");
+        assert_eq!(report.activity_phase.as_deref(), Some("in_event"));
+        assert_eq!(report.activity_route.as_deref(), Some("live_support"));
+        assert_eq!(report.mutation_applied, Some(false));
+    }
+
+    #[test]
+    fn event_signal_mutations_reject_feishu_record_identifiers() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "status-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "record_id": "rec_feishu",
+            "table_role": "activity_plan",
+            "status": "处理中"
+        }));
+
+        let error = validate("status-update", &payload)
+            .expect_err("Feishu identifiers must not be accepted for AgentOS writes");
+        assert!(error
+            .to_string()
+            .contains("must not use Feishu record_id or table_role"));
+    }
+
+    #[test]
+    fn event_signal_mutations_require_uuid_ids_and_allowlisted_status() {
+        let invalid_id = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "status-update",
+            "event_signal_id": "not-a-uuid",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "status": "处理中"
+        }));
+        assert!(validate("status-update", &invalid_id)
+            .expect_err("invalid event id must fail")
+            .to_string()
+            .contains("event_signal_id must be a UUID"));
+
+        let invalid_status = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "status-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "status": "待人工确认"
+        }));
+        assert!(validate("status-update", &invalid_status)
+            .expect_err("non-AgentOS status must fail")
+            .to_string()
+            .contains("status is not allowed"));
+    }
+
+    #[test]
+    fn event_signal_mutations_accept_exactly_one_mutable_field() {
+        let status_with_gap = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "status-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "status": "处理中",
+            "gap_summary": "缺少报名截止时间"
+        }));
+        assert!(validate("status-update", &status_with_gap)
+            .expect_err("status update must reject a second mutable field")
+            .to_string()
+            .contains("must not include gap_summary"));
+
+        let gap_with_status = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "gap-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "status": "处理中",
+            "gap_summary": "缺少报名截止时间"
+        }));
+        assert!(validate("gap-update", &gap_with_status)
+            .expect_err("gap update must reject a second mutable field")
+            .to_string()
+            .contains("must not include status"));
+
+        let phase_with_gap = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "phase-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "activity_phase": "in_event",
+            "gap_summary": "缺少报名截止时间"
+        }));
+        assert!(validate("phase-update", &phase_with_gap)
+            .expect_err("phase update must reject a second mutable field")
+            .to_string()
+            .contains("must not include gap_summary"));
+    }
+
+    #[test]
+    fn event_signal_status_transition_rules_keep_terminal_states_closed() {
+        assert!(validate_status_transition("待处理", "处理中").is_ok());
+        assert!(validate_status_transition("处理中", "已完成").is_ok());
+        assert!(validate_status_transition("处理中", "待处理").is_ok());
+        assert!(validate_status_transition("已完成", "处理中").is_err());
+        assert!(validate_status_transition("已关闭", "待处理").is_err());
+        assert!(validate_status_transition("已完成", "已完成").is_ok());
+        assert!(ELIGIBLE_SIGNAL_WORKER_STATUSES.contains(&"待处理"));
+        assert!(ELIGIBLE_SIGNAL_WORKER_STATUSES.contains(&"处理中"));
+        assert!(!ELIGIBLE_SIGNAL_WORKER_STATUSES.contains(&"已完成"));
+        assert!(!ELIGIBLE_SIGNAL_WORKER_STATUSES.contains(&"已关闭"));
+    }
+
+    #[test]
+    fn event_signal_activity_phase_transitions_are_forward_only() {
+        assert!(validate_activity_phase_transition(None, ActivityPhase::Post).is_ok());
+        assert!(validate_activity_phase_transition(Some("pre_event"), ActivityPhase::In).is_ok());
+        assert!(validate_activity_phase_transition(Some("pre_event"), ActivityPhase::Post).is_ok());
+        assert!(validate_activity_phase_transition(Some("in_event"), ActivityPhase::Post).is_ok());
+        assert!(
+            validate_activity_phase_transition(Some("post_event"), ActivityPhase::Post).is_ok()
+        );
+        assert!(validate_activity_phase_transition(Some("in_event"), ActivityPhase::Pre).is_err());
+        assert!(validate_activity_phase_transition(Some("post_event"), ActivityPhase::In).is_err());
+    }
+
+    #[test]
+    fn gap_summary_rejects_sensitive_and_overlong_content() {
+        assert_eq!(
+            normalize_gap_summary("缺少   报名截止时间").expect("summary should normalize"),
+            "缺少 报名截止时间"
+        );
+        assert!(normalize_gap_summary("请联系 13800138000").is_err());
+        assert!(normalize_gap_summary("https://example.com/private").is_err());
+        assert!(normalize_gap_summary(&"长".repeat(501)).is_err());
+    }
+
+    #[test]
+    fn event_signal_mutation_idempotency_key_is_stable() {
+        let event_signal_id = Uuid::parse_str("66666666-6666-4666-8666-666666666666").unwrap();
+        let mutation_id = Uuid::parse_str("77777777-7777-4777-8777-777777777777").unwrap();
+
+        assert_eq!(
+            event_signal_mutation_idempotency_key(event_signal_id, mutation_id),
+            "xiaoman_event_signal:66666666-6666-4666-8666-666666666666:77777777-7777-4777-8777-777777777777"
+        );
     }
 
     #[tokio::test]
@@ -1353,8 +3116,8 @@ mod tests {
             .contains("rec_activity_1"));
     }
 
-    #[tokio::test]
-    async fn handoff_create_rejects_unmapped_capability_pair() {
+    #[test]
+    fn handoff_create_rejects_unmapped_type_before_execution() {
         let payload = payload(json!({
             "actor_agent": "xiaoman",
             "operation": "handoff-create",
@@ -1364,21 +3127,9 @@ mod tests {
             "brief_summary": "提醒成员报名"
         }));
 
-        validate("handoff-create", &payload).expect("payload shape should be valid");
-        let err = execute_with_config(
-            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
-            "handoff-create".to_string(),
-            payload,
-            false,
-            true,
-            &runtime_without_source(),
-        )
-        .await
-        .expect_err("unmapped handoff should be rejected");
-
-        assert!(err
-            .to_string()
-            .contains("handoff-create is not mapped to an operations capability"));
+        let err = validate("handoff-create", &payload)
+            .expect_err("unmapped handoff should be rejected before execution");
+        assert!(err.to_string().contains("handoff_type is not allowed"));
     }
 
     #[test]

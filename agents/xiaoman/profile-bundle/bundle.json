@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "agent_id": "xiaoman",
+  "status": "observation-only",
+  "source": {
+    "profile_path": "/home/ubuntu/.hermes/profiles/xiaoman",
+    "observed_at": "2026-07-15",
+    "disposition": "template"
+  },
+  "inputs": [
+    {
+      "name": "QINTOPIA_XIAOMAN_OPERATIONS_OWNER_NAME",
+      "kind": "display_name",
+      "max_length": 64
+    },
+    {
+      "name": "QINTOPIA_XIAOMAN_OPERATIONS_OWNER_WECOM_TARGET",
+      "kind": "wecom_target",
+      "max_length": 128
+    },
+    {
+      "name": "QINTOPIA_XIAOMAN_TECHNICAL_OWNER_NAME",
+      "kind": "display_name",
+      "max_length": 64
+    },
+    {
+      "name": "QINTOPIA_XIAOMAN_TECHNICAL_HOME_CHANNEL",
+      "kind": "wecom_target",
+      "max_length": 128
+    }
+  ],
+  "files": [
+    {
+      "template": "templates/SOUL.md.template",
+      "target": "SOUL.md",
+      "mode": "0600",
+      "production_source_sha256": "4b54c777e09102385665554829df7b1665bde57d28b4c5bc5ce34fd1d052801e"
+    },
+    {
+      "template": "templates/profile.yaml.template",
+      "target": "profile.yaml",
+      "mode": "0644",
+      "production_source_sha256": "b34f56b16eac72dc561faef1178d8242705000376561327054e9a15809c2de09"
+    }
+  ],
+  "excluded_runtime_state": [
+    ".env",
+    "config.yaml",
+    "webhook_subscriptions.json",
+    "channel_directory.json",
+    "cron/jobs.json",
+    "sessions",
+    "auth",
+    "messages",
+    "memories",
+    "logs",
+    "cache",
+    "locks",
+    "state.db"
+  ],
+  "validation": {
+    "commands": [
+      "python3 agents/xiaoman/profile-bundle/render.py --check-only",
+      "python3 agents/xiaoman/profile-bundle/migrate_values.py --check-only",
+      "python3 -m unittest discover -s agents/xiaoman/profile-bundle/tests -p 'test_*.py'",
+      "pnpm agents:profile-bundles:check"
+    ]
+  },
+  "production_boundary": {
+    "live_profile_changes": false,
+    "external_sends": false,
+    "database_writes": false,
+    "network_access": false,
+    "server_config_write": "manual-root-only"
+  },
+  "rollback": {
+    "strategy": "leave the values file unused or remove it through an owner-approved operation; the live profile remains unchanged"
+  }
+}

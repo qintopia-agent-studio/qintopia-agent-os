@@ -1,17 +1,17 @@
 # Server Directory Plan
 
-Updated: 2026-07-04
+Updated: 2026-07-08
 
 This document records the intended server filesystem shape for Qintopia Agent OS. It
-separates the current transitional state from the target release model so future
-operators do not reintroduce ad hoc server checkouts, manual builds, or direct profile
-edits.
+separates the active release/current model from remaining profile-bundle and archive
+retention work so future operators do not reintroduce ad hoc server checkouts, manual
+builds, or direct profile edits.
 
 ## Direction
 
 The server should be a deployment target, not a development workspace.
 
-The long-term deployment model is:
+The production deployment model is:
 
 - GitHub CI builds reviewed artifacts from an approved `master` commit SHA.
 - GitHub CI uploads reviewed artifacts to Tencent COS for server-side distribution.
@@ -24,7 +24,7 @@ The long-term deployment model is:
 - Rollback switches `current` back to the previous release and restarts approved
   services.
 
-## Target Shape
+## Current Target Shape
 
 ```text
 /home/ubuntu/
@@ -70,17 +70,16 @@ The long-term deployment model is:
   cos-artifacts.env
 ```
 
-`qintopia-agent-os-artifacts/<sha>` is the current transition path for CI sidecar
-artifacts after they are pulled from COS. It should either become a download cache or be
-replaced by `qintopia-agent-os-releases/<sha>` after the release/current model is
-implemented.
+`qintopia-agent-os-artifacts/<sha>` is a download cache and audit path for CI artifacts
+after they are pulled from COS. It is not a production service working directory.
 
-## Current Transitional Directories
+## Current Runtime Directories
 
 | Path                                       | Classification       | Current use                                                    | Target disposition                                            |
 | ------------------------------------------ | -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------- |
-| `/home/ubuntu/qintopia-agent-os-monorepo`  | current architecture | server checkout for runbooks, scripts, migrations, and docs    | keep as deploy checkout                                       |
-| `/home/ubuntu/qintopia-agent-os-artifacts` | transition artifact  | verified CI sidecar binaries by SHA                            | replace or fold into `qintopia-agent-os-releases`             |
+| `/home/ubuntu/qintopia-agent-os-releases`  | current architecture | immutable releases plus `current`/`previous` symlinks          | keep as production runtime source                             |
+| `/home/ubuntu/qintopia-agent-os-monorepo`  | diagnostic checkout  | bootstrap/diagnostic checkout for approved runner work         | do not use as normal runtime release source                   |
+| `/home/ubuntu/qintopia-agent-os-artifacts` | artifact cache       | verified CI sidecar binaries by SHA                            | keep only as cache/audit evidence                             |
 | `/home/ubuntu/qintopia-agent-os-backups`   | current architecture | systemd and rollback backups created during M9                 | keep with retention policy                                    |
 | `/etc/qintopia`                            | current architecture | production env/config, COS config, and GitHub App key material | keep; never copy into git                                     |
 | `/home/ubuntu/.hermes`                     | Hermes live runtime  | Hermes core, profiles, logs, sessions, cache, skills, scripts  | keep; move versioned files to release-managed links over time |
@@ -122,8 +121,8 @@ M12-C WorkTool/Xiaoqin archive path:
 /home/ubuntu/qintopia-agent-os-backups/m12-worktool-xiaoqin-20260706T014342Z
 ```
 
-M9-F must remove these active service references before
-`/home/ubuntu/qintopia-msg-sidecar` becomes eligible for archive:
+M9-F removed these active service references before the old sidecar checkout was
+archived:
 
 - `qintopia-agentos-member-profile-worker.service`
 - `qintopia-agentos-graph-projection-worker.service`

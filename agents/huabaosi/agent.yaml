@@ -16,6 +16,9 @@ production_boundary:
   database_writes: true
   runtime_profile: true
   secrets: true
+runtime:
+  restart_target: hermes-huabaosi
+  systemd_user_service: hermes-gateway-huabaosi.service
 validation:
   commands:
     - pnpm smoke:sidecar
@@ -31,4 +34,5 @@ tags:
   - hermes-profile
 next_actions:
   - Separate approved profile behavior from Huabaosi shadow and Rust exploration.
-  - Define a production visual adapter only after owner approval and artifact review.
+  - Follow `docs/plans/active/aliang-production-image-generation.md` to define a
+    production visual adapter only after owner approval and artifact review.

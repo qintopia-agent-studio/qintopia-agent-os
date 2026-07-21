@@ -28,6 +28,16 @@ WORKFLOW_SYNC_SERVICE_FILE="/etc/systemd/system/${WORKFLOW_SYNC_SERVICE_NAME}"
 WORKFLOW_SYNC_TIMER_NAME="${QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_NAME:-qintopia-agentos-operations-workflow-sync.timer}"
 WORKFLOW_SYNC_TIMER_FILE="/etc/systemd/system/${WORKFLOW_SYNC_TIMER_NAME}"
 WORKFLOW_SYNC_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL:-2min}"
+EVIDENCE_WORKER_SERVICE_NAME="${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_SERVICE_NAME:-qintopia-agentos-operations-evidence-worker.service}"
+EVIDENCE_WORKER_SERVICE_FILE="/etc/systemd/system/${EVIDENCE_WORKER_SERVICE_NAME}"
+EVIDENCE_WORKER_TIMER_NAME="${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_NAME:-qintopia-agentos-operations-evidence-worker.timer}"
+EVIDENCE_WORKER_TIMER_FILE="/etc/systemd/system/${EVIDENCE_WORKER_TIMER_NAME}"
+EVIDENCE_WORKER_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL:-2min}"
+VISUAL_WORKER_SERVICE_NAME="${QINTOPIA_OPERATIONS_VISUAL_WORKER_SERVICE_NAME:-qintopia-agentos-operations-visual-worker.service}"
+VISUAL_WORKER_SERVICE_FILE="/etc/systemd/system/${VISUAL_WORKER_SERVICE_NAME}"
+VISUAL_WORKER_TIMER_NAME="${QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_NAME:-qintopia-agentos-operations-visual-worker.timer}"
+VISUAL_WORKER_TIMER_FILE="/etc/systemd/system/${VISUAL_WORKER_TIMER_NAME}"
+VISUAL_WORKER_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL:-2min}"
 WORKBENCH_EVENT_SERVICE_NAME="${QINTOPIA_OPERATIONS_WORKBENCH_EVENT_SERVICE_NAME:-qintopia-agentos-operations-workbench-event.service}"
 WORKBENCH_EVENT_SERVICE_FILE="/etc/systemd/system/${WORKBENCH_EVENT_SERVICE_NAME}"
 WORKBENCH_EVENT_TIMER_NAME="${QINTOPIA_OPERATIONS_WORKBENCH_EVENT_TIMER_NAME:-qintopia-agentos-operations-workbench-event.timer}"
@@ -38,6 +48,26 @@ GROUP_SEND_READY_SERVICE_FILE="/etc/systemd/system/${GROUP_SEND_READY_SERVICE_NA
 GROUP_SEND_READY_TIMER_NAME="${QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_NAME:-qintopia-agentos-operations-group-send-ready.timer}"
 GROUP_SEND_READY_TIMER_FILE="/etc/systemd/system/${GROUP_SEND_READY_TIMER_NAME}"
 GROUP_SEND_READY_TIMER_INTERVAL="${QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL:-1min}"
+XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME:-qintopia-agentos-xiaoman-activity-signal-worker.service}"
+XIAOMAN_ACTIVITY_SIGNAL_SERVICE_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME}"
+XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME:-qintopia-agentos-xiaoman-activity-signal-worker.timer}"
+XIAOMAN_ACTIVITY_SIGNAL_TIMER_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME}"
+XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL:-2min}"
+XIAOMAN_ACTIVITY_PROMOTION_STARTER_SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_SERVICE_NAME:-qintopia-agentos-xiaoman-activity-promotion-starter-worker.service}"
+XIAOMAN_ACTIVITY_PROMOTION_STARTER_SERVICE_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_PROMOTION_STARTER_SERVICE_NAME}"
+XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_NAME:-qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer}"
+XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_NAME}"
+XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL:-2min}"
+XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_NAME:-qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service}"
+XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_NAME}"
+XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_NAME:-qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer}"
+XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_NAME}"
+XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL:-2min}"
+XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_NAME:-qintopia-agentos-xiaoman-activity-send-request-starter-worker.service}"
+XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_NAME}"
+XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME:-qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer}"
+XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_FILE="/etc/systemd/system/${XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME}"
+XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL="${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL:-2min}"
 REMOTE="${QINTOPIA_SIDECAR_GIT_REMOTE:-origin}"
 BRANCH="${QINTOPIA_SIDECAR_GIT_BRANCH:-main}"
 BIN="${REPO_DIR}/target/release/qintopia-message-sidecar"
@@ -57,8 +87,10 @@ Required before deploy/verify:
 
 Worker units are installed for message embedding, identity resolution, member
 profiles, SQL graph projection, event signals, daily digests, Feishu publishing,
-raw-message archive, AgentOS operations workflow summary sync, and AgentOS
-workbench event processing, and AgentOS group-send readiness audit.
+raw-message archive, AgentOS operations workflow summary sync, AgentOS evidence and
+visual artifact workers, AgentOS workbench event processing, AgentOS group-send
+readiness audit, and Xiaoman activity signal intake, activity promotion child starter,
+image-generation request starter, and send request starter.
 
 AgentOS operations control-plane dry smoke runs during deploy/verify. The
 Postgres apply smoke runs only when QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1.
@@ -306,6 +338,70 @@ Unit=${WORKFLOW_SYNC_SERVICE_NAME}
 [Install]
 WantedBy=timers.target
 EOF
+  log "installing systemd unit at ${EVIDENCE_WORKER_SERVICE_FILE}"
+  sudo tee "$EVIDENCE_WORKER_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Operations Evidence Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-evidence-worker --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${EVIDENCE_WORKER_TIMER_FILE}"
+  sudo tee "$EVIDENCE_WORKER_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS operations evidence worker
+
+[Timer]
+OnBootSec=7min
+OnUnitActiveSec=${EVIDENCE_WORKER_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${EVIDENCE_WORKER_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
+  log "installing systemd unit at ${VISUAL_WORKER_SERVICE_FILE}"
+  sudo tee "$VISUAL_WORKER_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Operations Visual Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-collaboration-worker --work-item-type visual_asset_request --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${VISUAL_WORKER_TIMER_FILE}"
+  sudo tee "$VISUAL_WORKER_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS operations visual worker
+
+[Timer]
+OnBootSec=8min
+OnUnitActiveSec=${VISUAL_WORKER_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${VISUAL_WORKER_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
   log "installing systemd unit at ${WORKBENCH_EVENT_SERVICE_FILE}"
   sudo tee "$WORKBENCH_EVENT_SERVICE_FILE" >/dev/null <<EOF
 [Unit]
@@ -370,6 +466,134 @@ Unit=${GROUP_SEND_READY_SERVICE_NAME}
 [Install]
 WantedBy=timers.target
 EOF
+  log "installing systemd unit at ${XIAOMAN_ACTIVITY_SIGNAL_SERVICE_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_SIGNAL_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Xiaoman Activity Signal Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-xiaoman-activity-signal-worker --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${XIAOMAN_ACTIVITY_SIGNAL_TIMER_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS Xiaoman activity signal intake
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=${XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${XIAOMAN_ACTIVITY_SIGNAL_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
+  log "installing systemd unit at ${XIAOMAN_ACTIVITY_PROMOTION_STARTER_SERVICE_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_PROMOTION_STARTER_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Xiaoman Activity Promotion Starter Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-xiaoman-activity-promotion-starter-worker --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS Xiaoman activity promotion child starter
+
+[Timer]
+OnBootSec=6min
+OnUnitActiveSec=${XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${XIAOMAN_ACTIVITY_PROMOTION_STARTER_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
+  log "installing systemd unit at ${XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Xiaoman Activity Image Generation Starter Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-xiaoman-activity-image-generation-starter-worker --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS Xiaoman activity image-generation request starter
+
+[Timer]
+OnBootSec=9min
+OnUnitActiveSec=${XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
+  log "installing systemd unit at ${XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_FILE" >/dev/null <<EOF
+[Unit]
+Description=Qintopia AgentOS Xiaoman Activity Send Request Starter Worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${REPO_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${BIN} run-xiaoman-activity-send-request-starter-worker --once --apply
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+  log "installing systemd timer at ${XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_FILE}"
+  sudo tee "$XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_FILE" >/dev/null <<EOF
+[Unit]
+Description=Run Qintopia AgentOS Xiaoman activity send request starter
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=${XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL}
+AccuracySec=30s
+Persistent=true
+Unit=${XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
   sudo systemctl daemon-reload
 }
 
@@ -418,9 +642,9 @@ QINTOPIA_DAILY_DIGEST_WORKER_POLL_SECONDS=60
 QINTOPIA_DAILY_DIGEST_PUBLISHER_BATCH_SIZE=10
 QINTOPIA_DAILY_DIGEST_PUBLISHER_POLL_SECONDS=120
 QINTOPIA_DAILY_DIGEST_PUBLISHER_AGENT=xiaoman
-QINTOPIA_DAILY_DIGEST_FEISHU_BASE_TOKEN=QIlqblr9oamGlWsx3frcl5WGnvh
-QINTOPIA_DAILY_DIGEST_ALLOWED_FEISHU_BASE_TOKENS=QIlqblr9oamGlWsx3frcl5WGnvh
-QINTOPIA_DAILY_DIGEST_FEISHU_DAILY_TABLE_ID=tblcDfEdBTke4voG
+QINTOPIA_DAILY_DIGEST_FEISHU_BASE_TOKEN=replace-with-base-token
+QINTOPIA_DAILY_DIGEST_ALLOWED_FEISHU_BASE_TOKENS=replace-with-base-token
+QINTOPIA_DAILY_DIGEST_FEISHU_DAILY_TABLE_ID=replace-with-daily-table-id
 # Fill these after scripts/setup-daily-digest-base.py --apply creates the tables.
 # QINTOPIA_DAILY_DIGEST_FEISHU_SIGNAL_TABLE_ID=
 # QINTOPIA_DAILY_DIGEST_FEISHU_ARCHIVE_TABLE_ID=
@@ -437,15 +661,40 @@ QINTOPIA_RAW_ARCHIVE_FORMAT=jsonl.zst
 # AgentOS operations workflow summary sync is installed as a systemd timer.
 # The timer interval is controlled at deploy-time by
 # QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL in scripts/server-deploy.sh.
+# AgentOS evidence and visual workers are installed as timers. They only process
+# AgentOS evidence_request / visual_asset_request work_items into internal
+# evidence_summary / poster_brief artifacts; they do not call Feishu, QiWe,
+# Wenyuange live search, Huabaosi production generation, or external adapters.
+# QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL is read at deploy-time.
+# QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL is read at deploy-time.
 # AgentOS workbench event processing is also installed as a timer. It only
 # processes already-recorded human_workbench_event_recorded events.
 # QINTOPIA_OPERATIONS_WORKBENCH_EVENT_TIMER_INTERVAL is read at deploy-time.
 # AgentOS group-send readiness audit is installed as a timer. It only records
 # send-ready events and never calls QiWe/Erhua production send adapters.
 # QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL is read at deploy-time.
+# Xiaoman activity signal intake is installed as a timer. It only scans
+# owner_agent=xiaoman event_signals and writes AgentOS work_items; it does not
+# read/write Feishu, call QiWe, create visual assets, or send externally.
+# QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL is read at deploy-time.
+# Xiaoman activity promotion starter is installed as a timer. It only creates
+# missing AgentOS evidence/visual child work_items under existing Xiaoman
+# activity request parents; it does not read/write Feishu, call QiWe, execute
+# evidence retrieval, create visual assets, or send externally.
+# QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL is read at deploy-time.
+# Xiaoman activity image-generation starter is installed as a timer. It only creates
+# AgentOS image_generation_request work_items from approved poster_brief artifacts; it
+# does not call the image provider worker, upload media, create generated images,
+# read/write Feishu, call QiWe, publish, or send externally.
+# QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL is read at deploy-time.
+# Xiaoman activity send request starter is installed as a timer. It only creates
+# awaiting_publish AgentOS group_message_request work_items from approved Xiaoman
+# poster_brief artifacts; it does not record final confirmation, queue, send,
+# publish, read/write Feishu, call QiWe, or run external adapters.
+# QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL is read at deploy-time.
 RUST_LOG=info,qintopia_message_sidecar=debug
 EOF
-  sudo chown ubuntu:ubuntu "$ENV_FILE"
+  sudo chown root:ubuntu "$ENV_FILE"
   sudo chmod 0640 "$ENV_FILE"
 }
 
@@ -529,10 +778,22 @@ run_migrations_and_checks() {
   "$BIN" run-raw-archive-worker --check-only
   log "running operations workflow sync worker dry-run check"
   "$BIN" run-workflow-sync-worker --once --dry-run
+  log "running operations evidence worker dry-run check"
+  "$BIN" run-evidence-worker --once --dry-run
+  log "running operations visual worker dry-run check"
+  "$BIN" run-collaboration-worker --work-item-type visual_asset_request --once --dry-run
   log "running operations workbench event worker dry-run check"
   "$BIN" run-workbench-event-worker --once --dry-run
   log "running operations group send-ready worker dry-run check"
   "$BIN" run-group-message-send-worker --once --dry-run
+  log "running Xiaoman activity signal worker dry-run check"
+  "$BIN" run-xiaoman-activity-signal-worker --check-only
+  log "running Xiaoman activity promotion starter worker dry-run check"
+  "$BIN" run-xiaoman-activity-promotion-starter-worker --check-only
+  log "running Xiaoman activity image-generation starter worker dry-run check"
+  "$BIN" run-xiaoman-activity-image-generation-starter-worker --check-only
+  log "running Xiaoman activity send request starter worker dry-run check"
+  "$BIN" run-xiaoman-activity-send-request-starter-worker --check-only
 }
 
 start_service() {
@@ -548,8 +809,14 @@ start_service() {
   sudo systemctl enable --now "$PUBLISHER_SERVICE_NAME"
   sudo systemctl enable --now "$ARCHIVE_SERVICE_NAME"
   sudo systemctl enable --now "$WORKFLOW_SYNC_TIMER_NAME"
+  sudo systemctl enable --now "$EVIDENCE_WORKER_TIMER_NAME"
+  sudo systemctl enable --now "$VISUAL_WORKER_TIMER_NAME"
   sudo systemctl enable --now "$WORKBENCH_EVENT_TIMER_NAME"
   sudo systemctl enable --now "$GROUP_SEND_READY_TIMER_NAME"
+  sudo systemctl enable --now "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
+  sudo systemctl enable --now "$XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_NAME"
+  sudo systemctl enable --now "$XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_NAME"
+  sudo systemctl enable --now "$XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME"
   systemctl is-active "$IDENTITY_SERVICE_NAME"
   systemctl is-active "$PROFILE_SERVICE_NAME"
   systemctl is-active "$GRAPH_SERVICE_NAME"
@@ -558,8 +825,14 @@ start_service() {
   systemctl is-active "$PUBLISHER_SERVICE_NAME"
   systemctl is-active "$ARCHIVE_SERVICE_NAME"
   systemctl is-active "$WORKFLOW_SYNC_TIMER_NAME"
+  systemctl is-active "$EVIDENCE_WORKER_TIMER_NAME"
+  systemctl is-active "$VISUAL_WORKER_TIMER_NAME"
   systemctl is-active "$WORKBENCH_EVENT_TIMER_NAME"
   systemctl is-active "$GROUP_SEND_READY_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME"
 }
 
 run_smoke() {
@@ -602,8 +875,14 @@ verify_services() {
   systemctl is-active "$PUBLISHER_SERVICE_NAME"
   systemctl is-active "$ARCHIVE_SERVICE_NAME"
   systemctl is-active "$WORKFLOW_SYNC_TIMER_NAME"
+  systemctl is-active "$EVIDENCE_WORKER_TIMER_NAME"
+  systemctl is-active "$VISUAL_WORKER_TIMER_NAME"
   systemctl is-active "$WORKBENCH_EVENT_TIMER_NAME"
   systemctl is-active "$GROUP_SEND_READY_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_SIGNAL_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_NAME"
+  systemctl is-active "$XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_NAME"
   systemctl --user is-active hermes-gateway-erhua.service
 }
 

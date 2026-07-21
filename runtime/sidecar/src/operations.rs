@@ -5,12 +5,21 @@ use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Row};
 use uuid::Uuid;
 
-use crate::{config::Cli, db};
+use crate::{
+    activity_lifecycle::ActivityPhase,
+    config::Cli,
+    db,
+    huabaosi_feishu_artifact_mirror::{self, FeishuPrimaryStorageApprovalEvidence},
+    url_policy,
+};
 
 const ALLOWED_WORK_ITEM_TYPES: &[&str] = &[
     "visual_asset_request",
+    "image_generation_request",
     "group_message_request",
     "activity_promotion_request",
+    "activity_live_support_request",
+    "activity_recap_request",
     "evidence_request",
 ];
 
@@ -37,10 +46,16 @@ const DRY_RUN_ALLOWED_GROUP_ALIASES: &[&str] = &["community_activity_group"];
 const DRY_RUN_ALLOWED_GROUP_IDS: &[&str] = &[];
 const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "huabaosi.create_visual_asset",
+    "huabaosi.generate_image_asset",
     "erhua.send_group_message",
     "wenyuange.retrieve_evidence",
     "xiaoman.create_activity_request",
 ];
+const GENERATED_IMAGE_ARTIFACT_TYPE: &str = "generated_image";
+const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
+const GENERATED_IMAGE_WORK_ITEM_TYPE: &str = "image_generation_request";
+const GENERATED_IMAGE_WORKER_ID: &str = "huabaosi-image-generation-worker";
+const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkItemCreateRequest {
@@ -139,6 +154,10 @@ pub struct ArtifactReviewDecisionRequest {
     pub reviewer_id: String,
     pub decision: String,
     #[serde(default)]
+    pub expected_artifact_type: Option<String>,
+    #[serde(default)]
+    pub expected_review_status: Option<String>,
+    #[serde(default)]
     pub reason: String,
     #[serde(default)]
     pub source: String,
@@ -154,6 +173,7 @@ pub struct ArtifactReviewDecisionReport {
     pub action_status: String,
     pub artifact_id: Uuid,
     pub work_item_id: Option<Uuid>,
+    pub artifact_type: Option<String>,
     pub previous_review_status: Option<String>,
     pub review_status: String,
     pub reviewer_id: String,
@@ -273,6 +293,8 @@ pub struct WorkItemStatusTreeReport {
     pub root: WorkItemStatusNode,
     pub children: Vec<WorkItemStatusNode>,
     pub child_count: usize,
+    pub descendants: Vec<WorkItemStatusNode>,
+    pub descendant_count: usize,
     pub current_blocking_point: Option<String>,
     pub limitations: Vec<String>,
     pub guardrails: Vec<String>,
@@ -286,9 +308,11 @@ pub struct WorkflowSyncReport {
     pub action_status: String,
     pub root_work_item_id: Uuid,
     pub child_count: usize,
+    pub descendant_count: usize,
     pub aggregate_status: String,
     pub current_blocking_point: Option<String>,
     pub child_status_refs: Vec<WorkflowChildStatusRef>,
+    pub descendant_status_refs: Vec<WorkflowChildStatusRef>,
     pub event_id: Option<Uuid>,
     pub limitations: Vec<String>,
     pub guardrails: Vec<String>,
@@ -309,8 +333,114 @@ pub struct WorkflowSyncWorkerReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct XiaomanActivityPromotionStarterWorkerReport {
+    pub success: bool,
+    pub dry_run: bool,
+    pub apply_requested: bool,
+    pub check_only: bool,
+    pub worker: &'static str,
+    pub source: &'static str,
+    pub action_status: String,
+    pub requested_work_item_id: Option<Uuid>,
+    pub scanned_count: usize,
+    pub created_count: usize,
+    pub existing_count: usize,
+    pub missing_child_count: usize,
+    pub safe_for_chat: bool,
+    pub work_items: Vec<WorkItemCreateReport>,
+    pub limitations: Vec<String>,
+    pub guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct XiaomanActivitySendRequestStarterWorkerReport {
+    pub success: bool,
+    pub dry_run: bool,
+    pub apply_requested: bool,
+    pub check_only: bool,
+    pub worker: &'static str,
+    pub source: &'static str,
+    pub action_status: String,
+    pub requested_work_item_id: Option<Uuid>,
+    pub scanned_count: usize,
+    pub created_count: usize,
+    pub existing_count: usize,
+    pub missing_child_count: usize,
+    pub safe_for_chat: bool,
+    pub work_items: Vec<WorkItemCreateReport>,
+    pub limitations: Vec<String>,
+    pub guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct XiaomanActivityImageGenerationStarterWorkerReport {
+    pub success: bool,
+    pub dry_run: bool,
+    pub apply_requested: bool,
+    pub check_only: bool,
+    pub worker: &'static str,
+    pub source: &'static str,
+    pub action_status: String,
+    pub requested_work_item_id: Option<Uuid>,
+    pub scanned_count: usize,
+    pub created_count: usize,
+    pub existing_count: usize,
+    pub missing_child_count: usize,
+    pub safe_for_chat: bool,
+    pub work_items: Vec<WorkItemCreateReport>,
+    pub limitations: Vec<String>,
+    pub guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct XiaomanActivityPromotionCandidate {
+    id: Uuid,
+    activity_phase: ActivityPhase,
+    brief_summary: String,
+    source_type: String,
+    source_refs: Value,
+    source_event_signal_id: Option<Uuid>,
+    priority: String,
+    human_owner: String,
+    missing_evidence_child: bool,
+    missing_visual_child: bool,
+}
+
+#[derive(Debug, Clone)]
+struct XiaomanActivitySendRequestCandidate {
+    parent_id: Uuid,
+    activity_phase: ActivityPhase,
+    visual_work_item_id: Uuid,
+    image_generation_work_item_id: Uuid,
+    approved_artifact_id: Uuid,
+    brief_summary: String,
+    source_type: String,
+    source_refs: Value,
+    source_event_signal_id: Option<Uuid>,
+    priority: String,
+    human_owner: String,
+}
+
+#[derive(Debug, Clone)]
+struct XiaomanActivityImageGenerationCandidate {
+    activity_phase: ActivityPhase,
+    visual_work_item_id: Uuid,
+    approved_artifact_id: Uuid,
+    approved_brief_hash: String,
+    evidence_content_hash: Option<String>,
+    brief_summary: String,
+    source_type: String,
+    source_refs: Value,
+    source_event_signal_id: Option<Uuid>,
+    priority: String,
+    human_owner: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct WorkflowChildStatusRef {
     pub work_item_id: Uuid,
+    pub parent_work_item_id: Option<Uuid>,
+    pub depth: i32,
     pub work_item_type: String,
     pub status: String,
     pub capability_key: String,
@@ -321,6 +451,7 @@ pub struct WorkflowChildStatusRef {
 pub struct WorkItemStatusNode {
     pub work_item_id: Uuid,
     pub parent_work_item_id: Option<Uuid>,
+    pub depth: i32,
     pub work_item_type: String,
     pub status: String,
     pub requester_agent: String,
@@ -339,6 +470,26 @@ pub struct WorkItemStatusNode {
 #[derive(Debug, Clone)]
 struct WorkItemStatusRow {
     node: WorkItemStatusNode,
+}
+
+#[derive(Debug, Clone)]
+struct ArtifactApprovalContext {
+    artifact_id: Uuid,
+    work_item_id: Uuid,
+    artifact_type: String,
+    review_status: String,
+    created_by_agent: String,
+    artifact_uri: Option<String>,
+    content_hash: Option<String>,
+    source_ids: Value,
+    risk_labels: Vec<String>,
+    information_class: String,
+    metadata: Value,
+    work_item_type: String,
+    capability_key: String,
+    work_item_status: String,
+    work_item_payload: Value,
+    creation_event_matches: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -540,14 +691,29 @@ pub async fn run_review_decision(
     if apply && dry_run {
         bail!("use either --apply or --dry-run, not both");
     }
-    let request: ArtifactReviewDecisionRequest =
+    let mut request: ArtifactReviewDecisionRequest =
         serde_json::from_str(&payload_json).context("parse artifact review decision payload")?;
     let apply_requested = apply && !dry_run;
     let report = if apply_requested {
         let database_url = cli.database_url_required()?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
         let policy = OperationsPolicy::from_cli(cli, true);
-        record_artifact_review_decision(&pool, request, true, &policy).await?
+        normalize_review_request(&mut request);
+        let approval_evidence = if validate_review_request(&request).is_ok()
+            && validate_reviewer_authorized(&request.reviewer_id, &policy).is_ok()
+        {
+            prepare_feishu_primary_storage_approval_evidence(&pool, &request, database_url).await?
+        } else {
+            None
+        };
+        record_artifact_review_decision_with_evidence(
+            &pool,
+            request,
+            true,
+            &policy,
+            approval_evidence.as_ref(),
+        )
+        .await?
     } else {
         let policy = OperationsPolicy::from_cli(cli, false);
         record_artifact_review_decision_dry_run(request, &policy)?
@@ -691,6 +857,116 @@ pub async fn run_workflow_sync_worker(
     Ok(())
 }
 
+pub async fn run_xiaoman_activity_promotion_starter_worker(
+    cli: &Cli,
+    check_only: bool,
+    once: bool,
+    apply: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+) -> Result<()> {
+    if check_only && apply {
+        bail!("use either --check-only or --apply, not both");
+    }
+    if !once && !check_only {
+        bail!(
+            "xiaoman activity promotion starter worker currently supports --once or --check-only"
+        );
+    }
+    let database_url = cli.database_url_required()?;
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
+    let policy = OperationsPolicy::from_cli(cli, true);
+    let report = run_xiaoman_activity_promotion_starter_batch(
+        &pool,
+        check_only,
+        apply && !check_only,
+        batch_size,
+        work_item_id,
+        &policy,
+    )
+    .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the CLI command maps its reviewed flags directly to the protected worker boundary"
+)]
+pub async fn run_xiaoman_activity_send_request_starter_worker(
+    cli: &Cli,
+    check_only: bool,
+    once: bool,
+    apply: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+    target_group_alias: String,
+    message_text: String,
+) -> Result<()> {
+    if check_only && apply {
+        bail!("use either --check-only or --apply, not both");
+    }
+    if !once && !check_only {
+        bail!("xiaoman activity send request starter worker currently supports --once or --check-only");
+    }
+    let database_url = cli.database_url_required()?;
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
+    let policy = if apply {
+        OperationsPolicy::from_cli(cli, true)
+    } else {
+        OperationsPolicy::dry_run()
+    };
+    let report = run_xiaoman_activity_send_request_starter_batch(
+        &pool,
+        check_only,
+        apply && !check_only,
+        batch_size,
+        work_item_id,
+        &target_group_alias,
+        &message_text,
+        &policy,
+    )
+    .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+pub async fn run_xiaoman_activity_image_generation_starter_worker(
+    cli: &Cli,
+    check_only: bool,
+    once: bool,
+    apply: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+) -> Result<()> {
+    if check_only && apply {
+        bail!("use either --check-only or --apply, not both");
+    }
+    if !once && !check_only {
+        bail!(
+            "xiaoman activity image generation starter worker currently supports --once or --check-only"
+        );
+    }
+    let database_url = cli.database_url_required()?;
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
+    let policy = if apply {
+        OperationsPolicy::from_cli(cli, true)
+    } else {
+        OperationsPolicy::dry_run()
+    };
+    let report = run_xiaoman_activity_image_generation_starter_batch(
+        &pool,
+        check_only,
+        apply && !check_only,
+        batch_size,
+        work_item_id,
+        &policy,
+    )
+    .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
 pub async fn run_capability_list(cli: &Cli, use_db: bool) -> Result<()> {
     let report = if use_db {
         let database_url = cli.database_url_required()?;
@@ -721,23 +997,39 @@ async fn work_item_status_tree(
     work_item_id: Uuid,
 ) -> Result<WorkItemStatusTreeReport> {
     let root_id = resolve_root_work_item_id(pool, work_item_id).await?;
-    let root = load_work_item_status_row(pool, root_id).await?;
-    let children = load_child_work_item_status_rows(pool, root_id).await?;
-    let mut ordered_nodes = Vec::with_capacity(children.len() + 1);
+    let mut rows = load_work_item_status_tree_rows(pool, root_id).await?;
+    let root = rows
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("workflow root is not found"))?;
+    if root.node.work_item_id != root_id || root.node.depth != 0 {
+        bail!("workflow status tree did not start at the resolved root");
+    }
+    let descendants = rows.split_off(1);
+    let children = descendants
+        .iter()
+        .filter(|row| row.node.parent_work_item_id == Some(root_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut ordered_nodes = Vec::with_capacity(descendants.len() + 1);
     ordered_nodes.push(root.clone());
-    ordered_nodes.extend(children.iter().cloned());
+    ordered_nodes.extend(descendants.iter().cloned());
     let current_blocking_point = current_blocking_point(&ordered_nodes);
+    let child_count = children.len();
+    let descendant_count = descendants.len();
     Ok(WorkItemStatusTreeReport {
         success: true,
         queried_work_item_id: work_item_id,
         root_work_item_id: root_id,
         root: root.node,
         children: children.into_iter().map(|row| row.node).collect(),
-        child_count: ordered_nodes.len().saturating_sub(1),
+        child_count,
+        descendants: descendants.into_iter().map(|row| row.node).collect(),
+        descendant_count,
         current_blocking_point,
         limitations: vec![
             "status tree is read-only and does not execute workers".to_string(),
-            "this is a one-level parent/child summary, not a full DAG engine".to_string(),
+            "recursive status reporting is not a general DAG scheduler".to_string(),
             "Feishu Task sync state is represented only by AgentOS mirror events and refs"
                 .to_string(),
         ],
@@ -758,6 +1050,7 @@ async fn sync_workflow_status(
     validate_syncable_workflow(&status_tree)?;
     let aggregate_status = workflow_aggregate_status(&status_tree);
     let child_status_refs = workflow_child_status_refs(&status_tree);
+    let descendant_status_refs = workflow_descendant_status_refs(&status_tree);
     let mut event_id = None;
 
     if apply_requested {
@@ -782,7 +1075,9 @@ async fn sync_workflow_status(
                 "aggregate_status": aggregate_status,
                 "current_blocking_point": status_tree.current_blocking_point,
                 "child_count": status_tree.child_count,
+                "descendant_count": status_tree.descendant_count,
                 "child_status_refs": child_status_refs,
+                "descendant_status_refs": descendant_status_refs,
                 "synced_by": "operations-workflow-sync"
             }
         }))
@@ -802,7 +1097,9 @@ async fn sync_workflow_status(
                     "aggregate_status": aggregate_status,
                     "current_blocking_point": status_tree.current_blocking_point,
                     "child_count": status_tree.child_count,
+                    "descendant_count": status_tree.descendant_count,
                     "child_status_refs": child_status_refs,
+                    "descendant_status_refs": descendant_status_refs,
                     "does_not_execute_workers": true,
                     "does_not_call_external_systems": true
                 }),
@@ -825,14 +1122,16 @@ async fn sync_workflow_status(
         },
         root_work_item_id: status_tree.root_work_item_id,
         child_count: status_tree.child_count,
+        descendant_count: status_tree.descendant_count,
         aggregate_status,
         current_blocking_point: status_tree.current_blocking_point,
         child_status_refs,
+        descendant_status_refs,
         event_id,
         limitations: vec![
             "workflow sync updates only the AgentOS parent summary; it does not execute workers"
                 .to_string(),
-            "summary is one-level parent/child state, not a general DAG engine".to_string(),
+            "recursive summary reporting is not a general DAG scheduler".to_string(),
             "Feishu Task remains a workbench mirror, not the source of truth".to_string(),
         ],
         guardrails: vec![
@@ -873,6 +1172,428 @@ async fn run_workflow_sync_worker_once(
     ))
 }
 
+async fn run_xiaoman_activity_promotion_starter_batch(
+    pool: &PgPool,
+    check_only: bool,
+    apply_requested: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+    policy: &OperationsPolicy,
+) -> Result<XiaomanActivityPromotionStarterWorkerReport> {
+    let candidates =
+        load_xiaoman_activity_promotion_candidates(pool, work_item_id, batch_size).await?;
+    let mut work_items = Vec::new();
+    let mut missing_child_count = 0;
+
+    for candidate in &candidates {
+        let requests = xiaoman_activity_promotion_child_requests(candidate);
+        missing_child_count += requests.len();
+        for request in requests {
+            let report = if apply_requested {
+                create_work_item(pool, request, true, policy).await?
+            } else {
+                create_work_item_dry_run(request)?
+            };
+            work_items.push(report);
+        }
+    }
+
+    let existing_count = work_items.iter().filter(|item| item.existing).count();
+    let created_count = work_items.len().saturating_sub(existing_count);
+    let action_status = if candidates.is_empty() {
+        "no_eligible_activity_requests"
+    } else if apply_requested {
+        "activity_promotion_children_created"
+    } else {
+        "activity_promotion_children_preview"
+    };
+
+    Ok(xiaoman_activity_promotion_starter_report(
+        check_only,
+        apply_requested,
+        work_item_id,
+        candidates.len(),
+        created_count,
+        existing_count,
+        missing_child_count,
+        action_status,
+        work_items,
+    ))
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the batch receives explicit queue selection, payload, and policy inputs"
+)]
+async fn run_xiaoman_activity_send_request_starter_batch(
+    pool: &PgPool,
+    check_only: bool,
+    apply_requested: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+    target_group_alias: &str,
+    message_text: &str,
+    policy: &OperationsPolicy,
+) -> Result<XiaomanActivitySendRequestStarterWorkerReport> {
+    let candidates =
+        load_xiaoman_activity_send_request_candidates(pool, work_item_id, batch_size).await?;
+    let mut work_items = Vec::new();
+
+    for candidate in &candidates {
+        let request = xiaoman_activity_send_request(candidate, target_group_alias, message_text)?;
+        let report = if apply_requested {
+            create_work_item(pool, request, true, policy).await?
+        } else {
+            create_work_item_dry_run(request)?
+        };
+        work_items.push(report);
+    }
+
+    let existing_count = work_items.iter().filter(|item| item.existing).count();
+    let created_count = work_items.len().saturating_sub(existing_count);
+    let action_status = if candidates.is_empty() {
+        "no_eligible_approved_generated_images"
+    } else if apply_requested {
+        "group_message_requests_created"
+    } else {
+        "group_message_requests_preview"
+    };
+
+    Ok(xiaoman_activity_send_request_starter_report(
+        check_only,
+        apply_requested,
+        work_item_id,
+        candidates.len(),
+        created_count,
+        existing_count,
+        candidates.len(),
+        action_status,
+        work_items,
+    ))
+}
+
+async fn run_xiaoman_activity_image_generation_starter_batch(
+    pool: &PgPool,
+    check_only: bool,
+    apply_requested: bool,
+    batch_size: i64,
+    work_item_id: Option<Uuid>,
+    policy: &OperationsPolicy,
+) -> Result<XiaomanActivityImageGenerationStarterWorkerReport> {
+    let candidates =
+        load_xiaoman_activity_image_generation_candidates(pool, work_item_id, batch_size).await?;
+    let mut work_items = Vec::new();
+
+    for candidate in &candidates {
+        let request = xiaoman_activity_image_generation_request(candidate);
+        let report = if apply_requested {
+            create_work_item(pool, request, true, policy).await?
+        } else {
+            create_work_item_dry_run(request)?
+        };
+        work_items.push(report);
+    }
+
+    let existing_count = work_items.iter().filter(|item| item.existing).count();
+    let created_count = work_items.len().saturating_sub(existing_count);
+    let action_status = if candidates.is_empty() {
+        "no_eligible_approved_visual_artifacts"
+    } else if apply_requested {
+        "image_generation_requests_created"
+    } else {
+        "image_generation_requests_preview"
+    };
+
+    Ok(xiaoman_activity_image_generation_starter_report(
+        check_only,
+        apply_requested,
+        work_item_id,
+        candidates.len(),
+        created_count,
+        existing_count,
+        candidates.len(),
+        action_status,
+        work_items,
+    ))
+}
+
+async fn load_xiaoman_activity_promotion_candidates(
+    pool: &PgPool,
+    work_item_id: Option<Uuid>,
+    batch_size: i64,
+) -> Result<Vec<XiaomanActivityPromotionCandidate>> {
+    let rows = sqlx::query(
+        r#"
+        WITH phase_parents AS (
+            SELECT
+                parent.*,
+                CASE
+                    WHEN parent.payload->>'activity_phase'
+                         IN ('pre_event', 'in_event', 'post_event')
+                        THEN parent.payload->>'activity_phase'
+                    WHEN parent.work_item_type = 'activity_live_support_request'
+                        THEN 'in_event'
+                    WHEN parent.work_item_type = 'activity_recap_request'
+                        THEN 'post_event'
+                    ELSE 'pre_event'
+                END AS activity_phase
+            FROM qintopia_agent_os.work_items parent
+            WHERE parent.capability_key = 'xiaoman.create_activity_request'
+              AND parent.work_item_type IN (
+                  'activity_promotion_request',
+                  'activity_live_support_request',
+                  'activity_recap_request'
+              )
+              AND parent.target_agent = 'xiaoman'
+              AND ($1::uuid IS NULL OR parent.id = $1)
+        )
+        SELECT
+            parent.id,
+            parent.activity_phase,
+            parent.brief_summary,
+            parent.source_type,
+            parent.source_refs,
+            parent.source_event_signal_id,
+            parent.priority,
+            parent.human_owner,
+            NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'wenyuange.retrieve_evidence'
+                  AND child.work_item_type = 'evidence_request'
+            ) AS missing_evidence_child,
+            NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'huabaosi.create_visual_asset'
+                  AND child.work_item_type = 'visual_asset_request'
+            ) AS missing_visual_child
+        FROM phase_parents parent
+        WHERE (
+            NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'wenyuange.retrieve_evidence'
+                  AND child.work_item_type = 'evidence_request'
+            )
+            OR (
+              parent.activity_phase <> 'in_event'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items child
+                WHERE child.parent_work_item_id = parent.id
+                  AND child.capability_key = 'huabaosi.create_visual_asset'
+                  AND child.work_item_type = 'visual_asset_request'
+              )
+            )
+          )
+        ORDER BY parent.created_at ASC, parent.id ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(batch_size.max(1))
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman activity promotion starter candidates")?;
+
+    rows.into_iter()
+        .map(|row| {
+            let activity_phase: String = row.try_get("activity_phase")?;
+            Ok(XiaomanActivityPromotionCandidate {
+                id: row.try_get("id")?,
+                activity_phase: ActivityPhase::parse(&activity_phase)
+                    .context("activity request has invalid activity_phase")?,
+                brief_summary: row.try_get("brief_summary")?,
+                source_type: row.try_get("source_type")?,
+                source_refs: row.try_get("source_refs")?,
+                source_event_signal_id: row.try_get("source_event_signal_id")?,
+                priority: row.try_get("priority")?,
+                human_owner: row.try_get("human_owner")?,
+                missing_evidence_child: row.try_get("missing_evidence_child")?,
+                missing_visual_child: row.try_get("missing_visual_child")?,
+            })
+        })
+        .collect()
+}
+
+async fn load_xiaoman_activity_send_request_candidates(
+    pool: &PgPool,
+    work_item_id: Option<Uuid>,
+    batch_size: i64,
+) -> Result<Vec<XiaomanActivitySendRequestCandidate>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            parent.id AS parent_id,
+            CASE
+                WHEN parent.work_item_type = 'activity_recap_request'
+                    THEN 'post_event'
+                ELSE 'pre_event'
+            END AS activity_phase,
+            visual.id AS visual_work_item_id,
+            image_request.id AS image_generation_work_item_id,
+            generated_image.id AS approved_artifact_id,
+            parent.brief_summary,
+            parent.source_type,
+            parent.source_refs,
+            parent.source_event_signal_id,
+            parent.priority,
+            parent.human_owner
+        FROM qintopia_agent_os.work_items parent
+        JOIN qintopia_agent_os.work_items visual
+          ON visual.parent_work_item_id = parent.id
+         AND visual.capability_key = 'huabaosi.create_visual_asset'
+         AND visual.work_item_type = 'visual_asset_request'
+         AND visual.status = 'completed'
+        JOIN qintopia_agent_os.work_items image_request
+          ON image_request.parent_work_item_id = visual.id
+         AND image_request.capability_key = 'huabaosi.generate_image_asset'
+         AND image_request.work_item_type = 'image_generation_request'
+         AND image_request.status = 'completed'
+        JOIN LATERAL (
+            SELECT id
+            FROM qintopia_agent_os.artifacts generated_image
+            WHERE generated_image.work_item_id = image_request.id
+              AND generated_image.artifact_type = 'generated_image'
+              AND generated_image.review_status = 'approved'
+            ORDER BY generated_image.updated_at DESC, generated_image.created_at DESC
+            LIMIT 1
+        ) generated_image ON true
+        WHERE parent.capability_key = 'xiaoman.create_activity_request'
+          AND parent.work_item_type IN (
+              'activity_promotion_request',
+              'activity_recap_request'
+          )
+          AND parent.target_agent = 'xiaoman'
+          AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1 OR image_request.id = $1)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_items child
+              WHERE child.parent_work_item_id = parent.id
+                AND child.capability_key = 'erhua.send_group_message'
+                AND child.work_item_type = 'group_message_request'
+          )
+        ORDER BY parent.created_at ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(batch_size.max(1))
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman activity send request candidates")?;
+
+    rows.into_iter()
+        .map(|row| {
+            let activity_phase: String = row.try_get("activity_phase")?;
+            Ok(XiaomanActivitySendRequestCandidate {
+                parent_id: row.try_get("parent_id")?,
+                activity_phase: ActivityPhase::parse(&activity_phase)
+                    .context("activity send candidate has invalid activity_phase")?,
+                visual_work_item_id: row.try_get("visual_work_item_id")?,
+                image_generation_work_item_id: row.try_get("image_generation_work_item_id")?,
+                approved_artifact_id: row.try_get("approved_artifact_id")?,
+                brief_summary: row.try_get("brief_summary")?,
+                source_type: row.try_get("source_type")?,
+                source_refs: row.try_get("source_refs")?,
+                source_event_signal_id: row.try_get("source_event_signal_id")?,
+                priority: row.try_get("priority")?,
+                human_owner: row.try_get("human_owner")?,
+            })
+        })
+        .collect()
+}
+
+async fn load_xiaoman_activity_image_generation_candidates(
+    pool: &PgPool,
+    work_item_id: Option<Uuid>,
+    batch_size: i64,
+) -> Result<Vec<XiaomanActivityImageGenerationCandidate>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            CASE
+                WHEN parent.work_item_type = 'activity_recap_request'
+                    THEN 'post_event'
+                ELSE 'pre_event'
+            END AS activity_phase,
+            visual.id AS visual_work_item_id,
+            artifact.id AS approved_artifact_id,
+            artifact.content_hash AS approved_brief_hash,
+            artifact.metadata->>'evidence_content_hash' AS evidence_content_hash,
+            visual.brief_summary,
+            visual.source_type,
+            visual.source_refs,
+            visual.source_event_signal_id,
+            visual.priority,
+            visual.human_owner
+        FROM qintopia_agent_os.work_items visual
+        JOIN qintopia_agent_os.work_items parent
+          ON parent.id = visual.parent_work_item_id
+         AND parent.capability_key = 'xiaoman.create_activity_request'
+         AND parent.work_item_type IN (
+             'activity_promotion_request',
+             'activity_recap_request'
+         )
+         AND parent.target_agent = 'xiaoman'
+        JOIN LATERAL (
+            SELECT id, content_hash, metadata
+            FROM qintopia_agent_os.artifacts artifact
+            WHERE artifact.work_item_id = visual.id
+              AND artifact.artifact_type = 'poster_brief'
+              AND artifact.review_status = 'approved'
+              AND artifact.content_hash IS NOT NULL
+              AND artifact.content_hash <> ''
+            ORDER BY artifact.updated_at DESC, artifact.created_at DESC
+            LIMIT 1
+        ) artifact ON true
+        WHERE visual.capability_key = 'huabaosi.create_visual_asset'
+          AND visual.work_item_type = 'visual_asset_request'
+          AND visual.target_agent = 'huabaosi'
+          AND visual.status = 'completed'
+          AND ($1::uuid IS NULL OR visual.id = $1 OR artifact.id = $1)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_items child
+              WHERE child.parent_work_item_id = visual.id
+                AND child.capability_key = 'huabaosi.generate_image_asset'
+                AND child.work_item_type = 'image_generation_request'
+          )
+        ORDER BY visual.created_at ASC, visual.id ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(batch_size.max(1))
+    .fetch_all(pool)
+    .await
+    .context("load Xiaoman activity image generation starter candidates")?;
+
+    rows.into_iter()
+        .map(|row| {
+            let activity_phase: String = row.try_get("activity_phase")?;
+            Ok(XiaomanActivityImageGenerationCandidate {
+                activity_phase: ActivityPhase::parse(&activity_phase)
+                    .context("activity image-generation candidate has invalid activity_phase")?,
+                visual_work_item_id: row.try_get("visual_work_item_id")?,
+                approved_artifact_id: row.try_get("approved_artifact_id")?,
+                approved_brief_hash: row.try_get("approved_brief_hash")?,
+                evidence_content_hash: row.try_get("evidence_content_hash")?,
+                brief_summary: row.try_get("brief_summary")?,
+                source_type: row.try_get("source_type")?,
+                source_refs: row.try_get("source_refs")?,
+                source_event_signal_id: row.try_get("source_event_signal_id")?,
+                priority: row.try_get("priority")?,
+                human_owner: row.try_get("human_owner")?,
+            })
+        })
+        .collect()
+}
+
 async fn next_syncable_workflow_parent_id(pool: &PgPool) -> Result<Option<Uuid>> {
     sqlx::query_scalar(
         r#"
@@ -906,14 +1627,14 @@ fn validate_syncable_workflow(status_tree: &WorkItemStatusTreeReport) -> Result<
 
 fn workflow_aggregate_status(status_tree: &WorkItemStatusTreeReport) -> String {
     if status_tree
-        .children
+        .descendants
         .iter()
         .any(|child| child.status == "failed")
     {
         return "failed".to_string();
     }
     if status_tree
-        .children
+        .descendants
         .iter()
         .any(|child| child.status == "cancelled")
     {
@@ -923,7 +1644,7 @@ fn workflow_aggregate_status(status_tree: &WorkItemStatusTreeReport) -> String {
         return "processing".to_string();
     }
     if status_tree
-        .children
+        .descendants
         .iter()
         .all(|child| child.status == "completed")
     {
@@ -935,15 +1656,26 @@ fn workflow_aggregate_status(status_tree: &WorkItemStatusTreeReport) -> String {
 fn workflow_child_status_refs(
     status_tree: &WorkItemStatusTreeReport,
 ) -> Vec<WorkflowChildStatusRef> {
-    status_tree
-        .children
+    workflow_status_refs(&status_tree.children)
+}
+
+fn workflow_descendant_status_refs(
+    status_tree: &WorkItemStatusTreeReport,
+) -> Vec<WorkflowChildStatusRef> {
+    workflow_status_refs(&status_tree.descendants)
+}
+
+fn workflow_status_refs(nodes: &[WorkItemStatusNode]) -> Vec<WorkflowChildStatusRef> {
+    nodes
         .iter()
-        .map(|child| WorkflowChildStatusRef {
-            work_item_id: child.work_item_id,
-            work_item_type: child.work_item_type.clone(),
-            status: child.status.clone(),
-            capability_key: child.capability_key.clone(),
-            blocking_reason: child.blocking_reason.clone(),
+        .map(|node| WorkflowChildStatusRef {
+            work_item_id: node.work_item_id,
+            parent_work_item_id: node.parent_work_item_id,
+            depth: node.depth,
+            work_item_type: node.work_item_type.clone(),
+            status: node.status.clone(),
+            capability_key: node.capability_key.clone(),
+            blocking_reason: node.blocking_reason.clone(),
         })
         .collect()
 }
@@ -951,48 +1683,54 @@ fn workflow_child_status_refs(
 async fn resolve_root_work_item_id(pool: &PgPool, work_item_id: Uuid) -> Result<Uuid> {
     let row = sqlx::query(
         r#"
-        SELECT COALESCE(parent_work_item_id, id) AS root_work_item_id
-        FROM qintopia_agent_os.work_items
-        WHERE id = $1
+        WITH RECURSIVE ancestry AS (
+            SELECT id, parent_work_item_id, ARRAY[id] AS path
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+
+            UNION ALL
+
+            SELECT parent.id, parent.parent_work_item_id, ancestry.path || parent.id
+            FROM qintopia_agent_os.work_items parent
+            JOIN ancestry ON parent.id = ancestry.parent_work_item_id
+            WHERE NOT parent.id = ANY(ancestry.path)
+        )
+        SELECT id AS root_work_item_id
+        FROM ancestry
+        WHERE parent_work_item_id IS NULL
+        LIMIT 1
         "#,
     )
     .bind(work_item_id)
     .fetch_optional(pool)
     .await
     .context("load work item root")?
-    .ok_or_else(|| anyhow::anyhow!("work item is not found"))?;
+    .ok_or_else(|| anyhow::anyhow!("work item is not found or its parent chain is cyclic"))?;
     Ok(row.get("root_work_item_id"))
 }
 
-async fn load_work_item_status_row(pool: &PgPool, work_item_id: Uuid) -> Result<WorkItemStatusRow> {
-    let sql = status_row_sql("wi.id = $1");
-    let row = sqlx::query(&sql)
-        .bind(work_item_id)
-        .fetch_one(pool)
-        .await
-        .context("load work item status row")?;
-    status_row_from_row(row)
-}
-
-async fn load_child_work_item_status_rows(
+async fn load_work_item_status_tree_rows(
     pool: &PgPool,
     root_work_item_id: Uuid,
 ) -> Result<Vec<WorkItemStatusRow>> {
-    let sql = status_row_sql("wi.parent_work_item_id = $1");
-    let rows = sqlx::query(&sql)
-        .bind(root_work_item_id)
-        .fetch_all(pool)
-        .await
-        .context("load child work item status rows")?;
-    rows.into_iter().map(status_row_from_row).collect()
-}
-
-fn status_row_sql(predicate: &str) -> String {
-    format!(
+    let rows = sqlx::query(
         r#"
+        WITH RECURSIVE status_tree AS (
+            SELECT id, 0::integer AS depth, ARRAY[id] AS path
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+
+            UNION ALL
+
+            SELECT child.id, parent.depth + 1, parent.path || child.id
+            FROM qintopia_agent_os.work_items child
+            JOIN status_tree parent ON child.parent_work_item_id = parent.id
+            WHERE NOT child.id = ANY(parent.path)
+        )
         SELECT
             wi.id,
             wi.parent_work_item_id,
+            status_tree.depth,
             wi.work_item_type,
             wi.status,
             wi.requester_agent,
@@ -1024,13 +1762,18 @@ fn status_row_sql(predicate: &str) -> String {
                   AND e.event_type = 'group_message_send_ready_recorded'
                   AND e.data->>'send_executed' = 'false'
             ) AS send_ready_event_count
-        FROM qintopia_agent_os.work_items wi
+        FROM status_tree
+        JOIN qintopia_agent_os.work_items wi ON wi.id = status_tree.id
         LEFT JOIN qintopia_agent_os.artifacts a ON a.work_item_id = wi.id
-        WHERE {predicate}
-        GROUP BY wi.id
-        ORDER BY wi.created_at ASC
-        "#
+        GROUP BY wi.id, status_tree.depth
+        ORDER BY status_tree.depth ASC, wi.created_at ASC, wi.id ASC
+        "#,
     )
+        .bind(root_work_item_id)
+        .fetch_all(pool)
+        .await
+        .context("load recursive work item status tree")?;
+    rows.into_iter().map(status_row_from_row).collect()
 }
 
 fn status_row_from_row(row: sqlx::postgres::PgRow) -> Result<WorkItemStatusRow> {
@@ -1048,6 +1791,7 @@ fn status_row_from_row(row: sqlx::postgres::PgRow) -> Result<WorkItemStatusRow> 
         node: WorkItemStatusNode {
             work_item_id: row.try_get("id")?,
             parent_work_item_id: row.try_get("parent_work_item_id")?,
+            depth: row.try_get("depth")?,
             work_item_type,
             status,
             requester_agent: row.try_get("requester_agent")?,
@@ -1273,14 +2017,95 @@ pub fn record_artifact_review_decision_dry_run(
     normalize_review_request(&mut request);
     validate_review_request(&request)?;
     validate_reviewer_authorized(&request.reviewer_id, policy)?;
-    Ok(review_report(&request, false, "dry_run_ok", None, None))
+    Ok(review_report(
+        &request,
+        false,
+        "dry_run_ok",
+        None,
+        None,
+        None,
+    ))
+}
+
+async fn prepare_feishu_primary_storage_approval_evidence(
+    pool: &PgPool,
+    request: &ArtifactReviewDecisionRequest,
+    database_url: &str,
+) -> Result<Option<FeishuPrimaryStorageApprovalEvidence>> {
+    if request.decision != "approved" {
+        return Ok(None);
+    }
+    let row = sqlx::query(
+        r#"
+        SELECT work_item_id, artifact_type, review_status, created_by_agent, artifact_uri
+        FROM qintopia_agent_os.artifacts
+        WHERE id = $1
+        "#,
+    )
+    .bind(request.artifact_id)
+    .fetch_optional(pool)
+    .await
+    .context("inspect generated image storage boundary before approval")?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let artifact_type: String = row.try_get("artifact_type")?;
+    let review_status: String = row.try_get("review_status")?;
+    let created_by_agent: String = row.try_get("created_by_agent")?;
+    let artifact_uri: Option<String> = row.try_get("artifact_uri")?;
+    validate_artifact_review_preconditions(request, &artifact_type, &review_status)?;
+    let expected_uri = format!(
+        "feishu-base://huabaosi-generated-image/{}",
+        request.artifact_id
+    );
+    if artifact_type != GENERATED_IMAGE_ARTIFACT_TYPE
+        || created_by_agent != "huabaosi"
+        || artifact_uri.as_deref() != Some(expected_uri.as_str())
+    {
+        return Ok(None);
+    }
+
+    match huabaosi_feishu_artifact_mirror::revalidate_primary_storage_for_approval(
+        pool,
+        request.artifact_id,
+        database_url,
+    )
+    .await
+    {
+        Ok(evidence) => Ok(Some(evidence)),
+        Err(error) => {
+            let work_item_id: Uuid = row.try_get("work_item_id")?;
+            append_review_policy_denial(
+                pool,
+                request,
+                Some(work_item_id),
+                "generated image approval denied by authenticated Feishu revalidation",
+                "authenticated Feishu primary-storage revalidation failed",
+                "generated_image_approval_feishu_revalidation",
+            )
+            .await?;
+            Err(error)
+                .context("generated_image approval requires authenticated Feishu revalidation")
+        }
+    }
 }
 
 pub async fn record_artifact_review_decision(
     pool: &PgPool,
+    request: ArtifactReviewDecisionRequest,
+    apply_requested: bool,
+    policy: &OperationsPolicy,
+) -> Result<ArtifactReviewDecisionReport> {
+    record_artifact_review_decision_with_evidence(pool, request, apply_requested, policy, None)
+        .await
+}
+
+async fn record_artifact_review_decision_with_evidence(
+    pool: &PgPool,
     mut request: ArtifactReviewDecisionRequest,
     apply_requested: bool,
     policy: &OperationsPolicy,
+    approval_evidence: Option<&FeishuPrimaryStorageApprovalEvidence>,
 ) -> Result<ArtifactReviewDecisionReport> {
     normalize_review_request(&mut request);
     validate_review_request(&request)?;
@@ -1289,8 +2114,10 @@ pub async fn record_artifact_review_decision(
             append_review_policy_denial(
                 pool,
                 &request,
+                None,
                 "artifact review decision denied by reviewer allowlist",
                 &err.to_string(),
+                "artifact_review_reviewer_allowlist",
             )
             .await?;
         }
@@ -1298,7 +2125,14 @@ pub async fn record_artifact_review_decision(
     }
 
     if !apply_requested {
-        return Ok(review_report(&request, false, "dry_run_ok", None, None));
+        return Ok(review_report(
+            &request,
+            false,
+            "dry_run_ok",
+            None,
+            None,
+            None,
+        ));
     }
 
     let mut tx = pool
@@ -1307,20 +2141,90 @@ pub async fn record_artifact_review_decision(
         .context("begin artifact review transaction")?;
     let row = sqlx::query(
         r#"
-        SELECT id, work_item_id, review_status
-        FROM qintopia_agent_os.artifacts
-        WHERE id = $1
-        FOR UPDATE
+        SELECT
+            artifact.id,
+            artifact.work_item_id,
+            artifact.artifact_type,
+            artifact.review_status,
+            artifact.created_by_agent,
+            artifact.artifact_uri,
+            artifact.content_hash,
+            artifact.source_ids,
+            artifact.risk_labels,
+            artifact.information_class,
+            artifact.metadata,
+            work_item.work_item_type,
+            work_item.capability_key,
+            work_item.status AS work_item_status,
+            work_item.payload AS work_item_payload,
+            EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_item_events event
+                WHERE event.work_item_id = artifact.work_item_id
+                  AND event.artifact_id = artifact.id
+                  AND event.event_type = 'generated_image_created'
+                  AND event.actor_type = 'worker'
+                  AND event.actor_id = $2
+                  AND event.data->>'content_hash' = artifact.content_hash
+                  AND event.data->>'mime_type' = artifact.metadata->>'mime_type'
+                  AND event.data->>'file_md5' = artifact.metadata->>'file_md5'
+                  AND event.data->>'provider_source_mime_type' = artifact.metadata->>'provider_source_mime_type'
+                  AND event.data->>'provider_source_content_hash' = artifact.metadata->>'provider_source_content_hash'
+                  AND event.data->>'media_transform' = artifact.metadata->>'media_transform'
+                  AND event.data->>'jpeg_quality' = artifact.metadata->>'jpeg_quality'
+                  AND event.data->>'alpha_background' = artifact.metadata->>'alpha_background'
+                  AND event.data->>'width' = artifact.metadata->>'width'
+                  AND event.data->>'height' = artifact.metadata->>'height'
+                  AND event.data->>'byte_size' = artifact.metadata->>'byte_size'
+                  AND event.data->>'external_publish_executed' = 'false'
+            ) AS creation_event_matches
+        FROM qintopia_agent_os.artifacts artifact
+        JOIN qintopia_agent_os.work_items work_item ON work_item.id = artifact.work_item_id
+        WHERE artifact.id = $1
+        FOR UPDATE OF artifact, work_item
         "#,
     )
     .bind(request.artifact_id)
+    .bind(GENERATED_IMAGE_WORKER_ID)
     .fetch_optional(&mut *tx)
     .await
     .context("load artifact for review")?
     .ok_or_else(|| anyhow::anyhow!("artifact is not found"))?;
 
-    let work_item_id: Uuid = row.get("work_item_id");
-    let previous_review_status: String = row.get("review_status");
+    let approval_context = artifact_approval_context_from_row(&row)?;
+    if let Err(error) = validate_artifact_review_preconditions(
+        &request,
+        &approval_context.artifact_type,
+        &approval_context.review_status,
+    ) {
+        tx.rollback()
+            .await
+            .context("rollback artifact review precondition mismatch")?;
+        return Err(error);
+    }
+    if let Err(error) = validate_generated_image_approval_with_evidence(
+        &approval_context,
+        &request.decision,
+        approval_evidence,
+    ) {
+        tx.rollback()
+            .await
+            .context("rollback denied generated image approval")?;
+        append_review_policy_denial(
+            pool,
+            &request,
+            Some(approval_context.work_item_id),
+            "generated image approval denied by integrity policy",
+            "generated_image artifact integrity validation failed",
+            "generated_image_approval_integrity",
+        )
+        .await?;
+        return Err(error);
+    }
+
+    let work_item_id = approval_context.work_item_id;
+    let artifact_type = approval_context.artifact_type;
+    let previous_review_status = approval_context.review_status;
     sqlx::query(
         r#"
         UPDATE qintopia_agent_os.artifacts
@@ -1359,6 +2263,7 @@ pub async fn record_artifact_review_decision(
             "review_status": request.decision,
             "reason": request.reason,
             "source": request.source,
+            "authenticated_feishu_revalidation": approval_evidence.is_some(),
             "does_not_publish": true,
         }),
     )
@@ -1373,6 +2278,7 @@ pub async fn record_artifact_review_decision(
         true,
         "review_recorded",
         Some(work_item_id),
+        Some(artifact_type),
         Some(previous_review_status),
     ))
 }
@@ -1725,6 +2631,8 @@ pub async fn process_workbench_event(
                 artifact_id,
                 reviewer_id: event.actor_id.clone(),
                 decision: event.review_decision.clone(),
+                expected_artifact_type: None,
+                expected_review_status: None,
                 reason: non_empty_or_default(
                     &event.comment_text,
                     "workbench review event processed",
@@ -2210,6 +3118,12 @@ async fn next_processable_workbench_event_id(pool: &PgPool) -> Result<Option<Uui
               FROM qintopia_agent_os.work_item_events processed
               WHERE processed.event_type = 'human_workbench_event_processed'
                 AND processed.data->>'source_event_id' = e.id::text
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM qintopia_agent_os.work_item_events denied
+              WHERE denied.event_type = 'denied_by_policy'
+                AND denied.data->>'source_event_id' = e.id::text
           )
         ORDER BY e.created_at ASC
         LIMIT 1
@@ -2768,6 +3682,7 @@ pub async fn create_work_item(
     }
 
     let mut tx = pool.begin().await.context("begin work item transaction")?;
+    validate_activity_lifecycle_phase_fact(&mut tx, &request).await?;
     let initial_status = initial_status_for(&request, &capability);
     let existing = sqlx::query(
         r#"
@@ -2920,22 +3835,25 @@ async fn append_policy_denial(
 async fn append_review_policy_denial(
     pool: &PgPool,
     request: &ArtifactReviewDecisionRequest,
+    work_item_id: Option<Uuid>,
     message: &str,
     reason: &str,
+    policy: &str,
 ) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO qintopia_agent_os.work_item_events
             (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
-        VALUES (NULL, $1, 'denied_by_policy', 'human', $2, $3, $4)
+        VALUES ($1, $2, 'denied_by_policy', 'human', $3, $4, $5)
         "#,
     )
+    .bind(work_item_id)
     .bind(request.artifact_id)
     .bind(&request.reviewer_id)
     .bind(message)
     .bind(json!({
         "reason": reason,
-        "policy": "artifact_review_reviewer_allowlist",
+        "policy": policy,
         "artifact_id": request.artifact_id,
         "reviewer_id": request.reviewer_id,
         "decision": request.decision,
@@ -3091,6 +4009,10 @@ fn capability_list_item(capability: &Capability) -> CapabilityListItem {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "work item event columns are explicit at the shared transaction boundary"
+)]
 async fn append_event_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     work_item_id: Option<Uuid>,
@@ -3212,6 +4134,12 @@ fn validate_request(
     if !ALLOWED_RISK_LEVELS.contains(&capability.risk_level.as_str()) {
         bail!("capability risk_level is not allowed");
     }
+    if capability.capability_key == "huabaosi.generate_image_asset" {
+        validate_image_generation_request(request)?;
+    }
+    if capability.capability_key == "xiaoman.create_activity_request" {
+        validate_activity_lifecycle_root(request)?;
+    }
     if contains_sensitive_value(&request.payload)
         || contains_sensitive_value(&request.source_refs)
         || contains_sensitive_value(&request.metadata)
@@ -3220,6 +4148,104 @@ fn validate_request(
         bail!("payload contains disallowed sensitive or raw internal content");
     }
     validate_high_risk_send(request, capability, policy)?;
+    Ok(())
+}
+
+fn validate_activity_lifecycle_root(request: &WorkItemCreateRequest) -> Result<()> {
+    let raw_phase = non_empty_object_text(&request.payload, "activity_phase");
+    let phase = match raw_phase.as_deref() {
+        Some(value) => ActivityPhase::parse(value).context("activity_phase is not allowed")?,
+        None if request.work_item_type == ActivityPhase::Pre.root_work_item_type() => {
+            ActivityPhase::Pre
+        }
+        None => bail!("activity_phase is required for non-pre-event activity work"),
+    };
+    if request.work_item_type != phase.root_work_item_type() {
+        bail!("activity_phase does not match work_item_type");
+    }
+    if phase != ActivityPhase::Pre && request.source_type != "event_signal" {
+        bail!("non-pre-event activity work requires an event_signal phase fact");
+    }
+    if let Some(route) = non_empty_object_text(&request.payload, "activity_route") {
+        if route != phase.route() {
+            bail!("activity_route must be derived from activity_phase");
+        }
+    } else if phase != ActivityPhase::Pre {
+        bail!("activity_route is required for non-pre-event activity work");
+    }
+    Ok(())
+}
+
+async fn validate_activity_lifecycle_phase_fact(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    request: &WorkItemCreateRequest,
+) -> Result<()> {
+    if request.capability_key != "xiaoman.create_activity_request"
+        || request.source_type != "event_signal"
+    {
+        return Ok(());
+    }
+
+    let event_signal_id = request
+        .source_event_signal_id
+        .context("source_event_signal_id is required for event-signal activity roots")?;
+    let current_phase: String = sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(activity_phase, 'pre_event')
+        FROM qintopia_agent_os.event_signals
+        WHERE id = $1
+          AND owner_agent = 'xiaoman'
+          AND signal_type = '活动/聚会'
+        FOR SHARE
+        "#,
+    )
+    .bind(event_signal_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("lock activity phase fact for work item creation")?
+    .context("source_event_signal_id does not reference a Xiaoman activity signal")?;
+    let current_phase = ActivityPhase::parse(&current_phase)
+        .context("event signal contains an invalid activity_phase")?;
+    let requested_phase = non_empty_object_text(&request.payload, "activity_phase")
+        .as_deref()
+        .and_then(ActivityPhase::parse)
+        .unwrap_or(ActivityPhase::Pre);
+    if requested_phase != current_phase {
+        bail!("activity_phase does not match the current event signal phase");
+    }
+    Ok(())
+}
+
+fn validate_image_generation_request(request: &WorkItemCreateRequest) -> Result<()> {
+    let artifact_id = image_generation_approved_artifact_id(request)?;
+    let payload_artifact_id = request
+        .payload
+        .get("approved_brief_artifact_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("approved_brief_artifact_id is required"))?;
+    if Uuid::parse_str(payload_artifact_id).context("approved_brief_artifact_id must be a uuid")?
+        != artifact_id
+    {
+        bail!("approved_artifact_id must match payload approved_brief_artifact_id");
+    }
+    for field in ["approved_brief_content_hash", "prompt_hash"] {
+        let value = request
+            .payload
+            .get(field)
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !value.starts_with("sha256:") || value.len() <= "sha256:".len() {
+            bail!("{field} must be a sha256 hash");
+        }
+    }
+    if request
+        .payload
+        .get("image_specification")
+        .and_then(Value::as_str)
+        != Some("community_poster_1024x1024")
+    {
+        bail!("image_specification is not allowed");
+    }
     Ok(())
 }
 
@@ -3536,6 +4562,271 @@ fn workflow_work_item_requests(
     (parent, vec![evidence_child, visual_child])
 }
 
+fn xiaoman_activity_promotion_child_requests(
+    candidate: &XiaomanActivityPromotionCandidate,
+) -> Vec<WorkItemCreateRequest> {
+    let phase = candidate.activity_phase;
+    let workflow_type = phase.workflow_type();
+    let (evidence_purpose, evidence_brief, evidence_question) = match phase {
+        ActivityPhase::Pre => (
+            "activity_evidence_request",
+            format!("{} - 活动宣发背景资料", candidate.brief_summary),
+            format!(
+                "请整理活动宣发前需要引用的背景资料和证据：{}",
+                candidate.brief_summary
+            ),
+        ),
+        ActivityPhase::In => (
+            "activity_live_evidence_request",
+            format!("{} - 活动现场信息", candidate.brief_summary),
+            format!(
+                "请整理活动进行中的现场事实、变更和待跟进事项：{}",
+                candidate.brief_summary
+            ),
+        ),
+        ActivityPhase::Post => (
+            "activity_recap_evidence_request",
+            format!("{} - 活动复盘证据", candidate.brief_summary),
+            format!(
+                "请整理活动结束后的结果、反馈和复盘证据：{}",
+                candidate.brief_summary
+            ),
+        ),
+    };
+    let mut requests = Vec::new();
+    if candidate.missing_evidence_child {
+        requests.push(xiaoman_activity_promotion_child_request(
+            candidate,
+            "wenyuange",
+            "wenyuange.retrieve_evidence",
+            "evidence_request",
+            evidence_purpose,
+            evidence_brief,
+            "evidence-child",
+            json!({
+                "workflow_type": workflow_type,
+                "activity_phase": phase.as_str(),
+                "activity_route": phase.route(),
+                "planner_intent": "retrieve_evidence",
+                "question": evidence_question,
+                "request_text": candidate.brief_summary,
+            }),
+        ));
+    }
+    if phase.needs_visual() && candidate.missing_visual_child {
+        let (purpose, brief_summary, planner_intent, requested_output) = match phase {
+            ActivityPhase::Pre => (
+                "activity_visual_asset_request",
+                candidate.brief_summary.clone(),
+                "create_visual_asset",
+                "poster_or_visual_draft",
+            ),
+            ActivityPhase::Post => (
+                "activity_recap_visual_request",
+                format!("{} - 活动复盘视觉", candidate.brief_summary),
+                "create_recap_visual",
+                "recap_visual_draft",
+            ),
+            ActivityPhase::In => unreachable!("in-event route has no visual child"),
+        };
+        requests.push(xiaoman_activity_promotion_child_request(
+            candidate,
+            "huabaosi",
+            "huabaosi.create_visual_asset",
+            "visual_asset_request",
+            purpose,
+            brief_summary,
+            "visual-child",
+            json!({
+                "workflow_type": workflow_type,
+                "activity_phase": phase.as_str(),
+                "activity_route": phase.route(),
+                "planner_intent": planner_intent,
+                "requested_output": requested_output,
+                "request_text": candidate.brief_summary,
+            }),
+        ));
+    }
+    requests
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "child request creation keeps capability and idempotency fields explicit"
+)]
+fn xiaoman_activity_promotion_child_request(
+    candidate: &XiaomanActivityPromotionCandidate,
+    target_agent: &str,
+    capability_key: &str,
+    work_item_type: &str,
+    purpose: &str,
+    brief_summary: String,
+    idempotency_suffix: &str,
+    payload: Value,
+) -> WorkItemCreateRequest {
+    WorkItemCreateRequest {
+        requester_agent: "xiaoman".to_string(),
+        target_agent: target_agent.to_string(),
+        capability_key: capability_key.to_string(),
+        work_item_type: work_item_type.to_string(),
+        brief_summary,
+        purpose: purpose.to_string(),
+        human_owner: candidate.human_owner.clone(),
+        priority: candidate.priority.clone(),
+        source_type: candidate.source_type.clone(),
+        source_refs: candidate.source_refs.clone(),
+        source_event_signal_id: candidate.source_event_signal_id,
+        payload,
+        payload_redaction_policy: "summary_only".to_string(),
+        idempotency_key: format!(
+            "xiaoman_activity_promotion:{}:{}",
+            candidate.id, idempotency_suffix
+        ),
+        dedupe_key: String::new(),
+        metadata: json!({
+            "workflow_type": candidate.activity_phase.workflow_type(),
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": candidate.activity_phase.route(),
+            "workflow_starter": "run-xiaoman-activity-promotion-starter-worker",
+            "workflow_step": idempotency_suffix,
+            "parent_activity_request_work_item_id": candidate.id,
+        }),
+        parent_work_item_id: Some(candidate.id),
+        approved_artifact_id: None,
+    }
+}
+
+fn xiaoman_activity_send_request(
+    candidate: &XiaomanActivitySendRequestCandidate,
+    target_group_alias: &str,
+    message_text: &str,
+) -> Result<WorkItemCreateRequest> {
+    let workflow_type = candidate.activity_phase.workflow_type();
+    let activity_route = candidate.activity_phase.route();
+    let target_group_alias = normalize_key(target_group_alias);
+    let message_text = message_text.trim();
+    require_non_empty("target_group_alias", &target_group_alias)?;
+    require_non_empty("message_text", message_text)?;
+    if message_text.chars().count() > 500 {
+        bail!("message_text must be 500 characters or fewer");
+    }
+    if contains_sensitive_text(message_text) {
+        bail!("message_text contains disallowed sensitive or raw internal content");
+    }
+
+    Ok(WorkItemCreateRequest {
+        requester_agent: "xiaoman".to_string(),
+        target_agent: "erhua".to_string(),
+        capability_key: "erhua.send_group_message".to_string(),
+        work_item_type: "group_message_request".to_string(),
+        brief_summary: format!("发送已审核活动图片：{}", candidate.brief_summary),
+        purpose: "activity_group_message_request".to_string(),
+        human_owner: candidate.human_owner.clone(),
+        priority: candidate.priority.clone(),
+        source_type: candidate.source_type.clone(),
+        source_refs: candidate.source_refs.clone(),
+        source_event_signal_id: candidate.source_event_signal_id,
+        payload: json!({
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
+            "planner_intent": "send_group_message_after_final_confirmation",
+            "approved_artifact_id": candidate.approved_artifact_id,
+            "approved_artifact_type": "generated_image",
+            "visual_work_item_id": candidate.visual_work_item_id,
+            "image_generation_work_item_id": candidate.image_generation_work_item_id,
+            "target_channel": "qiwe",
+            "target_group_alias": target_group_alias,
+            "message_text": message_text,
+            "send_executed": false,
+        }),
+        payload_redaction_policy: "summary_only".to_string(),
+        idempotency_key: format!(
+            "xiaoman_{}:{}:group-message-child",
+            workflow_type, candidate.parent_id
+        ),
+        dedupe_key: String::new(),
+        metadata: json!({
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
+            "workflow_starter": "run-xiaoman-activity-send-request-starter-worker",
+            "workflow_step": "group_message",
+            "parent_activity_request_work_item_id": candidate.parent_id,
+            "visual_work_item_id": candidate.visual_work_item_id,
+            "image_generation_work_item_id": candidate.image_generation_work_item_id,
+            "approved_artifact_id": candidate.approved_artifact_id,
+            "approved_artifact_type": "generated_image",
+            "requires_human_final_confirmation": true,
+            "send_executed": false,
+        }),
+        parent_work_item_id: Some(candidate.parent_id),
+        approved_artifact_id: Some(candidate.approved_artifact_id),
+    })
+}
+
+fn xiaoman_activity_image_generation_request(
+    candidate: &XiaomanActivityImageGenerationCandidate,
+) -> WorkItemCreateRequest {
+    const SPECIFICATION: &str = "community_poster_1024x1024";
+    let workflow_type = candidate.activity_phase.workflow_type();
+    let activity_route = candidate.activity_phase.route();
+    let prompt_hash = format!(
+        "sha256:{}",
+        content_hash_text(&format!(
+            "{}|{}|{}",
+            candidate.approved_artifact_id, SPECIFICATION, candidate.approved_brief_hash
+        ))
+    );
+    WorkItemCreateRequest {
+        requester_agent: "xiaoman".to_string(),
+        target_agent: "huabaosi".to_string(),
+        capability_key: "huabaosi.generate_image_asset".to_string(),
+        work_item_type: "image_generation_request".to_string(),
+        brief_summary: format!("生成已审核活动海报图片：{}", candidate.brief_summary),
+        purpose: "activity_image_generation_request".to_string(),
+        human_owner: candidate.human_owner.clone(),
+        priority: candidate.priority.clone(),
+        source_type: candidate.source_type.clone(),
+        source_refs: candidate.source_refs.clone(),
+        source_event_signal_id: candidate.source_event_signal_id,
+        payload: json!({
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
+            "planner_intent": "generate_image_after_approved_poster_brief",
+            "approved_brief_artifact_id": candidate.approved_artifact_id,
+            "approved_brief_content_hash": candidate.approved_brief_hash,
+            "evidence_content_hash": candidate.evidence_content_hash,
+            "image_specification": SPECIFICATION,
+            "prompt_hash": prompt_hash,
+            "external_publish_executed": false,
+        }),
+        payload_redaction_policy: "summary_only".to_string(),
+        idempotency_key: format!(
+            "huabaosi_image:{}:{}:{}",
+            candidate.approved_artifact_id, SPECIFICATION, prompt_hash
+        ),
+        dedupe_key: String::new(),
+        metadata: json!({
+            "workflow_type": workflow_type,
+            "activity_phase": candidate.activity_phase.as_str(),
+            "activity_route": activity_route,
+            "workflow_starter": "run-xiaoman-activity-image-generation-starter-worker",
+            "workflow_step": "image_generation",
+            "visual_work_item_id": candidate.visual_work_item_id,
+            "approved_brief_artifact_id": candidate.approved_artifact_id,
+            "approved_brief_content_hash": candidate.approved_brief_hash,
+            "evidence_content_hash": candidate.evidence_content_hash,
+            "image_specification": SPECIFICATION,
+            "prompt_hash": prompt_hash,
+            "external_publish_executed": false,
+        }),
+        parent_work_item_id: Some(candidate.visual_work_item_id),
+        approved_artifact_id: Some(candidate.approved_artifact_id),
+    }
+}
+
 fn work_item_request_preview(request: &WorkItemCreateRequest) -> WorkItemCreateRequestPreview {
     WorkItemCreateRequestPreview {
         parent_work_item_id: request.parent_work_item_id,
@@ -3688,6 +4979,40 @@ async fn validate_apply_policy(
     capability: &Capability,
     policy: &OperationsPolicy,
 ) -> Result<()> {
+    if capability.capability_key == "huabaosi.generate_image_asset" {
+        let artifact_id = image_generation_approved_artifact_id(request)?;
+        let row = sqlx::query(
+            r#"
+            SELECT work_item_id, artifact_type, review_status, content_hash
+            FROM qintopia_agent_os.artifacts
+            WHERE id = $1
+            "#,
+        )
+        .bind(artifact_id)
+        .fetch_optional(pool)
+        .await
+        .context("load approved poster brief for image generation request")?
+        .ok_or_else(|| anyhow::anyhow!("approved_brief_artifact_id does not exist"))?;
+        let artifact_work_item_id: Uuid = row.get("work_item_id");
+        let artifact_type: String = row.get("artifact_type");
+        let review_status: String = row.get("review_status");
+        let content_hash: Option<String> = row.get("content_hash");
+        if artifact_type != "poster_brief" || review_status != "approved" {
+            bail!("approved_brief_artifact_id must reference an approved poster_brief");
+        }
+        if request.parent_work_item_id != Some(artifact_work_item_id) {
+            bail!("image_generation_request parent must be the approved poster_brief work item");
+        }
+        if content_hash.as_deref()
+            != request
+                .payload
+                .get("approved_brief_content_hash")
+                .and_then(Value::as_str)
+        {
+            bail!("approved_brief_content_hash must match the approved poster_brief");
+        }
+        return Ok(());
+    }
     if capability.capability_key != "erhua.send_group_message" {
         return Ok(());
     }
@@ -3695,7 +5020,7 @@ async fn validate_apply_policy(
         let artifact_id = approved_artifact_id(request)?;
         let row = sqlx::query(
             r#"
-            SELECT review_status
+            SELECT artifact_type, review_status, content_hash
             FROM qintopia_agent_os.artifacts
             WHERE id = $1
             "#,
@@ -3705,17 +5030,71 @@ async fn validate_apply_policy(
         .await
         .context("load approved artifact for group message request")?
         .ok_or_else(|| anyhow::anyhow!("approved_artifact_id does not exist"))?;
+        let artifact_type: String = row.get("artifact_type");
         let review_status: String = row.get("review_status");
+        let content_hash: Option<String> = row.get("content_hash");
         if review_status != "approved" {
             bail!("approved_artifact_id must reference an approved artifact");
+        }
+        if let Some(required_artifact_type) = group_message_required_artifact_type(&request.payload)
+        {
+            if artifact_type != required_artifact_type {
+                bail!("group message request requires an approved {required_artifact_type}");
+            }
+        }
+        if artifact_type == "text_announcement" {
+            validate_text_announcement_artifact_binding(content_hash.as_deref(), &request.payload)?;
         }
     }
     Ok(())
 }
 
+fn group_message_required_artifact_type(payload: &Value) -> Option<&'static str> {
+    match payload.get("workflow_type").and_then(Value::as_str) {
+        Some("activity_promotion" | "activity_recap") => Some("generated_image"),
+        Some("text_activity_announcement") => Some("text_announcement"),
+        _ => None,
+    }
+}
+
+fn validate_text_announcement_artifact_binding(
+    artifact_content_hash: Option<&str>,
+    payload: &Value,
+) -> Result<()> {
+    let approved_content_hash = payload
+        .get("approved_artifact_content_hash")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    validate_canonical_sha256(
+        approved_content_hash,
+        "approved text announcement content hash",
+    )?;
+    if artifact_content_hash != Some(approved_content_hash) {
+        bail!("approved_artifact_content_hash must match the approved text_announcement");
+    }
+    let message_text = payload
+        .get("message_text")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if content_hash_for_text(message_text) != approved_content_hash {
+        bail!("message_text must match the approved text_announcement content hash");
+    }
+    Ok(())
+}
+
+fn content_hash_for_text(value: &str) -> String {
+    format!("sha256:{:x}", Sha256::digest(value.as_bytes()))
+}
+
 fn normalize_review_request(request: &mut ArtifactReviewDecisionRequest) {
     request.reviewer_id = request.reviewer_id.trim().to_string();
     request.decision = normalize_key(&request.decision);
+    if let Some(value) = request.expected_artifact_type.as_mut() {
+        *value = normalize_key(value);
+    }
+    if let Some(value) = request.expected_review_status.as_mut() {
+        *value = normalize_key(value);
+    }
     request.reason = request.reason.trim().to_string();
     request.source = request.source.trim().to_string();
     if request.source.is_empty() {
@@ -3732,6 +5111,29 @@ fn validate_review_request(request: &ArtifactReviewDecisionRequest) -> Result<()
     if !["approved", "rejected", "changes_requested"].contains(&request.decision.as_str()) {
         bail!("review decision is not allowed");
     }
+    if let Some(expected_artifact_type) = request.expected_artifact_type.as_deref() {
+        if expected_artifact_type.is_empty()
+            || expected_artifact_type.len() > 64
+            || !expected_artifact_type
+                .chars()
+                .all(|value| value.is_ascii_lowercase() || value.is_ascii_digit() || value == '_')
+        {
+            bail!("expected_artifact_type is invalid");
+        }
+    }
+    if let Some(expected_review_status) = request.expected_review_status.as_deref() {
+        if ![
+            "not_required",
+            "pending",
+            "approved",
+            "rejected",
+            "changes_requested",
+        ]
+        .contains(&expected_review_status)
+        {
+            bail!("expected_review_status is invalid");
+        }
+    }
     if ["rejected", "changes_requested"].contains(&request.decision.as_str())
         && request.reason.trim().is_empty()
     {
@@ -3744,6 +5146,290 @@ fn validate_review_request(request: &ArtifactReviewDecisionRequest) -> Result<()
         bail!("review payload contains disallowed sensitive or raw internal content");
     }
     Ok(())
+}
+
+fn validate_artifact_review_preconditions(
+    request: &ArtifactReviewDecisionRequest,
+    artifact_type: &str,
+    review_status: &str,
+) -> Result<()> {
+    if request
+        .expected_artifact_type
+        .as_deref()
+        .is_some_and(|expected| expected != artifact_type)
+    {
+        bail!("artifact type does not match the review precondition");
+    }
+    if request
+        .expected_review_status
+        .as_deref()
+        .is_some_and(|expected| expected != review_status)
+    {
+        bail!("artifact review status does not match the review precondition");
+    }
+    Ok(())
+}
+
+fn artifact_approval_context_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ArtifactApprovalContext> {
+    Ok(ArtifactApprovalContext {
+        artifact_id: row.try_get("id")?,
+        work_item_id: row.try_get("work_item_id")?,
+        artifact_type: row.try_get("artifact_type")?,
+        review_status: row.try_get("review_status")?,
+        created_by_agent: row.try_get("created_by_agent")?,
+        artifact_uri: row.try_get("artifact_uri")?,
+        content_hash: row.try_get("content_hash")?,
+        source_ids: row.try_get("source_ids")?,
+        risk_labels: row.try_get("risk_labels")?,
+        information_class: row.try_get("information_class")?,
+        metadata: row.try_get("metadata")?,
+        work_item_type: row.try_get("work_item_type")?,
+        capability_key: row.try_get("capability_key")?,
+        work_item_status: row.try_get("work_item_status")?,
+        work_item_payload: row.try_get("work_item_payload")?,
+        creation_event_matches: row.try_get("creation_event_matches")?,
+    })
+}
+
+#[cfg(test)]
+fn validate_generated_image_approval(
+    context: &ArtifactApprovalContext,
+    decision: &str,
+) -> Result<()> {
+    validate_generated_image_approval_with_evidence(context, decision, None)
+}
+
+fn validate_generated_image_approval_with_evidence(
+    context: &ArtifactApprovalContext,
+    decision: &str,
+    approval_evidence: Option<&FeishuPrimaryStorageApprovalEvidence>,
+) -> Result<()> {
+    if decision != "approved" || context.artifact_type != GENERATED_IMAGE_ARTIFACT_TYPE {
+        return Ok(());
+    }
+    if context.review_status != "pending" {
+        bail!("generated_image approval requires pending review status");
+    }
+    if context.work_item_type != GENERATED_IMAGE_WORK_ITEM_TYPE
+        || context.capability_key != GENERATED_IMAGE_CAPABILITY_KEY
+        || context.work_item_status != "awaiting_review"
+    {
+        bail!("generated_image approval requires an awaiting-review image request");
+    }
+    if context.created_by_agent != "huabaosi"
+        || context.information_class != "internal_ops"
+        || !context
+            .risk_labels
+            .iter()
+            .any(|label| label == "generated_media")
+        || !context
+            .risk_labels
+            .iter()
+            .any(|label| label == "external_use_review_required")
+    {
+        bail!("generated_image approval requires controlled artifact provenance");
+    }
+
+    validate_generated_image_storage_boundary(context, approval_evidence)?;
+    validate_canonical_sha256(
+        context.content_hash.as_deref().unwrap_or_default(),
+        "generated_image content_hash",
+    )?;
+    validate_canonical_md5(
+        json_string(&context.metadata, "file_md5").unwrap_or_default(),
+        "generated_image file_md5",
+    )?;
+
+    for (key, expected) in [
+        ("generated_by", GENERATED_IMAGE_WORKER_ID),
+        ("provider", "openai-compatible"),
+        ("model", "gpt-image-2"),
+        ("mime_type", "image/jpeg"),
+        ("provider_source_mime_type", "image/png"),
+        ("media_transform", "png_to_jpeg_white_background_q92_v1"),
+        ("alpha_background", "#ffffff"),
+    ] {
+        if json_string(&context.metadata, key) != Some(expected) {
+            bail!("generated_image approval requires canonical worker metadata");
+        }
+    }
+    if json_i64(&context.metadata, "width") != Some(1024)
+        || json_i64(&context.metadata, "height") != Some(1024)
+    {
+        bail!("generated_image approval requires 1024x1024 JPEG metadata");
+    }
+    let provider_source_content_hash =
+        json_string(&context.metadata, "provider_source_content_hash").unwrap_or_default();
+    validate_canonical_sha256(
+        provider_source_content_hash,
+        "generated_image provider source content hash",
+    )?;
+    if json_i64(&context.metadata, "jpeg_quality") != Some(92) {
+        bail!("generated_image approval requires the reviewed JPEG quality");
+    }
+    let byte_size = json_i64(&context.metadata, "byte_size").unwrap_or_default();
+    if !(1..=MAX_APPROVABLE_GENERATED_IMAGE_BYTES).contains(&byte_size) {
+        bail!("generated_image approval requires bounded positive byte_size metadata");
+    }
+
+    let brief_id = matching_uuid_field(
+        &context.metadata,
+        &context.work_item_payload,
+        "approved_brief_artifact_id",
+    )?;
+    let brief_hash = matching_string_field(
+        &context.metadata,
+        &context.work_item_payload,
+        "approved_brief_content_hash",
+    )?;
+    validate_canonical_sha256(brief_hash, "approved brief content hash")?;
+    let prompt_hash =
+        matching_string_field(&context.metadata, &context.work_item_payload, "prompt_hash")?;
+    validate_canonical_sha256(prompt_hash, "image prompt hash")?;
+    if json_string(&context.work_item_payload, "image_specification")
+        != Some("community_poster_1024x1024")
+    {
+        bail!("generated_image approval requires the reviewed image specification");
+    }
+    if !source_ids_match_approved_brief(&context.source_ids, brief_id, brief_hash) {
+        bail!("generated_image approval requires matching approved brief source refs");
+    }
+    if !context.creation_event_matches {
+        bail!("generated_image approval requires a matching creation audit");
+    }
+    Ok(())
+}
+
+fn validate_generated_image_storage_boundary(
+    context: &ArtifactApprovalContext,
+    approval_evidence: Option<&FeishuPrimaryStorageApprovalEvidence>,
+) -> Result<()> {
+    let artifact_uri = context.artifact_uri.as_deref().unwrap_or_default();
+    let expected_feishu_uri = format!(
+        "feishu-base://huabaosi-generated-image/{}",
+        context.artifact_id
+    );
+    if artifact_uri == expected_feishu_uri {
+        let evidence = approval_evidence.context(
+            "generated_image Feishu approval requires authenticated revalidation evidence",
+        )?;
+        let metadata_file_md5 = json_string(&context.metadata, "file_md5");
+        let metadata_byte_size = json_i64(&context.metadata, "byte_size");
+        let metadata_width = json_i64(&context.metadata, "width");
+        let metadata_height = json_i64(&context.metadata, "height");
+        if evidence.artifact_id != context.artifact_id
+            || evidence.work_item_id != context.work_item_id
+            || evidence.artifact_uri != artifact_uri
+            || Some(evidence.content_hash.as_str()) != context.content_hash.as_deref()
+            || Some(evidence.file_md5.as_str()) != metadata_file_md5
+            || Some(evidence.byte_size) != metadata_byte_size
+            || Some(evidence.width) != metadata_width
+            || Some(evidence.height) != metadata_height
+        {
+            bail!(
+                "generated_image Feishu revalidation evidence does not match the locked artifact identity"
+            );
+        }
+        return Ok(());
+    }
+    if approval_evidence.is_some() {
+        bail!("generated_image Feishu revalidation evidence requires the fixed Feishu URI");
+    }
+    validate_generated_image_uri(artifact_uri)
+}
+
+fn validate_generated_image_uri(value: &str) -> Result<()> {
+    url_policy::reject_path_separator_ambiguity(value, "generated_image artifact_uri")?;
+    let uri = url::Url::parse(value).context("generated_image artifact_uri must be a valid URL")?;
+    if uri.scheme() != "https"
+        || uri.host_str().is_none()
+        || !uri.username().is_empty()
+        || uri.password().is_some()
+        || uri.query().is_some()
+        || uri.fragment().is_some()
+        || matches!(uri.path(), "" | "/")
+    {
+        bail!("generated_image artifact_uri must be a stable HTTPS media URL");
+    }
+    let path = uri.path().to_ascii_lowercase();
+    if !path.ends_with(".jpg") && !path.ends_with(".jpeg") {
+        bail!("generated_image artifact_uri must reference a JPEG object");
+    }
+    Ok(())
+}
+
+fn validate_canonical_sha256(value: &str, label: &str) -> Result<()> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        bail!("{label} must be a canonical sha256");
+    };
+    if hex.len() != 64
+        || !hex
+            .chars()
+            .all(|character| matches!(character, '0'..='9' | 'a'..='f'))
+    {
+        bail!("{label} must be a canonical sha256");
+    }
+    Ok(())
+}
+
+fn validate_canonical_md5(value: &str, label: &str) -> Result<()> {
+    if value.len() != 32
+        || !value
+            .chars()
+            .all(|character| matches!(character, '0'..='9' | 'a'..='f'))
+    {
+        bail!("{label} must be a canonical md5");
+    }
+    Ok(())
+}
+
+fn matching_uuid_field(metadata: &Value, payload: &Value, key: &str) -> Result<Uuid> {
+    let metadata_value = json_string(metadata, key)
+        .ok_or_else(|| anyhow::anyhow!("generated_image metadata is missing {key}"))?;
+    let payload_value = json_string(payload, key)
+        .ok_or_else(|| anyhow::anyhow!("image request payload is missing {key}"))?;
+    if metadata_value != payload_value {
+        bail!("generated_image source metadata does not match its image request");
+    }
+    Uuid::parse_str(metadata_value).with_context(|| format!("{key} must be a uuid"))
+}
+
+fn matching_string_field<'a>(
+    metadata: &'a Value,
+    payload: &'a Value,
+    key: &str,
+) -> Result<&'a str> {
+    let metadata_value = json_string(metadata, key)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("generated_image metadata is missing {key}"))?;
+    let payload_value = json_string(payload, key)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("image request payload is missing {key}"))?;
+    if metadata_value != payload_value {
+        bail!("generated_image source metadata does not match its image request");
+    }
+    Ok(metadata_value)
+}
+
+fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
+fn json_i64(value: &Value, key: &str) -> Option<i64> {
+    value.get(key).and_then(Value::as_i64)
+}
+
+fn source_ids_match_approved_brief(source_ids: &Value, brief_id: Uuid, brief_hash: &str) -> bool {
+    source_ids.as_array().is_some_and(|sources| {
+        sources.iter().any(|source| {
+            json_string(source, "approved_brief_artifact_id")
+                .and_then(|value| Uuid::parse_str(value).ok())
+                == Some(brief_id)
+                && json_string(source, "approved_brief_content_hash") == Some(brief_hash)
+        })
+    })
 }
 
 fn validate_reviewer_authorized(reviewer_id: &str, policy: &OperationsPolicy) -> Result<()> {
@@ -4043,17 +5729,16 @@ fn validate_workbench_event_request_payload(request: &WorkbenchEventRecordReques
             }
             validate_human_actor_id("metadata.new_human_owner", owner)?;
         }
-        "attachment_added" => {
+        "attachment_added"
             if request
                 .metadata
                 .get("attachment_uri")
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|item| !item.is_empty())
-                .is_none()
-            {
-                bail!("metadata.attachment_uri is required for attachment_added");
-            }
+                .is_none() =>
+        {
+            bail!("metadata.attachment_uri is required for attachment_added");
         }
         _ => {}
     }
@@ -4129,6 +5814,26 @@ fn approved_artifact_id(request: &WorkItemCreateRequest) -> Result<Uuid> {
     Uuid::parse_str(text).context("approved_artifact_id must be a uuid")
 }
 
+fn image_generation_approved_artifact_id(request: &WorkItemCreateRequest) -> Result<Uuid> {
+    if let Some(id) = request.approved_artifact_id {
+        return Ok(id);
+    }
+    let Some(text) = request
+        .payload
+        .get("approved_brief_artifact_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    else {
+        bail!("approved_brief_artifact_id is required for image generation requests");
+    };
+    Uuid::parse_str(text).context("approved_brief_artifact_id must be a uuid")
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "work item reports preserve explicit lifecycle outcome fields"
+)]
 fn report_from_request(
     request: &WorkItemCreateRequest,
     capability: &Capability,
@@ -4193,6 +5898,7 @@ fn review_report(
     apply_requested: bool,
     action_status: &str,
     work_item_id: Option<Uuid>,
+    artifact_type: Option<String>,
     previous_review_status: Option<String>,
 ) -> ArtifactReviewDecisionReport {
     ArtifactReviewDecisionReport {
@@ -4202,6 +5908,7 @@ fn review_report(
         action_status: action_status.to_string(),
         artifact_id: request.artifact_id,
         work_item_id,
+        artifact_type,
         previous_review_status,
         review_status: request.decision.clone(),
         reviewer_id: request.reviewer_id.clone(),
@@ -4214,6 +5921,11 @@ fn review_report(
         guardrails: vec![
             "only approved, rejected, or changes_requested decisions are accepted".to_string(),
             "rejected and changes_requested decisions require a reason".to_string(),
+            "generated_image approvals revalidate worker provenance and media metadata".to_string(),
+            "Feishu-backed approvals require authenticated same-identity readback evidence"
+                .to_string(),
+            "caller-supplied artifact type and status preconditions are enforced under row lock"
+                .to_string(),
             "review decisions are audited through work_item_events".to_string(),
         ],
     }
@@ -4365,12 +6077,149 @@ fn workflow_sync_worker_report(
             "workflow sync worker updates only AgentOS parent summaries".to_string(),
             "worker currently supports --once only; systemd/timer scheduling is external"
                 .to_string(),
-            "summary is one-level parent/child state, not a general DAG engine".to_string(),
+            "recursive summary reporting is not a general DAG scheduler".to_string(),
         ],
         guardrails: vec![
             "worker does not execute child workers or external adapters".to_string(),
             "Postgres remains the operations source of truth".to_string(),
             "Hermes Kanban is not used as a workflow fallback".to_string(),
+        ],
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the worker report exposes each queue count explicitly"
+)]
+fn xiaoman_activity_promotion_starter_report(
+    check_only: bool,
+    apply_requested: bool,
+    requested_work_item_id: Option<Uuid>,
+    scanned_count: usize,
+    created_count: usize,
+    existing_count: usize,
+    missing_child_count: usize,
+    action_status: &str,
+    work_items: Vec<WorkItemCreateReport>,
+) -> XiaomanActivityPromotionStarterWorkerReport {
+    XiaomanActivityPromotionStarterWorkerReport {
+        success: true,
+        dry_run: !apply_requested,
+        apply_requested,
+        check_only,
+        worker: "xiaoman-activity-promotion-starter-worker",
+        source: "agentos_work_items",
+        action_status: action_status.to_string(),
+        requested_work_item_id,
+        scanned_count,
+        created_count,
+        existing_count,
+        missing_child_count,
+        safe_for_chat: false,
+        work_items,
+        limitations: vec![
+            "starter worker only creates missing AgentOS evidence/visual child work_items"
+                .to_string(),
+            "starter worker does not execute evidence, collaboration, group-send, or external adapters"
+                .to_string(),
+            "systemd/timer scheduling is intentionally out of scope for this worker change"
+                .to_string(),
+        ],
+        guardrails: vec![
+            "Postgres AgentOS work_items remain the source of truth".to_string(),
+            "child work items use parent work_item_id based idempotency keys".to_string(),
+            "Feishu, QiWe, visual generation, and external sends are not called".to_string(),
+        ],
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the worker report exposes each queue count explicitly"
+)]
+fn xiaoman_activity_send_request_starter_report(
+    check_only: bool,
+    apply_requested: bool,
+    requested_work_item_id: Option<Uuid>,
+    scanned_count: usize,
+    created_count: usize,
+    existing_count: usize,
+    missing_child_count: usize,
+    action_status: &str,
+    work_items: Vec<WorkItemCreateReport>,
+) -> XiaomanActivitySendRequestStarterWorkerReport {
+    XiaomanActivitySendRequestStarterWorkerReport {
+        success: true,
+        dry_run: !apply_requested,
+        apply_requested,
+        check_only,
+        worker: "xiaoman-activity-send-request-starter-worker",
+        source: "agentos_work_items",
+        action_status: action_status.to_string(),
+        requested_work_item_id,
+        scanned_count,
+        created_count,
+        existing_count,
+        missing_child_count,
+        safe_for_chat: false,
+        work_items,
+        limitations: vec![
+            "starter worker only creates awaiting_publish AgentOS group_message_request work_items"
+                .to_string(),
+            "starter worker does not confirm, queue, send, publish, or call QiWe/Erhua adapters"
+                .to_string(),
+            "only approved poster_brief artifacts under Xiaoman activity promotion parents are eligible"
+                .to_string(),
+        ],
+        guardrails: vec![
+            "group_message_request still requires human final confirmation before it can be queued"
+                .to_string(),
+            "approved artifact and target group allowlist policies are enforced by operations create"
+                .to_string(),
+            "Postgres AgentOS work_items remain the source of truth".to_string(),
+        ],
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the worker report exposes each queue count explicitly"
+)]
+fn xiaoman_activity_image_generation_starter_report(
+    check_only: bool,
+    apply_requested: bool,
+    requested_work_item_id: Option<Uuid>,
+    scanned_count: usize,
+    created_count: usize,
+    existing_count: usize,
+    missing_child_count: usize,
+    action_status: &str,
+    work_items: Vec<WorkItemCreateReport>,
+) -> XiaomanActivityImageGenerationStarterWorkerReport {
+    XiaomanActivityImageGenerationStarterWorkerReport {
+        success: true,
+        dry_run: !apply_requested,
+        apply_requested,
+        check_only,
+        worker: "xiaoman-activity-image-generation-starter-worker",
+        source: "agentos_work_items",
+        action_status: action_status.to_string(),
+        requested_work_item_id,
+        scanned_count,
+        created_count,
+        existing_count,
+        missing_child_count,
+        safe_for_chat: false,
+        work_items,
+        limitations: vec![
+            "starter worker only creates AgentOS image_generation_request work_items from approved poster_brief artifacts".to_string(),
+            "starter worker does not call image providers, upload media, write Feishu, send QiWe, or publish".to_string(),
+            "runtime scheduling may only invoke this starter and must not invoke the image provider worker".to_string(),
+        ],
+        guardrails: vec![
+            "Postgres AgentOS work_items and artifact review remain the source of truth".to_string(),
+            "idempotency includes the approved brief, output specification, and redacted prompt hash".to_string(),
+            "an image-generation worker must remain disabled until its provider and media boundary are owner-reviewed".to_string(),
         ],
     }
 }
@@ -4405,6 +6254,18 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
                 "activity_promotion_request".to_string(),
             ],
             risk_level: "medium".to_string(),
+            review_policy: "before_external_use".to_string(),
+            enabled: true,
+        }),
+        "huabaosi.generate_image_asset" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "huabaosi".to_string(),
+            display_name: "画报司生成审核前图片素材".to_string(),
+            description: "基于已审核海报 brief 创建受控图片生成请求；生成结果仍需人工审核"
+                .to_string(),
+            allowed_callers: vec!["xiaoman".to_string(), "default".to_string()],
+            allowed_work_item_types: vec!["image_generation_request".to_string()],
+            risk_level: "high".to_string(),
             review_policy: "before_external_use".to_string(),
             enabled: true,
         }),
@@ -4448,7 +6309,11 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
             display_name: "小满创建活动运营请求".to_string(),
             description: "从活动信号或人工输入创建结构化活动运营请求".to_string(),
             allowed_callers: vec!["default".to_string(), "silaoshi".to_string()],
-            allowed_work_item_types: vec!["activity_promotion_request".to_string()],
+            allowed_work_item_types: vec![
+                "activity_promotion_request".to_string(),
+                "activity_live_support_request".to_string(),
+                "activity_recap_request".to_string(),
+            ],
             risk_level: "medium".to_string(),
             review_policy: "before_external_use".to_string(),
             enabled: true,
@@ -4582,8 +6447,331 @@ mod tests {
     use clap::Parser;
     use serde_json::json;
 
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = url::Url::parse(&database_url).expect("integration database URL must parse");
+        assert!(
+            matches!(parsed.scheme(), "postgres" | "postgresql"),
+            "PostgreSQL integration test requires a postgres URL"
+        );
+        assert!(
+            matches!(parsed.host_str(), Some("127.0.0.1" | "::1")),
+            "PostgreSQL integration test may only use a literal loopback database"
+        );
+        assert_eq!(
+            parsed.path().trim_start_matches('/'),
+            "qintopia_test",
+            "PostgreSQL integration test may only use qintopia_test"
+        );
+        database_url
+    }
+
     fn request(value: Value) -> WorkItemCreateRequest {
         serde_json::from_value(value).expect("request should deserialize")
+    }
+
+    fn xiaoman_promotion_candidate(
+        missing_evidence_child: bool,
+        missing_visual_child: bool,
+    ) -> XiaomanActivityPromotionCandidate {
+        XiaomanActivityPromotionCandidate {
+            id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            activity_phase: ActivityPhase::Pre,
+            brief_summary: "AgentOS 小满活动宣发".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({"event_signal_id": "evt_xiaoman_activity"}),
+            source_event_signal_id: Some(
+                Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
+            ),
+            priority: "normal".to_string(),
+            human_owner: "xiaoman-owner".to_string(),
+            missing_evidence_child,
+            missing_visual_child,
+        }
+    }
+
+    fn xiaoman_send_candidate() -> XiaomanActivitySendRequestCandidate {
+        XiaomanActivitySendRequestCandidate {
+            parent_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            activity_phase: ActivityPhase::Pre,
+            visual_work_item_id: Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap(),
+            image_generation_work_item_id: Uuid::parse_str("55555555-5555-4555-8555-555555555555")
+                .unwrap(),
+            approved_artifact_id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
+            brief_summary: "AgentOS 小满活动宣发".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({"event_signal_id": "evt_xiaoman_activity"}),
+            source_event_signal_id: Some(
+                Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
+            ),
+            priority: "normal".to_string(),
+            human_owner: "xiaoman-owner".to_string(),
+        }
+    }
+
+    fn xiaoman_image_candidate() -> XiaomanActivityImageGenerationCandidate {
+        XiaomanActivityImageGenerationCandidate {
+            activity_phase: ActivityPhase::Pre,
+            visual_work_item_id: Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap(),
+            approved_artifact_id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
+            approved_brief_hash: "sha256:approved-poster-brief".to_string(),
+            evidence_content_hash: Some("sha256:evidence-summary".to_string()),
+            brief_summary: "AgentOS 小满活动宣发".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({"event_signal_id": "evt_xiaoman_activity"}),
+            source_event_signal_id: Some(
+                Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
+            ),
+            priority: "normal".to_string(),
+            human_owner: "xiaoman-owner".to_string(),
+        }
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_starter_preview_builds_two_children() {
+        let candidate = xiaoman_promotion_candidate(true, true);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].capability_key, "wenyuange.retrieve_evidence");
+        assert_eq!(requests[0].work_item_type, "evidence_request");
+        assert_eq!(requests[0].parent_work_item_id, Some(candidate.id));
+        assert_eq!(
+            requests[0].idempotency_key,
+            format!("xiaoman_activity_promotion:{}:evidence-child", candidate.id)
+        );
+        assert_eq!(requests[1].capability_key, "huabaosi.create_visual_asset");
+        assert_eq!(requests[1].work_item_type, "visual_asset_request");
+        assert_eq!(requests[1].parent_work_item_id, Some(candidate.id));
+        assert_eq!(
+            requests[1].idempotency_key,
+            format!("xiaoman_activity_promotion:{}:visual-child", candidate.id)
+        );
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_starter_only_builds_missing_visual_child() {
+        let candidate = xiaoman_promotion_candidate(false, true);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].capability_key, "huabaosi.create_visual_asset");
+        assert_eq!(
+            requests[0].source_event_signal_id,
+            candidate.source_event_signal_id
+        );
+        assert_eq!(requests[0].priority, "normal");
+        assert_eq!(requests[0].human_owner, "xiaoman-owner");
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_starter_builds_no_duplicate_children() {
+        let candidate = xiaoman_promotion_candidate(false, false);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert!(requests.is_empty());
+    }
+
+    #[test]
+    fn xiaoman_in_event_route_creates_evidence_only() {
+        let mut candidate = xiaoman_promotion_candidate(true, true);
+        candidate.activity_phase = ActivityPhase::In;
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].capability_key, "wenyuange.retrieve_evidence");
+        assert_eq!(requests[0].purpose, "activity_live_evidence_request");
+        assert_eq!(requests[0].payload["activity_phase"], "in_event");
+        assert_eq!(requests[0].payload["activity_route"], "live_support");
+        assert_eq!(
+            requests[0].payload["workflow_type"],
+            "activity_live_support"
+        );
+    }
+
+    #[test]
+    fn xiaoman_post_event_route_creates_evidence_and_recap_visual() {
+        let mut candidate = xiaoman_promotion_candidate(true, true);
+        candidate.activity_phase = ActivityPhase::Post;
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].purpose, "activity_recap_evidence_request");
+        assert_eq!(requests[1].purpose, "activity_recap_visual_request");
+        assert_eq!(requests[1].payload["activity_phase"], "post_event");
+        assert_eq!(requests[1].payload["activity_route"], "activity_recap");
+        assert_eq!(requests[1].payload["workflow_type"], "activity_recap");
+        assert_eq!(
+            requests[1].payload["requested_output"],
+            "recap_visual_draft"
+        );
+    }
+
+    #[test]
+    fn activity_root_phase_and_route_must_match_the_work_item_type() {
+        let event_signal_id = Uuid::new_v4();
+        let valid = request(json!({
+            "requester_agent": "default",
+            "target_agent": "xiaoman",
+            "capability_key": "xiaoman.create_activity_request",
+            "work_item_type": "activity_live_support_request",
+            "brief_summary": "活动现场支持",
+            "priority": "normal",
+            "source_type": "event_signal",
+            "source_event_signal_id": event_signal_id,
+            "source_refs": {"event_signal_id": event_signal_id},
+            "payload": {
+                "activity_phase": "in_event",
+                "activity_route": "live_support"
+            }
+        }));
+        create_work_item_dry_run(valid.clone()).expect("matching phase route should pass");
+
+        let mut wrong_type = valid.clone();
+        wrong_type.work_item_type = "activity_recap_request".to_string();
+        assert!(create_work_item_dry_run(wrong_type)
+            .expect_err("phase and work item type mismatch must fail")
+            .to_string()
+            .contains("does not match work_item_type"));
+
+        let mut manual_phase = valid.clone();
+        manual_phase.source_type = "manual_request".to_string();
+        manual_phase.source_event_signal_id = None;
+        manual_phase.source_refs = json!({"source_record_ref": "activity:test"});
+        assert!(create_work_item_dry_run(manual_phase)
+            .expect_err("non-pre-event phase requires an AgentOS event signal fact")
+            .to_string()
+            .contains("requires an event_signal phase fact"));
+
+        let mut caller_selected_route = valid;
+        caller_selected_route.payload["activity_route"] = json!("activity_recap");
+        assert!(create_work_item_dry_run(caller_selected_route)
+            .expect_err("route must be derived from phase")
+            .to_string()
+            .contains("must be derived"));
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_evidence_child_preserves_event_signal_scope() {
+        let candidate = xiaoman_promotion_candidate(true, false);
+        let requests = xiaoman_activity_promotion_child_requests(&candidate);
+        let evidence = &requests[0];
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(evidence.target_agent, "wenyuange");
+        assert_eq!(evidence.source_type, "event_signal");
+        assert_eq!(
+            evidence.source_event_signal_id,
+            candidate.source_event_signal_id
+        );
+        assert_eq!(evidence.payload["workflow_type"], "activity_promotion");
+        assert_eq!(evidence.payload["planner_intent"], "retrieve_evidence");
+        assert_eq!(
+            evidence.metadata["parent_activity_request_work_item_id"],
+            candidate.id.to_string()
+        );
+    }
+
+    #[test]
+    fn xiaoman_image_generation_request_uses_approved_brief_and_stable_idempotency() {
+        let candidate = xiaoman_image_candidate();
+        let first = xiaoman_activity_image_generation_request(&candidate);
+        let second = xiaoman_activity_image_generation_request(&candidate);
+        let report = create_work_item_dry_run(first.clone())
+            .expect("image generation request should validate in dry-run");
+        let payload = first.payload.to_string();
+        let metadata = first.metadata.to_string();
+
+        assert_eq!(first.requester_agent, "xiaoman");
+        assert_eq!(first.target_agent, "huabaosi");
+        assert_eq!(first.capability_key, "huabaosi.generate_image_asset");
+        assert_eq!(first.work_item_type, "image_generation_request");
+        assert_eq!(report.risk_level, "high");
+        assert_eq!(
+            first.parent_work_item_id,
+            Some(candidate.visual_work_item_id)
+        );
+        assert_eq!(
+            first.approved_artifact_id,
+            Some(candidate.approved_artifact_id)
+        );
+        assert_eq!(first.idempotency_key, second.idempotency_key);
+        assert!(first.idempotency_key.starts_with(&format!(
+            "huabaosi_image:{}:community_poster_1024x1024:sha256:",
+            candidate.approved_artifact_id
+        )));
+        assert_eq!(
+            first.payload["approved_brief_content_hash"],
+            candidate.approved_brief_hash
+        );
+        assert_eq!(
+            first.payload["evidence_content_hash"],
+            candidate.evidence_content_hash.unwrap()
+        );
+        assert!(!payload.contains("api_key"));
+        assert!(!payload.contains("table_id"));
+        assert!(!metadata.contains("message_id"));
+    }
+
+    #[test]
+    fn xiaoman_post_event_image_generation_request_preserves_recap_route() {
+        let mut candidate = xiaoman_image_candidate();
+        candidate.activity_phase = ActivityPhase::Post;
+        candidate.brief_summary = "AgentOS 小满活动复盘".to_string();
+        let request = xiaoman_activity_image_generation_request(&candidate);
+        let report = create_work_item_dry_run(request.clone())
+            .expect("recap image generation request should validate");
+
+        assert_eq!(report.current_status, "queued");
+        assert_eq!(request.payload["workflow_type"], "activity_recap");
+        assert_eq!(request.payload["activity_phase"], "post_event");
+        assert_eq!(request.payload["activity_route"], "activity_recap");
+        assert_eq!(request.metadata["workflow_type"], "activity_recap");
+        assert_eq!(request.metadata["activity_phase"], "post_event");
+        assert_eq!(request.metadata["activity_route"], "activity_recap");
+    }
+
+    #[test]
+    fn image_generation_request_rejects_mismatched_approved_artifact() {
+        let candidate = xiaoman_image_candidate();
+        let mut request = xiaoman_activity_image_generation_request(&candidate);
+        request.approved_artifact_id = Some(Uuid::new_v4());
+
+        let err = create_work_item_dry_run(request)
+            .expect_err("mismatched approved artifact ids must be rejected");
+        assert!(err
+            .to_string()
+            .contains("approved_artifact_id must match payload"));
+    }
+
+    #[test]
+    fn xiaoman_activity_promotion_starter_report_is_safe_for_chat() {
+        let report = xiaoman_activity_promotion_starter_report(
+            true,
+            false,
+            None,
+            0,
+            0,
+            0,
+            0,
+            "no_eligible_activity_requests",
+            Vec::new(),
+        );
+        let raw = serde_json::to_string(&report).expect("report serializes");
+
+        assert_eq!(report.worker, "xiaoman-activity-promotion-starter-worker");
+        assert_eq!(report.source, "agentos_work_items");
+        assert!(!report.safe_for_chat);
+        assert!(!raw.contains("token"));
+        assert!(!raw.contains("table_id"));
+        assert!(!raw.contains("message_id"));
     }
 
     #[test]
@@ -4681,7 +6869,7 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 4);
+        assert_eq!(report.capability_count, 5);
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.create_visual_asset"
                 && item.provider_agent == "huabaosi"
@@ -4691,6 +6879,12 @@ mod tests {
             item.capability_key == "erhua.send_group_message"
                 && item.risk_level == "high"
                 && item.review_policy == "human_final_confirmation"
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "huabaosi.generate_image_asset"
+                && item
+                    .allowed_work_item_types
+                    .contains(&"image_generation_request".to_string())
         }));
     }
 
@@ -4792,6 +6986,129 @@ mod tests {
         assert_eq!(report.action_status, "needs_clarification");
         assert!(report.work_item_result.is_none());
         assert!(!report.clarification_questions.is_empty());
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_builds_awaiting_publish_group_message() {
+        let candidate = xiaoman_send_candidate();
+        let request = xiaoman_activity_send_request(
+            &candidate,
+            "community_activity_group",
+            "活动海报已审核，请确认是否发送。",
+        )
+        .expect("request should build");
+        let report = create_work_item_dry_run(request.clone()).expect("request should validate");
+
+        assert_eq!(report.capability_key, "erhua.send_group_message");
+        assert_eq!(report.work_item_type, "group_message_request");
+        assert_eq!(report.current_status, "awaiting_publish");
+        assert_eq!(report.review_policy, "human_final_confirmation");
+        assert_eq!(report.parent_work_item_id, Some(candidate.parent_id));
+        assert_eq!(request.payload["approved_artifact_type"], "generated_image");
+        assert_eq!(
+            request.payload["image_generation_work_item_id"],
+            candidate.image_generation_work_item_id.to_string()
+        );
+        assert_eq!(
+            report.idempotency_key,
+            format!(
+                "xiaoman_activity_promotion:{}:group-message-child",
+                candidate.parent_id
+            )
+        );
+    }
+
+    #[test]
+    fn xiaoman_post_event_send_request_preserves_recap_route() {
+        let mut candidate = xiaoman_send_candidate();
+        candidate.activity_phase = ActivityPhase::Post;
+        candidate.brief_summary = "AgentOS 小满活动复盘".to_string();
+        let request = xiaoman_activity_send_request(
+            &candidate,
+            "community_activity_group",
+            "活动复盘图片已审核，请确认是否发送。",
+        )
+        .expect("recap send request should build");
+        let report =
+            create_work_item_dry_run(request.clone()).expect("recap send request should validate");
+
+        assert_eq!(report.current_status, "awaiting_publish");
+        assert_eq!(request.payload["workflow_type"], "activity_recap");
+        assert_eq!(request.payload["activity_phase"], "post_event");
+        assert_eq!(request.payload["activity_route"], "activity_recap");
+        assert_eq!(
+            report.idempotency_key,
+            format!(
+                "xiaoman_activity_recap:{}:group-message-child",
+                candidate.parent_id
+            )
+        );
+        assert_eq!(request.metadata["workflow_type"], "activity_recap");
+        assert_eq!(request.metadata["activity_phase"], "post_event");
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_rejects_sensitive_message_text() {
+        let candidate = xiaoman_send_candidate();
+        let err = xiaoman_activity_send_request(
+            &candidate,
+            "community_activity_group",
+            "raw private chat transcript",
+        )
+        .expect_err("sensitive message should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("message_text contains disallowed sensitive"));
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_rejects_empty_group_alias() {
+        let candidate = xiaoman_send_candidate();
+        let err =
+            xiaoman_activity_send_request(&candidate, "  ", "活动海报已审核，请确认是否发送。")
+                .expect_err("target group alias is required");
+
+        assert!(err.to_string().contains("target_group_alias is required"));
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_rejects_overlong_message_text() {
+        let candidate = xiaoman_send_candidate();
+        let long_message = "活动".repeat(251);
+        let err =
+            xiaoman_activity_send_request(&candidate, "community_activity_group", &long_message)
+                .expect_err("message text length must be bounded");
+
+        assert!(err
+            .to_string()
+            .contains("message_text must be 500 characters or fewer"));
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_report_is_safe_for_chat() {
+        let report = xiaoman_activity_send_request_starter_report(
+            true,
+            false,
+            None,
+            1,
+            0,
+            0,
+            1,
+            "group_message_requests_preview",
+            Vec::new(),
+        );
+
+        assert_eq!(
+            report.worker,
+            "xiaoman-activity-send-request-starter-worker"
+        );
+        assert_eq!(report.source, "agentos_work_items");
+        assert!(!report.safe_for_chat);
+        assert!(report
+            .limitations
+            .iter()
+            .any(|item| item.contains("does not confirm")));
     }
 
     #[test]
@@ -4911,6 +7228,65 @@ mod tests {
         assert_eq!(report.risk_level, "high");
         assert_eq!(report.review_policy, "human_final_confirmation");
         assert_eq!(report.current_status, "awaiting_publish");
+    }
+
+    #[test]
+    fn group_message_required_artifact_type_binds_text_announcements() {
+        assert_eq!(
+            group_message_required_artifact_type(&json!({
+                "workflow_type": "activity_promotion"
+            })),
+            Some("generated_image")
+        );
+        assert_eq!(
+            group_message_required_artifact_type(&json!({
+                "workflow_type": "activity_recap"
+            })),
+            Some("generated_image")
+        );
+        assert_eq!(
+            group_message_required_artifact_type(&json!({
+                "workflow_type": "text_activity_announcement"
+            })),
+            Some("text_announcement")
+        );
+        assert_eq!(group_message_required_artifact_type(&json!({})), None);
+    }
+
+    #[test]
+    fn text_announcement_group_message_binds_approved_content_hash() {
+        let message_text = "明天下午 3 点木作体验课在秦托邦工坊集合。";
+        let content_hash = content_hash_for_text(message_text);
+        validate_text_announcement_artifact_binding(
+            Some(&content_hash),
+            &json!({
+                "approved_artifact_content_hash": content_hash,
+                "message_text": message_text
+            }),
+        )
+        .expect("matching text announcement hash should validate");
+
+        let err = validate_text_announcement_artifact_binding(
+            Some(&content_hash_for_text("另一段已审批文本")),
+            &json!({
+                "approved_artifact_content_hash": content_hash,
+                "message_text": message_text
+            }),
+        )
+        .expect_err("artifact hash drift should fail");
+        assert!(err
+            .to_string()
+            .contains("approved_artifact_content_hash must match"));
+
+        let err = validate_text_announcement_artifact_binding(
+            Some(&content_hash),
+            &json!({
+                "approved_artifact_content_hash": content_hash,
+                "message_text": "未审批的替换文本"
+            }),
+        )
+        .expect_err("message hash drift should fail");
+        assert!(err.to_string().contains("message_text must match"));
     }
 
     #[test]
@@ -5131,6 +7507,441 @@ mod tests {
             .limitations
             .iter()
             .any(|item| item.contains("does not publish")));
+    }
+
+    #[test]
+    fn review_decision_preconditions_bind_artifact_type_and_status() {
+        let mut request: ArtifactReviewDecisionRequest = serde_json::from_value(json!({
+            "artifact_id": "02dd5f47-81f8-4b8c-898d-b4c926fcf9b5",
+            "reviewer_id": "human-owner-1",
+            "decision": "approved",
+            "expected_artifact_type": " poster_brief ",
+            "expected_review_status": " pending "
+        }))
+        .expect("review request should deserialize");
+        normalize_review_request(&mut request);
+        validate_review_request(&request).expect("review preconditions should validate");
+
+        validate_artifact_review_preconditions(&request, "poster_brief", "pending")
+            .expect("matching artifact should pass");
+        let type_error =
+            validate_artifact_review_preconditions(&request, "generated_image", "pending")
+                .expect_err("wrong artifact type must fail");
+        assert!(type_error
+            .to_string()
+            .contains("artifact type does not match"));
+        let status_error =
+            validate_artifact_review_preconditions(&request, "poster_brief", "approved")
+                .expect_err("wrong review status must fail");
+        assert!(status_error
+            .to_string()
+            .contains("review status does not match"));
+    }
+
+    fn generated_image_approval_context() -> ArtifactApprovalContext {
+        let brief_id = Uuid::new_v4();
+        let brief_hash = format!("sha256:{}", "b".repeat(64));
+        let prompt_hash = format!("sha256:{}", "c".repeat(64));
+        ArtifactApprovalContext {
+            artifact_id: Uuid::new_v4(),
+            work_item_id: Uuid::new_v4(),
+            artifact_type: GENERATED_IMAGE_ARTIFACT_TYPE.to_string(),
+            review_status: "pending".to_string(),
+            created_by_agent: "huabaosi".to_string(),
+            artifact_uri: Some("https://media.example.test/posters/image.jpg".to_string()),
+            content_hash: Some(format!("sha256:{}", "a".repeat(64))),
+            source_ids: json!([{
+                "approved_brief_artifact_id": brief_id,
+                "approved_brief_content_hash": brief_hash,
+            }]),
+            risk_labels: vec![
+                "external_use_review_required".to_string(),
+                "generated_media".to_string(),
+            ],
+            information_class: "internal_ops".to_string(),
+            metadata: json!({
+                "generated_by": GENERATED_IMAGE_WORKER_ID,
+                "provider": "openai-compatible",
+                "model": "gpt-image-2",
+                "mime_type": "image/jpeg",
+                "file_md5": "e2c865db4162bed963bfaa9ef6ac18f0",
+                "provider_source_mime_type": "image/png",
+                "provider_source_content_hash": format!("sha256:{}", "d".repeat(64)),
+                "media_transform": "png_to_jpeg_white_background_q92_v1",
+                "jpeg_quality": 92,
+                "alpha_background": "#ffffff",
+                "width": 1024,
+                "height": 1024,
+                "byte_size": 4096,
+                "approved_brief_artifact_id": brief_id,
+                "approved_brief_content_hash": brief_hash,
+                "prompt_hash": prompt_hash,
+            }),
+            work_item_type: GENERATED_IMAGE_WORK_ITEM_TYPE.to_string(),
+            capability_key: GENERATED_IMAGE_CAPABILITY_KEY.to_string(),
+            work_item_status: "awaiting_review".to_string(),
+            work_item_payload: json!({
+                "approved_brief_artifact_id": brief_id,
+                "approved_brief_content_hash": brief_hash,
+                "prompt_hash": prompt_hash,
+                "image_specification": "community_poster_1024x1024",
+            }),
+            creation_event_matches: true,
+        }
+    }
+
+    #[test]
+    fn generated_image_approval_accepts_complete_worker_provenance() {
+        validate_generated_image_approval(&generated_image_approval_context(), "approved")
+            .expect("complete generated image should be approvable");
+    }
+
+    fn feishu_backed_approval_context() -> (
+        ArtifactApprovalContext,
+        FeishuPrimaryStorageApprovalEvidence,
+    ) {
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some(format!(
+            "feishu-base://huabaosi-generated-image/{}",
+            context.artifact_id
+        ));
+        let evidence = FeishuPrimaryStorageApprovalEvidence::test_only(
+            context.artifact_id,
+            context.work_item_id,
+            context.content_hash.clone().expect("fixture content hash"),
+            json_string(&context.metadata, "file_md5")
+                .expect("fixture file MD5")
+                .to_string(),
+            json_i64(&context.metadata, "byte_size").expect("fixture byte size"),
+            json_i64(&context.metadata, "width").expect("fixture width"),
+            json_i64(&context.metadata, "height").expect("fixture height"),
+        );
+        (context, evidence)
+    }
+
+    #[test]
+    fn generated_image_approval_accepts_matching_feishu_revalidation() {
+        let (context, evidence) = feishu_backed_approval_context();
+
+        validate_generated_image_approval_with_evidence(&context, "approved", Some(&evidence))
+            .expect("matching authenticated Feishu evidence should allow approval");
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_drifted_feishu_revalidation() {
+        for drifted_field in [
+            "artifact_id",
+            "work_item_id",
+            "artifact_uri",
+            "content_hash",
+            "file_md5",
+            "byte_size",
+            "width",
+            "height",
+        ] {
+            let (context, mut evidence) = feishu_backed_approval_context();
+            match drifted_field {
+                "artifact_id" => evidence.artifact_id = Uuid::new_v4(),
+                "work_item_id" => evidence.work_item_id = Uuid::new_v4(),
+                "artifact_uri" => evidence.artifact_uri.push_str("-drifted"),
+                "content_hash" => evidence.content_hash = format!("sha256:{}", "0".repeat(64)),
+                "file_md5" => evidence.file_md5 = "0".repeat(32),
+                "byte_size" => evidence.byte_size += 1,
+                "width" => evidence.width += 1,
+                "height" => evidence.height += 1,
+                _ => unreachable!("fixed drift field"),
+            }
+
+            let error = validate_generated_image_approval_with_evidence(
+                &context,
+                "approved",
+                Some(&evidence),
+            )
+            .expect_err("drifted Feishu evidence must fail closed");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("does not match the locked artifact identity"),
+                "unexpected result for {drifted_field}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_feishu_evidence_for_https_artifact() {
+        let (mut context, evidence) = feishu_backed_approval_context();
+        context.artifact_uri = Some("https://media.example.test/posters/image.jpg".to_string());
+
+        let error =
+            validate_generated_image_approval_with_evidence(&context, "approved", Some(&evidence))
+                .expect_err("HTTPS artifacts must not consume Feishu evidence");
+
+        assert!(error.to_string().contains("requires the fixed Feishu URI"));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_feishu_backed_approval_requires_matching_revalidation_evidence() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 1)
+            .await
+            .expect("connect guarded integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded integration database");
+
+        let (context, evidence) = feishu_backed_approval_context();
+        let suffix = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, payload, review_policy, risk_level,
+                 information_class)
+            VALUES
+                ($1, 'image_generation_request', 'awaiting_review', 'xiaoman',
+                 'huabaosi', 'huabaosi.generate_image_asset',
+                 'Feishu-backed approval integration request', 'integration_test',
+                 $2, $2, $3, 'before_external_use', 'medium', 'internal_ops')
+            "#,
+        )
+        .bind(context.work_item_id)
+        .bind(format!("feishu-backed-approval:{suffix}"))
+        .bind(&context.work_item_payload)
+        .execute(&pool)
+        .await
+        .expect("insert approval work item");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, source_ids, risk_labels,
+                 information_class, metadata)
+            VALUES
+                ($1, $2, 'generated_image', 'pending', 'huabaosi',
+                 'Feishu-backed integration image', 'sanitized integration fixture',
+                 $3, $4, $5, $6, $7, $8)
+            "#,
+        )
+        .bind(context.artifact_id)
+        .bind(context.work_item_id)
+        .bind(context.artifact_uri.as_deref())
+        .bind(context.content_hash.as_deref())
+        .bind(&context.source_ids)
+        .bind(&context.risk_labels)
+        .bind(&context.information_class)
+        .bind(&context.metadata)
+        .execute(&pool)
+        .await
+        .expect("insert Feishu-backed generated image");
+        let mut creation_data = context
+            .metadata
+            .as_object()
+            .expect("fixture metadata object")
+            .clone();
+        creation_data.insert(
+            "content_hash".to_string(),
+            json!(context
+                .content_hash
+                .as_deref()
+                .expect("fixture content hash")),
+        );
+        creation_data.insert("external_publish_executed".to_string(), json!(false));
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_item_events
+                (work_item_id, artifact_id, event_type, actor_type, actor_id,
+                 message, data)
+            VALUES
+                ($1, $2, 'generated_image_created', 'worker', $3,
+                 'integration generated image created', $4)
+            "#,
+        )
+        .bind(context.work_item_id)
+        .bind(context.artifact_id)
+        .bind(GENERATED_IMAGE_WORKER_ID)
+        .bind(Value::Object(creation_data))
+        .execute(&pool)
+        .await
+        .expect("insert generated-image creation audit");
+
+        let request = ArtifactReviewDecisionRequest {
+            artifact_id: context.artifact_id,
+            reviewer_id: "human-owner-1".to_string(),
+            decision: "approved".to_string(),
+            expected_artifact_type: None,
+            expected_review_status: None,
+            reason: "reviewed exact Feishu-backed JPEG".to_string(),
+            source: "integration_test".to_string(),
+            metadata: json!({}),
+        };
+        let policy = OperationsPolicy::dry_run();
+        let missing_evidence_error =
+            record_artifact_review_decision(&pool, request.clone(), true, &policy)
+                .await
+                .expect_err("Feishu-backed approval without evidence must fail");
+        assert!(missing_evidence_error
+            .to_string()
+            .contains("requires authenticated revalidation evidence"));
+
+        let report = record_artifact_review_decision_with_evidence(
+            &pool,
+            request,
+            true,
+            &policy,
+            Some(&evidence),
+        )
+        .await
+        .expect("matching evidence should approve transaction-locked artifact");
+        assert_eq!(report.action_status, "review_recorded");
+
+        let state: (String, String) = sqlx::query_as(
+            r#"
+            SELECT artifact.review_status, item.status
+            FROM qintopia_agent_os.artifacts artifact
+            JOIN qintopia_agent_os.work_items item ON item.id = artifact.work_item_id
+            WHERE artifact.id = $1
+            "#,
+        )
+        .bind(context.artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load approved integration state");
+        assert_eq!(state.0, "approved");
+        assert_eq!(state.1, "completed");
+
+        let audit: Value = sqlx::query_scalar(
+            r#"
+            SELECT data
+            FROM qintopia_agent_os.work_item_events
+            WHERE artifact_id = $1 AND event_type = 'review_decision_recorded'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(context.artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load approval audit");
+        assert_eq!(audit["authenticated_feishu_revalidation"], true);
+        let serialized = serde_json::to_string(&audit).expect("serialize approval audit");
+        for forbidden in [
+            "feishu-base://",
+            "file_token",
+            "record_id",
+            "base_token",
+            "table_id",
+            "tenant_access_token",
+        ] {
+            assert!(!serialized.contains(forbidden), "audit leaked {forbidden}");
+        }
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_missing_creation_audit() {
+        let mut context = generated_image_approval_context();
+        context.creation_event_matches = false;
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("creation audit must be required");
+
+        assert!(error.to_string().contains("matching creation audit"));
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_mismatched_source_brief() {
+        let mut context = generated_image_approval_context();
+        context.metadata["approved_brief_artifact_id"] = json!(Uuid::new_v4());
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("source brief must match the image request");
+
+        assert!(error.to_string().contains("source metadata does not match"));
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_unreviewed_transform_metadata() {
+        let mut context = generated_image_approval_context();
+        context.metadata["media_transform"] = json!("different-transform");
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("transform identity must be fixed");
+
+        assert!(error.to_string().contains("canonical worker metadata"));
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_invalid_source_hash() {
+        let mut context = generated_image_approval_context();
+        context.metadata["provider_source_content_hash"] = json!("sha256:invalid");
+
+        let error = validate_generated_image_approval(&context, "approved")
+            .expect_err("source PNG hash must be canonical");
+
+        assert!(error.to_string().contains("provider source content hash"));
+    }
+
+    #[test]
+    fn generated_image_approval_rejects_noncanonical_media_identity() {
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some("https://media.example.test/image.jpg?token=value".to_string());
+        let uri_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("media URL query must be rejected");
+        assert!(uri_error.to_string().contains("stable HTTPS media URL"));
+
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some(format!(
+            "feishu-base://huabaosi-generated-image/{}",
+            context.artifact_id
+        ));
+        let feishu_canary_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("Feishu-backed approval must require authenticated evidence");
+        assert!(feishu_canary_error
+            .to_string()
+            .contains("requires authenticated revalidation evidence"));
+
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some("https://media.example.test/posters%2Fimage.jpg".to_string());
+        let encoded_separator_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("encoded path separators must be rejected");
+        assert!(encoded_separator_error
+            .to_string()
+            .contains("ambiguous path separators"));
+
+        let mut context = generated_image_approval_context();
+        context.content_hash = Some("sha256:not-a-real-hash".to_string());
+        let hash_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("noncanonical hash must be rejected");
+        assert!(hash_error.to_string().contains("canonical sha256"));
+
+        let mut context = generated_image_approval_context();
+        context.metadata["file_md5"] = json!("not-a-canonical-md5");
+        let md5_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("noncanonical QiWe file MD5 must be rejected");
+        assert!(md5_error.to_string().contains("canonical md5"));
+
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = Some("https://media.example.test/image.png".to_string());
+        let mime_error = validate_generated_image_approval(&context, "approved")
+            .expect_err("non-JPEG artifact path must be rejected");
+        assert!(mime_error.to_string().contains("JPEG object"));
+    }
+
+    #[test]
+    fn generated_image_rejection_does_not_require_complete_provenance() {
+        let mut context = generated_image_approval_context();
+        context.artifact_uri = None;
+        context.creation_event_matches = false;
+
+        validate_generated_image_approval(&context, "rejected")
+            .expect("humans must be able to reject malformed artifacts");
+
+        let (context, _) = feishu_backed_approval_context();
+        validate_generated_image_approval(&context, "rejected")
+            .expect("Feishu-backed rejection must not require external revalidation");
     }
 
     #[test]
@@ -5743,10 +8554,29 @@ mod tests {
         send_ready_event_count: i64,
         parent_work_item_id: Option<Uuid>,
     ) -> WorkItemStatusRow {
+        status_row_at_depth(
+            work_item_type,
+            status,
+            pending_artifact_count,
+            send_ready_event_count,
+            parent_work_item_id,
+            i32::from(parent_work_item_id.is_some()),
+        )
+    }
+
+    fn status_row_at_depth(
+        work_item_type: &str,
+        status: &str,
+        pending_artifact_count: i64,
+        send_ready_event_count: i64,
+        parent_work_item_id: Option<Uuid>,
+        depth: i32,
+    ) -> WorkItemStatusRow {
         WorkItemStatusRow {
             node: WorkItemStatusNode {
                 work_item_id: Uuid::new_v4(),
                 parent_work_item_id,
+                depth,
                 work_item_type: work_item_type.to_string(),
                 status: status.to_string(),
                 requester_agent: "xiaoman".to_string(),
@@ -5770,6 +8600,7 @@ mod tests {
     }
 
     fn status_tree(children: Vec<WorkItemStatusNode>) -> WorkItemStatusTreeReport {
+        let descendants = children.clone();
         WorkItemStatusTreeReport {
             success: true,
             queried_work_item_id: Uuid::new_v4(),
@@ -5777,6 +8608,8 @@ mod tests {
             root: status_row("activity_promotion_request", "processing", 0, 0, None).node,
             child_count: children.len(),
             children,
+            descendant_count: descendants.len(),
+            descendants,
             current_blocking_point: None,
             limitations: vec![],
             guardrails: vec![],
@@ -5845,6 +8678,27 @@ mod tests {
     }
 
     #[test]
+    fn workflow_aggregate_status_includes_failed_nested_descendant() {
+        let root_id = Uuid::new_v4();
+        let visual =
+            status_row_at_depth("visual_asset_request", "completed", 0, 0, Some(root_id), 1).node;
+        let image = status_row_at_depth(
+            "image_generation_request",
+            "failed",
+            0,
+            0,
+            Some(visual.work_item_id),
+            2,
+        )
+        .node;
+        let mut tree = status_tree(vec![visual.clone()]);
+        tree.descendants = vec![visual, image];
+        tree.descendant_count = tree.descendants.len();
+
+        assert_eq!(workflow_aggregate_status(&tree), "failed");
+    }
+
+    #[test]
     fn workflow_child_status_refs_keep_safe_summary_fields() {
         let tree = status_tree(vec![
             status_row(
@@ -5860,11 +8714,38 @@ mod tests {
         let refs = workflow_child_status_refs(&tree);
 
         assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].depth, 1);
         assert_eq!(refs[0].work_item_type, "group_message_request");
         assert_eq!(
             refs[0].blocking_reason.as_deref(),
             Some("send_ready_waiting_for_production_send_adapter")
         );
+    }
+
+    #[test]
+    fn workflow_descendant_status_refs_preserve_nested_parent_and_depth() {
+        let root_id = Uuid::new_v4();
+        let visual =
+            status_row_at_depth("visual_asset_request", "completed", 0, 0, Some(root_id), 1).node;
+        let image = status_row_at_depth(
+            "image_generation_request",
+            "awaiting_review",
+            1,
+            0,
+            Some(visual.work_item_id),
+            2,
+        )
+        .node;
+        let mut tree = status_tree(vec![visual.clone()]);
+        tree.descendants = vec![visual.clone(), image.clone()];
+        tree.descendant_count = tree.descendants.len();
+
+        let refs = workflow_descendant_status_refs(&tree);
+
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[1].work_item_id, image.work_item_id);
+        assert_eq!(refs[1].parent_work_item_id, Some(visual.work_item_id));
+        assert_eq!(refs[1].depth, 2);
     }
 
     #[test]

@@ -9,6 +9,8 @@
 *.rs text
 *.sh text eol=lf
 
+docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch/hermes-wecom.patch whitespace=-blank-at-eol
+
 *.png binary
 *.jpg binary
 *.jpeg binary

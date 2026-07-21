@@ -1,8 +1,9 @@
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::{postgres::PgPool, Row};
+use sqlx::{postgres::PgPool, PgConnection, Row};
 use uuid::Uuid;
 
 use crate::{config::Cli, db};
@@ -22,6 +23,9 @@ pub struct EvidenceWorkerReport {
     pub work_item_id: Option<Uuid>,
     pub artifact_ids: Vec<Uuid>,
     pub artifact_previews: Vec<EvidenceArtifactPreview>,
+    pub retrieval_strategy: String,
+    pub source_message_count: usize,
+    pub safe_for_chat: bool,
     pub limitations: Vec<String>,
     pub guardrails: Vec<String>,
 }
@@ -44,7 +48,9 @@ struct EvidenceWorkItem {
     target_agent: String,
     capability_key: String,
     brief_summary: String,
+    source_type: String,
     source_refs: Value,
+    source_event_signal_id: Option<Uuid>,
     payload: Value,
     review_policy: String,
 }
@@ -58,6 +64,23 @@ struct EvidenceDraft {
     content_hash: String,
     review_status: String,
     information_class: String,
+    source_ids: Value,
+    retrieval_strategy: String,
+    source_message_count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct EvidenceSource {
+    strategy: &'static str,
+    signal_title: String,
+    signal_summary: String,
+    messages: Vec<EvidenceMessage>,
+}
+
+#[derive(Debug, Clone)]
+struct EvidenceMessage {
+    id: Uuid,
+    snippet: String,
 }
 
 pub async fn run(
@@ -99,14 +122,15 @@ fn run_fixture(apply_requested: bool) -> Result<EvidenceWorkerReport> {
         target_agent: "wenyuange".to_string(),
         capability_key: SUPPORTED_CAPABILITY.to_string(),
         brief_summary: "周末共创晚餐活动宣发背景资料".to_string(),
+        source_type: "fixture".to_string(),
         source_refs: json!({"source_record_ref": "activity_occurrence:fixture"}),
+        source_event_signal_id: None,
         payload: json!({"question": "请整理活动宣发所需的背景资料和可引用事实"}),
         review_policy: "not_required".to_string(),
     };
     validate_work_item(&work_item)?;
-    let drafts = build_evidence_drafts(&work_item)?;
+    let drafts = build_evidence_drafts(&work_item, &legacy_evidence_source())?;
     Ok(report_from_drafts(
-        true,
         false,
         true,
         "fixture_dry_run_ok",
@@ -126,9 +150,13 @@ async fn run_once(
             return Ok(empty_report(false, false, "no_claimable_evidence_request"));
         };
         validate_work_item(&work_item)?;
-        let drafts = build_evidence_drafts(&work_item)?;
+        let mut connection = pool
+            .acquire()
+            .await
+            .context("acquire evidence preview connection")?;
+        let source = load_evidence_source(&mut connection, &work_item).await?;
+        let drafts = build_evidence_drafts(&work_item, &source)?;
         return Ok(report_from_drafts(
-            false,
             false,
             false,
             "dry_run_ok",
@@ -152,7 +180,17 @@ async fn run_once(
             .context("commit failed validation evidence transaction")?;
         return Err(err);
     }
-    let drafts = match build_evidence_drafts(&work_item) {
+    let source = match load_evidence_source(&mut tx, &work_item).await {
+        Ok(source) => source,
+        Err(err) => {
+            mark_work_item_failed(&mut tx, &work_item, &err.to_string()).await?;
+            tx.commit()
+                .await
+                .context("commit failed source evidence transaction")?;
+            return Err(err);
+        }
+    };
+    let drafts = match build_evidence_drafts(&work_item, &source) {
         Ok(drafts) => drafts,
         Err(err) => {
             mark_work_item_failed(&mut tx, &work_item, &err.to_string()).await?;
@@ -169,25 +207,28 @@ async fn run_once(
     update_work_item_completed(&mut tx, &work_item).await?;
     append_event_in_tx(
         &mut tx,
-        Some(work_item.id),
-        None,
-        "evidence_artifact_created",
-        "worker",
-        WORKER_ID,
-        "evidence summary artifact created by evidence worker",
-        json!({
-            "artifact_count": drafts.len(),
-            "review_policy": work_item.review_policy,
-            "target_agent": work_item.target_agent,
-            "capability_key": work_item.capability_key,
-            "external_calls_executed": false,
-        }),
+        WorkItemEvent {
+            work_item_id: Some(work_item.id),
+            artifact_id: None,
+            event_type: "evidence_artifact_created",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "evidence summary artifact created by evidence worker",
+            data: json!({
+                "artifact_count": drafts.len(),
+                "review_policy": work_item.review_policy,
+                "target_agent": work_item.target_agent,
+                "capability_key": work_item.capability_key,
+                "external_calls_executed": false,
+                "retrieval_strategy": source.strategy,
+                "source_message_count": source.messages.len(),
+            }),
+        },
     )
     .await?;
     tx.commit().await.context("commit evidence transaction")?;
 
     Ok(report_from_drafts(
-        false,
         true,
         false,
         "evidence_artifact_created",
@@ -211,7 +252,8 @@ async fn peek_next_work_item(pool: &PgPool) -> Result<Option<EvidenceWorkItem>> 
     let row = sqlx::query(
         r#"
         SELECT id, work_item_type, requester_agent, target_agent, capability_key,
-               brief_summary, source_refs, payload, review_policy
+               brief_summary, source_type, source_refs, source_event_signal_id, payload,
+               review_policy
         FROM qintopia_agent_os.work_items
         WHERE status = 'queued'
           AND available_at <= now()
@@ -236,7 +278,8 @@ async fn peek_work_item_by_id(
     let row = sqlx::query(
         r#"
         SELECT id, work_item_type, requester_agent, target_agent, capability_key,
-               brief_summary, source_refs, payload, review_policy
+               brief_summary, source_type, source_refs, source_event_signal_id, payload,
+               review_policy
         FROM qintopia_agent_os.work_items
         WHERE id = $1
           AND status = 'queued'
@@ -295,7 +338,8 @@ async fn claim_next_work_item(
         WHERE items.id = claimed.id
         RETURNING items.id, items.work_item_type, items.requester_agent,
                   items.target_agent, items.capability_key, items.brief_summary,
-                  items.source_refs, items.payload, items.review_policy
+                  items.source_type, items.source_refs, items.source_event_signal_id,
+                  items.payload, items.review_policy
         "#,
     )
     .bind(SUPPORTED_WORK_ITEM_TYPE)
@@ -338,7 +382,8 @@ async fn claim_work_item_by_id(
         WHERE items.id = claimed.id
         RETURNING items.id, items.work_item_type, items.requester_agent,
                   items.target_agent, items.capability_key, items.brief_summary,
-                  items.source_refs, items.payload, items.review_policy
+                  items.source_type, items.source_refs, items.source_event_signal_id,
+                  items.payload, items.review_policy
         "#,
     )
     .bind(work_item_id)
@@ -359,7 +404,9 @@ fn work_item_from_row(row: sqlx::postgres::PgRow) -> Result<EvidenceWorkItem> {
         target_agent: row.try_get("target_agent")?,
         capability_key: row.try_get("capability_key")?,
         brief_summary: row.try_get("brief_summary")?,
+        source_type: row.try_get("source_type")?,
         source_refs: row.try_get("source_refs")?,
+        source_event_signal_id: row.try_get("source_event_signal_id")?,
         payload: row.try_get("payload")?,
         review_policy: row.try_get("review_policy")?,
     })
@@ -392,20 +439,302 @@ fn validate_work_item(work_item: &EvidenceWorkItem) -> Result<()> {
     Ok(())
 }
 
-fn build_evidence_drafts(work_item: &EvidenceWorkItem) -> Result<Vec<EvidenceDraft>> {
+async fn load_evidence_source(
+    connection: &mut PgConnection,
+    work_item: &EvidenceWorkItem,
+) -> Result<EvidenceSource> {
+    let Some(signal_id) = work_item.source_event_signal_id else {
+        if requires_event_signal_source(work_item) {
+            bail!("Xiaoman activity evidence requires source_event_signal_id");
+        }
+        return Ok(legacy_evidence_source());
+    };
+    if work_item.requester_agent != "xiaoman" {
+        bail!("source-grounded activity evidence must be requested by xiaoman");
+    }
+
+    let row = sqlx::query(
+        r#"
+        SELECT platform, chat_id, signal_date, title, summary, source_message_ids,
+               source_window_start, source_window_end
+        FROM qintopia_agent_os.event_signals
+        WHERE id = $1
+          AND owner_agent = 'xiaoman'
+        "#,
+    )
+    .bind(signal_id)
+    .fetch_optional(&mut *connection)
+    .await
+    .context("load Xiaoman evidence event signal")?
+    .context("source_event_signal_id does not reference a Xiaoman event signal")?;
+
+    let platform: String = row.try_get("platform")?;
+    let chat_id: String = row.try_get("chat_id")?;
+    let signal_date: NaiveDate = row.try_get("signal_date")?;
+    let signal_title: String = row.try_get("title")?;
+    let signal_summary: String = row.try_get("summary")?;
+    let source_message_ids: Vec<Uuid> = row.try_get("source_message_ids")?;
+    let source_window_start: Option<DateTime<Utc>> = row.try_get("source_window_start")?;
+    let source_window_end: Option<DateTime<Utc>> = row.try_get("source_window_end")?;
+
+    if !source_message_ids.is_empty() {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, text
+            FROM qintopia_messages.messages
+            WHERE id = ANY($1::uuid[])
+              AND platform = $2
+              AND chat_id = $3
+              AND COALESCE(processing_hints->>'raw_archived', 'false') <> 'true'
+              AND NULLIF(btrim(text), '') IS NOT NULL
+            ORDER BY COALESCE(sent_at, received_at) ASC, created_at ASC
+            LIMIT 20
+            "#,
+        )
+        .bind(&source_message_ids)
+        .bind(&platform)
+        .bind(&chat_id)
+        .fetch_all(&mut *connection)
+        .await
+        .context("load exact Xiaoman evidence messages")?;
+        let messages = evidence_messages_from_rows(rows);
+        if messages.is_empty() {
+            bail!("linked event signal contains no usable authorized source messages");
+        }
+        return Ok(EvidenceSource {
+            strategy: "exact_source_messages",
+            signal_title,
+            signal_summary,
+            messages,
+        });
+    }
+
+    let terms = evidence_keyword_terms(&signal_title);
+    if terms.is_empty() {
+        bail!("event signal title cannot produce bounded evidence search terms");
+    }
+    let (window_start, window_end) =
+        bounded_evidence_window(signal_date, source_window_start, source_window_end)?;
+    let rows = sqlx::query(
+        r#"
+        SELECT id, text
+        FROM qintopia_messages.messages
+        WHERE platform = $1
+          AND chat_id = $2
+          AND COALESCE(processing_hints->>'raw_archived', 'false') <> 'true'
+          AND NULLIF(btrim(text), '') IS NOT NULL
+          AND COALESCE(sent_at, received_at) >= $3
+          AND COALESCE(sent_at, received_at) <= $4
+          AND EXISTS (
+              SELECT 1
+              FROM unnest($5::text[]) AS term
+              WHERE text ILIKE '%' || term || '%'
+          )
+        ORDER BY COALESCE(sent_at, received_at) ASC, created_at ASC
+        LIMIT 20
+        "#,
+    )
+    .bind(&platform)
+    .bind(&chat_id)
+    .bind(window_start)
+    .bind(window_end)
+    .bind(&terms)
+    .fetch_all(&mut *connection)
+    .await
+    .context("load bounded same-chat Xiaoman evidence messages")?;
+    let messages = evidence_messages_from_rows(rows);
+    if messages.is_empty() {
+        bail!("no authorized evidence messages matched the event signal scope");
+    }
+    Ok(EvidenceSource {
+        strategy: "same_chat_window_keyword",
+        signal_title,
+        signal_summary,
+        messages,
+    })
+}
+
+fn legacy_evidence_source() -> EvidenceSource {
+    EvidenceSource {
+        strategy: "legacy_placeholder",
+        signal_title: String::new(),
+        signal_summary: String::new(),
+        messages: Vec::new(),
+    }
+}
+
+fn requires_event_signal_source(work_item: &EvidenceWorkItem) -> bool {
+    work_item.requester_agent == "xiaoman"
+        && work_item.source_type == "event_signal"
+        && work_item
+            .payload
+            .get("workflow_type")
+            .and_then(Value::as_str)
+            == Some("activity_promotion")
+}
+
+fn evidence_messages_from_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<EvidenceMessage> {
+    rows.into_iter()
+        .filter_map(|row| {
+            let id: Uuid = row.try_get("id").ok()?;
+            let text: String = row.try_get("text").ok()?;
+            let snippet = sanitize_evidence_snippet(&text);
+            (!snippet.is_empty()).then_some(EvidenceMessage { id, snippet })
+        })
+        .collect()
+}
+
+fn evidence_keyword_terms(title: &str) -> Vec<String> {
+    title
+        .split(|character: char| {
+            character.is_whitespace()
+                || matches!(
+                    character,
+                    ',' | '.'
+                        | ':'
+                        | ';'
+                        | '!'
+                        | '?'
+                        | '-'
+                        | '_'
+                        | '/'
+                        | '，'
+                        | '。'
+                        | '：'
+                        | '；'
+                        | '！'
+                        | '？'
+                        | '、'
+                        | '（'
+                        | '）'
+                        | '('
+                        | ')'
+                )
+        })
+        .map(str::trim)
+        .filter(|term| term.chars().count() >= 2)
+        .take(8)
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn bounded_evidence_window(
+    signal_date: NaiveDate,
+    source_window_start: Option<DateTime<Utc>>,
+    source_window_end: Option<DateTime<Utc>>,
+) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+    let midnight = signal_date
+        .and_hms_opt(0, 0, 0)
+        .context("event signal date cannot form an evidence window")?;
+    let default_start =
+        DateTime::<Utc>::from_naive_utc_and_offset(midnight, Utc) - Duration::hours(12);
+    let default_end = default_start + Duration::hours(48);
+    let window_start = source_window_start.unwrap_or(default_start);
+    let window_end = source_window_end.unwrap_or(default_end);
+    let duration = window_end.signed_duration_since(window_start);
+    if duration <= Duration::zero() || duration > Duration::hours(72) {
+        bail!("event signal evidence window must be positive and no longer than 72 hours");
+    }
+    Ok((window_start, window_end))
+}
+
+fn sanitize_evidence_snippet(text: &str) -> String {
+    if contains_sensitive_text(text) {
+        return String::new();
+    }
+    let sanitized = text
+        .split_whitespace()
+        .map(|token| {
+            let lower = token.to_ascii_lowercase();
+            let digit_count = token.chars().filter(char::is_ascii_digit).count();
+            let ascii_identifier = token.chars().count() >= 32
+                && token.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || "-_:".contains(character)
+                });
+            if lower.contains("http://") || lower.contains("https://") || lower.contains("www.") {
+                "[link]"
+            } else if lower.contains('@') {
+                "[account]"
+            } else if digit_count >= 7 {
+                "[number]"
+            } else if ascii_identifier {
+                "[identifier]"
+            } else {
+                token
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    sanitized.chars().take(240).collect()
+}
+
+fn build_evidence_drafts(
+    work_item: &EvidenceWorkItem,
+    source: &EvidenceSource,
+) -> Result<Vec<EvidenceDraft>> {
     let question = work_item
         .payload
         .get("question")
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(&work_item.brief_summary);
-    let title = format!("{} - 运营证据摘要", work_item.brief_summary);
-    let summary = format!("围绕「{}」整理的运营背景证据摘要。", question);
-    let content_text = format!(
-        "检索问题：{}\n证据范围：只允许使用已授权的知识库、消息证据或公开资料摘要；当前 worker 不执行外部检索。\n输出用途：为后续视觉素材、运营文案或人工审核提供背景依据。\n来源引用：{}",
-        question,
-        safe_source_refs(&work_item.source_refs)
-    );
+    let source_grounded = source.strategy != "legacy_placeholder";
+    let safe_question = if source_grounded {
+        sanitize_evidence_snippet(question)
+    } else {
+        question.to_string()
+    };
+    let safe_brief_summary = if source_grounded {
+        sanitize_evidence_snippet(&work_item.brief_summary)
+    } else {
+        work_item.brief_summary.clone()
+    };
+    if safe_question.is_empty() || safe_brief_summary.is_empty() {
+        bail!("evidence request cannot be represented without sensitive source text");
+    }
+    let title = format!("{} - 运营证据摘要", safe_brief_summary);
+    let (summary, content_text, source_ids) = if source.strategy == "legacy_placeholder" {
+        (
+            format!("围绕「{}」整理的运营背景证据摘要。", safe_question),
+            format!(
+                "检索问题：{}\n证据范围：只允许使用已授权的知识库、消息证据或公开资料摘要；当前合同没有可检索的事件信号来源。\n输出用途：为后续视觉素材、运营文案或人工审核提供背景依据。\n来源引用：{}",
+                safe_question,
+                safe_source_refs(&work_item.source_refs)
+            ),
+            json!([{"source_refs": work_item.source_refs}]),
+        )
+    } else {
+        if source.messages.is_empty() {
+            bail!("source-grounded evidence requires at least one sanitized message");
+        }
+        let snippets = source
+            .messages
+            .iter()
+            .map(|message| format!("- [source:{}] {}", message.id, message.snippet))
+            .collect::<Vec<_>>()
+            .join("\n");
+        (
+            format!(
+                "基于 {} 条已授权消息证据整理的活动背景摘要。",
+                source.messages.len()
+            ),
+            format!(
+                "检索问题：{}\n事件信号标题：{}\n事件信号摘要：{}\n检索策略：{}\n消息证据：\n{}\n输出用途：仅供后续视觉素材、运营文案或人工审核使用。",
+                safe_question,
+                sanitize_evidence_snippet(&source.signal_title),
+                sanitize_evidence_snippet(&source.signal_summary),
+                source.strategy,
+                snippets
+            ),
+            Value::Array(
+                source
+                    .messages
+                    .iter()
+                    .map(|message| json!({"message_uuid": message.id}))
+                    .collect(),
+            ),
+        )
+    };
     let content_hash = content_hash(&format!(
         "{}|{}|{}",
         work_item.id, "evidence_summary", content_text
@@ -418,6 +747,9 @@ fn build_evidence_drafts(work_item: &EvidenceWorkItem) -> Result<Vec<EvidenceDra
         content_hash,
         review_status: "not_required".to_string(),
         information_class: "internal_ops".to_string(),
+        source_ids,
+        retrieval_strategy: source.strategy.to_string(),
+        source_message_count: source.messages.len(),
     }])
 }
 
@@ -474,13 +806,15 @@ async fn upsert_artifact(
     .bind(&draft.summary)
     .bind(&draft.content_text)
     .bind(&draft.content_hash)
-    .bind(json!([{"source_refs": work_item.source_refs}]))
+    .bind(&draft.source_ids)
     .bind(&draft.information_class)
     .bind(json!({
         "generated_by": WORKER_ID,
         "capability_key": work_item.capability_key,
         "review_policy": work_item.review_policy,
         "external_calls_executed": false,
+        "retrieval_strategy": draft.retrieval_strategy,
+        "source_message_count": draft.source_message_count,
     }))
     .fetch_one(&mut **tx)
     .await
@@ -536,27 +870,33 @@ async fn mark_work_item_failed(
     .context("mark evidence work item failed")?;
     append_event_in_tx(
         tx,
-        Some(work_item.id),
-        None,
-        "failed",
-        "worker",
-        WORKER_ID,
-        "evidence worker failed to create artifacts",
-        json!({"error": message}),
+        WorkItemEvent {
+            work_item_id: Some(work_item.id),
+            artifact_id: None,
+            event_type: "failed",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "evidence worker failed to create artifacts",
+            data: json!({"error": message}),
+        },
     )
     .await?;
     Ok(())
 }
 
-async fn append_event_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+struct WorkItemEvent<'a> {
     work_item_id: Option<Uuid>,
     artifact_id: Option<Uuid>,
-    event_type: &str,
-    actor_type: &str,
-    actor_id: &str,
-    message: &str,
+    event_type: &'a str,
+    actor_type: &'a str,
+    actor_id: &'a str,
+    message: &'a str,
     data: Value,
+}
+
+async fn append_event_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    event: WorkItemEvent<'_>,
 ) -> Result<()> {
     sqlx::query(
         r#"
@@ -565,13 +905,13 @@ async fn append_event_in_tx(
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
-    .bind(work_item_id)
-    .bind(artifact_id)
-    .bind(event_type)
-    .bind(actor_type)
-    .bind(actor_id)
-    .bind(message)
-    .bind(data)
+    .bind(event.work_item_id)
+    .bind(event.artifact_id)
+    .bind(event.event_type)
+    .bind(event.actor_type)
+    .bind(event.actor_id)
+    .bind(event.message)
+    .bind(event.data)
     .execute(&mut **tx)
     .await
     .context("append evidence event")?;
@@ -579,7 +919,6 @@ async fn append_event_in_tx(
 }
 
 fn report_from_drafts(
-    dry_run: bool,
     apply_requested: bool,
     fixture_mode: bool,
     action_status: &str,
@@ -587,9 +926,17 @@ fn report_from_drafts(
     artifact_ids: Vec<Uuid>,
     drafts: &[EvidenceDraft],
 ) -> EvidenceWorkerReport {
+    let retrieval_strategy = drafts
+        .first()
+        .map(|draft| draft.retrieval_strategy.clone())
+        .unwrap_or_else(|| "none".to_string());
+    let source_message_count = drafts
+        .first()
+        .map(|draft| draft.source_message_count)
+        .unwrap_or(0);
     EvidenceWorkerReport {
         success: true,
-        dry_run,
+        dry_run: !apply_requested,
         apply_requested,
         fixture_mode,
         worker: WORKER_ID,
@@ -607,8 +954,11 @@ fn report_from_drafts(
                 content_hash: draft.content_hash.clone(),
             })
             .collect(),
+        retrieval_strategy,
+        source_message_count,
+        safe_for_chat: false,
         limitations: vec![
-            "fixture-mode and dry-run do not query the live message store or call Feishu"
+            "fixture-mode does not query the live message store; Xiaoman dry-run performs read-only Postgres retrieval"
                 .to_string(),
             "this worker creates a source-grounding artifact only; it does not mutate business records"
                 .to_string(),
@@ -618,6 +968,7 @@ fn report_from_drafts(
             "Hermes Kanban is not read or written".to_string(),
             "evidence artifacts are internal operations context and are not external-send artifacts"
                 .to_string(),
+            "Xiaoman evidence retrieval does not call embeddings or external adapters".to_string(),
         ],
     }
 }
@@ -637,6 +988,9 @@ fn empty_report(
         work_item_id: None,
         artifact_ids: Vec::new(),
         artifact_previews: Vec::new(),
+        retrieval_strategy: "none".to_string(),
+        source_message_count: 0,
+        safe_for_chat: false,
         limitations: vec!["no claimable evidence work item was found".to_string()],
         guardrails: vec![
             "only evidence_request with wenyuange.retrieve_evidence is supported".to_string(),
@@ -703,6 +1057,11 @@ mod tests {
         let report = run_fixture(false).expect("fixture should validate");
 
         assert_eq!(report.action_status, "fixture_dry_run_ok");
+        assert!(report.dry_run);
+        assert!(!report.apply_requested);
+        assert_eq!(report.retrieval_strategy, "legacy_placeholder");
+        assert_eq!(report.source_message_count, 0);
+        assert!(!report.safe_for_chat);
         assert_eq!(report.artifact_previews.len(), 1);
         assert_eq!(
             report.artifact_previews[0].artifact_type,
@@ -727,7 +1086,9 @@ mod tests {
             target_agent: "wenyuange".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "contains raw private chat".to_string(),
+            source_type: "fixture".to_string(),
             source_refs: json!({}),
+            source_event_signal_id: None,
             payload: json!({"question": "请整理"}),
             review_policy: "not_required".to_string(),
         };
@@ -747,7 +1108,9 @@ mod tests {
             target_agent: "huabaosi".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "活动背景".to_string(),
+            source_type: "fixture".to_string(),
             source_refs: json!({}),
+            source_event_signal_id: None,
             payload: json!({"question": "请整理"}),
             review_policy: "not_required".to_string(),
         };
@@ -766,5 +1129,210 @@ mod tests {
         assert!(refs.contains("source_record_ref"));
         assert!(!refs.contains("tbl_secret"));
         assert!(!refs.contains("table_id"));
+    }
+
+    #[test]
+    fn source_grounded_draft_contains_only_internal_ids_and_sanitized_snippets() {
+        let message_id = Uuid::new_v4();
+        let work_item = EvidenceWorkItem {
+            id: Uuid::new_v4(),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "wenyuange".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "周末共创晚餐活动宣发背景资料".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({"chat_ref": "sha256:opaque"}),
+            source_event_signal_id: Some(Uuid::new_v4()),
+            payload: json!({"question": "请整理活动证据"}),
+            review_policy: "not_required".to_string(),
+        };
+        let source = EvidenceSource {
+            strategy: "exact_source_messages",
+            signal_title: "周末共创晚餐".to_string(),
+            signal_summary: "成员确认周六举办活动".to_string(),
+            messages: vec![EvidenceMessage {
+                id: message_id,
+                snippet: sanitize_evidence_snippet(
+                    "周六 18:30 开始，报名电话 13800138000，详情 https://example.com/private",
+                ),
+            }],
+        };
+
+        let drafts = build_evidence_drafts(&work_item, &source).expect("draft should build");
+        let draft = &drafts[0];
+        assert_eq!(draft.retrieval_strategy, "exact_source_messages");
+        assert_eq!(draft.source_message_count, 1);
+        assert!(draft.content_text.contains(&message_id.to_string()));
+        assert!(draft.content_text.contains("[number]"));
+        assert!(draft.content_text.contains("[link]"));
+        assert!(!draft.content_text.contains("13800138000"));
+        assert!(!draft.content_text.contains("example.com"));
+        assert!(!draft.content_text.contains("chat_ref"));
+        assert_eq!(draft.source_ids, json!([{"message_uuid": message_id}]));
+    }
+
+    #[test]
+    fn source_grounded_draft_fails_without_messages() {
+        let work_item = EvidenceWorkItem {
+            id: Uuid::new_v4(),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "wenyuange".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "活动背景".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({}),
+            source_event_signal_id: Some(Uuid::new_v4()),
+            payload: json!({"question": "请整理"}),
+            review_policy: "not_required".to_string(),
+        };
+        let source = EvidenceSource {
+            strategy: "exact_source_messages",
+            signal_title: "活动".to_string(),
+            signal_summary: "活动摘要".to_string(),
+            messages: Vec::new(),
+        };
+
+        let error = build_evidence_drafts(&work_item, &source)
+            .expect_err("missing evidence must fail closed");
+        assert!(error
+            .to_string()
+            .contains("requires at least one sanitized message"));
+    }
+
+    #[test]
+    fn source_grounded_draft_fails_when_question_sanitizes_empty() {
+        let work_item = EvidenceWorkItem {
+            id: Uuid::new_v4(),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "wenyuange".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "活动背景".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({}),
+            source_event_signal_id: Some(Uuid::new_v4()),
+            payload: json!({"question": "raw private chat"}),
+            review_policy: "not_required".to_string(),
+        };
+        let source = EvidenceSource {
+            strategy: "exact_source_messages",
+            signal_title: "周末活动".to_string(),
+            signal_summary: "成员报名".to_string(),
+            messages: vec![EvidenceMessage {
+                id: Uuid::new_v4(),
+                snippet: "成员讨论报名时间".to_string(),
+            }],
+        };
+
+        let error = build_evidence_drafts(&work_item, &source)
+            .expect_err("sensitive source question must fail closed");
+        assert!(error
+            .to_string()
+            .contains("cannot be represented without sensitive source text"));
+    }
+
+    #[test]
+    fn evidence_snippet_redacts_links_accounts_numbers_and_long_ids() {
+        let snippet = sanitize_evidence_snippet(
+            "联系 owner@example.com 或访问 https://example.com/path 编号 1234567890 trace abcdefghijklmnopqrstuvwxyzabcdefgh",
+        );
+
+        assert!(snippet.contains("[account]"));
+        assert!(snippet.contains("[link]"));
+        assert!(snippet.contains("[number]"));
+        assert!(snippet.contains("[identifier]"));
+        assert!(!snippet.contains("owner@example.com"));
+        assert!(!snippet.contains("https://example.com"));
+        assert!(!snippet.contains("1234567890"));
+    }
+
+    #[test]
+    fn report_from_source_grounded_drafts_stays_internal_only() {
+        let work_item_id = Uuid::new_v4();
+        let artifact_id = Uuid::new_v4();
+        let draft = EvidenceDraft {
+            artifact_type: "evidence_summary".to_string(),
+            title: "活动证据摘要".to_string(),
+            summary: "基于 2 条已授权消息证据整理的活动背景摘要。".to_string(),
+            content_text: "消息证据已脱敏".to_string(),
+            content_hash: "sha256:evidence".to_string(),
+            review_status: "not_required".to_string(),
+            information_class: "internal_ops".to_string(),
+            source_ids: json!([]),
+            retrieval_strategy: "same_chat_window_keyword".to_string(),
+            source_message_count: 2,
+        };
+
+        let report = report_from_drafts(
+            false,
+            false,
+            "evidence_artifacts_preview",
+            Some(work_item_id),
+            vec![artifact_id],
+            &[draft],
+        );
+
+        assert!(report.dry_run);
+        assert!(!report.apply_requested);
+        assert!(!report.safe_for_chat);
+        assert_eq!(report.work_item_id, Some(work_item_id));
+        assert_eq!(report.artifact_ids, vec![artifact_id]);
+        assert_eq!(report.retrieval_strategy, "same_chat_window_keyword");
+        assert_eq!(report.source_message_count, 2);
+        assert!(report
+            .guardrails
+            .iter()
+            .any(|item| item.contains("does not call embeddings")));
+    }
+
+    #[test]
+    fn keyword_terms_split_common_chinese_punctuation() {
+        assert_eq!(
+            evidence_keyword_terms("周末共创晚餐（浦东）/报名"),
+            vec!["周末共创晚餐", "浦东", "报名"]
+        );
+    }
+
+    #[test]
+    fn evidence_window_rejects_unbounded_or_reversed_ranges() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 13).expect("valid date");
+        let start = DateTime::parse_from_rfc3339("2026-07-13T00:00:00Z")
+            .expect("valid timestamp")
+            .with_timezone(&Utc);
+
+        assert!(
+            bounded_evidence_window(date, Some(start), Some(start + Duration::hours(72))).is_ok()
+        );
+        assert!(
+            bounded_evidence_window(date, Some(start), Some(start + Duration::hours(73))).is_err()
+        );
+        assert!(
+            bounded_evidence_window(date, Some(start), Some(start - Duration::hours(1))).is_err()
+        );
+    }
+
+    #[test]
+    fn xiaoman_activity_evidence_requires_event_signal_source() {
+        let work_item = EvidenceWorkItem {
+            id: Uuid::new_v4(),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "wenyuange".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "活动背景".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({}),
+            source_event_signal_id: None,
+            payload: json!({"workflow_type": "activity_promotion", "question": "请整理"}),
+            review_policy: "not_required".to_string(),
+        };
+
+        assert!(requires_event_signal_source(&work_item));
+
+        let mut manual_work_item = work_item;
+        manual_work_item.source_type = "apply_smoke".to_string();
+        assert!(!requires_event_signal_source(&manual_work_item));
     }
 }

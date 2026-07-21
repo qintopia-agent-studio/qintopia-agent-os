@@ -1,0 +1,42 @@
+id: docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch
+type: migration-evidence
+name: Huabaosi WeCom Server Patch Snapshot
+owner: PatrickLiveCool
+status: review-pool
+risk_level: high
+description:
+  Exact review-only extraction of the production Hermes WeCom patch before the
+  user-visible gateway contract moves to the repository-owned Rust path.
+source:
+  repository: https://github.com/NousResearch/hermes-agent.git
+  path: /home/ubuntu/.hermes/hermes-agent
+  baseline_reference: 9cbc37e25
+  server_commit_reference: c76d035c1
+  observed_at: 2026-07-15
+  disposition: review-pool
+patch:
+  path: docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch/hermes-wecom.patch
+  sha256: bf60db1218d1a5690f93a999fb0e81bc6be1547c2f4da3f5b2397ed09658f572
+  allowed_paths:
+    - gateway/platforms/wecom.py
+    - tests/gateway/test_text_batching.py
+    - tests/gateway/test_wecom.py
+owned_target:
+  policy: runtime/sidecar/src/huabaosi_wecom_policy.rs
+  fixtures: runtime/sidecar/fixtures/huabaosi_wecom_policy_events.json
+  migration_plan: docs/plans/active/huabaosi-wecom-migration.md
+production_boundary:
+  deployable: false
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+validation:
+  commands:
+    - pnpm runtime:hermes:check
+    - pnpm secrets:check
+    - pnpm test:sidecar -- huabaosi_wecom_policy
+    - git diff --check
+rollback:
+  Current production routing remains on hermes-gateway-huabaosi.service; this evidence
+  package changes no runtime behavior.

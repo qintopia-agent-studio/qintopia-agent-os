@@ -41,7 +41,28 @@ jobs:
       )
 
     steps:
+      - name: Detect Release Please PR
+        id: release-please
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login || '' }}
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
+        run: |
+          set -euo pipefail
+          generated=false
+          if [[ "$PR_HEAD_REF" == release-please--branches--* &&
+            ( "$PR_AUTHOR" == "github-actions[bot]" || "$PR_AUTHOR" == "app/github-actions" ) &&
+            "$PR_BODY" == *"This PR was generated with [Release Please]"* ]]; then
+            generated=true
+          fi
+          echo "generated=${generated}" >> "$GITHUB_OUTPUT"
+
       - name: Run PR-Agent
+        if:
+          ${{ github.event_name != 'pull_request' ||
+          steps.release-please.outputs.generated != 'true' }}
         uses: the-pr-agent/pr-agent@8e4d32e5497defd43c023a404f73560c62728961
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,7 +74,7 @@ jobs:
           config.custom_model_max_tokens:
             ${{ vars.PR_AGENT_CUSTOM_MODEL_MAX_TOKENS || '32000' }}
           github_action_config.auto_review: "true"
-          github_action_config.auto_describe: "true"
+          github_action_config.auto_describe: "false"
           github_action_config.auto_improve: "false"
           pr_description.add_original_user_description: "false"
           github_action_config.pr_actions:

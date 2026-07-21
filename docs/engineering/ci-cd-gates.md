@@ -33,6 +33,9 @@ The runtime gate adds:
 - QiWe package tests
 - sidecar Rust tests
 - no-credential sidecar smoke checks
+- a Rust coverage baseline artifact and blocking strict Clippy gate
+- a Xiaoman downstream apply smoke against a disposable GitHub Actions PostgreSQL
+  service
 
 ## Secret And Runtime-State Gate
 
@@ -61,13 +64,45 @@ belongs to a reviewed runbook using an approved commit SHA.
 
 ## GitHub Actions CI
 
-The GitHub Actions CI workflow runs on pull requests and pushes to `master`. It uses
-Node.js 24 actions and always runs `pnpm check:light`.
+The GitHub Actions CI workflow runs on pull requests, pull-request body edits, and
+pushes to `master`. It uses Node.js 24 actions and always runs `pnpm check:light`.
 
 The CI workflow starts with a `changes` job. Markdown and docs-only changes skip
 Python/Rust runtime checks while still completing the required `check` job. Runtime,
 deployment script, package, workflow, or configuration changes run `pnpm check:runtime`
 after the light gate.
+
+Runtime-sensitive changes also run `rust-quality-baseline` with Rust 1.96. It stores
+LCOV and a text summary as a short-retention artifact. Strict Clippy runs with
+`cargo clippy --all-targets -- -D warnings` and blocks runtime-sensitive changes.
+`xiaoman-postgres-integration` uses only a disposable `qintopia_test` PostgreSQL service
+and runs the guarded control-plane apply smoke with no production database URL, secrets,
+Feishu, QiWe, or external adapters.
+
+### Release Please PR Validation
+
+GitHub does not recursively trigger PR workflows when a workflow using `GITHUB_TOKEN`
+creates or updates the Release Please PR. A release PR can therefore show no checks even
+though the repository CI contract is valid. No checks is not a passing state.
+
+Run CI manually on the release PR's exact head branch:
+
+```bash
+gh workflow run ci.yml \
+  --ref release-please--branches--master--components--qintopia-agent-os \
+  -f release_please_pr_number=<pr-number>
+```
+
+The dispatch reads the PR through the GitHub API and fails unless it is open, targets
+`master`, is authored by the Release Please bot, contains the generated-body marker, and
+its head SHA equals the workflow checkout SHA. Only then does it run the dedicated
+manifest/changelog validator. The resulting `changes` and `check` runs attach to that
+head SHA but workflow-dispatch check suites are not listed automatically in the PR
+rollup. The authenticated `check` job therefore publishes a fixed
+`Release Please validation` commit status on the verified head SHA, linked to the
+workflow run. That status must pass and be visible on the PR before merge. This
+validation does not approve publication; merging and publishing remain one owner release
+decision.
 
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the
@@ -112,21 +147,24 @@ artifacts.
 Deployment must still use only an artifact from a successful workflow run for the
 approved commit SHA, and the paired CI `check` job must have passed for the same commit.
 
-The artifact contains the release binary, `artifact-manifest.json`, and `SHA256SUMS` for
-M9 server verification. The server should download and verify this artifact for an
+The artifact contains the release binary, compressed bundle, `artifact-manifest.json`,
+and `SHA256SUMS` for M9 server verification. The checksum file covers the binary,
+bundle, and manifest. The server should download and verify this artifact for an
 approved commit SHA, then set the executable bit after checksum verification, instead of
 rebuilding the sidecar on the server.
 
 After upload, artifact jobs prune older GitHub Actions artifacts with the same artifact
-name and keep only the latest two: the current build and the previous build for
-rollback. COS artifact pruning follows the same latest-two policy. Artifact jobs have
-`actions: write` only for cleanup; repository CI remains read-only.
+name and keep the latest ten builds by default. COS artifact pruning follows the same
+latest-ten default. Override the counts with `QINTOPIA_ARTIFACT_KEEP_COUNT` and
+`QINTOPIA_COS_ARTIFACT_KEEP_COUNT` only as an owner-approved repository variable change.
+Artifact jobs have `actions: write` only for cleanup; repository CI remains read-only.
 
 Rust dependency caching is intentionally not enabled yet. The sidecar is pinned to Rust
-1.75.0 for server compatibility, and the first Rust-specific cache trial produced
-post-step metadata cleanup noise against newer registry crates. Keep CI clean first;
-revisit Rust caching only with a tested cache command that is compatible with the pinned
-toolchain.
+1.96.0, and the first Rust-specific cache trial produced post-step metadata cleanup
+noise against newer registry crates. Keep CI clean first; revisit Rust caching only with
+a tested cache command that is compatible with the pinned toolchain. Review Rust version
+changes quarterly or alongside a dependency upgrade; do not upgrade the toolchain
+opportunistically in unrelated feature work.
 
 Required production-adjacent PR evidence:
 

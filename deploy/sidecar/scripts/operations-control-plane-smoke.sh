@@ -17,13 +17,23 @@ run_json() {
   local name="$1"
   shift
   local output="$tmp_dir/${name}.json"
-  "${BIN_CMD[@]}" "$@" >"$output"
-  python3 - "$output" <<'PY'
+  local stderr="$tmp_dir/${name}.stderr"
+  if ! "${BIN_CMD[@]}" "$@" >"$output" 2>"$stderr"; then
+    echo "operations smoke command failed: ${name}" >&2
+    cat "$stderr" >&2
+    return 1
+  fi
+  if ! python3 - "$output" 2>/dev/null <<'PY'
 import json
 import sys
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
     json.load(fh)
 PY
+  then
+    echo "operations smoke command returned invalid JSON: ${name}" >&2
+    cat "$stderr" >&2
+    return 1
+  fi
   printf '%s\n' "$output"
 }
 
@@ -68,8 +78,9 @@ run_expect_failure() {
 
 capabilities="$(run_json capabilities operations-capability-list)"
 assert_json "$capabilities" "data['success'] is True"
-assert_json "$capabilities" "data['capability_count'] == 4"
+assert_json "$capabilities" "data['capability_count'] == 5"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.create_visual_asset' for item in data['capabilities'])"
+assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.generate_image_asset' and item['risk_level'] == 'high' for item in data['capabilities'])"
 assert_json "$capabilities" "any(item['capability_key'] == 'erhua.send_group_message' and item['risk_level'] == 'high' for item in data['capabilities'])"
 
 readiness_missing="$(run_json readiness_missing operations-readiness-check --profile production)"

@@ -95,6 +95,69 @@ for record in payload.get("records", []):
 PY
 }
 
+assert_shadow_validate_output() {
+  local output="$1"
+  SHADOW_OUTPUT="$output" \
+  SHADOW_BASE_TOKEN="${QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN}" \
+  SHADOW_PLAN_TABLE="${QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID}" \
+  SHADOW_OCCURRENCE_TABLE="${QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID}" \
+  python3 - <<'PY'
+import json
+import os
+import sys
+
+payload = json.loads(os.environ["SHADOW_OUTPUT"])
+assert payload["success"] is True
+assert payload["source"] == "feishu_agentos_shadow"
+assert payload["safe_for_chat"] is False
+assert payload["validation_status"] == "ok"
+assert payload["action_status"] in {"shadow_match", "shadow_mismatch", "shadow_source_not_configured"}
+
+for key in [
+    "feishu_record_count",
+    "event_signal_count",
+    "matched_count",
+    "missing_in_agentos",
+    "missing_in_feishu",
+]:
+    assert key in payload, key
+assert isinstance(payload["missing_in_agentos"], list)
+assert isinstance(payload["missing_in_feishu"], list)
+
+raw = json.dumps(payload, ensure_ascii=False)
+for forbidden in [
+    "Dangerous command requires approval",
+    "/approve",
+    "Working",
+    "execute_code",
+    "terminal",
+    "skill_view",
+    "lark-base",
+    "traceback",
+    "Traceback",
+    os.environ["SHADOW_BASE_TOKEN"],
+    os.environ["SHADOW_PLAN_TABLE"],
+    os.environ["SHADOW_OCCURRENCE_TABLE"],
+    "record_id",
+    "source_message_ids",
+]:
+    if forbidden and forbidden in raw:
+        raise AssertionError(f"shadow-validate leaked forbidden output: {forbidden}")
+
+if payload["action_status"] == "shadow_mismatch":
+    summary = {
+        "action_status": payload["action_status"],
+        "feishu_record_count": payload["feishu_record_count"],
+        "event_signal_count": payload["event_signal_count"],
+        "matched_count": payload["matched_count"],
+        "missing_in_agentos": payload["missing_in_agentos"],
+        "missing_in_feishu": payload["missing_in_feishu"],
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2), file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
 plan_list_payload="$(python3 - <<PY
 import json
 print(json.dumps({
@@ -122,6 +185,19 @@ PY
 )"
 occurrence_output="$(run_json list-by-date "$occurrence_list_payload")"
 assert_shadow_output "activity_occurrence list-by-date" "$occurrence_output"
+
+shadow_validate_payload="$(python3 - <<PY
+import json
+print(json.dumps({
+    "date": "${SHADOW_DATE}",
+    "actor_agent": "xiaoman",
+    "operation": "shadow-validate",
+    "dry_run": False,
+}, ensure_ascii=False))
+PY
+)"
+shadow_validate_output="$(run_json shadow-validate "$shadow_validate_payload")"
+assert_shadow_validate_output "$shadow_validate_output"
 
 if [[ -n "${QINTOPIA_XIAOMAN_ACTIVITY_SHADOW_PLAN_RECORD_ID:-}" ]]; then
   plan_get_payload="$(python3 - <<PY

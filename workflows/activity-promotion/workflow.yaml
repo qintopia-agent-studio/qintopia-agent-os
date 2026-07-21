@@ -5,11 +5,11 @@ owner: TBD
 status: active
 risk_level: high
 description:
-  Multi-Agent control-plane workflow for activity promotion assets, evidence, and
-  group-send readiness.
+  Multi-Agent control-plane workflow for phase-derived activity evidence, promotion or
+  recap assets, and pre-event group-send readiness.
 source:
   path: runtime/sidecar/src/operations.rs
-  reference: eda2652f21999e4f32699463413372accbd3b76e
+  reference: current-monorepo
   disposition: adopt
 production_boundary:
   external_sends: false
@@ -32,5 +32,23 @@ tags:
   - huabaosi
   - erhua
 next_actions:
-  - Keep group-send execution out of scope until reviewed send adapter and final
-    confirmation gates exist.
+  - Observe phase-derived child routing after deployment; in-event must remain
+    evidence-only and post-event recap briefs must not enter image or send starters.
+  - Run the Huabaosi image-generation disabled-state production observation after each
+    approved internal-runtime deploy; keep the provider worker unscheduled and disabled.
+  - Run huabaosi-image-generation-preflight in staging to validate the local adapter
+    configuration without contacting external services, then obtain owner approval for
+    the image provider account, isolated media storage, staging smoke, budget, reviewer
+    allowlist, and rollback owner before enabling the guarded image adapter in staging.
+  - After those decisions are recorded, run exactly one
+    huabaosi-image-generation-staging-smoke.sh invocation against an approved staging
+    image request. Confirm the final artifact is the transformed 1024x1024 JPEG, record
+    only its sanitized result, and keep the generated image pending human review.
+  - Keep image generation and group-send execution out of runtime scheduling until the
+    staged adapter observation is reviewed; final confirmation and send-adapter gates
+    remain separate.
+  - Validate the guarded QiWe upload/callback worker against its local fake server and
+    disposable PostgreSQL while keeping production scheduling and real send enablement
+    absent.
+  - Capture one owner-approved isolated staging async-upload callback to verify complete
+    file credentials before creating a listener service or allowing a real image send.

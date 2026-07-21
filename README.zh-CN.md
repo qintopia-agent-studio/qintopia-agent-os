@@ -1,5 +1,11 @@
 # Qintopia Agent OS Monorepo
 
+<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+
+[![All Contributors](https://img.shields.io/badge/all_contributors-4-orange.svg?style=flat-square)](#contributors)
+
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
+
 [English](README.md)
 
 这个仓库是 Qintopia Agent OS 的单一事实源。它采用 Capability / Plugin
@@ -10,8 +16,9 @@ Monorepo 结构：目录按 Agent OS 领域和业务能力组织，而不是按�
 Qintopia Agent OS 用一个 git 仓库统一管理 Hermes profiles、受控 skills、workflows、MCP
 adapters、runtime templates、部署脚本、fixtures 和工程文档。
 
-这个仓库要替代当前混合模式：一部分代码在多个独立仓库里，一部分文件通过 scp 或手工方式上传服务器，一部分运行态资产直接在
-`.hermes` 目录下被修改。
+这个仓库已经替代此前的混合协作模式：代码分散在多个独立仓库、服务器本地文件和 `.hermes`
+运行态改动中的状态已归并为以 monorepo 为事实源的工作方式。新的 Agent
+OS 工作应从这里开始；旧仓库和服务器捕获材料只有在 package 明确标注为来源时才作为迁移或审计输入。
 
 ## 仓库结构
 
@@ -156,3 +163,24 @@ cleanup 已完成。历史迁移状态、源目录 inventory、adoption 顺序�
 ```bash
 pnpm check
 ```
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/qiaopengjun5162"><img src="https://avatars.githubusercontent.com/u/124650229?v=4?s=100" width="100px;" alt="Paxon Qiao"/><br /><sub><b>Paxon Qiao</b></sub></a><br /><a href="https://github.com/qintopia-agent-studio/qintopia-agent-os/commits?author=qiaopengjun5162" title="Code">💻</a> <a href="https://github.com/qintopia-agent-studio/qintopia-agent-os/commits?author=qiaopengjun5162" title="Documentation">📖</a> <a href="#infra-qiaopengjun5162" title="Infrastructure">🚇</a> <a href="https://github.com/qintopia-agent-studio/qintopia-agent-os/commits?author=qiaopengjun5162" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/detroxryo"><img src="https://github.com/detroxryo.png?size=100" width="100px;" alt="detroxryo"/><br /><sub><b>detroxryo</b></sub></a><br /><a href="#review-detroxryo" title="Reviewed Pull Requests">👀</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/noraincode"><img src="https://github.com/noraincode.png?size=100" width="100px;" alt="noraincode"/><br /><sub><b>noraincode</b></sub></a><br /><a href="#review-noraincode" title="Reviewed Pull Requests">👀</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/PatrickLiveCool"><img src="https://github.com/PatrickLiveCool.png?size=100" width="100px;" alt="PatrickLiveCool"/><br /><sub><b>PatrickLiveCool</b></sub></a><br /><a href="#review-PatrickLiveCool" title="Reviewed Pull Requests">👀</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->

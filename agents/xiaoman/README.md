@@ -22,6 +22,14 @@ activity signals and human-confirmed inputs into governed work items.
 - Server profile observed read-only: `/home/ubuntu/.hermes/profiles/xiaoman`
 - Current service observed read-only: `hermes-gateway-xiaoman.service`
 - Related workflow package: `workflows/activity-promotion`
+- The active `qintopia-tools` plugin and AgentOS workers run from the immutable
+  `release/current` artifact.
+- `SOUL.md`, `config.yaml`, `profile.yaml`, webhook/channel declarations, and cron
+  declarations remain runtime-local. The observation-only bundle under `profile-bundle/`
+  templates `SOUL.md` and `profile.yaml` for strict fixture rendering and future
+  production parity. Its root-only one-time migration command may prepare the fixed
+  server-local values JSON after owner approval; it does not activate or replace either
+  live file.
 - Runtime `.env`, webhook state, memories, caches, locks, logs, and databases are
   excluded from this package.
 
@@ -31,4 +39,5 @@ activity signals and human-confirmed inputs into governed work items.
 pnpm smoke:sidecar
 pnpm registry:check
 pnpm policy:check
+pnpm agents:profile-bundles:check
 ```

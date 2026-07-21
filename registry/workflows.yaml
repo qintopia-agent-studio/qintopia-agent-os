@@ -16,14 +16,17 @@ entries:
   - id: workflows/xiaoman-activity-signal
     path: workflows/xiaoman-activity-signal
     manifest: workflows/xiaoman-activity-signal/workflow.yaml
-    status: draft
-    notes: Xiaoman activity signal intake and Agent OS activity state workflow.
+    status: active
+    notes:
+      Xiaoman activity signal intake and AgentOS-only downstream workflow; v0.2.6
+      production observation passed while external adapters remain gated.
   - id: workflows/visual-asset-request
     path: workflows/visual-asset-request
     manifest: workflows/visual-asset-request/workflow.yaml
-    status: draft
+    status: active
     notes:
-      Xiaoman-to-Huabaosi visual asset request, draft, review, and delivery workflow.
+      Xiaoman-to-Aliang/Huabaosi evidence-gated visual brief, review, and delivery
+      workflow; real image generation remains separately gated.
   - id: workflows/silaoshi-daily-ops
     path: workflows/silaoshi-daily-ops
     manifest: workflows/silaoshi-daily-ops/workflow.yaml

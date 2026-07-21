@@ -1,0 +1,126 @@
+schema_version: 1
+
+allowed_targets:
+  - qintopia-system-services
+  - hermes-erhua
+  - hermes-wenyuange
+  - hermes-xiaoman
+  - hermes-silaoshi
+  - hermes-huabaosi
+  - hermes-guanerye
+
+no_restart_paths:
+  - "*.md"
+  - "**/*.md"
+  - "README*"
+  - "CHANGELOG.md"
+  - ".release-please-config.json"
+  - ".release-please-manifest.json"
+  - ".gitignore"
+  - ".prettierrc*"
+  - ".markdownlint*"
+  - "docs/**"
+  - "fixtures/**"
+  - "deprecated/**"
+  - ".github/PULL_REQUEST_TEMPLATE.md"
+  - ".github/CODEOWNERS"
+  - ".github/workflows/ci.yml"
+  - ".github/workflows/deploy-production.yml"
+  - ".github/workflows/artifacts.yml"
+  - ".github/workflows/pr-agent.yml"
+  - ".github/workflows/release-please.yml"
+  - "package.json"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
+  - "registry/**"
+  - "tools/agents/**"
+  - "tools/ci/**"
+  - "tools/inventory/**"
+  - "tools/policy/**"
+  - "tools/security/**"
+  - "agents/xiaoman/agent.yaml"
+  - "agents/xiaoman/profile.template.yaml"
+  - "agents/xiaoman/profile-bundle/**"
+  - "runtime/hermes/manifest.yaml"
+
+production_adjacent_paths:
+  - "agents/**"
+  - "skills/**"
+  - "workflows/**"
+  - "runtime/**"
+  - "mcp/**"
+  - "deploy/**"
+  - ".github/workflows/ci.yml"
+  - ".github/workflows/deploy-production.yml"
+  - ".github/workflows/artifacts.yml"
+  - "package.json"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
+
+rules:
+  - target: hermes-erhua
+    reason:
+      Erhua profile, QiWe consultation, context MCP, weather, and Erhua plugin behavior.
+    paths:
+      - "agents/erhua/**"
+      - "runtime/sidecar/**"
+      - "skills/postgres-context/**"
+      - "mcp/postgres/**"
+      - "mcp/context-server/**"
+      - "skills/qintopia-tools/variants/erhua/**"
+      - "workflows/erhua-consultation/**"
+      - "skills/qintopia-weather/**"
+      - "mcp/weather-provider/**"
+
+  - target: hermes-wenyuange
+    reason: WenYuanGe profile and knowledge retrieval behavior.
+    paths:
+      - "agents/wenyuange/**"
+      - "skills/qintopia-tools/variants/wenyuange/**"
+      - "skills/knowledge-retrieval/**"
+
+  - target: hermes-xiaoman
+    reason: Xiaoman profile, activity signal, and activity promotion behavior.
+    paths:
+      - "agents/xiaoman/**"
+      - "skills/qintopia-tools/variants/xiaoman/**"
+      - "workflows/xiaoman-activity-signal/**"
+      - "workflows/activity-promotion/**"
+
+  - target: hermes-silaoshi
+    reason: Silaoshi profile and daily operations workflow behavior.
+    paths:
+      - "agents/silaoshi/**"
+      - "workflows/silaoshi-daily-ops/**"
+
+  - target: hermes-huabaosi
+    reason: Huabaosi profile, Feishu Base read, and visual asset workflows.
+    paths:
+      - "agents/huabaosi/**"
+      - "skills/feishu-base/**"
+      - "workflows/visual-asset-request/**"
+
+  - target: hermes-guanerye
+    reason: Guanerye engineering profile behavior.
+    paths:
+      - "agents/guanerye/**"
+
+  - target: qintopia-system-services
+    reason:
+      Shared sidecar, database, MCP, deploy, QiWe, context, and operations runtime.
+    paths:
+      - "runtime/sidecar/**"
+      - "runtime/postgres/**"
+      - "runtime/systemd/**"
+      - "runtime/nginx/**"
+      - "deploy/sidecar/**"
+      - "deploy/runner/**"
+      - "deploy/rollback/**"
+      - "deploy/smoke/**"
+      - "deploy/manifests/**"
+      - "deploy/restart-target-rules.yaml"
+      - "tools/deploy/**"
+      - "mcp/**"
+      - "skills/qiwe/**"
+      - "skills/postgres-context/**"
+      - "skills/operations-intake/**"

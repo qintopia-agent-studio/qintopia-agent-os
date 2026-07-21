@@ -46,10 +46,17 @@ bundle with:
 The current `agents/*/profile.template.yaml` files remain package contracts and planning
 inputs. They are not live profile files.
 
-Erhua's approved exception is governed by
+Erhua's approved design exception is governed by
 `docs/operations/profile-bundles/erhua-livecool-profile-overlay-runbook.md`. It
-satisfies the review, diff, rollback, smoke, and owner-approval gates above without
-adopting the future whole-file symlink shape.
+satisfies the review, diff, rollback, and smoke design gates above without adopting the
+future whole-file symlink shape. Each production activation still requires review of the
+redacted dry run and explicit owner approval.
+
+Xiaoman now has the first observation-only implementation under
+`agents/xiaoman/profile-bundle`. It packages a strict renderer, fake fixtures, and a
+read-only parity smoke without creating a live symlink. This does not change the M10-F
+rule: activation requires a later owner-reviewed cutover with production parity and
+rollback evidence.
 
 ## Target Shape
 
@@ -104,14 +111,14 @@ This symlink shape is a future target, not current M10-F execution.
 
 ## Per-Profile M10-F Status
 
-| Profile   | Current M10-F disposition | Notes                                                              |
-| --------- | ------------------------- | ------------------------------------------------------------------ |
-| Erhua     | governed field overlay    | Livecool model fields only; no whole config or prompt repoint      |
-| Xiaoman   | template only             | Activity workflow config depends on runtime `.env` and local state |
-| Wenyuange | template only             | Evidence/message-store access must preserve disclosure boundaries  |
-| Huabaosi  | review-pool template      | Visual adapter/Rust/shadow material remains unapproved direction   |
-| Silaoshi  | template only             | Temporary scripts remain separate workflow/script candidates       |
-| Guanerye  | template only             | No immediate plugin/MCP migration observed                         |
+| Profile   | Current M10-F disposition | Notes                                                                 |
+| --------- | ------------------------- | --------------------------------------------------------------------- |
+| Erhua     | governed field overlay    | Livecool model fields only; no whole config or prompt repoint         |
+| Xiaoman   | observation bundle        | Release parity smoke pending; sensitive config and state remain local |
+| Wenyuange | template only             | Evidence/message-store access must preserve disclosure boundaries     |
+| Huabaosi  | review-pool template      | Visual adapter/Rust/shadow material remains unapproved direction      |
+| Silaoshi  | template only             | Temporary scripts remain separate workflow/script candidates          |
+| Guanerye  | template only             | No immediate plugin/MCP migration observed                            |
 
 ## M10-F Exit Criteria
 

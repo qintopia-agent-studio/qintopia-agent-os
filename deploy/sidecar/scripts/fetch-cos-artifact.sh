@@ -350,10 +350,10 @@ for file_name in "${payload_files[@]}"; do
 done
 
 if [[ "$payload_mode" == "bundle" && "$artifact_type" == "sidecar" ]]; then
-  tar -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir" \
+  tar --no-same-owner -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir" \
     qintopia-message-sidecar
 elif [[ "$payload_mode" == "bundle" && "$artifact_type" == "deploy-bundle" ]]; then
-  tar -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir" \
+  tar --no-same-owner -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir" \
     payload
 fi
 
@@ -394,6 +394,12 @@ if manifest_target != expected_target:
 
 if artifact_type == "sidecar":
     required_path = "qintopia-message-sidecar"
+    if manifest.get("validation", {}).get("cargo_features") != [
+        "huabaosi-production-adapter",
+        "huabaosi-feishu-mirror-adapter",
+        "qiwe-production-adapter",
+    ]:
+        raise SystemExit("artifact manifest Cargo features are not approved for production")
 else:
     required_path = "qintopia-agent-os-deploy-bundle.tar.gz"
 
@@ -415,9 +421,14 @@ if not manifest_sha or manifest_sha != checksum_sha:
     raise SystemExit("artifact manifest checksum does not match SHA256SUMS")
 PY
   sha256sum -c SHA256SUMS
+  chmod 0444 artifact-manifest.json SHA256SUMS
   if [[ "$artifact_type" == "sidecar" ]]; then
     chmod 0755 qintopia-message-sidecar
+    if [[ "$payload_mode" == "bundle" ]]; then
+      chmod 0444 qintopia-message-sidecar.tar.gz
+    fi
   else
+    chmod 0444 qintopia-agent-os-deploy-bundle.tar.gz
     chmod 0755 payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp
     chmod 0755 payload/deploy/sidecar/scripts/render-systemd-units.sh
   fi

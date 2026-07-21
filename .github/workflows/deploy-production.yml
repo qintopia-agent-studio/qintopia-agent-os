@@ -65,6 +65,8 @@ env:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
   TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
+  QINTOPIA_COS_ARTIFACT_KEEP_COUNT: ${{ vars.QINTOPIA_COS_ARTIFACT_KEEP_COUNT || '10' }}
+  WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
 
 jobs:
   build-release-artifacts:
@@ -122,7 +124,7 @@ jobs:
           cache: pnpm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.75.0
+        uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -162,6 +164,7 @@ jobs:
     environment: production
 
     permissions:
+      actions: read
       contents: read
 
     steps:
@@ -170,6 +173,20 @@ jobs:
         with:
           ref: master
           fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Resolve release or manual deploy inputs
         id: resolve
@@ -187,12 +204,13 @@ jobs:
           INPUT_ROLLBACK_ON_SMOKE_FAILURE:
             ${{ github.event.inputs.rollback_on_smoke_failure || '' }}
           INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name || '' }}
           RELEASE_HTML_URL: ${{ github.event.release.html_url || '' }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || 'false' }}
           RELEASE_DEPLOY_SCOPE: ${{ vars.RELEASE_DEPLOY_SCOPE || '' }}
-          RELEASE_DEPLOY_RESTART_TARGETS:
-            ${{ vars.RELEASE_DEPLOY_RESTART_TARGETS || 'qintopia-system-services' }}
+          RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE:
+            ${{ vars.RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE || '' }}
           RELEASE_DEPLOY_DRY_RUN: ${{ vars.RELEASE_DEPLOY_DRY_RUN || 'true' }}
         run: |
           set -euo pipefail
@@ -300,8 +318,76 @@ jobs:
               echo "origin/master HEAD: $master_sha" >&2
               exit 2
             fi
+            mkdir -p dist/deploy-resolution
+            releases_file="dist/deploy-resolution/releases.json"
+            workflow_runs_file="dist/deploy-resolution/deploy-runs.json"
+            deploy_results_file="dist/deploy-resolution/deploy-results.json"
+            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              > "$releases_file"
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100" \
+              > "$workflow_runs_file"
+            node tools/deploy/collect-release-deploy-results.mjs \
+              --workflow-runs-file "$workflow_runs_file" \
+              --output "$deploy_results_file"
+            releases_json="$(cat "$releases_file")"
+            previous_release_tag="$(printf '%s' "$releases_json" | node -e '
+              const fs = require("node:fs");
+              const current = process.argv[1];
+              const releases = JSON.parse(fs.readFileSync(0, "utf8"));
+              for (const release of releases) {
+                if (
+                  release &&
+                  release.tag_name !== current &&
+                  release.draft !== true &&
+                  release.prerelease !== true &&
+                  /^v[0-9]/.test(String(release.tag_name || ""))
+                ) {
+                  console.log(release.tag_name);
+                }
+              }
+            ' "$RELEASE_TAG_NAME" | while read -r tag; do
+              if [[ -z "$tag" ]]; then
+                continue
+              fi
+              tag_commit="$(git rev-list -n 1 "${tag}^{commit}")"
+              if git merge-base --is-ancestor "$tag_commit" "$commit_sha"; then
+                printf '%s\n' "$tag"
+                break
+              fi
+            done)"
+            if [[ -z "$previous_release_tag" ]]; then
+              echo "Could not resolve previous published Release tag for ${RELEASE_TAG_NAME}." >&2
+              exit 2
+            fi
             release_scope="${RELEASE_DEPLOY_SCOPE:-sidecar-runtime,deploy-bundle,hermes-plugins}"
-            restart_targets="$RELEASE_DEPLOY_RESTART_TARGETS"
+            if [[ -n "$RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE" ]]; then
+              restart_targets="$RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE"
+              {
+                echo "## Restart Target Override"
+                echo
+                echo "Using RELEASE_DEPLOY_RESTART_TARGETS_OVERRIDE:"
+                echo
+                echo '```text'
+                echo "$restart_targets"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            else
+              restart_targets="$(node tools/deploy/resolve-release-restart-targets.mjs \
+                --current-tag "$RELEASE_TAG_NAME" \
+                --releases-file "$releases_file" \
+                --deploy-results-file "$deploy_results_file" \
+                --summary-output dist/deploy-resolution/release-restart-targets.md)"
+              if [[ -z "$restart_targets" ]]; then
+                restart_targets="qintopia-system-services"
+                {
+                  echo "## Restart Target Default"
+                  echo
+                  echo "No restart target matched the Release diff."
+                  echo "Using qintopia-system-services as the minimum deploy smoke target."
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
             dry_run="$RELEASE_DEPLOY_DRY_RUN"
             rollback_on_smoke_failure="true"
             profile_dry_run_request_id=""
@@ -382,20 +468,6 @@ jobs:
             echo "${notes_delimiter}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Validate deploy runner contracts
         run: pnpm deploy:runner:check
 
@@ -457,12 +529,10 @@ jobs:
         run: |
           set -euo pipefail
           deploy/sidecar/scripts/prune-cos-artifacts.sh \
-            --artifact-name qintopia-message-sidecar-linux-x86_64-gnu \
-            --keep 2
+            --artifact-name qintopia-message-sidecar-linux-x86_64-gnu
           deploy/sidecar/scripts/prune-cos-artifacts.sh \
             --artifact-type deploy-bundle \
-            --artifact-name qintopia-agent-os-deploy-bundle \
-            --keep 2
+            --artifact-name qintopia-agent-os-deploy-bundle
 
       - name: Create deploy request
         run:
@@ -497,6 +567,21 @@ jobs:
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
           TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Wait for server deploy result
+        if: ${{ env.WAIT_FOR_SERVER_DEPLOY_RESULT == 'true' }}
+        run:
+          deploy/runner/wait-deploy-result.sh --request-file
+          dist/deploy-requests/request.json
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          DEPLOY_RESULT_TIMEOUT_SECONDS:
+            ${{ vars.DEPLOY_RESULT_TIMEOUT_SECONDS || '900' }}
+          DEPLOY_RESULT_POLL_SECONDS: ${{ vars.DEPLOY_RESULT_POLL_SECONDS || '15' }}
 
       - name: Upload deploy request audit artifact
         uses: actions/upload-artifact@v7

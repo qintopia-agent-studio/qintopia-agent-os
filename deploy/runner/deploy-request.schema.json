@@ -83,7 +83,7 @@
         "prefix": { "type": "string", "minLength": 1 },
         "request_key": {
           "type": "string",
-          "pattern": "^qintopia-agent-os/deploy-requests/production/pending/.+\\.json$"
+          "pattern": "^qintopia-agent-os/deploy-requests/production/requests/.+\\.json$"
         },
         "result_key": {
           "type": "string",

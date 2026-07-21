@@ -18,14 +18,49 @@ Each artifact contains:
 - `qintopia-message-sidecar.tar.gz`: compressed release binary bundle used for COS
   transport
 - `artifact-manifest.json`: commit, branch, target, build time, runner, Rust toolchain,
-  file size, and file checksum
-- `SHA256SUMS`: checksum file for server-side verification
+  Cargo feature list, file size, and file checksum
+- `SHA256SUMS`: server-side checksum file covering the release binary, compressed
+  bundle, and `artifact-manifest.json`
 
 The initial target is `linux-x86_64-gnu`, matching the current production server:
 
 ```text
 Linux x86_64, Ubuntu glibc
 ```
+
+Production sidecar artifacts are built with exactly the non-default
+`huabaosi-production-adapter` and guarded `huabaosi-feishu-mirror-adapter` Cargo
+features, and record only those names in `cargo_features`. Neither
+`huabaosi-staging-adapter`, `qiwe-staging-adapter` may appear in this builder or a
+server-source production build, and all-features production artifacts remain forbidden.
+Feishu primary storage for the Huabaosi canary is guarded by the production adapter path
+and creates only pending AgentOS artifacts. The Feishu mirror worker is compiled into
+the reviewed production artifact but can run only after persistent enablement, owner
+approval where required, release/database hash binding, allowlists, release-local
+preflight, and explicit timer activation. Runtime environment variables cannot select
+staging code or bypass these bindings. The builder also refuses a dirty or unreadable
+git worktree so `commit_sha` cannot describe different uncommitted source bytes.
+
+The staging-only sidecar artifact name is:
+
+```text
+qintopia-message-sidecar-staging-linux-x86_64-gnu
+```
+
+It is built only by the manually dispatched Artifacts workflow when
+`build_staging_sidecar=true`. It compiles exactly `huabaosi-staging-adapter` and
+`qiwe-staging-adapter`, records `staging_only=true` and `production_eligible=false` in
+the manifest, and packages the exact Huabaosi and QiWe staging smoke runners with their
+own manifest and `SHA256SUMS` identities. It is retained only as a GitHub Actions
+artifact, and all packaged files must be installed together under
+`/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` for
+owner-approved Huabaosi/QiWe staging evidence. The `huabaosi-staging-adapter` feature
+includes the guarded Feishu Base primary-storage upload and readback client because the
+staging values require `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`; it still
+requires the staging approval phrase, reviewed database hash, Base/table allowlists, and
+profile boundary before external I/O. It is never uploaded to COS, never included in the
+production release build, and must not be fetched or promoted by production deployment
+scripts.
 
 ## CI Requirements
 
@@ -45,6 +80,8 @@ This means the approved commit has passed:
 - CI-safe deployment preflight
 - QiWe package tests
 - sidecar Rust tests
+- warning-denied Clippy for both default production features and all staging/test
+  features
 - no-credential sidecar smoke checks
 
 ## Artifact Retention
@@ -60,6 +97,9 @@ The `Artifacts` workflow publishes release artifacts. It is opt-in:
 - include `[publish-artifacts]` in the `master` commit message when an automatic
   publication is intentional.
 
+The staging-only artifact is stricter: it is never built from the push path and can be
+published only by a manual `workflow_dispatch` with `build_staging_sidecar=true`.
+
 The `sidecar-artifact` job uploads the new artifact first, then runs
 `pnpm artifact:prune:sidecar` with `actions: write` permission to delete older same-name
 artifacts. This limits repository artifact storage without changing the server rollback
@@ -69,15 +109,14 @@ from GitHub artifact retention.
 
 The workflow can also build `qintopia-agent-os-deploy-bundle`, which contains reviewed
 operator files for M9-F: the Hermes MCP wrapper, systemd renderer, and deployment
-runbooks. GitHub Actions and COS both keep the latest two deploy bundle artifacts,
-matching the sidecar runtime artifact retention policy.
+runbooks. GitHub Actions and COS both keep the latest ten deploy bundle artifacts by
+default, matching the sidecar runtime artifact retention policy.
 
-`qintopia-agent-os-artifacts/<sha>` is the current transition download cache. The target
-release model promotes verified payloads into immutable
+`qintopia-agent-os-artifacts/<sha>` is an artifact download cache and audit path. The
+active release model promotes verified payloads into immutable
 `/home/ubuntu/qintopia-agent-os-releases/<sha>` directories and runs services through a
-stable `/home/ubuntu/qintopia-agent-os-releases/current` symlink. In that model, GitHub
-Actions and COS are the transport, while the server release directory is the runtime
-source.
+stable `/home/ubuntu/qintopia-agent-os-releases/current` symlink. GitHub Actions and COS
+are the transport, while the server release directory is the runtime source.
 
 ## COS Distribution
 
@@ -135,9 +174,9 @@ multipart mode instead of relying on COSCLI's larger default part size and a slo
 single-stream upload to the Shanghai bucket.
 
 The default COS payload is the compressed `qintopia-message-sidecar.tar.gz` bundle. The
-server fetch script extracts the bundle and then verifies the extracted binary with the
-same `SHA256SUMS` file, so systemd and Hermes still see `qintopia-message-sidecar` in
-the artifact directory.
+server fetch script keeps the bundle in the artifact directory, extracts it, and then
+uses the same `SHA256SUMS` file to verify the bundle, extracted binary, and manifest, so
+systemd and Hermes still see `qintopia-message-sidecar` in the artifact directory.
 
 Direct upload from GitHub-hosted runners to the Shanghai COS bucket has been too slow in
 CI even after multipart tuning and compressed payloads. Treat this as a network path
@@ -147,12 +186,12 @@ to COS upload. The verified accelerated upload for commit
 seconds.
 
 After each successful COS upload, the workflow runs
-`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2` for both `sidecar` and
-`deploy-bundle`. COS keeps only the latest two sidecar artifact SHA directories for
-`qintopia-message-sidecar-linux-x86_64-gnu` and the latest two deploy bundle SHA
+`deploy/sidecar/scripts/prune-cos-artifacts.sh` for both `sidecar` and `deploy-bundle`.
+COS keeps the latest ten sidecar artifact SHA directories for
+`qintopia-message-sidecar-linux-x86_64-gnu` and the latest ten deploy bundle SHA
 directories for `qintopia-agent-os-deploy-bundle`, matching the GitHub Actions artifact
-retention policy. This retention is implemented in CI because bucket lifecycle rules are
-time-based and cannot express "latest two builds".
+retention count. This retention is implemented in CI because bucket lifecycle rules are
+time-based and cannot express "latest N builds".
 
 Optional GitHub repository variables can override the workflow defaults:
 
@@ -214,7 +253,7 @@ After verification, assemble the runtime artifact and deploy bundle payload into
 
 ## GitHub Artifact Fallback
 
-GitHub Actions artifacts are still uploaded and pruned to the latest two builds for CI
+GitHub Actions artifacts are still uploaded and pruned to the latest ten builds for CI
 audit and emergency fallback. For the private repository, downloading GitHub Actions
 artifacts requires GitHub API read access through the Qintopia Agent OS deployer GitHub
 App or a short-lived `GITHUB_TOKEN`.

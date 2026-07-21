@@ -76,8 +76,11 @@ capability and work item layer.
 
 The first human workbench worker is a Feishu Task mirror payload generator. It uses
 provider `feishu_task_dry_run`, writes only allowlisted fields to
-`human_workbench_refs`, and records `mirror_dry_run_recorded`. It does not call Feishu
-Task APIs or treat Feishu as a source of truth.
+`human_workbench_refs`, and records `mirror_dry_run_recorded`. Immediate child refs are
+kept for compatibility; a separate descendant summary includes every nested work item
+with its direct parent and depth. It does not call Feishu Task APIs or treat Feishu as a
+source of truth. The dry-run description caps traversal at depth 8 and 32 refs and
+records an explicit truncation flag instead of producing an unbounded task description.
 
 `operations-workbench-event-record` is the matching controlled intake path for future
 Feishu Task comments, section changes, review requests, and final confirmation requests.
@@ -104,11 +107,13 @@ adapters. The server deployment script installs an optional systemd oneshot serv
 timer for this worker; the timer only processes events that were already recorded into
 Postgres by the guarded intake path.
 
-`operations-workflow-sync` persists a one-level workflow parent summary after child work
-items change. It reads the same status tree as `operations-work-item-status`, writes
-`workflow_summary` into the parent `work_items.metadata`, updates the parent aggregate
-status, and appends `workflow_status_synced`. It does not execute workers, create Feishu
-Tasks, publish artifacts, or send group messages.
+`operations-workflow-sync` persists a recursive workflow parent summary after descendant
+work items change. It reads the same status tree as `operations-work-item-status`, keeps
+immediate child refs for compatibility, adds every descendant with its direct parent and
+depth, writes `workflow_summary` into the parent `work_items.metadata`, updates the
+parent aggregate status, and appends `workflow_status_synced`. It does not execute
+workers, schedule a general DAG, create Feishu Tasks, publish artifacts, or send group
+messages.
 
 `run-workflow-sync-worker --once` is the worker form of the same operation. It selects
 the oldest syncable `activity_promotion_request` parent unless a specific
@@ -133,9 +138,9 @@ are rejected before capability execution.
 
 Workbench mirror descriptions are allowlisted to stable operational fields:
 `work_item_id`, `work_item_type`, `capability_key`, requester/target agents, human
-owner, sanitized source refs, risk/review policy, artifact counts, and current status.
-Raw payload, internal prompts, Base table ids, tokens, and raw private text are rejected
-rather than mirrored.
+owner, sanitized source refs, risk/review policy, artifact counts, immediate child refs,
+recursive descendant refs, and current status. Raw payload, internal prompts, Base table
+ids, tokens, and raw private text are rejected rather than mirrored.
 
 External-send capabilities such as `erhua.send_group_message` are high risk. They
 require approved artifacts, allowlisted targets, human final confirmation, bounded
@@ -156,6 +161,13 @@ reviewer/confirmer/owner/attachment-host allowlist denials append
 `work_item_events.denied_by_policy` with `policy` metadata before the command returns
 the policy error.
 
+Artifact review apply may also carry `expected_artifact_type` and
+`expected_review_status`. When present, the sidecar checks them before any generated
+image Feishu revalidation and again under the artifact row lock before changing review
+state. A mismatch returns an error without recording a review decision. Production
+one-shot workflows must use these preconditions when a generic review command is
+intended to approve only one artifact class and state.
+
 New `group_message_request` work items for `erhua.send_group_message` should start in
 `awaiting_publish` rather than `queued`. That keeps approved-but-not- finally-confirmed
 sends out of claimable worker queues until a separate human confirmation path records
@@ -172,7 +184,10 @@ items are skipped by checking for an existing `group_message_send_ready_recorded
 with `send_executed=false`, so periodic runs do not duplicate the audit entry. The
 worker increments `work_items.attempts` on claim and stops claiming send-ready requests
 once attempts reach 3, providing a bounded retry guard before the production external
-send adapter exists.
+send adapter exists. A successful send-ready transition and a policy-denied terminal
+transition both clear `claimed_by`, `locked_at`, and `claim_expires_at` in the same
+transaction. The worker must update exactly the row it locked before appending either
+audit event, so persisted claim ownership never outlives the claim lease.
 
 ## Compatibility
 
@@ -208,29 +223,32 @@ The migration is additive:
 - `scripts/operations-control-plane-apply-smoke.sh` is the guarded Postgres apply smoke.
   It requires `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1` and
   `QINTOPIA_SIDECAR_DATABASE_URL`, runs migrations, verifies the DB-backed capability
-  registry, creates one planned `visual_asset_request` through
-  `operations-request-submit`, confirms planner-submit idempotency, starts an
-  `activity_promotion` workflow with parent/evidence/visual work items through
-  `operations-workflow-start`, confirms workflow idempotency, runs the evidence worker
-  for the workflow-created `evidence_request`, runs the collaboration worker for the
-  workflow-created `visual_asset_request` to create a pending `poster_brief` artifact
-  and move the work item to `awaiting_review`, records an approved artifact review
-  without publishing or sending and marks the visual work item completed, creates a
-  controlled child `erhua.send_group_message` request from the approved artifact on the
-  same parent, records final confirmation, records send-readiness without sending,
-  verifies unapproved artifacts cannot create group-message requests, verifies the
-  evidence, visual, and group-message child work items share one parent
+  registry, replays a sanitized Xiaoman activity signal through
+  `xiaoman-activity signal-ingest --apply`, verifies the resulting
+  `xiaoman.create_activity_request` control-plane row and idempotent replay behavior,
+  creates one planned `visual_asset_request` through `operations-request-submit`,
+  confirms planner-submit idempotency, starts an `activity_promotion` workflow with
+  parent/evidence/visual work items through `operations-workflow-start`, confirms
+  workflow idempotency, runs the evidence worker for the workflow-created
+  `evidence_request`, runs the collaboration worker for the workflow-created
+  `visual_asset_request` to create a pending `poster_brief` artifact and move the work
+  item to `awaiting_review`, records an approved artifact review without publishing or
+  sending and marks the visual work item completed, creates a controlled child
+  `erhua.send_group_message` request from the approved artifact on the same parent,
+  records final confirmation, records send-readiness without sending, verifies
+  unapproved artifacts cannot create group-message requests, verifies the evidence,
+  visual, and group-message child work items share one parent
   `activity_promotion_request`, reads that parent status tree and current blocking
   point, syncs the durable parent workflow summary with `workflow_status_synced`,
-  records a dry-run Feishu Task workbench reference with safe child status summaries and
-  the current blocking point, records a human workbench event against that mirror
-  reference without mutating work item status, confirms duplicate external workbench
-  event ids are idempotent, records and processes review-request, final-confirmation,
-  controlled cancellation status-change, owner-change, and attachment workbench events
-  through `run-workbench-event-worker`, verifies processing idempotency, and confirms
-  policy denial audit events. The script uses `run-collaboration-worker --work-item-id`,
-  `run-evidence-worker --work-item-id`, `operations-workflow-sync --work-item-id`,
-  `run-workflow-sync-worker --work-item-id`,
+  records a dry-run Feishu Task workbench reference with safe immediate-child and
+  recursive-descendant status summaries and the current blocking point, records a human
+  workbench event against that mirror reference without mutating work item status,
+  confirms duplicate external workbench event ids are idempotent, records and processes
+  review-request, final-confirmation, controlled cancellation status-change,
+  owner-change, and attachment workbench events through `run-workbench-event-worker`,
+  verifies processing idempotency, and confirms policy denial audit events. The script
+  uses `run-collaboration-worker --work-item-id`, `run-evidence-worker --work-item-id`,
+  `operations-workflow-sync --work-item-id`, `run-workflow-sync-worker --work-item-id`,
   `run-group-message-send-worker --work-item-id`, and
   `run-workbench-mirror-worker --work-item-id` so it processes only the smoke work item.
   It does not call Feishu, QiWe, Huabaosi, Wenyuange, or external send/publish adapters.

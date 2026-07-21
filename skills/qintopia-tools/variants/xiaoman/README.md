@@ -55,6 +55,59 @@ shared `qintopia` toolset.
   whether Human Owner approval is required.
 - `qintopia_conversation_summary`: turns a customer conversation into the
   standard 小秦 handoff format.
+- `qintopia_xiaoman_activity_status_update`, `qintopia_xiaoman_activity_gap_update`, and
+  `qintopia_xiaoman_activity_phase_update`: create sidecar commands for AgentOS
+  `event_signals` mutations with `event_signal_id` and `mutation_id`; they do not accept
+  Feishu `record_id` / `table_role` as write identifiers.
+- `qintopia_xiaoman_activity_announcement_prepare`: prepares the text-only community
+  activity announcement MVP for operations review. It turns sanitized activity records
+  into a draft for 刘珊, missing-field follow-ups, and an Erhua handoff draft that still
+  requires human confirmation before any group delivery.
+- `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
+  `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
+  to `huabaosi.create_visual_asset`.
+- `qintopia_xiaoman_activity_promotion_review_draft`: turns already-read sanitized
+  activity records into a human-reviewable summary, promotion assessment, copy draft,
+  poster brief, and controlled record-path payload. It does not read Feishu, write
+  Postgres, call Huabaosi, publish, queue, or send.
+
+## Xiaoman Activity Mutations
+
+Xiaoman's activity read tools may use allowlisted Feishu `record_id` and `table_role`
+inputs. The status and gap write tools use a different boundary: they mutate only
+Xiaoman-owned AgentOS `event_signals` and require both an internal `event_signal_id`
+UUID and a caller-supplied `mutation_id` UUID. An exact retry must retain the same
+`mutation_id`.
+
+`qintopia_xiaoman_activity_list_by_date` normally returns the bounded sidecar command
+for local execution. Set `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1` only in a
+runtime that should let the tool directly receive sanitized read results from the
+sidecar. Read-through is limited to read-only, non-dry-run operations and returns the
+worker's `record_count`, `records`, and `summaries`; write operations still return
+commands.
+
+`qintopia_xiaoman_activity_status_update` accepts only `待处理`, `处理中`, `已完成`, or
+`已关闭`. `qintopia_xiaoman_activity_gap_update` accepts one non-sensitive `gap_summary`
+of at most 500 characters. `qintopia_xiaoman_activity_phase_update` accepts only
+`pre_event`, `in_event`, or `post_event`; the sidecar enforces forward-only transitions
+and derives the route from the stored AgentOS phase fact. These wrappers default to
+dry-run and return a bounded sidecar command for the runtime executor. They do not
+accept Feishu record ids, write Feishu, send QiWe messages, or call an external adapter.
+
+`qintopia_xiaoman_activity_announcement_prepare` is the current text-first operations
+MVP. It may use records already returned by `qintopia_xiaoman_activity_list_by_date`, or
+perform read-through only when that read-only path is explicitly enabled. It skips
+temporary meal records by default, keeps paid planned activities in the scheduling pool,
+flags missing time/location/owner/material fields, and returns only drafts. It does not
+create work items, call Huabaosi, call Erhua, call QiWe, publish, or send.
+
+For the boss-visible promotion review path, Xiaoman should first read activity records,
+then pass the selected sanitized record to
+`qintopia_xiaoman_activity_promotion_review_draft`. That draft is a stateless review
+artifact for a human owner: it can suggest the controlled dry-run
+`qintopia_xiaoman_activity_handoff_create` payload to record the next step after human
+confirmation, but it does not approve, generate images, queue group messages, publish,
+or send. Postgres/AgentOS remains the fact source; Hermes only calls the tool.
 
 Complaint guardrails:
 
@@ -151,6 +204,7 @@ gateway remains the dispatcher.
 ## Validation
 
 ```bash
-python3 config/hermes/plugins/qintopia-tools/tests/test_qintopia_tools.py
-python3 -m py_compile config/hermes/plugins/qintopia-tools/__init__.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s skills/qintopia-tools/variants/xiaoman/tests -p 'test_*.py'
+node tools/skills/check-qintopia-tools.mjs
 ```

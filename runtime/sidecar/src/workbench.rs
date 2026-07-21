@@ -9,6 +9,8 @@ use crate::{config::Cli, db};
 const WORKER_ID: &str = "workbench-mirror-worker";
 const PROVIDER: &str = "feishu_task_dry_run";
 const TASKLIST_NAME: &str = "AgentOS · 运营协作工作台";
+const MAX_DESCENDANT_DEPTH: i32 = 8;
+const MAX_DESCENDANT_REFS: usize = 32;
 
 #[derive(Debug, Serialize)]
 pub struct WorkbenchMirrorReport {
@@ -47,7 +49,9 @@ struct WorkbenchWorkItem {
     risk_level: String,
     review_policy: String,
     payload: Value,
-    child_status_refs: Vec<ChildStatusRef>,
+    child_status_refs: Vec<WorkbenchStatusRef>,
+    descendant_status_refs: Vec<WorkbenchStatusRef>,
+    descendant_status_truncated: bool,
     current_blocking_point: Option<String>,
     artifact_count: i64,
     pending_artifact_count: i64,
@@ -55,8 +59,10 @@ struct WorkbenchWorkItem {
 }
 
 #[derive(Debug, Clone)]
-struct ChildStatusRef {
+struct WorkbenchStatusRef {
     work_item_id: Uuid,
+    parent_work_item_id: Uuid,
+    depth: i32,
     work_item_type: String,
     status: String,
     capability_key: String,
@@ -119,13 +125,25 @@ fn run_fixture(apply_requested: bool) -> Result<WorkbenchMirrorReport> {
         risk_level: "medium".to_string(),
         review_policy: "before_external_use".to_string(),
         payload: json!({"handoff_type": "visual_asset_request"}),
-        child_status_refs: vec![ChildStatusRef {
+        child_status_refs: vec![WorkbenchStatusRef {
             work_item_id: Uuid::nil(),
+            parent_work_item_id: Uuid::nil(),
+            depth: 1,
             work_item_type: "visual_asset_request".to_string(),
             status: "awaiting_review".to_string(),
             capability_key: "huabaosi.create_visual_asset".to_string(),
             blocking_reason: Some("waiting_for_artifact_review".to_string()),
         }],
+        descendant_status_refs: vec![WorkbenchStatusRef {
+            work_item_id: Uuid::nil(),
+            parent_work_item_id: Uuid::nil(),
+            depth: 1,
+            work_item_type: "visual_asset_request".to_string(),
+            status: "awaiting_review".to_string(),
+            capability_key: "huabaosi.create_visual_asset".to_string(),
+            blocking_reason: Some("waiting_for_artifact_review".to_string()),
+        }],
+        descendant_status_truncated: false,
         current_blocking_point: Some(
             "visual_asset_request:waiting_for_artifact_review".to_string(),
         ),
@@ -180,20 +198,22 @@ async fn run_once(
     let ref_id = upsert_workbench_ref(&mut tx, &item, &plan).await?;
     append_event_in_tx(
         &mut tx,
-        Some(item.id),
-        None,
-        "mirror_dry_run_recorded",
-        "worker",
-        WORKER_ID,
-        "Feishu Task mirror payload recorded without calling Feishu",
-        json!({
-            "provider": PROVIDER,
-            "external_id": plan.external_id,
-            "task_title": plan.title,
-            "task_section": plan.section,
-            "description_fields": plan.description_fields,
-            "sensitive_fields_redacted": true,
-        }),
+        WorkItemEvent {
+            work_item_id: Some(item.id),
+            artifact_id: None,
+            event_type: "mirror_dry_run_recorded",
+            actor_type: "worker",
+            actor_id: WORKER_ID,
+            message: "Feishu Task mirror payload recorded without calling Feishu",
+            data: json!({
+                "provider": PROVIDER,
+                "external_id": plan.external_id,
+                "task_title": plan.title,
+                "task_section": plan.section,
+                "description_fields": plan.description_fields,
+                "sensitive_fields_redacted": true,
+            }),
+        },
     )
     .await?;
     tx.commit()
@@ -333,7 +353,7 @@ async fn lock_next_work_item(
               AND wi.status IN ('queued', 'processing', 'awaiting_review', 'awaiting_publish', 'failed')
             ORDER BY wi.created_at ASC
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF wi SKIP LOCKED
         )
         SELECT
             wi.id,
@@ -384,7 +404,7 @@ async fn lock_work_item_by_id(
               AND wi.id = $2
               AND wi.status IN ('queued', 'processing', 'awaiting_review', 'awaiting_publish', 'failed')
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF wi SKIP LOCKED
         )
         SELECT
             wi.id,
@@ -456,6 +476,8 @@ fn base_work_item_from_row(row: sqlx::postgres::PgRow) -> Result<WorkbenchWorkIt
         review_policy: row.try_get("review_policy")?,
         payload: row.try_get("payload")?,
         child_status_refs: Vec::new(),
+        descendant_status_refs: Vec::new(),
+        descendant_status_truncated: false,
         current_blocking_point: None,
         artifact_count: row.try_get("artifact_count")?,
         pending_artifact_count: row.try_get("pending_artifact_count")?,
@@ -464,30 +486,57 @@ fn base_work_item_from_row(row: sqlx::postgres::PgRow) -> Result<WorkbenchWorkIt
 }
 
 async fn enrich_parent_status(pool: &PgPool, item: &mut WorkbenchWorkItem) -> Result<()> {
-    let rows = sqlx::query(child_status_sql())
+    let rows = sqlx::query(descendant_status_sql())
         .bind(item.id)
+        .bind(MAX_DESCENDANT_DEPTH)
+        .bind((MAX_DESCENDANT_REFS + 1) as i64)
         .fetch_all(pool)
         .await
-        .context("load child status refs for workbench mirror")?;
-    apply_child_status_refs(item, rows)
+        .context("load descendant status refs for workbench mirror")?;
+    apply_status_refs(item, rows)
 }
 
 async fn enrich_parent_status_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     item: &mut WorkbenchWorkItem,
 ) -> Result<()> {
-    let rows = sqlx::query(child_status_sql())
+    let rows = sqlx::query(descendant_status_sql())
         .bind(item.id)
+        .bind(MAX_DESCENDANT_DEPTH)
+        .bind((MAX_DESCENDANT_REFS + 1) as i64)
         .fetch_all(&mut **tx)
         .await
-        .context("load child status refs for workbench mirror")?;
-    apply_child_status_refs(item, rows)
+        .context("load descendant status refs for workbench mirror")?;
+    apply_status_refs(item, rows)
 }
 
-fn child_status_sql() -> &'static str {
+fn descendant_status_sql() -> &'static str {
     r#"
+    WITH RECURSIVE descendants AS (
+        SELECT
+            wi.id,
+            wi.parent_work_item_id,
+            1::integer AS depth,
+            ARRAY[$1::uuid, wi.id] AS path
+        FROM qintopia_agent_os.work_items wi
+        WHERE wi.parent_work_item_id = $1
+
+        UNION ALL
+
+        SELECT
+            child.id,
+            child.parent_work_item_id,
+            parent.depth + 1,
+            parent.path || child.id
+        FROM qintopia_agent_os.work_items child
+        JOIN descendants parent ON child.parent_work_item_id = parent.id
+        WHERE NOT child.id = ANY(parent.path)
+          AND parent.depth < $2
+    )
     SELECT
         wi.id,
+        wi.parent_work_item_id,
+        descendants.depth,
         wi.work_item_type,
         wi.status,
         wi.capability_key,
@@ -499,18 +548,16 @@ fn child_status_sql() -> &'static str {
               AND e.event_type = 'group_message_send_ready_recorded'
               AND e.data->>'send_executed' = 'false'
         ) AS send_ready_event_count
-    FROM qintopia_agent_os.work_items wi
+    FROM descendants
+    JOIN qintopia_agent_os.work_items wi ON wi.id = descendants.id
     LEFT JOIN qintopia_agent_os.artifacts a ON a.work_item_id = wi.id
-    WHERE wi.parent_work_item_id = $1
-    GROUP BY wi.id
-    ORDER BY wi.created_at ASC
+    GROUP BY wi.id, descendants.depth
+    ORDER BY descendants.depth ASC, wi.created_at ASC, wi.id ASC
+    LIMIT $3
     "#
 }
 
-fn apply_child_status_refs(
-    item: &mut WorkbenchWorkItem,
-    rows: Vec<sqlx::postgres::PgRow>,
-) -> Result<()> {
+fn apply_status_refs(item: &mut WorkbenchWorkItem, rows: Vec<sqlx::postgres::PgRow>) -> Result<()> {
     let mut refs = Vec::new();
     for row in rows {
         let status: String = row.try_get("status")?;
@@ -523,21 +570,30 @@ fn apply_child_status_refs(
             pending_artifact_count,
             send_ready_event_count,
         );
-        refs.push(ChildStatusRef {
+        refs.push(WorkbenchStatusRef {
             work_item_id: row.try_get("id")?,
+            parent_work_item_id: row.try_get("parent_work_item_id")?,
+            depth: row.try_get("depth")?,
             work_item_type,
             status,
             capability_key: row.try_get("capability_key")?,
             blocking_reason,
         });
     }
+    item.descendant_status_truncated = refs.len() > MAX_DESCENDANT_REFS;
+    refs.truncate(MAX_DESCENDANT_REFS);
     item.current_blocking_point = refs.iter().find_map(|child| {
         child
             .blocking_reason
             .as_ref()
             .map(|reason| format!("{}:{}", child.work_item_type, reason))
     });
-    item.child_status_refs = refs;
+    item.child_status_refs = refs
+        .iter()
+        .filter(|reference| reference.depth == 1)
+        .cloned()
+        .collect();
+    item.descendant_status_refs = refs;
     Ok(())
 }
 
@@ -557,6 +613,8 @@ fn build_task_plan(item: &WorkbenchWorkItem) -> Result<TaskMirrorPlan> {
         "review_policy".to_string(),
         "artifact_refs".to_string(),
         "child_status_refs".to_string(),
+        "descendant_status_refs".to_string(),
+        "descendant_status_truncated".to_string(),
         "current_blocking_point".to_string(),
         "current_status".to_string(),
     ];
@@ -574,6 +632,14 @@ fn build_task_plan(item: &WorkbenchWorkItem) -> Result<TaskMirrorPlan> {
         format!("review_policy: {}", item.review_policy),
         format!("artifact_refs: {}", artifact_summary(item)),
         format!("child_status_refs: {}", child_status_summary(item)),
+        format!(
+            "descendant_status_refs: {}",
+            descendant_status_summary(item)
+        ),
+        format!(
+            "descendant_status_truncated: {}",
+            item.descendant_status_truncated
+        ),
         format!(
             "current_blocking_point: {}",
             item.current_blocking_point.as_deref().unwrap_or("none")
@@ -631,6 +697,8 @@ async fn upsert_workbench_ref(
         "dry_run_only": true,
         "current_blocking_point": item.current_blocking_point,
         "child_status_count": item.child_status_refs.len(),
+        "descendant_status_count": item.descendant_status_refs.len(),
+        "descendant_status_truncated": item.descendant_status_truncated,
         "sensitive_fields_redacted": true,
     }))
     .fetch_one(&mut **tx)
@@ -639,15 +707,19 @@ async fn upsert_workbench_ref(
     Ok(row.get("id"))
 }
 
-async fn append_event_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+struct WorkItemEvent<'a> {
     work_item_id: Option<Uuid>,
     artifact_id: Option<Uuid>,
-    event_type: &str,
-    actor_type: &str,
-    actor_id: &str,
-    message: &str,
+    event_type: &'a str,
+    actor_type: &'a str,
+    actor_id: &'a str,
+    message: &'a str,
     data: Value,
+}
+
+async fn append_event_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    event: WorkItemEvent<'_>,
 ) -> Result<()> {
     sqlx::query(
         r#"
@@ -656,13 +728,13 @@ async fn append_event_in_tx(
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
-    .bind(work_item_id)
-    .bind(artifact_id)
-    .bind(event_type)
-    .bind(actor_type)
-    .bind(actor_id)
-    .bind(message)
-    .bind(data)
+    .bind(event.work_item_id)
+    .bind(event.artifact_id)
+    .bind(event.event_type)
+    .bind(event.actor_type)
+    .bind(event.actor_id)
+    .bind(event.message)
+    .bind(event.data)
     .execute(&mut **tx)
     .await
     .context("append workbench mirror event")?;
@@ -727,6 +799,28 @@ fn child_status_summary(item: &WorkbenchWorkItem) -> String {
                 child.status,
                 child.capability_key,
                 child.blocking_reason.as_deref().unwrap_or("none")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn descendant_status_summary(item: &WorkbenchWorkItem) -> String {
+    if item.descendant_status_refs.is_empty() {
+        return "none".to_string();
+    }
+    item.descendant_status_refs
+        .iter()
+        .map(|descendant| {
+            format!(
+                "{}:parent={}:depth={}:{}:{}:{}:{}",
+                descendant.work_item_id,
+                descendant.parent_work_item_id,
+                descendant.depth,
+                descendant.work_item_type,
+                descendant.status,
+                descendant.capability_key,
+                descendant.blocking_reason.as_deref().unwrap_or("none")
             )
         })
         .collect::<Vec<_>>()
@@ -903,8 +997,70 @@ mod tests {
         assert_eq!(report.task_section, "待审核");
         assert!(report.description.contains("work_item_id"));
         assert!(report.description.contains("artifact_refs"));
+        assert!(report.description.contains("child_status_refs"));
+        assert!(report.description.contains("descendant_status_refs"));
+        assert!(report
+            .description
+            .contains("descendant_status_truncated: false"));
         assert!(!report.description.contains("payload"));
         assert!(report.sensitive_fields_redacted);
+    }
+
+    #[test]
+    fn descendant_status_query_is_recursive_and_preserves_lineage() {
+        let sql = descendant_status_sql();
+
+        assert!(sql.contains("WITH RECURSIVE descendants"));
+        assert!(sql.contains("child.parent_work_item_id = parent.id"));
+        assert!(sql.contains("parent.path || child.id"));
+        assert!(sql.contains("parent.depth < $2"));
+        assert!(sql.contains("wi.parent_work_item_id"));
+        assert!(sql.contains("descendants.depth"));
+        assert!(sql.contains("LIMIT $3"));
+    }
+
+    #[test]
+    fn descendant_summary_includes_direct_parent_and_depth() {
+        let visual_id = Uuid::new_v4();
+        let image_id = Uuid::new_v4();
+        let item = WorkbenchWorkItem {
+            id: Uuid::new_v4(),
+            work_item_type: "activity_promotion_request".to_string(),
+            status: "processing".to_string(),
+            requester_agent: "default".to_string(),
+            target_agent: "xiaoman".to_string(),
+            capability_key: "xiaoman.create_activity_request".to_string(),
+            human_owner: String::new(),
+            priority: "normal".to_string(),
+            brief_summary: "周末活动".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({}),
+            risk_level: "medium".to_string(),
+            review_policy: "before_external_use".to_string(),
+            payload: json!({}),
+            child_status_refs: Vec::new(),
+            descendant_status_refs: vec![WorkbenchStatusRef {
+                work_item_id: image_id,
+                parent_work_item_id: visual_id,
+                depth: 2,
+                work_item_type: "image_generation_request".to_string(),
+                status: "awaiting_review".to_string(),
+                capability_key: "huabaosi.generate_image_asset".to_string(),
+                blocking_reason: Some("waiting_for_artifact_review".to_string()),
+            }],
+            descendant_status_truncated: false,
+            current_blocking_point: None,
+            artifact_count: 0,
+            pending_artifact_count: 0,
+            approved_artifact_count: 0,
+        };
+
+        let summary = descendant_status_summary(&item);
+
+        assert!(summary.contains(&image_id.to_string()));
+        assert!(summary.contains(&format!("parent={visual_id}")));
+        assert!(summary.contains("depth=2:image_generation_request:awaiting_review"));
+        assert!(summary.contains("huabaosi.generate_image_asset:waiting_for_artifact_review"));
     }
 
     #[test]
@@ -930,6 +1086,8 @@ mod tests {
             review_policy: "before_external_use".to_string(),
             payload: json!({"app_token": "secret"}),
             child_status_refs: Vec::new(),
+            descendant_status_refs: Vec::new(),
+            descendant_status_truncated: false,
             current_blocking_point: None,
             artifact_count: 0,
             pending_artifact_count: 0,

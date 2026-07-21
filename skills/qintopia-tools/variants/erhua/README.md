@@ -135,8 +135,14 @@ Weather guardrails:
   weather, hourly weather, minutely precipitation, official weather alert evidence, and
   air quality.
 - 07:00 morning weather broadcast copy must come from `skills/qintopia-weather`
-  `daily_forecast` / `morning_broadcast`; current conditions belong only under
-  `今早参考`.
+  `daily_forecast` / `morning_broadcast`. The delegated contract uses the
+  `Asia/Shanghai` local day and always returns
+  fixed 中午 (`11:00`–`13:59`), 下午 (`14:00`–`17:59`), and 晚上 (`18:00`–`22:59`)
+  period entries. Current conditions belong only under `今早参考`; AQI is labeled
+  `空气（鄠邑区）`.
+- The Erhua registration shell must not re-render the weather copy. It forwards the
+  canonical `morning_broadcast`, including explicit `暂未确认` degradation, up to two
+  prioritized Chinese-color warnings, and the maximum eight-line boundary.
 - Do not expose or wrap tropical cyclone/typhoon, ocean/marine/tide/current,
   solar-radiation, POI, historical weather, station-detail, astronomy, grid weather, or
   arbitrary-city tools for 二花.

@@ -17,7 +17,12 @@ Claude Code. The collaboration model is intentionally git-first and CI-backed.
    `fix: resolve qintopia-tools skill path`.
 9. Update the current roadmap or package docs when future direction changes.
 10. Open a PR with validation results and production-boundary notes.
-11. Deploy only reviewed commit SHAs through a documented runbook.
+11. Before merge, read the complete Reviewer Guide, reviews, conversation comments, and
+    inline threads for the latest head SHA; resolve or explicitly disposition every
+    security and recommended review item.
+12. Repeat review inspection after every push, then wait for replacement CI and review
+    results before merge.
+13. Deploy only reviewed commit SHAs through a documented runbook.
 
 Do not develop directly on `master`. CI runs on `master` after merge; feature work
 belongs on a branch.
@@ -79,6 +84,11 @@ When a version is ready, the owner reviews and merges the Release Please PR. Tha
 prepares the version and creates a draft GitHub Release. It does not deploy production.
 Production deployment still requires manually publishing the draft GitHub Release, which
 triggers the `release.published` deploy workflow.
+
+Release merging is manual-only. Do not use auto-merge for Release Please PRs, and do not
+let bots or programming agents automatically merge release PRs or publish draft GitHub
+Releases. The owner makes the merge and publish decisions after the required exact-head
+validation has passed.
 
 If the Release Please PR stays open while more feature PRs merge, Release Please updates
 the same release PR. Avoid editing root `CHANGELOG.md` or

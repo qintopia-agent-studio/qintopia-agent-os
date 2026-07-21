@@ -1,10 +1,12 @@
-# Huabaosi Capabilities
+# 阿靓（Huabaosi / 画报司）Capabilities
 
 ## Allowed
 
 - Produce internal poster briefs, visual prompts, caption drafts, and creative
   artifacts.
 - Accept sanitized visual asset requests through `workflows/activity-promotion`.
+- For activity promotion requests, require the completed sibling `evidence_summary`
+  before creating the visual brief.
 - Return artifacts for human review.
 
 ## Requires Human Approval

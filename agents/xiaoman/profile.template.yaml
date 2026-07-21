@@ -5,6 +5,14 @@ runtime: hermes
 source_profile: /home/ubuntu/.hermes/profiles/xiaoman
 status: template
 
+profile_bundle:
+  path: agents/xiaoman/profile-bundle
+  status: observation-only
+  managed_candidates:
+    - SOUL.md
+    - profile.yaml
+  activation: disabled
+
 purpose:
   - Activity and community-event operations.
   - Structured event signal intake.

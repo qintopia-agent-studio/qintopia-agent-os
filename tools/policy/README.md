@@ -7,7 +7,8 @@ It checks that:
 
 - inventory records keep WorkTool and Xiaoqin out of active migration paths
 - server Huabaosi shadow work stays in review-pool until owner approval
-- the sidecar deploy script remains marked as a legacy snapshot before M9 cutover
+- the sidecar deploy script remains marked as a legacy snapshot unless a reviewed deploy
+  package converts or removes it
 - Postgres migrations have matching data-design notes
 - active package registries do not point at deprecated or review-pool sources
 

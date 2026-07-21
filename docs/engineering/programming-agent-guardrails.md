@@ -126,7 +126,12 @@ bodies.
 
 If `gh` is missing, run `pnpm pr:bootstrap` to print supported installation commands. On
 supported environments, `pnpm pr:bootstrap -- --install` may install GitHub CLI.
-Authentication still requires `gh auth login`.
+Authentication still requires `gh auth login` only when the actual PR flow reports an
+authentication failure.
+
+In the Codex desktop environment, do not run extra GitHub authentication checks before
+creating a PR. Use `pnpm pr:create` directly after PR readiness checks; only handle
+authentication when the actual push or PR creation command fails.
 
 ## Hermes Profile Rule
 

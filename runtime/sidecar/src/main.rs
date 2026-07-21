@@ -1,3 +1,13 @@
+mod activity_lifecycle;
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "qiwe-production-adapter",
+    feature = "qiwe-staging-adapter"
+))]
+mod bounded_http;
 mod collaboration;
 mod config;
 mod consumer;
@@ -12,17 +22,37 @@ mod evidence;
 mod graph_projection;
 mod group_message_send;
 mod health;
+#[cfg_attr(
+    not(any(test, feature = "huabaosi-feishu-mirror-adapter")),
+    allow(dead_code, unused_imports, unused_variables)
+)]
+mod huabaosi_feishu_artifact_mirror;
+mod huabaosi_wecom_canary;
+mod huabaosi_wecom_policy;
+mod huabaosi_wecom_shadow;
 mod identity_backfill;
 mod identity_bootstrap;
+#[cfg_attr(
+    not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter"
+    )),
+    allow(dead_code)
+)]
+mod image_generation;
 mod knowledge;
 mod mcp_server;
 mod member_profile;
 mod message_search;
 mod operations;
+mod qiwe_image_send;
+pub mod qiwe_image_send_state;
 mod raw_archive;
 mod smoke;
+mod url_policy;
 mod workbench;
 mod xiaoman_activity;
+mod xiaoman_real_activity_evidence;
 
 use anyhow::Result;
 use clap::Parser;
@@ -342,6 +372,80 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::RunXiaomanActivitySignalWorker {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            poll_seconds,
+        } => {
+            xiaoman_activity::run_signal_worker(
+                &cli,
+                xiaoman_activity::SignalWorkerOptions {
+                    check_only,
+                    once,
+                    apply,
+                    batch_size,
+                    poll_seconds,
+                },
+            )
+            .await
+        }
+        Command::RunXiaomanActivityPromotionStarterWorker {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            work_item_id,
+        } => {
+            operations::run_xiaoman_activity_promotion_starter_worker(
+                &cli,
+                check_only,
+                once,
+                apply,
+                batch_size,
+                work_item_id,
+            )
+            .await
+        }
+        Command::RunXiaomanActivitySendRequestStarterWorker {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            work_item_id,
+            target_group_alias,
+            message_text,
+        } => {
+            operations::run_xiaoman_activity_send_request_starter_worker(
+                &cli,
+                check_only,
+                once,
+                apply,
+                batch_size,
+                work_item_id,
+                target_group_alias,
+                message_text,
+            )
+            .await
+        }
+        Command::RunXiaomanActivityImageGenerationStarterWorker {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            work_item_id,
+        } => {
+            operations::run_xiaoman_activity_image_generation_starter_worker(
+                &cli,
+                check_only,
+                once,
+                apply,
+                batch_size,
+                work_item_id,
+            )
+            .await
+        }
         Command::OperationsWorkItemCreate {
             payload_json,
             apply,
@@ -424,6 +528,68 @@ async fn main() -> Result<()> {
                 fixture_mode,
             )
             .await
+        }
+        Command::RunHuabaosiImageGenerationWorker {
+            once,
+            work_item_id,
+            apply,
+            dry_run,
+            fixture_mode,
+        } => image_generation::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
+        Command::HuabaosiImageGenerationPreflight => image_generation::run_preflight(),
+        Command::HuabaosiFeishuArtifactMirrorPreflight => {
+            huabaosi_feishu_artifact_mirror::run_preflight()
+        }
+        Command::HuabaosiFeishuArtifactMirrorObservationPreflight => {
+            huabaosi_feishu_artifact_mirror::run_observation_preflight()
+        }
+        Command::HuabaosiFeishuPrimaryStorageRevalidate { artifact_id } => {
+            huabaosi_feishu_artifact_mirror::run_primary_storage_revalidation(&cli, artifact_id)
+                .await
+        }
+        Command::RunHuabaosiFeishuArtifactMirrorWorker {
+            once,
+            artifact_id,
+            apply,
+            dry_run,
+            fixture_mode,
+        } => {
+            huabaosi_feishu_artifact_mirror::run(
+                &cli,
+                once,
+                artifact_id,
+                apply,
+                dry_run,
+                fixture_mode,
+            )
+            .await
+        }
+        Command::HuabaosiWecomShadowCapture => huabaosi_wecom_shadow::run(),
+        Command::HuabaosiWecomPolicyPreview => huabaosi_wecom_policy::run(),
+        Command::HuabaosiWecomCanaryPreflight => huabaosi_wecom_canary::run_preflight(),
+        Command::HuabaosiWecomCanaryGateway { apply, dry_run } => {
+            huabaosi_wecom_canary::run_gateway(apply, dry_run)
+        }
+        Command::QiweImageSendPreflight => qiwe_image_send::run_preflight(),
+        Command::QiweImageSendStagingPreflight => qiwe_image_send::run_staging_preflight(&cli),
+        Command::QiweImageSendProductionPreflight => {
+            qiwe_image_send::run_production_preflight(&cli)
+        }
+        Command::RunQiweImageSendWorker {
+            once,
+            work_item_id,
+            apply,
+            dry_run,
+        } => qiwe_image_send::run_upload_worker(&cli, once, work_item_id, apply, dry_run).await,
+        Command::ProcessQiweImageSendCallback { apply, dry_run } => {
+            qiwe_image_send::run_callback_processor(&cli, apply, dry_run).await
+        }
+        Command::XiaomanRealActivityProductionEvidence {
+            workflow_root_id,
+            source_event_signal_id,
+        } => {
+            xiaoman_real_activity_evidence::run(&cli, workflow_root_id, source_event_signal_id)
+                .await
         }
         Command::RunEvidenceWorker {
             once,

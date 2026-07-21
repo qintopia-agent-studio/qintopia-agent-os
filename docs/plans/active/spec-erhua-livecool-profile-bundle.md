@@ -139,13 +139,13 @@ rollback write distinct smoke and restore evidence.
 **Runner Control Plane**
 
 - Follow the fixed profile-only branch without moving release symlinks.
-  [`qintopia-agent-os-deploy-runner:388`](../../../deploy/runner/qintopia-agent-os-deploy-runner#L388)
+  [`qintopia-agent-os-deploy-runner:393`](../../../deploy/runner/qintopia-agent-os-deploy-runner#L393)
 
 - Verify request coupling and exact dry-run authorization.
   [`deploy-request.schema.json:125`](../../../deploy/runner/deploy-request.schema.json#L125)
 
 - Check workflow inputs and production gate enforcement.
-  [`deploy-production.yml:354`](../../../.github/workflows/deploy-production.yml#L354)
+  [`deploy-production.yml:440`](../../../.github/workflows/deploy-production.yml#L440)
 
 **Profile Transaction**
 

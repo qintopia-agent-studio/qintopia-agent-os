@@ -1,7 +1,9 @@
 # Release/Current Model
 
-This document defines the target release model after M9-F removes the remaining
-references to `/home/ubuntu/qintopia-msg-sidecar`.
+This document defines the active release/current production model for Agent OS runtime
+payloads. M9-F removed the remaining active sidecar worker and Hermes MCP references to
+`/home/ubuntu/qintopia-msg-sidecar`; that old checkout is now archive evidence, not a
+runtime source.
 
 ## Direction
 
@@ -22,7 +24,7 @@ GitHub CI
 Routine releases must not depend on server-side `git fetch`, `git checkout`, local Rust
 builds, `scp` source overwrites, or direct edits under `.hermes`.
 
-## Target Directory Shape
+## Directory Shape
 
 ```text
 /home/ubuntu/qintopia-agent-os-releases/
@@ -43,14 +45,13 @@ builds, `scp` source overwrites, or direct edits under `.hermes`.
   previous -> <previous-approved-sha>
 ```
 
-`/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is only a transition download cache. It
-can be kept for rollback evidence, but services should eventually point at
-`/home/ubuntu/qintopia-agent-os-releases/current`.
+`/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is only an artifact cache and audit
+evidence. Services should use `/home/ubuntu/qintopia-agent-os-releases/current`.
 
 ## Release Payloads
 
-The first M9-F release assembles two verified COS inputs: the sidecar runtime artifact
-and the deploy bundle. The resulting release directory should contain:
+The M9-F release established the release assembly pattern from two verified COS inputs:
+the sidecar runtime artifact and the deploy bundle. A release directory should contain:
 
 ```text
 sidecar/
@@ -78,6 +79,12 @@ services that Hermes mounts or executes.
 
 ## Promotion Sequence
 
+Before merging the Release Please PR or publishing its draft Release, complete
+[`release-acceptance-checklist.md`](release-acceptance-checklist.md). The checklist is
+the guardrail for exact-head Release Please validation, tag freshness, deploy-bundle
+payload coverage, post-deploy release-current convergence, and Xiaoman completion claim
+boundaries.
+
 1. Confirm the target SHA has successful `check` and `sidecar-artifact` CI jobs.
 2. Download the target SHA artifact from COS into a staging or cache directory.
 3. Verify `artifact-manifest.json`, `SHA256SUMS`, and binary self-checks.
@@ -86,11 +93,36 @@ services that Hermes mounts or executes.
 6. Record the current symlink target as the rollback SHA.
 7. Update `previous` to the old `current` target.
 8. Atomically switch `current` to `<approved-sha>`.
-9. Restart only owner-approved services or Hermes profile processes.
-10. Record the release SHA, previous SHA, checks, and rollback command in git.
+9. Render and install the fixed systemd unit allowlist from the immutable release, then
+   enable internal AgentOS worker timers.
+10. Restart only owner-approved services or Hermes profile processes.
+11. Record the release SHA, previous SHA, checks, and rollback command in git.
+
+The Huabaosi image-generation worker is an external provider boundary, not an internal
+timer. A release may install its preflight, worker, and timer units, but the ordinary
+installer must leave that timer disabled. After the owner manually publishes the
+Release, production configuration must bind the enablement to that exact release SHA and
+database URL hash. Run the release-local one-shot production canary first with the timer
+inactive; it binds one pending brief, the fixed `trainer` reviewer, one new request, one
+pending Feishu-backed JPEG, and authenticated same-byte revalidation to the immutable
+release evidence. It does not approve the generated image or call QiWe. Enable ongoing
+scheduling through the separate activation script only after that canary is reviewed.
 
 The release assembly step should be idempotent: if the release directory already exists,
 the operator must verify its manifest and checksum instead of overwriting it blindly.
+
+## Completion Claims
+
+Publishing a Release is not itself proof that a product workflow is usable end to end.
+For Xiaoman, classify the Release before merge as `infrastructure`, `activation-ready`,
+or `production-complete` using
+[`docs/plans/active/xiaoman-production-completion-gate.md`](../plans/active/xiaoman-production-completion-gate.md).
+
+An infrastructure Release may be published to ship staging artifacts, provisioners,
+deployment fixes, smoke checks, or guarded activation scripts. Its release notes and PR
+body must not claim Xiaoman production completion while Huabaosi staging evidence, QiWe
+staging upload/callback/send evidence, QiWe production enablement, production activation
+evidence, or one real end-to-end activity is still missing.
 
 ## Runtime References
 
@@ -102,6 +134,10 @@ Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-relea
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-sha>
 ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
 ```
+
+After each promotion, render and reinstall these units from the immutable release so
+`QINTOPIA_DEPLOYED_COMMIT_SHA` matches the release behind `current`. Do not leave stale
+deployment metadata in a unit merely because its path uses the `current` symlink.
 
 Hermes profile directories remain live runtime state. Preserve:
 

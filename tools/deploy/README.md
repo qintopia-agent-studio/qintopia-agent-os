@@ -25,7 +25,7 @@ Local mode additionally requires:
 
 ## Systemd Cutover Preview
 
-Validate that the M9 sidecar systemd renderer can produce monorepo-native units:
+Validate that the sidecar systemd renderer can produce reviewable units:
 
 ```bash
 pnpm deploy:systemd:check
@@ -62,6 +62,24 @@ The check is non-mutating. It verifies the worker units render through
 that the Hermes `mcp-context` wrapper can run from a verified artifact,
 `release/current`, or explicit `QINTOPIA_SIDECAR_BIN`.
 
+## Deploy Contract Checks
+
+Validate deploy package metadata and production-adjacent smoke boundaries:
+
+```bash
+pnpm deploy:contracts:check
+```
+
+The check is non-mutating. It also protects the aggregate Xiaoman production preflight
+smoke so it remains a composition of read-only observation scripts and does not grow
+apply smoke, deploy, release, Feishu write, QiWe, or external-send behavior. The same
+gate protects the Xiaoman production preflight record template so production evidence
+keeps timer status, fixed commands, secret scans, queue counts, and pass/hold decisions.
+It also runs `tools/deploy/check-xiaoman-preflight-readiness.mjs`, a repository-only
+audit that verifies the Xiaoman workflow metadata, systemd command contracts, aggregate
+preflight smoke, evidence record, and guarded apply smoke still describe one coherent
+AgentOS-only production preflight path.
+
 ## GitHub App Git Access
 
 Validate the GitHub App git wrapper without credentials:
@@ -92,12 +110,24 @@ pnpm artifact:sidecar
 ```
 
 The command writes `dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu`
-with the release binary, `artifact-manifest.json`, and `SHA256SUMS`. `dist/` is ignored
-by git.
+with the release binary, compressed bundle, `artifact-manifest.json`, and `SHA256SUMS`
+covering all three payload files. `dist/` is ignored by git.
 
-The CI artifact job uses Rust 1.75.0 to match `runtime/sidecar/Cargo.toml`
+The CI artifact job uses Rust 1.96.0 to match `runtime/sidecar/Cargo.toml`
 `rust-version`. Server deployment downloads the uploaded artifact and does not require
 Node.js, pnpm, Rust, or Docker on the production host.
+
+Build the staging-only sidecar artifact layout locally:
+
+```bash
+pnpm artifact:sidecar:staging
+```
+
+This writes `dist/sidecar-artifacts/qintopia-message-sidecar-staging-linux-x86_64-gnu`
+with a manifest compiled only with `huabaosi-staging-adapter` and
+`qiwe-staging-adapter`. It is for owner-approved staging evidence under
+`/home/ubuntu/qintopia-agent-os-staging-releases/<sha>` only; production deployment
+scripts must keep using `pnpm artifact:sidecar`.
 
 ## Artifact Retention
 
@@ -109,7 +139,7 @@ GITHUB_REPOSITORY="qintopia-agent-studio/qintopia-agent-os" \
 pnpm artifact:prune:sidecar
 ```
 
-The command keeps the latest two artifacts named
-`qintopia-message-sidecar-linux-x86_64-gnu`: the current deployment candidate and one
-rollback candidate. Older same-name artifacts are deleted through the GitHub Actions
-Artifacts API.
+The command keeps the latest ten artifacts named
+`qintopia-message-sidecar-linux-x86_64-gnu` by default. Override the count with
+`QINTOPIA_ARTIFACT_KEEP_COUNT` or `--keep <count>`. Older same-name artifacts are
+deleted through the GitHub Actions Artifacts API.

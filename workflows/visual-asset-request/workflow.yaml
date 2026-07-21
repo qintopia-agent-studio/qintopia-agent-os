@@ -2,11 +2,11 @@ id: workflows/visual-asset-request
 type: workflow
 name: Visual Asset Request
 owner: PatrickLiveCool
-status: draft
+status: active
 risk_level: medium
 description:
-  Workflow for Xiaoman-to-Huabaosi visual asset requests, draft evidence, human review,
-  and delivery state.
+  Workflow for Xiaoman-to-Huabaosi visual briefs, human review, controlled
+  image-generation request intake, and delivery state.
 source:
   path: runtime/sidecar/src/operations.rs
   reference: current-monorepo
@@ -32,6 +32,8 @@ tags:
   - xiaoman
   - visual-assets
 next_actions:
-  - Add replay fixtures for request creation, draft evidence, human review, and
-    delivery.
+  - Keep the reviewed AgentOS internal brief path observable in the PostgreSQL apply
+    smoke.
+  - Implement a separately owner-reviewed provider, isolated media storage, and staged
+    rollout before enabling any real image generation.
   - Keep publication and external sends outside this workflow until separately approved.

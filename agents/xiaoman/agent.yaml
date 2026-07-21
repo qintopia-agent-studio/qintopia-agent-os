@@ -1,8 +1,8 @@
 id: agents/xiaoman
 type: agent
 name: Xiaoman
-owner: TBD
-status: adopting
+owner: PatrickLiveCool
+status: active
 risk_level: medium
 description:
   Activity and community-event operations Agent that creates governed work items from
@@ -16,18 +16,26 @@ production_boundary:
   database_writes: true
   runtime_profile: true
   secrets: true
+runtime:
+  restart_target: hermes-xiaoman
+  systemd_user_service: hermes-gateway-xiaoman.service
 validation:
   commands:
     - pnpm smoke:sidecar
     - pnpm registry:check
     - pnpm policy:check
+    - pnpm agents:profile-bundles:check
 dependencies:
   - workflows/activity-promotion
+  - runtime/hermes
   - runtime/sidecar
 tags:
   - agent
   - activity-ops
   - hermes-profile
 next_actions:
-  - Convert approved profile behavior into reviewed templates.
-  - Split reusable event-signal and activity-source behavior into workflow packages.
+  - The AgentOS-only Xiaoman activity path is production-ready. External image
+    generation, Feishu writeback, and QiWe delivery remain disabled until their
+    separately reviewed production gates are satisfied.
+  - Keep live profile symlinks, config, webhook, channel, cron, and secrets
+    runtime-local.

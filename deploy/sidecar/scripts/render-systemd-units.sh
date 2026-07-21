@@ -190,6 +190,33 @@ PrivateTmp=true
 EOF
 }
 
+render_guarded_oneshot_service() {
+  local service_name="$1"
+  local description="$2"
+  local preflight_command="$3"
+  local command="$4"
+
+  write_file "$service_name" <<EOF
+[Unit]
+Description=${description}
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${MONOREPO_DIR}
+EnvironmentFile=${ENV_FILE}
+Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
+ExecStartPre=${BIN} ${preflight_command}
+ExecStart=${BIN} ${command}
+NoNewPrivileges=true
+PrivateTmp=true
+EOF
+}
+
 render_timer() {
   local timer_name="$1"
   local description="$2"
@@ -230,8 +257,29 @@ This output is a review artifact. It is not an installer.
 Install scope for the M9 window:
 - Install or update only units approved by the owner for the migration window.
 - Restart the main sidecar first, then workers that were already active before cutover.
-- Do not enable new worker services or timers by default.
+- Do not enable new worker services or timers by default unless this plan names an
+  owner-reviewed default-enabled exception.
 - Operations timers are rendered for review but should remain disabled unless explicitly approved.
+- The Xiaoman activity signal worker timer may be enabled by default after owner
+  review because it writes only AgentOS work_items from Xiaoman event_signals.
+  It must not write Feishu, send QiWe messages, or create visual assets.
+- The Xiaoman activity promotion starter timer may be enabled by default after
+  owner review because it only creates missing AgentOS evidence/visual child
+  work_items under existing Xiaoman activity request parents. It must not write
+  Feishu, send QiWe messages, create visual assets, or run external adapters.
+- The Xiaoman activity image-generation starter timer may be enabled by default after
+  owner review because it only creates AgentOS image_generation_request work_items from
+  approved poster_brief artifacts. It must not call an image provider, upload media,
+  create generated images, write Feishu, call QiWe, publish, or send externally.
+- The Xiaoman activity send request starter timer may be enabled by default after
+  owner review because it only creates awaiting_publish AgentOS group_message_request
+  work_items from approved Xiaoman poster_brief artifacts. It must not confirm,
+  queue, send, publish, write Feishu, call QiWe, or run external adapters.
+- The operations evidence and visual worker timers may be enabled after the Xiaoman
+  child intake path is observed healthy. They only process AgentOS work_items into
+  internal evidence_summary and poster_brief artifacts. They must not write Feishu,
+  send QiWe messages, run live Wenyuange search, call Huabaosi production generation,
+  or run external adapters.
 
 Apply shape during the approved window:
 1. Copy reviewed unit files into /etc/systemd/system.
@@ -327,6 +375,28 @@ render_all() {
     "${QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL:-2min}"
 
   render_oneshot_service \
+    "qintopia-agentos-operations-evidence-worker.service" \
+    "Qintopia AgentOS Operations Evidence Worker" \
+    "run-evidence-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-operations-evidence-worker.timer" \
+    "Run Qintopia AgentOS operations evidence worker" \
+    "qintopia-agentos-operations-evidence-worker.service" \
+    "7min" \
+    "${QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-operations-visual-worker.service" \
+    "Qintopia AgentOS Operations Visual Worker" \
+    "run-collaboration-worker --work-item-type visual_asset_request --once --apply"
+  render_timer \
+    "qintopia-agentos-operations-visual-worker.timer" \
+    "Run Qintopia AgentOS operations visual worker" \
+    "qintopia-agentos-operations-visual-worker.service" \
+    "8min" \
+    "${QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
     "qintopia-agentos-operations-workbench-event.service" \
     "Qintopia AgentOS Operations Workbench Event Processor" \
     "run-workbench-event-worker --once --apply"
@@ -347,6 +417,98 @@ render_all() {
     "qintopia-agentos-operations-group-send-ready.service" \
     "4min" \
     "${QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL:-1min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-signal-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Signal Worker" \
+    "run-xiaoman-activity-signal-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-signal-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity signal intake" \
+    "qintopia-agentos-xiaoman-activity-signal-worker.service" \
+    "5min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Promotion Starter Worker" \
+    "run-xiaoman-activity-promotion-starter-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity promotion child starter" \
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service" \
+    "6min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Image Generation Starter Worker" \
+    "run-xiaoman-activity-image-generation-starter-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity image-generation request starter" \
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service" \
+    "9min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-huabaosi-image-generation-preflight.service" \
+    "Qintopia AgentOS Huabaosi Image Generation Production Preflight" \
+    "huabaosi-image-generation-preflight"
+  render_guarded_oneshot_service \
+    "qintopia-agentos-huabaosi-image-generation-worker.service" \
+    "Qintopia AgentOS Huabaosi Image Generation Worker" \
+    "huabaosi-image-generation-preflight" \
+    "run-huabaosi-image-generation-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-huabaosi-image-generation-worker.timer" \
+    "Run Qintopia AgentOS Huabaosi image generation worker" \
+    "qintopia-agentos-huabaosi-image-generation-worker.service" \
+    "11min" \
+    "${QINTOPIA_HUABAOSI_IMAGE_GENERATION_TIMER_INTERVAL:-5min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service" \
+    "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Production Preflight" \
+    "huabaosi-feishu-artifact-mirror-preflight"
+  render_guarded_oneshot_service \
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service" \
+    "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Worker" \
+    "huabaosi-feishu-artifact-mirror-preflight" \
+    "run-huabaosi-feishu-artifact-mirror-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer" \
+    "Run Qintopia AgentOS Huabaosi Feishu artifact mirror worker" \
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service" \
+    "12min" \
+    "${QINTOPIA_HUABAOSI_FEISHU_MIRROR_TIMER_INTERVAL:-5min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-qiwe-image-send-preflight.service" \
+    "Qintopia AgentOS QiWe Image Send Production Preflight" \
+    "qiwe-image-send-production-preflight"
+  render_guarded_oneshot_service \
+    "qintopia-agentos-qiwe-image-send-worker.service" \
+    "Qintopia AgentOS QiWe Image Send Worker" \
+    "qiwe-image-send-production-preflight" \
+    "run-qiwe-image-send-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-qiwe-image-send-worker.timer" \
+    "Run Qintopia AgentOS QiWe image send worker" \
+    "qintopia-agentos-qiwe-image-send-worker.service" \
+    "13min" \
+    "${QINTOPIA_QIWE_IMAGE_SEND_TIMER_INTERVAL:-1min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Send Request Starter Worker" \
+    "run-xiaoman-activity-send-request-starter-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity send request starter" \
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
+    "10min" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL:-2min}"
 }
 
 validate_output() {
@@ -363,10 +525,31 @@ validate_output() {
     "qintopia-agentos-raw-archive-worker.service"
     "qintopia-agentos-operations-workflow-sync.service"
     "qintopia-agentos-operations-workflow-sync.timer"
+    "qintopia-agentos-operations-evidence-worker.service"
+    "qintopia-agentos-operations-evidence-worker.timer"
+    "qintopia-agentos-operations-visual-worker.service"
+    "qintopia-agentos-operations-visual-worker.timer"
     "qintopia-agentos-operations-workbench-event.service"
     "qintopia-agentos-operations-workbench-event.timer"
     "qintopia-agentos-operations-group-send-ready.service"
     "qintopia-agentos-operations-group-send-ready.timer"
+    "qintopia-agentos-xiaoman-activity-signal-worker.service"
+    "qintopia-agentos-xiaoman-activity-signal-worker.timer"
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.service"
+    "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer"
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service"
+    "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer"
+    "qintopia-agentos-huabaosi-image-generation-preflight.service"
+    "qintopia-agentos-huabaosi-image-generation-worker.service"
+    "qintopia-agentos-huabaosi-image-generation-worker.timer"
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service"
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service"
+    "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
+    "qintopia-agentos-qiwe-image-send-preflight.service"
+    "qintopia-agentos-qiwe-image-send-worker.service"
+    "qintopia-agentos-qiwe-image-send-worker.timer"
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"
+    "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
   )
 
   local file

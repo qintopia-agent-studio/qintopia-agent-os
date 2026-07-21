@@ -19,6 +19,15 @@ const requiredRegisteredTools = {
     "qintopia_wenyuange_lookup",
     "qintopia_weather_lookup",
     "qintopia_daily_digest_publish",
+    "qintopia_xiaoman_activity_record_get",
+    "qintopia_xiaoman_activity_list_by_date",
+    "qintopia_xiaoman_activity_announcement_prepare",
+    "qintopia_xiaoman_activity_status_update",
+    "qintopia_xiaoman_activity_gap_update",
+    "qintopia_xiaoman_activity_phase_update",
+    "qintopia_xiaoman_activity_handoff_create",
+    "qintopia_xiaoman_activity_promotion_review_draft",
+    "qintopia_xiaoman_activity_material_summary",
   ],
   wenyuange: ["qintopia_wenyuange_lookup"],
 };
@@ -59,6 +68,12 @@ for (const variant of variants) {
   }
 
   const variantSource = readText(variantPath);
+  const pluginYaml = readText(`skills/qintopia-tools/variants/${variant}/plugin.yaml`);
+  for (const toolName of requiredRegisteredTools[variant]) {
+    if (!pluginYaml.includes(`- ${toolName}`)) {
+      errors.push(`${variant}: plugin.yaml must list ${toolName}`);
+    }
+  }
   if (variantSource.includes("_operations_intake_plugin().QINTOPIA")) {
     errors.push(
       `${variant}: operations-intake schemas must not load the delegated package at module import time`

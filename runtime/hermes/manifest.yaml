@@ -34,7 +34,15 @@ tags:
   - profile-bundle
   - runtime-template
 next_actions:
-  - Review the Erhua redacted dry run before any production profile activation.
+  - Review the Erhua Livecool redacted dry run before any production model overlay
+    activation.
+  - Deploy the observation-only Xiaoman bundle, run the owner-approved one-time values
+    migration, and record production parity before any live profile repoint.
+  - Add first-cutover backup and rollback behavior in a separate reviewed PR.
   - Keep `.env`, sessions, logs, cache, auth, and state databases out of git and release
     bundles.
   - Promote profile bundles only through reviewed release/current runbooks.
+  - Keep docs/operations/review-pool/hermes patch evidence out of deploy bundles;
+    migrate each accepted behavior into an owned package in an independent PR.
+  - Inventory Erhua's live 07:00 cron structure and weather script hashes before a
+    separate profile cutover activates the release-owned broadcast entrypoint.

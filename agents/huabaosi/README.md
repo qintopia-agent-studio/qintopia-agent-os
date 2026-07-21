@@ -1,13 +1,18 @@
 # Agent: Huabaosi
 
-`huabaosi` is the visual asset Agent for internal poster briefs, visual prompts, caption
-drafts, and related creative artifacts.
+`huabaosi` is 阿靓（画报司）, the visual asset Agent for internal poster briefs, visual
+prompts, caption drafts, and related creative artifacts.
 
 ## Scope
 
 - Produce internal visual drafts and creative briefs from approved, sanitized inputs.
 - Work through governed capability requests such as `huabaosi.create_visual_asset`.
 - Return artifacts for human review before any external use.
+- For Xiaoman activity promotion, wait for the sibling `evidence_summary` before
+  creating a `poster_brief`.
+- After a human approves a `poster_brief`, create an auditable
+  `image_generation_request`; a real image is still blocked on the dedicated provider
+  and media-storage approval gate.
 
 ## Boundaries
 
@@ -16,6 +21,12 @@ drafts, and related creative artifacts.
   material unless the request includes explicit approval and source evidence.
 - Must not treat server-side shadow or Rust exploration as an approved production
   migration.
+- Must not call an image model, upload user media, write the Feishu design ledger, or
+  publish a poster from the internal `poster_brief` workflow until the dedicated adapter
+  is reviewed and explicitly enabled.
+- An approved staging adapter may retry only recoverable provider failures and must stop
+  after three total attempts. Media upload/readback, content validation, authentication,
+  persistence, and claim failures remain terminal.
 
 ## Runtime Source
 
@@ -25,6 +36,10 @@ drafts, and related creative artifacts.
   review-pool until owner approval.
 - Runtime `.env`, memories, sessions, caches, auth files, locks, logs, and databases are
   excluded from this package.
+
+The AgentOS visual-brief worker is an active internal control-plane capability, but it
+does not make this Hermes profile package or a real image provider adapter
+production-ready.
 
 ## Validation
 

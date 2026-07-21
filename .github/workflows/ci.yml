@@ -2,9 +2,20 @@ name: CI
 
 on:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      release_please_pr_number:
+        description: Open Release Please PR number to validate on its exact head branch
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,8 +23,9 @@ concurrency:
 
 env:
   NODE_VERSION: "24"
-  RUST_TOOLCHAIN: "1.75.0"
+  RUST_TOOLCHAIN: "1.96.0"
   PNPM_VERSION: "10.29.2"
+  RUST_MIN_STACK: "33554432"
 
 jobs:
   changes:
@@ -22,11 +34,14 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: read
 
     outputs:
       full-check: ${{ steps.detect.outputs.full-check }}
       changed-files: ${{ steps.detect.outputs.changed-files }}
       release-please-pr: ${{ steps.detect.outputs.release-please-pr }}
+      base-sha: ${{ steps.detect.outputs.base-sha }}
+      head-sha: ${{ steps.detect.outputs.head-sha }}
 
     steps:
       - name: Checkout
@@ -41,23 +56,51 @@ jobs:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login || '' }}
           PR_BODY: ${{ github.event.pull_request.body || '' }}
+          DISPATCH_RELEASE_PLEASE_PR_NUMBER:
+            ${{ inputs.release_please_pr_number || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
+          event_name="${{ github.event_name }}"
+          base_sha=""
+          head_sha=""
+          if [[ "$event_name" == "workflow_dispatch" && -n "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" ]]; then
+            pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${DISPATCH_RELEASE_PLEASE_PR_NUMBER}")"
+            PR_HEAD_REF="$(jq -r '.head.ref // ""' <<<"$pr_json")"
+            PR_AUTHOR="$(jq -r '.user.login // ""' <<<"$pr_json")"
+            PR_BODY="$(jq -r '.body // ""' <<<"$pr_json")"
+            pr_state="$(jq -r '.state // ""' <<<"$pr_json")"
+            pr_base="$(jq -r '.base.ref // ""' <<<"$pr_json")"
+            base_sha="$(jq -r '.base.sha // ""' <<<"$pr_json")"
+            head_sha="$(jq -r '.head.sha // ""' <<<"$pr_json")"
+            if [[ "$pr_state" != "open" || "$pr_base" != "master" ]]; then
+              echo "release PR dispatch requires an open PR targeting master" >&2
+              exit 1
+            fi
+            if [[ "$head_sha" != "${{ github.sha }}" ]]; then
+              echo "workflow_dispatch ref must resolve to the exact release PR head SHA" >&2
+              exit 1
+            fi
+          elif [[ "$event_name" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+          fi
+
           release_please_pr=false
-          if [[ "${{ github.event_name }}" == "pull_request" &&
+          if [[ ( "$event_name" == "pull_request" || -n "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" ) &&
             "$PR_HEAD_REF" == release-please--branches--* &&
             ( "$PR_AUTHOR" == "github-actions[bot]" || "$PR_AUTHOR" == "app/github-actions" ) &&
             "$PR_BODY" == *"This PR was generated with [Release Please]"* ]]; then
             release_please_pr=true
           fi
 
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            base_sha="${{ github.event.pull_request.base.sha }}"
-            head_sha="${{ github.event.pull_request.head.sha }}"
-          else
-            base_sha="${{ github.event.before }}"
-            head_sha="${{ github.sha }}"
+          if [[ -n "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" && "$release_please_pr" != "true" ]]; then
+            echo "workflow_dispatch PR is not an authentic Release Please PR" >&2
+            exit 1
           fi
 
           if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
@@ -84,6 +127,8 @@ jobs:
             echo "EOF"
             echo "full-check=${full_check}"
             echo "release-please-pr=${release_please_pr}"
+            echo "base-sha=${base_sha}"
+            echo "head-sha=${head_sha}"
           } >> "$GITHUB_OUTPUT"
 
           printf 'full-check=%s\n' "$full_check"
@@ -98,6 +143,8 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: read
+      statuses: write
 
     steps:
       - name: Checkout
@@ -120,6 +167,38 @@ jobs:
         if: ${{ needs.changes.outputs.release-please-pr != 'true' }}
         run: pnpm install --frozen-lockfile
 
+      - name: Fetch restart preview commits
+        if:
+          ${{ github.event_name == 'pull_request' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
+        shell: bash
+        env:
+          BASE_SHA: ${{ needs.changes.outputs.base-sha }}
+          HEAD_SHA: ${{ needs.changes.outputs.head-sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          base_sha="$BASE_SHA"
+          head_sha="$HEAD_SHA"
+          head_repository="$HEAD_REPOSITORY"
+          git fetch --no-tags --depth=1 origin "$base_sha" || true
+          if [[ -n "$head_repository" && "$head_repository" != "$GITHUB_REPOSITORY" ]]; then
+            git fetch --no-tags --depth=1 "https://github.com/${head_repository}.git" "$head_sha" || true
+          else
+            git fetch --no-tags --depth=1 origin "$head_sha" || true
+          fi
+          git cat-file -e "${base_sha}^{commit}"
+          git cat-file -e "${head_sha}^{commit}"
+
+      - name: Restart impact preview
+        if:
+          ${{ github.event_name == 'pull_request' &&
+          needs.changes.outputs.release-please-pr != 'true' }}
+        run: >-
+          node tools/deploy/resolve-restart-targets.mjs --base-ref "${{
+          needs.changes.outputs.base-sha }}" --head-ref "${{
+          needs.changes.outputs.head-sha }}" --mode preview
+
       - name: Light check
         if: ${{ needs.changes.outputs.release-please-pr != 'true' }}
         run: |
@@ -130,7 +209,43 @@ jobs:
 
       - name: Release Please PR check
         if: ${{ needs.changes.outputs.release-please-pr == 'true' }}
-        run: node tools/ci/check-release-please-pr.mjs
+        env:
+          DISPATCH_RELEASE_PLEASE_PR_NUMBER:
+            ${{ inputs.release_please_pr_number || '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            event_path="${RUNNER_TEMP}/release-please-pr-event.json"
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${DISPATCH_RELEASE_PLEASE_PR_NUMBER}" \
+              | jq '{pull_request: .}' >"$event_path"
+            GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$event_path" \
+              node tools/ci/check-release-please-pr.mjs
+          else
+            node tools/ci/check-release-please-pr.mjs
+          fi
+
+      - name: Publish Release Please validation status
+        if: >-
+          ${{ always() && github.event_name == 'workflow_dispatch' &&
+          needs.changes.outputs.release-please-pr == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ needs.changes.outputs.head-sha }}
+          RUN_URL:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
+        run: |
+          state=success
+          description="Release Please metadata validation passed"
+          if [[ "${{ job.status }}" != "success" ]]; then
+            state=failure
+            description="Release Please metadata validation failed"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context="Release Please validation" \
+            -f description="$description" \
+            -f target_url="$RUN_URL"
 
       - name: Setup Python
         if:
@@ -144,7 +259,7 @@ jobs:
         if:
           ${{ needs.changes.outputs.full-check == 'true' &&
           needs.changes.outputs.release-please-pr != 'true' }}
-        uses: dtolnay/rust-toolchain@1.75.0
+        uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: rustfmt
 
@@ -161,3 +276,164 @@ jobs:
         run: |
           echo "Docs-only or Markdown-only change detected."
           echo "Skipped Python/Rust runtime checks and artifact builds."
+
+  rust-quality-baseline:
+    name: Rust quality baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.full-check == 'true' &&
+      needs.changes.outputs.release-please-pr != 'true' }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust quality toolchain
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: clippy, llvm-tools-preview
+
+      - name: Install Rust quality tools
+        run: |
+          cargo install cargo-nextest --version 0.9.138 --locked
+          cargo install cargo-llvm-cov --version 0.8.7 --locked
+
+      - name: Rust coverage baseline
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov nextest --manifest-path runtime/sidecar/Cargo.toml --lcov --output-path coverage/sidecar.lcov
+          cargo llvm-cov report --manifest-path runtime/sidecar/Cargo.toml --summary-only | tee coverage/summary.txt
+          cat coverage/summary.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: All-feature staging adapter tests
+        run: >-
+          cargo nextest run --manifest-path runtime/sidecar/Cargo.toml --all-features
+          --no-fail-fast
+
+      - name: Clippy baseline
+        run: |
+          set -o pipefail
+          cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --no-default-features -- -D warnings 2>&1 | tee coverage/clippy-default.txt
+          cargo clippy --manifest-path runtime/sidecar/Cargo.toml --all-targets --all-features -- -D warnings 2>&1 | tee coverage/clippy.txt
+
+      - name: Upload Rust quality baseline
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-quality-baseline
+          path: coverage
+          retention-days: 14
+          if-no-files-found: error
+
+  xiaoman-postgres-integration:
+    name: Xiaoman PostgreSQL integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.full-check == 'true' &&
+      needs.changes.outputs.release-please-pr != 'true' }}
+
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: qintopia_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qintopia_test" --health-interval 10s
+          --health-timeout 5s --health-retries 5
+
+    env:
+      QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE: "1"
+      QINTOPIA_SIDECAR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/qintopia_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Verify temporary PostgreSQL client
+        run: psql --version
+
+      - name: Rust group send-ready PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          group_message_send::tests::postgres_send_ready_is_idempotent_and_fails_closed
+          -- --ignored --exact
+
+      - name: Huabaosi stale image-generation claim integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          image_generation::tests::postgres_stale_processing_claim_is_terminal_ambiguous
+          -- --ignored --exact
+
+      - name: Huabaosi Feishu artifact mirror state integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          huabaosi_feishu_artifact_mirror::tests::postgres_mirror_state_is_idempotent_and_redacted
+          -- --ignored --exact
+
+      - name: Feishu-backed generated-image approval integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          operations::tests::postgres_feishu_backed_approval_requires_matching_revalidation_evidence
+          -- --ignored --exact
+
+      - name: QiWe callback capture-storage redaction integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          event::tests::postgres_callback_storage_redacts_credentials -- --ignored
+          --exact
+
+      - name: QiWe image-send state integration
+        run: |
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests,huabaosi-staging-adapter,qiwe-staging-adapter \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_claims_feishu_bridge_without_persisting_uri \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_is_idempotent_and_redacted \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_rejects_stale_claim \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_recovers_expired_callback_and_terminalizes_ambiguous_send \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_expires_missing_callback_during_reclaim \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_terminalizes_stale_upload_and_send \
+            -- --ignored --exact
+          cargo test --manifest-path runtime/sidecar/Cargo.toml \
+            --features postgres-integration-tests \
+            qiwe_image_send_state::tests::postgres_qiwe_send_state_terminalizes_legacy_unrecorded_claim \
+            -- --ignored --exact
+
+      - name: Xiaoman downstream apply smoke
+        run: deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh

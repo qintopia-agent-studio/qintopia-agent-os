@@ -6,10 +6,250 @@ reviewable Agent OS state.
 ## Responsibility
 
 - Detect activity signals and map them to activity records.
-- Track status transitions without treating Feishu as the system source of truth.
+- Apply allowlisted status and gap mutations to Postgres event signals without treating
+  Feishu as the system source of truth.
 - Trigger downstream work requests only when required fields are present.
 - Keep Xiaoman's path read-only or database-scoped until owner-reviewed runtime config
   enables more behavior.
+
+## Current Status
+
+This workflow is **production-ready for the AgentOS-only minimum viable path**. The
+external image-generation, Feishu-writeback, QiWe-send, and final-publication adapters
+remain disabled until their owner-reviewed production gates close separately.
+
+```text
+event_signals
+  -> activity request
+  -> evidence/visual children
+  -> internal artifacts
+  -> awaiting-publish group message request
+  -> human final confirmation
+  -> queued send-ready audit
+```
+
+The guarded image adapter adds this approved-asset dependency before the final handoff,
+once the separately gated image-generation production path is activated:
+
+```text
+approved poster_brief
+  -> image_generation_request
+  -> generated_image (pending human review)
+  -> approved generated_image
+  -> awaiting-publish group message request
+```
+
+## Activity Lifecycle Phases
+
+Activity signals use one Postgres-owned phase and one derived internal route:
+
+| Phase        | Meaning | Route                   | Child capabilities |
+| ------------ | ------- | ----------------------- | ------------------ |
+| `pre_event`  | 事前    | `promotion_preparation` | evidence + visual  |
+| `in_event`   | 事中    | `live_support`          | evidence only      |
+| `post_event` | 事后    | `activity_recap`        | evidence + visual  |
+
+The phase moves forward only. Existing rows without a phase remain compatible as
+`pre_event`. The route is derived by the Rust sidecar; callers cannot provide an
+arbitrary capability or route string.
+
+Each phase has a separate idempotent root work item. The existing promotion starter
+timer performs the allowlisted internal child routing without becoming a general DAG
+executor. In-event work stops at internal evidence. Post-event work stops at a
+reviewable recap brief in this PR; neither route generates or sends an external message.
+
+Only the final-confirmation transition is human-operated; all other arrows above are
+AgentOS work-item or internal-artifact operations. The send-ready audit deliberately
+keeps the request queued and records `send_executed=false` because no production send
+adapter is enabled. The `v0.2.9` owner-approved, read-only aggregate preflight passed on
+2026-07-15 and is recorded in
+`deploy/smoke/docs/xiaoman-production-preflight-record.md`. Passing that gate requires
+sanitized observation output with `safe_for_chat=false` where present and still does not
+approve Feishu writeback, QiWe sends, poster publishing, real Wenyuange retrieval, or
+Huabaosi production generation.
+
+## Signal Intake Contract
+
+The sidecar entrypoint is `xiaoman-activity signal-ingest`. It accepts structured
+activity signals from `qintopia_agent_os.event_signals` or sanitized replay fixtures and
+turns them into a `xiaoman.create_activity_request` work item preview or apply write.
+
+Required payload fields:
+
+- `actor_agent`: must be `xiaoman`.
+- `operation`: must be `signal-ingest`.
+- `event_signal_id`: stable event-signal id or sanitized fixture id.
+- `signal_type`: expected to be an activity signal such as `活动/聚会`.
+- `activity_title`: short activity title.
+- `signal_date`: activity signal date in `YYYY-MM-DD`.
+
+Optional fields:
+
+- `chat_id`, `source_message_ids`, `owner_name`, `priority`, `location`,
+  `brief_summary`, `gap_summary`, `related_member_names`, and `activity_phase`. A
+  missing phase is interpreted as `pre_event`; an invalid phase fails validation.
+
+The worker builds a stable idempotency key from `event_signal_id` and writes through the
+existing operations control plane. Replays of the same signal must return the existing
+work item instead of creating duplicates. If required fields are missing, the worker
+still produces an operations work item preview with `review_needed` metadata and does
+not trigger downstream visual, evidence, or send work.
+
+Signal replay fixtures under `fixtures/xiaoman/` carry an `expected` block that defines
+the acceptance contract for `signal-ingest`: status, capability routing, idempotency,
+review-needed fields, and the no-external-send boundary. `pnpm workflows:check`
+validates that static contract, and `pnpm check:runtime` runs the same fixtures through
+the sidecar smoke.
+
+The guarded Postgres apply smoke seeds a matching `qintopia_agent_os.event_signals` row,
+replays its UUID through `xiaoman-activity signal-ingest --apply`, verifies that it
+creates exactly one `xiaoman.create_activity_request` work item, verifies that the work
+item stores `source_event_signal_id`, and verifies that replaying the same signal
+returns the existing work item by idempotency key.
+
+## Event Signal Mutations
+
+`xiaoman-activity status-update`, `gap-update`, and `phase-update` mutate only
+Xiaoman-owned `qintopia_agent_os.event_signals`. All require an internal UUID
+`event_signal_id` and a caller-supplied UUID `mutation_id`. They reject Feishu
+`record_id` and `table_role` fields.
+
+The release-managed Xiaoman `qintopia-tools` wrappers expose the same UUID-only mutation
+contract. Wrapper tests assert the exact sidecar payload and command mode so the Hermes
+tool schema cannot drift back to the legacy Feishu-record write shape.
+
+`status-update` accepts `待处理`, `处理中`, `已完成`, or `已关闭`. Completed and closed
+signals are terminal for this command. `gap-update` writes a normalized, non-sensitive
+`gap_summary` of at most 500 characters without replacing the extracted signal summary.
+`phase-update` accepts only the three lifecycle phases, rejects non-activity signals,
+and permits only same-phase replay or a forward transition.
+
+Apply runs lock the event, validate replay or transition state, update one allowlisted
+field, and append one `event_signal_mutations` audit row in the same transaction. An
+exact replay returns the existing mutation; conflicting reuse of `mutation_id` fails.
+Neither operation reads or writes Feishu, sends QiWe messages, or calls an external
+adapter. Dry-run validates the payload without a database write and never returns the
+gap text.
+
+After an owner-approved deploy, the guarded
+`deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh` checks that
+the runtime timer is active, that its service command is fixed to
+`run-xiaoman-activity-signal-worker --once --apply`, that recent journal output does not
+leak known sensitive markers, and that `run-xiaoman-activity-signal-worker --check-only`
+can preview the current AgentOS queue. It is a read-only production observation smoke.
+
+`run-xiaoman-activity-promotion-starter-worker` completes the next AgentOS-only step: it
+scans existing `xiaoman.create_activity_request` work items and creates only missing
+`evidence_request` and `visual_asset_request` child work items under the same parent. It
+does not execute evidence retrieval, visual generation, Feishu writes, QiWe sends, or
+group-send readiness. It may be scheduled by the reviewed
+`qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer`, whose service
+command is fixed to `run-xiaoman-activity-promotion-starter-worker --once --apply`.
+
+For Xiaoman activity evidence children whose `source_type` is `event_signal`, the
+evidence worker resolves the inherited `source_event_signal_id` back to Postgres
+`event_signals`. It first reads the explicitly referenced internal message UUIDs and
+only falls back to same-chat, bounded-window local keyword retrieval. It stores
+sanitized short snippets and internal source UUIDs in the `evidence_summary`; it does
+not store platform message ids, raw chat ids, sender ids, or unbounded raw chat. Missing
+source evidence fails closed instead of completing a placeholder artifact, and no
+embedding or external retrieval endpoint is called.
+
+`deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh` is the
+read-only production-readiness check for the evidence and visual worker previews. It
+runs the existing evidence and visual workers in dry-run mode only:
+`run-evidence-worker --once --dry-run` and
+`run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`. The
+smoke proves the child queues can be previewed without writing Postgres, reading or
+writing Feishu, calling QiWe, generating posters, or sending externally.
+
+The downstream evidence and visual workers may also be scheduled by the reviewed runtime
+deployment path. `qintopia-agentos-operations-evidence-worker.timer` runs
+`run-evidence-worker --once --apply` to create internal `evidence_summary` artifacts,
+and `qintopia-agentos-operations-visual-worker.timer` runs
+`run-collaboration-worker --work-item-type visual_asset_request --once --apply` to
+create pending 阿靓（Huabaosi / 画报司）`poster_brief` artifacts. For an
+`activity_promotion` child, the visual worker waits for the sibling completed
+`evidence_summary` before it claims the visual request. These timers still do not call
+external Wenyuange or embedding search, Huabaosi production generation, Feishu, QiWe,
+poster publishing, or external send adapters.
+
+`run-xiaoman-activity-image-generation-starter-worker` performs the next internal-only
+handoff. The reviewed runtime timer runs it as
+`run-xiaoman-activity-image-generation-starter-worker --once --apply` and creates one
+idempotent `image_generation_request` only after a Xiaoman `poster_brief` is approved.
+The timer does not run `run-huabaosi-image-generation-worker`, contact a provider,
+upload media, create a `generated_image`, write Feishu, call QiWe, publish, or send
+externally. Its production observation smoke inspects the fixed unit command and
+sanitized journal, then runs the starter with `--check-only` so the observation itself
+remains read-only.
+
+The separate Huabaosi provider disabled-state observation verifies that
+`QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED` remains off and that no provider worker
+service or timer is installed. It may run the provider worker only as
+`run-huabaosi-image-generation-worker --once --dry-run` for a read-only queue preview;
+it never claims a request or calls provider/media endpoints.
+
+`run-xiaoman-activity-send-request-starter-worker` adds the next AgentOS-only handoff:
+only after a Xiaoman visual child has a completed image-generation request with a
+reviewed `approved` `generated_image`, it creates one missing `erhua.send_group_message`
+/ `group_message_request` child under the same activity parent. The new child starts at
+`awaiting_publish`, references that image, and records `send_executed=false`. An
+approved `poster_brief` alone cannot unlock this handoff. It does not record final
+confirmation, move the request to `queued`, run send-ready, publish, call QiWe, write
+Feishu, or call external adapters.
+
+An image can reach `approved` only when the review command confirms its recorded
+Huabaosi worker provenance, stable HTTPS URI, sha256, PNG metadata, source brief/prompt
+refs, and creation audit match the image-generation request. A hand-inserted or
+incomplete image remains pending and cannot unlock this starter.
+
+`deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
+checks this handoff after an owner-approved deploy. It verifies that the reviewed timer
+command is fixed to `run-xiaoman-activity-send-request-starter-worker --once --apply`,
+inspects recent journal output for known sensitive markers, and runs
+`run-xiaoman-activity-send-request-starter-worker --check-only` to verify the sanitized
+report shape without writing.
+
+`deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh` is the aggregate
+read-only production preflight for this path. It composes the Xiaoman signal timer
+observation, legacy Hermes cron observation, promotion starter timer observation, shared
+evidence/visual timer observation, Xiaoman downstream evidence/visual preview,
+image-generation starter observation, Huabaosi provider disabled-state observation, send
+request starter observation, and group send-ready timer observation. It runs the image
+worker only in dry-run and does not run the send-ready worker, deploy, write Postgres or
+Feishu, call provider/media endpoints or QiWe, publish, or send externally.
+
+`xiaoman-activity shadow-validate` is a guarded, read-only Feishu shadow check. It reads
+the allowlisted Feishu activity Base and the same-date AgentOS `event_signals`, compares
+coverage by normalized activity title and date, and reports sanitized
+`missing_in_agentos` / `missing_in_feishu` lists. It does not write Feishu, write
+Postgres, send QiWe messages, or make Feishu the source of truth.
+
+`run-xiaoman-activity-signal-worker` scans eligible Xiaoman `event_signals` and submits
+the same `signal-ingest` work item contract in batches. `--check-only` previews the
+batch without writes; `--once --apply` creates missing AgentOS work items. It may be
+scheduled by the reviewed `qintopia-agentos-xiaoman-activity-signal-worker.timer`, whose
+service command is fixed to `run-xiaoman-activity-signal-worker --once --apply`. The
+timer does not write Feishu, send QiWe messages, create visual assets, or call external
+send adapters.
+
+## Feishu Write Boundaries
+
+There are two Feishu-writing paths today, and they have different jobs:
+
+- The QiWe solitaire activity path parses activity/registration messages and writes a
+  configured Feishu activity table through `FeishuActivityWriter`. This is the activity
+  ledger path for activity records, participant counts, status mapping, and table-level
+  defaults.
+- The Xiaoman event radar path writes daily digest views through the sidecar publisher:
+  `event_signals` becomes `事件信号表`, and daily digest/archive rows become `日报总表`
+  / `文档归档表`.
+
+The activity ledger can be a useful human workbench, but AgentOS still treats Postgres
+`event_signals` and `work_items` as the workflow source of truth. Shadow validation
+exists to compare the ledger mirror against AgentOS coverage, not to infer facts from
+raw Feishu record ids.
 
 ## Production Boundary
 
@@ -20,14 +260,55 @@ reviewable Agent OS state.
 
 ## Acceptance Scenarios
 
-- New activity signal creates or updates one activity record idempotently.
-- Duplicate signal does not create duplicate activity state.
+- New activity signal creates one `xiaoman.create_activity_request` work item through
+  the operations control plane.
+- Runtime scheduling can turn the activity request into missing evidence and visual
+  child work items without manual CLI runs.
+- Downstream observation can preview evidence and visual worker consumption without
+  applying artifact writes or calling external systems.
+- Downstream runtime scheduling can turn child work items into internal
+  `evidence_summary` and pending `poster_brief` artifacts without external adapters.
+- Approved Xiaoman `poster_brief` artifacts can create one idempotent
+  `image_generation_request`; they cannot create a group-message request by themselves.
+- An approved Xiaoman `generated_image` can create one awaiting-publish
+  `group_message_request` without final confirmation, queueing, send-ready, or external
+  sends.
+- Runtime scheduling can create awaiting-publish `group_message_request` work items only
+  from approved Xiaoman `generated_image` artifacts without external adapters.
+- A human final confirmation can move the Xiaoman group-message request to `queued`, and
+  the send-ready worker records exactly one internal `send_executed=false` audit event
+  without calling an external adapter.
+- Activity request starter creates missing evidence and visual child work items without
+  duplicating existing children.
+- Duplicate signal returns the existing work item by idempotency key.
 - Missing required fields produce a review-needed state.
 - Valid signal can request a visual asset workflow without publishing anything.
+- `status-update` and `gap-update` apply one allowlisted AgentOS event-signal field and
+  one append-only mutation audit; replays do not duplicate either write.
+
+## Source References
+
+The following Feishu wiki pages are related product and operations references. They are
+linked here as source references only; Agent OS state still comes from Postgres and
+reviewed monorepo contracts.
+
+- [NCvZwwomEio1Xmkvgl3c4YpAnmh](https://ranuox3qst4.feishu.cn/wiki/NCvZwwomEio1Xmkvgl3c4YpAnmh?from=auth_notice&hash=e8563a1c58fdd146fcfb23d0a2988f67)
+- [SmPbwnVpsiuJC4kjx4ncq4S4nr6](https://ranuox3qst4.feishu.cn/wiki/SmPbwnVpsiuJC4kjx4ncq4S4nr6?from=auth_notice&hash=5fc546f98f8a8c8396eefb1c4c155c78)
+- [XQ5BwtpjwiX0XrkApp7cwneenCb](https://ranuox3qst4.feishu.cn/wiki/XQ5BwtpjwiX0XrkApp7cwneenCb?from=auth_notice&hash=e1f6b934be2a99f22384f72f4c7501a0)
+- [FCIFwg7j6iTEblk33DGcvdyqnaf](https://ranuox3qst4.feishu.cn/wiki/FCIFwg7j6iTEblk33DGcvdyqnaf?from=auth_notice&hash=91bd5991ce02dafa2c49d4fb9cc57284)
+- [HmNnwztw7ihdT5kG7zrcVCGonXd](https://ranuox3qst4.feishu.cn/wiki/HmNnwztw7ihdT5kG7zrcVCGonXd?from=auth_notice&hash=6eb664e6468a49ba140f3c18183d0e0e)
+- [QQxvwnBBiiEkOnkpCiMcuNRinNf](https://ranuox3qst4.feishu.cn/wiki/QQxvwnBBiiEkOnkpCiMcuNRinNf?from=auth_notice&hash=494ce31860515da8b2e2131aa5f8e867)
 
 ## Validation
 
 ```bash
 pnpm workflows:check
 pnpm check:runtime
+deploy/sidecar/scripts/xiaoman-activity-shadow-read-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
+QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh
+QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh
+bash -n deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh
 ```

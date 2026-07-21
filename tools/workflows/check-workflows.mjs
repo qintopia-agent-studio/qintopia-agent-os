@@ -17,6 +17,26 @@ const workflows = [
 ];
 
 const fixtureDirs = ["fixtures/operations", "fixtures/qiwe", "fixtures/xiaoman"];
+const xiaomanSignalFixtures = [
+  "activity-signal.json",
+  "duplicate-signal.json",
+  "in-event-signal.json",
+  "post-event-signal.json",
+  "missing-fields-signal.json",
+];
+const xiaomanSignalExpectedFields = [
+  "validation_status",
+  "action_status",
+  "capability_key",
+  "work_item_type",
+  "activity_phase",
+  "activity_route",
+  "requester_agent",
+  "target_agent",
+  "idempotency_key",
+  "review_needed",
+  "missing_required_fields",
+];
 
 const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));
 const readText = (relativePath) =>
@@ -24,6 +44,24 @@ const readText = (relativePath) =>
 
 const addError = (message) => {
   errors.push(message);
+};
+
+const xiaomanActivityRoutes = {
+  pre_event: {
+    route: "promotion_preparation",
+    workItemType: "activity_promotion_request",
+    idempotencySuffix: "",
+  },
+  in_event: {
+    route: "live_support",
+    workItemType: "activity_live_support_request",
+    idempotencySuffix: ":in_event",
+  },
+  post_event: {
+    route: "activity_recap",
+    workItemType: "activity_recap_request",
+    idempotencySuffix: ":post_event",
+  },
 };
 
 for (const workflowPath of workflows) {
@@ -81,6 +119,96 @@ for (const fixtureDir of fixtureDirs) {
       }
     }
   }
+}
+
+for (const file of xiaomanSignalFixtures) {
+  const fixturePath = `fixtures/xiaoman/${file}`;
+  if (!exists(fixturePath)) {
+    addError(`${fixturePath}: missing Xiaoman signal replay fixture`);
+    continue;
+  }
+  const parsed = JSON.parse(readText(fixturePath));
+  if (parsed.input?.workflow !== "workflows/xiaoman-activity-signal") {
+    addError(
+      `${fixturePath}: input.workflow must be workflows/xiaoman-activity-signal`
+    );
+  }
+  if (parsed.input?.operation !== "signal-ingest") {
+    addError(`${fixturePath}: input.operation must be signal-ingest`);
+  }
+  if (parsed.input?.actor_agent !== "xiaoman") {
+    addError(`${fixturePath}: input.actor_agent must be xiaoman`);
+  }
+  if (!parsed.input?.event_signal_id) {
+    addError(`${fixturePath}: input.event_signal_id is required`);
+  }
+  for (const field of xiaomanSignalExpectedFields) {
+    if (!(field in (parsed.expected ?? {}))) {
+      addError(`${fixturePath}: expected.${field} is required`);
+    }
+  }
+  const phase = parsed.input?.activity_phase ?? "pre_event";
+  const routeContract = xiaomanActivityRoutes[phase];
+  if (!routeContract) {
+    addError(`${fixturePath}: input.activity_phase is not allowed`);
+    continue;
+  }
+  const expectedIdempotencyKey = `xiaoman_activity_signal:${parsed.input?.event_signal_id}${routeContract.idempotencySuffix}`;
+  if (parsed.expected?.idempotency_key !== expectedIdempotencyKey) {
+    addError(
+      `${fixturePath}: expected.idempotency_key must match input.event_signal_id`
+    );
+  }
+  if (parsed.expected?.capability_key !== "xiaoman.create_activity_request") {
+    addError(
+      `${fixturePath}: expected.capability_key must be xiaoman.create_activity_request`
+    );
+  }
+  if (parsed.expected?.activity_phase !== phase) {
+    addError(`${fixturePath}: expected.activity_phase must match input.activity_phase`);
+  }
+  if (parsed.expected?.activity_route !== routeContract.route) {
+    addError(`${fixturePath}: expected.activity_route must be ${routeContract.route}`);
+  }
+  if (parsed.expected?.work_item_type !== routeContract.workItemType) {
+    addError(
+      `${fixturePath}: expected.work_item_type must be ${routeContract.workItemType}`
+    );
+  }
+  if (
+    parsed.expected?.requester_agent !== "default" ||
+    parsed.expected?.target_agent !== "xiaoman"
+  ) {
+    addError(
+      `${fixturePath}: expected routing must be requester_agent=default and target_agent=xiaoman`
+    );
+  }
+  if (parsed.expected?.external_sends !== false) {
+    addError(`${fixturePath}: expected.external_sends must be false`);
+  }
+  if (!Array.isArray(parsed.expected?.missing_required_fields)) {
+    addError(`${fixturePath}: expected.missing_required_fields must be an array`);
+  }
+}
+
+const duplicateSignal = JSON.parse(readText("fixtures/xiaoman/duplicate-signal.json"));
+if (duplicateSignal.expected?.creates_duplicate_activity !== false) {
+  addError(
+    "fixtures/xiaoman/duplicate-signal.json: expected.creates_duplicate_activity must be false"
+  );
+}
+const missingFieldsSignal = JSON.parse(
+  readText("fixtures/xiaoman/missing-fields-signal.json")
+);
+if (missingFieldsSignal.expected?.action_status !== "review_needed") {
+  addError(
+    "fixtures/xiaoman/missing-fields-signal.json: expected.action_status must be review_needed"
+  );
+}
+if (!missingFieldsSignal.expected?.missing_required_fields?.includes("signal_date")) {
+  addError(
+    "fixtures/xiaoman/missing-fields-signal.json: expected missing_required_fields must include signal_date"
+  );
 }
 
 if (errors.length > 0) {

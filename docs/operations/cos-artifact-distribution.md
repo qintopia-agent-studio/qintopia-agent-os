@@ -231,12 +231,12 @@ The `sidecar-artifact` job uploads to COS only when `TENCENT_COS_UPLOAD_ENABLED=
 and both upload secrets are present. If upload is disabled, CI still builds and uploads
 the GitHub Actions artifact.
 
-After a successful COS upload, CI prunes old COS artifact directories and keeps only the
-latest two sidecar artifact SHA directories for
-`qintopia-message-sidecar-linux-x86_64-gnu` and the latest two deploy bundle SHA
-directories for `qintopia-agent-os-deploy-bundle`. The prune steps use
-`deploy/sidecar/scripts/prune-cos-artifacts.sh --keep 2`, so COS retention matches the
-GitHub Actions artifact retention policy.
+After a successful COS upload, CI prunes old COS artifact directories and keeps the
+latest ten sidecar artifact SHA directories for
+`qintopia-message-sidecar-linux-x86_64-gnu` and the latest ten deploy bundle SHA
+directories for `qintopia-agent-os-deploy-bundle` by default. The prune steps use
+`QINTOPIA_COS_ARTIFACT_KEEP_COUNT`, defaulting to `10`, so COS retention matches the
+GitHub Actions artifact retention count.
 
 ## Server Configuration
 
@@ -285,9 +285,10 @@ The upload script verifies `SHA256SUMS` before upload and writes these files by 
 - `qintopia-message-sidecar.tar.gz`
 
 `qintopia-message-sidecar.tar.gz` contains the release binary. The server fetch script
-extracts it and then verifies the extracted `qintopia-message-sidecar` with
-`SHA256SUMS`. This keeps the server runtime layout unchanged while reducing the object
-payload sent from GitHub-hosted runners to COS.
+keeps the bundle, extracts it, and verifies the bundle, extracted
+`qintopia-message-sidecar`, and `artifact-manifest.json` with `SHA256SUMS`. This keeps
+the server runtime layout unchanged while reducing the object payload sent from
+GitHub-hosted runners to COS.
 
 Set `TENCENT_COS_ARTIFACT_PAYLOAD=raw` only for emergency debugging when you need to
 upload the raw binary object directly.
@@ -338,7 +339,7 @@ The download script verifies:
 - requested commit SHA matches `artifact-manifest.json`
 - artifact name and target match the expected sidecar target
 - compressed bundle is extracted into `qintopia-message-sidecar`
-- manifest checksum matches `SHA256SUMS`
+- compressed bundle, manifest, and binary checksums match `SHA256SUMS`
 - `sha256sum -c SHA256SUMS` passes
 
 Only after this should systemd or Hermes references be repointed.
@@ -385,8 +386,8 @@ checkout, systemd units, Hermes profile config, symlinks, or running services.
 
 ## Release Promotion Direction
 
-The current `qintopia-agent-os-artifacts/<sha>` path is a transition download cache. The
-target release path is:
+The `qintopia-agent-os-artifacts/<sha>` path is a download cache and audit path. The
+active release path is:
 
 ```text
 /home/ubuntu/qintopia-agent-os-releases/<approved-sha>
@@ -394,8 +395,8 @@ target release path is:
 /home/ubuntu/qintopia-agent-os-releases/previous
 ```
 
-The release promotion step should copy verified payloads from the COS download cache
-into an immutable release directory, then switch `current` only after all checks pass.
+The release promotion step copies verified payloads from the COS download cache into an
+immutable release directory, then switches `current` only after all checks pass.
 Rollback switches `current` back to `previous`.
 
 ## Current Owner Inputs

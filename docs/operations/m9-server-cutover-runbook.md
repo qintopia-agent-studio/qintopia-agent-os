@@ -65,10 +65,9 @@ downloading it from Tencent COS and verifying `artifact-manifest.json` plus
 `SHA256SUMS`; it should not rebuild the sidecar with local Node.js, pnpm, or Rust
 tooling during the migration window.
 
-GitHub retains only the latest two sidecar CI artifacts for audit and emergency
-fallback. COS is the default production distribution path. Preserve the verified server
-copy under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` once it is
-downloaded.
+GitHub retains the latest ten sidecar CI artifacts for audit and emergency fallback. COS
+is the default production distribution path. Preserve the verified server copy under
+`/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` once it is downloaded.
 
 `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is a transition path. The next release
 model should promote verified payloads into
@@ -470,8 +469,10 @@ window. Do not enable new workers by default.
 
 ## Deprecated Runtime Cleanup
 
-Cleanup is allowed only after owner approval and after M9-F removes live references to
-legacy paths.
+Cleanup is allowed only after owner approval and after fresh read-only checks confirm no
+live references to the legacy paths remain. M9-F removed the known active sidecar worker
+and Hermes MCP references, but cleanup windows must still recheck processes, units,
+timers, cron, nginx, rollback, and evidence paths before archiving or deletion.
 
 Deprecated assets currently classified for final-migration handling:
 

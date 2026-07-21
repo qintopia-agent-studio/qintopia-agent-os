@@ -8,6 +8,13 @@ on:
         required: true
         default: true
         type: boolean
+      build_staging_sidecar:
+        description:
+          Build and publish the staging-only sidecar artifact for owner-approved
+          evidence smokes.
+        required: true
+        default: false
+        type: boolean
       build_deploy_bundle:
         description: Build and publish the deploy bundle artifact.
         required: true
@@ -28,7 +35,7 @@ concurrency:
 
 env:
   NODE_VERSION: "24"
-  RUST_TOOLCHAIN: "1.75.0"
+  RUST_TOOLCHAIN: "1.96.0"
   PNPM_VERSION: "10.29.2"
   TENCENT_COS_BUCKET:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
@@ -36,6 +43,8 @@ env:
   TENCENT_COS_PREFIX: ${{ vars.TENCENT_COS_PREFIX || 'qintopia-agent-os' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
   TENCENT_COS_UPLOAD_ENABLED: ${{ vars.TENCENT_COS_UPLOAD_ENABLED || 'false' }}
+  QINTOPIA_ARTIFACT_KEEP_COUNT: ${{ vars.QINTOPIA_ARTIFACT_KEEP_COUNT || '10' }}
+  QINTOPIA_COS_ARTIFACT_KEEP_COUNT: ${{ vars.QINTOPIA_COS_ARTIFACT_KEEP_COUNT || '10' }}
 
 jobs:
   publish-plan:
@@ -48,6 +57,7 @@ jobs:
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
       build-sidecar: ${{ steps.plan.outputs.build-sidecar }}
+      build-staging-sidecar: ${{ steps.plan.outputs.build-staging-sidecar }}
       build-deploy-bundle: ${{ steps.plan.outputs.build-deploy-bundle }}
       upload-cos: ${{ steps.plan.outputs.upload-cos }}
 
@@ -62,18 +72,21 @@ jobs:
 
           publish=false
           build_sidecar=false
+          build_staging_sidecar=false
           build_deploy_bundle=false
           upload_cos=false
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             publish=true
             build_sidecar="${{ inputs.build_sidecar }}"
+            build_staging_sidecar="${{ inputs.build_staging_sidecar }}"
             build_deploy_bundle="${{ inputs.build_deploy_bundle }}"
             upload_cos="${{ inputs.upload_cos }}"
           elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/master" ]]; then
             if [[ "$HEAD_COMMIT_MESSAGE" == *"[publish-artifacts]"* ]]; then
               publish=true
               build_sidecar=true
+              build_staging_sidecar=false
               build_deploy_bundle=true
               upload_cos=true
             fi
@@ -82,12 +95,14 @@ jobs:
           {
             echo "publish=${publish}"
             echo "build-sidecar=${build_sidecar}"
+            echo "build-staging-sidecar=${build_staging_sidecar}"
             echo "build-deploy-bundle=${build_deploy_bundle}"
             echo "upload-cos=${upload_cos}"
           } >> "$GITHUB_OUTPUT"
 
           printf 'publish=%s\n' "$publish"
           printf 'build-sidecar=%s\n' "$build_sidecar"
+          printf 'build-staging-sidecar=%s\n' "$build_staging_sidecar"
           printf 'build-deploy-bundle=%s\n' "$build_deploy_bundle"
           printf 'upload-cos=%s\n' "$upload_cos"
 
@@ -132,7 +147,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.75.0
+        uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Build sidecar artifact
         run: node tools/deploy/build-sidecar-artifact.mjs
@@ -178,7 +193,7 @@ jobs:
           env.TENCENT_COS_SECRET_KEY != '' }}
         run: >-
           deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-name
-          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+          qintopia-message-sidecar-linux-x86_64-gnu
         env:
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
@@ -190,7 +205,49 @@ jobs:
       - name: Prune old sidecar artifacts
         run: >-
           node tools/deploy/prune-github-artifacts.mjs --artifact-name
-          qintopia-message-sidecar-linux-x86_64-gnu --keep 2
+          qintopia-message-sidecar-linux-x86_64-gnu
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  staging-sidecar-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: publish-plan
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' && needs.publish-plan.outputs.publish
+      == 'true' && needs.publish-plan.outputs.build-staging-sidecar == 'true' }}
+
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Build staging sidecar artifact
+        run: node tools/deploy/build-staging-sidecar-artifact.mjs
+
+      - name: Upload staging sidecar artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-message-sidecar-staging-linux-x86_64-gnu
+          path: dist/sidecar-artifacts/qintopia-message-sidecar-staging-linux-x86_64-gnu
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Prune old staging sidecar artifacts
+        run: >-
+          node tools/deploy/prune-github-artifacts.mjs --artifact-name
+          qintopia-message-sidecar-staging-linux-x86_64-gnu
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
@@ -263,7 +320,7 @@ jobs:
           env.TENCENT_COS_SECRET_KEY != '' }}
         run: >-
           deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-type deploy-bundle
-          --artifact-name qintopia-agent-os-deploy-bundle --keep 2
+          --artifact-name qintopia-agent-os-deploy-bundle
         env:
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
@@ -275,6 +332,6 @@ jobs:
       - name: Prune old deploy bundles
         run: >-
           node tools/deploy/prune-github-artifacts.mjs --artifact-name
-          qintopia-agent-os-deploy-bundle --keep 2
+          qintopia-agent-os-deploy-bundle
         env:
           GITHUB_TOKEN: ${{ github.token }}

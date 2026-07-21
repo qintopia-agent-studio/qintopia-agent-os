@@ -1,9 +1,10 @@
 # Server Deployment Runbook
 
 This is the adopted standalone sidecar runbook from before the Agent OS monorepo
-cutover. Keep it as historical deployment evidence and rollback reference. M9 should use
-`../../../docs/operations/m9-server-cutover-runbook.md` and the CI-built sidecar
-artifact path instead of rebuilding from this standalone checkout.
+cutover. Keep it as historical deployment evidence and rollback reference. Current
+production deployment uses `../../../docs/operations/release-current-model.md`,
+`../../../docs/operations/m9-server-cutover-runbook.md`, and COS-verified release
+payloads instead of rebuilding from this standalone checkout.
 
 This sidecar runs on the Hermes server and persists QiWe/Hermes message events from
 local NATS JetStream into the Postgres tunnel exposed on the server.
@@ -16,10 +17,18 @@ local NATS JetStream into the Postgres tunnel exposed on the server.
 - Identity worker unit: `/etc/systemd/system/qintopia-message-identity-worker.service`
 - AgentOS operations workflow sync timer:
   `/etc/systemd/system/qintopia-agentos-operations-workflow-sync.timer`
+- AgentOS operations evidence worker timer:
+  `/etc/systemd/system/qintopia-agentos-operations-evidence-worker.timer`
+- AgentOS operations visual worker timer:
+  `/etc/systemd/system/qintopia-agentos-operations-visual-worker.timer`
 - AgentOS operations workbench event timer:
   `/etc/systemd/system/qintopia-agentos-operations-workbench-event.timer`
 - AgentOS operations group send-readiness timer:
   `/etc/systemd/system/qintopia-agentos-operations-group-send-ready.timer`
+- AgentOS Xiaoman activity signal worker timer:
+  `/etc/systemd/system/qintopia-agentos-xiaoman-activity-signal-worker.timer`
+- AgentOS Xiaoman activity promotion starter worker timer:
+  `/etc/systemd/system/qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer`
 - Environment file: `/etc/qintopia/message-sidecar.env`
 - NATS URL: `nats://127.0.0.1:4222`
 - Expected Postgres endpoint: `127.0.0.1:55432`
@@ -58,6 +67,11 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH1fnbaWX9q/g+ovbo9sK0LtvcJolUzFQhmaGMzYgjqq
 Do not commit the real database URL. Store it only in
 `/etc/qintopia/message-sidecar.env`:
 
+The deploy script renders this file as `root:ubuntu 0640`. The `ubuntu` service user may
+read it through systemd and release-local observations, but the runtime user must not
+own or write it; the Huabaosi production canary fails closed when the file is not
+root-owned.
+
 ```env
 QINTOPIA_SIDECAR_NATS_URL=nats://127.0.0.1:4222
 QINTOPIA_SIDECAR_NATS_STREAM=QINTOPIA_QIWE_MESSAGES
@@ -91,6 +105,13 @@ QINTOPIA_IDENTITY_WORKER_POLL_SECONDS=60
 RUST_LOG=info,qintopia_message_sidecar=debug
 ```
 
+The deployment template contains placeholders for Feishu Base tokens and table ids. Fill
+those values only in the server-local environment file through the approved secret
+process; the deploy script leaves an existing environment file unchanged. If a runtime
+value is found in git, revoke or rotate it in the provider, replace the server-local
+value, deploy an approved SHA, and record the verification. Do not hot-edit source files
+on the server.
+
 By default the worker calls `QINTOPIA_EMBEDDING_BASE_URL` plus `/v1/embeddings`. Set
 `QINTOPIA_MESSAGE_EMBEDDING_ENDPOINT` to a full endpoint when a provider uses a
 different path.
@@ -101,17 +122,18 @@ mode for validating config and database connectivity without calling the embeddi
 
 ## Build And Validate
 
-Preferred server path after the deploy key and database URL are configured:
+Historical standalone path after the deploy key and database URL are configured:
 
 ```bash
 cd /home/ubuntu/qintopia-msg-sidecar
 scripts/server-deploy.sh deploy
 ```
 
-Manual path:
+Historical manual path:
 
-The production server currently has Rust 1.75.0 from apt, so builds must use the
-checked-in lockfile:
+The production server is an artifact deployment target. Its apt Rust version is not a
+supported build toolchain; any exceptional manual build must first install Rust 1.96.0
+and use the checked-in lockfile:
 
 ```bash
 cd /home/ubuntu/qintopia-msg-sidecar
@@ -309,6 +331,56 @@ The default timer interval is `2min`. Override it during unit installation by ru
 the deploy script with `QINTOPIA_OPERATIONS_WORKFLOW_SYNC_TIMER_INTERVAL=5min` or
 another systemd time span.
 
+The AgentOS operations evidence worker runs as a systemd timer. It calls
+`run-evidence-worker --once --apply`, claims one queued `evidence_request`, creates an
+internal `evidence_summary` artifact, and records the audit trail in Postgres. It does
+not call live Wenyuange search, export raw messages, read or write Feishu, call QiWe, or
+send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-operations-evidence-worker.timer
+systemctl status qintopia-agentos-operations-evidence-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-operations-evidence-worker.timer --no-pager
+journalctl -u qintopia-agentos-operations-evidence-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_OPERATIONS_EVIDENCE_WORKER_TIMER_INTERVAL=5min` or another systemd time span.
+
+The AgentOS operations visual worker also runs as a systemd timer. It calls
+`run-collaboration-worker --work-item-type visual_asset_request --once --apply`, claims
+one queued `visual_asset_request`, creates a pending `poster_brief` artifact, and
+records the audit trail in Postgres. It does not call Huabaosi production generation,
+read or write Feishu, call QiWe, publish posters, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-operations-visual-worker.timer
+systemctl status qintopia-agentos-operations-visual-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-operations-visual-worker.timer --no-pager
+journalctl -u qintopia-agentos-operations-visual-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_OPERATIONS_VISUAL_WORKER_TIMER_INTERVAL=5min` or another systemd time span.
+
+After an owner-approved deploy, run the guarded downstream timer observation smoke to
+inspect both timer units, fixed service commands, recent journal output, and read-only
+worker previews:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1
+scripts/operations-downstream-timers-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, create
+production visual assets, or send externally. It fails if the services are not fixed to
+`run-evidence-worker --once --apply` and
+`run-collaboration-worker --work-item-type visual_asset_request --once --apply`, or if
+inspected output includes known secret/external-send markers.
+
 The AgentOS operations workbench event processor also runs as a systemd timer. It calls
 `run-workbench-event-worker --once --apply`, processes only already-recorded
 `human_workbench_event_recorded` rows that represent review or final-confirmation
@@ -341,6 +413,282 @@ journalctl -u qintopia-agentos-operations-group-send-ready.service -n 100 --no-p
 
 The default timer interval is `1min`. Override it during unit installation with
 `QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_INTERVAL=2min` or another systemd time span.
+
+After an owner-approved deploy, inspect this timer with the read-only observation smoke:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE=1
+scripts/operations-group-send-ready-timer-observation-smoke.sh
+```
+
+This observation checks only systemd state, rendered unit commands, and sanitized
+journal output. It does not run the worker, confirm a group message, write Postgres,
+call QiWe, or send externally.
+
+The Xiaoman activity signal worker runs as a systemd timer. It calls
+`run-xiaoman-activity-signal-worker --once --apply`, scans only Xiaoman activity
+`event_signals`, and creates missing AgentOS `xiaoman.create_activity_request`
+`work_items` through the existing `signal-ingest` contract. It does not read or write
+Feishu, call QiWe, create visual assets, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-signal-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-signal-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-xiaoman-activity-signal-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-signal-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_INTERVAL=5min` or another systemd time span.
+
+After an owner-approved deploy, run the guarded observation smoke to inspect the timer,
+service command, recent journal output, and a read-only worker preview:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-signal-timer-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, create
+visual assets, or send externally. It fails if the service command is not
+`run-xiaoman-activity-signal-worker --once --apply` or if inspected output includes
+known secret/external-send markers.
+
+The Xiaoman activity promotion starter worker also runs as a systemd timer. It calls
+`run-xiaoman-activity-promotion-starter-worker --once --apply`, scans existing Xiaoman
+activity request `work_items`, and creates only missing AgentOS evidence/visual child
+`work_items`. It does not execute evidence retrieval, create visual assets, read or
+write Feishu, call QiWe, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-promotion-starter-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_INTERVAL=5min` or another systemd
+time span.
+
+After an owner-approved deploy, run the guarded observation smoke to inspect the timer,
+service command, recent journal output, and a read-only worker preview:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-promotion-starter-timer-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, create
+visual assets, or send externally. It fails if the service command is not
+`run-xiaoman-activity-promotion-starter-worker --once --apply` or if inspected output
+includes known secret/external-send markers.
+
+The Xiaoman image-generation starter runs as a separate internal systemd timer. It calls
+`run-xiaoman-activity-image-generation-starter-worker --once --apply` and only creates
+missing AgentOS `image_generation_request` work items from approved `poster_brief`
+artifacts. It does not run the Huabaosi image worker, contact a provider, upload media,
+create generated images, write Feishu, call QiWe, publish, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service -n 100 --no-pager
+```
+
+The default interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL=5min` or another
+systemd time span. After an owner-approved deploy, run the read-only observation:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh
+```
+
+The release installer installs the Huabaosi production preflight, worker, and timer
+units but leaves the timer disabled. Before activation, apply the reviewed non-secret
+release SHA and database URL hash plus provider and fixed Feishu Base/table
+configuration through the production configuration channel. Do not edit the server
+checkout or commit those values.
+
+For the Feishu-backed canary, set `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`,
+exact Base/table allowlists, the fixed `huabaosi-generated-image-v1` schema, the
+Huabaosi profile env path, and both image/Feishu production bindings. Do not configure
+release COS or an ad hoc public media endpoint as poster storage.
+
+Use the reviewed Huabaosi design Base token already held in server-side configuration
+for `QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN` and the matching allowlist. Use only the
+owner-provided generated-image Feishu URL's `table` query parameter for
+`QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID` and the matching allowlist; do not reuse
+the legacy poster ledger table and do not commit the live table id. In this storage
+mode, `QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1` is required for the image worker to
+write the reviewed Feishu table, but it does not enable the mirror worker timer. The
+timer is enabled only by the dedicated activation script after release-local preflight.
+
+Run the read-only observation before activation. It runs configuration preflight and a
+queue preview only; it does not claim requests or contact provider/media endpoints. For
+Feishu-backed storage, it also does not authenticate to Feishu, upload an attachment, or
+write a Base record.
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1
+scripts/huabaosi-image-generation-production-observation-smoke.sh
+```
+
+After the owner manually publishes the Release and confirms the exact release SHA,
+confirm the new units were installed. The first release containing this installer change
+is processed by the previous deploy runner, so run the reviewed same-SHA follow-up
+deployment with the original release scope and `qintopia-system-services` restart target
+before activation. Do not repair a missing unit with a server edit.
+
+Run the release-local one-shot canary while the provider timer is disabled. Use the
+approved hashes from Release/deployment evidence and one pending `poster_brief` UUID.
+The command parses only its allowlisted keys from the fixed production env, approves the
+brief as `trainer`, creates exactly one new request, generates one Feishu-backed JPEG,
+and performs authenticated same-byte revalidation.
+
+```bash
+release_sha='<approved 40-hex release sha>'
+sudo env \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENABLE=1 \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_APPROVAL=approved-production-image-generation-canary \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_BRIEF_ARTIFACT_ID='<pending poster_brief UUID>' \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_DATABASE_URL_SHA256='<approved database URL sha256>' \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_RELEASE_SHA="$release_sha" \
+  QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_SIDECAR_SHA256='<approved sidecar binary sha256>' \
+  "/home/ubuntu/qintopia-agent-os-releases/${release_sha}/deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh"
+```
+
+Retain all five sanitized evidence records. The generated image remains `pending`; the
+command does not approve it, enable a timer, run the mirror worker, publish, call QiWe,
+or send. A failed or ambiguous request remains terminal and requires a new reviewed
+brief/request rather than a retry.
+
+Only after the one-shot evidence and pending JPEG are reviewed may the owner choose to
+activate ongoing scheduling. The activation command first starts the fixed no-network
+preflight service and stops without enabling the timer if any production gate is
+invalid.
+
+```bash
+export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION=approved-production-image-generation
+scripts/activate-huabaosi-image-generation-production.sh
+unset QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION
+```
+
+Observe the first pending `generated_image`; do not approve it automatically. Confirm
+the timer and sanitized worker outcome with the same observation smoke. Immediate
+rollback stops scheduling before runtime configuration is changed through the reviewed
+configuration channel:
+
+```bash
+export QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK=approved-production-image-generation-rollback
+scripts/rollback-huabaosi-image-generation-production.sh
+unset QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK
+```
+
+Rollback does not delete generated artifacts or audit rows and does not enable QiWe.
+
+For the Huabaosi WeCom migration, run the separate gateway observation smoke from the
+release directory. This smoke does not source `.env`. It inspects only the active Hermes
+gateway service, fixed command shape, public `busy_input_mode`, release/current
+presence, and sanitized journal marker counts for internal filtering, send fallback, and
+API timeouts.
+
+```bash
+export QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1
+scripts/huabaosi-wecom-gateway-observation-smoke.sh
+```
+
+It must not restart services, print raw journal lines, print user messages, send WeCom
+messages, run image generation, write Postgres or Feishu, call QiWe/provider/media
+endpoints, or modify live Hermes profile state.
+
+The Xiaoman activity send request starter worker also runs as a systemd timer. It calls
+`run-xiaoman-activity-send-request-starter-worker --once --apply`, scans Xiaoman
+activity promotion parents with completed visual children and approved `poster_brief`
+artifacts, and creates only missing AgentOS `group_message_request` child `work_items`
+in `awaiting_publish`. It does not record final confirmation, move work items to
+`queued`, run send-ready, publish, read or write Feishu, call QiWe, or send externally.
+
+```bash
+sudo systemctl enable --now qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer
+systemctl status qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer --no-pager
+systemctl list-timers qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer --no-pager
+journalctl -u qintopia-agentos-xiaoman-activity-send-request-starter-worker.service -n 100 --no-pager
+```
+
+The default timer interval is `2min`. Override it during unit installation with
+`QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL=5min` or another systemd
+time span.
+
+After an owner-approved deploy, run the guarded observation smoke to inspect the timer,
+service command, recent journal output, and a read-only worker preview:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-send-request-starter-observation-smoke.sh
+```
+
+The observation smoke does not write Postgres, read or write Feishu, call QiWe, record
+final confirmation, queue group messages, run send-ready, or send externally. It fails
+if the service command is not
+`run-xiaoman-activity-send-request-starter-worker --once --apply` or if inspected output
+includes known secret/external-send markers.
+
+After the Xiaoman intake and starter timers are healthy, run the downstream observation
+smoke to inspect the evidence and visual artifact timers:
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1
+scripts/xiaoman-activity-downstream-observation-smoke.sh
+```
+
+This smoke runs `run-evidence-worker --once --dry-run` and
+`run-collaboration-worker --work-item-type visual_asset_request --once --dry-run`. It
+does not write Postgres, read or write Feishu, call QiWe, generate posters, or send
+externally. It fails if the preview output includes known secret/external-send markers.
+
+For the production preflight, run the Xiaoman aggregate observation smoke after an
+owner-approved deploy. It composes the Xiaoman signal timer observation, Xiaoman
+promotion starter timer observation, shared evidence/visual timer observation, Xiaoman
+downstream evidence/visual preview, Xiaoman image-generation starter observation,
+Huabaosi provider disabled-state observation, Xiaoman send request starter timer
+observation, and the group send-ready timer observation. It runs the provider worker
+only as `--once --dry-run`, does not run the send-ready worker, and does not deploy,
+write Postgres or Feishu, call provider/media endpoints or QiWe, publish, or send
+externally.
+
+The group send-ready timer observation only inspects the fixed command, timer state, and
+sanitized journal; it does not run the send-ready worker.
+
+```bash
+set -a
+. /etc/qintopia/message-sidecar.env
+set +a
+export QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1
+scripts/xiaoman-activity-production-preflight-smoke.sh
+```
 
 ## Read-Only Database Checks
 
@@ -484,7 +832,14 @@ the WenYuanGe profile has confirmed tool discovery and successful
 9. Confirm `qintopia-agentos-operations-group-send-ready.timer` is active so
    final-confirmed group-send requests record send-ready audit events without manual CLI
    runs. This does not send messages.
-10. Mount `qintopia-context` MCP into the WenYuanGe Hermes profile first. Keep
+10. Confirm `qintopia-agentos-xiaoman-activity-signal-worker.timer` is active so Xiaoman
+    activity `event_signals` create AgentOS intake work items without manual CLI runs.
+    This does not read or write Feishu and does not send messages.
+11. Confirm `qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer` is active
+    so Xiaoman activity requests create evidence/visual child work items without manual
+    CLI runs. This does not execute evidence retrieval, create visual assets, read or
+    write Feishu, or send messages.
+12. Mount `qintopia-context` MCP into the WenYuanGe Hermes profile first. Keep
     the 二花 profile unchanged until the WenYuanGe MCP path is validated.
 
 Hermes publisher failures must remain best-effort only. NATS, sidecar, or Postgres

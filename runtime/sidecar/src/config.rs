@@ -744,6 +744,102 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Scan Xiaoman activity event_signals and submit signal-ingest work items.
+    RunXiaomanActivitySignalWorker {
+        /// Scan without writing AgentOS work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum event_signals to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Poll interval for long-running mode.
+        #[arg(long, default_value_t = 300)]
+        poll_seconds: u64,
+    },
+    /// Add missing evidence/visual child work items for Xiaoman activity requests.
+    RunXiaomanActivityPromotionStarterWorker {
+        /// Scan without writing AgentOS child work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS child work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum parent work items to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Process one specific Xiaoman activity request work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+    },
+    /// Add awaiting_publish group-message requests for approved Xiaoman activity posters.
+    RunXiaomanActivitySendRequestStarterWorker {
+        /// Scan without writing AgentOS group-message work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS group-message work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum parent work items to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Process one specific Xiaoman parent or visual child work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Target allowlisted group alias for the future final-confirmed send.
+        #[arg(long, default_value = "community_activity_group")]
+        target_group_alias: String,
+
+        /// Safe message text summary for final confirmation. This is not sent by this worker.
+        #[arg(long, default_value = "活动海报已审核，请确认是否发送。")]
+        message_text: String,
+    },
+    /// Add image-generation requests for approved Xiaoman activity poster briefs.
+    RunXiaomanActivityImageGenerationStarterWorker {
+        /// Scan without writing AgentOS image-generation work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS image-generation work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum approved visual artifacts to scan per batch.
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+
+        /// Process one specific visual work item or approved poster brief artifact.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+    },
     /// Create a capability-governed AgentOS operations work item.
     OperationsWorkItemCreate {
         /// JSON payload for the generic capability/work item request.
@@ -945,6 +1041,122 @@ pub enum Command {
         /// Use deterministic local fixture input instead of reading Postgres.
         #[arg(long)]
         fixture_mode: bool,
+    },
+    /// Generate review-pending image artifacts from approved Huabaosi poster briefs.
+    RunHuabaosiImageGenerationWorker {
+        /// Process one work item and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Restrict processing to one image-generation work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Apply the configured provider adapter. Disabled by default and requires owner-reviewed configuration.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force preview mode even if --apply is absent.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Use a deterministic local preview without database writes or network calls.
+        #[arg(long)]
+        fixture_mode: bool,
+    },
+    /// Validate Huabaosi image adapter configuration without opening network or database connections.
+    HuabaosiImageGenerationPreflight,
+    /// Validate Huabaosi generated-image Feishu mirror configuration without network or database access.
+    HuabaosiFeishuArtifactMirrorPreflight,
+    /// Validate the Huabaosi generated-image Feishu mirror observation boundary without secret configuration.
+    HuabaosiFeishuArtifactMirrorObservationPreflight,
+    /// Revalidate one Feishu-backed Huabaosi generated image without approval, sending, or writes.
+    HuabaosiFeishuPrimaryStorageRevalidate {
+        /// Restrict revalidation to one generated-image artifact.
+        #[arg(long)]
+        artifact_id: uuid::Uuid,
+    },
+    /// Mirror one immutable Huabaosi generated image into the fixed Feishu Base artifact table.
+    RunHuabaosiFeishuArtifactMirrorWorker {
+        /// Process one candidate and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Restrict processing to one generated-image artifact.
+        #[arg(long)]
+        artifact_id: Option<uuid::Uuid>,
+
+        /// Apply the external Feishu write adapter. Requires explicit reviewed enablement.
+        #[arg(long)]
+        apply: bool,
+
+        /// Preview one eligible artifact without media, Feishu, or database writes.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Use a deterministic local preview without database or network access.
+        #[arg(long)]
+        fixture_mode: bool,
+    },
+    /// Preview-sanitize one Huabaosi WeCom event from stdin without writing, sending, or generating assets.
+    HuabaosiWecomShadowCapture,
+    /// Preview Huabaosi WeCom gateway policy for one stdin event without writing, sending, or generating assets.
+    HuabaosiWecomPolicyPreview,
+    /// Validate the Huabaosi WeCom canary gateway configuration without stdin, network, or database access.
+    HuabaosiWecomCanaryPreflight,
+    /// Preview or run one allowlisted Huabaosi WeCom canary gateway payload from stdin.
+    HuabaosiWecomCanaryGateway {
+        /// Apply the canary sender. Default builds fail closed before reading stdin.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run validation even when --apply is present.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Validate the disabled QiWe async image-upload/send contract without network or database access.
+    QiweImageSendPreflight,
+    /// Validate the enabled QiWe staging adapter without stdin, network, or database access.
+    QiweImageSendStagingPreflight,
+    /// Validate the enabled QiWe production adapter gate before timer activation.
+    QiweImageSendProductionPreflight,
+    /// Claim one reviewed QiWe image-send request and submit its asynchronous URL upload.
+    RunQiweImageSendWorker {
+        /// Process one work item and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Restrict processing to one group-message work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Apply the external upload adapter. Requires explicit reviewed enablement.
+        #[arg(long)]
+        apply: bool,
+
+        /// Preview one eligible work item without claiming, writing, or networking.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Process one bounded QiWe cmd=20000 callback read from stdin.
+    ProcessQiweImageSendCallback {
+        /// Apply callback correlation and at-most-once external image send.
+        #[arg(long)]
+        apply: bool,
+
+        /// Validate callback shape only; do not open Postgres or network connections.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Emit retained sanitized evidence for one completed real Xiaoman production activity.
+    XiaomanRealActivityProductionEvidence {
+        /// Completed Xiaoman activity workflow root work item id.
+        #[arg(long)]
+        workflow_root_id: Option<uuid::Uuid>,
+
+        /// Xiaoman event signal id for an activity with exactly one completed workflow root.
+        #[arg(long)]
+        source_event_signal_id: Option<uuid::Uuid>,
     },
     /// Claim Wenyuange evidence requests and create internal evidence artifacts.
     RunEvidenceWorker {

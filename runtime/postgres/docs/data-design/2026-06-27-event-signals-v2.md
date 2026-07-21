@@ -168,3 +168,11 @@ Runtime behavior changes are implemented in application code:
 When the rule judge changes, unpublished stale rule-generated events for the same
 chat/date/version can be deleted and already published stale events are closed, so
 reports do not keep carrying obsolete automatic detections.
+
+## Mutation Addendum
+
+Schema version `2026-07-14.001` adds `gap_summary` and the append-only
+`event_signal_mutations` audit. Xiaoman status/gap applies now target internal event
+signal UUIDs with explicit mutation UUIDs; they do not target Feishu record ids. See
+`2026-07-14-xiaoman-event-signal-mutations.md` for status transitions, idempotency, and
+privacy boundaries.

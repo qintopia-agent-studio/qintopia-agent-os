@@ -14,6 +14,7 @@ the contract, fixtures, validation, and change routing.
 
 - return only safe member or context snapshots;
 - prepare Erhua reply context without exposing raw profile data;
+- resolve speaker and mentioned-member context for direct chat and group mention flows;
 - write only audited Erhua trainer-memory notes through allowlisted trainer IDs;
 - keep write-capable operations explicit, auditable, and revocable;
 - block unrestricted SQL, raw chat logs, live `.env` files, and Hermes live state.
@@ -40,6 +41,27 @@ Read tools may return:
 - `safe_reply_hints`;
 - selected active training guidance;
 - source ids and audit-friendly metadata.
+
+For QiWe speaker identity in `qintopia_answer_context_prepare`, `sender_id` is the
+current QiWe user id in both group mentions and direct chats. The read path first
+resolves the exact `platform + chat_id + channel_user_id` identity, then may use only
+the materialized QiWe platform identity
+`platform='qiwe' + chat_id='' + channel_user_id`. It must not pick the most recent
+cross-chat row. Cross-chat continuity is produced asynchronously by identity workers,
+which materialize `chat_id=''` only when the linked person is unambiguous.
+
+Mentioned-member resolution must be deterministic and safe:
+
+- display names, Chinese aliases, and channel mention text may be used as lookup inputs;
+- exact or alias matches may resolve a single member;
+- ambiguous matches must be returned as ambiguous context so Erhua can clarify;
+- missing matches must be returned as unresolved context so Erhua does not invent;
+- vector or message-history search must not be used to guess member identity.
+
+`qintopia_answer_context_prepare` should also return routing guidance for the current
+message. Member/self-identity questions use member context, public facts use approved
+knowledge, discussion-history questions may use message evidence, and live operations
+questions require human/live-ops handoff.
 
 Read tools must not return:
 
