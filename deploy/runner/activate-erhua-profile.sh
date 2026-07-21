@@ -62,6 +62,7 @@ fi
 
 work_dir="$(mktemp -d)"
 rollback_on_exit=false
+cleanup_evidence_on_rollback=false
 cleanup() {
   local status=$?
   if [[ "$status" -ne 0 && "$rollback_on_exit" == "true" ]]; then
@@ -69,6 +70,9 @@ cleanup() {
       --backup-dir "$backup_dir" --metadata "$metadata"; then
       echo "Erhua activation cleanup restore failed" >&2
       status=70
+    fi
+    if [[ "$cleanup_evidence_on_rollback" == "true" && -f "$evidence_path" ]]; then
+      rm -f "$evidence_path" || true
     fi
   fi
   rm -rf "$work_dir"
@@ -243,6 +247,7 @@ python3 "$transaction" activate --config "$config_path" --env "$env_path" \
   --candidate-config "$candidate_config" --candidate-env "$candidate_env"
 python3 "$renderer" verify --config "$config_path" --overlay "$overlay"
 python3 "$migrator" check --env "$env_path"
-write_evidence activated "$metadata" "$dry_run_request_id"
 mv "$dry_run_marker" "${dry_run_marker}.used-${request_id}"
+write_evidence activated "$metadata" "$dry_run_request_id"
+cleanup_evidence_on_rollback=true
 rollback_on_exit=false
