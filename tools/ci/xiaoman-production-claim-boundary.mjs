@@ -8,8 +8,8 @@ export const requiredXiaomanProductionCompletionEvidenceRefs = [
 ];
 
 const positiveClaimPatterns = [
-  /\bXiaoman\b[^\n。；;]*(?:production[- ]complete|fully usable in production|production[- ]ready|end[- ]to[- ]end production)/i,
-  /(?:production[- ]complete|fully usable in production|production[- ]ready|end[- ]to[- ]end production)[^\n。；;]*\bXiaoman\b/i,
+  /\bXiaoman\b[^\n。；;]*(?:production[- ]complete|fully usable in production|end[- ]to[- ]end production)/i,
+  /(?:production[- ]complete|fully usable in production|end[- ]to[- ]end production)[^\n。；;]*\bXiaoman\b/i,
   /小满[^\n。；;]*(?:生产完成|生产可用|生产闭环已完成|生产端到端已完成|生产已跑通)/,
 ];
 
