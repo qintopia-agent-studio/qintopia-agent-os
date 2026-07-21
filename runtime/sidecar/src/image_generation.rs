@@ -1043,7 +1043,7 @@ fn image_http_timeout(value: Option<&str>) -> Result<Duration> {
         .transpose()?
         .unwrap_or(DEFAULT_IMAGE_HTTP_TIMEOUT_SECONDS);
     if !(MIN_IMAGE_HTTP_TIMEOUT_SECONDS..=MAX_IMAGE_HTTP_TIMEOUT_SECONDS).contains(&seconds) {
-        bail!("image HTTP timeout seconds must be between 60 and 240");
+        bail!("image HTTP timeout seconds must be between {MIN_IMAGE_HTTP_TIMEOUT_SECONDS} and {MAX_IMAGE_HTTP_TIMEOUT_SECONDS}");
     }
     Ok(Duration::from_secs(seconds))
 }
@@ -2030,8 +2030,8 @@ fn image_preview(work_item: &ImageGenerationWorkItem) -> GeneratedImagePreview {
         review_status: "pending",
         content_hash,
         mime_type: FINAL_IMAGE_MIME_TYPE,
-        width: 1024,
-        height: 1024,
+        width: IMAGE_WIDTH,
+        height: IMAGE_HEIGHT,
         byte_size: 0,
         image_specification: work_item.image_specification.clone(),
     }
@@ -2833,18 +2833,18 @@ mod tests {
     fn image_http_timeout_is_bounded_below_claim_lease() {
         assert_eq!(
             image_http_timeout(None).expect("default timeout"),
-            Duration::from_secs(180)
+            Duration::from_secs(300)
         );
         assert_eq!(
             image_http_timeout(Some("60")).expect("minimum timeout"),
             Duration::from_secs(60)
         );
         assert_eq!(
-            image_http_timeout(Some("240")).expect("maximum timeout"),
-            Duration::from_secs(240)
+            image_http_timeout(Some("599")).expect("maximum timeout"),
+            Duration::from_secs(599)
         );
         assert!(image_http_timeout(Some("59")).is_err());
-        assert!(image_http_timeout(Some("241")).is_err());
+        assert!(image_http_timeout(Some("600")).is_err());
         assert!(image_http_timeout(Some("invalid")).is_err());
     }
 
@@ -3207,8 +3207,8 @@ mod tests {
             content_hash: format!("sha256:{}", "a".repeat(64)),
             file_md5: "5289df737df57326fcdd22597afb1fac".to_string(),
             provider_source_content_hash: format!("sha256:{}", "b".repeat(64)),
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
             artifact_uri: "https://media.example.test/public/image.jpg".to_string(),
             storage_provider: HTTP_STORAGE_BACKEND,
             feishu_record_id: None,
@@ -3253,16 +3253,16 @@ mod tests {
     fn media_response_must_stay_within_public_base_and_allowlist() {
         let config = test_config("https://media.example.test/public");
         let metadata = ImageMetadata {
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         let media = MediaUploadResponse {
             uri: "https://other.example.test/public/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         assert!(validate_media_response(
             http_storage(&config),
@@ -3279,16 +3279,16 @@ mod tests {
     fn media_response_cannot_escape_public_path_prefix() {
         let config = test_config("https://media.example.test/public");
         let metadata = ImageMetadata {
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         let media = MediaUploadResponse {
             uri: "https://media.example.test/publicity/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         assert!(validate_media_response(
             http_storage(&config),
@@ -3305,8 +3305,8 @@ mod tests {
             content_hash: "sha256:abc".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         assert!(validate_media_response(
             http_storage(&config),
@@ -3348,16 +3348,16 @@ mod tests {
     fn media_upload_metadata_must_match_generated_image() {
         let config = test_config("https://media.example.test/public");
         let metadata = ImageMetadata {
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         let media = MediaUploadResponse {
             uri: "https://media.example.test/public/image.jpg".to_string(),
             content_hash: "sha256:unexpected".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         let error = validate_media_response(
             http_storage(&config),
@@ -3376,16 +3376,16 @@ mod tests {
     fn media_upload_uri_must_name_the_final_jpeg_object() {
         let config = test_config("https://media.example.test/public");
         let metadata = ImageMetadata {
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
         let media = MediaUploadResponse {
             uri: "https://media.example.test/public/image.png".to_string(),
             content_hash: "sha256:expected".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
             byte_size: 12,
-            width: 1024,
-            height: 1024,
+            width: super::IMAGE_WIDTH,
+            height: super::IMAGE_HEIGHT,
         };
 
         let error = validate_media_response(
@@ -3416,7 +3416,10 @@ mod tests {
         assert_eq!(first, second);
         assert!(first.starts_with(&[0xff, 0xd8]));
         assert!(first.ends_with(&[0xff, 0xd9]));
-        assert_eq!((metadata.width, metadata.height), (1024, 1024));
+        assert_eq!(
+            (metadata.width, metadata.height),
+            (super::IMAGE_WIDTH, super::IMAGE_HEIGHT)
+        );
         assert!(first.len() <= DEFAULT_MAX_MEDIA_BYTES);
     }
 
@@ -3506,8 +3509,8 @@ mod tests {
                                 "content_hash": content_hash_bytes(&final_for_server),
                                 "mime_type": FINAL_IMAGE_MIME_TYPE,
                                 "byte_size": final_for_server.len(),
-                                "width": 1024,
-                                "height": 1024,
+                                "width": super::IMAGE_WIDTH,
+                                "height": super::IMAGE_HEIGHT,
                             })
                             .to_string(),
                         )
@@ -3550,8 +3553,8 @@ mod tests {
             generated.provider_source_content_hash,
             content_hash_bytes(&source_png)
         );
-        assert_eq!(generated.width, 1024);
-        assert_eq!(generated.height, 1024);
+        assert_eq!(generated.width, super::IMAGE_WIDTH);
+        assert_eq!(generated.height, super::IMAGE_HEIGHT);
         assert!(generated.artifact_uri.contains("/public/image.jpg"));
     }
 
@@ -3615,8 +3618,8 @@ mod tests {
                             "content_hash": content_hash_bytes(&final_for_server),
                             "mime_type": FINAL_IMAGE_MIME_TYPE,
                             "byte_size": final_for_server.len(),
-                            "width": 1024,
-                            "height": 1024,
+                            "width": super::IMAGE_WIDTH,
+                            "height": super::IMAGE_HEIGHT,
                         })
                         .to_string(),
                     ),
@@ -3821,7 +3824,7 @@ mod tests {
     }
 
     fn fixture_png_with_color(color: [u8; 4]) -> Vec<u8> {
-        fixture_png_with_dimensions(1024, 1024, color)
+        fixture_png_with_dimensions(super::IMAGE_WIDTH, super::IMAGE_HEIGHT, color)
     }
 
     fn fixture_png_with_dimensions(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {

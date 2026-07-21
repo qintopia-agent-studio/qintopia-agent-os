@@ -75,12 +75,9 @@ if [[ ! -x "$hermes_python_real" ]]; then
   echo "Erhua Hermes Python is not executable" >&2
   exit 1
 fi
-if [[ -z "${QINTOPIA_HERMES_PYTHON:-}" ]]; then
-  allowed_venv_root="/home/ubuntu/.hermes/hermes-agent/venv"
-  if [[ "$hermes_python_real" != "${allowed_venv_root}"/* ]]; then
-    echo "Erhua Hermes Python must resolve within the allowed venv boundary" >&2
-    exit 1
-  fi
+if [[ "$hermes_python_real" != "/home/ubuntu/.hermes/hermes-agent/venv"/* && "$hermes_python_real" != "${release_dir}"/* ]]; then
+  echo "Erhua Hermes Python must resolve within the allowed venv or release boundary" >&2
+  exit 1
 fi
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
   echo "Erhua profile activation requires PyYAML for the root Python runtime" >&2

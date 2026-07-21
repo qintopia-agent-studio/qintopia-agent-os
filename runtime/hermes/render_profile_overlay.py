@@ -19,6 +19,21 @@ from yaml.events import AliasEvent
 
 MANAGED_MODEL_KEYS = ("default", "provider", "base_url")
 PROVIDER_KEYS = ("name", "base_url", "model", "key_env", "api_mode")
+PRESERVED_PROVIDER_FIELDS = {"timeout"}
+FORBIDDEN_PROVIDER_FIELDS = {
+    "api_key",
+    "api_key_env",
+    "authorization",
+    "headers",
+    "token",
+    "bearer_token",
+    "secret",
+    "credential",
+    "password",
+    "api_secret",
+    "access_token",
+    "refresh_token",
+}
 EXPECTED_OVERLAY = {
     "profile_overlay_version": 1,
     "agent_id": "erhua",
@@ -170,10 +185,10 @@ def render(base: Any, overlay: dict[str, Any]) -> tuple[dict[str, Any], list[str
     if provider_name in provider_indexes:
         index = provider_indexes[provider_name]
         current_provider = providers[index]
-        rendered_provider = copy.deepcopy(current_provider)
-        rendered_provider.pop("api_key", None)
-        rendered_provider.pop("api_key_env", None)
-        rendered_provider.update(copy.deepcopy(desired_provider))
+        rendered_provider = copy.deepcopy(desired_provider)
+        for key in PRESERVED_PROVIDER_FIELDS:
+            if key in current_provider and key not in rendered_provider:
+                rendered_provider[key] = current_provider[key]
         if current_provider != rendered_provider:
             changed.append(f"custom_providers[name={desired_provider['name']}]")
         providers[index] = rendered_provider
@@ -254,6 +269,16 @@ def verify_command(args: argparse.Namespace) -> None:
     )
     if "api_key" in provider or "api_key_env" in provider:
         raise ValueError("rendered provider must not contain an inline credential")
+    forbidden = set(provider) & FORBIDDEN_PROVIDER_FIELDS
+    if forbidden:
+        raise ValueError(
+            f"rendered provider contains forbidden fields: {', '.join(sorted(forbidden))}"
+        )
+    extra = set(provider) - set(PROVIDER_KEYS) - PRESERVED_PROVIDER_FIELDS
+    if extra:
+        raise ValueError(
+            f"rendered provider contains unapproved fields: {', '.join(sorted(extra))}"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:

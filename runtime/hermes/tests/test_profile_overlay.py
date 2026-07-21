@@ -301,7 +301,7 @@ class ProfileOverlayTests(unittest.TestCase):
             config = profile / "config.yaml"
             env_file = profile / ".env"
             default_config = directory / "default.yaml"
-            fake_hermes_python = directory / "hermes-python"
+            fake_hermes_python = ROOT / "runtime/hermes/tests/.test-hermes-python"
             config.write_text((FIXTURES / "erhua-base.yaml").read_text())
             env_file.write_text("OTHER=value\n")
             default_config.write_text((FIXTURES / "default-with-livecool.yaml").read_text())
@@ -502,6 +502,9 @@ class ProfileOverlayTests(unittest.TestCase):
             )
             self.assertEqual("restored", restore_evidence["phase"])
             self.assertNotIn("sha256", restore_evidence["files"]["env"])
+            fake_hermes_python.unlink(missing_ok=True)
+            called = Path(f"{fake_hermes_python}.called")
+            called.unlink(missing_ok=True)
 
     def test_activation_requires_matching_dry_run_before_backup_or_write(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -513,7 +516,7 @@ class ProfileOverlayTests(unittest.TestCase):
             config = profile / "config.yaml"
             env_file = profile / ".env"
             default_config = directory / "default.yaml"
-            fake_hermes_python = directory / "hermes-python"
+            fake_hermes_python = ROOT / "runtime/hermes/tests/.test-hermes-python"
             config.write_bytes((FIXTURES / "erhua-base.yaml").read_bytes())
             env_file.write_text("OTHER=value\n")
             default_config.write_bytes(
@@ -554,6 +557,7 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertEqual(before_config, config.read_bytes())
             self.assertEqual(before_env, env_file.read_bytes())
             self.assertFalse((state / "profile-backups").exists())
+            fake_hermes_python.unlink(missing_ok=True)
 
     def test_transaction_restores_files_when_activation_metadata_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
