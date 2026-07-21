@@ -67,8 +67,10 @@ use crate::bounded_http::{
 const WORKER_ID: &str = "huabaosi-image-generation-worker";
 const CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const WORK_ITEM_TYPE: &str = "image_generation_request";
-const SPECIFICATION: &str = "community_poster_1024x1024";
-const IMAGE_SIZE: &str = "1024x1024";
+const SPECIFICATION: &str = "community_poster_1254x1254";
+const IMAGE_WIDTH: u32 = 1254;
+const IMAGE_HEIGHT: u32 = 1254;
+const IMAGE_SIZE: &str = "1254x1254";
 const PROVIDER_SOURCE_MIME_TYPE: &str = "image/png";
 const FINAL_IMAGE_MIME_TYPE: &str = "image/jpeg";
 const MEDIA_TRANSFORM: &str = "png_to_jpeg_white_background_q92_v1";
@@ -1247,7 +1249,7 @@ fn decode_provider_png(bytes: &[u8], max_bytes: usize) -> Result<RgbaImage> {
     }
     let image = decode_image_with_limits(bytes, ImageFormat::Png, "decode generated PNG")?;
     let (width, height) = image.dimensions();
-    if width != 1024 || height != 1024 {
+    if width != IMAGE_WIDTH || height != IMAGE_HEIGHT {
         bail!("generated image dimensions must match the requested specification");
     }
     Ok(image.to_rgba8())
@@ -1255,7 +1257,7 @@ fn decode_provider_png(bytes: &[u8], max_bytes: usize) -> Result<RgbaImage> {
 
 fn encode_final_jpeg(source: &RgbaImage, max_bytes: usize) -> Result<Vec<u8>> {
     let (width, height) = source.dimensions();
-    if width != 1024 || height != 1024 {
+    if width != IMAGE_WIDTH || height != IMAGE_HEIGHT {
         bail!("generated image dimensions must match the requested specification");
     }
     let rgb = composite_rgba_over_white(source);
@@ -1287,7 +1289,7 @@ fn inspect_final_jpeg(bytes: &[u8], max_bytes: usize) -> Result<ImageMetadata> {
     }
     let image = decode_image_with_limits(bytes, ImageFormat::Jpeg, "decode final JPEG")?;
     let (width, height) = image.dimensions();
-    if width != 1024 || height != 1024 {
+    if width != IMAGE_WIDTH || height != IMAGE_HEIGHT {
         bail!("generated image dimensions must match the requested specification");
     }
     Ok(ImageMetadata { width, height })
@@ -1299,8 +1301,8 @@ fn decode_image_with_limits(
     error_context: &'static str,
 ) -> Result<image::DynamicImage> {
     let mut limits = Limits::default();
-    limits.max_image_width = Some(1024);
-    limits.max_image_height = Some(1024);
+    limits.max_image_width = Some(IMAGE_WIDTH);
+    limits.max_image_height = Some(IMAGE_HEIGHT);
     limits.max_alloc = Some(MAX_IMAGE_DECODER_ALLOC_BYTES);
     let mut reader = ImageReader::with_format(io::Cursor::new(bytes), format);
     reader.limits(limits);
