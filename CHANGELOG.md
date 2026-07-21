@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.20](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.19...v0.2.20) (2026-07-21)
+
+
+### Bug Fixes
+
+* align image dimensions and timeouts for gpt-image-2 provider ([71564ec](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/71564eca91f2af8b984438715bae4b5467311a85))
+* declare text_group_message_request_prepare in xiaoman plugin manifest ([f22d8e1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f22d8e1cfe312fbe848898da0bbfff41810fbe7c))
+* match image dimensions to gpt-image-2 provider output (1254x1254) ([bbd40af](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bbd40af10c11ce9a21f041cb1c9fdecfa49c48a7))
+* revert SPECIFICATION string, keep dimension fix for 1254x1254 ([55c5f32](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/55c5f32afe8c908e633f37b6c0ebce95e8d117b0))
+* **runtime:** govern Erhua Livecool provider activation ([#243](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/243)) ([0e431d0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0e431d0fe6fa8615e9b76f655872bccae0163efd))
+
 ## [0.2.19](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.18...v0.2.19) (2026-07-21)
 
 
