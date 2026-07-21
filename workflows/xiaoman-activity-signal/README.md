@@ -14,7 +14,9 @@ reviewable Agent OS state.
 
 ## Current Status
 
-This workflow is active for the AgentOS-only production preflight path:
+This workflow is **production-ready for the AgentOS-only minimum viable path**. The
+external image-generation, Feishu-writeback, QiWe-send, and final-publication adapters
+remain disabled until their owner-reviewed production gates close separately.
 
 ```text
 event_signals
@@ -26,7 +28,8 @@ event_signals
   -> queued send-ready audit
 ```
 
-The guarded image adapter adds this approved-asset dependency before the final handoff:
+The guarded image adapter adds this approved-asset dependency before the final handoff,
+once the separately gated image-generation production path is activated:
 
 ```text
 approved poster_brief

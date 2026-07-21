@@ -105,3 +105,4 @@ cache/
 .codex-tmp/
 scratch/
 out/
+outputs/
