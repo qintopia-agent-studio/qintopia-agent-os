@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.21](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.20...v0.2.21) (2026-07-22)
+
+
+### Features
+
+* build xiaoman completion manifest ([#247](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/247)) ([294f36d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/294f36d483e92bfd8544f08504d8b585ce394339))
+
+
+### Bug Fixes
+
+* align xiaoman qiwe production boundaries ([#244](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/244)) ([03c7767](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/03c7767cd209cc5b82ae987919145be647f1db23))
+* **runtime:** allow standard Hermes venv Python entry ([#248](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/248)) ([4f4b4b3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4f4b4b31aac08946c3339446665be52ed83462d2))
+
 ## [0.2.20](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.19...v0.2.20) (2026-07-21)
 
 
