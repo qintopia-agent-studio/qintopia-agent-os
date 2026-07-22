@@ -952,7 +952,10 @@ Use `rg` and `rg --files` for search.
   timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
   evidence/visual preview, and the group send-ready timer observation. It must not set
   apply-smoke flags, deploy units, publish releases, write Feishu, call QiWe, run the
-  send-ready worker, or run external adapters.
+  send-ready worker, or run external adapters. It must invoke child observations through
+  `env -i` with only a fixed PATH, the child enable flag, and the release-local sidecar
+  path when present; do not pass caller-provided test overrides, systemctl/journalctl
+  overrides, env-file overrides, or ambient deployment secrets into child observations.
 - As of 2026-07-15, real end-to-end acceptance is not complete. Do not claim the Xiaoman
   activity flow is accepted until one real activity is observed from Xiaoman signal
   intake through image generation, human approval, and QiWe group-send arrival.
