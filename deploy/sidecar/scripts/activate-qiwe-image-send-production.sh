@@ -6,8 +6,8 @@ if [[ "${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:-}" != "approved-product
   exit 1
 fi
 
-ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
-SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+ENV_FILE="/etc/qintopia/message-sidecar.env"
+SYSTEMCTL="systemctl"
 PREFLIGHT_SERVICE="qintopia-agentos-qiwe-image-send-preflight.service"
 WORKER_TIMER="qintopia-agentos-qiwe-image-send-worker.timer"
 
