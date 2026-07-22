@@ -85,20 +85,23 @@ target, or missing final confirmation must stop before sending.
 - The Huabaosi final-artifact path converts provider PNG to the immutable reviewed JPEG
   while preserving source and final hashes plus the fixed transform metadata.
 - `qiwe-image-send-preflight` checks only local configuration and emits a sanitized
-  report. It opens no network or database connection. Production release artifacts do
-  not compile QiWe live adapter features; release-local production observation checks
-  the immutable manifest and disabled runtime state instead of passing production
-  secrets to the sidecar.
+  report. It opens no network or database connection. Production release artifacts
+  compile the reviewed `qiwe-production-adapter` together with Huabaosi production
+  features, while release-local production observation keeps secrets out of shell
+  children and checks the immutable manifest plus disabled runtime state.
 - Preflight `missing_configuration` may list only fixed public variable names from
   `.env.example`, never values, URLs, hosts, group ids, or enable flags. An empty list
   with `config_valid=false` means present configuration failed format, readiness, or
   allowlist validation and must still fail closed.
 - `QINTOPIA_QIWE_IMAGE_SEND_ENABLED` defaults to `0`; guarded upload/callback commands
-  exist, but default and production binaries fail apply before Postgres or network
-  access even if the runtime enable flag is misconfigured. A staging-feature apply also
-  requires the exact owner approval phrase before Postgres or network access. Production
-  observation installs no worker service/timer and does not install a production
-  callback listener.
+  exist, but default binaries fail apply before Postgres or network access even if the
+  runtime enable flag is misconfigured. Staging and production feature builds both
+  require their exact owner approval phrase, database URL hash, Feishu delivery config,
+  webhook readiness, and allowlists before Postgres, callback stdin, or network access.
+  If both QiWe live features are present in a test or accidental build, apply chooses
+  the production gate and never falls back to staging approval or staging database
+  hashing. Production observation installs no worker service/timer and does not install
+  a production callback listener.
 - The QiWe capture producer sanitizes any `cmd=20000` event before NATS publication, and
   the Rust sidecar independently repeats the boundary before Postgres persistence. Both
   rebuild the entire callback payload from hashed correlation ids and fixed `msgData`
@@ -123,18 +126,20 @@ target, or missing final confirmation must stop before sending.
   upload request, and `process-qiwe-image-send-callback` reads one bounded callback from
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
-  The live helpers compile only with `qiwe-staging-adapter` in runnable artifacts.
-  Production release artifacts must not include any QiWe live adapter until a separate
-  owner-approved production send boundary exists. Production release artifacts continue
-  to record exactly `huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`.
-  The guarded staging smoke remains an owner-approved one-shot operator entrypoint.
+  The live helpers compile only with `qiwe-staging-adapter` or
+  `qiwe-production-adapter`. Production release artifacts record exactly
+  `huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and
+  `qiwe-production-adapter`, and still reject staging approval, staging databases, or
+  missing Feishu delivery configuration before apply. The guarded staging smoke remains
+  an owner-approved one-shot operator entrypoint.
 - A combined staging build containing both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter` may claim an exact Feishu primary-storage URI. It commits the
   existing `uploading` attempt before Feishu or QiWe I/O, revalidates the approved JPEG,
   performs the non-deprecated SDK temporary upload, reads the temporary URL back, and
   proves SHA-256, MD5, and byte size before invoking the existing async upload. The
-  bytes, multipart body, and temporary URL are memory-only and zeroized; production,
-  default, and single-feature builds reject this route.
+  bytes, multipart body, and temporary URL are memory-only and zeroized; default and
+  single-feature builds reject this route, while production requires the matching
+  Huabaosi Feishu mirror plus QiWe production feature pair.
 - Callback parsing classifies the raw `msgData` field names into one of four fixed,
   reviewed credential schema ids before deserializing credential values. Reports expose
   only that fixed id and an additional-field count. They reject simultaneous canonical

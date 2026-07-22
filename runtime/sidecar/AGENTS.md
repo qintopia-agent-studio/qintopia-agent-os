@@ -68,15 +68,19 @@ From the monorepo root, prefer:
   approval phrase, deployed release SHA binding, database URL hash binding, and adapter
   policy before Postgres or external I/O; shell scripts cannot be the only enforcement
   point.
-- Production sidecar artifacts compile exactly `huabaosi-production-adapter` plus the
-  guarded `huabaosi-feishu-mirror-adapter`; QiWe live adapters, staging adapters, and
-  all-features production artifacts remain forbidden. Mirror apply must still fail
-  before Postgres or external I/O unless the exact owner phrase, deployed release SHA,
-  database hash, fixed Base/table allowlists, schema, profile path, media host policy,
-  and persistent enable flag all pass. Ordinary release installation may install a
-  mirror preflight, worker, and timer, but only the explicit owner activation script may
-  enable the timer. Feishu primary storage for the first canary is part of the Huabaosi
-  production adapter path and still creates only pending AgentOS artifacts.
+- Production sidecar artifacts compile exactly `huabaosi-production-adapter`,
+  `huabaosi-feishu-mirror-adapter`, and `qiwe-production-adapter`. Staging adapters,
+  mixed staging/production builds, and all-features production artifacts remain
+  forbidden. Mirror apply must still fail before Postgres or external I/O unless the
+  exact owner phrase, deployed release SHA, database hash, fixed Base/table allowlists,
+  schema, profile path, media host policy, and persistent enable flag all pass. QiWe
+  production apply must still fail before Postgres, callback stdin, or network access
+  unless the exact owner phrase, production database hash, Feishu delivery config,
+  webhook readiness, and persistent enablement all pass. Ordinary release installation
+  may install mirror and QiWe production preflights, workers, services, and timers, but
+  only the explicit owner activation scripts may enable external timers. Feishu primary
+  storage for the first canary is part of the Huabaosi production adapter path and still
+  creates only pending AgentOS artifacts.
 - A canary review apply must provide expected artifact type and review status
   preconditions. The sidecar must enforce them again under the artifact row lock before
   changing review state, and before authenticated Feishu revalidation, so a mistaken
@@ -133,16 +137,18 @@ From the monorepo root, prefer:
   with no attempt row are unknown external outcomes: terminalize them as `ambiguous`
   with automatic retry disabled. Worker previews must reuse the exact apply-side group
   and media-host allowlists.
-- The QiWe upload worker and callback processor may compile live helpers for staging
-  only with `qiwe-staging-adapter`. Default and production builds must fail apply before
-  Postgres or network access, and callback apply must do so before reading stdin.
-  Runtime env flags are not a substitute for this compile gate. Callback JSON is
-  accepted from bounded stdin only, never CLI arguments or environment variables. File
-  credentials may open the send gate only when callback filename, canonical MD5, and
-  byte size exactly match the approved final JPEG identity snapshotted at upload.
-  Callback credentials, request ids, media URLs, target groups, tokens, device ids,
-  response bodies, and provider message ids must not appear in reports or logs;
-  sensitive in-memory buffers must be zeroized on drop.
+- The QiWe upload worker and callback processor may compile live helpers only through
+  `qiwe-staging-adapter` or `qiwe-production-adapter`. Default builds must fail apply
+  before Postgres or network access, and callback apply must do so before reading stdin.
+  If a test or accidental build includes both QiWe live features, apply must select the
+  production owner/database gate and must never fall back to staging approval or staging
+  database hashing. Runtime env flags are not a substitute for the compile and owner
+  gates. Callback JSON is accepted from bounded stdin only, never CLI arguments or
+  environment variables. File credentials may open the send gate only when callback
+  filename, canonical MD5, and byte size exactly match the approved final JPEG identity
+  snapshotted at upload. Callback credentials, request ids, media URLs, target groups,
+  tokens, device ids, response bodies, and provider message ids must not appear in
+  reports or logs; sensitive in-memory buffers must be zeroized on drop.
 - A staging-feature callback apply must validate explicit enablement, API/media/group
   allowlists, and webhook readiness before reading stdin. Upload apply must validate the
   same adapter configuration before connecting to Postgres.
