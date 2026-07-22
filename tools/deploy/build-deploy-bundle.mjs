@@ -63,6 +63,7 @@ const sourceFiles = [
   "runtime/hermes/migrate_erhua_livecool_env.py",
   "runtime/hermes/profile_transaction.py",
   "runtime/hermes/verify_runtime_provider.py",
+  "runtime/hermes/validate_hermes_python.py",
   "docs/operations/profile-bundles/erhua-livecool-profile-overlay-runbook.md",
   "deploy/runner/deploy-request.schema.json",
   "deploy/runner/deploy-result.schema.json",

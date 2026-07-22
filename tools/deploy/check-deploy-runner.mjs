@@ -56,6 +56,7 @@ const requiredFiles = [
   "deploy/runner/install-release-systemd-units.sh",
   "deploy/runner/qintopia-agent-os-deploy-runner",
   "deploy/runner/activate-erhua-profile.sh",
+  "runtime/hermes/validate_hermes_python.py",
   "deploy/runner/poll-deploy-requests.sh",
   "deploy/runner/promote-release.sh",
   "deploy/runner/rollback-release.sh",
@@ -834,6 +835,9 @@ for (const fragment of [
   "--dry-run-request-id",
   "older than 24 hours",
   "verify_runtime_provider.py",
+  "validate_hermes_python.py",
+  'chmod 0711 "$work_dir"',
+  "/usr/sbin/runuser -u ubuntu -- /usr/bin/env",
 ]) {
   if (activateErhuaText && !activateErhuaText.includes(fragment)) {
     addError(`deploy/runner/activate-erhua-profile.sh: missing ${fragment}`);

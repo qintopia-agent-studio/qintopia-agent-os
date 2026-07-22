@@ -321,6 +321,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "runtime/hermes/migrate_erhua_livecool_env.py",
     "runtime/hermes/profile_transaction.py",
     "runtime/hermes/verify_runtime_provider.py",
+    "runtime/hermes/validate_hermes_python.py",
   ]) {
     if (!deployBundle.includes(required)) {
       addError(
