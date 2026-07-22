@@ -32,6 +32,8 @@ const writeExecutable = (filePath, content) => {
 };
 const envLine = (key, value) => `${key}=${value}`;
 const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const shellDoubleQuoted = (value) =>
+  `"${String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`")}"`;
 
 try {
   const databaseUrl =
@@ -63,14 +65,26 @@ try {
   const runuser = path.join(tmpRoot, "runuser");
 
   fs.mkdirSync(fixtureScriptDir, { recursive: true });
-  for (const [source, target] of [
-    [activationScript, fixtureActivationScript],
-    [rollbackScript, fixtureRollbackScript],
-    [observationScript, fixtureObservationScript],
-  ]) {
-    fs.copyFileSync(source, target);
-    fs.chmodSync(target, 0o755);
-  }
+  const copyProductionScriptFixture = (source, target) => {
+    const sourceText = fs.readFileSync(source, "utf8");
+    for (const forbidden of ["TEST_MODE", "_TEST_MODE", "RUNUSER_BIN:-"]) {
+      if (sourceText.includes(forbidden)) {
+        throw new Error(`production script must not contain ${forbidden}`);
+      }
+    }
+    const fixtureText = sourceText.replace(
+      'RUNUSER_BIN="/usr/sbin/runuser"',
+      `RUNUSER_BIN=${shellDoubleQuoted(runuser)}`
+    );
+    if (fixtureText === sourceText) {
+      throw new Error("fixture script did not replace the fixed runuser path");
+    }
+    writeExecutable(target, fixtureText);
+  };
+  copyProductionScriptFixture(activationScript, fixtureActivationScript);
+  copyProductionScriptFixture(rollbackScript, fixtureRollbackScript);
+  fs.copyFileSync(observationScript, fixtureObservationScript);
+  fs.chmodSync(fixtureObservationScript, 0o755);
 
   writeExecutable(sidecar, "#!/usr/bin/env bash\nexit 70\n");
   fs.mkdirSync(path.dirname(bridge), { recursive: true });
@@ -101,6 +115,10 @@ try {
     runuser,
     `#!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
+  echo "ambient secret reached runuser" >&2
+  exit 23
+fi
 printf '%s\\n' "$*" >>"${logPath}"
 case "$*" in
   *"systemctl --user restart hermes-gateway-erhua.service"*|*"systemctl --user is-active --quiet hermes-gateway-erhua.service"*) exit 0 ;;
@@ -163,7 +181,7 @@ esac
 
   const commonEnv = {
     ...process.env,
-    RUNUSER_BIN: runuser,
+    QINTOPIA_UNRELATED_RUNTIME_SECRET: "must-not-reach-runuser",
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_MODE: "1",
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_ROOT: tmpRoot,
     QINTOPIA_RELEASE_CURRENT_DIR: currentRelease,
@@ -177,27 +195,7 @@ esac
     });
 
   fs.writeFileSync(logPath, "", "utf8");
-  const pollutedProductionScript = run(activationScript, {
-    RUNUSER_BIN: runuser,
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_MODE: "1",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_ROOT: tmpRoot,
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION:
-      "approved-production-qiwe-image-callback-bridge",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: enabledEnv,
-  });
-  if (
-    pollutedProductionScript.status === 0 ||
-    fs.readFileSync(logPath, "utf8") !== ""
-  ) {
-    throw new Error(
-      "activation production script must reject test mode before runuser"
-    );
-  }
-
-  fs.writeFileSync(logPath, "", "utf8");
   const denied = run(fixtureActivationScript, {
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_MODE: "1",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_ROOT: tmpRoot,
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: enabledEnv,
   });
   if (denied.status === 0 || fs.readFileSync(logPath, "utf8") !== "") {
@@ -206,8 +204,6 @@ esac
 
   fs.writeFileSync(logPath, "", "utf8");
   const mismatch = run(fixtureActivationScript, {
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_MODE: "1",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_ROOT: tmpRoot,
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-callback-bridge",
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: mismatchEnv,
@@ -222,8 +218,6 @@ esac
 
   fs.writeFileSync(logPath, "", "utf8");
   const activated = run(fixtureActivationScript, {
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_MODE: "1",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_ROOT: tmpRoot,
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-callback-bridge",
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: enabledEnv,
@@ -242,22 +236,7 @@ esac
   }
 
   fs.writeFileSync(logPath, "", "utf8");
-  const pollutedRollbackScript = run(rollbackScript, {
-    RUNUSER_BIN: runuser,
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_MODE: "1",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_ROOT: tmpRoot,
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK:
-      "approved-production-qiwe-image-callback-bridge-rollback",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: disabledEnv,
-  });
-  if (pollutedRollbackScript.status === 0 || fs.readFileSync(logPath, "utf8") !== "") {
-    throw new Error("rollback production script must reject test mode before runuser");
-  }
-
-  fs.writeFileSync(logPath, "", "utf8");
   const rolledBack = run(fixtureRollbackScript, {
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_MODE: "1",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_ROOT: tmpRoot,
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK:
       "approved-production-qiwe-image-callback-bridge-rollback",
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: disabledEnv,

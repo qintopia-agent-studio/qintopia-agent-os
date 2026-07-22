@@ -8,30 +8,9 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OBSERVATION_SCRIPT="${SCRIPT_DIR}/qiwe-image-callback-bridge-production-observation-smoke.sh"
-RUNUSER_BIN="${RUNUSER_BIN:-/usr/sbin/runuser}"
-HERMES_SYSTEMD_USER="${QINTOPIA_HERMES_SYSTEMD_USER:-ubuntu}"
-HERMES_SERVICE="${QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_HERMES_SERVICE:-hermes-gateway-erhua.service}"
-TEST_MODE="${QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_MODE:-0}"
-TEST_ROOT="${QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_ROOT:-}"
-
-if [[ "$TEST_MODE" == "1" ]]; then
-  case "${SCRIPT_DIR}/" in
-    /tmp/*|/private/tmp/*) ;;
-    *)
-      echo "QiWe image callback bridge production rollback test mode requires a fixture script copy" >&2
-      exit 1
-      ;;
-  esac
-  if [[ -z "$TEST_ROOT" || "${SCRIPT_DIR}/" != "$TEST_ROOT"/* ]]; then
-    echo "QiWe image callback bridge production rollback test mode requires a fixture script copy" >&2
-    exit 1
-  fi
-else
-  if [[ "$RUNUSER_BIN" != "/usr/sbin/runuser" || "$HERMES_SYSTEMD_USER" != "ubuntu" || "$HERMES_SERVICE" != "hermes-gateway-erhua.service" ]]; then
-    echo "QiWe image callback bridge production rollback requires the fixed Erhua runtime service" >&2
-    exit 1
-  fi
-fi
+RUNUSER_BIN="/usr/sbin/runuser"
+HERMES_SYSTEMD_USER="ubuntu"
+HERMES_SERVICE="hermes-gateway-erhua.service"
 
 if [[ ! -x "$OBSERVATION_SCRIPT" ]]; then
   echo "QiWe image callback bridge production rollback requires the release-local observation script" >&2

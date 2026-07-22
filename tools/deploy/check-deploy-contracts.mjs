@@ -532,14 +532,14 @@ if (!exists(qiweCallbackBridgeProductionActivationPath)) {
     "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION",
     "approved-production-qiwe-image-callback-bridge",
     "qiwe-image-callback-bridge-production-observation-smoke.sh",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_ROOT",
-    "test mode requires a fixture script copy",
+    'RUNUSER_BIN="/usr/sbin/runuser"',
+    'HERMES_SYSTEMD_USER="ubuntu"',
+    'HERMES_SERVICE="hermes-gateway-erhua.service"',
     'QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE="$expected_state"',
     "run_observation enabled",
     "restart_erhua",
     "systemctl --user restart ${HERMES_SERVICE}",
     "systemctl --user is-active --quiet ${HERMES_SERVICE}",
-    "requires the fixed Erhua runtime service",
     "env -i",
     "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
   ]) {
@@ -556,6 +556,11 @@ if (!exists(qiweCallbackBridgeProductionActivationPath)) {
     "QIWE_TOKEN",
     "QIWE_GUID",
     "QINTOPIA_SIDECAR_DATABASE_URL",
+    "TEST_MODE",
+    "_TEST_MODE",
+    "RUNUSER_BIN:-",
+    "QINTOPIA_HERMES_SYSTEMD_USER",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_HERMES_SERVICE",
   ]) {
     forbidFragment(qiweCallbackBridgeProductionActivationPath, activation, fragment);
   }
@@ -573,14 +578,14 @@ if (!exists(qiweCallbackBridgeProductionRollbackPath)) {
     "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK",
     "approved-production-qiwe-image-callback-bridge-rollback",
     "qiwe-image-callback-bridge-production-observation-smoke.sh",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_ROOT",
-    "test mode requires a fixture script copy",
+    'RUNUSER_BIN="/usr/sbin/runuser"',
+    'HERMES_SYSTEMD_USER="ubuntu"',
+    'HERMES_SERVICE="hermes-gateway-erhua.service"',
     'QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE="$expected_state"',
     "run_observation disabled",
     "restart_erhua",
     "systemctl --user restart ${HERMES_SERVICE}",
     "systemctl --user is-active --quiet ${HERMES_SERVICE}",
-    "requires the fixed Erhua runtime service",
     "env -i",
     "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
   ]) {
@@ -597,6 +602,11 @@ if (!exists(qiweCallbackBridgeProductionRollbackPath)) {
     "QIWE_TOKEN",
     "QIWE_GUID",
     "QINTOPIA_SIDECAR_DATABASE_URL",
+    "TEST_MODE",
+    "_TEST_MODE",
+    "RUNUSER_BIN:-",
+    "QINTOPIA_HERMES_SYSTEMD_USER",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_HERMES_SERVICE",
   ]) {
     forbidFragment(qiweCallbackBridgeProductionRollbackPath, rollback, fragment);
   }
