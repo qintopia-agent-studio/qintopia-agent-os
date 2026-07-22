@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.22](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.21...v0.2.22) (2026-07-22)
+
+
+### Bug Fixes
+
+* guard qiwe callback bridge production activation ([#251](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/251)) ([89614e3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/89614e3f24b1d632bb8b122fe2744630bc17ff86))
+* isolate xiaoman production preflight child env ([#252](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/252)) ([93a37b5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/93a37b5746543dbcee70568a2931620e22bddb71))
+* pin huabaosi production activation systemctl ([#253](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/253)) ([916a237](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/916a2371a1d819ae162ab06cadc0540da8273563))
+
+
+### CI / Deployment
+
+* tier heavy pull request checks ([#249](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/249)) ([3d7f0d4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3d7f0d4091eeefcf91500e3f4788ae05dbe9ba7d))
+
 ## [0.2.21](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.20...v0.2.21) (2026-07-22)
 
 
