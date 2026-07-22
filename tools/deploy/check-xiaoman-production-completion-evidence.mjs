@@ -449,6 +449,7 @@ function assertReleasePlease(record) {
       "status",
       "pr_number",
       "head_sha",
+      "release_tag",
       "released_commit_sha",
       "manual_ci_workflow",
       "release_please_status",
@@ -459,12 +460,20 @@ function assertReleasePlease(record) {
     record.status !== "passed" ||
     !positiveInteger(record.pr_number) ||
     !isGitSha(record.head_sha) ||
+    !isReleaseTag(record.release_tag) ||
     !isGitSha(record.released_commit_sha) ||
     record.manual_ci_workflow !== "ci.yml" ||
     record.release_please_status !== "success"
   ) {
     fail("Release Please validation evidence is incomplete");
   }
+}
+
+function isReleaseTag(value) {
+  return (
+    typeof value === "string" &&
+    /^v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)
+  );
 }
 
 function assertQiweProductionEnablement(record) {

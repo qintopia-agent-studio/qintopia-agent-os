@@ -4,6 +4,7 @@
     "status": "passed",
     "pr_number": 0,
     "head_sha": "<release-please-head-sha>",
+    "release_tag": "v0.0.0",
     "released_commit_sha": "<published-production-release-sha>",
     "manual_ci_workflow": "ci.yml",
     "release_please_status": "success"
