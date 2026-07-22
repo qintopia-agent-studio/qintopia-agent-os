@@ -255,6 +255,8 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh",
+    "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
     "docs/operations/staging-runtime-provisioning-runbook.md",
@@ -515,6 +517,88 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
     "raw_body",
   ]) {
     forbidFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
+  }
+}
+
+const qiweCallbackBridgeProductionActivationPath =
+  "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh";
+if (!exists(qiweCallbackBridgeProductionActivationPath)) {
+  addError(
+    `${qiweCallbackBridgeProductionActivationPath}: missing production activation script`
+  );
+} else {
+  const activation = readText(qiweCallbackBridgeProductionActivationPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION",
+    "approved-production-qiwe-image-callback-bridge",
+    "qiwe-image-callback-bridge-production-observation-smoke.sh",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION_TEST_ROOT",
+    "test mode requires a fixture script copy",
+    'QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE="$expected_state"',
+    "run_observation enabled",
+    "restart_erhua",
+    "systemctl --user restart ${HERMES_SERVICE}",
+    "systemctl --user is-active --quiet ${HERMES_SERVICE}",
+    "requires the fixed Erhua runtime service",
+    "env -i",
+    "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+  ]) {
+    requireFragment(qiweCallbackBridgeProductionActivationPath, activation, fragment);
+  }
+  for (const fragment of [
+    "systemctl enable",
+    "systemctl start",
+    "process-qiwe-image-send-callback",
+    "--apply",
+    "source ",
+    "eval ",
+    "tenant_access_token",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+  ]) {
+    forbidFragment(qiweCallbackBridgeProductionActivationPath, activation, fragment);
+  }
+}
+
+const qiweCallbackBridgeProductionRollbackPath =
+  "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh";
+if (!exists(qiweCallbackBridgeProductionRollbackPath)) {
+  addError(
+    `${qiweCallbackBridgeProductionRollbackPath}: missing production rollback script`
+  );
+} else {
+  const rollback = readText(qiweCallbackBridgeProductionRollbackPath);
+  for (const fragment of [
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK",
+    "approved-production-qiwe-image-callback-bridge-rollback",
+    "qiwe-image-callback-bridge-production-observation-smoke.sh",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK_TEST_ROOT",
+    "test mode requires a fixture script copy",
+    'QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE="$expected_state"',
+    "run_observation disabled",
+    "restart_erhua",
+    "systemctl --user restart ${HERMES_SERVICE}",
+    "systemctl --user is-active --quiet ${HERMES_SERVICE}",
+    "requires the fixed Erhua runtime service",
+    "env -i",
+    "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+  ]) {
+    requireFragment(qiweCallbackBridgeProductionRollbackPath, rollback, fragment);
+  }
+  for (const fragment of [
+    "systemctl enable",
+    "systemctl start",
+    "process-qiwe-image-send-callback",
+    "--apply",
+    "source ",
+    "eval ",
+    "tenant_access_token",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+  ]) {
+    forbidFragment(qiweCallbackBridgeProductionRollbackPath, rollback, fragment);
   }
 }
 

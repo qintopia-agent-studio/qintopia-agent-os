@@ -276,6 +276,32 @@ database URL SHA-256 matches the runtime database URL without printing that URL.
 not process callbacks, start services, enable timers, read Feishu, write Postgres, call
 QiWe, or publish.
 
+Production callback bridge activation is guarded and separate from the image-send worker
+timer. The owner must first persist the reviewed Erhua env values with
+`QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=1`, production mode, release/current
+processor path/root, the approved sidecar SHA-256, image-send enablement, webhook
+readiness, production approval, and the database URL hash that matches the runtime
+database URL. The release-local activation script then runs the same observation with
+`expected_state=enabled`, restarts only `hermes-gateway-erhua.service` as the `ubuntu`
+user, and observes the enabled state again:
+
+```bash
+QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION=approved-production-qiwe-image-callback-bridge \
+  deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh
+```
+
+Rollback requires the persistent Erhua env to set
+`QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=0`, then restarts only Erhua and proves
+the bridge is disabled:
+
+```bash
+QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK=approved-production-qiwe-image-callback-bridge-rollback \
+  deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh
+```
+
+Neither script enables the QiWe worker timer, processes callback JSON, calls Postgres,
+calls QiWe, writes Feishu, publishes, sends, sources env files, or prints credentials.
+
 Until a new immutable Release is owner-published, deployed, activated, and backed by one
 real Xiaoman activity evidence bundle, QiWe image send remains code-ready rather than a
 completed production workflow.

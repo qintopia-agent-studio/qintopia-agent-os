@@ -683,6 +683,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
     "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh",
+    "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
