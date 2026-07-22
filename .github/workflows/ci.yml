@@ -126,7 +126,7 @@ jobs:
             case "$file" in
               *.md|docs/**|deploy/sidecar/docs/**)
                 ;;
-              .github/workflows/ci.yml|runtime/sidecar/**|runtime/postgres/**|deploy/sidecar/**|runtime/sidecar/Cargo.toml|runtime/sidecar/Cargo.lock)
+              .github/workflows/**|runtime/sidecar/**|runtime/postgres/**|deploy/sidecar/**|runtime/sidecar/Cargo.toml|runtime/sidecar/Cargo.lock)
                 rust_quality_check=true
                 postgres_integration_check=true
                 ;;

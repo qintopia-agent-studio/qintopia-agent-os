@@ -142,6 +142,7 @@ if (ciWorkflow && !ciWorkflow.includes("release-please-pr")) {
 for (const requiredFragment of [
   "rust-quality-check",
   "postgres-integration-check",
+  ".github/workflows/**",
   "runtime/sidecar/**",
   "runtime/postgres/**",
   "deploy/sidecar/**",
