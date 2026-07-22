@@ -36,13 +36,16 @@ if (!exists(sidecarAgentsPath)) {
 } else {
   const sidecarAgents = readText(sidecarAgentsPath);
   for (const fragment of [
-    "Production sidecar artifacts compile exactly `huabaosi-production-adapter`,",
-    "`huabaosi-feishu-mirror-adapter`, and `qiwe-production-adapter`",
-    "mixed staging/production builds, and all-features production artifacts remain",
+    "Production sidecar artifacts compile exactly `huabaosi-production-adapter` and the",
+    "guarded `huabaosi-feishu-mirror-adapter`",
+    "QiWe live features, staging adapters,",
+    "staging/production builds, and all-features production artifacts remain forbidden",
     "QiWe",
-    "production apply must still fail before Postgres, callback stdin, or network access",
-    "unless the exact owner phrase, production database hash, Feishu delivery config",
-    "only the explicit owner activation scripts may enable external timers",
+    "apply code must still fail before Postgres",
+    "or network access unless",
+    "Feishu delivery config",
+    "QiWe live features must not be",
+    "the explicit owner activation scripts may enable external timers",
     "The QiWe upload worker and callback processor may compile live helpers only through",
     "`qiwe-staging-adapter` or `qiwe-production-adapter`",
   ]) {
@@ -63,16 +66,15 @@ if (!exists(qiweImageSendPlanPath)) {
 } else {
   const plan = readText(qiweImageSendPlanPath);
   for (const fragment of [
-    "Production release artifacts record exactly",
-    "`huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and",
-    "`qiwe-production-adapter`, and still reject staging approval, staging databases",
+    "Huabaosi production release artifacts record exactly",
+    "`huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`",
+    "must reject",
+    "QiWe live features, staging approval, staging databases",
     "the production gate and never falls back to staging approval",
   ]) {
     requireFragment(qiweImageSendPlanPath, plan, fragment);
   }
   for (const fragment of [
-    "Production release artifacts must not include any QiWe live adapter",
-    "Production release artifacts continue to record exactly `huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`",
     "default and production binaries fail apply before Postgres or network access",
   ]) {
     forbidFragment(qiweImageSendPlanPath, plan, fragment);
@@ -88,8 +90,8 @@ if (!exists(qiweImageSendAdapterWorkerPlanPath)) {
 } else {
   const plan = readText(qiweImageSendAdapterWorkerPlanPath);
   for (const fragment of [
-    "`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter,",
-    "qiwe-production-adapter]`",
+    "`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`",
+    "exclude QiWe live",
     "Production apply must use the production owner phrase",
     "back to staging gates",
   ]) {
@@ -97,7 +99,6 @@ if (!exists(qiweImageSendAdapterWorkerPlanPath)) {
   }
   for (const fragment of [
     "compile a QiWe live adapter into the production artifact",
-    "`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`",
     "production units absent",
   ]) {
     forbidFragment(qiweImageSendAdapterWorkerPlanPath, plan, fragment);
@@ -114,10 +115,10 @@ if (!exists(xiaomanFeishuQiweBoundaryPath)) {
   const plan = readText(xiaomanFeishuQiweBoundaryPath);
   for (const fragment of [
     "Staging requires",
-    "`huabaosi-staging-adapter` plus `qiwe-staging-adapter`; production requires",
-    "`huabaosi-feishu-mirror-adapter` plus `qiwe-production-adapter` with production",
-    "owner/database/Feishu delivery gates",
-    "Default, Huabaosi-only, and QiWe-only builds must continue to reject it",
+    "`huabaosi-staging-adapter` plus `qiwe-staging-adapter`",
+    "artifacts must contain only",
+    "must not bundle `qiwe-production-adapter`",
+    "QiWe-only builds continue to reject this route",
   ]) {
     requireFragment(xiaomanFeishuQiweBoundaryPath, plan, fragment);
   }
@@ -136,10 +137,10 @@ if (!exists(currentRoadmapPath)) {
 } else {
   const roadmap = readText(currentRoadmapPath);
   for (const fragment of [
-    "Only the matched Huabaosi/QiWe live feature pairs may claim this storage type",
-    "production requires `huabaosi-feishu-mirror-adapter` plus",
+    "Only the matched Huabaosi/QiWe staging live feature pair may claim this storage",
+    "Huabaosi production artifacts must contain only `huabaosi-production-adapter` plus",
+    "must not bundle",
     "`qiwe-production-adapter`",
-    "with production owner/database/Feishu delivery gates",
     "Single-feature builds still",
     "fail closed",
   ]) {
@@ -169,6 +170,29 @@ if (!exists(sidecarDeployPath)) {
     sidecarDeploy,
     'sudo chown ubuntu:ubuntu "$ENV_FILE"'
   );
+}
+
+for (const artifactFetchPath of [
+  "deploy/sidecar/scripts/fetch-ci-artifact.sh",
+  "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+]) {
+  if (!exists(artifactFetchPath)) {
+    addError(`${artifactFetchPath}: missing production sidecar artifact fetcher`);
+  } else {
+    const fetcher = readText(artifactFetchPath);
+    requireFragment(artifactFetchPath, fetcher, "huabaosi-production-adapter");
+    requireFragment(artifactFetchPath, fetcher, "huabaosi-feishu-mirror-adapter");
+    if (
+      fetcher.includes(
+        '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
+      ) ||
+      fetcher.includes('"qiwe-production-adapter",')
+    ) {
+      addError(
+        `${artifactFetchPath}: Huabaosi production artifact validation must not accept qiwe-production-adapter`
+      );
+    }
+  }
 }
 
 const stagingArtifactProvisionPath =
@@ -1702,6 +1726,32 @@ if (!exists(aliangProductionRollbackPath)) {
   }
 }
 
+const huabaosiFeishuMirrorProductionObservationPath =
+  "deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh";
+if (!exists(huabaosiFeishuMirrorProductionObservationPath)) {
+  addError(
+    `${huabaosiFeishuMirrorProductionObservationPath}: missing Huabaosi Feishu mirror production observation`
+  );
+} else {
+  const observation = readText(huabaosiFeishuMirrorProductionObservationPath);
+  for (const fragment of [
+    "artifact-manifest.json",
+    '"huabaosi-production-adapter"',
+    '"huabaosi-feishu-mirror-adapter"',
+  ]) {
+    requireFragment(
+      huabaosiFeishuMirrorProductionObservationPath,
+      observation,
+      fragment
+    );
+  }
+  forbidFragment(
+    huabaosiFeishuMirrorProductionObservationPath,
+    observation,
+    '"qiwe-production-adapter"'
+  );
+}
+
 const huabaosiFeishuMirrorActivationPath =
   "deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh";
 if (!exists(huabaosiFeishuMirrorActivationPath)) {
@@ -2034,13 +2084,16 @@ if (exists(productionSidecarArtifactBuilderPath)) {
     "manifestSha256",
     '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
-    '"qiwe-production-adapter"',
     "`${bundleSha256}  ${bundleName}`",
     "`${manifestSha256}  artifact-manifest.json`",
   ]) {
     requireFragment(productionSidecarArtifactBuilderPath, builder, fragment);
   }
-  for (const fragment of ['"qiwe-staging-adapter"', '"huabaosi-staging-adapter"']) {
+  for (const fragment of [
+    '"qiwe-production-adapter"',
+    '"qiwe-staging-adapter"',
+    '"huabaosi-staging-adapter"',
+  ]) {
     forbidFragment(productionSidecarArtifactBuilderPath, builder, fragment);
   }
 }

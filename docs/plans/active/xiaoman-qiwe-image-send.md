@@ -85,10 +85,10 @@ target, or missing final confirmation must stop before sending.
 - The Huabaosi final-artifact path converts provider PNG to the immutable reviewed JPEG
   while preserving source and final hashes plus the fixed transform metadata.
 - `qiwe-image-send-preflight` checks only local configuration and emits a sanitized
-  report. It opens no network or database connection. Production release artifacts
-  compile the reviewed `qiwe-production-adapter` together with Huabaosi production
-  features, while release-local production observation keeps secrets out of shell
-  children and checks the immutable manifest plus disabled runtime state.
+  report. It opens no network or database connection. Huabaosi production release
+  artifacts must not compile `qiwe-production-adapter`; release-local production
+  observation keeps secrets out of shell children and checks the immutable manifest plus
+  disabled runtime state.
 - Preflight `missing_configuration` may list only fixed public variable names from
   `.env.example`, never values, URLs, hosts, group ids, or enable flags. An empty list
   with `config_valid=false` means present configuration failed format, readiness, or
@@ -127,11 +127,11 @@ target, or missing final confirmation must stop before sending.
   stdin before opening the at-most-once send gate. Both use the same bounded Rust HTTP
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
   The live helpers compile only with `qiwe-staging-adapter` or
-  `qiwe-production-adapter`. Production release artifacts record exactly
-  `huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and
-  `qiwe-production-adapter`, and still reject staging approval, staging databases, or
-  missing Feishu delivery configuration before apply. The guarded staging smoke remains
-  an owner-approved one-shot operator entrypoint.
+  `qiwe-production-adapter`. Huabaosi production release artifacts record exactly
+  `huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`, and must reject
+  QiWe live features, staging approval, staging databases, or missing Feishu delivery
+  configuration before apply. The guarded staging smoke remains an owner-approved
+  one-shot operator entrypoint.
 - A combined staging build containing both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter` may claim an exact Feishu primary-storage URI. It commits the
   existing `uploading` attempt before Feishu or QiWe I/O, revalidates the approved JPEG,
@@ -239,9 +239,9 @@ evidence template lives in
 
 ## Production Boundary
 
-Default execution still cannot contact QiWe or send messages. Production image-send
-artifacts may contain only the reviewed `huabaosi-production-adapter`,
-`huabaosi-feishu-mirror-adapter`, and `qiwe-production-adapter` feature set; staging and
+Default execution still cannot contact QiWe or send messages. Huabaosi production
+artifacts may contain only the reviewed `huabaosi-production-adapter` and
+`huabaosi-feishu-mirror-adapter` feature set; QiWe live features, staging adapters, and
 all-features builds remain forbidden. The production observation smoke accepts only the
 immutable `release/current` binary and fixed production env file, and it must not run
 `--apply` or process callbacks.

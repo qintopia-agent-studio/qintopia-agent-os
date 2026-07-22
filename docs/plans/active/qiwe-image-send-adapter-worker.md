@@ -155,9 +155,9 @@ Production image-send observation may inspect the immutable release/current arti
 confirm send remains disabled, but it must not install or enable a worker service/timer,
 install a callback listener, broaden group allowlists, accept production
 env/release/systemctl overrides, pass database/QiWe secrets to observation children, or
-contact QiWe. Production artifact builders are checked to exclude `qiwe-staging-adapter`
-and all-features builds; their manifest records exactly
-`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter, qiwe-production-adapter]`.
+contact QiWe. Huabaosi production artifact builders are checked to exclude QiWe live
+adapters, staging adapters, and all-features builds; their manifest records exactly
+`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`.
 Production apply must use the production owner phrase, production database URL hash,
 Feishu delivery config, webhook readiness, and reviewed allowlists before Postgres,
 callback stdin, or network access; test or accidental mixed QiWe builds must never fall

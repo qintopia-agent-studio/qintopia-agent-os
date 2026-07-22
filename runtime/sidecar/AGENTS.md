@@ -68,17 +68,18 @@ From the monorepo root, prefer:
   approval phrase, deployed release SHA binding, database URL hash binding, and adapter
   policy before Postgres or external I/O; shell scripts cannot be the only enforcement
   point.
-- Production sidecar artifacts compile exactly `huabaosi-production-adapter`,
-  `huabaosi-feishu-mirror-adapter`, and `qiwe-production-adapter`. Staging adapters,
-  mixed staging/production builds, and all-features production artifacts remain
-  forbidden. Mirror apply must still fail before Postgres or external I/O unless the
-  exact owner phrase, deployed release SHA, database hash, fixed Base/table allowlists,
-  schema, profile path, media host policy, and persistent enable flag all pass. QiWe
-  production apply must still fail before Postgres, callback stdin, or network access
-  unless the exact owner phrase, production database hash, Feishu delivery config,
-  webhook readiness, and persistent enablement all pass. Ordinary release installation
-  may install mirror and QiWe production preflights, workers, services, and timers, but
-  only the explicit owner activation scripts may enable external timers. Feishu primary
+- Production sidecar artifacts compile exactly `huabaosi-production-adapter` and the
+  guarded `huabaosi-feishu-mirror-adapter`. QiWe live features, staging adapters, mixed
+  staging/production builds, and all-features production artifacts remain forbidden.
+  Mirror apply must still fail before Postgres or external I/O unless the exact owner
+  phrase, deployed release SHA, database hash, fixed Base/table allowlists, schema,
+  profile path, media host policy, and persistent enable flag all pass. QiWe production
+  apply code must still fail before Postgres, callback stdin, or network access unless
+  the exact owner phrase, production database hash, Feishu delivery config, webhook
+  readiness, and persistent enablement all pass, but QiWe live features must not be
+  bundled into the Huabaosi production artifact. Ordinary release installation may
+  install mirror and QiWe production preflights, workers, services, and timers, but only
+  the explicit owner activation scripts may enable external timers. Feishu primary
   storage for the first canary is part of the Huabaosi production adapter path and still
   creates only pending AgentOS artifacts.
 - A canary review apply must provide expected artifact type and review status

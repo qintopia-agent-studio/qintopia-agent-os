@@ -71,7 +71,6 @@ try {
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
-            "qiwe-production-adapter",
           ],
         },
       },
@@ -169,6 +168,73 @@ exec ${JSON.stringify(systemTar)} "$@"
   requireMode(path.join(outputRoot, "artifact-manifest.json"), 0o444);
   requireMode(path.join(outputRoot, "SHA256SUMS"), 0o444);
   requireMode(path.join(outputRoot, "qintopia-message-sidecar.tar.gz"), 0o444);
+
+  const qiweFeatureOutputRoot = path.join(tmpRoot, "qiwe-feature-output");
+  fs.writeFileSync(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        commit_sha: sha,
+        artifact_name: artifactName,
+        target: "linux-x86_64-gnu",
+        files: [
+          {
+            path: "qintopia-message-sidecar",
+            sha256: sha256File(binaryPath),
+          },
+        ],
+        validation: {
+          cargo_features: [
+            "huabaosi-production-adapter",
+            "huabaosi-feishu-mirror-adapter",
+            "qiwe-production-adapter",
+          ],
+        },
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(fixtureRoot, "SHA256SUMS"),
+    [
+      `${sha256File(binaryPath)}  qintopia-message-sidecar`,
+      `${sha256File(archivePath)}  qintopia-message-sidecar.tar.gz`,
+      `${sha256File(manifestPath)}  artifact-manifest.json`,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const qiweFeatureResult = spawnSync(
+    "bash",
+    [
+      "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+      "--artifact-type",
+      "sidecar",
+      "--sha",
+      sha,
+      "--output-dir",
+      qiweFeatureOutputRoot,
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...fetchEnv,
+        ARTIFACT_NAME: artifactName,
+        ARTIFACT_TARGET: "linux-x86_64-gnu",
+      },
+      encoding: "utf8",
+    }
+  );
+  if (
+    qiweFeatureResult.status === 0 ||
+    !`${qiweFeatureResult.stdout}\n${qiweFeatureResult.stderr}`.includes(
+      "artifact manifest Cargo features are not approved for production"
+    )
+  ) {
+    throw new Error("COS fetch accepted a QiWe-enabled Huabaosi production artifact");
+  }
 
   const payloadRoot = path.join(fixtureRoot, "payload");
   const contextMcpPath = path.join(
@@ -280,11 +346,11 @@ exec ${JSON.stringify(systemTar)} "$@"
 
   const tarInvocations = fs.readFileSync(tarArgsPath, "utf8").trim().split("\n");
   if (
-    tarInvocations.length !== 2 ||
+    tarInvocations.length !== 3 ||
     tarInvocations.some((args) => !args.includes("--no-same-owner"))
   ) {
     throw new Error(
-      `COS fetch extraction must use --no-same-owner twice, got ${JSON.stringify(tarInvocations)}`
+      `COS fetch extraction must use --no-same-owner for each extraction, got ${JSON.stringify(tarInvocations)}`
     );
   }
 } finally {
