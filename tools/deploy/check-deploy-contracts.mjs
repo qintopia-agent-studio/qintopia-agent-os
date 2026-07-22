@@ -536,6 +536,7 @@ if (!exists(qiweCallbackBridgeProductionActivationPath)) {
     'HERMES_SYSTEMD_USER="ubuntu"',
     'HERMES_SERVICE="hermes-gateway-erhua.service"',
     'QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE="$expected_state"',
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1",
     "run_observation enabled",
     "restart_erhua",
     "systemctl --user restart ${HERMES_SERVICE}",
@@ -561,6 +562,11 @@ if (!exists(qiweCallbackBridgeProductionActivationPath)) {
     "RUNUSER_BIN:-",
     "QINTOPIA_HERMES_SYSTEMD_USER",
     "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_HERMES_SERVICE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_MODE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_ROOT",
+    "QINTOPIA_RELEASE_CURRENT_DIR",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PLUGIN_PATH",
   ]) {
     forbidFragment(qiweCallbackBridgeProductionActivationPath, activation, fragment);
   }
@@ -582,6 +588,7 @@ if (!exists(qiweCallbackBridgeProductionRollbackPath)) {
     'HERMES_SYSTEMD_USER="ubuntu"',
     'HERMES_SERVICE="hermes-gateway-erhua.service"',
     'QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE="$expected_state"',
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1",
     "run_observation disabled",
     "restart_erhua",
     "systemctl --user restart ${HERMES_SERVICE}",
@@ -607,6 +614,11 @@ if (!exists(qiweCallbackBridgeProductionRollbackPath)) {
     "RUNUSER_BIN:-",
     "QINTOPIA_HERMES_SYSTEMD_USER",
     "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_HERMES_SERVICE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_MODE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_ROOT",
+    "QINTOPIA_RELEASE_CURRENT_DIR",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PLUGIN_PATH",
   ]) {
     forbidFragment(qiweCallbackBridgeProductionRollbackPath, rollback, fragment);
   }

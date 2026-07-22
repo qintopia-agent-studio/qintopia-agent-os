@@ -20,11 +20,6 @@ const rollbackScript = path.join(
   repoRoot,
   "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh"
 );
-const observationScript = path.join(
-  repoRoot,
-  "deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh"
-);
-
 const writeExecutable = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
@@ -63,6 +58,7 @@ try {
   );
   const logPath = path.join(tmpRoot, "runuser.log");
   const runuser = path.join(tmpRoot, "runuser");
+  const observationState = path.join(tmpRoot, "observation-state");
 
   fs.mkdirSync(fixtureScriptDir, { recursive: true });
   const copyProductionScriptFixture = (source, target) => {
@@ -83,8 +79,31 @@ try {
   };
   copyProductionScriptFixture(activationScript, fixtureActivationScript);
   copyProductionScriptFixture(rollbackScript, fixtureRollbackScript);
-  fs.copyFileSync(observationScript, fixtureObservationScript);
-  fs.chmodSync(fixtureObservationScript, 0o755);
+  writeExecutable(
+    fixtureObservationScript,
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
+  echo "ambient secret reached observation" >&2
+  exit 23
+fi
+if [[ "\${QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE:-}" != "1" ]]; then
+  echo "fixture observation requires enable flag" >&2
+  exit 62
+fi
+expected_state="\${QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE:-}"
+actual_state="$(cat ${shellDoubleQuoted(observationState)})"
+if [[ "$actual_state" == "fail" ]]; then
+  echo "fixture observation failed closed" >&2
+  exit 66
+fi
+if [[ "$expected_state" != "$actual_state" ]]; then
+  echo "fixture observation state mismatch" >&2
+  exit 67
+fi
+echo "fixture observation $actual_state"
+`
+  );
 
   writeExecutable(sidecar, "#!/usr/bin/env bash\nexit 70\n");
   fs.mkdirSync(path.dirname(bridge), { recursive: true });
@@ -182,8 +201,10 @@ esac
   const commonEnv = {
     ...process.env,
     QINTOPIA_UNRELATED_RUNTIME_SECRET: "must-not-reach-runuser",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_MODE: "1",
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_ROOT: tmpRoot,
+    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_MODE:
+      "must-not-reach-observation",
+    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_TEST_ROOT:
+      "must-not-reach-observation",
     QINTOPIA_RELEASE_CURRENT_DIR: currentRelease,
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PLUGIN_PATH: plugin,
   };
@@ -195,6 +216,7 @@ esac
     });
 
   fs.writeFileSync(logPath, "", "utf8");
+  fs.writeFileSync(observationState, "enabled", "utf8");
   const denied = run(fixtureActivationScript, {
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: enabledEnv,
   });
@@ -203,6 +225,7 @@ esac
   }
 
   fs.writeFileSync(logPath, "", "utf8");
+  fs.writeFileSync(observationState, "fail", "utf8");
   const mismatch = run(fixtureActivationScript, {
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-callback-bridge",
@@ -217,6 +240,7 @@ esac
   }
 
   fs.writeFileSync(logPath, "", "utf8");
+  fs.writeFileSync(observationState, "enabled", "utf8");
   const activated = run(fixtureActivationScript, {
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-callback-bridge",
@@ -236,6 +260,7 @@ esac
   }
 
   fs.writeFileSync(logPath, "", "utf8");
+  fs.writeFileSync(observationState, "disabled", "utf8");
   const rolledBack = run(fixtureRollbackScript, {
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK:
       "approved-production-qiwe-image-callback-bridge-rollback",
