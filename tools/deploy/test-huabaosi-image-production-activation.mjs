@@ -16,10 +16,39 @@ const rollbackScript = path.join(
   repoRoot,
   "deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh"
 );
+const fixedSystemctl = "/usr/bin/systemctl";
 
 try {
   const logPath = path.join(tmpRoot, "systemctl.log");
   const systemctl = path.join(tmpRoot, "systemctl");
+  const activationFixture = path.join(tmpRoot, "activate-production-fixture.sh");
+  const rollbackFixture = path.join(tmpRoot, "rollback-production-fixture.sh");
+
+  for (const sourcePath of [activationScript, rollbackScript]) {
+    const source = fs.readFileSync(sourcePath, "utf8");
+    if (source.includes('SYSTEMCTL="${SYSTEMCTL:-systemctl}"')) {
+      throw new Error(
+        `${path.basename(sourcePath)} must not allow overriding systemctl`
+      );
+    }
+    if (!source.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')) {
+      throw new Error(`${path.basename(sourcePath)} must reset PATH`);
+    }
+    if (!source.includes(`SYSTEMCTL="${fixedSystemctl}"`)) {
+      throw new Error(`${path.basename(sourcePath)} must use the fixed systemctl path`);
+    }
+  }
+
+  fs.writeFileSync(
+    activationFixture,
+    fs.readFileSync(activationScript, "utf8").replaceAll(fixedSystemctl, systemctl),
+    "utf8"
+  );
+  fs.writeFileSync(
+    rollbackFixture,
+    fs.readFileSync(rollbackScript, "utf8").replaceAll(fixedSystemctl, systemctl),
+    "utf8"
+  );
   fs.writeFileSync(
     systemctl,
     `#!/usr/bin/env bash
@@ -33,11 +62,11 @@ printf '%s\n' "$*" >>"${logPath}"
   const run = (script, extraEnv = {}) =>
     spawnSync("bash", [script], {
       cwd: repoRoot,
-      env: { ...process.env, SYSTEMCTL: systemctl, ...extraEnv },
+      env: { ...process.env, ...extraEnv },
       encoding: "utf8",
     });
 
-  for (const script of [activationScript, rollbackScript]) {
+  for (const script of [activationFixture, rollbackFixture]) {
     fs.writeFileSync(logPath, "", "utf8");
     const denied = run(script);
     if (denied.status === 0 || fs.readFileSync(logPath, "utf8") !== "") {
@@ -48,7 +77,7 @@ printf '%s\n' "$*" >>"${logPath}"
   }
 
   fs.writeFileSync(logPath, "", "utf8");
-  const activated = run(activationScript, {
+  const activated = run(activationFixture, {
     QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION:
       "approved-production-image-generation",
   });
@@ -68,7 +97,7 @@ printf '%s\n' "$*" >>"${logPath}"
   }
 
   fs.writeFileSync(logPath, "", "utf8");
-  const rolledBack = run(rollbackScript, {
+  const rolledBack = run(rollbackFixture, {
     QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK:
       "approved-production-image-generation-rollback",
   });

@@ -9,7 +9,8 @@ fi
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 PREFLIGHT_SERVICE="qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service"
 WORKER_TIMER="qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
-SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+SYSTEMCTL="/usr/bin/systemctl"
 
 if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   echo "systemctl is required for Huabaosi Feishu mirror production activation" >&2

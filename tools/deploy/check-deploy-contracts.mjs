@@ -1611,6 +1611,8 @@ if (!exists(aliangProductionActivationPath)) {
   for (const fragment of [
     "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION",
     "approved-production-image-generation",
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
     "qintopia-agentos-huabaosi-image-generation-worker.timer",
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
@@ -1626,6 +1628,8 @@ if (!exists(aliangProductionActivationPath)) {
     "source ",
     "QIWE_",
     "FEISHU_",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
   ]) {
     forbidFragment(aliangProductionActivationPath, activation, fragment);
   }
@@ -1640,13 +1644,22 @@ if (!exists(aliangProductionRollbackPath)) {
   for (const fragment of [
     "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK",
     "approved-production-image-generation-rollback",
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
     "qintopia-agentos-huabaosi-image-generation-worker.service",
     "qintopia-agentos-huabaosi-image-generation-worker.timer",
     '"$SYSTEMCTL" disable --now "$WORKER_TIMER"',
   ]) {
     requireFragment(aliangProductionRollbackPath, rollback, fragment);
   }
-  for (const fragment of ["rm -", "source ", "QIWE_", "FEISHU_"]) {
+  for (const fragment of [
+    "rm -",
+    "source ",
+    "QIWE_",
+    "FEISHU_",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+  ]) {
     forbidFragment(aliangProductionRollbackPath, rollback, fragment);
   }
 }
@@ -1663,6 +1676,8 @@ if (!exists(huabaosiFeishuMirrorActivationPath)) {
     "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION",
     "approved-production-huabaosi-feishu-artifact-mirror",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
     "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
@@ -1683,6 +1698,8 @@ if (!exists(huabaosiFeishuMirrorActivationPath)) {
     "--apply",
     "QIWE_",
     "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
   ]) {
     forbidFragment(huabaosiFeishuMirrorActivationPath, activation, fragment);
   }
@@ -1775,11 +1792,27 @@ if (exists(huabaosiFeishuMirrorRollbackPath)) {
     rollback,
     'ENV_FILE="/etc/qintopia/message-sidecar.env"'
   );
+  requireFragment(
+    huabaosiFeishuMirrorRollbackPath,
+    rollback,
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"'
+  );
+  requireFragment(
+    huabaosiFeishuMirrorRollbackPath,
+    rollback,
+    'SYSTEMCTL="/usr/bin/systemctl"'
+  );
   forbidFragment(
     huabaosiFeishuMirrorRollbackPath,
     rollback,
     "QINTOPIA_SIDECAR_ENV_FILE"
   );
+  forbidFragment(
+    huabaosiFeishuMirrorRollbackPath,
+    rollback,
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"'
+  );
+  forbidFragment(huabaosiFeishuMirrorRollbackPath, rollback, 'SYSTEMCTL="systemctl"');
 }
 
 const renderSystemdUnitsPath = "deploy/sidecar/scripts/render-systemd-units.sh";

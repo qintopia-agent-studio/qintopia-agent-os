@@ -91,11 +91,14 @@
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh`
 - Huabaosi generated-image Feishu mirror activation is guarded, not automatic. It
   requires the persistent mirror flag to be present exactly once and set to `1`, then
-  runs the release-local preflight service before enabling the dedicated timer:
+  runs the release-local preflight service through the fixed `/usr/bin/systemctl`
+  boundary before enabling the dedicated timer:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION=approved-production-huabaosi-feishu-artifact-mirror deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh`
 - Huabaosi generated-image Feishu mirror immediate timer rollback:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK=approved-production-huabaosi-feishu-artifact-mirror-rollback deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh`
-- Huabaosi image generation production activation after manual Release publish:
+- Huabaosi image generation production activation after manual Release publish. The
+  activation and rollback scripts must use a fixed minimal `PATH` and
+  `/usr/bin/systemctl`, never a caller-provided `SYSTEMCTL`:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION=approved-production-image-generation deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh`
 - Huabaosi image generation immediate timer rollback:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK=approved-production-image-generation-rollback deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh`
