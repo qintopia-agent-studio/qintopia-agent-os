@@ -7,7 +7,8 @@ if [[ "${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK:-}" != "approved-productio
 fi
 
 ENV_FILE="/etc/qintopia/message-sidecar.env"
-SYSTEMCTL="systemctl"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+SYSTEMCTL="/usr/bin/systemctl"
 WORKER_SERVICE="qintopia-agentos-qiwe-image-send-worker.service"
 WORKER_TIMER="qintopia-agentos-qiwe-image-send-worker.timer"
 

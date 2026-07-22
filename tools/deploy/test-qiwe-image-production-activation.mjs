@@ -18,6 +18,8 @@ const rollbackScript = path.join(
   "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh"
 );
 const fixedEnvFile = "/etc/qintopia/message-sidecar.env";
+const fixedSystemctl = "/usr/bin/systemctl";
+const fixedSha256sum = "/usr/bin/sha256sum";
 
 try {
   const databaseUrl =
@@ -26,6 +28,7 @@ try {
   const logPath = path.join(tmpRoot, "systemctl.log");
   const envFile = path.join(tmpRoot, "message-sidecar.env");
   const systemctl = path.join(tmpRoot, "systemctl");
+  const sha256sum = path.join(tmpRoot, "sha256sum");
   const activationFixture = path.join(tmpRoot, "activate-production-fixture.sh");
   const rollbackFixture = path.join(tmpRoot, "rollback-production-fixture.sh");
 
@@ -46,19 +49,34 @@ try {
         `${path.basename(sourcePath)} must read the fixed reviewed env file`
       );
     }
-    if (!source.includes('SYSTEMCTL="systemctl"')) {
-      throw new Error(`${path.basename(sourcePath)} must use the fixed systemctl`);
+    if (!source.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')) {
+      throw new Error(`${path.basename(sourcePath)} must reset PATH`);
     }
+    if (!source.includes(`SYSTEMCTL="${fixedSystemctl}"`)) {
+      throw new Error(`${path.basename(sourcePath)} must use the fixed systemctl path`);
+    }
+  }
+  if (
+    !fs.readFileSync(activationScript, "utf8").includes(`SHA256SUM="${fixedSha256sum}"`)
+  ) {
+    throw new Error("activation must use the fixed sha256sum path");
   }
 
   fs.writeFileSync(
     activationFixture,
-    fs.readFileSync(activationScript, "utf8").replaceAll(fixedEnvFile, envFile),
+    fs
+      .readFileSync(activationScript, "utf8")
+      .replaceAll(fixedEnvFile, envFile)
+      .replaceAll(fixedSystemctl, systemctl)
+      .replaceAll(fixedSha256sum, sha256sum),
     "utf8"
   );
   fs.writeFileSync(
     rollbackFixture,
-    fs.readFileSync(rollbackScript, "utf8").replaceAll(fixedEnvFile, envFile),
+    fs
+      .readFileSync(rollbackScript, "utf8")
+      .replaceAll(fixedEnvFile, envFile)
+      .replaceAll(fixedSystemctl, systemctl),
     "utf8"
   );
   fs.writeFileSync(
@@ -73,6 +91,19 @@ fi
     "utf8"
   );
   fs.chmodSync(systemctl, 0o755);
+  fs.writeFileSync(
+    sha256sum,
+    `#!/usr/bin/env bash
+set -euo pipefail
+input="$(cat)"
+if [[ "$input" != "${databaseUrl}" ]]; then
+  exit 2
+fi
+printf '%s  -\\n' "${databaseHash}"
+`,
+    "utf8"
+  );
+  fs.chmodSync(sha256sum, 0o755);
 
   const writeEnv = (flag) =>
     fs.writeFileSync(
@@ -91,7 +122,6 @@ fi
       cwd: repoRoot,
       env: {
         ...process.env,
-        PATH: `${tmpRoot}${path.delimiter}${process.env.PATH ?? ""}`,
         ...extraEnv,
       },
       encoding: "utf8",

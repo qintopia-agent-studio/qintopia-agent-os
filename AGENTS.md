@@ -132,7 +132,7 @@
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256`; never weaken this to a
   format-only hash check. Activation and rollback must read the fixed reviewed
   `/etc/qintopia/message-sidecar.env` and must not accept env-file or systemctl command
-  overrides from the caller:
+  overrides from the caller; use a fixed system PATH and absolute systemctl path:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`
 - QiWe image-send immediate timer rollback:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK=approved-production-qiwe-image-send-rollback deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh`

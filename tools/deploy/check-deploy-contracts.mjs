@@ -1704,9 +1704,10 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
     "QINTOPIA_SIDECAR_DATABASE_URL",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
-    'SYSTEMCTL="systemctl"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    'SHA256SUM="/usr/bin/sha256sum"',
     "database URL hash does not match the approved production hash",
-    "sha256sum",
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.timer",
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
@@ -1724,6 +1725,8 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "QIWE_TOKEN",
     "QINTOPIA_SIDECAR_ENV_FILE",
     'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+    "sha256sum | awk",
   ]) {
     forbidFragment(qiweImageSendProductionActivationPath, activation, fragment);
   }
@@ -1742,7 +1745,8 @@ if (!exists(qiweImageSendProductionRollbackPath)) {
     "approved-production-qiwe-image-send-rollback",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
-    'SYSTEMCTL="systemctl"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
     "qintopia-agentos-qiwe-image-send-worker.service",
     "qintopia-agentos-qiwe-image-send-worker.timer",
     '"$SYSTEMCTL" disable --now "$WORKER_TIMER"',
@@ -1756,6 +1760,7 @@ if (!exists(qiweImageSendProductionRollbackPath)) {
     "QIWE_TOKEN",
     "QINTOPIA_SIDECAR_ENV_FILE",
     'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
   ]) {
     forbidFragment(qiweImageSendProductionRollbackPath, rollback, fragment);
   }
