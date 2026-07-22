@@ -845,13 +845,15 @@ Use `rg` and `rg --files` for search.
   write Postgres or Feishu, call QiWe, create a generated image, or publish.
 - `huabaosi-image-generation-production-canary-smoke.sh` is the release-local one-shot
   entrypoint for the first post-deploy image. It must run from the exact immutable
-  release with the provider timer disabled and inactive, parse only allowlisted keys
-  from the fixed production env without `source` or `eval`, reuse reviewer `trainer`,
-  and bind one pending brief to one new request, one pending Feishu-backed JPEG, and
-  authenticated same-byte revalidation. Its approval request must transactionally
-  require the target artifact to be a pending `poster_brief` before mutation or Feishu
-  revalidation. Each retained canary evidence phase must preserve
-  `release_binary_verified=true`, `approved_sidecar_sha256_matched=true`, and
+  release with the provider timer disabled and inactive, use a fixed minimal `PATH` and
+  `/usr/bin/systemctl` in production mode, reject test mode from production release
+  roots, parse only allowlisted keys from the fixed production env without `source` or
+  `eval`, reuse reviewer `trainer`, and bind one pending brief to one new request, one
+  pending Feishu-backed JPEG, and authenticated same-byte revalidation. Its approval
+  request must transactionally require the target artifact to be a pending
+  `poster_brief` before mutation or Feishu revalidation. Each retained canary evidence
+  phase must preserve `release_binary_verified=true`,
+  `approved_sidecar_sha256_matched=true`, and
   `approved_database_url_sha256_matched=true` so the standalone and final completion
   checkers can prove the immutable release/database boundary. It must not approve the
   generated image, enable timers, run the mirror worker, publish, call QiWe, send, or
