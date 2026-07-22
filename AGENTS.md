@@ -117,6 +117,15 @@
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh`
 - QiWe image callback bridge production observation smoke:
   `QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh`
+- QiWe image callback bridge production activation after manual Release publish and
+  persistent Erhua env approval. The activation script validates the bridge is already
+  bound to release/current, production mode, the approved sidecar SHA-256, and the
+  approved production database URL hash before restarting Erhua; it must not enable
+  timers, process callbacks, call QiWe, or source env files:
+  `QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION=approved-production-qiwe-image-callback-bridge deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh`
+- QiWe image callback bridge immediate rollback after persistent Erhua env disables the
+  bridge:
+  `QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ROLLBACK=approved-production-qiwe-image-callback-bridge-rollback deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh`
 - QiWe image-send production activation after manual Release publish and production env
   approval. The activation script must fail before preflight or timer changes unless the
   persistent `QINTOPIA_SIDECAR_DATABASE_URL` hashes to the approved

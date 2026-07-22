@@ -116,16 +116,18 @@ unless correcting historical evidence.
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The
      deterministic provider-PNG-to-final-JPEG path resolves the code-level format gap;
      the additive Postgres state stores only hashed correlation/idempotency and
-     sanitized claim/audit facts. A guarded upload worker and bounded callback command
-     now exist for fake-server and disposable-Postgres validation, but sending remains
-     disabled because no listener service or timer exists. The disabled staging webhook
-     bridge accepts only a digest-pinned sidecar under the fixed immutable staging
-     release root; the provider/storage/readback path plus callback credential shape
-     still require owner-approved staging evidence. Feishu-backed generated images use a
-     separately gated staging bridge: authenticated Feishu bytes are uploaded to the
-     non-deprecated QiWe SDK temporary-storage endpoint, its memory-only URL is
-     allowlisted and read back for complete JPEG identity, and only then enters the
-     existing asynchronous URL upload path. Track this reviewed boundary in
+     sanitized claim/audit facts. A guarded upload worker, bounded callback command,
+     disabled-by-default staging webhook bridge, production worker activation, and
+     production callback bridge activation boundary now exist, but sending remains
+     disabled until owner-approved evidence and persistent runtime enablement prove the
+     full route. The staging webhook bridge accepts only a digest-pinned sidecar under
+     the fixed immutable staging release root; the provider/storage/readback path plus
+     callback credential shape still require owner-approved staging evidence.
+     Feishu-backed generated images use a separately gated staging bridge: authenticated
+     Feishu bytes are uploaded to the non-deprecated QiWe SDK temporary-storage
+     endpoint, its memory-only URL is allowlisted and read back for complete JPEG
+     identity, and only then enters the existing asynchronous URL upload path. Track
+     this reviewed boundary in
      [Xiaoman Feishu-To-QiWe Delivery Boundary](xiaoman-feishu-qiwe-delivery-boundary.md).
      Only the matched Huabaosi/QiWe live feature pairs may claim this storage type:
      staging requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`, and
@@ -140,8 +142,8 @@ unless correcting historical evidence.
      merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration
      tests. The next boundary is owner-approved isolated staging evidence for the final
-     JPEG and callback credential shape; no listener, service, timer, or production
-     enablement may precede that evidence.
+     JPEG and callback credential shape before production worker or callback bridge
+     activation is used for a real send.
    - The Huabaosi live provider/media entrypoint is being moved behind the non-default
      `huabaosi-staging-adapter` Cargo feature. Its Rust command gate binds an exact
      owner phrase and repository-reviewed database URL hash allowlist before Postgres.
