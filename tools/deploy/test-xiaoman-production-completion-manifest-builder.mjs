@@ -8,15 +8,23 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
+const builder = path.join(
+  repoRoot,
+  "tools/deploy/build-xiaoman-production-completion-manifest.mjs"
+);
 const checker = path.join(
   repoRoot,
   "tools/deploy/check-xiaoman-production-completion-evidence.mjs"
 );
 const tmpRoot = fs.mkdtempSync(
-  path.join(os.tmpdir(), "xiaoman-production-completion-evidence-")
+  path.join(os.tmpdir(), "xiaoman-production-completion-manifest-")
 );
-const releaseSha = "0123456789abcdef0123456789abcdef01234567";
+const fakeBin = path.join(tmpRoot, "bin");
+const stagingReleaseSha = "0123456789abcdef0123456789abcdef01234567";
 const productionReleaseSha = "89abcdef012345670123456789abcdef01234567";
+const releaseTag = "v0.2.21";
+const releasePleaseHeadSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const qiweEnablementHeadSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const sidecarHash = "1".repeat(64);
 const productionSidecarHash = "2".repeat(64);
 const stagingDatabaseHash = "3".repeat(64);
@@ -24,182 +32,134 @@ const productionDatabaseHash = "4".repeat(64);
 const contentHash = `sha256:${"a".repeat(64)}`;
 
 try {
+  writeFakeGh();
+  assertFakeGh();
   const files = writeEvidenceFiles();
-  let result = runChecker(files);
+  const manifest = path.join(tmpRoot, "completion-manifest.json");
+  let result = runBuilder(files, manifest);
+  assert.equal(result.status, 0, result.stderr);
+
+  const generated = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  assert.equal(generated.release_please_validation.pr_number, 246);
+  assert.equal(generated.release_please_validation.head_sha, releasePleaseHeadSha);
+  assert.equal(generated.release_please_validation.release_tag, releaseTag);
+  assert.equal(
+    generated.release_please_validation.released_commit_sha,
+    productionReleaseSha
+  );
+  assert.equal(generated.qiwe_production_enablement.pr_number, 244);
+  assert.equal(generated.qiwe_production_enablement.head_sha, qiweEnablementHeadSha);
+  assert.equal(
+    generated.huabaosi_production_activation.sidecar_binary_sha256,
+    productionSidecarHash
+  );
+  assert.deepEqual(generated.real_activity_confirmation, {
+    qiwe_group_arrival_confirmed: true,
+    confirmed_by: "owner",
+    confirmed_at: "2026-07-20T06:30:00Z",
+  });
+
+  result = runCompletionChecker({ ...files, manifest });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Xiaoman production completion evidence check passed/);
 
-  const templateText = writeEvidenceFiles();
-  fs.appendFileSync(
-    templateText.qiweGroupArrivalConfirmation,
-    [
-      "## Exclusions",
-      "Do not record QiWe token, GUID, API secret material, raw target group id, message id, request id, callback event id, file id, MD5 value, AES key, file size, filename, media URL, database URL, database credentials, raw chat content, screenshots containing member profiles, shell logs, or response bodies.",
-      "",
-    ].join("\n"),
-    "utf8"
+  const drifted = writeEvidenceFiles({
+    production: { common: { production_release_sha: stagingReleaseSha } },
+  });
+  result = runBuilder(drifted, path.join(tmpRoot, "drifted-manifest.json"));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /evidence release SHA does not match/);
+
+  result = runBuilder(files, path.join(tmpRoot, "bad-release-head-manifest.json"), {
+    FAKE_RELEASE_PR_HEAD_SHA: "c".repeat(40),
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Release Please PR head SHA does not match/);
+
+  result = runBuilder(files, path.join(tmpRoot, "draft-release-manifest.json"), {
+    FAKE_RELEASE_DRAFT: "true",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /published GitHub Release must exist/);
+
+  result = runBuilder(files, path.join(tmpRoot, "sensitive-gh-failure-manifest.json"), {
+    FAKE_GH_SENSITIVE_FAILURE: "1",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /redacted-sensitive-diagnostic/);
+  assert.doesNotMatch(result.stderr, /fileAesKey|request_id|live-secret/);
+
+  result = runBuilder(files, path.join(tmpRoot, "release-tag-drift-manifest.json"), {
+    FAKE_RELEASE_TAG_SHA: stagingReleaseSha,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /published GitHub Release tag does not point/);
+
+  result = runBuilder(
+    files,
+    path.join(tmpRoot, "annotated-release-tag-manifest.json"),
+    {
+      FAKE_RELEASE_TAG_TYPE: "tag",
+    }
   );
-  result = runChecker(templateText);
   assert.equal(result.status, 0, result.stderr);
 
-  const missingEnablement = writeEvidenceFiles({
-    manifest: {
-      qiwe_production_enablement: {
-        status: "observation-only",
-      },
-    },
+  result = runBuilder(files, path.join(tmpRoot, "open-qiwe-pr-manifest.json"), {
+    FAKE_QIWE_PR_STATE: "OPEN",
   });
-  result = runChecker(missingEnablement);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /QiWe production enablement evidence is incomplete/);
+  assert.match(result.stderr, /QiWe production enablement PR must be merged/);
 
-  const releasePleaseDrift = writeEvidenceFiles({
-    manifest: {
-      release_please_validation: {
-        released_commit_sha: releaseSha,
-      },
-    },
+  result = runBuilder(files, path.join(tmpRoot, "unreleased-qiwe-pr-manifest.json"), {
+    FAKE_COMPARE_STATUS: "diverged",
   });
-  result = runChecker(releasePleaseDrift);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /release facts do not bind/);
+  assert.match(result.stderr, /QiWe production enablement PR head is not included/);
 
-  const qiweEnablementReleaseDrift = writeEvidenceFiles({
-    manifest: {
-      qiwe_production_enablement: {
-        included_in_release_sha: releaseSha,
-      },
-    },
-  });
-  result = runChecker(qiweEnablementReleaseDrift);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /release facts do not bind/);
-
-  const testModeReadiness = writeEvidenceFiles({
-    stagingRuntime: { test_mode: true },
-  });
-  result = runChecker(testModeReadiness);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /staging runtime readiness/);
-
-  const wrongReadinessReport = writeEvidenceFiles({
-    stagingRuntime: {
-      reports: [
-        { label: "prerequisite", success: true },
-        { label: "huabaosi_readiness", success: true },
-        { label: "unreviewed_report", success: true },
-      ],
-    },
-  });
-  result = runChecker(wrongReadinessReport);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /staging runtime readiness/);
-
-  const productionDrift = writeEvidenceFiles({
-    manifest: {
-      huabaosi_production_activation: {
-        sidecar_binary_sha256: "f".repeat(64),
-      },
-    },
-  });
-  result = runChecker(productionDrift);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /do not bind to retained evidence/);
-
-  const canaryContentDrift = writeEvidenceFiles({
-    huabaosiProductionCanary: {
-      generation: { content_hash: `sha256:${"b".repeat(64)}` },
-      revalidation: { content_hash: `sha256:${"b".repeat(64)}` },
-    },
-  });
-  result = runChecker(canaryContentDrift);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /does not bind to real activity image/);
-
-  const canaryPhaseMissing = writeEvidenceFiles();
-  fs.writeFileSync(
-    canaryPhaseMissing.huabaosiProductionCanary,
-    huabaosiProductionCanaryOutput()
-      .split(/\r?\n/)
-      .filter((line) => !line.includes('"phase":"brief_review"'))
-      .join("\n"),
-    "utf8"
-  );
-  result = runChecker(canaryPhaseMissing);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /five fixed phases/);
-
-  const canaryBoundaryMissing = writeEvidenceFiles({
-    huabaosiProductionCanary: {
-      preflight: { release_binary_verified: false },
-    },
-  });
-  result = runChecker(canaryBoundaryMissing);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /shared production boundary/);
-
-  const rawSecret = writeEvidenceFiles({
-    manifest: {
-      real_activity_confirmation: {
-        confirmed_by: "owner-token",
-      },
-    },
-  });
-  result = runChecker(rawSecret);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /forbidden sensitive fragment/);
-
-  const invalidConfirmationTime = writeEvidenceFiles({
-    manifest: {
-      real_activity_confirmation: {
-        confirmed_at: "2026-99-99T99:99:99Z",
-      },
-    },
-  });
-  result = runChecker(invalidConfirmationTime);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /human group-arrival confirmation/);
-
-  const confirmationTimeDrift = writeEvidenceFiles({
-    qiweGroupArrivalConfirmation: {
-      confirmed_at: "2026-07-20T06:31:00Z",
-    },
-  });
-  result = runChecker(confirmationTimeDrift);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /does not bind to QiWe group arrival evidence/);
-
-  const missingArrivalConfirmation = writeEvidenceFiles();
-  fs.writeFileSync(
-    missingArrivalConfirmation.qiweGroupArrivalConfirmation,
-    "\n",
-    "utf8"
-  );
-  result = runChecker(missingArrivalConfirmation);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /QiWe group arrival confirmation evidence failed/);
-
-  const routeMismatch = writeEvidenceFiles({
-    production: {
-      activityRoute: "activity_recap",
-    },
-  });
-  result = runChecker(routeMismatch);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Xiaoman real activity production evidence failed/);
-
-  const nonObjectManifest = writeEvidenceFiles();
-  fs.writeFileSync(nonObjectManifest.manifest, "[]\n", "utf8");
-  result = runChecker(nonObjectManifest);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /completion manifest must be a JSON object/);
+  console.log("Xiaoman production completion manifest builder test passed.");
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
 
-console.log("Xiaoman production completion evidence test passed.");
+function runBuilder(files, output, env = {}) {
+  return spawnSync(
+    "node",
+    [
+      builder,
+      "--release-please-pr-number",
+      "246",
+      "--release-please-head-sha",
+      releasePleaseHeadSha,
+      "--release-tag",
+      releaseTag,
+      "--released-commit-sha",
+      productionReleaseSha,
+      "--qiwe-production-enablement-pr-number",
+      "244",
+      "--qiwe-production-enablement-head-sha",
+      qiweEnablementHeadSha,
+      "--huabaosi-production-canary",
+      files.huabaosiProductionCanary,
+      "--production-real-activity",
+      files.production,
+      "--qiwe-group-arrival-confirmation",
+      files.qiweGroupArrivalConfirmation,
+      "--output",
+      output,
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...env,
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    }
+  );
+}
 
-function runChecker(files) {
+function runCompletionChecker(files) {
   return spawnSync(
     "node",
     [
@@ -219,34 +179,146 @@ function runChecker(files) {
       "--qiwe-group-arrival-confirmation",
       files.qiweGroupArrivalConfirmation,
     ],
-    {
-      cwd: repoRoot,
-      encoding: "utf8",
-    }
+    { cwd: repoRoot, encoding: "utf8" }
   );
 }
 
+function writeFakeGh() {
+  fs.mkdirSync(fakeBin, { recursive: true });
+  const fakeGh = path.join(fakeBin, "gh");
+  fs.writeFileSync(
+    fakeGh,
+    `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const releaseTag = ${JSON.stringify(releaseTag)};
+const releasePleaseHeadSha = ${JSON.stringify(releasePleaseHeadSha)};
+const productionReleaseSha = ${JSON.stringify(productionReleaseSha)};
+const qiweEnablementHeadSha = ${JSON.stringify(qiweEnablementHeadSha)};
+
+function write(payload) {
+  process.stdout.write(JSON.stringify(payload));
+}
+
+if (process.env.FAKE_GH_SENSITIVE_FAILURE === "1") {
+  console.error('{"fileAesKey":"live-secret","request_id":"raw-request"}');
+  process.exit(1);
+}
+
+if (args[0] === "pr" && args[1] === "view") {
+  const number = Number.parseInt(args[2], 10);
+  if (number === 246) {
+    const missingCheck = process.env.FAKE_RELEASE_PR_MISSING_CHECK;
+    const checks = [
+      { name: "changes", conclusion: "SUCCESS" },
+      { name: "check", conclusion: "SUCCESS" },
+      { context: "Release Please validation", state: "SUCCESS" },
+    ].filter((check) => !missingCheck || (check.name !== missingCheck && check.context !== missingCheck));
+    write({
+      number,
+      state: process.env.FAKE_RELEASE_PR_STATE || "MERGED",
+      baseRefName: "master",
+      headRefOid: process.env.FAKE_RELEASE_PR_HEAD_SHA || releasePleaseHeadSha,
+      mergeCommit: { oid: process.env.FAKE_RELEASE_PR_MERGE_SHA || productionReleaseSha },
+      statusCheckRollup: checks,
+    });
+    process.exit(0);
+  }
+  if (number === 244) {
+    write({
+      number,
+      state: process.env.FAKE_QIWE_PR_STATE || "MERGED",
+      baseRefName: "master",
+      headRefOid: process.env.FAKE_QIWE_PR_HEAD_SHA || qiweEnablementHeadSha,
+      mergeCommit: { oid: "dddddddddddddddddddddddddddddddddddddddd" },
+    });
+    process.exit(0);
+  }
+}
+
+if (args[0] === "api" && args[1] === \`repos/:owner/:repo/releases/tags/\${releaseTag}\`) {
+  write({
+    tag_name: releaseTag,
+    draft: process.env.FAKE_RELEASE_DRAFT === "true",
+    prerelease: process.env.FAKE_RELEASE_PRERELEASE === "true",
+  });
+  process.exit(0);
+}
+
+if (args[0] === "api" && args[1] === \`repos/:owner/:repo/git/ref/tags/\${releaseTag}\`) {
+  write({
+    ref: \`refs/tags/\${releaseTag}\`,
+    object: {
+      type: process.env.FAKE_RELEASE_TAG_TYPE || "commit",
+      sha: process.env.FAKE_RELEASE_TAG_TYPE === "tag"
+        ? "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        : process.env.FAKE_RELEASE_TAG_SHA || productionReleaseSha,
+    },
+  });
+  process.exit(0);
+}
+
+if (args[0] === "api" && args[1] === "repos/:owner/:repo/git/tags/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") {
+  write({
+    object: {
+      type: "commit",
+      sha: process.env.FAKE_ANNOTATED_TAG_SHA || productionReleaseSha,
+    },
+  });
+  process.exit(0);
+}
+
+if (args[0] === "api" && args[1]?.includes("/compare/")) {
+  write({ status: process.env.FAKE_COMPARE_STATUS || "ahead" });
+  process.exit(0);
+}
+
+console.error("unexpected fake gh call:", args.join(" "));
+process.exit(1);
+`,
+    { mode: 0o755 }
+  );
+}
+
+function assertFakeGh() {
+  const result = spawnSync(
+    "gh",
+    [
+      "pr",
+      "view",
+      "246",
+      "--json",
+      "number,state,baseRefName,headRefOid,mergeCommit,statusCheckRollup",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.ok(payload.statusCheckRollup?.[0], result.stdout);
+  assert.equal(payload.statusCheckRollup[0].name, "changes");
+}
+
 function writeEvidenceFiles(overrides = {}) {
-  const dir = fs.mkdtempSync(path.join(tmpRoot, "case-"));
   const files = {
-    manifest: path.join(dir, "completion-manifest.json"),
-    stagingRuntime: path.join(dir, "staging-runtime.txt"),
-    huabaosi: path.join(dir, "huabaosi.txt"),
-    qiwe: path.join(dir, "qiwe.txt"),
-    huabaosiProductionCanary: path.join(dir, "huabaosi-production-canary.txt"),
-    production: path.join(dir, "production.txt"),
-    qiweGroupArrivalConfirmation: path.join(dir, "qiwe-group-arrival-confirmation.txt"),
+    stagingRuntime: path.join(tmpRoot, `staging-${cryptoSuffix()}.txt`),
+    huabaosi: path.join(tmpRoot, `huabaosi-${cryptoSuffix()}.txt`),
+    qiwe: path.join(tmpRoot, `qiwe-${cryptoSuffix()}.txt`),
+    huabaosiProductionCanary: path.join(tmpRoot, `canary-${cryptoSuffix()}.txt`),
+    production: path.join(tmpRoot, `production-${cryptoSuffix()}.txt`),
+    qiweGroupArrivalConfirmation: path.join(
+      tmpRoot,
+      `confirmation-${cryptoSuffix()}.txt`
+    ),
   };
   fs.writeFileSync(
-    files.manifest,
-    `${JSON.stringify(deepMerge(completionManifest(), overrides.manifest ?? {}))}\n`,
-    "utf8"
-  );
-  fs.writeFileSync(
     files.stagingRuntime,
-    `staging_runtime_readiness_evidence=${JSON.stringify(
-      deepMerge(stagingRuntimeReadiness(), overrides.stagingRuntime ?? {})
-    )}\n`,
+    `staging_runtime_readiness_evidence=${JSON.stringify(stagingRuntimeReadiness())}\n`,
     "utf8"
   );
   fs.writeFileSync(files.huabaosi, huabaosiStagingOutput(), "utf8");
@@ -269,45 +341,8 @@ function writeEvidenceFiles(overrides = {}) {
   return files;
 }
 
-function completionManifest() {
-  return {
-    schema: "xiaoman-production-completion-evidence-v1",
-    release_please_validation: {
-      status: "passed",
-      pr_number: 180,
-      head_sha: releaseSha,
-      release_tag: "v0.2.21",
-      released_commit_sha: productionReleaseSha,
-      manual_ci_workflow: "ci.yml",
-      release_please_status: "success",
-    },
-    qiwe_production_enablement: {
-      status: "merged",
-      pr_number: 215,
-      head_sha: releaseSha,
-      included_in_release_sha: productionReleaseSha,
-      listener_service_timer_reviewed: true,
-      observation_reviewed: true,
-      rollback_reviewed: true,
-      exact_allowlists_reviewed: true,
-      production_feature_boundary_reviewed: true,
-    },
-    huabaosi_production_activation: {
-      release_sha: productionReleaseSha,
-      sidecar_binary_sha256: productionSidecarHash,
-      database_url_sha256: productionDatabaseHash,
-      image_generation_observation_passed: true,
-      image_generation_activation_approved: true,
-      feishu_mirror_observation_passed: true,
-      feishu_mirror_activation_approved: true,
-      first_record_evidence_retained: true,
-    },
-    real_activity_confirmation: {
-      qiwe_group_arrival_confirmed: true,
-      confirmed_by: "owner",
-      confirmed_at: "2026-07-20T06:30:00Z",
-    },
-  };
+function cryptoSuffix() {
+  return Math.random().toString(16).slice(2);
 }
 
 function stagingRuntimeReadiness() {
@@ -316,7 +351,7 @@ function stagingRuntimeReadiness() {
     worker: "staging-runtime-readiness-evidence",
     action_status: "ready_for_huabaosi_qiwe_staging_smokes",
     test_mode: false,
-    release_sha: releaseSha,
+    release_sha: stagingReleaseSha,
     packaged_sidecar_sha256: sidecarHash,
     staging_database_url_sha256: stagingDatabaseHash,
     reports: [
@@ -528,6 +563,7 @@ function productionOutput(overrides = {}) {
     approved_sidecar_sha256_matched: true,
     approved_database_url_sha256_matched: true,
     safe_for_chat: false,
+    ...(overrides.common ?? {}),
   };
   return [
     {
@@ -539,8 +575,8 @@ function productionOutput(overrides = {}) {
       dry_run: false,
       source_event_signal_id: sourceEventSignalId,
       workflow_root_id: workflowRootId,
-      activity_phase: overrides.activityPhase ?? "pre_event",
-      activity_route: overrides.activityRoute ?? "activity_promotion",
+      activity_phase: "pre_event",
+      activity_route: "activity_promotion",
       external_send_executed: false,
     },
     {

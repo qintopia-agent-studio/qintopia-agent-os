@@ -139,6 +139,25 @@
 - Xiaoman QiWe group-arrival human confirmation evidence validation after a real
   activity send:
   `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`
+- Build the non-secret Xiaoman production completion manifest after the Huabaosi canary,
+  real-activity, and QiWe group-arrival evidence checks pass. Run it where `gh` can
+  verify the Release Please PR, QiWe production enablement PR, and published release
+  commit facts:
+
+  ```bash
+  node tools/deploy/build-xiaoman-production-completion-manifest.mjs \
+    --release-please-pr-number <release-please-pr-number> \
+    --release-please-head-sha <release-please-head-sha> \
+    --release-tag <published-release-tag> \
+    --released-commit-sha <published-release-commit-sha> \
+    --qiwe-production-enablement-pr-number <qiwe-production-enablement-pr-number> \
+    --qiwe-production-enablement-head-sha <qiwe-production-enablement-head-sha> \
+    --huabaosi-production-canary <production-canary-output.txt> \
+    --production-real-activity <production-evidence-output.txt> \
+    --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+    --output <completed-xiaoman-production-completion-evidence.json>
+  ```
+
 - Full Xiaoman production completion evidence validation after all completion gates have
   retained sanitized evidence:
 

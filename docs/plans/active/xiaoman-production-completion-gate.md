@@ -129,8 +129,25 @@ These are useful but not completion:
      <qiwe-group-arrival-confirmation-output.txt>
    ```
 
-8. Fill the non-secret completion manifest and run the full completion checker before
-   changing any Release classification to `production-complete`.
+8. Build the non-secret completion manifest from the retained Huabaosi canary,
+   real-activity, QiWe group-arrival evidence, and GitHub PR state, then run the full
+   checker before changing any Release classification to `production-complete`. The
+   builder must run where `gh` can verify the Release Please PR, QiWe production
+   enablement PR, and published release commit facts:
+
+   ```bash
+   node tools/deploy/build-xiaoman-production-completion-manifest.mjs \
+     --release-please-pr-number <release-please-pr-number> \
+     --release-please-head-sha <release-please-head-sha> \
+     --release-tag <published-release-tag> \
+     --released-commit-sha <published-release-commit-sha> \
+     --qiwe-production-enablement-pr-number <qiwe-production-enablement-pr-number> \
+     --qiwe-production-enablement-head-sha <qiwe-production-enablement-head-sha> \
+     --huabaosi-production-canary <production-canary-output.txt> \
+     --production-real-activity <production-evidence-output.txt> \
+     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+     --output <completed-xiaoman-production-completion-evidence.json>
+   ```
 
 ## Production Boundary
 

@@ -2233,6 +2233,7 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
     "qiwe_readiness",
     "isUtcSecondTimestamp",
     "qiwe_production_enablement",
+    "release_tag",
     "released_commit_sha",
     "included_in_release_sha",
     "release facts do not bind to the deployed production release",
@@ -2254,6 +2255,78 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
   }
   for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
     forbidFragment(xiaomanProductionCompletionEvidenceCheckPath, checker, fragment);
+  }
+}
+
+const xiaomanProductionCompletionManifestBuilderPath =
+  "tools/deploy/build-xiaoman-production-completion-manifest.mjs";
+if (!exists(xiaomanProductionCompletionManifestBuilderPath)) {
+  addError(
+    `${xiaomanProductionCompletionManifestBuilderPath}: missing Xiaoman production completion manifest builder`
+  );
+} else {
+  const builder = readText(xiaomanProductionCompletionManifestBuilderPath);
+  for (const fragment of [
+    "xiaoman-production-completion-evidence-v1",
+    "check-huabaosi-image-production-canary-evidence.mjs",
+    "check-xiaoman-real-activity-production-evidence.mjs",
+    "check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs",
+    "assertGithubReleaseFacts(options)",
+    "gh",
+    "pr",
+    "view",
+    "api",
+    "statusCheckRollup",
+    "mergeCommit",
+    "Release Please validation",
+    "Published GitHub Release",
+    "Published Git tag ref",
+    "Published annotated Git tag",
+    "QiWe production enablement inclusion",
+    "releases/tags/${options.releaseTag}",
+    "git/ref/tags/${options.releaseTag}",
+    "draft",
+    "prerelease",
+    "compare/${options.qiweProductionEnablementHeadSha}...${options.releasedCommitSha}",
+    "huabaosi_image_generation_production_canary_evidence=",
+    "xiaoman_real_activity_production_evidence=",
+    "xiaoman_qiwe_group_arrival_confirmation_evidence=",
+    "--release-please-pr-number",
+    "--release-please-head-sha",
+    "--release-tag",
+    "--released-commit-sha",
+    "--qiwe-production-enablement-pr-number",
+    "--qiwe-production-enablement-head-sha",
+    "--huabaosi-production-canary",
+    "--production-real-activity",
+    "--qiwe-group-arrival-confirmation",
+    "assertNoSensitiveOutput(output)",
+    "forbiddenOutputPatterns",
+    "released_commit_sha",
+    "release_tag",
+    "included_in_release_sha",
+    "qiwe_group_arrival_confirmed",
+    "safeDiagnostic",
+    "redacted-sensitive-diagnostic",
+    "forbiddenOutputPatterns.some",
+    "must be merged in GitHub before manifest generation",
+    "does not match GitHub state",
+    "published GitHub Release tag does not point to the released commit SHA",
+    "is not included in the released commit SHA",
+  ]) {
+    requireFragment(xiaomanProductionCompletionManifestBuilderPath, builder, fragment);
+  }
+  for (const fragment of [
+    "fetch(",
+    "systemctl",
+    "process.env.QIWE_TOKEN",
+    "process.env.DATABASE_URL",
+    "child_process.exec",
+    "https://",
+    "postgres://",
+    "postgresql://",
+  ]) {
+    forbidFragment(xiaomanProductionCompletionManifestBuilderPath, builder, fragment);
   }
 }
 
@@ -2599,6 +2672,7 @@ if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
   for (const fragment of [
     "xiaoman-production-completion-evidence-v1",
     "release_please_validation",
+    "release_tag",
     "released_commit_sha",
     "manual_ci_workflow",
     "release_please_status",
