@@ -120,6 +120,12 @@ Rollback result records must distinguish rollback success from rollback failure.
 failed rollback is recorded as deployment `failed` with `rollback.status: failed`, not
 as `rolled_back`.
 
+When promotion has already started and a later step fails, the result must keep a
+bounded diagnostic in the `deploy-runner` check detail: the fixed failure stage, exit
+status, whether `current` had been promoted, and whether an Erhua profile activation was
+attempted. Do not upload raw server logs, environment files, journal output, secrets, or
+external adapter payloads as deploy result diagnostics.
+
 Erhua profile activation additionally requires a matching reviewed dry-run, backs up and
 restores the runtime-local config and `.env`, verifies hashes, modes, and ownership,
 restarts only Erhua, requires affirmative resolution through Hermes's own provider
