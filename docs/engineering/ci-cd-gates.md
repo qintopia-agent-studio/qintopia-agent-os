@@ -72,12 +72,14 @@ Python/Rust runtime checks while still completing the required `check` job. Runt
 deployment script, package, workflow, or configuration changes run `pnpm check:runtime`
 after the light gate.
 
-Runtime-sensitive changes also run `rust-quality-baseline` with Rust 1.96. It stores
-LCOV and a text summary as a short-retention artifact. Strict Clippy runs with
-`cargo clippy --all-targets -- -D warnings` and blocks runtime-sensitive changes.
-`xiaoman-postgres-integration` uses only a disposable `qintopia_test` PostgreSQL service
-and runs the guarded control-plane apply smoke with no production database URL, secrets,
-Feishu, QiWe, or external adapters.
+Heavy checks are risk-tiered separately. Sidecar, Postgres, deploy sidecar script, or CI
+workflow changes run `rust-quality-baseline` with Rust 1.96 and
+`xiaoman-postgres-integration`; explicit non-Release manual dispatches also force the
+heavy tier. The Rust job stores LCOV and a text summary as a short-retention artifact.
+Strict Clippy runs with `cargo clippy --all-targets -- -D warnings` and blocks the heavy
+tier. The PostgreSQL integration uses only a disposable `qintopia_test` service and runs
+the guarded control-plane apply smoke with no production database URL, secrets, Feishu,
+QiWe, or external adapters.
 
 ### Release Please PR Validation
 

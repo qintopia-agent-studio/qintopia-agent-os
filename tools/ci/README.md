@@ -38,14 +38,20 @@ materials also identify the owner-retained evidence bundle, the completion gate,
 activation-ready releases should keep using explicit non-completion wording.
 
 Ordinary PRs still run `pnpm pr:check-body` and `pnpm check:light`; runtime-sensitive
-changes still add `pnpm check:runtime` through the existing changed-file gate.
+changes still add `pnpm check:runtime` through the existing changed-file gate. Heavy
+Rust quality and disposable PostgreSQL integration jobs are risk-tiered separately so a
+Hermes, deploy-runner, documentation, or CI metadata change does not pay the full
+sidecar/PostgreSQL cost unless it touches the sidecar, Postgres, deploy sidecar scripts,
+or the CI workflow itself. Manual non-Release workflow dispatches still force the full
+heavy tier.
 
 ## Rust Quality And Xiaoman Integration
 
-Runtime-sensitive changes also run a Rust 1.96 quality baseline. It uploads LCOV and a
-coverage summary, then executes the non-ignored sidecar suite with all features so
-staging-only adapter tests run before strict default/all-feature Clippy. The all-feature
-test is not a production build and must not execute ignored PostgreSQL tests. The
-Xiaoman downstream integration job owns those ignored tests and the guarded apply smoke
-against a disposable GitHub Actions PostgreSQL service. It must not accept production
-database URLs, secrets, Feishu credentials, QiWe credentials, or external adapters.
+Sidecar, Postgres, deploy sidecar scripts, or CI workflow changes run a Rust 1.96
+quality baseline. It uploads LCOV and a coverage summary, then executes the non-ignored
+sidecar suite with all features so staging-only adapter tests run before strict
+default/all-feature Clippy. The all-feature test is not a production build and must not
+execute ignored PostgreSQL tests. The Xiaoman downstream integration job owns those
+ignored tests and the guarded apply smoke against a disposable GitHub Actions PostgreSQL
+service. It must not accept production database URLs, secrets, Feishu credentials, QiWe
+credentials, or external adapters.

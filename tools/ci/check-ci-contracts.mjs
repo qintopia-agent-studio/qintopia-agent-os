@@ -21,6 +21,7 @@ if (!fs.existsSync(path.join(repoRoot, readmePath))) {
     "docs-only",
     "required checks",
     "production-adjacent",
+    "risk-tiered",
     "secrets",
     "commit message",
   ]) {
@@ -139,6 +140,20 @@ if (ciWorkflow && !ciWorkflow.includes("release-please-pr")) {
 }
 
 for (const requiredFragment of [
+  "rust-quality-check",
+  "postgres-integration-check",
+  "runtime/sidecar/**",
+  "runtime/postgres/**",
+  "deploy/sidecar/**",
+]) {
+  if (ciWorkflow && !ciWorkflow.includes(requiredFragment)) {
+    errors.push(
+      `.github/workflows/ci.yml: heavy checks must include ${requiredFragment}`
+    );
+  }
+}
+
+for (const requiredFragment of [
   "workflow_dispatch:",
   "release_please_pr_number:",
   "DISPATCH_RELEASE_PLEASE_PR_NUMBER",
@@ -248,6 +263,17 @@ if (ciWorkflow) {
         ".github/workflows/ci.yml: jobs.changes must not receive commit status write permission"
       );
     }
+    const changesOutputs = parsedWorkflow?.jobs?.changes?.outputs ?? {};
+    for (const outputName of [
+      "full-check",
+      "rust-quality-check",
+      "postgres-integration-check",
+      "release-please-pr",
+    ]) {
+      if (!changesOutputs[outputName]) {
+        errors.push(`.github/workflows/ci.yml: jobs.changes must output ${outputName}`);
+      }
+    }
     const checkSteps = parsedWorkflow?.jobs?.check?.steps;
     if (!Array.isArray(checkSteps)) {
       errors.push(".github/workflows/ci.yml: jobs.check.steps must be a step list");
@@ -342,6 +368,17 @@ if (ciWorkflow) {
     if (!qualityJob) {
       errors.push(".github/workflows/ci.yml: missing rust-quality-baseline job");
     } else {
+      const condition = String(qualityJob.if ?? "");
+      if (!condition.includes("rust-quality-check == 'true'")) {
+        errors.push(
+          ".github/workflows/ci.yml: rust-quality-baseline must be gated by rust-quality-check"
+        );
+      }
+      if (condition.includes("full-check == 'true'")) {
+        errors.push(
+          ".github/workflows/ci.yml: rust-quality-baseline must not run for every full-check change"
+        );
+      }
       const qualitySteps = qualityJob.steps ?? [];
       for (const requiredStep of [
         "Rust coverage baseline",
@@ -428,6 +465,17 @@ if (ciWorkflow) {
     if (!postgresJob) {
       errors.push(".github/workflows/ci.yml: missing xiaoman-postgres-integration job");
     } else {
+      const condition = String(postgresJob.if ?? "");
+      if (!condition.includes("postgres-integration-check == 'true'")) {
+        errors.push(
+          ".github/workflows/ci.yml: xiaoman-postgres-integration must be gated by postgres-integration-check"
+        );
+      }
+      if (condition.includes("full-check == 'true'")) {
+        errors.push(
+          ".github/workflows/ci.yml: xiaoman-postgres-integration must not run for every full-check change"
+        );
+      }
       const postgres = postgresJob.services?.postgres;
       if (postgres?.image !== "pgvector/pgvector:pg16") {
         errors.push(
