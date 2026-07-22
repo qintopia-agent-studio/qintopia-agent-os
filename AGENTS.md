@@ -841,8 +841,16 @@ Use `rg` and `rg --files` for search.
 - `huabaosi-image-generation-production-observation-smoke.sh` may verify either the
   disabled pre-activation state or the enabled production timer state, run configuration
   preflight, and run `run-huabaosi-image-generation-worker --once --dry-run` for a
-  read-only queue preview. It must not use `--apply`, contact provider/media endpoints,
-  write Postgres or Feishu, call QiWe, create a generated image, or publish.
+  read-only queue preview. It must discover the immutable
+  `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`
+  binary, or accept an explicit `QINTOPIA_SIDECAR_BIN` only when it resolves to that
+  same release-local binary with exactly `huabaosi-production-adapter` and
+  `huabaosi-feishu-mirror-adapter`, not QiWe production features. It must parse only
+  allowlisted production env keys, launch child sidecar commands with a minimal explicit
+  environment, and fail closed instead of accepting test-mode/path override env vars,
+  `source`-ing env files, using `cargo run`, or falling back to a mutable source tree.
+  It must not use `--apply`, contact provider/media endpoints, write Postgres or Feishu,
+  call QiWe, create a generated image, or publish.
 - `huabaosi-image-generation-production-canary-smoke.sh` is the release-local one-shot
   entrypoint for the first post-deploy image. It must run from the exact immutable
   release with the provider timer disabled and inactive, use a fixed minimal `PATH` and

@@ -7,11 +7,21 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-image-observation-"));
-const script = path.join(
+const tmpParent = fs.existsSync("/private/tmp") ? "/private/tmp" : os.tmpdir();
+const tmpRoot = fs.mkdtempSync(path.join(tmpParent, "qintopia-image-observation-"));
+const sourceScript = path.join(
   repoRoot,
   "deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh"
 );
+
+const bashQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+
+const replaceOnce = (source, search, replacement) => {
+  if (!source.includes(search)) {
+    throw new Error(`fixture source is missing expected fragment: ${search}`);
+  }
+  return source.replace(search, replacement);
+};
 
 const writeExecutable = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -23,7 +33,27 @@ try {
   const systemctlLog = path.join(tmpRoot, "systemctl.log");
   const sidecarLog = path.join(tmpRoot, "sidecar.log");
   const systemctl = path.join(tmpRoot, "bin", "systemctl");
-  const sidecar = path.join(tmpRoot, "bin", "qintopia-message-sidecar");
+  const observationEnv = path.join(tmpRoot, "observation.env");
+  const script = path.join(tmpRoot, "huabaosi-image-observation-fixture.sh");
+  const releaseSha = "0123456789abcdef0123456789abcdef01234567";
+  const releaseRoot = path.join(tmpRoot, "releases");
+  const releaseDir = path.join(releaseRoot, releaseSha);
+  const currentRelease = path.join(releaseRoot, "current");
+  const sidecar = path.join(releaseDir, "sidecar", "qintopia-message-sidecar");
+  const manifestPath = path.join(releaseDir, "sidecar", "artifact-manifest.json");
+
+  const productionSource = fs.readFileSync(sourceScript, "utf8");
+  for (const forbidden of [
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_TEST_MODE",
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_TEST_ROOT",
+    "QINTOPIA_RELEASE_CURRENT_DIR",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-',
+  ]) {
+    if (productionSource.includes(forbidden)) {
+      throw new Error(`production observation script still contains ${forbidden}`);
+    }
+  }
 
   writeExecutable(
     systemctl,
@@ -50,11 +80,11 @@ set -euo pipefail
 printf '%s\n' "$*" >>"${sidecarLog}"
 case "$1" in
   huabaosi-image-generation-preflight)
-    if [[ "\${FAKE_PRODUCTION_MODE:-0}" == "1" ]]; then
+    if [[ "\${QINTOPIA_HUABAOSI_IMAGE_MODEL:-}" == "production" ]]; then
       printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"adapter_mode":"production","config_valid":true,"media_allowed_host_count":1,"missing_configuration":[],"safe_for_chat":false}'
       exit 0
     fi
-    if [[ "\${FAKE_CONFIG_VALID:-0}" == "1" ]]; then
+    if [[ "\${QINTOPIA_HUABAOSI_IMAGE_MODEL:-}" == "config-valid" ]]; then
       printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":false,"adapter_compiled":false,"adapter_mode":"disabled","config_valid":true,"media_allowed_host_count":1,"missing_configuration":[],"safe_for_chat":false}'
       exit 0
     fi
@@ -64,11 +94,15 @@ case "$1" in
     ;;
   run-huabaosi-image-generation-worker)
     [[ "$2" == "--once" && "$3" == "--dry-run" ]]
-    if [[ -n "\${FAKE_STDERR_LEAK_VALUE:-}" ]]; then
-      printf '%s\n' "\${FAKE_STDERR_LEAK_VALUE}" >&2
+    if [[ "\${QINTOPIA_HUABAOSI_IMAGE_MODEL:-}" == "leak-stderr" ]]; then
+      printf '%s\n' "\${QINTOPIA_HUABAOSI_IMAGE_API_KEY:-}" >&2
       exit 1
     fi
-    printf '{"success":true,"dry_run":true,"apply_requested":false,"fixture_mode":false,"worker":"huabaosi-image-generation-worker","action_status":"no_claimable_image_request","work_item_id":null,"artifact_ids":[],"artifact_preview":null,"safe_for_chat":false,"unexpected":"%s"}\n' "\${FAKE_LEAK_VALUE:-}"
+    unexpected=""
+    if [[ "\${QINTOPIA_HUABAOSI_IMAGE_MODEL:-}" == "leak-stdout" ]]; then
+      unexpected="\${QINTOPIA_HUABAOSI_IMAGE_API_KEY:-}"
+    fi
+    printf '{"success":true,"dry_run":true,"apply_requested":false,"fixture_mode":false,"worker":"huabaosi-image-generation-worker","action_status":"no_claimable_image_request","work_item_id":null,"artifact_ids":[],"artifact_preview":null,"safe_for_chat":false,"unexpected":"%s"}\n' "$unexpected"
     ;;
   *)
     exit 64
@@ -76,27 +110,123 @@ case "$1" in
 esac
 `
   );
+  const writeManifest = (cargoFeatures) => {
+    fs.writeFileSync(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          commit_sha: releaseSha,
+          validation: {
+            cargo_features: cargoFeatures,
+          },
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+  };
+  writeManifest(["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"]);
+  fs.writeFileSync(sidecarLog, "", "utf8");
 
-  const runObservation = (extraEnv = {}) =>
-    spawnSync("bash", [script], {
+  let fixtureSource = productionSource;
+  fixtureSource = replaceOnce(
+    fixtureSource,
+    'MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"',
+    `MONOREPO_ROOT=${bashQuote(repoRoot)}`
+  );
+  fixtureSource = replaceOnce(
+    fixtureSource,
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    `ENV_FILE=${bashQuote(observationEnv)}`
+  );
+  fixtureSource = replaceOnce(
+    fixtureSource,
+    'RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    `RELEASE_CURRENT_DIR=${bashQuote(currentRelease)}`
+  );
+  fixtureSource = replaceOnce(
+    fixtureSource,
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    `SYSTEMCTL=${bashQuote(systemctl)}`
+  );
+  writeExecutable(script, fixtureSource);
+
+  const writeObservationEnv = (lines = []) => {
+    fs.writeFileSync(observationEnv, [...lines, ""].join("\n"), "utf8");
+  };
+
+  const runObservation = (extraEnv = {}, envLines = []) => {
+    writeObservationEnv(envLines);
+    return spawnSync("bash", [script], {
       cwd: repoRoot,
       env: {
         ...process.env,
         QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE: "1",
-        QINTOPIA_SIDECAR_BIN: sidecar,
-        QINTOPIA_SIDECAR_ENV_FILE: path.join(tmpRoot, "missing.env"),
-        SYSTEMCTL: systemctl,
+        QINTOPIA_SIDECAR_BIN: "",
         ...extraEnv,
       },
       encoding: "utf8",
     });
+  };
 
-  for (const configValid of ["0", "1"]) {
+  const missingRelease = runObservation();
+  if (missingRelease.status === 0 || fs.readFileSync(sidecarLog, "utf8") !== "") {
+    throw new Error(
+      "image observation must fail before execution without release/current"
+    );
+  }
+
+  fs.symlinkSync(releaseDir, currentRelease);
+
+  writeManifest([
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "qiwe-production-adapter",
+  ]);
+  fs.writeFileSync(sidecarLog, "", "utf8");
+  const qiweFeature = runObservation();
+  if (qiweFeature.status === 0 || fs.readFileSync(sidecarLog, "utf8") !== "") {
+    throw new Error("image observation accepted a QiWe-enabled production artifact");
+  }
+  writeManifest(["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"]);
+
+  const mutableSidecar = path.join(tmpRoot, "bin", "mutable-sidecar");
+  writeExecutable(
+    mutableSidecar,
+    `#!/usr/bin/env bash
+exit 0
+`
+  );
+  const mutableBinary = runObservation({ QINTOPIA_SIDECAR_BIN: mutableSidecar });
+  if (mutableBinary.status === 0) {
+    throw new Error("image observation accepted a sidecar outside release/current");
+  }
+
+  const ignoredOverrides = runObservation({
+    QINTOPIA_RELEASE_CURRENT_DIR: path.join(tmpRoot, "missing-release-override"),
+    QINTOPIA_SIDECAR_ENV_FILE: path.join(tmpRoot, "invalid-env-override"),
+    SYSTEMCTL: mutableSidecar,
+  });
+  if (ignoredOverrides.status !== 0) {
+    throw new Error(
+      `image observation honored caller path overrides\nstdout:\n${ignoredOverrides.stdout}\nstderr:\n${ignoredOverrides.stderr}`
+    );
+  }
+
+  fs.writeFileSync(sidecarLog, "", "utf8");
+  const invalidEnv = runObservation({}, ["not a valid env line"]);
+  if (invalidEnv.status === 0 || fs.readFileSync(sidecarLog, "utf8") !== "") {
+    throw new Error("image observation must fail before execution on invalid env");
+  }
+
+  for (const model of ["", "config-valid"]) {
     fs.writeFileSync(sidecarLog, "", "utf8");
-    const result = runObservation({ FAKE_CONFIG_VALID: configValid });
+    const envLines = model ? [`QINTOPIA_HUABAOSI_IMAGE_MODEL=${model}`] : [];
+    const result = runObservation({}, envLines);
     if (result.status !== 0) {
       throw new Error(
-        `expected disabled observation to pass for config_valid=${configValid}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+        `expected disabled observation to pass for model=${model}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
       );
     }
     const log = fs.readFileSync(sidecarLog, "utf8");
@@ -116,10 +246,10 @@ esac
   }
 
   for (const enabledValue of ["1", " 1 "]) {
-    const enabled = runObservation({
-      QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED: enabledValue,
-      QINTOPIA_HUABAOSI_IMAGE_API_KEY: "observation-secret-must-not-appear",
-    });
+    const enabled = runObservation({}, [
+      `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=${enabledValue}`,
+      "QINTOPIA_HUABAOSI_IMAGE_API_KEY=observation-secret-must-not-appear",
+    ]);
     if (enabled.status === 0) {
       throw new Error(
         `expected generation flag ${JSON.stringify(enabledValue)} to fail production observation`
@@ -134,13 +264,17 @@ esac
     }
   }
 
-  const enabled = runObservation({
-    QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED: "1",
-    FAKE_PRODUCTION_MODE: "1",
-    FAKE_PROVIDER_UNIT_PRESENT: "1",
-    FAKE_PROVIDER_TIMER_ACTIVE: "1",
-    FAKE_PROVIDER_TIMER_ENABLED: "1",
-  });
+  const enabled = runObservation(
+    {
+      FAKE_PROVIDER_UNIT_PRESENT: "1",
+      FAKE_PROVIDER_TIMER_ACTIVE: "1",
+      FAKE_PROVIDER_TIMER_ENABLED: "1",
+    },
+    [
+      "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1",
+      "QINTOPIA_HUABAOSI_IMAGE_MODEL=production",
+    ]
+  );
   if (enabled.status !== 0) {
     throw new Error(
       `expected enabled production observation to pass\nstdout:\n${enabled.stdout}\nstderr:\n${enabled.stderr}`
@@ -151,22 +285,26 @@ esac
     { FAKE_PROVIDER_TIMER_ACTIVE: "0", FAKE_PROVIDER_TIMER_ENABLED: "1" },
     { FAKE_PROVIDER_TIMER_ACTIVE: "1", FAKE_PROVIDER_TIMER_ENABLED: "0" },
   ]) {
-    const invalidEnabled = runObservation({
-      QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED: "1",
-      FAKE_PRODUCTION_MODE: "1",
-      FAKE_PROVIDER_UNIT_PRESENT: "1",
-      ...missingState,
-    });
+    const invalidEnabled = runObservation(
+      {
+        FAKE_PROVIDER_UNIT_PRESENT: "1",
+        ...missingState,
+      },
+      [
+        "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1",
+        "QINTOPIA_HUABAOSI_IMAGE_MODEL=production",
+      ]
+    );
     if (invalidEnabled.status === 0) {
       throw new Error("expected incomplete production timer state to fail observation");
     }
   }
 
   const leakedValue = "configured-secret-must-be-redacted";
-  const leaked = runObservation({
-    QINTOPIA_HUABAOSI_IMAGE_API_KEY: leakedValue,
-    FAKE_LEAK_VALUE: leakedValue,
-  });
+  const leaked = runObservation({}, [
+    "QINTOPIA_HUABAOSI_IMAGE_MODEL=leak-stdout",
+    `QINTOPIA_HUABAOSI_IMAGE_API_KEY=${leakedValue}`,
+  ]);
   if (leaked.status === 0) {
     throw new Error("expected configured secret in worker output to fail observation");
   }
@@ -175,10 +313,10 @@ esac
   }
 
   const stderrLeakedValue = "stderr-secret-must-be-redacted";
-  const stderrLeaked = runObservation({
-    QINTOPIA_HUABAOSI_IMAGE_API_KEY: stderrLeakedValue,
-    FAKE_STDERR_LEAK_VALUE: stderrLeakedValue,
-  });
+  const stderrLeaked = runObservation({}, [
+    "QINTOPIA_HUABAOSI_IMAGE_MODEL=leak-stderr",
+    `QINTOPIA_HUABAOSI_IMAGE_API_KEY=${stderrLeakedValue}`,
+  ]);
   if (stderrLeaked.status === 0) {
     throw new Error("expected configured secret in worker stderr to fail observation");
   }
