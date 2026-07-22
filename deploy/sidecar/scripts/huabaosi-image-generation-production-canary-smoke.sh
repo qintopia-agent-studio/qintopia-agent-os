@@ -66,15 +66,60 @@ if [[ "$TEST_MODE" == "0" ]]; then
   fi
   ENV_FILE="$PRODUCTION_ENV_FILE"
   SIDECAR_BIN="${RELEASE_ROOT}/sidecar/qintopia-message-sidecar"
-  SYSTEMCTL="systemctl"
+  PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+  SYSTEMCTL="/usr/bin/systemctl"
 else
+  if [[ "$RELEASE_ROOT" == "${PRODUCTION_RELEASE_PARENT}/"* ]]; then
+    echo "production canary test mode is forbidden from production release roots" >&2
+    exit 1
+  fi
   ENV_FILE="${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENV_FILE:-}"
   SIDECAR_BIN="${QINTOPIA_SIDECAR_BIN:-}"
   SYSTEMCTL="${SYSTEMCTL:-systemctl}"
-  case "$ENV_FILE" in
-    /private/tmp/*|/tmp/*|/private/var/folders/*|/var/folders/*) ;;
-    *)
+  test_path_status="$(python3 - "$ENV_FILE" "$SIDECAR_BIN" <<'PY'
+import os
+import stat
+import sys
+
+env_file, sidecar_bin = sys.argv[1:3]
+allowed_prefixes = (
+    "/private/tmp/",
+    "/tmp/",
+    "/private/var/folders/",
+    "/var/folders/",
+)
+
+def validate(label, path, executable):
+    if not os.path.isabs(path):
+        return label
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        return label
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        return label
+    real_path = os.path.realpath(path)
+    if not any(real_path.startswith(prefix) for prefix in allowed_prefixes):
+        return label
+    if executable and not os.access(path, os.X_OK):
+        return label
+    return "ok"
+
+env_status = validate("env", env_file, False)
+if env_status != "ok":
+    print(env_status)
+    raise SystemExit(0)
+print(validate("sidecar", sidecar_bin, True))
+PY
+)"
+  case "$test_path_status" in
+    ok) ;;
+    env)
       echo "production canary test mode may read only a temporary fake env file" >&2
+      exit 1
+      ;;
+    *)
+      echo "production canary test mode may execute only a temporary fake sidecar" >&2
       exit 1
       ;;
   esac

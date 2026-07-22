@@ -16,6 +16,10 @@ const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-aliang-canary-")
 const envFile = path.join(tmpRoot, "message-sidecar.env");
 const commandLog = path.join(tmpRoot, "commands.log");
 const systemctl = path.join(tmpRoot, "systemctl");
+const productionRoot = path.join(
+  fs.realpathSync(tmpRoot),
+  "qintopia-agent-os-releases"
+);
 const briefId = "11111111-2222-4333-8444-555555555555";
 const briefWorkItemId = "44444444-5555-4666-8777-888888888888";
 const imageWorkItemId = "22222222-3333-4444-8555-666666666666";
@@ -37,6 +41,7 @@ const sha256File = (filePath) =>
   crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 
 const writeExecutable = (filePath, content) => {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
   fs.chmodSync(filePath, 0o755);
 };
@@ -206,6 +211,24 @@ const run = (sidecar, extraEnv = {}) =>
     encoding: "utf8",
   });
 
+const productionRootFixture = () => {
+  const fixturePath = path.join(
+    productionRoot,
+    releaseSha,
+    "deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh"
+  );
+  writeExecutable(
+    fixturePath,
+    fs
+      .readFileSync(script, "utf8")
+      .replaceAll(
+        'PRODUCTION_RELEASE_PARENT="/home/ubuntu/qintopia-agent-os-releases"',
+        `PRODUCTION_RELEASE_PARENT="${productionRoot}"`
+      )
+  );
+  return fixturePath;
+};
+
 const assertNoSecrets = (output) => {
   for (const secret of secretValues) {
     if (output.includes(secret)) {
@@ -242,6 +265,20 @@ esac
   );
 
   const sidecar = fakeSidecar("sidecar-success");
+  const source = fs.readFileSync(script, "utf8");
+  if (!source.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')) {
+    throw new Error("production canary must reset PATH in production mode");
+  }
+  if (!source.includes('SYSTEMCTL="/usr/bin/systemctl"')) {
+    throw new Error("production canary must use the fixed systemctl path");
+  }
+  if (!source.includes("test mode is forbidden from production release roots")) {
+    throw new Error("production canary must forbid test mode in release roots");
+  }
+  if (!source.includes("test mode may execute only a temporary fake sidecar")) {
+    throw new Error("production canary must restrict test sidecar path");
+  }
+
   const success = run(sidecar);
   if (success.status !== 0) {
     throw new Error(`production canary success fixture failed\n${success.stderr}`);
@@ -329,6 +366,68 @@ esac
     !staticTimer.stderr.includes("timer must be disabled during one-shot canary")
   ) {
     throw new Error("static provider timer must block one-shot production canary");
+  }
+
+  const releaseRootFixture = productionRootFixture();
+  const testModeInProductionRoot = spawnSync("bash", [releaseRootFixture], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENABLE: "1",
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_APPROVAL:
+        "approved-production-image-generation-canary",
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_BRIEF_ARTIFACT_ID: briefId,
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_DATABASE_URL_SHA256: databaseHash,
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_RELEASE_SHA: releaseSha,
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_SIDECAR_SHA256: sha256File(sidecar),
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_TEST_MODE: "1",
+      QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENV_FILE: envFile,
+      QINTOPIA_SIDECAR_BIN: sidecar,
+      SYSTEMCTL: systemctl,
+    },
+    encoding: "utf8",
+  });
+  if (
+    testModeInProductionRoot.status === 0 ||
+    !testModeInProductionRoot.stderr.includes(
+      "test mode is forbidden from production release roots"
+    )
+  ) {
+    throw new Error("test mode must be rejected from production release roots");
+  }
+
+  const nonTemporarySidecar = run("/usr/bin/true");
+  if (
+    nonTemporarySidecar.status === 0 ||
+    !nonTemporarySidecar.stderr.includes(
+      "test mode may execute only a temporary fake sidecar"
+    )
+  ) {
+    throw new Error("test mode must reject non-temporary sidecar paths");
+  }
+
+  const sidecarSymlink = path.join(tmpRoot, "sidecar-symlink");
+  fs.symlinkSync("/usr/bin/true", sidecarSymlink);
+  const symlinkSidecar = run(sidecarSymlink);
+  if (
+    symlinkSidecar.status === 0 ||
+    !symlinkSidecar.stderr.includes(
+      "test mode may execute only a temporary fake sidecar"
+    )
+  ) {
+    throw new Error("test mode must reject symlink sidecar paths");
+  }
+
+  const envSymlink = path.join(tmpRoot, "message-sidecar-link.env");
+  fs.symlinkSync(envFile, envSymlink);
+  const symlinkEnv = run(sidecar, {
+    QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_ENV_FILE: envSymlink,
+  });
+  if (
+    symlinkEnv.status === 0 ||
+    !symlinkEnv.stderr.includes("test mode may read only a temporary fake env file")
+  ) {
+    throw new Error("test mode must reject symlink env file paths");
   }
 
   const wrongApproval = run(sidecar, {
