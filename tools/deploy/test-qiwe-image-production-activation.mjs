@@ -17,6 +17,9 @@ const rollbackScript = path.join(
   repoRoot,
   "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh"
 );
+const fixedEnvFile = "/etc/qintopia/message-sidecar.env";
+const fixedSystemctl = "/usr/bin/systemctl";
+const fixedSha256sum = "/usr/bin/sha256sum";
 
 try {
   const databaseUrl =
@@ -25,6 +28,57 @@ try {
   const logPath = path.join(tmpRoot, "systemctl.log");
   const envFile = path.join(tmpRoot, "message-sidecar.env");
   const systemctl = path.join(tmpRoot, "systemctl");
+  const sha256sum = path.join(tmpRoot, "sha256sum");
+  const activationFixture = path.join(tmpRoot, "activate-production-fixture.sh");
+  const rollbackFixture = path.join(tmpRoot, "rollback-production-fixture.sh");
+
+  for (const sourcePath of [activationScript, rollbackScript]) {
+    const source = fs.readFileSync(sourcePath, "utf8");
+    if (source.includes("QINTOPIA_SIDECAR_ENV_FILE")) {
+      throw new Error(
+        `${path.basename(sourcePath)} must not allow overriding the reviewed env file`
+      );
+    }
+    if (source.includes('SYSTEMCTL="${SYSTEMCTL:-systemctl}"')) {
+      throw new Error(
+        `${path.basename(sourcePath)} must not allow overriding systemctl`
+      );
+    }
+    if (!source.includes(`ENV_FILE="${fixedEnvFile}"`)) {
+      throw new Error(
+        `${path.basename(sourcePath)} must read the fixed reviewed env file`
+      );
+    }
+    if (!source.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')) {
+      throw new Error(`${path.basename(sourcePath)} must reset PATH`);
+    }
+    if (!source.includes(`SYSTEMCTL="${fixedSystemctl}"`)) {
+      throw new Error(`${path.basename(sourcePath)} must use the fixed systemctl path`);
+    }
+  }
+  if (
+    !fs.readFileSync(activationScript, "utf8").includes(`SHA256SUM="${fixedSha256sum}"`)
+  ) {
+    throw new Error("activation must use the fixed sha256sum path");
+  }
+
+  fs.writeFileSync(
+    activationFixture,
+    fs
+      .readFileSync(activationScript, "utf8")
+      .replaceAll(fixedEnvFile, envFile)
+      .replaceAll(fixedSystemctl, systemctl)
+      .replaceAll(fixedSha256sum, sha256sum),
+    "utf8"
+  );
+  fs.writeFileSync(
+    rollbackFixture,
+    fs
+      .readFileSync(rollbackScript, "utf8")
+      .replaceAll(fixedEnvFile, envFile)
+      .replaceAll(fixedSystemctl, systemctl),
+    "utf8"
+  );
   fs.writeFileSync(
     systemctl,
     `#!/usr/bin/env bash
@@ -37,6 +91,19 @@ fi
     "utf8"
   );
   fs.chmodSync(systemctl, 0o755);
+  fs.writeFileSync(
+    sha256sum,
+    `#!/usr/bin/env bash
+set -euo pipefail
+input="$(cat)"
+if [[ "$input" != "${databaseUrl}" ]]; then
+  exit 2
+fi
+printf '%s  -\\n' "${databaseHash}"
+`,
+    "utf8"
+  );
+  fs.chmodSync(sha256sum, 0o755);
 
   const writeEnv = (flag) =>
     fs.writeFileSync(
@@ -55,15 +122,13 @@ fi
       cwd: repoRoot,
       env: {
         ...process.env,
-        SYSTEMCTL: systemctl,
-        QINTOPIA_SIDECAR_ENV_FILE: envFile,
         ...extraEnv,
       },
       encoding: "utf8",
     });
 
   writeEnv("1");
-  for (const script of [activationScript, rollbackScript]) {
+  for (const script of [activationFixture, rollbackFixture]) {
     fs.writeFileSync(logPath, "", "utf8");
     const denied = run(script);
     if (denied.status === 0 || fs.readFileSync(logPath, "utf8") !== "") {
@@ -75,7 +140,7 @@ fi
 
   writeEnv("0");
   fs.writeFileSync(logPath, "", "utf8");
-  const wrongFlag = run(activationScript, {
+  const wrongFlag = run(activationFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-send",
   });
@@ -96,7 +161,7 @@ fi
     "utf8"
   );
   fs.writeFileSync(logPath, "", "utf8");
-  const duplicateDatabaseHash = run(activationScript, {
+  const duplicateDatabaseHash = run(activationFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-send",
   });
@@ -118,7 +183,7 @@ fi
     "utf8"
   );
   fs.writeFileSync(logPath, "", "utf8");
-  const databaseHashMismatch = run(activationScript, {
+  const databaseHashMismatch = run(activationFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-send",
   });
@@ -150,7 +215,7 @@ fi
     "utf8"
   );
   fs.writeFileSync(logPath, "", "utf8");
-  const duplicateDatabaseUrl = run(activationScript, {
+  const duplicateDatabaseUrl = run(activationFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-send",
   });
@@ -171,7 +236,7 @@ fi
 
   writeEnv("1");
   fs.writeFileSync(logPath, "", "utf8");
-  const preflightRejected = run(activationScript, {
+  const preflightRejected = run(activationFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-send",
     SYSTEMCTL_FAIL_PREFLIGHT: "1",
@@ -192,7 +257,7 @@ fi
   }
 
   fs.writeFileSync(logPath, "", "utf8");
-  const activated = run(activationScript, {
+  const activated = run(activationFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-send",
   });
@@ -213,7 +278,7 @@ fi
 
   writeEnv("0");
   fs.writeFileSync(logPath, "", "utf8");
-  const rolledBack = run(rollbackScript, {
+  const rolledBack = run(rollbackFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK:
       "approved-production-qiwe-image-send-rollback",
   });

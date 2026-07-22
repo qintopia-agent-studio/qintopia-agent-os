@@ -251,7 +251,10 @@ enablement flag, exact production owner phrase, canonical production database UR
 and release-local `qiwe-image-send-production-preflight` before enabling the worker
 timer. That worker can upload one approved send-ready image and persist sanitized
 `awaiting_callback` state, but final `/msg/sendImage` still depends on one reviewed
-`cmd=20000` callback reaching `process-qiwe-image-send-callback --apply`.
+`cmd=20000` callback reaching `process-qiwe-image-send-callback --apply`. The activation
+and rollback scripts read only the fixed reviewed `/etc/qintopia/message-sidecar.env`
+and do not accept caller-provided env-file or systemctl command overrides; they reset
+PATH and call systemctl by absolute path.
 
 The Hermes webhook callback bridge is the reviewed callback ingress for that final step.
 In production mode it must use exactly

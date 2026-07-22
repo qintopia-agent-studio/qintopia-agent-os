@@ -8,6 +8,10 @@ import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-xiaoman-observation-"));
+const aggregatePreflightPath = path.join(
+  repoRoot,
+  "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh"
+);
 
 const writeExecutable = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -22,6 +26,30 @@ const assertPassed = (label, result) => {
     );
   }
 };
+
+const aggregatePreflight = fs.readFileSync(aggregatePreflightPath, "utf8");
+for (const fragment of [
+  'CHILD_PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+  'env -i "${child_env[@]}" "$script_path"',
+  '"PATH=${CHILD_PATH}"',
+  "QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE",
+  "operations-group-send-ready-timer-observation-smoke.sh",
+]) {
+  if (!aggregatePreflight.includes(fragment)) {
+    throw new Error(`aggregate production preflight must include ${fragment}`);
+  }
+}
+for (const fragment of [
+  "env QINTOPIA_",
+  "QINTOPIA_SIDECAR_ENV_FILE=",
+  "SYSTEMCTL=",
+  "JOURNALCTL=",
+  "_OBSERVATION_TEST_MODE",
+]) {
+  if (aggregatePreflight.includes(fragment)) {
+    throw new Error(`aggregate production preflight must not include ${fragment}`);
+  }
+}
 
 try {
   const binDir = path.join(tmpRoot, "bin");

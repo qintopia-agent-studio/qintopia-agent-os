@@ -6,8 +6,10 @@ if [[ "${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:-}" != "approved-product
   exit 1
 fi
 
-ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
-SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+ENV_FILE="/etc/qintopia/message-sidecar.env"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+SYSTEMCTL="/usr/bin/systemctl"
+SHA256SUM="/usr/bin/sha256sum"
 PREFLIGHT_SERVICE="qintopia-agentos-qiwe-image-send-preflight.service"
 WORKER_TIMER="qintopia-agentos-qiwe-image-send-worker.timer"
 
@@ -21,7 +23,7 @@ if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v sha256sum >/dev/null 2>&1; then
+if [[ ! -x "$SHA256SUM" ]]; then
   echo "sha256sum is required for QiWe image-send production activation" >&2
   exit 1
 fi
@@ -75,7 +77,8 @@ require_database_hash_match() {
   local actual_hash
   expected_hash="$(env_line_value "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256")"
   database_url="$(env_line_value "QINTOPIA_SIDECAR_DATABASE_URL")"
-  actual_hash="$(printf '%s' "$database_url" | sha256sum | awk '{print $1}')"
+  actual_hash="$(printf '%s' "$database_url" | "$SHA256SUM")"
+  actual_hash="${actual_hash%% *}"
   if [[ "$actual_hash" != "$expected_hash" ]]; then
     echo "QiWe image-send production activation database URL hash does not match the approved production hash" >&2
     exit 1

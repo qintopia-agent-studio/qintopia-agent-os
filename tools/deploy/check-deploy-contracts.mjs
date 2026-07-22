@@ -438,32 +438,42 @@ if (!exists(xiaomanPreflightPath)) {
   const preflight = readText(xiaomanPreflightPath);
   for (const fragment of [
     "QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE",
-    "QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE",
     "xiaoman-activity-signal-timer-observation-smoke.sh",
-    "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
+    "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE",
     "xiaoman-legacy-cron-observation-smoke.sh",
-    "QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE",
     "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
-    "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1",
+    "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE",
     "operations-downstream-timers-observation-smoke.sh",
-    "QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE",
     "xiaoman-activity-downstream-observation-smoke.sh",
-    "QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE",
     "xiaoman-activity-image-generation-starter-observation-smoke.sh",
-    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1",
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE",
     "huabaosi-image-generation-production-observation-smoke.sh",
-    "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE",
     "xiaoman-activity-send-request-starter-observation-smoke.sh",
-    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1",
+    "QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE",
+    "operations-group-send-ready-timer-observation-smoke.sh",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE",
     "qiwe-image-send-production-observation-smoke.sh",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1",
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE",
     "qiwe-image-callback-bridge-production-observation-smoke.sh",
+    'CHILD_PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'env -i "${child_env[@]}" "$script_path"',
+    '"PATH=${CHILD_PATH}"',
   ]) {
     requireFragment(xiaomanPreflightPath, preflight, fragment);
   }
 
   for (const fragment of [
+    "env QINTOPIA_",
     "QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1",
+    "QINTOPIA_SIDECAR_ENV_FILE=",
+    "SYSTEMCTL=",
+    "JOURNALCTL=",
+    "_OBSERVATION_TEST_MODE",
     "server-deploy.sh",
     "gh release",
     "release create",
@@ -1693,8 +1703,11 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
     "QINTOPIA_SIDECAR_DATABASE_URL",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    'SHA256SUM="/usr/bin/sha256sum"',
     "database URL hash does not match the approved production hash",
-    "sha256sum",
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.timer",
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
@@ -1710,6 +1723,10 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "source ",
     "eval ",
     "QIWE_TOKEN",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+    "sha256sum | awk",
   ]) {
     forbidFragment(qiweImageSendProductionActivationPath, activation, fragment);
   }
@@ -1727,13 +1744,24 @@ if (!exists(qiweImageSendProductionRollbackPath)) {
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK",
     "approved-production-qiwe-image-send-rollback",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=0",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
     "qintopia-agentos-qiwe-image-send-worker.service",
     "qintopia-agentos-qiwe-image-send-worker.timer",
     '"$SYSTEMCTL" disable --now "$WORKER_TIMER"',
   ]) {
     requireFragment(qiweImageSendProductionRollbackPath, rollback, fragment);
   }
-  for (const fragment of ["rm -", "source ", "eval ", "QIWE_TOKEN"]) {
+  for (const fragment of [
+    "rm -",
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+  ]) {
     forbidFragment(qiweImageSendProductionRollbackPath, rollback, fragment);
   }
 }
