@@ -68,6 +68,7 @@ rules:
       - "runtime/hermes/profile_transaction.py"
       - "runtime/hermes/render_profile_overlay.py"
       - "runtime/hermes/verify_runtime_provider.py"
+      - "runtime/hermes/validate_hermes_python.py"
       - "runtime/sidecar/**"
       - "skills/postgres-context/**"
       - "mcp/postgres/**"

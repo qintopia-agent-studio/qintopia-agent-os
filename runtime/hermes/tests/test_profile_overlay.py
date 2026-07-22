@@ -18,6 +18,7 @@ RENDERER = RUNTIME / "render_profile_overlay.py"
 MIGRATOR = RUNTIME / "migrate_erhua_livecool_env.py"
 TRANSACTION = RUNTIME / "profile_transaction.py"
 VERIFIER = RUNTIME / "verify_runtime_provider.py"
+PYTHON_VALIDATOR = RUNTIME / "validate_hermes_python.py"
 ACTIVATOR = ROOT / "deploy/runner/activate-erhua-profile.sh"
 ROLLBACK = ROOT / "deploy/runner/rollback-erhua-profile.sh"
 SMOKE = ROOT / "deploy/runner/smoke-release.sh"
@@ -140,6 +141,126 @@ class ProfileOverlayTests(unittest.TestCase):
                 check=False,
             )
             self.assertNotEqual(0, rejected.returncode)
+
+    def test_hermes_python_validator_accepts_venv_base_and_contains_release_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).resolve()
+            venv = directory / "venv"
+            venv_bin = venv / "bin"
+            release = directory / "release"
+            base_home = directory / "base-python"
+            external_python = base_home / "python3.11"
+            rogue = directory / "rogue-python"
+            venv_bin.mkdir(parents=True)
+            base_home.mkdir(parents=True)
+            release.mkdir()
+            (venv / "pyvenv.cfg").write_text(f"home = {base_home}\n")
+            external_python.write_text("#!/bin/sh\nexit 0\n")
+            os.chmod(external_python, 0o755)
+            (venv_bin / "python").symlink_to(external_python)
+
+            self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(venv_bin / "python"),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+            )
+
+            (venv_bin / "python").unlink()
+            rogue.write_text("#!/bin/sh\nexit 0\n")
+            os.chmod(rogue, 0o755)
+            (venv_bin / "python").symlink_to(rogue)
+            rejected_rogue_venv_target = self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(venv_bin / "python"),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+                expect=1,
+            )
+            self.assertIn(
+                "does not match pyvenv.cfg home", rejected_rogue_venv_target.stderr
+            )
+            (venv_bin / "python").unlink()
+            (venv_bin / "python").symlink_to(external_python)
+
+            rejected_external = self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(rogue),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+                expect=1,
+            )
+            self.assertIn("fixed venv entry or remain inside", rejected_external.stderr)
+
+            release_python = release / "python"
+            release_python.symlink_to(external_python)
+            escaped_release = self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(release_python),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+                expect=1,
+            )
+            self.assertIn("fixed venv entry or remain inside", escaped_release.stderr)
+
+            unexpected = directory / "unexpected"
+            unexpected.mkdir()
+            unexpected_python = unexpected / "python3.11"
+            unexpected_python.write_text("#!/bin/sh\nexit 0\n")
+            os.chmod(unexpected_python, 0o755)
+            (venv_bin / "python").unlink()
+            (venv_bin / "python").symlink_to(unexpected_python)
+            mismatched_home = self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(venv_bin / "python"),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+                expect=1,
+            )
+            self.assertIn("does not match pyvenv.cfg home", mismatched_home.stderr)
+            (venv_bin / "python").unlink()
+            (venv_bin / "python").symlink_to(external_python)
+
+            release_python.unlink()
+            release_python.write_text("#!/bin/sh\nexit 0\n")
+            os.chmod(release_python, 0o755)
+            self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(release_python),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+            )
+
+            (venv / "pyvenv.cfg").unlink()
+            missing_metadata = self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(venv_bin / "python"),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+                expect=1,
+            )
+            self.assertIn("pyvenv.cfg", missing_metadata.stderr)
 
     def test_duplicate_alias_and_forbidden_overlay_fail_without_output(self) -> None:
         invalid_documents = {

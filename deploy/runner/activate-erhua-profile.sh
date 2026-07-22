@@ -50,35 +50,23 @@ renderer="${release_dir}/runtime/hermes/render_profile_overlay.py"
 migrator="${release_dir}/runtime/hermes/migrate_erhua_livecool_env.py"
 transaction="${release_dir}/runtime/hermes/profile_transaction.py"
 runtime_verifier="${release_dir}/runtime/hermes/verify_runtime_provider.py"
-hermes_python="${QINTOPIA_HERMES_PYTHON:-/home/ubuntu/.hermes/hermes-agent/venv/bin/python}"
+python_validator="${release_dir}/runtime/hermes/validate_hermes_python.py"
+hermes_venv="/home/ubuntu/.hermes/hermes-agent/venv"
+hermes_python="${QINTOPIA_HERMES_PYTHON:-${hermes_venv}/bin/python}"
 
 if [[ ! -d "$profile_dir" || -L "$profile_dir" || "$(realpath "$profile_dir" 2>/dev/null || true)" != "$profile_dir" ]]; then
   echo "Erhua profile directory must not contain path aliases" >&2
   exit 1
 fi
 
-for path in "$config_path" "$env_path" "$default_config" "$overlay" "$renderer" "$migrator" "$transaction" "$runtime_verifier"; do
+for path in "$config_path" "$env_path" "$default_config" "$overlay" "$renderer" "$migrator" "$transaction" "$runtime_verifier" "$python_validator"; do
   if [[ ! -f "$path" || -L "$path" ]]; then
     echo "Erhua profile prerequisite is missing or aliased" >&2
     exit 1
   fi
 done
-hermes_python_real="$hermes_python"
-if [[ -L "$hermes_python" ]]; then
-  hermes_python_real="$(readlink -f "$hermes_python" 2>/dev/null || true)"
-  if [[ -z "$hermes_python_real" || ! -f "$hermes_python_real" || -L "$hermes_python_real" ]]; then
-    echo "Erhua Hermes Python symlink target is missing or aliased" >&2
-    exit 1
-  fi
-fi
-if [[ ! -x "$hermes_python_real" ]]; then
-  echo "Erhua Hermes Python is not executable" >&2
-  exit 1
-fi
-if [[ "$hermes_python_real" != "/home/ubuntu/.hermes/hermes-agent/venv"/* && "$hermes_python_real" != "${release_dir}"/* ]]; then
-  echo "Erhua Hermes Python must resolve within the allowed venv or release boundary" >&2
-  exit 1
-fi
+python3 "$python_validator" --python "$hermes_python" --venv-dir "$hermes_venv" \
+  --release-dir "$release_dir" >/dev/null
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
   echo "Erhua profile activation requires PyYAML for the root Python runtime" >&2
   exit 1
@@ -102,6 +90,9 @@ cleanup() {
     if [[ -n "${dry_run_marker:-}" && -f "$used_marker" ]]; then
       mv "$used_marker" "$dry_run_marker" || true
     fi
+  fi
+  if [[ -n "${runtime_verify_dir:-}" ]]; then
+    rm -rf "$runtime_verify_dir"
   fi
   rm -rf "$work_dir"
   return "$status"
@@ -129,8 +120,26 @@ python3 "$migrator" prepare --env "$env_path" --default-config "$default_config"
   --output "$candidate_env" --report "$env_report"
 python3 "$renderer" verify --config "$candidate_config" --overlay "$overlay"
 python3 "$migrator" check --env "$candidate_env"
-PYTHONDONTWRITEBYTECODE=1 "$hermes_python" "$runtime_verifier" \
-  --config "$candidate_config" >/dev/null
+if [[ "$(id -u)" == "0" ]]; then
+  if ! id -u ubuntu >/dev/null 2>&1 || [[ ! -x /usr/sbin/runuser ]]; then
+    echo "Erhua runtime verification requires the ubuntu runtime user" >&2
+    exit 1
+  fi
+  runtime_verify_dir="$(mktemp -d)"
+  runtime_verify_config="${runtime_verify_dir}/config.yaml"
+  install -d -o ubuntu -g ubuntu -m 0700 "$runtime_verify_dir"
+  install -o ubuntu -g ubuntu -m 0600 "$candidate_config" "$runtime_verify_config"
+  /usr/sbin/runuser -u ubuntu -- /usr/bin/env -i \
+    HOME=/home/ubuntu \
+    LOGNAME=ubuntu \
+    PATH=/usr/local/bin:/usr/bin:/bin \
+    PYTHONDONTWRITEBYTECODE=1 \
+    USER=ubuntu \
+    "$hermes_python" "$runtime_verifier" --config "$runtime_verify_config" >/dev/null
+else
+  PYTHONDONTWRITEBYTECODE=1 "$hermes_python" "$runtime_verifier" \
+    --config "$candidate_config" >/dev/null
+fi
 
 write_evidence() {
   local phase="$1"

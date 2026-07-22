@@ -68,6 +68,11 @@ assertSuccess(
   ["hermes-erhua"]
 );
 assertSuccess(
+  "erhua-runtime-validator",
+  ["runtime/hermes/validate_hermes_python.py"],
+  ["hermes-erhua"]
+);
+assertSuccess(
   "sidecar-only",
   ["runtime/sidecar/src/context_tools.rs"],
   ["hermes-erhua", "qintopia-system-services"]

@@ -259,6 +259,7 @@ if (!exists(deployBundleBuilderPath)) {
     "docs/operations/release-acceptance-checklist.md",
     "docs/operations/staging-runtime-provisioning-runbook.md",
     "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
+    "runtime/hermes/validate_hermes_python.py",
   ]) {
     requireFragment(deployBundleBuilderPath, builder, fragment);
   }

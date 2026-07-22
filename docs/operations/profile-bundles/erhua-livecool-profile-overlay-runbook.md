@@ -59,6 +59,15 @@ three separately approved requests:
    and current config/env hashes must match the exact reviewed dry-run marker.
    Publishing the draft GitHub Release remains a separate owner action.
 
+The runtime resolver uses the fixed Hermes venv entry point. A standard venv may link
+that entry to a base interpreter outside the venv; the validator requires the fixed,
+non-aliased venv and `pyvenv.cfg`, then requires the final standard Python executable to
+be a direct child of the absolute, non-aliased `home` declared by that metadata. This
+permits the normal venv base-interpreter link without accepting an unrelated external
+executable. Any release-local interpreter and its resolved target must remain inside the
+immutable release. When the deploy runner is root, it executes the Hermes resolver as
+the unprivileged `ubuntu` runtime owner.
+
 The runner rejects any request that combines `hermes-profile-erhua` with another scope
 or restart target, disables rollback, or targets a release other than `current`.
 Profile-only requests do not promote a release or modify `current`/`previous`. Request

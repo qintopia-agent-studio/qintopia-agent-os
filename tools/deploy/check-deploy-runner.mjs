@@ -56,6 +56,7 @@ const requiredFiles = [
   "deploy/runner/install-release-systemd-units.sh",
   "deploy/runner/qintopia-agent-os-deploy-runner",
   "deploy/runner/activate-erhua-profile.sh",
+  "runtime/hermes/validate_hermes_python.py",
   "deploy/runner/poll-deploy-requests.sh",
   "deploy/runner/promote-release.sh",
   "deploy/runner/rollback-release.sh",
@@ -834,9 +835,22 @@ for (const fragment of [
   "--dry-run-request-id",
   "older than 24 hours",
   "verify_runtime_provider.py",
+  "validate_hermes_python.py",
+  'runtime_verify_dir="$(mktemp -d)"',
+  "/usr/sbin/runuser -u ubuntu -- /usr/bin/env -i",
+  "HOME=/home/ubuntu",
+  "PATH=/usr/local/bin:/usr/bin:/bin",
 ]) {
   if (activateErhuaText && !activateErhuaText.includes(fragment)) {
     addError(`deploy/runner/activate-erhua-profile.sh: missing ${fragment}`);
+  }
+}
+for (const forbidden of [
+  'chmod 0711 "$work_dir"',
+  "/usr/sbin/runuser -u ubuntu -- /usr/bin/env PYTHONDONTWRITEBYTECODE=1",
+]) {
+  if (activateErhuaText.includes(forbidden)) {
+    addError(`deploy/runner/activate-erhua-profile.sh: forbidden ${forbidden}`);
   }
 }
 const rollbackReleaseText = exists("deploy/runner/rollback-release.sh")
@@ -937,6 +951,25 @@ for (const target of schemaTargets) {
       `deploy/runner/deploy-request.schema.json: target ${target} missing from restart rules`
     );
   }
+}
+const erhuaRestartRule = (restartRules.rules ?? []).find(
+  (rule) => rule.target === "hermes-erhua"
+);
+const hermesPythonRestartTargets = (restartRules.rules ?? [])
+  .filter((rule) =>
+    Array.isArray(rule?.paths)
+      ? rule.paths.includes("runtime/hermes/validate_hermes_python.py")
+      : false
+  )
+  .map((rule) => rule.target);
+if (
+  !Array.isArray(erhuaRestartRule?.paths) ||
+  hermesPythonRestartTargets.length !== 1 ||
+  hermesPythonRestartTargets[0] !== "hermes-erhua"
+) {
+  addError(
+    "deploy/restart-target-rules.yaml: validate_hermes_python.py must belong only to hermes-erhua paths"
+  );
 }
 
 const agentRegistry = exists("registry/agents.yaml")
