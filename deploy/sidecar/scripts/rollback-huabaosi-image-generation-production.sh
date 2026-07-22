@@ -6,7 +6,8 @@ if [[ "${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK:-}" != "approved-production
   exit 1
 fi
 
-SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+SYSTEMCTL="/usr/bin/systemctl"
 WORKER_SERVICE="qintopia-agentos-huabaosi-image-generation-worker.service"
 WORKER_TIMER="qintopia-agentos-huabaosi-image-generation-worker.timer"
 
