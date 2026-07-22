@@ -744,11 +744,24 @@ if (!exists(huabaosiImageProductionObservationPath)) {
   const smoke = readText(huabaosiImageProductionObservationPath);
   for (const fragment of [
     "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE",
+    "/home/ubuntu/qintopia-agent-os-releases/current",
+    "/etc/qintopia/message-sidecar.env",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    "sidecar/qintopia-message-sidecar",
+    "artifact-manifest.json",
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"huabaosi-production-adapter"',
+    '"huabaosi-feishu-mirror-adapter"',
     "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED",
     'PROVIDER_SERVICE_NAME="qintopia-agentos-huabaosi-image-generation-worker.service"',
     'PROVIDER_TIMER_NAME="qintopia-agentos-huabaosi-image-generation-worker.timer"',
     "huabaosi-image-generation-preflight",
     "run-huabaosi-image-generation-worker --once --dry-run",
+    "CHILD_ENV",
+    "load_observation_env",
+    "env -i",
     'worker_stderr="$tmp_dir/worker-preview.stderr"',
     "worker_status=$?",
     'assert_no_sensitive_output "image worker dry-run stderr"',
@@ -762,9 +775,23 @@ if (!exists(huabaosiImageProductionObservationPath)) {
     requireFragment(huabaosiImageProductionObservationPath, smoke, fragment);
   }
   for (const fragment of [
+    '"qiwe-production-adapter"',
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_TEST_MODE",
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_TEST_ROOT",
+    "QINTOPIA_RELEASE_CURRENT_DIR",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-',
+    "TEST_MODE=",
+    "TEST_ROOT=",
     "run-huabaosi-image-generation-worker --once --apply",
     "generated_image_created",
     "run-group-message-send-worker",
+    'source "$ENV_FILE"',
+    "QINTOPIA_SIDECAR_SOURCE_DIR",
+    "SIDECAR_SOURCE_DIR",
+    "SIDECAR_DIR",
+    "cargo run",
+    "${CARGO:-cargo}",
   ]) {
     forbidFragment(huabaosiImageProductionObservationPath, smoke, fragment);
   }
