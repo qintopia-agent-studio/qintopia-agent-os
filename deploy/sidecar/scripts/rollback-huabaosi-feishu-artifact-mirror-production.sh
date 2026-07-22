@@ -6,7 +6,8 @@ if [[ "${QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK:-}" != "approved-productio
   exit 1
 fi
 
-SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+SYSTEMCTL="/usr/bin/systemctl"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 WORKER_SERVICE="qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service"
 WORKER_TIMER="qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"

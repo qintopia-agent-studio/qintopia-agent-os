@@ -19,6 +19,7 @@ const rollbackScriptSource = path.join(
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh"
 );
 const fixedEnvFile = "/etc/qintopia/message-sidecar.env";
+const fixedSystemctl = "/usr/bin/systemctl";
 
 try {
   const logPath = path.join(tmpRoot, "systemctl.log");
@@ -38,15 +39,32 @@ try {
         `${path.basename(sourcePath)} must read the fixed reviewed env file`
       );
     }
+    if (source.includes('SYSTEMCTL="${SYSTEMCTL:-systemctl}"')) {
+      throw new Error(
+        `${path.basename(sourcePath)} must not allow overriding systemctl`
+      );
+    }
+    if (!source.includes('PATH="/usr/bin:/bin:/usr/sbin:/sbin"')) {
+      throw new Error(`${path.basename(sourcePath)} must reset PATH`);
+    }
+    if (!source.includes(`SYSTEMCTL="${fixedSystemctl}"`)) {
+      throw new Error(`${path.basename(sourcePath)} must use the fixed systemctl path`);
+    }
   }
   fs.writeFileSync(
     activationScript,
-    fs.readFileSync(activationScriptSource, "utf8").replaceAll(fixedEnvFile, envPath),
+    fs
+      .readFileSync(activationScriptSource, "utf8")
+      .replaceAll(fixedEnvFile, envPath)
+      .replaceAll(fixedSystemctl, systemctl),
     "utf8"
   );
   fs.writeFileSync(
     rollbackScript,
-    fs.readFileSync(rollbackScriptSource, "utf8").replaceAll(fixedEnvFile, envPath),
+    fs
+      .readFileSync(rollbackScriptSource, "utf8")
+      .replaceAll(fixedEnvFile, envPath)
+      .replaceAll(fixedSystemctl, systemctl),
     "utf8"
   );
   fs.writeFileSync(envPath, "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1\n", "utf8");
@@ -68,7 +86,6 @@ fi
       cwd: repoRoot,
       env: {
         ...process.env,
-        SYSTEMCTL: systemctl,
         ...extraEnv,
       },
       encoding: "utf8",
