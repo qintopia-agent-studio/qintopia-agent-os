@@ -148,12 +148,13 @@ class ProfileOverlayTests(unittest.TestCase):
             venv = directory / "venv"
             venv_bin = venv / "bin"
             release = directory / "release"
-            external = directory / "external"
-            external_python = external / "python3.11"
+            base_home = directory / "base-python"
+            external_python = base_home / "python3.11"
+            rogue = directory / "rogue-python"
             venv_bin.mkdir(parents=True)
+            base_home.mkdir(parents=True)
             release.mkdir()
-            external.mkdir()
-            (venv / "pyvenv.cfg").write_text(f"home = {external}\n")
+            (venv / "pyvenv.cfg").write_text(f"home = {base_home}\n")
             external_python.write_text("#!/bin/sh\nexit 0\n")
             os.chmod(external_python, 0o755)
             (venv_bin / "python").symlink_to(external_python)
@@ -168,10 +169,30 @@ class ProfileOverlayTests(unittest.TestCase):
                 str(release),
             )
 
+            (venv_bin / "python").unlink()
+            rogue.write_text("#!/bin/sh\nexit 0\n")
+            os.chmod(rogue, 0o755)
+            (venv_bin / "python").symlink_to(rogue)
+            rejected_rogue_venv_target = self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(venv_bin / "python"),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+                expect=1,
+            )
+            self.assertIn(
+                "does not match pyvenv.cfg home", rejected_rogue_venv_target.stderr
+            )
+            (venv_bin / "python").unlink()
+            (venv_bin / "python").symlink_to(external_python)
+
             rejected_external = self.run_tool(
                 PYTHON_VALIDATOR,
                 "--python",
-                str(external_python),
+                str(rogue),
                 "--venv-dir",
                 str(venv),
                 "--release-dir",

@@ -55,6 +55,25 @@ def read_venv_home(config: Path) -> Path:
     return absolute_path(home, "Hermes venv base interpreter home")
 
 
+def validate_venv_entry_target(
+    resolved_entry: Path, venv_dir: Path, pyvenv_config: Path
+) -> None:
+    try:
+        resolved_entry.relative_to(venv_dir)
+        return
+    except ValueError:
+        pass
+
+    base_home = read_venv_home(pyvenv_config)
+    require_unaliased_directory(base_home, "Hermes venv base interpreter home")
+    if resolved_entry.parent != base_home or not re.fullmatch(
+        r"python(?:3(?:\.[0-9]+)?)?", resolved_entry.name
+    ):
+        raise ValueError(
+            "Hermes venv Python target does not match pyvenv.cfg home"
+        )
+
+
 def validate(python_entry: Path, venv_dir: Path, release_dir: Path) -> str:
     require_unaliased_directory(release_dir, "release directory")
     resolved_entry = require_executable_entry(python_entry)
@@ -68,14 +87,7 @@ def validate(python_entry: Path, venv_dir: Path, release_dir: Path) -> str:
         pyvenv_config = venv_dir / "pyvenv.cfg"
         if not pyvenv_config.is_file() or pyvenv_config.is_symlink():
             raise ValueError("Hermes venv pyvenv.cfg must be a regular file")
-        base_home = read_venv_home(pyvenv_config)
-        require_unaliased_directory(base_home, "Hermes venv base interpreter home")
-        if resolved_entry.parent != base_home or not re.fullmatch(
-            r"python(?:3(?:\.[0-9]+)?)?", resolved_entry.name
-        ):
-            raise ValueError(
-                "Hermes venv Python target does not match pyvenv.cfg home"
-            )
+        validate_venv_entry_target(resolved_entry, venv_dir, pyvenv_config)
         return "venv"
 
     try:

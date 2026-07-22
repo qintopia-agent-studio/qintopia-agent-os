@@ -91,6 +91,9 @@ cleanup() {
       mv "$used_marker" "$dry_run_marker" || true
     fi
   fi
+  if [[ -n "${runtime_verify_dir:-}" ]]; then
+    rm -rf "$runtime_verify_dir"
+  fi
   rm -rf "$work_dir"
   return "$status"
 }
@@ -122,12 +125,16 @@ if [[ "$(id -u)" == "0" ]]; then
     echo "Erhua runtime verification requires the ubuntu runtime user" >&2
     exit 1
   fi
-  runtime_verify_dir="${work_dir}/runtime-verification"
+  runtime_verify_dir="$(mktemp -d)"
   runtime_verify_config="${runtime_verify_dir}/config.yaml"
-  chmod 0711 "$work_dir"
   install -d -o ubuntu -g ubuntu -m 0700 "$runtime_verify_dir"
   install -o ubuntu -g ubuntu -m 0600 "$candidate_config" "$runtime_verify_config"
-  /usr/sbin/runuser -u ubuntu -- /usr/bin/env PYTHONDONTWRITEBYTECODE=1 \
+  /usr/sbin/runuser -u ubuntu -- /usr/bin/env -i \
+    HOME=/home/ubuntu \
+    LOGNAME=ubuntu \
+    PATH=/usr/local/bin:/usr/bin:/bin \
+    PYTHONDONTWRITEBYTECODE=1 \
+    USER=ubuntu \
     "$hermes_python" "$runtime_verifier" --config "$runtime_verify_config" >/dev/null
 else
   PYTHONDONTWRITEBYTECODE=1 "$hermes_python" "$runtime_verifier" \
