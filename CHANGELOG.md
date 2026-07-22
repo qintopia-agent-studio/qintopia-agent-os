@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.23](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.22...v0.2.23) (2026-07-22)
+
+
+### Bug Fixes
+
+* bind huabaosi observation to release sidecar ([#257](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/257)) ([c19f62d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c19f62db5b5bc76031d1987c46bff127253fde21))
+* harden huabaosi canary test boundary ([#254](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/254)) ([ef44d6a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ef44d6a7f3bc5fc41399437ee2c61753b3cd6a26))
+* surface deploy runner failure stage ([#256](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/256)) ([1b4abf6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1b4abf6c65e4464c18ff8c97838296d5834dc006))
+
 ## [0.2.22](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.21...v0.2.22) (2026-07-22)
 
 
