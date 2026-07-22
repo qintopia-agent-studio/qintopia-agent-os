@@ -1625,7 +1625,7 @@ fn worker_report(state: WorkerReportState) -> QiweImageSendWorkerReport {
         ],
         guardrails: vec![
             "Postgres remains the system source of truth".to_string(),
-            "default production builds exclude the staging-only live QiWe adapter".to_string(),
+            "default builds fail closed; production builds require the production QiWe owner and database gates".to_string(),
             "Feishu bytes and QiWe temporary-storage URLs remain memory-only and are zeroized after same-byte readback".to_string(),
             "tokens, device ids, group ids, media URLs, request ids, callback credentials, response bodies, and message ids are excluded from reports".to_string(),
             "no Feishu writeback or unrelated external adapter is called".to_string(),
@@ -1711,7 +1711,7 @@ fn preflight_report(state: PreflightReportState) -> QiweImageSendPreflightReport
         action_status: if !state.config_valid {
             "adapter_not_configured"
         } else if state.adapter_compiled {
-            "staging_adapter_compiled_requires_owner_review"
+            "live_adapter_compiled_requires_owner_review"
         } else if state.send_enabled {
             "adapter_enablement_not_approved"
         } else {
@@ -1734,7 +1734,7 @@ fn preflight_report(state: PreflightReportState) -> QiweImageSendPreflightReport
             "the generated-image contract requires the deterministic final JPEG; owner-approved staging must still verify isolated media upload and same-byte readback".to_string(),
         ],
         guardrails: vec![
-            "production artifacts use default Cargo features and cannot compile the staging-only live adapter".to_string(),
+            "default builds fail closed; production builds require the production QiWe owner and database gates".to_string(),
             "a staging build still requires explicit enablement, owner approval, and exact endpoint and group allowlists".to_string(),
             "tokens, device ids, group ids, media URLs, file credentials, and message identifiers are not emitted".to_string(),
             "no timer, production runtime configuration, Feishu writeback, or external send is installed by this contract".to_string(),
@@ -1786,7 +1786,7 @@ fn live_preflight_report(
                 "staging apply requires the exact owner phrase and expected database URL hash before Postgres, callback stdin, or network access".to_string(),
                 "API hosts, media hosts, and target group ids use exact reviewed allowlists".to_string(),
                 "Feishu primary-storage delivery requires the combined Huabaosi and QiWe staging feature build and same-byte temporary-storage readback".to_string(),
-                "production artifacts exclude the staging adapter; callback listener enablement remains a separate reviewed boundary".to_string(),
+                "production artifacts use the production QiWe feature and still reject staging approval or staging databases".to_string(),
             ],
         ),
         LivePreflightMode::Production => (
@@ -3282,14 +3282,14 @@ mod tests {
     }
 
     #[test]
-    fn compiled_staging_adapter_fails_production_preflight() {
+    fn compiled_live_adapter_requires_owner_review_in_default_preflight() {
         let report = test_preflight_report(true, false, true);
 
         assert!(!report.success);
         assert!(report.adapter_compiled);
         assert_eq!(
             report.action_status,
-            "staging_adapter_compiled_requires_owner_review"
+            "live_adapter_compiled_requires_owner_review"
         );
     }
 

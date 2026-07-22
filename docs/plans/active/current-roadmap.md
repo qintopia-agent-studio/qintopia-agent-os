@@ -127,13 +127,15 @@ unless correcting historical evidence.
      allowlisted and read back for complete JPEG identity, and only then enters the
      existing asynchronous URL upload path. Track this reviewed boundary in
      [Xiaoman Feishu-To-QiWe Delivery Boundary](xiaoman-feishu-qiwe-delivery-boundary.md).
-     Only the combined Huabaosi/QiWe staging feature artifact may claim this storage
-     type; production and single-feature builds still fail closed. This is code-level
-     implementation evidence, not real staging or send evidence. A read-only 2026-07-16
-     Asia/Shanghai server observation confirmed that `paxon-server` still lacks the
-     fixed staging env file and immutable staging release root, so real staging must
-     first provision those owner-reviewed inputs instead of treating local fake smokes
-     as runtime evidence.
+     Only the matched Huabaosi/QiWe live feature pairs may claim this storage type:
+     staging requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`, and
+     production requires `huabaosi-feishu-mirror-adapter` plus `qiwe-production-adapter`
+     with production owner/database/Feishu delivery gates. Single-feature builds still
+     fail closed. This is code-level implementation evidence, not real staging or send
+     evidence. A read-only 2026-07-16 Asia/Shanghai server observation confirmed that
+     `paxon-server` still lacks the fixed staging env file and immutable staging release
+     root, so real staging must first provision those owner-reviewed inputs instead of
+     treating local fake smokes as runtime evidence.
    - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md)
      merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration
