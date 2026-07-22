@@ -148,13 +148,15 @@ class ProfileOverlayTests(unittest.TestCase):
             venv = directory / "venv"
             venv_bin = venv / "bin"
             release = directory / "release"
-            external = directory / "external-python"
+            external = directory / "external"
+            external_python = external / "python3.11"
             venv_bin.mkdir(parents=True)
             release.mkdir()
-            (venv / "pyvenv.cfg").write_text("home = /external\n")
-            external.write_text("#!/bin/sh\nexit 0\n")
-            os.chmod(external, 0o755)
-            (venv_bin / "python").symlink_to(external)
+            external.mkdir()
+            (venv / "pyvenv.cfg").write_text(f"home = {external}\n")
+            external_python.write_text("#!/bin/sh\nexit 0\n")
+            os.chmod(external_python, 0o755)
+            (venv_bin / "python").symlink_to(external_python)
 
             self.run_tool(
                 PYTHON_VALIDATOR,
@@ -169,7 +171,7 @@ class ProfileOverlayTests(unittest.TestCase):
             rejected_external = self.run_tool(
                 PYTHON_VALIDATOR,
                 "--python",
-                str(external),
+                str(external_python),
                 "--venv-dir",
                 str(venv),
                 "--release-dir",
@@ -179,7 +181,7 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertIn("fixed venv entry or remain inside", rejected_external.stderr)
 
             release_python = release / "python"
-            release_python.symlink_to(external)
+            release_python.symlink_to(external_python)
             escaped_release = self.run_tool(
                 PYTHON_VALIDATOR,
                 "--python",
@@ -191,6 +193,28 @@ class ProfileOverlayTests(unittest.TestCase):
                 expect=1,
             )
             self.assertIn("fixed venv entry or remain inside", escaped_release.stderr)
+
+            unexpected = directory / "unexpected"
+            unexpected.mkdir()
+            unexpected_python = unexpected / "python3.11"
+            unexpected_python.write_text("#!/bin/sh\nexit 0\n")
+            os.chmod(unexpected_python, 0o755)
+            (venv_bin / "python").unlink()
+            (venv_bin / "python").symlink_to(unexpected_python)
+            mismatched_home = self.run_tool(
+                PYTHON_VALIDATOR,
+                "--python",
+                str(venv_bin / "python"),
+                "--venv-dir",
+                str(venv),
+                "--release-dir",
+                str(release),
+                expect=1,
+            )
+            self.assertIn("does not match pyvenv.cfg home", mismatched_home.stderr)
+            (venv_bin / "python").unlink()
+            (venv_bin / "python").symlink_to(external_python)
+
             release_python.unlink()
             release_python.write_text("#!/bin/sh\nexit 0\n")
             os.chmod(release_python, 0o755)

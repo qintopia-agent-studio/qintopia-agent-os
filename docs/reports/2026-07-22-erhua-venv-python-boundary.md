@@ -30,7 +30,8 @@ interpreter. It must:
 - accept only the fixed Hermes venv entry point or an interpreter contained in the
   immutable release;
 - require the fixed venv and its `pyvenv.cfg` to be regular, non-aliased paths;
-- allow the fixed venv entry point to link to its external base interpreter;
+- allow the fixed venv entry point to link only to a standard Python executable directly
+  below the absolute, non-aliased base `home` declared by `pyvenv.cfg`;
 - keep release-local interpreter symlink targets inside the immutable release; and
 - execute the Hermes runtime resolver as the unprivileged `ubuntu` runtime owner when
   the deploy runner is root.

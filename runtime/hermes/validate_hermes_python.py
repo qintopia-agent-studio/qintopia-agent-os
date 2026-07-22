@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from pathlib import Path
 
 
@@ -33,6 +34,27 @@ def require_executable_entry(entry: Path) -> Path:
     return resolved
 
 
+def read_venv_home(config: Path) -> Path:
+    fields: dict[str, str] = {}
+    lines = config.read_text(encoding="utf-8").splitlines()
+    for line_number, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, separator, value = stripped.partition("=")
+        key = key.strip().lower()
+        value = value.strip()
+        if not separator or not key or not value:
+            raise ValueError(f"Hermes venv pyvenv.cfg line {line_number} is invalid")
+        if key in fields:
+            raise ValueError(f"Hermes venv pyvenv.cfg contains duplicate {key}")
+        fields[key] = value
+    home = fields.get("home", "")
+    if not home:
+        raise ValueError("Hermes venv pyvenv.cfg must declare home")
+    return absolute_path(home, "Hermes venv base interpreter home")
+
+
 def validate(python_entry: Path, venv_dir: Path, release_dir: Path) -> str:
     require_unaliased_directory(release_dir, "release directory")
     resolved_entry = require_executable_entry(python_entry)
@@ -46,6 +68,14 @@ def validate(python_entry: Path, venv_dir: Path, release_dir: Path) -> str:
         pyvenv_config = venv_dir / "pyvenv.cfg"
         if not pyvenv_config.is_file() or pyvenv_config.is_symlink():
             raise ValueError("Hermes venv pyvenv.cfg must be a regular file")
+        base_home = read_venv_home(pyvenv_config)
+        require_unaliased_directory(base_home, "Hermes venv base interpreter home")
+        if resolved_entry.parent != base_home or not re.fullmatch(
+            r"python(?:3(?:\.[0-9]+)?)?", resolved_entry.name
+        ):
+            raise ValueError(
+                "Hermes venv Python target does not match pyvenv.cfg home"
+            )
         return "venv"
 
     try:
@@ -70,7 +100,7 @@ def main() -> int:
             absolute_path(args.venv_dir, "Hermes venv"),
             absolute_path(args.release_dir, "release directory"),
         )
-    except (OSError, ValueError) as exc:
+    except (OSError, UnicodeError, ValueError) as exc:
         print(f"Hermes Python validation failed: {exc}", file=os.sys.stderr)
         return 1
     print(f"Hermes Python entry validated: {scope}")
