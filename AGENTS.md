@@ -982,6 +982,10 @@ Use `rg` and `rg --files` for search.
   previous runner. Use a reviewed follow-up `workflow_dispatch` request for the same
   published SHA to activate the new runner behavior; do not bootstrap it with server
   edits.
+- Deploy result diagnostics may include only bounded non-secret runner facts such as the
+  fixed failure stage, numeric exit status, promotion state, and profile activation
+  attempt state. Do not upload raw server logs, journal output, env files, secrets,
+  external adapter payloads, or command output into COS deploy result JSON.
 - As of 2026-07-15, the corrected `v0.2.10` same-SHA follow-up deploy installed the new
   systemd units. A same-SHA request for an existing release must reuse the immutable
   manifest's exact runtime, bundle, commit, scope, and restart-target fields; narrowing

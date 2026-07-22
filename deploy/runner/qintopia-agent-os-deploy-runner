@@ -254,6 +254,9 @@ fi
 
 result_file="${RESULT_DIR}/${request_id}.json"
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+deploy_stage="starting"
+deploy_failure_stage=""
+deploy_failure_status=""
 
 write_result() {
   local status="$1"
@@ -275,7 +278,8 @@ write_result() {
     "$current_target" "$restart_targets" "$error" "$rollback_attempted" \
     "$rollback_status" "$rollback_target" "${RESULT_DIR}/${request_id}.profile.json" \
     "${RESULT_DIR}/${request_id}.smoke.json" "${RESULT_DIR}/${request_id}.restore.json" \
-    "$release_scope" <<'PY'
+    "$release_scope" "$deploy_failure_stage" "$deploy_failure_status" \
+    "$promoted_current" "$profile_activation_attempted" <<'PY'
 import json
 import os
 import sys
@@ -298,7 +302,24 @@ import sys
     smoke_evidence_path,
     restore_evidence_path,
     release_scope,
-) = sys.argv[1:18]
+    deploy_failure_stage,
+    deploy_failure_status,
+    promoted_current,
+    profile_activation_attempted,
+) = sys.argv[1:22]
+
+runner_check = {
+    "name": "deploy-runner",
+    "status": "passed" if status.endswith("succeeded") else "failed",
+}
+if deploy_failure_stage:
+    detail = {
+        "failure_stage": deploy_failure_stage,
+        "exit_status": int(deploy_failure_status or "0"),
+        "promoted_current": promoted_current == "true",
+        "profile_activation_attempted": profile_activation_attempted == "true",
+    }
+    runner_check["detail"] = json.dumps(detail, separators=(",", ":"))
 
 result = {
     "schema_version": 1,
@@ -312,7 +333,7 @@ result = {
     "previous_sha": previous_sha,
     "current_target": current_target,
     "restart_targets": [item for item in restart_targets.split(",") if item],
-    "checks": [{"name": "deploy-runner", "status": "passed" if status.endswith("succeeded") else "failed"}],
+    "checks": [runner_check],
     "rollback": {
         "attempted": rollback_attempted == "true",
         "status": rollback_status,
@@ -391,6 +412,7 @@ assert_current_profile_release() {
 
 run_promotion() {
   if [[ "$release_scope" == "hermes-profile-erhua" ]]; then
+    deploy_stage="validate-current-profile-release"
     validate_current_profile_release || return $?
     profile_args=(
       --release-dir "$profile_release_dir"
@@ -404,6 +426,7 @@ run_promotion() {
       profile_args+=(--dry-run-request-id "$profile_dry_run_request_id")
     fi
     profile_status=0
+    deploy_stage="activate-erhua-profile"
     "$profile_release_dir/deploy/runner/activate-erhua-profile.sh" \
       "${profile_args[@]}" || profile_status=$?
     if [[ "$dry_run" != "true" && -f "${STATE_DIR}/profile-backups/${request_id}/metadata.json" ]]; then
@@ -417,8 +440,10 @@ run_promotion() {
       return
     fi
     profile_activation_attempted=true
+    deploy_stage="assert-current-profile-release"
     assert_current_profile_release || return $?
     rm -f "${RESULT_DIR}/${request_id}.smoke.json"
+    deploy_stage="profile-smoke-release"
     "$profile_release_dir/deploy/runner/smoke-release.sh" \
       --release-root "$RELEASE_ROOT" \
       --profile-release-dir "$profile_release_dir" \
@@ -427,7 +452,9 @@ run_promotion() {
       --log-since "$started_at" \
       --evidence-output "${RESULT_DIR}/${request_id}.smoke.json" \
       --evidence-phase activation || return $?
+    deploy_stage="assert-current-profile-release"
     assert_current_profile_release || return $?
+    deploy_stage="write-success-result"
     write_result succeeded
     return
   fi
@@ -439,19 +466,24 @@ run_promotion() {
   if [[ "$dry_run" == "true" ]]; then
     promote_args+=(--dry-run)
   fi
+  deploy_stage="promote-release"
   deploy/runner/promote-release.sh \
     "${promote_args[@]}" || return $?
   if [[ "$dry_run" == "true" ]]; then
+    deploy_stage="write-dry-run-result"
     write_result dry_run_succeeded
   else
     promoted_current=true
+    deploy_stage="install-release-systemd-units"
     deploy/runner/install-release-systemd-units.sh \
       --release-root "$RELEASE_ROOT" \
       --release-sha "$release_sha" || return $?
+    deploy_stage="smoke-release"
     deploy/runner/smoke-release.sh \
       --release-root "$RELEASE_ROOT" \
       --restart-targets "$restart_targets" \
       --log-since "$started_at" || return $?
+    deploy_stage="write-success-result"
     write_result succeeded
   fi
 }
@@ -468,6 +500,8 @@ run_promotion() {
   status=$?
   set -e
   if [[ "$status" -ne 0 ]]; then
+    deploy_failure_stage="$deploy_stage"
+    deploy_failure_status="$status"
     if [[ "$release_scope" == "hermes-profile-erhua" && "$profile_activation_attempted" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
       rollback_target="$profile_release_dir"
       rollback_ok=true
@@ -489,10 +523,10 @@ run_promotion() {
         --evidence-phase rollback || rollback_ok=false
       assert_current_profile_release || rollback_ok=false
       if [[ "$rollback_ok" == "true" ]]; then
-        write_result rolled_back "profile activation failed and rollback succeeded" \
+        write_result rolled_back "profile activation failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback succeeded" \
           true succeeded "$rollback_target"
       else
-        write_result failed "profile activation failed and rollback failed" \
+        write_result failed "profile activation failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback failed" \
           true failed "$rollback_target"
       fi
     elif [[ "$promoted_current" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
@@ -508,14 +542,14 @@ run_promotion() {
         rollback_ok=false
       fi
       if [[ "$rollback_ok" == "true" ]]; then
-        write_result rolled_back "deployment failed and rollback succeeded" \
+        write_result rolled_back "deployment failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback succeeded" \
           true succeeded "$rollback_target"
       else
-        write_result failed "deployment failed and rollback failed" \
+        write_result failed "deployment failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback failed" \
           true failed "$rollback_target"
       fi
     else
-      write_result failed "deployment failed"
+      write_result failed "deployment failed during ${deploy_failure_stage} (exit ${deploy_failure_status})"
     fi
     exit "$status"
   fi

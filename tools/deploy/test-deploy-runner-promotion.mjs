@@ -22,6 +22,7 @@ const signingKey = "test-signing-key";
 const keyId = "production";
 const requestId = "deploy-20260706T000000Z-0123456789ab";
 const sha = "0123456789abcdef0123456789abcdef01234567";
+const previousSha = "abcdef0123456789abcdef0123456789abcdef01";
 
 const canonicalJson = (value) => {
   if (Array.isArray(value)) {
@@ -100,6 +101,21 @@ fi
 `
   );
   writeExecutable(
+    "bin/readlink",
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "-f" ]]; then
+  python3 - "\${2:-}" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve())
+PY
+  exit 0
+fi
+/usr/bin/readlink "$@"
+`
+  );
+  writeExecutable(
     "deploy/runner/promote-release.sh",
     `#!/usr/bin/env bash
 echo "simulated promote failure" >&2
@@ -165,6 +181,118 @@ exit 44
   if (deployResult.current_target) {
     throw new Error(
       "failed pre-promotion result must not report a promoted current target"
+    );
+  }
+
+  fs.rmSync(stateDir, { recursive: true, force: true });
+  fs.rmSync(releaseRoot, { recursive: true, force: true });
+  fs.mkdirSync(path.join(stateDir, "results"), { recursive: true });
+  fs.mkdirSync(releaseRoot, { recursive: true });
+
+  writeExecutable(
+    "deploy/runner/promote-release.sh",
+    `#!/usr/bin/env bash
+set -euo pipefail
+release_root=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --release-root)
+      release_root="\${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "\${release_root}/${sha}" "\${release_root}/${previousSha}"
+ln -sfn "\${release_root}/${previousSha}" "\${release_root}/previous"
+ln -sfn "\${release_root}/${sha}" "\${release_root}/current"
+`
+  );
+  writeExecutable(
+    "deploy/runner/install-release-systemd-units.sh",
+    `#!/usr/bin/env bash
+echo "simulated systemd install failure" >&2
+exit 55
+`
+  );
+  writeExecutable(
+    "deploy/runner/rollback-release.sh",
+    `#!/usr/bin/env bash
+set -euo pipefail
+release_root=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --release-root)
+      release_root="\${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+target="$(readlink -f "\${release_root}/previous")"
+ln -sfn "$target" "\${release_root}/current"
+`
+  );
+  writeExecutable(
+    "deploy/runner/smoke-release.sh",
+    `#!/usr/bin/env bash
+exit 0
+`
+  );
+
+  const promotedResult = spawnSync(
+    "bash",
+    [
+      path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner"),
+      "--request-file",
+      requestFile,
+    ],
+    {
+      cwd: tmpRoot,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
+        QINTOPIA_RELEASE_ROOT: releaseRoot,
+        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+        TENCENT_COS_REGION: "ap-shanghai",
+      },
+      encoding: "utf8",
+    }
+  );
+
+  if (promotedResult.status !== 55) {
+    throw new Error(
+      `expected runner to return install failure status 55, got ${promotedResult.status}\nstdout:\n${promotedResult.stdout}\nstderr:\n${promotedResult.stderr}`
+    );
+  }
+
+  const promotedDeployResult = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  if (promotedDeployResult.status !== "rolled_back") {
+    throw new Error(`expected rolled_back result, got ${promotedDeployResult.status}`);
+  }
+  if (
+    promotedDeployResult.error !==
+    "deployment failed during install-release-systemd-units (exit 55) and rollback succeeded"
+  ) {
+    throw new Error(`expected diagnostic error, got ${promotedDeployResult.error}`);
+  }
+  const detail = JSON.parse(promotedDeployResult.checks[0].detail);
+  if (
+    detail.failure_stage !== "install-release-systemd-units" ||
+    detail.exit_status !== 55 ||
+    detail.promoted_current !== true ||
+    detail.profile_activation_attempted !== false
+  ) {
+    throw new Error(
+      `expected deploy-runner failure detail, got ${promotedDeployResult.checks[0].detail}`
     );
   }
 } finally {
