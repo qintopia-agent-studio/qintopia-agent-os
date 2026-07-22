@@ -38,6 +38,8 @@ jobs:
 
     outputs:
       full-check: ${{ steps.detect.outputs.full-check }}
+      rust-quality-check: ${{ steps.detect.outputs.rust-quality-check }}
+      postgres-integration-check: ${{ steps.detect.outputs.postgres-integration-check }}
       changed-files: ${{ steps.detect.outputs.changed-files }}
       release-please-pr: ${{ steps.detect.outputs.release-please-pr }}
       base-sha: ${{ steps.detect.outputs.base-sha }}
@@ -111,6 +113,8 @@ jobs:
           fi
 
           full_check=false
+          rust_quality_check=false
+          postgres_integration_check=false
           for file in "${changed[@]}"; do
             case "$file" in
               *.md|docs/**|deploy/sidecar/docs/**)
@@ -119,19 +123,36 @@ jobs:
                 full_check=true
                 ;;
             esac
+            case "$file" in
+              *.md|docs/**|deploy/sidecar/docs/**)
+                ;;
+              .github/workflows/**|runtime/sidecar/**|runtime/postgres/**|deploy/sidecar/**|runtime/sidecar/Cargo.toml|runtime/sidecar/Cargo.lock)
+                rust_quality_check=true
+                postgres_integration_check=true
+                ;;
+            esac
           done
+          if [[ "$event_name" == "workflow_dispatch" && -z "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" ]]; then
+            full_check=true
+            rust_quality_check=true
+            postgres_integration_check=true
+          fi
 
           {
             echo "changed-files<<EOF"
             printf '%s\n' "${changed[@]}"
             echo "EOF"
             echo "full-check=${full_check}"
+            echo "rust-quality-check=${rust_quality_check}"
+            echo "postgres-integration-check=${postgres_integration_check}"
             echo "release-please-pr=${release_please_pr}"
             echo "base-sha=${base_sha}"
             echo "head-sha=${head_sha}"
           } >> "$GITHUB_OUTPUT"
 
           printf 'full-check=%s\n' "$full_check"
+          printf 'rust-quality-check=%s\n' "$rust_quality_check"
+          printf 'postgres-integration-check=%s\n' "$postgres_integration_check"
           printf 'release-please-pr=%s\n' "$release_please_pr"
           printf 'changed files:\n'
           printf '  %s\n' "${changed[@]}"
@@ -283,7 +304,7 @@ jobs:
     timeout-minutes: 20
     needs: changes
     if: >-
-      ${{ needs.changes.outputs.full-check == 'true' &&
+      ${{ needs.changes.outputs.rust-quality-check == 'true' &&
       needs.changes.outputs.release-please-pr != 'true' }}
 
     permissions:
@@ -336,7 +357,7 @@ jobs:
     timeout-minutes: 20
     needs: changes
     if: >-
-      ${{ needs.changes.outputs.full-check == 'true' &&
+      ${{ needs.changes.outputs.postgres-integration-check == 'true' &&
       needs.changes.outputs.release-please-pr != 'true' }}
 
     permissions:

@@ -544,6 +544,11 @@ Use `rg` and `rg --files` for search.
   remain in the disposable integration job. Production artifacts must still use only
   reviewed production features; an all-features CI build must never be promoted or
   treated as a production artifact.
+- Heavy PR checks are risk-tiered. Keep `check` meaningful for ordinary PRs, but run
+  `rust-quality-baseline` and `xiaoman-postgres-integration` only for sidecar, Postgres,
+  deploy sidecar script, or CI workflow changes, plus explicit non-Release manual
+  dispatches. Do not weaken Release Please manual validation, production deploy, or
+  published Release gates; those remain the full safety boundary.
 - QiWe image-send production activation is guarded, not automatic. Activation requires
   the persistent sidecar env file to contain exactly one
   `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, exactly one
