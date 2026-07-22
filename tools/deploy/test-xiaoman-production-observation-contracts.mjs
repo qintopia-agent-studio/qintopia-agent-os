@@ -32,6 +32,8 @@ for (const fragment of [
   'CHILD_PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
   'env -i "${child_env[@]}" "$script_path"',
   '"PATH=${CHILD_PATH}"',
+  "QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE",
+  "operations-group-send-ready-timer-observation-smoke.sh",
 ]) {
   if (!aggregatePreflight.includes(fragment)) {
     throw new Error(`aggregate production preflight must include ${fragment}`);

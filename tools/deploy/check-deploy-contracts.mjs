@@ -454,6 +454,8 @@ if (!exists(xiaomanPreflightPath)) {
     "huabaosi-image-generation-production-observation-smoke.sh",
     "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE",
     "xiaoman-activity-send-request-starter-observation-smoke.sh",
+    "QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE",
+    "operations-group-send-ready-timer-observation-smoke.sh",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE",
     "qiwe-image-send-production-observation-smoke.sh",
     "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE",
