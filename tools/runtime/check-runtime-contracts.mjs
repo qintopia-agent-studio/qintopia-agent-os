@@ -25,6 +25,17 @@ const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 const addError = (message) => errors.push(message);
 
+const packageJson = JSON.parse(readText("package.json"));
+if (
+  !packageJson.scripts?.["runtime:contracts:check"]?.includes(
+    "test_validate_hermes_python.py"
+  )
+) {
+  addError(
+    "package.json: runtime:contracts:check must run the Hermes Python validator tests"
+  );
+}
+
 for (const [packagePath, requiredFragments] of Object.entries(packages)) {
   const readmePath = `${packagePath}/README.md`;
   const manifestPath = `${packagePath}/manifest.yaml`;

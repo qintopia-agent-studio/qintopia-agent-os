@@ -72,6 +72,12 @@ not values. `migrate_erhua_livecool_env.py` creates or checks the server-local
 dry-run and activation smoke. It requires Hermes's own provider resolver to return the
 approved named provider and base URL.
 
+`validate_hermes_python.py` binds that resolver to the fixed Hermes venv or an immutable
+release-local interpreter. The venv base home must be unaliased except for uv's stable
+CPython major/minor alias below the same runtime user's `.local/share/uv/python` root.
+That alias must resolve in one absolute in-root hop to a matching patch version and
+platform; arbitrary, chained, relative, or out-of-root aliases remain rejected.
+
 The deploy runner is the only production caller. It supplies fixed profile paths; deploy
 requests cannot supply paths. See
 `docs/operations/profile-bundles/erhua-livecool-profile-overlay-runbook.md`.

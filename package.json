@@ -22,7 +22,7 @@
     "skills:operations-intake:check": "pnpm skills:operations-intake:test",
     "workflows:check": "node tools/workflows/check-workflows.mjs",
     "mcp:adapters:check": "node tools/mcp/check-adapters.mjs",
-    "runtime:contracts:check": "node tools/runtime/check-runtime-contracts.mjs && node tools/runtime/test-hermes-patch-paths.mjs",
+    "runtime:contracts:check": "node tools/runtime/check-runtime-contracts.mjs && node tools/runtime/test-hermes-patch-paths.mjs && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s runtime/hermes/tests -p 'test_validate_hermes_python.py' -v",
     "runtime:hermes:check": "node tools/runtime/check-runtime-contracts.mjs && node tools/runtime/test-hermes-patch-paths.mjs && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s runtime/hermes/tests -v",
     "runtime:systemd:check": "node tools/runtime/check-runtime-contracts.mjs",
     "runtime:nginx:check": "node tools/runtime/check-runtime-contracts.mjs",
