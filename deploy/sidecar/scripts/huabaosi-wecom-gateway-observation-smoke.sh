@@ -10,6 +10,8 @@ SERVICE_NAME="${QINTOPIA_HUABAOSI_WECOM_SERVICE_NAME:-hermes-gateway-huabaosi.se
 PROFILE_DIR="${QINTOPIA_HUABAOSI_WECOM_PROFILE_DIR:-/home/ubuntu/.hermes/profiles/huabaosi}"
 PROFILE_CONFIG="${QINTOPIA_HUABAOSI_WECOM_PROFILE_CONFIG:-${PROFILE_DIR}/config.yaml}"
 RELEASE_CURRENT="${QINTOPIA_RELEASE_CURRENT_PATH:-/home/ubuntu/qintopia-agent-os-releases/current}"
+EXPECTED_DROP_IN_PATH="/home/ubuntu/.config/systemd/user/hermes-gateway-huabaosi.service.d/env.conf"
+EXPECTED_ENVIRONMENT_FILE="/home/ubuntu/.hermes/profiles/huabaosi/.env (ignore_errors=no)"
 JOURNAL_LINES="${QINTOPIA_HUABAOSI_WECOM_JOURNAL_LINES:-160}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 JOURNALCTL="${JOURNALCTL:-journalctl}"
@@ -74,11 +76,15 @@ grep -Fx active "$service_status" >/dev/null
 assert_no_sensitive_output "service status" "$service_status"
 
 service_properties="$tmp_dir/service-properties.txt"
-"$SYSTEMCTL" --user show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths >"$service_properties"
+"$SYSTEMCTL" --user show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths --property=EnvironmentFiles >"$service_properties"
 grep -Fx "WorkingDirectory=${PROFILE_DIR}" "$service_properties" >/dev/null
 grep -E "^ExecStart=.*/home/ubuntu/\\.hermes/hermes-agent/.+ -m hermes_cli\\.main --profile huabaosi gateway run --replace.*$" "$service_properties" >/dev/null
-if ! grep -Fx "DropInPaths=" "$service_properties" >/dev/null; then
-  echo "Huabaosi WeCom gateway service has drop-in overrides; effective command requires owner review" >&2
+if ! grep -Fx "DropInPaths=${EXPECTED_DROP_IN_PATH}" "$service_properties" >/dev/null; then
+  echo "Huabaosi WeCom gateway service does not use the single reviewed environment drop-in" >&2
+  exit 1
+fi
+if ! grep -Fx "EnvironmentFiles=${EXPECTED_ENVIRONMENT_FILE}" "$service_properties" >/dev/null; then
+  echo "Huabaosi WeCom gateway service does not require the fixed profile environment file" >&2
   exit 1
 fi
 assert_no_sensitive_output "service properties" "$service_properties"

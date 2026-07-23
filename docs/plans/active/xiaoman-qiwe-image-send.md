@@ -244,7 +244,11 @@ artifacts may contain only the reviewed `huabaosi-production-adapter` and
 `huabaosi-feishu-mirror-adapter` feature set; QiWe live features, staging adapters, and
 all-features builds remain forbidden. The production observation smoke accepts only the
 immutable `release/current` binary and fixed production env file, and it must not run
-`--apply` or process callbacks.
+`--apply` or process callbacks. Because that binary is the Huabaosi production artifact,
+the observation may prove only the disabled QiWe worker and callback-bridge state. It
+must fail closed if either QiWe production enable flag is `1`; an enabled state requires
+a separate reviewed QiWe production artifact and must never be made possible by adding
+`qiwe-production-adapter` to the Huabaosi artifact.
 
 Production activation is guarded rather than automatic. It requires the persistent
 enablement flag, exact production owner phrase, canonical production database URL hash,
@@ -272,21 +276,24 @@ QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 \
   deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh
 ```
 
-It verifies that Erhua's QiWe plugin symlink resolves to `release/current`, the bridge
-configuration is either explicitly disabled or bound to production mode, the configured
-sidecar path/hash match the immutable release binary, and the approved production
-database URL SHA-256 matches the runtime database URL without printing that URL. It does
-not process callbacks, start services, enable timers, read Feishu, write Postgres, call
-QiWe, or publish.
+It verifies that Erhua's QiWe plugin symlink resolves to `release/current`, the callback
+bridge is explicitly disabled, and the immutable release binary carries exactly the
+approved Huabaosi production features. It ignores unrelated secret-bearing env values
+and fails closed if the bridge enable flag is `1`. It does not process callbacks, start
+services, enable timers, read Feishu, write Postgres, call QiWe, or publish.
 
 Production callback bridge activation is guarded and separate from the image-send worker
-timer. The owner must first persist the reviewed Erhua env values with
-`QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=1`, production mode, release/current
-processor path/root, the approved sidecar SHA-256, image-send enablement, webhook
-readiness, production approval, and the database URL hash that matches the runtime
-database URL. The release-local activation script then runs the same observation with
-`expected_state=enabled`, restarts only `hermes-gateway-erhua.service` as the `ubuntu`
-user, and observes the enabled state again:
+timer. The current Huabaosi-only release cannot pass its enabled observation, so the
+activation command must not restart Erhua until a separate reviewed QiWe production
+artifact and required staging evidence exist. That future boundary must first persist
+the reviewed Erhua env values with `QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=1`,
+production mode, release/current processor path/root, the approved sidecar SHA-256,
+image-send enablement, webhook readiness, production approval, and the database URL hash
+that matches the runtime database URL. The release-local activation script then runs the
+same observation with `expected_state=enabled`, restarts only
+`hermes-gateway-erhua.service` as the `ubuntu` user, and observes the enabled state
+again. The command below documents that guarded future boundary; it is not an activation
+instruction for the current Huabaosi artifact:
 
 ```bash
 QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_ACTIVATION=approved-production-qiwe-image-callback-bridge \

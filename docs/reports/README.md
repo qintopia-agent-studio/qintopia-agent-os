@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-23 Xiaoman QiWe disabled observation artifact drift](2026-07-23-xiaoman-qiwe-disabled-observation-artifact-drift.md)
 - [2026-07-17 Erhua weather broadcast current-only output](2026-07-17-erhua-weather-broadcast-current-only.md)
 - [2026-07-18 v0.2.15 release decision evidence](2026-07-18-v0215-release-decision-evidence.md)
 - [2026-07-19 production release metadata permissions](2026-07-19-production-release-metadata-permissions.md)
@@ -56,6 +57,7 @@ team onboarding, architecture review, or migration decisions.
 | `2026-07-14-v028-release-tag-drift.md`                                             | adopt-input | v0.2.8 release tag drift deploy failure                                |
 | `2026-07-14-group-send-ready-claim-cleanup.md`                                     | adopt-input | Group send-ready complete claim release remediation                    |
 | `2026-07-15-huabaosi-wecom-v029-production-observation.md`                         | adopt-input | v0.2.9 Huabaosi WeCom observation and runtime-layout remediation       |
+| `2026-07-23-huabaosi-wecom-env-drop-in-observation-drift.md`                       | adopt-input | Huabaosi WeCom fixed env drop-in observation remediation               |
 | `2026-07-15-huabaosi-stale-claim-ambiguity.md`                                     | adopt-input | Huabaosi expired image-generation claim remediation                    |
 | `2026-07-15-xiaoman-production-path-audit.md`                                      | adopt-input | Xiaoman v0.2.9 production execution and remaining ownership gaps       |
 | `2026-07-15-xiaoman-qiwe-callback-ingress-gap.md`                                  | adopt-input | Xiaoman QiWe memory-only callback ingress gap                          |

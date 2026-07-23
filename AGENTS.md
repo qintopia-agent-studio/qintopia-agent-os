@@ -141,6 +141,13 @@
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`
 - QiWe image-send immediate timer rollback:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK=approved-production-qiwe-image-send-rollback deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh`
+- Release-local QiWe production observations currently inspect the Huabaosi production
+  sidecar artifact and may prove only the disabled image-send and callback-bridge state.
+  They must require exactly `huabaosi-production-adapter` plus
+  `huabaosi-feishu-mirror-adapter`, reject `qiwe-production-adapter`, and fail closed if
+  either QiWe enable flag is `1`. Enabled QiWe production requires a separate reviewed
+  artifact and enablement boundary after staging evidence; never restore it by mixing
+  QiWe into the Huabaosi artifact.
 - Real Xiaoman activity production evidence export after owner-confirmed completion:
 
   ```bash
@@ -601,9 +608,10 @@ Use `rg` and `rg --files` for search.
   `qiwe-staging-adapter`, apply commands must still select the production gate and must
   never fall back to staging approval or staging database hashing. Production
   observation may inspect the immutable release/current binary and fixed production env
-  file, but it must not pass database/QiWe secrets to observation children, bypass the
-  async callback/send state machine, write Feishu as part of sending, or treat staging
-  evidence as production completion.
+  file only to prove the current Huabaosi artifact remains disabled. It must fail if the
+  QiWe image-send flag is enabled, and it must not pass database/QiWe secrets to
+  observation children, bypass the async callback/send state machine, write Feishu as
+  part of sending, or treat staging evidence as production completion.
 - The Hermes QiWe image callback bridge is a memory-only callback ingress, not a
   scheduler or release activation path. Production mode must require
   `QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE=production`, exact production owner
@@ -890,11 +898,14 @@ Use `rg` and `rg --files` for search.
   retry terminal/ambiguous outcomes.
 - `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
   Hermes WeCom user-service active state through `systemctl --user`, fixed service
-  command, public `busy_input_mode`, release/current presence, and sanitized
-  user-journal marker counts. It must not source `.env`, print raw journal lines, print
-  user messages, read tokens, restart services, send WeCom messages, run image
-  generation, write Postgres or Feishu, call QiWe/provider/media endpoints, or modify
-  live Hermes profile state.
+  command, fixed
+  `/home/ubuntu/.config/systemd/user/hermes-gateway-huabaosi.service.d/env.conf`
+  drop-in, fixed required `/home/ubuntu/.hermes/profiles/huabaosi/.env`, public
+  `busy_input_mode`, release/current presence, and sanitized user-journal marker counts.
+  It must reject missing or additional drop-ins and optional or alternate environment
+  files. It must not source `.env`, print raw journal lines, print user messages, read
+  tokens, restart services, send WeCom messages, run image generation, write Postgres or
+  Feishu, call QiWe/provider/media endpoints, or modify live Hermes profile state.
 - `huabaosi-wecom-canary-observation-smoke.sh` may only verify that the canary gateway
   remains unscheduled and disabled, then run `huabaosi-wecom-canary-preflight` for a
   sanitized local configuration summary. From release/current it must discover the
