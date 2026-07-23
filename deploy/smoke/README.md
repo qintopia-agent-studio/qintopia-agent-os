@@ -53,7 +53,10 @@ It is not a cutover approval.
 read-only observation smoke for the 阿亮画报师 WeCom migration. It inspects the active
 Hermes user gateway service through `systemctl --user`, its fixed command shape, public
 `busy_input_mode`, release/current presence, and sanitized user-journal marker counts
-for internal filtering, send fallback, and API timeouts.
+for internal filtering, send fallback, and API timeouts. The journal scan is fixed to
+the most recent 30 minutes and at most 160 lines so failures from an earlier Release do
+not make every later observation fail. Commands, production paths, and the journal
+window are fixed; callers cannot replace them with test doubles or alternate state.
 
 Run it only after an owner-approved deploy from the immutable release directory:
 

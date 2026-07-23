@@ -30,10 +30,38 @@ try {
   const releaseCurrent = path.join(tmpRoot, "qintopia-agent-os-releases", "current");
   const systemctl = path.join(tmpRoot, "bin", "systemctl");
   const journalctl = path.join(tmpRoot, "bin", "journalctl");
+  const testScript = path.join(tmpRoot, "huabaosi-wecom-gateway-observation-smoke.sh");
 
   fs.mkdirSync(profileDir, { recursive: true });
   fs.mkdirSync(releaseCurrent, { recursive: true });
   fs.writeFileSync(profileConfig, "busy_input_mode: interrupt\n", "utf8");
+
+  let testScriptSource = fs.readFileSync(script, "utf8");
+  const fixtureReplacements = [
+    [
+      'PROFILE_DIR="/home/ubuntu/.hermes/profiles/huabaosi"',
+      `PROFILE_DIR="${profileDir}"`,
+    ],
+    [
+      'PROFILE_CONFIG="${PROFILE_DIR}/config.yaml"',
+      `PROFILE_CONFIG="${profileConfig}"`,
+    ],
+    [
+      'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
+      `RELEASE_CURRENT="${releaseCurrent}"`,
+    ],
+    ['SYSTEMCTL="/usr/bin/systemctl"', `SYSTEMCTL="${systemctl}"`],
+    ['JOURNALCTL="/usr/bin/journalctl"', `JOURNALCTL="${journalctl}"`],
+  ];
+  for (const [productionValue, fixtureValue] of fixtureReplacements) {
+    if (!testScriptSource.includes(productionValue)) {
+      throw new Error(
+        `production observation is missing fixed value: ${productionValue}`
+      );
+    }
+    testScriptSource = testScriptSource.replace(productionValue, fixtureValue);
+  }
+  writeExecutable(testScript, testScriptSource);
 
   writeExecutable(
     systemctl,
@@ -85,16 +113,11 @@ JOURNAL
   );
 
   const runObservation = (extraEnv = {}) =>
-    spawnSync("bash", [script], {
+    spawnSync("bash", [testScript], {
       cwd: repoRoot,
       env: {
         ...process.env,
         QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE: "1",
-        QINTOPIA_HUABAOSI_WECOM_PROFILE_DIR: profileDir,
-        QINTOPIA_HUABAOSI_WECOM_PROFILE_CONFIG: profileConfig,
-        QINTOPIA_RELEASE_CURRENT_PATH: releaseCurrent,
-        SYSTEMCTL: systemctl,
-        JOURNALCTL: journalctl,
         ...extraEnv,
       },
       encoding: "utf8",
@@ -111,6 +134,7 @@ JOURNAL
     "Huabaosi WeCom gateway observation passed",
     "busy_input_mode=interrupt",
     "release_current_present=true",
+    "journal_window=30m",
     "internal_filter_count=1",
     "send_fallback_count=2",
     "api_timeout_count=3",
@@ -127,7 +151,7 @@ JOURNAL
   for (const required of [
     "systemctl --user is-active hermes-gateway-huabaosi.service",
     "systemctl --user show hermes-gateway-huabaosi.service",
-    "journalctl --user -u hermes-gateway-huabaosi.service",
+    "journalctl --user -u hermes-gateway-huabaosi.service --since 30 minutes ago -n 160",
   ]) {
     if (!commands.includes(required)) {
       throw new Error(`observation did not query the user unit: ${required}`);
@@ -137,6 +161,30 @@ JOURNAL
     if (commands.includes(forbidden)) {
       throw new Error(`observation ran forbidden systemctl action: ${forbidden}`);
     }
+  }
+
+  fs.writeFileSync(commandLog, "", "utf8");
+  const productionOverridesIgnored = runObservation({
+    QINTOPIA_HUABAOSI_WECOM_JOURNAL_LINES: "1",
+    QINTOPIA_HUABAOSI_WECOM_JOURNAL_SINCE: "1 second ago",
+    QINTOPIA_HUABAOSI_WECOM_PROFILE_DIR: "/tmp/alternate-profile",
+    QINTOPIA_HUABAOSI_WECOM_PROFILE_CONFIG: "/tmp/alternate-config.yaml",
+    QINTOPIA_RELEASE_CURRENT_PATH: "/tmp/alternate-release",
+    SYSTEMCTL: "/bin/false",
+    JOURNALCTL: "/bin/false",
+  });
+  if (productionOverridesIgnored.status !== 0) {
+    throw new Error(
+      "observation must ignore caller-selected production paths and commands"
+    );
+  }
+  const journalWindowCommands = fs.readFileSync(commandLog, "utf8");
+  if (
+    !journalWindowCommands.includes("--since 30 minutes ago -n 160") ||
+    journalWindowCommands.includes("--since 1 second ago") ||
+    journalWindowCommands.includes(" -n 1 ")
+  ) {
+    throw new Error("observation accepted a caller-selected journal window");
   }
 
   fs.writeFileSync(profileConfig, "name: huabaosi\n", "utf8");
