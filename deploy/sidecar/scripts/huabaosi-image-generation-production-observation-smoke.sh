@@ -25,7 +25,7 @@ else
   SIDECAR_BIN="${RELEASE_CURRENT_DIR}/sidecar/qintopia-message-sidecar"
 fi
 
-if ! python3 - "$SIDECAR_BIN" "$RELEASE_CURRENT_DIR" <<'PY'
+if ! RELEASE_SHA="$(python3 - "$SIDECAR_BIN" "$RELEASE_CURRENT_DIR" <<'PY'
 import json
 import os
 import re
@@ -62,8 +62,9 @@ if manifest.get("validation", {}).get("cargo_features") != [
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
     raise SystemExit(1)
+print(release_sha)
 PY
-then
+)"; then
   echo "Huabaosi image generation production observation requires the immutable release/current sidecar binary with approved features" >&2
   exit 1
 fi
@@ -100,7 +101,6 @@ import sys
 
 path = sys.argv[1]
 allowed = {
-    "QINTOPIA_DEPLOYED_COMMIT_SHA",
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
     "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
@@ -108,7 +108,6 @@ allowed = {
     "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
     "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
     "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
-    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
     "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
     "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
     "QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL",
@@ -262,6 +261,8 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 load_observation_env
+add_child_env "QINTOPIA_DEPLOYED_COMMIT_SHA" "$RELEASE_SHA"
+add_child_env "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA" "$RELEASE_SHA"
 assert_generation_state
 assert_provider_state
 
