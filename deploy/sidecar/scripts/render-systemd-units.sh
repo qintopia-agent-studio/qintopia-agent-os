@@ -169,6 +169,10 @@ render_oneshot_service() {
   local service_name="$1"
   local description="$2"
   local command="$3"
+  local extra_environment_line=""
+  if [[ -n "${4:-}" ]]; then
+    extra_environment_line="${4}"$'\n'
+  fi
 
   write_file "$service_name" <<EOF
 [Unit]
@@ -183,7 +187,7 @@ Group=ubuntu
 WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
-Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
+${extra_environment_line}Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
 ExecStart=${BIN} ${command}
 NoNewPrivileges=true
 PrivateTmp=true
@@ -195,6 +199,10 @@ render_guarded_oneshot_service() {
   local description="$2"
   local preflight_command="$3"
   local command="$4"
+  local extra_environment_line=""
+  if [[ -n "${5:-}" ]]; then
+    extra_environment_line="${5}"$'\n'
+  fi
 
   write_file "$service_name" <<EOF
 [Unit]
@@ -209,7 +217,7 @@ Group=ubuntu
 WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
-Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
+${extra_environment_line}Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
 ExecStartPre=${BIN} ${preflight_command}
 ExecStart=${BIN} ${command}
 NoNewPrivileges=true
@@ -296,6 +304,8 @@ EOF
 }
 
 render_all() {
+  local huabaosi_release_environment="Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"
+
   mkdir -p "$OUTPUT_DIR"
   render_plan
 
@@ -454,12 +464,14 @@ render_all() {
   render_oneshot_service \
     "qintopia-agentos-huabaosi-image-generation-preflight.service" \
     "Qintopia AgentOS Huabaosi Image Generation Production Preflight" \
-    "huabaosi-image-generation-preflight"
+    "huabaosi-image-generation-preflight" \
+    "$huabaosi_release_environment"
   render_guarded_oneshot_service \
     "qintopia-agentos-huabaosi-image-generation-worker.service" \
     "Qintopia AgentOS Huabaosi Image Generation Worker" \
     "huabaosi-image-generation-preflight" \
-    "run-huabaosi-image-generation-worker --once --apply"
+    "run-huabaosi-image-generation-worker --once --apply" \
+    "$huabaosi_release_environment"
   render_timer \
     "qintopia-agentos-huabaosi-image-generation-worker.timer" \
     "Run Qintopia AgentOS Huabaosi image generation worker" \
@@ -470,12 +482,14 @@ render_all() {
   render_oneshot_service \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service" \
     "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Production Preflight" \
-    "huabaosi-feishu-artifact-mirror-preflight"
+    "huabaosi-feishu-artifact-mirror-preflight" \
+    "$huabaosi_release_environment"
   render_guarded_oneshot_service \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service" \
     "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Worker" \
     "huabaosi-feishu-artifact-mirror-preflight" \
-    "run-huabaosi-feishu-artifact-mirror-worker --once --apply"
+    "run-huabaosi-feishu-artifact-mirror-worker --once --apply" \
+    "$huabaosi_release_environment"
   render_timer \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer" \
     "Run Qintopia AgentOS Huabaosi Feishu artifact mirror worker" \

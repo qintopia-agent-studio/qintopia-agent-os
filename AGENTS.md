@@ -390,6 +390,13 @@ Use `rg` and `rg --files` for search.
   enable flag is present exactly once and exactly `1`. Rollback must stop the timer
   first and may report completion only after that flag is present exactly once and
   exactly `0` in the reviewed sidecar environment file.
+- Huabaosi image-generation and Feishu-mirror production systemd services must bind both
+  `QINTOPIA_DEPLOYED_COMMIT_SHA` and `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA`
+  to the immutable release SHA when units are rendered. The read-only image production
+  observation must derive the same SHA from the verified `release/current` target and
+  override stale copies of those two values from the persistent environment before
+  invoking the release-local sidecar. Do not repair release binding by editing
+  `/etc/qintopia/message-sidecar.env` during a deployment.
 - Hermes remains the Agent runtime. It should not become the business database.
 - The production Hermes venv is uv-managed. Its `pyvenv.cfg` base home may use uv's
   stable `cpython-<major>.<minor>-<platform>` alias, which resolves to an exact patch

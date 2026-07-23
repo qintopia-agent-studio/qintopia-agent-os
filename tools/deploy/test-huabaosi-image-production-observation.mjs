@@ -78,6 +78,8 @@ exit 1
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${sidecarLog}"
+[[ "\${QINTOPIA_DEPLOYED_COMMIT_SHA:-}" == "${releaseSha}" ]]
+[[ "\${QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA:-}" == "${releaseSha}" ]]
 case "$1" in
   huabaosi-image-generation-preflight)
     if [[ "\${QINTOPIA_HUABAOSI_IMAGE_MODEL:-}" == "production" ]]; then
@@ -273,6 +275,8 @@ exit 0
     [
       "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1",
       "QINTOPIA_HUABAOSI_IMAGE_MODEL=production",
+      `QINTOPIA_DEPLOYED_COMMIT_SHA=${"f".repeat(40)}`,
+      `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${"e".repeat(40)}`,
     ]
   );
   if (enabled.status !== 0) {
