@@ -45,7 +45,6 @@ try {
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >>"${systemctlLog}"
-if [[ "\${FAKE_QIWE_UNIT_PRESENT:-0}" == "1" && "$1" == "cat" ]]; then exit 0; fi
 if [[ "\${FAKE_QIWE_TIMER_ENABLED:-0}" == "1" && "$1" == "is-enabled" ]]; then exit 0; fi
 if [[ "\${FAKE_QIWE_TIMER_ACTIVE:-0}" == "1" && "$1" == "is-active" ]]; then exit 0; fi
 exit 1
@@ -60,24 +59,25 @@ echo "fake sidecar must not run during production observation" >&2
 exit 70
 `
   );
-  fs.writeFileSync(
-    path.join(releaseDir, "sidecar", "artifact-manifest.json"),
-    `${JSON.stringify(
-      {
-        commit_sha: releaseSha,
-        validation: {
-          cargo_features: [
-            "huabaosi-production-adapter",
-            "huabaosi-feishu-mirror-adapter",
-            "qiwe-production-adapter",
-          ],
+  const manifestPath = path.join(releaseDir, "sidecar", "artifact-manifest.json");
+  const writeManifest = (cargoFeatures) =>
+    fs.writeFileSync(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          commit_sha: releaseSha,
+          validation: { cargo_features: cargoFeatures },
         },
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  );
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+  const approvedCargoFeatures = [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ];
+  writeManifest(approvedCargoFeatures);
   fs.symlinkSync(releaseDir, currentRelease);
   fs.writeFileSync(sidecarLog, "", "utf8");
 
@@ -92,12 +92,6 @@ exit 70
   ];
   const disabledEnv = path.join(tmpRoot, "disabled.env");
   const enabledEnv = path.join(tmpRoot, "enabled.env");
-  const unapprovedEnabledEnv = path.join(tmpRoot, "unapproved-enabled.env");
-  const duplicateApprovalEnabledEnv = path.join(
-    tmpRoot,
-    "duplicate-approval-enabled.env"
-  );
-  const duplicateHashEnabledEnv = path.join(tmpRoot, "duplicate-hash-enabled.env");
   const secretEnv = path.join(tmpRoot, "secret.env");
   const maliciousEnv = path.join(tmpRoot, "malicious.env");
   fs.writeFileSync(
@@ -107,42 +101,7 @@ exit 70
   );
   fs.writeFileSync(
     enabledEnv,
-    [
-      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
-      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
-      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
-      ...qiweConfigLines,
-      "",
-    ].join("\n"),
-    "utf8"
-  );
-  fs.writeFileSync(
-    unapprovedEnabledEnv,
     ["QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1", ...qiweConfigLines, ""].join("\n"),
-    "utf8"
-  );
-  fs.writeFileSync(
-    duplicateApprovalEnabledEnv,
-    [
-      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
-      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
-      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=not-approved",
-      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
-      ...qiweConfigLines,
-      "",
-    ].join("\n"),
-    "utf8"
-  );
-  fs.writeFileSync(
-    duplicateHashEnabledEnv,
-    [
-      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
-      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
-      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
-      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=not-a-hash",
-      ...qiweConfigLines,
-      "",
-    ].join("\n"),
     "utf8"
   );
   fs.writeFileSync(
@@ -221,6 +180,13 @@ exit 70
     throw new Error("observation accepted a sidecar outside release/current");
   }
 
+  writeManifest([...approvedCargoFeatures, "qiwe-production-adapter"]);
+  const mixedArtifact = run();
+  if (mixedArtifact.status === 0) {
+    throw new Error("observation accepted a mixed Huabaosi/QiWe production artifact");
+  }
+  writeManifest(approvedCargoFeatures);
+
   fs.writeFileSync(sidecarLog, "", "utf8");
   const disabled = run();
   if (disabled.status !== 0) {
@@ -281,57 +247,14 @@ exit 70
     throw new Error("duplicate allowlisted env key did not fail at env parsing");
   }
 
-  fs.writeFileSync(sidecarLog, "", "utf8");
-  const unapprovedEnabled = run({
-    QINTOPIA_SIDECAR_ENV_FILE: unapprovedEnabledEnv,
-  });
-  if (
-    unapprovedEnabled.status === 0 ||
-    !unapprovedEnabled.stderr.includes("approval flag")
-  ) {
-    throw new Error(
-      "enabled observation must require production approval before success"
-    );
-  }
-
-  for (const [name, envPath, expected] of [
-    [
-      "duplicate approval",
-      duplicateApprovalEnabledEnv,
-      "approval flag is missing or duplicated",
-    ],
-    [
-      "duplicate database hash",
-      duplicateHashEnabledEnv,
-      "database hash flag is missing or duplicated",
-    ],
-  ]) {
-    const rejected = run({ QINTOPIA_SIDECAR_ENV_FILE: envPath });
-    if (rejected.status === 0 || !rejected.stderr.includes(expected)) {
-      throw new Error(`enabled observation accepted ${name}`);
-    }
-  }
-
-  const installedDisabledUnit = run({
-    FAKE_QIWE_UNIT_PRESENT: "1",
-  });
-  if (installedDisabledUnit.status !== 0) {
-    throw new Error("disabled observation should accept installed but inactive units");
-  }
-
   const enabled = run({
     QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
-    FAKE_QIWE_UNIT_PRESENT: "1",
-    FAKE_QIWE_TIMER_ENABLED: "1",
-    FAKE_QIWE_TIMER_ACTIVE: "1",
   });
-  if (enabled.status !== 0) {
-    throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
-  }
   if (
-    !enabled.stdout.includes("qiwe_image_send_production_observation_state=enabled")
+    enabled.status === 0 ||
+    !enabled.stderr.includes("requires a separate reviewed QiWe production artifact")
   ) {
-    throw new Error("enabled observation did not report enabled state");
+    throw new Error("enabled observation accepted the Huabaosi production artifact");
   }
 
   const disabledTimerEnabled = run({

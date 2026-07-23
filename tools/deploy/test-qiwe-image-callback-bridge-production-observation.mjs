@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -21,9 +20,6 @@ const writeExecutable = (filePath, content) => {
   fs.writeFileSync(filePath, content, "utf8");
   fs.chmodSync(filePath, 0o755);
 };
-const envLine = (key, value) => `${key}=${value}`;
-const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
 try {
   const fixtureSecrets = [
     "postgres://fixture-user:fixture-password@127.0.0.1:55432/qintopia",
@@ -61,61 +57,31 @@ exit 70
   );
   fs.mkdirSync(path.dirname(bridge), { recursive: true });
   fs.writeFileSync(bridge, "# fixture bridge\n", "utf8");
-  fs.writeFileSync(
-    path.join(releaseDir, "sidecar", "artifact-manifest.json"),
-    `${JSON.stringify(
-      {
-        commit_sha: releaseSha,
-        validation: {
-          cargo_features: [
-            "huabaosi-production-adapter",
-            "huabaosi-feishu-mirror-adapter",
-            "qiwe-production-adapter",
-          ],
+  const manifestPath = path.join(releaseDir, "sidecar", "artifact-manifest.json");
+  const writeManifest = (cargoFeatures) =>
+    fs.writeFileSync(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          commit_sha: releaseSha,
+          validation: { cargo_features: cargoFeatures },
         },
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  );
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+  const approvedCargoFeatures = [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ];
+  writeManifest(approvedCargoFeatures);
   fs.symlinkSync(releaseDir, currentRelease);
   fs.mkdirSync(path.dirname(plugin), { recursive: true });
   fs.symlinkSync(path.join(currentRelease, "skills", "qiwe"), plugin);
 
-  const sidecarHash = sha256(fs.readFileSync(sidecar));
-  const databaseHash = sha256(fixtureSecrets[0]);
-  const qiweConfigLines = [
-    envLine("QINTOPIA_SIDECAR_DATABASE_URL", fixtureSecrets[0]),
-    envLine("QIWE_API_URL", "https://manager.qiweapi.com/qiwe/api/qw/doApi"),
-    envLine("QIWE_TOKEN", fixtureSecrets[1]),
-    envLine("QIWE_GUID", fixtureSecrets[2]),
-    envLine("QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS", "manager.qiweapi.com"),
-    envLine("QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS", fixtureSecrets[4]),
-    envLine("QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS", fixtureSecrets[3]),
-    envLine("QINTOPIA_QIWE_IMAGE_SEND_ENABLED", "1"),
-    envLine("QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY", "1"),
-    envLine(
-      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
-      "approved-production-qiwe-image-send"
-    ),
-    envLine("QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256", databaseHash),
-  ];
-  const callbackLines = [
-    envLine("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED", "1"),
-    envLine("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE", "production"),
-    envLine(
-      "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN",
-      path.join(currentRelease, "sidecar", "qintopia-message-sidecar")
-    ),
-    envLine("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT", currentRelease),
-    envLine("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256", sidecarHash),
-    envLine("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_TIMEOUT_SECONDS", "30"),
-  ];
-
   const disabledEnv = path.join(tmpRoot, "disabled.env");
   const enabledEnv = path.join(tmpRoot, "enabled.env");
-  const hashMismatchEnv = path.join(tmpRoot, "hash-mismatch.env");
   const duplicateEnv = path.join(tmpRoot, "duplicate.env");
   const unsafeEnv = path.join(tmpRoot, "unsafe.env");
   const secretEnv = path.join(tmpRoot, "secret.env");
@@ -123,30 +89,14 @@ exit 70
     disabledEnv,
     [
       "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=0",
-      envLine("QINTOPIA_IGNORED_RUNTIME_VALUE", fixtureSecrets[5]),
+      `QINTOPIA_IGNORED_RUNTIME_VALUE=${fixtureSecrets[5]}`,
       "",
     ].join("\n"),
     "utf8"
   );
   fs.writeFileSync(
     enabledEnv,
-    [...callbackLines, ...qiweConfigLines, ""].join("\n"),
-    "utf8"
-  );
-  fs.writeFileSync(
-    hashMismatchEnv,
-    [
-      ...callbackLines,
-      ...qiweConfigLines.filter(
-        (line) =>
-          !line.startsWith("QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=")
-      ),
-      envLine(
-        "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
-        "a".repeat(64)
-      ),
-      "",
-    ].join("\n"),
+    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=1\n",
     "utf8"
   );
   fs.writeFileSync(
@@ -161,11 +111,8 @@ exit 70
   fs.writeFileSync(
     unsafeEnv,
     [
-      "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=1",
-      envLine(
-        "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN",
-        `$(touch ${commandSubstitutionMarker})`
-      ),
+      "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=0",
+      `QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN=$(touch ${commandSubstitutionMarker})`,
       "",
     ].join("\n"),
     "utf8"
@@ -174,8 +121,8 @@ exit 70
     secretEnv,
     [
       "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED=0",
-      envLine("FEISHU_APP_SECRET", fixtureSecrets[5]),
-      envLine("QINTOPIA_SIDECAR_DATABASE_URL", fixtureSecrets[0]),
+      `FEISHU_APP_SECRET=${fixtureSecrets[5]}`,
+      `QINTOPIA_SIDECAR_DATABASE_URL=${fixtureSecrets[0]}`,
       "",
     ].join("\n"),
     "utf8"
@@ -237,6 +184,13 @@ exit 70
     throw new Error("callback bridge observation accepted a non-symlink plugin path");
   }
 
+  writeManifest([...approvedCargoFeatures, "qiwe-production-adapter"]);
+  const mixedArtifact = run();
+  if (mixedArtifact.status === 0) {
+    throw new Error("observation accepted a mixed Huabaosi/QiWe production artifact");
+  }
+  writeManifest(approvedCargoFeatures);
+
   const disabled = run();
   if (disabled.status !== 0) {
     throw new Error(
@@ -275,39 +229,20 @@ exit 70
   const unsafe = run({
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: unsafeEnv,
   });
-  if (unsafe.status === 0 || fs.existsSync(commandSubstitutionMarker)) {
+  if (unsafe.status !== 0 || fs.existsSync(commandSubstitutionMarker)) {
     throw new Error(
-      "callback bridge observation accepted or executed an unsafe env value"
+      "callback bridge observation rejected or executed an ignored env value"
     );
-  }
-
-  const hashMismatch = run({
-    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: hashMismatchEnv,
-  });
-  if (
-    hashMismatch.status === 0 ||
-    !hashMismatch.stderr.includes("production observation env is invalid")
-  ) {
-    throw new Error("callback bridge observation accepted a database hash mismatch");
-  }
-  for (const secret of fixtureSecrets) {
-    if (`${hashMismatch.stdout}\n${hashMismatch.stderr}`.includes(secret)) {
-      throw new Error("hash mismatch diagnostic leaked a fixture secret");
-    }
   }
 
   const enabled = run({
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: enabledEnv,
   });
-  if (enabled.status !== 0) {
-    throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
-  }
   if (
-    !enabled.stdout.includes(
-      "qiwe_image_callback_bridge_production_observation_state=enabled"
-    )
+    enabled.status === 0 ||
+    !enabled.stderr.includes("requires a separate reviewed QiWe production artifact")
   ) {
-    throw new Error("enabled observation did not report enabled state");
+    throw new Error("enabled observation accepted the Huabaosi production artifact");
   }
 
   const expectedDisabled = run({

@@ -12,9 +12,7 @@ DEFAULT_ENV_FILE="/etc/qintopia/message-sidecar.env"
 DEFAULT_RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
 ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-$DEFAULT_ENV_FILE}"
 RELEASE_CURRENT_DIR="${QINTOPIA_RELEASE_CURRENT_DIR:-$DEFAULT_RELEASE_CURRENT_DIR}"
-WORKER_SERVICE_NAME="qintopia-agentos-qiwe-image-send-worker.service"
 WORKER_TIMER_NAME="qintopia-agentos-qiwe-image-send-worker.timer"
-WORKER_PREFLIGHT_NAME="qintopia-agentos-qiwe-image-send-preflight.service"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 EXPECTED_STATE="${QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE:-auto}"
 TEST_MODE="${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_TEST_MODE:-0}"
@@ -102,7 +100,6 @@ with open(manifest_path, encoding="utf-8") as fh:
 if manifest.get("validation", {}).get("cargo_features") != [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
-    "qiwe-production-adapter",
 ]:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
@@ -185,45 +182,17 @@ if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
 fi
 
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then
-  if [[ "$(grep -Ec '^QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=' "$ENV_FILE" || true)" != "1" ]]; then
-    echo "QiWe image-send production approval flag is missing or duplicated" >&2
-    exit 1
-  fi
-  if ! grep -Fxq "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send" "$ENV_FILE"; then
-    echo "QiWe image-send production approval flag is invalid" >&2
-    exit 1
-  fi
-  if [[ "$(grep -Ec '^QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=' "$ENV_FILE" || true)" != "1" ]]; then
-    echo "QiWe image-send production database hash flag is missing or duplicated" >&2
-    exit 1
-  fi
-  if [[ "$(grep -Ec '^QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=[0-9a-f]{64}$' "$ENV_FILE" || true)" != "1" ]]; then
-    echo "QiWe image-send production database hash flag is invalid" >&2
-    exit 1
-  fi
-  for unit in "$WORKER_PREFLIGHT_NAME" "$WORKER_SERVICE_NAME" "$WORKER_TIMER_NAME"; do
-    if ! "$SYSTEMCTL" cat "$unit" >/dev/null 2>&1; then
-      echo "QiWe image-send production unit is missing" >&2
-      exit 1
-    fi
-  done
-  if ! "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
-    echo "QiWe image-send production timer must be active" >&2
-    exit 1
-  fi
-  if ! "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
-    echo "QiWe image-send production timer must be enabled" >&2
-    exit 1
-  fi
-else
-  if "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
-    echo "QiWe image-send production timer must not be active" >&2
-    exit 1
-  fi
-  if "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
-    echo "QiWe image-send production timer must not be enabled" >&2
-    exit 1
-  fi
+  echo "QiWe image-send enabled observation requires a separate reviewed QiWe production artifact" >&2
+  exit 1
+fi
+
+if "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
+  echo "QiWe image-send production timer must not be active" >&2
+  exit 1
+fi
+if "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
+  echo "QiWe image-send production timer must not be enabled" >&2
+  exit 1
 fi
 
 echo "qiwe_image_send_production_observation_state=${EXPECTED_STATE}"

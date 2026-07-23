@@ -524,19 +524,15 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
   for (const fragment of [
     "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE",
     "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256",
-    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
-    "callback bridge production database hash does not match runtime database URL",
     "/home/ubuntu/.hermes/profiles/erhua/.env",
     "/home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform",
     "/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar",
     "skills/qiwe/image_callback_bridge.py",
     "qiwe_image_callback_bridge_production_observation_state",
     "huabaosi-production-adapter",
-    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "enabled observation requires a separate reviewed QiWe production artifact",
+    'allowlist = {"QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED"}',
   ]) {
     requireFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
   }
@@ -549,6 +545,7 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
     "eval ",
     "tenant_access_token",
     "raw_body",
+    '"qiwe-production-adapter"',
   ]) {
     forbidFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
   }
@@ -896,12 +893,14 @@ if (!exists(huabaosiWeComGatewayObservationPath)) {
     "QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE",
     "hermes-gateway-huabaosi.service",
     '--user is-active "$SERVICE_NAME"',
-    '--user show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths',
+    '--user show "$SERVICE_NAME" --property=WorkingDirectory --property=ExecStart --property=DropInPaths --property=EnvironmentFiles',
     '--user -u "$SERVICE_NAME"',
     "WorkingDirectory=${PROFILE_DIR}",
     "--profile huabaosi gateway run --replace",
-    "DropInPaths=",
-    "drop-in overrides",
+    "/home/ubuntu/.config/systemd/user/hermes-gateway-huabaosi.service.d/env.conf",
+    "/home/ubuntu/.hermes/profiles/huabaosi/.env (ignore_errors=no)",
+    "single reviewed environment drop-in",
+    "fixed profile environment file",
     "busy_input_mode",
     "QINTOPIA_RELEASE_CURRENT_PATH",
     "internal_filter_count",
@@ -2012,14 +2011,11 @@ if (!exists(qiweImageProductionObservationPath)) {
     "requires the real systemctl command",
     '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
-    '"qiwe-production-adapter"',
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
-    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
-    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
     "parse_send_enablement",
     "expected state must be disabled, enabled, or auto",
-    "production timer must be active",
     "production timer must not be active",
+    "enabled observation requires a separate reviewed QiWe production artifact",
     "qiwe_image_send_production_observation_state=",
   ]) {
     requireFragment(qiweImageProductionObservationPath, observation, fragment);
@@ -2028,6 +2024,7 @@ if (!exists(qiweImageProductionObservationPath)) {
     "cargo run",
     'source "$',
     ". /etc/qintopia",
+    '"qiwe-production-adapter"',
     "eval ",
     "env -i",
     "QINTOPIA_SIDECAR_DATABASE_URL",

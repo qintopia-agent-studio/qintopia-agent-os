@@ -292,12 +292,26 @@ jobs:
         with:
           components: clippy, llvm-tools-preview
 
+      - name: Prepare Rust quality tool evidence
+        run: |
+          mkdir -p coverage
+          printf '%s\n' \
+            'installer=taiki-e/install-action@v2' \
+            'checksum=true' \
+            'fallback=none' > coverage/rust-quality-tool-install-strategy.txt
+
       - name: Install Rust quality tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.138,cargo-llvm-cov@0.8.7
+          checksum: true
+          fallback: none
+
+      - name: Record Rust quality tool versions
         run: |
           set -o pipefail
-          mkdir -p coverage
-          cargo install cargo-nextest --version 0.9.138 --locked 2>&1 | tee coverage/cargo-nextest-install.log
-          cargo install cargo-llvm-cov --version 0.8.7 --locked 2>&1 | tee coverage/cargo-llvm-cov-install.log
+          cargo nextest --version 2>&1 | tee coverage/cargo-nextest-version.txt
+          cargo llvm-cov --version 2>&1 | tee coverage/cargo-llvm-cov-version.txt
 
       - name: Rust coverage baseline
         run: |

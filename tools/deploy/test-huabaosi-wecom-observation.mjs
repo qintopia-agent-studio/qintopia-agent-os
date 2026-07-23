@@ -12,6 +12,10 @@ const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh"
 );
+const expectedDropInPath =
+  "/home/ubuntu/.config/systemd/user/hermes-gateway-huabaosi.service.d/env.conf";
+const expectedEnvironmentFile =
+  "/home/ubuntu/.hermes/profiles/huabaosi/.env (ignore_errors=no)";
 
 const writeExecutable = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -45,11 +49,10 @@ case "$1" in
     printf 'active\\n'
     ;;
   show)
-    cat <<'PROPERTIES'
-WorkingDirectory=${profileDir}
-ExecStart={ path=/home/ubuntu/.hermes/hermes-agent/venv/bin/python ; argv[]=/home/ubuntu/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main --profile huabaosi gateway run --replace ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
-PROPERTIES
-    printf 'DropInPaths=%s\\n' "\${FAKE_DROP_IN_PATHS:-}"
+    printf 'WorkingDirectory=%s\\n' "\${FAKE_WORKING_DIRECTORY-${profileDir}}"
+    printf 'ExecStart=%s\\n' "\${FAKE_EXEC_START-{ path=/home/ubuntu/.hermes/hermes-agent/venv/bin/python ; argv[]=/home/ubuntu/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main --profile huabaosi gateway run --replace ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }}"
+    printf 'DropInPaths=%s\\n' "\${FAKE_DROP_IN_PATHS-${expectedDropInPath}}"
+    printf 'EnvironmentFiles=%s\\n' "\${FAKE_ENVIRONMENT_FILES-${expectedEnvironmentFile}}"
     ;;
   *)
     exit 64
@@ -164,12 +167,47 @@ JOURNAL
     throw new Error("observation failure repeated the fixed sensitive marker");
   }
 
-  const dropInOverride = runObservation({
-    FAKE_DROP_IN_PATHS:
-      "/etc/systemd/system/hermes-gateway-huabaosi.service.d/override.conf",
+  const missingDropIn = runObservation({
+    FAKE_DROP_IN_PATHS: "",
   });
-  if (dropInOverride.status === 0) {
-    throw new Error("expected service drop-in overrides to fail observation");
+  if (missingDropIn.status === 0) {
+    throw new Error("expected a missing fixed environment drop-in to fail observation");
+  }
+
+  const extraDropIn = runObservation({
+    FAKE_DROP_IN_PATHS: `${expectedDropInPath} /etc/systemd/user/hermes-gateway-huabaosi.service.d/override.conf`,
+  });
+  if (extraDropIn.status === 0) {
+    throw new Error("expected an additional service drop-in to fail observation");
+  }
+
+  const wrongEnvironmentFile = runObservation({
+    FAKE_ENVIRONMENT_FILES: "/tmp/huabaosi.env (ignore_errors=no)",
+  });
+  if (wrongEnvironmentFile.status === 0) {
+    throw new Error("expected an alternate environment file to fail observation");
+  }
+
+  const optionalEnvironmentFile = runObservation({
+    FAKE_ENVIRONMENT_FILES:
+      "/home/ubuntu/.hermes/profiles/huabaosi/.env (ignore_errors=yes)",
+  });
+  if (optionalEnvironmentFile.status === 0) {
+    throw new Error("expected an optional environment file to fail observation");
+  }
+
+  const workingDirectoryDrift = runObservation({
+    FAKE_WORKING_DIRECTORY: "/tmp/huabaosi",
+  });
+  if (workingDirectoryDrift.status === 0) {
+    throw new Error("expected working-directory drift to fail observation");
+  }
+
+  const commandDrift = runObservation({
+    FAKE_EXEC_START: "{ path=/bin/false ; argv[]=/bin/false ; ignore_errors=no ; }",
+  });
+  if (commandDrift.status === 0) {
+    throw new Error("expected gateway command drift to fail observation");
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

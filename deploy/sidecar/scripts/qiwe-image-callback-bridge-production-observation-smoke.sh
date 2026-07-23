@@ -58,7 +58,6 @@ fi
 PLUGIN_BRIDGE="${RELEASE_CURRENT_DIR}/skills/qiwe/image_callback_bridge.py"
 
 if ! RELEASE_FACTS="$(python3 - "$RELEASE_CURRENT_DIR" "$SIDECAR_BIN" "$PLUGIN_PATH" "$PLUGIN_BRIDGE" <<'PY'
-import hashlib
 import json
 import os
 import re
@@ -107,61 +106,27 @@ with open(manifest_path, encoding="utf-8") as fh:
 if manifest.get("validation", {}).get("cargo_features") != [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
-    "qiwe-production-adapter",
 ]:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
     raise SystemExit(1)
 
-digest = hashlib.sha256()
-with open(expected_bin, "rb") as fh:
-    for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-        digest.update(chunk)
-print(f"{release_sha} {digest.hexdigest()}")
+print(release_sha)
 PY
 )"; then
   echo "QiWe image callback bridge production observation requires release/current sidecar and Erhua plugin to resolve to the immutable production release" >&2
   exit 1
 fi
 
-RELEASE_SHA="${RELEASE_FACTS%% *}"
-SIDECAR_SHA256="${RELEASE_FACTS#* }"
+RELEASE_SHA="$RELEASE_FACTS"
 
-ENV_FACTS="$(python3 - "$HERMES_ENV_FILE" "$SIDECAR_BIN" "$RELEASE_CURRENT_DIR" "$SIDECAR_SHA256" <<'PY'
-import hashlib
+ENV_FACTS="$(python3 - "$HERMES_ENV_FILE" <<'PY'
 import json
 import re
 import sys
 
-path, expected_bin, expected_root, expected_sidecar_sha = sys.argv[1:5]
-allowlist = {
-    "QINTOPIA_SIDECAR_DATABASE_URL",
-    "QIWE_API_URL",
-    "QIWE_TOKEN",
-    "QIWE_GUID",
-    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
-    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
-    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
-    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
-    "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
-    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
-    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256",
-    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_TIMEOUT_SECONDS",
-}
-required_when_enabled = {
-    "QINTOPIA_SIDECAR_DATABASE_URL",
-    "QIWE_API_URL",
-    "QIWE_TOKEN",
-    "QIWE_GUID",
-    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
-    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
-    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
-}
+path = sys.argv[1]
+allowlist = {"QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED"}
 assignment = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=[ \t]*(.*?)[ \t]*(?:#[^\"']*)?$")
 values = {}
 
@@ -194,39 +159,6 @@ enabled = values.get("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED", "0")
 if enabled not in {"0", "1"}:
     raise SystemExit("invalid callback bridge enable flag")
 
-if enabled == "1":
-    checks = {
-        "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE": "production",
-        "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN": expected_bin,
-        "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT": expected_root,
-        "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256": expected_sidecar_sha,
-        "QINTOPIA_QIWE_IMAGE_SEND_ENABLED": "1",
-        "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY": "1",
-        "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL": "approved-production-qiwe-image-send",
-    }
-    for key, expected in checks.items():
-        if values.get(key) != expected:
-            raise SystemExit(f"invalid callback bridge env value for {key}")
-    for key in required_when_enabled:
-        if not values.get(key):
-            raise SystemExit(f"missing callback bridge env value for {key}")
-    database_hash = values.get("QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256", "")
-    if not re.fullmatch(r"[0-9a-f]{64}", database_hash):
-        raise SystemExit("invalid callback bridge production database hash")
-    actual_database_hash = hashlib.sha256(
-        values["QINTOPIA_SIDECAR_DATABASE_URL"].encode("utf-8")
-    ).hexdigest()
-    if actual_database_hash != database_hash:
-        raise SystemExit("callback bridge production database hash does not match runtime database URL")
-    timeout = values.get("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_TIMEOUT_SECONDS")
-    if timeout is not None:
-        try:
-            timeout_value = float(timeout)
-        except ValueError as exc:
-            raise SystemExit("invalid callback bridge timeout") from exc
-        if not 1.0 <= timeout_value <= 60.0:
-            raise SystemExit("invalid callback bridge timeout")
-
 print(json.dumps({"enabled": enabled == "1"}, sort_keys=True))
 PY
 )" || {
@@ -249,6 +181,10 @@ if [[ "$EXPECTED_STATE" != "enabled" && "$EXPECTED_STATE" != "disabled" ]]; then
 fi
 if [[ "$EXPECTED_STATE" != "$OBSERVED_STATE" ]]; then
   echo "QiWe image callback bridge observed state does not match expected state" >&2
+  exit 1
+fi
+if [[ "$OBSERVED_STATE" == "enabled" ]]; then
+  echo "QiWe image callback bridge enabled observation requires a separate reviewed QiWe production artifact" >&2
   exit 1
 fi
 
