@@ -108,6 +108,19 @@ required job succeeds. That status must pass and be visible on the PR before mer
 validation does not approve publication; merging and publishing remain one owner release
 decision.
 
+The same token suppression can omit the ruleset-required `PR-Agent review assistant`
+check. In that case run the PR-Agent workflow on the same exact release head:
+
+```bash
+gh workflow run pr-agent.yml \
+  --ref release-please--branches--master--components--qintopia-agent-os \
+  -f release_please_pr_number=<pr-number>
+```
+
+The workflow authenticates the open bot-owned PR and exact checkout SHA, then skips the
+external PR-Agent action because generated Release Please metadata is not an AI review
+target. A successful no-review job provides the required check without changing the PR.
+
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the
 heavy steps inside the workflow.

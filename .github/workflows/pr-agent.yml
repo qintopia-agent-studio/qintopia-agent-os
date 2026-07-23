@@ -13,6 +13,11 @@ on:
       - created
       - edited
   workflow_dispatch:
+    inputs:
+      release_please_pr_number:
+        description: Open Release Please PR number to validate on its exact head branch
+        required: false
+        type: string
 
 concurrency:
   group:
@@ -43,26 +48,53 @@ jobs:
     steps:
       - name: Detect Release Please PR
         id: release-please
-        if: ${{ github.event_name == 'pull_request' }}
+        if: >-
+          ${{ github.event_name == 'pull_request' || inputs.release_please_pr_number !=
+          '' }}
         shell: bash
         env:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login || '' }}
           PR_BODY: ${{ github.event.pull_request.body || '' }}
+          DISPATCH_RELEASE_PLEASE_PR_NUMBER:
+            ${{ inputs.release_please_pr_number || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          event_name="${{ github.event_name }}"
+          if [[ "$event_name" == "workflow_dispatch" ]]; then
+            pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${DISPATCH_RELEASE_PLEASE_PR_NUMBER}")"
+            PR_HEAD_REF="$(jq -r '.head.ref // ""' <<<"$pr_json")"
+            PR_AUTHOR="$(jq -r '.user.login // ""' <<<"$pr_json")"
+            PR_BODY="$(jq -r '.body // ""' <<<"$pr_json")"
+            pr_state="$(jq -r '.state // ""' <<<"$pr_json")"
+            pr_base="$(jq -r '.base.ref // ""' <<<"$pr_json")"
+            head_sha="$(jq -r '.head.sha // ""' <<<"$pr_json")"
+            if [[ "$pr_state" != "open" || "$pr_base" != "master" ]]; then
+              echo "release PR-Agent dispatch requires an open PR targeting master" >&2
+              exit 1
+            fi
+            if [[ "$head_sha" != "${{ github.sha }}" ]]; then
+              echo "PR-Agent workflow_dispatch ref must resolve to the exact release PR head SHA" >&2
+              exit 1
+            fi
+          fi
+
           generated=false
           if [[ "$PR_HEAD_REF" == release-please--branches--* &&
             ( "$PR_AUTHOR" == "github-actions[bot]" || "$PR_AUTHOR" == "app/github-actions" ) &&
             "$PR_BODY" == *"This PR was generated with [Release Please]"* ]]; then
             generated=true
           fi
+          if [[ -n "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" && "$generated" != "true" ]]; then
+            echo "PR-Agent workflow_dispatch PR is not an authentic Release Please PR" >&2
+            exit 1
+          fi
           echo "generated=${generated}" >> "$GITHUB_OUTPUT"
 
       - name: Run PR-Agent
-        if:
-          ${{ github.event_name != 'pull_request' ||
-          steps.release-please.outputs.generated != 'true' }}
+        if: ${{ steps.release-please.outputs.generated != 'true' }}
         uses: the-pr-agent/pr-agent@8e4d32e5497defd43c023a404f73560c62728961
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

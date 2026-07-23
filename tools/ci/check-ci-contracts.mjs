@@ -621,6 +621,12 @@ if (prAgentWorkflow) {
       `.github/workflows/pr-agent.yml: workflow YAML must parse: ${error.message}`
     );
   }
+  const prAgentDispatch = parsedPrAgentWorkflow?.on?.workflow_dispatch;
+  if (!prAgentDispatch?.inputs?.release_please_pr_number) {
+    errors.push(
+      ".github/workflows/pr-agent.yml: workflow_dispatch must accept an explicit Release Please PR number"
+    );
+  }
   const prAgentEnv =
     parsedPrAgentWorkflow?.jobs?.["pr-agent"]?.steps?.find((step) =>
       String(step?.uses ?? "").includes("pr-agent")
@@ -635,11 +641,22 @@ if (prAgentWorkflow) {
     );
   } else {
     const runScript = String(detectReleasePleaseStep.run ?? "");
+    const condition = String(detectReleasePleaseStep.if ?? "");
+    if (!condition.includes("inputs.release_please_pr_number != ''")) {
+      errors.push(
+        ".github/workflows/pr-agent.yml: Release Please detector must run for explicit manual validation"
+      );
+    }
     for (const requiredFragment of [
       "release-please--branches--",
       "github-actions[bot]",
       "app/github-actions",
       "This PR was generated with [Release Please]",
+      "DISPATCH_RELEASE_PLEASE_PR_NUMBER",
+      "gh api",
+      "release PR-Agent dispatch requires an open PR targeting master",
+      "PR-Agent workflow_dispatch ref must resolve to the exact release PR head SHA",
+      "PR-Agent workflow_dispatch PR is not an authentic Release Please PR",
       "generated=${generated}",
     ]) {
       if (!runScript.includes(requiredFragment)) {
@@ -660,6 +677,13 @@ if (prAgentWorkflow) {
   ) {
     errors.push(
       ".github/workflows/pr-agent.yml: PR-Agent must skip Release Please generated PRs"
+    );
+  }
+  if (
+    String(runPrAgentStep?.if ?? "").includes("github.event_name != 'pull_request'")
+  ) {
+    errors.push(
+      ".github/workflows/pr-agent.yml: manual authenticated Release Please validation must skip external PR-Agent"
     );
   }
   if (prAgentEnv["pr_description.add_original_user_description"] !== "false") {

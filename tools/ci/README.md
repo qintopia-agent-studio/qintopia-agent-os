@@ -45,6 +45,12 @@ or the CI workflow itself. Manual workflow dispatches and authenticated Release 
 validation always force the full heavy tier. The PR-attached release status is published
 only after the main, Rust, and PostgreSQL jobs all succeed.
 
+If the bot update also suppresses the ruleset-required `PR-Agent review assistant`, run
+`pr-agent.yml` manually with the same exact release head and explicit PR number. The
+workflow authenticates the Release Please PR and skips the external PR-Agent action; its
+successful job satisfies the required check without reviewing or editing generated
+release metadata.
+
 ## Rust Quality And Xiaoman Integration
 
 Sidecar, Postgres, deploy sidecar scripts, or CI workflow changes run a Rust 1.96

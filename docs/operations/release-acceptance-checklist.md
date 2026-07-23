@@ -27,6 +27,8 @@ send externally.
 - Confirm the linked run completed `check`, `Rust quality baseline`, and
   `Xiaoman PostgreSQL integration` successfully; skipped heavy jobs are not valid
   Release Please evidence.
+- If `PR-Agent review assistant` is missing, manually dispatch `pr-agent.yml` with the
+  same release head and PR number, then confirm its authenticated no-review job passes.
 - If Release Please force-updates the branch after new commits land on `master`, discard
   older validation runs and rerun the manual dispatch on the new head.
 - Review Release notes and PR body language. Infrastructure or activation-ready releases

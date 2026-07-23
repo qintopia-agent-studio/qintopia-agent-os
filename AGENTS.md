@@ -41,6 +41,8 @@
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
 - Release Please PR manual CI validation:
   `gh workflow run ci.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
+- Release Please PR required PR-Agent check validation:
+  `gh workflow run pr-agent.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
 - Staging-only sidecar artifact for Huabaosi/QiWe evidence smokes:
   `pnpm artifact:sidecar:staging`
 - If the local pnpm version shim cannot verify a registry signature, do not set
@@ -261,8 +263,11 @@ Use `rg` and `rg --files` for search.
   PR, run the manual CI validation command on its exact head branch and require the
   workflow `changes`, `check`, `Rust quality baseline`, and
   `Xiaoman PostgreSQL integration` jobs plus the PR-attached `Release Please validation`
-  commit status to pass. The dispatch must fail if the PR is not open, does not target
-  `master`, is not bot-authored, or the checked-out SHA differs from the PR head.
+  commit status to pass. Run the manual PR-Agent validation on that same exact head when
+  the ruleset-required `PR-Agent review assistant` check was suppressed. Both dispatches
+  must fail if the PR is not open, does not target `master`, is not bot-authored, or the
+  checked-out SHA differs from the PR head. The authenticated PR-Agent dispatch must
+  skip external AI review and must not edit or comment on the generated Release PR.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap`.
