@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.26](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.25...v0.2.26) (2026-07-23)
+
+
+### Bug Fixes
+
+* **deploy:** bind Huabaosi services to release SHA ([#264](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/264)) ([56f82ec](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/56f82ec494fb40a4e245c0fff49a75f5a2ba0797))
+
 ## [0.2.25](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.24...v0.2.25) (2026-07-23)
 
 
