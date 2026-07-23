@@ -779,6 +779,10 @@ if (!exists(huabaosiImageProductionObservationPath)) {
     '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
     "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED",
+    "QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS",
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_APPROVAL",
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
     'PROVIDER_SERVICE_NAME="qintopia-agentos-huabaosi-image-generation-worker.service"',
     'PROVIDER_TIMER_NAME="qintopia-agentos-huabaosi-image-generation-worker.timer"',
     "huabaosi-image-generation-preflight",
@@ -786,6 +790,7 @@ if (!exists(huabaosiImageProductionObservationPath)) {
     "CHILD_ENV",
     "load_observation_env",
     'add_child_env "QINTOPIA_DEPLOYED_COMMIT_SHA" "$RELEASE_SHA"',
+    'add_child_env "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA" "$RELEASE_SHA"',
     'add_child_env "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA" "$RELEASE_SHA"',
     "env -i",
     'worker_stderr="$tmp_dir/worker-preview.stderr"',
@@ -1911,8 +1916,10 @@ if (!exists(renderSystemdUnitsPath)) {
 } else {
   const renderer = readText(renderSystemdUnitsPath);
   for (const fragment of [
-    'local huabaosi_release_environment="Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"',
-    '"$huabaosi_release_environment"',
+    'local huabaosi_feishu_release_environment="Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"',
+    'local huabaosi_image_release_environment="Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"',
+    '"$huabaosi_image_release_environment"',
+    '"$huabaosi_feishu_release_environment"',
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
     "qintopia-agentos-huabaosi-image-generation-worker.service",
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",

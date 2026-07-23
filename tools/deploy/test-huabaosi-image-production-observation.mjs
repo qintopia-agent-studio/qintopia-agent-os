@@ -79,10 +79,15 @@ exit 1
 set -euo pipefail
 printf '%s\n' "$*" >>"${sidecarLog}"
 [[ "\${QINTOPIA_DEPLOYED_COMMIT_SHA:-}" == "${releaseSha}" ]]
+[[ "\${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA:-}" == "${releaseSha}" ]]
 [[ "\${QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA:-}" == "${releaseSha}" ]]
 case "$1" in
   huabaosi-image-generation-preflight)
     if [[ "\${QINTOPIA_HUABAOSI_IMAGE_MODEL:-}" == "production" ]]; then
+      if [[ "\${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_APPROVAL:-}" != "approved-production-image-generation" || "\${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_DATABASE_URL_SHA256:-}" != "${"a".repeat(64)}" || "\${QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS:-}" != "180" || "\${QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES:-}" != "10485760" ]]; then
+        printf '%s\n' '{"success":false,"worker":"huabaosi-image-generation-worker","action_status":"adapter_not_configured","generation_enabled":true,"adapter_compiled":true,"adapter_mode":"production","config_valid":false,"media_allowed_host_count":0,"missing_configuration":[],"safe_for_chat":false}'
+        exit 1
+      fi
       printf '%s\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"adapter_mode":"production","config_valid":true,"media_allowed_host_count":1,"missing_configuration":[],"safe_for_chat":false}'
       exit 0
     fi
@@ -274,8 +279,13 @@ exit 0
     },
     [
       "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1",
+      "QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS=180",
       "QINTOPIA_HUABAOSI_IMAGE_MODEL=production",
+      "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_APPROVAL=approved-production-image-generation",
+      `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+      "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES=10485760",
       `QINTOPIA_DEPLOYED_COMMIT_SHA=${"f".repeat(40)}`,
+      `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${"d".repeat(40)}`,
       `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${"e".repeat(40)}`,
     ]
   );
