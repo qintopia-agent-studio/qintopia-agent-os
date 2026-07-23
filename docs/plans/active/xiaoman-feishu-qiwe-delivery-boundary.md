@@ -32,11 +32,11 @@ call Feishu or QiWe, install a listener or timer, or send externally.
   reviewed QiWe live adapter can deliver an exact `feishu-base://` artifact by
   committing the existing `uploading` attempt, reading the authenticated Feishu bytes,
   uploading those bytes to QiWe SDK temporary storage, reading the returned temporary
-  URL back, and then invoking the existing async URL upload path. Default,
-  Huabaosi-only, and QiWe-only builds continue to reject this route. Staging requires
-  `huabaosi-staging-adapter` plus `qiwe-staging-adapter`; production requires
-  `huabaosi-feishu-mirror-adapter` plus `qiwe-production-adapter` with production
-  owner/database/Feishu delivery gates.
+  URL back, and then invoking the existing async URL upload path. Default, Huabaosi-only
+  production artifacts, and QiWe-only builds continue to reject this route. Staging
+  requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`; Huabaosi production
+  artifacts must contain only `huabaosi-production-adapter` plus the guarded
+  `huabaosi-feishu-mirror-adapter` and must not bundle `qiwe-production-adapter`.
 - The reviewed QiWe protocol plan says the synchronous local and URL upload APIs are
   marked for deprecation and must not become the production foundation.
 
@@ -118,12 +118,12 @@ The boundary was implemented in reviewed phases, but runtime evidence is still p
    - The Postgres `uploading` attempt must be committed before authenticated Feishu
      readback or either QiWe upload call. Interrupted external work remains terminal
      ambiguous and is never retried automatically.
-   - Only a combined live artifact containing both the Huabaosi Feishu primary-storage
-     path and a reviewed QiWe live adapter may claim a `feishu-base://` artifact.
-     Default, Huabaosi-only, and QiWe-only builds must continue to reject it. Staging
-     requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`; production
-     requires `huabaosi-feishu-mirror-adapter` plus `qiwe-production-adapter` with
-     production owner/database/Feishu delivery gates.
+   - Only a combined staging live artifact containing both the Huabaosi Feishu
+     primary-storage path and a reviewed QiWe live adapter may claim a `feishu-base://`
+     artifact. Default, Huabaosi-only production artifacts, and QiWe-only builds must
+     continue to reject it. Staging requires `huabaosi-staging-adapter` plus
+     `qiwe-staging-adapter`; Huabaosi production artifacts must not bundle
+     `qiwe-production-adapter`.
    - The revalidated JPEG bytes, multipart body, returned `cloudUrl`, and readback bytes
      remain memory-only and are zeroized. No temporary URL or attachment credential may
      enter Postgres, reports, logs, CLI arguments, or environment-derived output.

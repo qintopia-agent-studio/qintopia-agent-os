@@ -349,9 +349,8 @@ data but are not eligible for the future QiWe JPG send contract.
   owner phrase, repository-reviewed database URL hash allowlist, staging database name,
   and adapter policy in Rust before Postgres or network access. Huabaosi production
   image-generation apply remains behind the reviewed `huabaosi-production-adapter` and
-  guarded `huabaosi-feishu-mirror-adapter` features; the unified production sidecar
-  artifact may also include `qiwe-production-adapter`, which is guarded independently by
-  the QiWe owner/database/Feishu delivery gates and must not weaken Huabaosi checks.
+  guarded `huabaosi-feishu-mirror-adapter` features; the Huabaosi production sidecar
+  artifact must not include `qiwe-production-adapter` or other QiWe live features.
 
 运行无网络预检：
 

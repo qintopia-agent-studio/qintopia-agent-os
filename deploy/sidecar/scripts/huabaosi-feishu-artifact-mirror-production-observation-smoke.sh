@@ -57,7 +57,6 @@ with open(manifest_path, encoding="utf-8") as fh:
 if manifest.get("validation", {}).get("cargo_features") != [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
-    "qiwe-production-adapter",
 ]:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:

@@ -271,13 +271,22 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
     "openssl",
     "jwt_path",
     "huabaosi-production-adapter",
-    "qiwe-production-adapter",
   ]) {
     if (!artifactFetchScript.includes(requiredFragment)) {
       addError(
         `deploy/sidecar/scripts/fetch-ci-artifact.sh: must support GitHub App credential path (${requiredFragment})`
       );
     }
+  }
+  if (
+    artifactFetchScript.includes(
+      '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
+    ) ||
+    artifactFetchScript.includes('"qiwe-production-adapter",')
+  ) {
+    addError(
+      "deploy/sidecar/scripts/fetch-ci-artifact.sh: Huabaosi production artifact validation must not accept qiwe-production-adapter"
+    );
   }
 }
 
@@ -449,7 +458,6 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     'tar --no-same-owner -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir"',
     "qintopia-message-sidecar",
     "huabaosi-production-adapter",
-    "qiwe-production-adapter",
     "sha256sum -c SHA256SUMS",
   ]) {
     if (!cosFetchScript.includes(requiredFragment)) {
@@ -457,6 +465,16 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
         `deploy/sidecar/scripts/fetch-cos-artifact.sh: must verify COS artifact downloads (${requiredFragment})`
       );
     }
+  }
+  if (
+    cosFetchScript.includes(
+      '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
+    ) ||
+    cosFetchScript.includes('"qiwe-production-adapter",')
+  ) {
+    addError(
+      "deploy/sidecar/scripts/fetch-cos-artifact.sh: Huabaosi production artifact validation must not accept qiwe-production-adapter"
+    );
   }
 }
 
@@ -491,7 +509,6 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const approvedCargoFeatures = [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
-    "qiwe-production-adapter",
   ];
   const cargoFeaturesMatch = buildArtifactScript.match(
     /const cargoFeatures = \[([\s\S]*?)\];/
@@ -542,6 +559,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   for (const forbiddenFragment of [
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
+    "qiwe-production-adapter",
     '"--all-features"',
   ]) {
     if (buildArtifactScript.includes(forbiddenFragment)) {
