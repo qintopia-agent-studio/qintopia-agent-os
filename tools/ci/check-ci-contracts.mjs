@@ -254,9 +254,9 @@ if (ciWorkflow) {
         );
       }
     }
-    if (parsedWorkflow?.jobs?.check?.permissions?.statuses !== "write") {
+    if (parsedWorkflow?.jobs?.check?.permissions?.statuses) {
       errors.push(
-        ".github/workflows/ci.yml: jobs.check needs statuses: write to publish the authenticated Release Please result"
+        ".github/workflows/ci.yml: jobs.check must not publish Release Please status before independent heavy jobs finish"
       );
     }
     if (parsedWorkflow?.jobs?.changes?.permissions?.statuses) {
@@ -274,6 +274,19 @@ if (ciWorkflow) {
       if (!changesOutputs[outputName]) {
         errors.push(`.github/workflows/ci.yml: jobs.changes must output ${outputName}`);
       }
+    }
+    const detectChangesStep = parsedWorkflow?.jobs?.changes?.steps?.find(
+      (step) => step?.name === "Detect changed files"
+    );
+    const detectChangesScript = String(detectChangesStep?.run ?? "");
+    if (
+      !/if \[\[ "\$release_please_pr" == "true" \]\]; then\s+full_check=true\s+rust_quality_check=true\s+postgres_integration_check=true/.test(
+        detectChangesScript
+      )
+    ) {
+      errors.push(
+        ".github/workflows/ci.yml: authenticated Release Please validation must force full, Rust, and PostgreSQL checks"
+      );
     }
     const checkSteps = parsedWorkflow?.jobs?.check?.steps;
     if (!Array.isArray(checkSteps)) {
@@ -329,38 +342,73 @@ if (ciWorkflow) {
           }
         }
       }
-      const releaseStatusStep = checkSteps.find(
+      if (
+        checkSteps.some(
+          (step) => step?.name === "Publish Release Please validation status"
+        )
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: jobs.check must not publish Release Please status before independent heavy jobs finish"
+        );
+      }
+    }
+
+    const releaseValidationJob = parsedWorkflow?.jobs?.["release-please-validation"];
+    if (!releaseValidationJob) {
+      errors.push(
+        ".github/workflows/ci.yml: missing final release-please-validation aggregation job"
+      );
+    } else {
+      const releaseNeeds = Array.isArray(releaseValidationJob.needs)
+        ? releaseValidationJob.needs
+        : [releaseValidationJob.needs];
+      for (const requiredJob of [
+        "changes",
+        "check",
+        "rust-quality-baseline",
+        "xiaoman-postgres-integration",
+      ]) {
+        if (!releaseNeeds.includes(requiredJob)) {
+          errors.push(
+            `.github/workflows/ci.yml: release-please-validation must wait for ${requiredJob}`
+          );
+        }
+      }
+      if (releaseValidationJob.permissions?.statuses !== "write") {
+        errors.push(
+          ".github/workflows/ci.yml: release-please-validation needs statuses: write"
+        );
+      }
+      const releaseCondition = String(releaseValidationJob.if ?? "");
+      for (const requiredFragment of [
+        "always()",
+        "workflow_dispatch",
+        "release-please-pr == 'true'",
+      ]) {
+        if (!releaseCondition.includes(requiredFragment)) {
+          errors.push(
+            `.github/workflows/ci.yml: release-please-validation condition must include ${requiredFragment}`
+          );
+        }
+      }
+      const releaseStatusStep = releaseValidationJob.steps?.find(
         (step) => step?.name === "Publish Release Please validation status"
       );
-      if (!releaseStatusStep) {
-        errors.push(
-          ".github/workflows/ci.yml: must publish a Release Please validation commit status"
-        );
-      } else {
-        const runScript = String(releaseStatusStep.run ?? "");
-        const condition = String(releaseStatusStep.if ?? "");
-        for (const requiredFragment of [
-          "always()",
-          "workflow_dispatch",
-          "release-please-pr == 'true'",
-        ]) {
-          if (!condition.includes(requiredFragment)) {
-            errors.push(
-              `.github/workflows/ci.yml: Release Please status condition must include ${requiredFragment}`
-            );
-          }
-        }
-        for (const requiredFragment of [
-          "statuses/${HEAD_SHA}",
-          'context="Release Please validation"',
-          'state="$state"',
-          'target_url="$RUN_URL"',
-        ]) {
-          if (!runScript.includes(requiredFragment)) {
-            errors.push(
-              `.github/workflows/ci.yml: Release Please status publisher must include ${requiredFragment}`
-            );
-          }
+      const runScript = String(releaseStatusStep?.run ?? "");
+      for (const requiredFragment of [
+        "needs.check.result",
+        "needs.rust-quality-baseline.result",
+        "needs.xiaoman-postgres-integration.result",
+        "statuses/${HEAD_SHA}",
+        'context="Release Please validation"',
+        'state="$state"',
+        'target_url="$RUN_URL"',
+        '[[ "$state" == "success" ]]',
+      ]) {
+        if (!runScript.includes(requiredFragment)) {
+          errors.push(
+            `.github/workflows/ci.yml: final Release Please status publisher must include ${requiredFragment}`
+          );
         }
       }
     }
@@ -380,7 +428,36 @@ if (ciWorkflow) {
           ".github/workflows/ci.yml: rust-quality-baseline must not run for every full-check change"
         );
       }
+      if (condition.includes("release-please-pr != 'true'")) {
+        errors.push(
+          ".github/workflows/ci.yml: rust-quality-baseline must not exclude authenticated Release Please validation"
+        );
+      }
+      if (
+        qualityJob.env?.CARGO_HTTP_MULTIPLEXING !== "false" ||
+        qualityJob.env?.CARGO_NET_RETRY !== "10"
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Rust quality tool downloads must disable HTTP/2 multiplexing and retry transient failures"
+        );
+      }
       const qualitySteps = qualityJob.steps ?? [];
+      const installToolsStep = qualitySteps.find(
+        (step) => step?.name === "Install Rust quality tools"
+      );
+      const installToolsCommand = String(installToolsStep?.run ?? "");
+      for (const requiredFragment of [
+        "set -o pipefail",
+        "mkdir -p coverage",
+        "coverage/cargo-nextest-install.log",
+        "coverage/cargo-llvm-cov-install.log",
+      ]) {
+        if (!installToolsCommand.includes(requiredFragment)) {
+          errors.push(
+            `.github/workflows/ci.yml: Rust quality tool setup must retain ${requiredFragment}`
+          );
+        }
+      }
       for (const requiredStep of [
         "Rust coverage baseline",
         "All-feature staging adapter tests",
@@ -475,6 +552,11 @@ if (ciWorkflow) {
       if (condition.includes("full-check == 'true'")) {
         errors.push(
           ".github/workflows/ci.yml: xiaoman-postgres-integration must not run for every full-check change"
+        );
+      }
+      if (condition.includes("release-please-pr != 'true'")) {
+        errors.push(
+          ".github/workflows/ci.yml: xiaoman-postgres-integration must not exclude authenticated Release Please validation"
         );
       }
       const postgres = postgresJob.services?.postgres;

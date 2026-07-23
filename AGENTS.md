@@ -259,7 +259,8 @@ Use `rg` and `rg --files` for search.
 - A Release Please PR created or updated with `GITHUB_TOKEN` may have no automatic PR
   checks because GitHub suppresses recursive workflow triggers. Before merging such a
   PR, run the manual CI validation command on its exact head branch and require the
-  workflow `changes` and `check` jobs plus the PR-attached `Release Please validation`
+  workflow `changes`, `check`, `Rust quality baseline`, and
+  `Xiaoman PostgreSQL integration` jobs plus the PR-attached `Release Please validation`
   commit status to pass. The dispatch must fail if the PR is not open, does not target
   `master`, is not bot-authored, or the checked-out SHA differs from the PR head.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
@@ -555,7 +556,7 @@ Use `rg` and `rg --files` for search.
   Postgres claim/mutation, or network access even if runtime enable flags are
   misconfigured; callback apply must also fail before reading stdin. Production artifact
   manifests must record exactly
-  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter, qiwe-production-adapter]`;
+  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`;
   artifact and server-source build checks must reject `qiwe-staging-adapter`,
   `huabaosi-staging-adapter`, and all-features builds. The Huabaosi production feature
   alone must not make QiWe live helpers available.
@@ -566,9 +567,10 @@ Use `rg` and `rg --files` for search.
   treated as a production artifact.
 - Heavy PR checks are risk-tiered. Keep `check` meaningful for ordinary PRs, but run
   `rust-quality-baseline` and `xiaoman-postgres-integration` only for sidecar, Postgres,
-  deploy sidecar script, or CI workflow changes, plus explicit non-Release manual
-  dispatches. Do not weaken Release Please manual validation, production deploy, or
-  published Release gates; those remain the full safety boundary.
+  deploy sidecar script, or CI workflow changes. Explicit manual dispatches and
+  authenticated Release Please validation force the full light, runtime, Rust, and
+  PostgreSQL tiers. Do not weaken production deploy or published Release gates; those
+  remain the full safety boundary.
 - QiWe image-send production activation is guarded, not automatic. Activation requires
   the persistent sidecar env file to contain exactly one
   `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, exactly one
