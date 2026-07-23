@@ -6,20 +6,22 @@ ids, QiWe tokens, message ids, or private member data into this file.
 
 ## Run Metadata
 
-- Commit SHA: `7553f92b3205dc7e8632894212380630c139a111`
-- Release: `v0.2.9`; Deploy Production run `29338173008`
+- Commit SHA: `68c9877bbee7590e434602ad59cb3b917e673a30`
+- Release: `v0.2.28`; Deploy Production run `30000866695`
 - Operator: `qiaopengjun5162` release publish; Codex read-only production preflight
-- Run time: `2026-07-15T10:44+08:00` through `2026-07-15T10:45+08:00`
+- Run time: `2026-07-23T19:06+08:00`
 - Server: `paxon-server`
 - Environment file loaded without printing values: `/etc/qintopia/message-sidecar.env`
 - Command:
 
 ```bash
-set -a
-. /etc/qintopia/message-sidecar.env
-set +a
-export QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1
-/home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh
+sudo bash -lc '
+  set -a
+  . /etc/qintopia/message-sidecar.env
+  set +a
+  export QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1
+  exec /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh
+'
 ```
 
 ## Required Evidence
@@ -35,13 +37,15 @@ export QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE=1
 | Huabaosi provider runtime state     | Generation flag, compiled adapter mode, and timer state agree; preflight and `run-huabaosi-image-generation-worker --once --dry-run` expose no sensitive configuration or external calls   | Pass   |
 | Xiaoman send request starter timer  | `qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer` is active and enabled; service command is fixed to `run-xiaoman-activity-send-request-starter-worker --once --apply` | Pass   |
 | Operations group send-ready timer   | `qintopia-agentos-operations-group-send-ready.timer` is active and enabled; service command is fixed to `run-group-message-send-worker --once --apply`                                     | Pass   |
+| QiWe image-send state               | Observation reports `disabled` and binds the immutable `v0.2.28` release SHA; no QiWe production artifact or external send is accepted                                                     | Pass   |
+| QiWe callback bridge state          | Observation reports `disabled` and binds the immutable `v0.2.28` release SHA; no callback processing is accepted                                                                           | Pass   |
 | Read-only worker previews           | Aggregate smoke finishes with `xiaoman activity production preflight passed`; preview reports are JSON-valid and `safe_for_chat=false` where present                                       | Pass   |
 | Secret and external-send scan       | Journal/unit/preview output contains no token, database URL, Feishu Base id, message id, raw chat, `send_executed=true`, or external-send command                                          | Pass   |
 | Production boundary                 | No deploy command, Feishu write, QiWe call, provider/media call, poster publish, final confirmation, queueing, send-ready execution, or external send happens during this smoke            | Pass   |
 
 All seven internal worker services reported `Result=success` and `ExecMainStatus=0`
 after their latest timer triggers. Their `ExecStart` paths resolve to the immutable
-`v0.2.9` sidecar under `release/current`.
+`v0.2.28` sidecar under `release/current`.
 
 ## Queue Snapshot
 

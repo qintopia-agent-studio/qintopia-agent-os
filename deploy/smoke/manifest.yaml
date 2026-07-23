@@ -29,8 +29,8 @@ tags:
   - smoke
   - validation
 next_actions:
-  - Run the Huabaosi WeCom gateway observation smoke from release/current after the
-    phase-2 PR is deployed, and record only sanitized counts and pass/fail evidence.
-  - Keep the Xiaoman production preflight on Hold until the corrected observation
-    contract is released and the aggregate smoke passes with sanitized evidence.
+  - Release the fixed-window Huabaosi WeCom gateway observation, rerun it from
+    release/current, and record only sanitized counts and pass/fail evidence.
+  - Retain the v0.2.28 Xiaoman aggregate preflight pass as AgentOS-only evidence and
+    rerun it after production runtime changes.
   - Wrap existing sidecar smoke scripts under this package without changing behavior.

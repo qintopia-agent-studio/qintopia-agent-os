@@ -106,6 +106,10 @@
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK=approved-production-image-generation-rollback deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh`
 - Huabaosi WeCom gateway read-only observation smoke:
   `QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`
+  Run it as the `ubuntu` Hermes systemd user, not through `sudo`, because it inspects
+  `systemctl --user`. Its journal scan is fixed to the latest 30 minutes and 160 lines;
+  production commands, paths, and the journal window must not accept caller-controlled
+  overrides. Keep test doubles in the Node fixture only.
 - Huabaosi WeCom canary disabled-state observation smoke:
   `QINTOPIA_HUABAOSI_WECOM_CANARY_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh`
 - QiWe image-send staging readiness smoke:

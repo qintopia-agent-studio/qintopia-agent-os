@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
+PATH="/usr/bin:/bin"
+export PATH
 
 if [[ "${QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE:-}" != "1" ]]; then
   echo "Huabaosi WeCom gateway observation skipped: set QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 to inspect read-only runtime state" >&2
   exit 0
 fi
 
-SERVICE_NAME="${QINTOPIA_HUABAOSI_WECOM_SERVICE_NAME:-hermes-gateway-huabaosi.service}"
-PROFILE_DIR="${QINTOPIA_HUABAOSI_WECOM_PROFILE_DIR:-/home/ubuntu/.hermes/profiles/huabaosi}"
-PROFILE_CONFIG="${QINTOPIA_HUABAOSI_WECOM_PROFILE_CONFIG:-${PROFILE_DIR}/config.yaml}"
-RELEASE_CURRENT="${QINTOPIA_RELEASE_CURRENT_PATH:-/home/ubuntu/qintopia-agent-os-releases/current}"
+SERVICE_NAME="hermes-gateway-huabaosi.service"
+PROFILE_DIR="/home/ubuntu/.hermes/profiles/huabaosi"
+PROFILE_CONFIG="${PROFILE_DIR}/config.yaml"
+RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"
 EXPECTED_DROP_IN_PATH="/home/ubuntu/.config/systemd/user/hermes-gateway-huabaosi.service.d/env.conf"
 EXPECTED_ENVIRONMENT_FILE="/home/ubuntu/.hermes/profiles/huabaosi/.env (ignore_errors=no)"
-JOURNAL_LINES="${QINTOPIA_HUABAOSI_WECOM_JOURNAL_LINES:-160}"
-SYSTEMCTL="${SYSTEMCTL:-systemctl}"
-JOURNALCTL="${JOURNALCTL:-journalctl}"
+JOURNAL_LINES="160"
+JOURNAL_SINCE="30 minutes ago"
+SYSTEMCTL="/usr/bin/systemctl"
+JOURNALCTL="/usr/bin/journalctl"
 
 if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   echo "systemctl is required for Huabaosi WeCom gateway observation" >&2
@@ -117,14 +120,14 @@ if [[ ! -e "$RELEASE_CURRENT" ]]; then
 fi
 
 journal="$tmp_dir/journal.txt"
-"$JOURNALCTL" --user -u "$SERVICE_NAME" -n "$JOURNAL_LINES" --no-pager -o cat >"$journal" || true
+"$JOURNALCTL" --user -u "$SERVICE_NAME" --since "$JOURNAL_SINCE" -n "$JOURNAL_LINES" --no-pager -o cat >"$journal" || true
 assert_no_sensitive_output "service journal" "$journal"
 
 internal_filter_count="$(count_matches 'internal[- ]process|process filter|filtered internal|skip(ped|ping) internal' "$journal")"
 send_fallback_count="$(count_matches 'Send failed: .*plain-text fallback|Fallback send also failed|Response formatting failed' "$journal")"
 api_timeout_count="$(count_matches 'API call failed.*Request timed out|Request timed out|request timed out|Timeout sending message to WeCom' "$journal")"
 
-printf 'Huabaosi WeCom gateway observation passed: service=%s busy_input_mode=%s release_current_present=true internal_filter_count=%s send_fallback_count=%s api_timeout_count=%s\n' \
+printf 'Huabaosi WeCom gateway observation passed: service=%s busy_input_mode=%s release_current_present=true journal_window=30m internal_filter_count=%s send_fallback_count=%s api_timeout_count=%s\n' \
   "$SERVICE_NAME" \
   "$busy_mode" \
   "$internal_filter_count" \
