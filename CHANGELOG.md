@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.25](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.24...v0.2.25) (2026-07-23)
+
+
+### Bug Fixes
+
+* **ci:** enforce full Release Please validation ([335e9ad](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/335e9ada48682bcf5c1e372c284ca418041409cc))
+* **ci:** validate Release PR-Agent required check ([cafc9c9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cafc9c9d5f1dd38b3bc051ade5d5faa4730e5e92))
+* **runtime:** allow bounded uv python home alias ([d79f452](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d79f452284edbd251d84e4034239f4b157d1dda6))
+
 ## [0.2.24](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.23...v0.2.24) (2026-07-23)
 
 
