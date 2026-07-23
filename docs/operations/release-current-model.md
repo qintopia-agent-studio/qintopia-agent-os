@@ -139,12 +139,16 @@ After each promotion, render and reinstall these units from the immutable releas
 `QINTOPIA_DEPLOYED_COMMIT_SHA` matches the release behind `current`. Do not leave stale
 deployment metadata in a unit merely because its path uses the `current` symlink.
 
-Huabaosi image-generation and Feishu-mirror services additionally render
+Huabaosi image-generation services additionally render both
+`QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA` and
 `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA` from the same approved release SHA.
-The read-only Huabaosi image observation derives both release-bound values from the
-verified `current` target before invoking the immutable sidecar. Persistent environment
-files remain the reviewed source for secrets, allowlists, enablement, and approval
-values; they are not the deployment source of truth for the active release identity.
+Feishu-mirror-only services render only the Feishu binding. The read-only Huabaosi image
+observation derives all three release-bound values from the verified `current` target
+before invoking the immutable sidecar, while retaining the reviewed persistent image
+approval, database hash, timeout, and media bound used by the production preflight.
+Persistent environment files remain the reviewed source for secrets, allowlists,
+enablement, and approval values; they are not the deployment source of truth for the
+active release identity.
 
 Hermes profile directories remain live runtime state. Preserve:
 

@@ -95,6 +95,19 @@ esac
   for (const unitName of [
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
     "qintopia-agentos-huabaosi-image-generation-worker.service",
+  ]) {
+    const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
+    for (const required of [
+      `Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`,
+      `Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${releaseSha}`,
+      `Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`,
+    ]) {
+      if (!unit.includes(required)) {
+        throw new Error(`${unitName} is missing ${required}`);
+      }
+    }
+  }
+  for (const unitName of [
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service",
   ]) {
@@ -107,14 +120,22 @@ esac
         throw new Error(`${unitName} is missing ${required}`);
       }
     }
+    if (unit.includes("QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA")) {
+      throw new Error(`${unitName} must not inherit Huabaosi image release binding`);
+    }
   }
   for (const unitName of [
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.service",
   ]) {
     const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
-    if (unit.includes("QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA")) {
-      throw new Error(`${unitName} must not inherit Huabaosi release binding`);
+    for (const forbidden of [
+      "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA",
+      "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+    ]) {
+      if (unit.includes(forbidden)) {
+        throw new Error(`${unitName} must not inherit ${forbidden}`);
+      }
     }
   }
   for (const timer of [

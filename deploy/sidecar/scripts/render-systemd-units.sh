@@ -304,7 +304,8 @@ EOF
 }
 
 render_all() {
-  local huabaosi_release_environment="Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"
+  local huabaosi_feishu_release_environment="Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"
+  local huabaosi_image_release_environment="Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"$'\n'"${huabaosi_feishu_release_environment}"
 
   mkdir -p "$OUTPUT_DIR"
   render_plan
@@ -465,13 +466,13 @@ render_all() {
     "qintopia-agentos-huabaosi-image-generation-preflight.service" \
     "Qintopia AgentOS Huabaosi Image Generation Production Preflight" \
     "huabaosi-image-generation-preflight" \
-    "$huabaosi_release_environment"
+    "$huabaosi_image_release_environment"
   render_guarded_oneshot_service \
     "qintopia-agentos-huabaosi-image-generation-worker.service" \
     "Qintopia AgentOS Huabaosi Image Generation Worker" \
     "huabaosi-image-generation-preflight" \
     "run-huabaosi-image-generation-worker --once --apply" \
-    "$huabaosi_release_environment"
+    "$huabaosi_image_release_environment"
   render_timer \
     "qintopia-agentos-huabaosi-image-generation-worker.timer" \
     "Run Qintopia AgentOS Huabaosi image generation worker" \
@@ -483,13 +484,13 @@ render_all() {
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service" \
     "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Production Preflight" \
     "huabaosi-feishu-artifact-mirror-preflight" \
-    "$huabaosi_release_environment"
+    "$huabaosi_feishu_release_environment"
   render_guarded_oneshot_service \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service" \
     "Qintopia AgentOS Huabaosi Feishu Artifact Mirror Worker" \
     "huabaosi-feishu-artifact-mirror-preflight" \
     "run-huabaosi-feishu-artifact-mirror-worker --once --apply" \
-    "$huabaosi_release_environment"
+    "$huabaosi_feishu_release_environment"
   render_timer \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer" \
     "Run Qintopia AgentOS Huabaosi Feishu artifact mirror worker" \
