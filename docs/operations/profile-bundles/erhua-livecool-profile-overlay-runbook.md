@@ -60,13 +60,16 @@ three separately approved requests:
    Publishing the draft GitHub Release remains a separate owner action.
 
 The runtime resolver uses the fixed Hermes venv entry point. A standard venv may link
-that entry to a base interpreter outside the venv; the validator requires the fixed,
+that entry to a base interpreter outside the venv. The validator requires the fixed,
 non-aliased venv and `pyvenv.cfg`, then requires the final standard Python executable to
-be a direct child of the absolute, non-aliased `home` declared by that metadata. This
-permits the normal venv base-interpreter link without accepting an unrelated external
-executable. Any release-local interpreter and its resolved target must remain inside the
-immutable release. When the deploy runner is root, it executes the Hermes resolver as
-the unprivileged `ubuntu` runtime owner.
+be a direct child of the declared base home. A direct base home must be non-aliased. The
+only accepted aliased form is uv's stable CPython major/minor directory below the same
+runtime user's fixed `.local/share/uv/python` root; it must be one absolute symlink to
+an in-root patch-version directory with the same major/minor version and platform
+suffix. This permits the production uv venv layout without accepting an unrelated
+external executable. Any release-local interpreter and its resolved target must remain
+inside the immutable release. When the deploy runner is root, it executes the Hermes
+resolver as the unprivileged `ubuntu` runtime owner.
 
 The runner rejects any request that combines `hermes-profile-erhua` with another scope
 or restart target, disables rollback, or targets a release other than `current`.

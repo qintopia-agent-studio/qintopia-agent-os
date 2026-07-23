@@ -385,6 +385,12 @@ Use `rg` and `rg --files` for search.
   first and may report completion only after that flag is present exactly once and
   exactly `0` in the reviewed sidecar environment file.
 - Hermes remains the Agent runtime. It should not become the business database.
+- The production Hermes venv is uv-managed. Its `pyvenv.cfg` base home may use uv's
+  stable `cpython-<major>.<minor>-<platform>` alias, which resolves to an exact patch
+  version below `/home/ubuntu/.local/share/uv/python`. Interpreter validation may allow
+  only that single in-root alias with matching version/platform identity; do not require
+  the uv home path to be textually unaliased and do not broaden it to arbitrary
+  symlinks.
 - `agents/xiaoman/profile-bundle` is observation-only. It may package the reviewed
   `SOUL.md`/`profile.yaml` templates, strict renderer, fake fixtures, and read-only
   parity smoke, but the deploy runner must not render it, read its server-local values,

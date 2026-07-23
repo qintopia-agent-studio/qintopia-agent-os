@@ -55,6 +55,57 @@ def read_venv_home(config: Path) -> Path:
     return absolute_path(home, "Hermes venv base interpreter home")
 
 
+def resolve_uv_base_home(base_home: Path, venv_dir: Path) -> Path:
+    if (
+        venv_dir.name != "venv"
+        or venv_dir.parent.name != "hermes-agent"
+        or venv_dir.parent.parent.name != ".hermes"
+        or base_home.name != "bin"
+    ):
+        raise ValueError("Hermes venv base interpreter home must not be aliased")
+
+    uv_root = venv_dir.parent.parent.parent / ".local/share/uv/python"
+    require_unaliased_directory(uv_root, "Hermes uv Python root")
+    alias_dir = base_home.parent
+    if alias_dir.parent != uv_root or not alias_dir.is_symlink():
+        raise ValueError("Hermes venv base interpreter home alias is outside the uv root")
+
+    alias_match = re.fullmatch(r"cpython-([0-9]+)\.([0-9]+)-(.+)", alias_dir.name)
+    if alias_match is None:
+        raise ValueError("Hermes uv Python alias name is invalid")
+
+    raw_target = Path(os.readlink(alias_dir))
+    resolved_dir = alias_dir.resolve(strict=True)
+    if (
+        not raw_target.is_absolute()
+        or raw_target != resolved_dir
+        or resolved_dir.parent != uv_root
+        or not resolved_dir.is_dir()
+        or resolved_dir.is_symlink()
+    ):
+        raise ValueError("Hermes uv Python alias must have one absolute in-root target")
+
+    resolved_match = re.fullmatch(
+        r"cpython-([0-9]+)\.([0-9]+)\.([0-9]+)-(.+)", resolved_dir.name
+    )
+    if resolved_match is None or (
+        alias_match.group(1),
+        alias_match.group(2),
+        alias_match.group(3),
+    ) != (
+        resolved_match.group(1),
+        resolved_match.group(2),
+        resolved_match.group(4),
+    ):
+        raise ValueError("Hermes uv Python alias version or platform does not match")
+
+    resolved_home = resolved_dir / "bin"
+    require_unaliased_directory(resolved_home, "Hermes uv Python home")
+    if base_home.resolve(strict=True) != resolved_home:
+        raise ValueError("Hermes uv Python home does not match its alias target")
+    return resolved_home
+
+
 def validate_venv_entry_target(
     resolved_entry: Path, venv_dir: Path, pyvenv_config: Path
 ) -> None:
@@ -65,9 +116,34 @@ def validate_venv_entry_target(
         pass
 
     base_home = read_venv_home(pyvenv_config)
-    require_unaliased_directory(base_home, "Hermes venv base interpreter home")
-    if resolved_entry.parent != base_home or not re.fullmatch(
+    if base_home.is_dir() and not base_home.is_symlink() and base_home.resolve() == base_home:
+        resolved_home = base_home
+        expected_version = None
+    else:
+        resolved_home = resolve_uv_base_home(base_home, venv_dir)
+        alias_match = re.fullmatch(
+            r"cpython-([0-9]+)\.([0-9]+)-(.+)", base_home.parent.name
+        )
+        expected_version = f"{alias_match.group(1)}.{alias_match.group(2)}"
+
+    python_name_is_standard = re.fullmatch(
         r"python(?:3(?:\.[0-9]+)?)?", resolved_entry.name
+    ) is not None
+    expected_python_names = None
+    if expected_version is not None:
+        major = expected_version.split(".", 1)[0]
+        expected_python_names = {
+            "python",
+            f"python{major}",
+            f"python{expected_version}",
+        }
+    if (
+        resolved_entry.parent != resolved_home
+        or not python_name_is_standard
+        or (
+            expected_python_names is not None
+            and resolved_entry.name not in expected_python_names
+        )
     ):
         raise ValueError(
             "Hermes venv Python target does not match pyvenv.cfg home"
