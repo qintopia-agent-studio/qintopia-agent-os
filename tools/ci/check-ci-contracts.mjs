@@ -442,21 +442,81 @@ if (ciWorkflow) {
         );
       }
       const qualitySteps = qualityJob.steps ?? [];
+      const prepareToolsStep = qualitySteps.find(
+        (step) => step?.name === "Prepare Rust quality tool evidence"
+      );
+      const prepareToolsCommand = String(prepareToolsStep?.run ?? "");
+      for (const requiredFragment of [
+        "mkdir -p coverage",
+        "coverage/rust-quality-tool-install-strategy.txt",
+        "installer=taiki-e/install-action@v2",
+        "checksum=true",
+        "fallback=none",
+      ]) {
+        if (!prepareToolsCommand.includes(requiredFragment)) {
+          errors.push(
+            `.github/workflows/ci.yml: Rust quality evidence setup must retain ${requiredFragment}`
+          );
+        }
+      }
       const installToolsStep = qualitySteps.find(
         (step) => step?.name === "Install Rust quality tools"
       );
-      const installToolsCommand = String(installToolsStep?.run ?? "");
+      if (installToolsStep?.uses !== "taiki-e/install-action@v2") {
+        errors.push(
+          ".github/workflows/ci.yml: Rust quality tools must use the prebuilt taiki-e installer"
+        );
+      }
+      if (installToolsStep?.with?.tool !== "nextest@0.9.138,cargo-llvm-cov@0.8.7") {
+        errors.push(
+          ".github/workflows/ci.yml: Rust quality tools must retain the fixed nextest and cargo-llvm-cov versions"
+        );
+      }
+      if (
+        installToolsStep?.with?.checksum !== true ||
+        installToolsStep?.with?.fallback !== "none"
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Rust quality prebuilt installs must require checksums and disable Cargo fallback"
+        );
+      }
+      if (
+        qualitySteps.some((step) =>
+          /cargo install (?:cargo-nextest|cargo-llvm-cov)/.test(String(step?.run ?? ""))
+        )
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Rust quality tools must not compile through cargo install"
+        );
+      }
+      const recordToolsStep = qualitySteps.find(
+        (step) => step?.name === "Record Rust quality tool versions"
+      );
+      const recordToolsCommand = String(recordToolsStep?.run ?? "");
       for (const requiredFragment of [
         "set -o pipefail",
-        "mkdir -p coverage",
-        "coverage/cargo-nextest-install.log",
-        "coverage/cargo-llvm-cov-install.log",
+        "cargo nextest --version",
+        "coverage/cargo-nextest-version.txt",
+        "cargo llvm-cov --version",
+        "coverage/cargo-llvm-cov-version.txt",
       ]) {
-        if (!installToolsCommand.includes(requiredFragment)) {
+        if (!recordToolsCommand.includes(requiredFragment)) {
           errors.push(
-            `.github/workflows/ci.yml: Rust quality tool setup must retain ${requiredFragment}`
+            `.github/workflows/ci.yml: Rust quality tool version evidence must retain ${requiredFragment}`
           );
         }
+      }
+      const prepareToolsStepIndex = qualitySteps.indexOf(prepareToolsStep);
+      const installToolsStepIndex = qualitySteps.indexOf(installToolsStep);
+      const recordToolsStepIndex = qualitySteps.indexOf(recordToolsStep);
+      if (
+        prepareToolsStepIndex < 0 ||
+        installToolsStepIndex <= prepareToolsStepIndex ||
+        recordToolsStepIndex <= installToolsStepIndex
+      ) {
+        errors.push(
+          ".github/workflows/ci.yml: Rust quality tool evidence, install, and version steps must remain ordered"
+        );
       }
       for (const requiredStep of [
         "Rust coverage baseline",

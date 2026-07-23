@@ -242,6 +242,12 @@ Use `rg` and `rg --files` for search.
 - A `group_message_send` claim must clear `claimed_by`, `locked_at`, and
   `claim_expires_at` together when it records send-ready or policy-denied state. The
   transition must update exactly the locked work item before appending its audit event.
+- CI must install the fixed cargo-nextest and cargo-llvm-cov versions from checksum-
+  verified prebuilt releases through `taiki-e/install-action` with Cargo fallback
+  disabled. Do not restore per-run `cargo install`; it reintroduces crates.io index
+  failures before tests start. Prepare a non-empty diagnostic artifact before tool
+  download so an installation failure cannot be obscured by a second missing-artifact
+  error.
 - Do not develop directly on `master`; create a feature branch first.
 - Document first for new features, behavior changes, migrations, runtime changes, or
   production-adjacent work.
