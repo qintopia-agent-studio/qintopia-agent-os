@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.24](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.23...v0.2.24) (2026-07-23)
+
+
+### Bug Fixes
+
+* exclude qiwe feature from huabaosi production artifact ([#258](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/258)) ([87cf0d8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/87cf0d877189c83ad3629b5dcae090674acf46c9))
+
 ## [0.2.23](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.22...v0.2.23) (2026-07-22)
 
 
