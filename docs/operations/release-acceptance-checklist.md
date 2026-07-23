@@ -24,6 +24,9 @@ send externally.
 
 - Confirm the PR-attached `Release Please validation` status is `SUCCESS` on the same
   head SHA that will be merged.
+- Confirm the linked run completed `check`, `Rust quality baseline`, and
+  `Xiaoman PostgreSQL integration` successfully; skipped heavy jobs are not valid
+  Release Please evidence.
 - If Release Please force-updates the branch after new commits land on `master`, discard
   older validation runs and rerun the manual dispatch on the new head.
 - Review Release notes and PR body language. Infrastructure or activation-ready releases

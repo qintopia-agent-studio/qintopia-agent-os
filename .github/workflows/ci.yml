@@ -132,7 +132,11 @@ jobs:
                 ;;
             esac
           done
-          if [[ "$event_name" == "workflow_dispatch" && -z "$DISPATCH_RELEASE_PLEASE_PR_NUMBER" ]]; then
+          if [[ "$release_please_pr" == "true" ]]; then
+            full_check=true
+            rust_quality_check=true
+            postgres_integration_check=true
+          elif [[ "$event_name" == "workflow_dispatch" ]]; then
             full_check=true
             rust_quality_check=true
             postgres_integration_check=true
@@ -165,7 +169,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      statuses: write
 
     steps:
       - name: Checkout
@@ -185,7 +188,6 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        if: ${{ needs.changes.outputs.release-please-pr != 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Fetch restart preview commits
@@ -221,9 +223,9 @@ jobs:
           needs.changes.outputs.head-sha }}" --mode preview
 
       - name: Light check
-        if: ${{ needs.changes.outputs.release-please-pr != 'true' }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" && \
+            "${{ needs.changes.outputs.release-please-pr }}" != "true" ]]; then
             pnpm pr:check-body
           fi
           pnpm check:light
@@ -245,55 +247,24 @@ jobs:
             node tools/ci/check-release-please-pr.mjs
           fi
 
-      - name: Publish Release Please validation status
-        if: >-
-          ${{ always() && github.event_name == 'workflow_dispatch' &&
-          needs.changes.outputs.release-please-pr == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ needs.changes.outputs.head-sha }}
-          RUN_URL:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
-            github.run_id }}
-        run: |
-          state=success
-          description="Release Please metadata validation passed"
-          if [[ "${{ job.status }}" != "success" ]]; then
-            state=failure
-            description="Release Please metadata validation failed"
-          fi
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
-            -f state="$state" \
-            -f context="Release Please validation" \
-            -f description="$description" \
-            -f target_url="$RUN_URL"
-
       - name: Setup Python
-        if:
-          ${{ needs.changes.outputs.full-check == 'true' &&
-          needs.changes.outputs.release-please-pr != 'true' }}
+        if: ${{ needs.changes.outputs.full-check == 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Setup Rust
-        if:
-          ${{ needs.changes.outputs.full-check == 'true' &&
-          needs.changes.outputs.release-please-pr != 'true' }}
+        if: ${{ needs.changes.outputs.full-check == 'true' }}
         uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: rustfmt
 
       - name: Runtime check
-        if:
-          ${{ needs.changes.outputs.full-check == 'true' &&
-          needs.changes.outputs.release-please-pr != 'true' }}
+        if: ${{ needs.changes.outputs.full-check == 'true' }}
         run: pnpm check:runtime
 
       - name: Report docs-only check
-        if:
-          ${{ needs.changes.outputs.full-check != 'true' &&
-          needs.changes.outputs.release-please-pr != 'true' }}
+        if: ${{ needs.changes.outputs.full-check != 'true' }}
         run: |
           echo "Docs-only or Markdown-only change detected."
           echo "Skipped Python/Rust runtime checks and artifact builds."
@@ -303,12 +274,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: changes
-    if: >-
-      ${{ needs.changes.outputs.rust-quality-check == 'true' &&
-      needs.changes.outputs.release-please-pr != 'true' }}
+    if: ${{ needs.changes.outputs.rust-quality-check == 'true' }}
 
     permissions:
       contents: read
+
+    env:
+      CARGO_HTTP_MULTIPLEXING: "false"
+      CARGO_NET_RETRY: "10"
 
     steps:
       - name: Checkout
@@ -321,8 +294,10 @@ jobs:
 
       - name: Install Rust quality tools
         run: |
-          cargo install cargo-nextest --version 0.9.138 --locked
-          cargo install cargo-llvm-cov --version 0.8.7 --locked
+          set -o pipefail
+          mkdir -p coverage
+          cargo install cargo-nextest --version 0.9.138 --locked 2>&1 | tee coverage/cargo-nextest-install.log
+          cargo install cargo-llvm-cov --version 0.8.7 --locked 2>&1 | tee coverage/cargo-llvm-cov-install.log
 
       - name: Rust coverage baseline
         run: |
@@ -356,9 +331,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: changes
-    if: >-
-      ${{ needs.changes.outputs.postgres-integration-check == 'true' &&
-      needs.changes.outputs.release-please-pr != 'true' }}
+    if: ${{ needs.changes.outputs.postgres-integration-check == 'true' }}
 
     permissions:
       contents: read
@@ -458,3 +431,45 @@ jobs:
 
       - name: Xiaoman downstream apply smoke
         run: deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh
+
+  release-please-validation:
+    name: Release Please validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - changes
+      - check
+      - rust-quality-baseline
+      - xiaoman-postgres-integration
+    if: >-
+      ${{ always() && github.event_name == 'workflow_dispatch' &&
+      needs.changes.outputs.release-please-pr == 'true' }}
+
+    permissions:
+      contents: read
+      statuses: write
+
+    steps:
+      - name: Publish Release Please validation status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ needs.changes.outputs.head-sha }}
+          RUN_URL:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
+        run: |
+          set -euo pipefail
+          state=failure
+          description="Full Release Please validation failed"
+          if [[ "${{ needs.check.result }}" == "success" && \
+            "${{ needs.rust-quality-baseline.result }}" == "success" && \
+            "${{ needs.xiaoman-postgres-integration.result }}" == "success" ]]; then
+            state=success
+            description="Full Release Please validation passed"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context="Release Please validation" \
+            -f description="$description" \
+            -f target_url="$RUN_URL"
+          [[ "$state" == "success" ]]

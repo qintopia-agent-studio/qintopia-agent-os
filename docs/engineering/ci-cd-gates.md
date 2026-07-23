@@ -75,11 +75,13 @@ after the light gate.
 Heavy checks are risk-tiered separately. Sidecar, Postgres, deploy sidecar script, or CI
 workflow changes run `rust-quality-baseline` with Rust 1.96 and
 `xiaoman-postgres-integration`; explicit non-Release manual dispatches also force the
-heavy tier. The Rust job stores LCOV and a text summary as a short-retention artifact.
-Strict Clippy runs with `cargo clippy --all-targets -- -D warnings` and blocks the heavy
-tier. The PostgreSQL integration uses only a disposable `qintopia_test` service and runs
-the guarded control-plane apply smoke with no production database URL, secrets, Feishu,
-QiWe, or external adapters.
+heavy tier. Authenticated Release Please dispatches also force light, runtime, Rust, and
+PostgreSQL validation on the exact release head. The Rust job stores LCOV, setup logs,
+and a text summary as a short-retention artifact. Strict Clippy runs with
+`cargo clippy --all-targets -- -D warnings` and blocks the heavy tier. The PostgreSQL
+integration uses only a disposable `qintopia_test` service and runs the guarded
+control-plane apply smoke with no production database URL, secrets, Feishu, QiWe, or
+external adapters.
 
 ### Release Please PR Validation
 
@@ -98,11 +100,11 @@ gh workflow run ci.yml \
 The dispatch reads the PR through the GitHub API and fails unless it is open, targets
 `master`, is authored by the Release Please bot, contains the generated-body marker, and
 its head SHA equals the workflow checkout SHA. Only then does it run the dedicated
-manifest/changelog validator. The resulting `changes` and `check` runs attach to that
-head SHA but workflow-dispatch check suites are not listed automatically in the PR
-rollup. The authenticated `check` job therefore publishes a fixed
-`Release Please validation` commit status on the verified head SHA, linked to the
-workflow run. That status must pass and be visible on the PR before merge. This
+manifest/changelog validator and force the complete light, runtime, Rust quality, and
+disposable PostgreSQL tiers. Workflow-dispatch check suites are not listed automatically
+in the PR rollup, so a final aggregation job publishes a fixed
+`Release Please validation` commit status on the verified head SHA only after every
+required job succeeds. That status must pass and be visible on the PR before merge. This
 validation does not approve publication; merging and publishing remain one owner release
 decision.
 
