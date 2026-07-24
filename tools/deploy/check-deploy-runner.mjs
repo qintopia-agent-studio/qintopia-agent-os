@@ -78,6 +78,7 @@ const requiredFiles = [
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
+  "tools/deploy/test-wait-deploy-result.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
   "tools/deploy/test-promote-release-tree.mjs",
   "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
@@ -237,6 +238,7 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     expires_at: "2026-07-06T01:00:00Z",
     commit_sha: "0123456789abcdef0123456789abcdef01234567",
     runtime_sha: "0123456789abcdef0123456789abcdef01234567",
+    runtime_artifact_profile: "huabaosi-production",
     deploy_bundle_sha: "abcdef0123456789abcdef0123456789abcdef01",
     release_sha: "abcdef0123456789abcdef0123456789abcdef01",
     release_scope: ["deploy-bundle", "hermes-plugins"],
@@ -317,6 +319,10 @@ if (exists("deploy/runner/deploy-result.schema.json")) {
     started_at: "2026-07-06T00:00:00Z",
     finished_at: "2026-07-06T00:01:00Z",
     release_sha: "abcdef0123456789abcdef0123456789abcdef01",
+    commit_sha: "0123456789abcdef0123456789abcdef01234567",
+    runtime_sha: "0123456789abcdef0123456789abcdef01234567",
+    runtime_artifact_profile: "huabaosi-production",
+    deploy_bundle_sha: "abcdef0123456789abcdef0123456789abcdef01",
     release_scope: ["deploy-bundle"],
     previous_sha: "0123456789abcdef0123456789abcdef01234567",
     current_target: "/home/ubuntu/qintopia-agent-os-releases/current",
@@ -453,6 +459,7 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "Deploy Production must be run from refs/heads/master",
     "Pre-releases must not trigger production deployment.",
     "Release tag must point to current origin/master HEAD.",
+    "Release-published production deploys must use runtime_artifact_profile=huabaosi-production.",
     'release_scope="$(normalize_csv_allowlist',
     'restart_targets="$(normalize_csv_allowlist',
     'dry_run="$(normalize_boolean "dry_run" "$dry_run")',
@@ -464,6 +471,11 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "Build release deploy bundle",
     "Upload release sidecar artifact to Tencent COS",
     "Upload release deploy bundle to Tencent COS",
+    "Validate deploy artifacts in Tencent COS",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE",
+    "RUNTIME_SHA",
+    "DEPLOY_BUNDLE_SHA",
+    "fetch-cos-artifact.sh",
     "Wait for server deploy result",
     "previous_release_tag",
     "repos/${GITHUB_REPOSITORY}/releases?per_page=100",
@@ -518,6 +530,8 @@ if (exists(".github/workflows/rollback-production.yml")) {
   const executableResolveRun =
     typeof resolveRun === "string" ? stripCommentOnlyLines(resolveRun) : "";
   const releaseTagInput = workflow?.on?.workflow_dispatch?.inputs?.release_tag;
+  const runtimeArtifactProfileInput =
+    workflow?.on?.workflow_dispatch?.inputs?.runtime_artifact_profile;
   const restartTargetsInput = workflow?.on?.workflow_dispatch?.inputs?.restart_targets;
   const releaseTagOptions = releaseTagInput?.options ?? [];
   if (releaseTagInput?.type !== "choice") {
@@ -573,6 +587,20 @@ fi`;
       ".github/workflows/rollback-production.yml: restart_targets must use a choice input"
     );
   }
+  if (runtimeArtifactProfileInput?.type !== "choice") {
+    addError(
+      ".github/workflows/rollback-production.yml: runtime_artifact_profile must use a choice input"
+    );
+  }
+  const runtimeArtifactProfileOptions = runtimeArtifactProfileInput?.options ?? [];
+  if (
+    runtimeArtifactProfileInput?.default !== "huabaosi-production" ||
+    runtimeArtifactProfileOptions.join(",") !== "huabaosi-production,qiwe-production"
+  ) {
+    addError(
+      ".github/workflows/rollback-production.yml: runtime_artifact_profile options must be exactly [huabaosi-production, qiwe-production] with huabaosi-production as default"
+    );
+  }
   if (!restartTargetsInput?.options?.includes("all-hermes-and-system")) {
     addError(
       ".github/workflows/rollback-production.yml: restart_targets must include all-hermes-and-system"
@@ -605,9 +633,13 @@ fi`;
     'gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}"',
     "Rollback target must be a published non-prerelease GitHub Release.",
     "git merge-base --is-ancestor",
+    "runtime_artifact_profile must be huabaosi-production or qiwe-production.",
+    "runtime-artifact-profile=${runtime_artifact_profile}",
     "Validate rollback artifacts in Tencent COS",
     "fetch-cos-artifact.sh",
     "ROLLBACK_TARGET_SHA",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE",
+    "DEPLOY_RUNTIME_ARTIFACT_PROFILE",
     "DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins",
     "DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: false",
     "create-deploy-request.mjs",
@@ -701,6 +733,7 @@ for (const fragment of [
   'current_target" != "$release_target',
   "staging_dir/manifest.json",
   '"runtime_sha"',
+  '"runtime_artifact_profile"',
   '"deploy_bundle_sha"',
   '"commit_sha"',
   '"release_scope"',
@@ -720,6 +753,21 @@ for (const forbidden of [
 ]) {
   if (promoteText.includes(forbidden)) {
     addError(`deploy/runner/promote-release.sh: forbidden fragment ${forbidden}`);
+  }
+}
+
+const rollbackReadmeText = exists("deploy/rollback/README.md")
+  ? readText("deploy/rollback/README.md")
+  : "";
+for (const fragment of [
+  "`runtime_artifact_profile` explicitly in the rollback request",
+  "reviewed `runtime_artifact_profile` input",
+  "`huabaosi-production`",
+  "`qiwe-production`",
+  "must match the validated rollback artifact",
+]) {
+  if (!rollbackReadmeText.includes(fragment)) {
+    addError(`deploy/rollback/README.md: missing ${fragment}`);
   }
 }
 
@@ -920,6 +968,12 @@ for (const fragment of [
   "DEPLOY_RESULT_TIMEOUT_SECONDS",
   "DEPLOY_RESULT_POLL_SECONDS",
   "qintopia-agent-os/deploy-results/production",
+  "deploy result {key} mismatch",
+  "deploy-request-validation",
+  '"runtime_artifact_profile"',
+  '"deploy_bundle_sha"',
+  "deploy result release_scope mismatch",
+  "deploy result restart_targets mismatch",
   "succeeded|dry_run_succeeded",
   "failed|rolled_back",
   "Timed out after",
@@ -1076,6 +1130,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-collect-release-deploy-results.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-wait-deploy-result.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-resolve-release-restart-targets.mjs"], {

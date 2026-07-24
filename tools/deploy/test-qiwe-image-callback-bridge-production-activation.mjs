@@ -114,11 +114,8 @@ echo "fixture observation $actual_state"
       {
         commit_sha: releaseSha,
         validation: {
-          cargo_features: [
-            "huabaosi-production-adapter",
-            "huabaosi-feishu-mirror-adapter",
-            "qiwe-production-adapter",
-          ],
+          artifact_profile: "qiwe-production",
+          cargo_features: ["qiwe-production-adapter"],
         },
       },
       null,

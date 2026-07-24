@@ -87,6 +87,7 @@ from datetime import datetime, timezone
 
 path = sys.argv[1]
 allowed_scope = {"sidecar-runtime", "deploy-bundle", "hermes-plugins", "hermes-profile-erhua"}
+allowed_runtime_artifact_profiles = {"huabaosi-production", "qiwe-production"}
 allowed_targets = {
     "qintopia-system-services",
     "hermes-erhua",
@@ -141,6 +142,8 @@ if not request_id.fullmatch(require_string(data, "request_id")):
 for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "release_sha"):
     if not sha.fullmatch(require_string(data, key)):
         fail(f"{key} must be a lowercase 40-character SHA")
+if data.get("runtime_artifact_profile") not in allowed_runtime_artifact_profiles:
+    fail("runtime_artifact_profile must be an approved production profile")
 
 created_at = parse_datetime(require_string(data, "created_at"), "created_at")
 expires_at = parse_datetime(require_string(data, "expires_at"), "expires_at")
@@ -241,7 +244,9 @@ validate_request
 
 request_id="$(json_get request_id)"
 release_sha="$(json_get release_sha)"
+commit_sha="$(json_get commit_sha)"
 runtime_sha="$(json_get runtime_sha)"
+runtime_artifact_profile="$(json_get runtime_artifact_profile)"
 deploy_bundle_sha="$(json_get deploy_bundle_sha)"
 release_scope="$(json_get release_scope)"
 restart_targets="$(json_get restart_targets)"
@@ -274,7 +279,8 @@ write_result() {
   fi
   previous_sha="${previous_target##*/}"
   python3 - "$result_file" "$request_id" "$status" "$started_at" \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$previous_sha" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$release_sha" "$commit_sha" \
+    "$runtime_sha" "$runtime_artifact_profile" "$deploy_bundle_sha" "$previous_sha" \
     "$current_target" "$restart_targets" "$error" "$rollback_attempted" \
     "$rollback_status" "$rollback_target" "${RESULT_DIR}/${request_id}.profile.json" \
     "${RESULT_DIR}/${request_id}.smoke.json" "${RESULT_DIR}/${request_id}.restore.json" \
@@ -291,6 +297,10 @@ import sys
     started_at,
     finished_at,
     release_sha,
+    commit_sha,
+    runtime_sha,
+    runtime_artifact_profile,
+    deploy_bundle_sha,
     previous_sha,
     current_target,
     restart_targets,
@@ -306,7 +316,7 @@ import sys
     deploy_failure_status,
     promoted_current,
     profile_activation_attempted,
-) = sys.argv[1:22]
+) = sys.argv[1:26]
 
 runner_check = {
     "name": "deploy-runner",
@@ -329,6 +339,10 @@ result = {
     "started_at": started_at,
     "finished_at": finished_at,
     "release_sha": release_sha,
+    "commit_sha": commit_sha,
+    "runtime_sha": runtime_sha,
+    "runtime_artifact_profile": runtime_artifact_profile,
+    "deploy_bundle_sha": deploy_bundle_sha,
     "release_scope": [item for item in release_scope.split(",") if item],
     "previous_sha": previous_sha,
     "current_target": current_target,

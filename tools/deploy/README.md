@@ -80,6 +80,35 @@ audit that verifies the Xiaoman workflow metadata, systemd command contracts, ag
 preflight smoke, evidence record, and guarded apply smoke still describe one coherent
 AgentOS-only production preflight path.
 
+Rerun the full repository-local Xiaoman production evidence chain verification bundle:
+
+```bash
+node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs
+```
+
+Use it before any owner-operated Huabaosi production canary, QiWe production follow-up
+deploy, real-activity evidence export, or final completion-manifest capture.
+
+After the owner has retained the reviewed staging and production evidence files, build
+and validate the final Xiaoman production completion manifest in one step:
+
+```bash
+pnpm deploy:xiaoman-production-evidence:finalize -- \
+  --release-please-pr-number <release-please-pr-number> \
+  --release-please-head-sha <release-please-head-sha> \
+  --release-tag <published-release-tag> \
+  --released-commit-sha <published-release-commit-sha> \
+  --qiwe-production-enablement-pr-number <qiwe-production-enablement-pr-number> \
+  --qiwe-production-enablement-head-sha <qiwe-production-enablement-head-sha> \
+  --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
+  --huabaosi-staging <huabaosi-staging-output.txt> \
+  --qiwe-staging <qiwe-staging-output.txt> \
+  --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
+  --production-real-activity <production-evidence-output.txt> \
+  --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+  --output <completed-xiaoman-production-completion-evidence.json>
+```
+
 ## GitHub App Git Access
 
 Validate the GitHub App git wrapper without credentials:
@@ -113,6 +142,17 @@ The command writes `dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64
 with the release binary, compressed bundle, `artifact-manifest.json`, and `SHA256SUMS`
 covering all three payload files. `dist/` is ignored by git.
 
+Build the independent QiWe production sidecar artifact layout locally:
+
+```bash
+pnpm artifact:sidecar:qiwe-production
+```
+
+This writes
+`dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` with
+manifest profile `qiwe-production` and exactly `qiwe-production-adapter`. Use it only
+with deploy requests whose `runtime_artifact_profile=qiwe-production`.
+
 The CI artifact job uses Rust 1.96.0 to match `runtime/sidecar/Cargo.toml`
 `rust-version`. Server deployment downloads the uploaded artifact and does not require
 Node.js, pnpm, Rust, or Docker on the production host.
@@ -143,3 +183,14 @@ The command keeps the latest ten artifacts named
 `qintopia-message-sidecar-linux-x86_64-gnu` by default. Override the count with
 `QINTOPIA_ARTIFACT_KEEP_COUNT` or `--keep <count>`. Older same-name artifacts are
 deleted through the GitHub Actions Artifacts API.
+
+Prune old independent QiWe production sidecar artifacts:
+
+```bash
+GITHUB_TOKEN="replace-with-actions-write-token" \
+GITHUB_REPOSITORY="qintopia-agent-studio/qintopia-agent-os" \
+pnpm artifact:prune:sidecar:qiwe-production
+```
+
+That command keeps the latest ten artifacts named
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` by default.

@@ -25,12 +25,12 @@ unless correcting historical evidence.
 - Hermes profile live state, including `.env`, sessions, logs, cache, memory, auth, and
   local config overrides, stays outside git.
 - `v0.2.10` is the first Release containing the new deploy-runner behavior. Its
-  corrected same-SHA follow-up deploy succeeded and installed the three Huabaosi
-  production image units. The worker timer remains disabled until the owner supplies
-  reviewed provider and Feishu-backed generated-image table configuration, runs
-  production preflight, and activates the timer through the guarded script. The
-  generated-image table id comes from the owner-provided Feishu URL's `table` query
-  parameter and must not be committed to git.
+  corrected same-SHA follow-up deploy for runner/bootstrap continuity succeeded and
+  installed the three Huabaosi production image units. The worker timer remains disabled
+  until the owner supplies reviewed provider and Feishu-backed generated-image table
+  configuration, runs production preflight, and activates the timer through the guarded
+  script. The generated-image table id comes from the owner-provided Feishu URL's
+  `table` query parameter and must not be committed to git.
 - Xiaoman production completion is gated separately from infrastructure releases. A
   Release may ship staging/provisioning or activation tooling without being a usable
   Xiaoman completion. Use the
@@ -88,29 +88,30 @@ unless correcting historical evidence.
      production worker remains inactive until the owner manually publishes the Release,
      the release binary passes production preflight, and the dedicated timer is
      explicitly activated for canary generation. Image review and publication remain
-     separate gates. As of 2026-07-15, the same-SHA follow-up deploy and systemd
-     installation evidence are complete. Final activation still requires reviewed
-     provider/media configuration, a successful production preflight, Huabaosi timer
-     activation, and the first real pending `generated_image` review evidence. The
-     production artifact can also compile the guarded Feishu mirror adapter so the
-     reviewed generated-image workbench row can be activated in the same release
-     boundary; approval and publishing still stay separate. A first real canary on
-     2026-07-19 proved brief approval, starter intake, production claims, bounded
-     retries, and rollback, but all three provider calls reached the fixed 60-second
-     socket timeout before an image response. The timer is disabled and no artifact was
-     created. Production completion now requires the reviewed image-specific timeout
-     remediation, a new Release deployment, and a newly approved canary that reaches one
-     pending Feishu-backed JPEG. Release `v0.2.16` deployed the timeout remediation, but
-     production acceptance found that the first assembly retained the previous runner's
-     owner and metadata modes. A same-SHA follow-up reported success without replacing
-     the existing immutable tree and also collapsed `previous` onto `current`. Keep the
-     generation timer disabled until a distinct Release includes existing-tree
-     validation, is assembled by the corrected runner, and passes release-local
-     observation. The final Release also includes a release-local one-shot runner so the
-     next production attempt can approve one pending brief as `trainer`, create one new
-     request, generate one pending Feishu-backed JPEG, and authenticate the same bytes
-     without first enabling the long-running timer. Generated-image approval, mirror
-     scheduling, publishing, QiWe, and sending remain separate gates.
+     separate gates. As of 2026-07-15, the same-SHA follow-up deploy for
+     runner/bootstrap continuity and systemd installation evidence are complete. Final
+     activation still requires reviewed provider/media configuration, a successful
+     production preflight, Huabaosi timer activation, and the first real pending
+     `generated_image` review evidence. The production artifact can also compile the
+     guarded Feishu mirror adapter so the reviewed generated-image workbench row can be
+     activated in the same release boundary; approval and publishing still stay
+     separate. A first real canary on 2026-07-19 proved brief approval, starter intake,
+     production claims, bounded retries, and rollback, but all three provider calls
+     reached the fixed 60-second socket timeout before an image response. The timer is
+     disabled and no artifact was created. Production completion now requires the
+     reviewed image-specific timeout remediation, a new Release deployment, and a newly
+     approved canary that reaches one pending Feishu-backed JPEG. Release `v0.2.16`
+     deployed the timeout remediation, but production acceptance found that the first
+     assembly retained the previous runner's owner and metadata modes. A same-SHA
+     follow-up reported success without replacing the existing immutable tree and also
+     collapsed `previous` onto `current`. Keep the generation timer disabled until a
+     distinct Release includes existing-tree validation, is assembled by the corrected
+     runner, and passes release-local observation. The final Release also includes a
+     release-local one-shot runner so the next production attempt can approve one
+     pending brief as `trainer`, create one new request, generate one pending
+     Feishu-backed JPEG, and authenticate the same bytes without first enabling the
+     long-running timer. Generated-image approval, mirror scheduling, publishing, QiWe,
+     and sending remain separate gates.
    - The final Xiaoman image-send boundary is tracked in
      [Xiaoman QiWe image send](xiaoman-qiwe-image-send.md). The reviewed contract uses
      QiWe async URL upload plus a correlated Webhook before `/msg/sendImage`. The
@@ -139,6 +140,14 @@ unless correcting historical evidence.
      lacks the fixed staging env file and immutable staging release root, so real
      staging must first provision those owner-reviewed inputs instead of treating local
      fake smokes as runtime evidence.
+   - As of Friday, July 24, 2026, the repository-local implementation for the reviewed
+     Xiaoman production evidence chain has been re-verified: deploy contracts, deploy
+     runner checks, Huabaosi production canary evidence checks, QiWe production
+     observation/activation checks, real-activity evidence checks, and completion
+     manifest/evidence checks pass locally. See
+     [2026-07-24 Xiaoman production evidence chain local verification](../../reports/2026-07-24-xiaoman-production-evidence-chain-local-verification.md).
+     This means the remaining work is primarily owner-operated external evidence
+     capture, not a large remaining repository implementation gap.
    - The guarded [QiWe image-send adapter worker](qiwe-image-send-adapter-worker.md)
      merged in `#119` with shared bounded Rust HTTP, one upload worker, one bounded
      callback command, fake-server coverage, and disposable PostgreSQL integration
@@ -155,7 +164,13 @@ unless correcting historical evidence.
      approval, and QiWe group-send arrival. A Release remains infrastructure-only or
      activation-ready until the [completion gate](xiaoman-production-completion-gate.md)
      records the required staging, production enablement, activation, and real activity
-     evidence.
+     evidence. Follow the reviewed production evidence sequence in
+     [Xiaoman production evidence runbook](../../operations/xiaoman-production-evidence-runbook.md):
+     retain the Huabaosi first-record canary, deploy the reviewed `qiwe-production`
+     artifact if needed, export real Xiaoman/QiWe production evidence, retain group
+     arrival confirmation, then build the final completion manifest. The reviewed
+     one-shot helper `tools/deploy/finalize-xiaoman-production-completion-evidence.mjs`
+     may be used for that last retained-evidence step after all sanitized files exist.
 
 3. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,

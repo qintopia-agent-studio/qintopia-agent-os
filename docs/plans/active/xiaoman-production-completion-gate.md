@@ -1,6 +1,6 @@
 # Xiaoman Production Completion Gate
 
-Updated: 2026-07-20
+Updated: 2026-07-24
 
 ## Goal
 
@@ -22,6 +22,15 @@ evidence binding, and final completion-evidence binding are merged in `#226` thr
 `#233`. They are still code readiness only until a manual Release Please decision,
 immutable production deployment, owner activation, and owner-retained real-activity
 evidence prove the full workflow.
+
+As of Friday, July 24, 2026, the repository-local implementation for this reviewed
+production evidence chain has been re-verified. See
+[2026-07-24 Xiaoman production evidence chain local verification](../../reports/2026-07-24-xiaoman-production-evidence-chain-local-verification.md).
+That local verification does not satisfy the completion gates below. It confirms that
+the remaining work is primarily owner-operated external evidence capture through the
+reviewed
+[Xiaoman production evidence runbook](../../operations/xiaoman-production-evidence-runbook.md),
+not a large remaining repository implementation gap.
 
 ## Release Classification
 
@@ -63,7 +72,9 @@ All gates are required before a Release is called Xiaoman production complete:
    human approval, send-ready, QiWe group-send arrival, and sanitized production
    evidence retention. The QiWe group arrival must also have a separate sanitized human
    confirmation record bound to the same send-ready work item, generated-image artifact,
-   and `artifact_content_hash`.
+   and `artifact_content_hash`. The retained evidence must also prove the Huabaosi
+   first-record canary ran on `runtime_artifact_profile=huabaosi-production` and the
+   real QiWe delivery evidence ran on `runtime_artifact_profile=qiwe-production`.
 9. The final production completion checker passes against the owner-retained evidence
    bundle:
 
@@ -74,7 +85,7 @@ All gates are required before a Release is called Xiaoman production complete:
      --huabaosi-staging <huabaosi-staging-output.txt> \
      --qiwe-staging <qiwe-staging-output.txt> \
      --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
-     --production-real-activity <production-real-activity-output.txt> \
+     --production-real-activity <production-evidence-output.txt> \
      --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>
    ```
 
@@ -119,7 +130,7 @@ These are useful but not completion:
    evidence with the release-local exporter:
 
    ```bash
-   QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-production-sidecar-sha256> \
+   QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-qiwe-production-sidecar-sha256> \
    QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256=<approved-production-database-url-sha256> \
    qintopia-message-sidecar xiaoman-real-activity-production-evidence \
      --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
@@ -144,6 +155,26 @@ These are useful but not completion:
      --qiwe-production-enablement-pr-number <qiwe-production-enablement-pr-number> \
      --qiwe-production-enablement-head-sha <qiwe-production-enablement-head-sha> \
      --huabaosi-production-canary <production-canary-output.txt> \
+     --production-real-activity <production-evidence-output.txt> \
+     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+     --output <completed-xiaoman-production-completion-evidence.json>
+   ```
+
+   After those retained evidence files exist, operators may use the reviewed one-shot
+   helper instead of typing the builder and checker separately:
+
+   ```bash
+   pnpm deploy:xiaoman-production-evidence:finalize -- \
+     --release-please-pr-number <release-please-pr-number> \
+     --release-please-head-sha <release-please-head-sha> \
+     --release-tag <published-release-tag> \
+     --released-commit-sha <published-release-commit-sha> \
+     --qiwe-production-enablement-pr-number <qiwe-production-enablement-pr-number> \
+     --qiwe-production-enablement-head-sha <qiwe-production-enablement-head-sha> \
+     --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
+     --huabaosi-staging <huabaosi-staging-output.txt> \
+     --qiwe-staging <qiwe-staging-output.txt> \
+     --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
      --production-real-activity <production-evidence-output.txt> \
      --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
      --output <completed-xiaoman-production-completion-evidence.json>

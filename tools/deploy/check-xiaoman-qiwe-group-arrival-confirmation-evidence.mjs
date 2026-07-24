@@ -9,7 +9,7 @@ const repoRoot = process.cwd();
 const args = process.argv.slice(2);
 if (args.length !== 2) {
   fail(
-    "usage: node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <group-arrival-confirmation-output.txt>"
+    "usage: node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>"
   );
 }
 

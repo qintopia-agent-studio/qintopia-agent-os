@@ -82,6 +82,18 @@ From the monorepo root, prefer:
   the explicit owner activation scripts may enable external timers. Feishu primary
   storage for the first canary is part of the Huabaosi production adapter path and still
   creates only pending AgentOS artifacts.
+- The dedicated QiWe production sidecar artifact is separate and compile-reviewed. Its
+  manifest profile is `qiwe-production`, its artifact name is
+  `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and it must compile
+  exactly `qiwe-production-adapter`. Production deploy requests must record
+  `runtime_artifact_profile`, and QiWe enabled-state observations must accept only this
+  reviewed artifact profile, never a mixed Huabaosi/QiWe binary.
+- `xiaoman-real-activity-production-evidence` must read the adjacent
+  `artifact-manifest.json`, require `commit_sha` to match
+  `QINTOPIA_DEPLOYED_COMMIT_SHA`, require `validation.artifact_profile=qiwe-production`,
+  and require exactly `validation.cargo_features=["qiwe-production-adapter"]` before
+  exporting sanitized evidence. Final completion evidence must also keep the Huabaosi
+  canary profile as `huabaosi-production`.
 - A canary review apply must provide expected artifact type and review status
   preconditions. The sidecar must enforce them again under the artifact row lock before
   changing review state, and before authenticated Feishu revalidation, so a mistaken

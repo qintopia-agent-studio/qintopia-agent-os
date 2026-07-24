@@ -252,13 +252,41 @@ else
 fi
 
 if [[ "$runner_status" -ne 0 && ! -f "$result_file" ]]; then
-  python3 - "$result_file" "$request_id" "$fallback_error" <<'PY'
+  python3 - "$result_file" "$request_file" "$request_id" "$fallback_error" <<'PY'
 import json
+import re
 import sys
 from datetime import datetime, timezone
 
-path, request_id, error = sys.argv[1:4]
+path, request_file, request_id, error = sys.argv[1:5]
 now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+sha_pattern = re.compile(r"^[0-9a-f]{40}$")
+approved_profiles = {"huabaosi-production", "qiwe-production"}
+
+try:
+    with open(request_file, encoding="utf-8") as fh:
+        request = json.load(fh)
+except Exception:
+    request = {}
+
+
+def normalized_sha(value):
+    value = str(value or "")
+    return value if sha_pattern.fullmatch(value) else "0" * 40
+
+
+runtime_artifact_profile = str(request.get("runtime_artifact_profile") or "")
+if runtime_artifact_profile not in approved_profiles:
+    runtime_artifact_profile = "huabaosi-production"
+
+release_scope = request.get("release_scope")
+if not isinstance(release_scope, list) or not release_scope:
+    release_scope = ["sidecar-runtime"]
+
+restart_targets = request.get("restart_targets")
+if not isinstance(restart_targets, list) or not restart_targets:
+    restart_targets = ["qintopia-system-services"]
+
 result = {
     "schema_version": 1,
     "request_id": request_id,
@@ -266,10 +294,15 @@ result = {
     "status": "failed",
     "started_at": now,
     "finished_at": now,
-    "release_sha": "0000000000000000000000000000000000000000",
+    "release_sha": normalized_sha(request.get("release_sha")),
+    "commit_sha": normalized_sha(request.get("commit_sha")),
+    "runtime_sha": normalized_sha(request.get("runtime_sha")),
+    "runtime_artifact_profile": runtime_artifact_profile,
+    "deploy_bundle_sha": normalized_sha(request.get("deploy_bundle_sha")),
+    "release_scope": release_scope,
     "previous_sha": "",
     "current_target": "",
-    "restart_targets": [],
+    "restart_targets": restart_targets,
     "checks": [{"name": "deploy-request-validation", "status": "failed"}],
     "rollback": {"attempted": False, "status": "not_needed"},
     "error": error,

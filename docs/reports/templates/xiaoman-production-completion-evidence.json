@@ -22,7 +22,8 @@
   },
   "huabaosi_production_activation": {
     "release_sha": "<production-release-sha>",
-    "sidecar_binary_sha256": "<approved-production-sidecar-sha256>",
+    "runtime_artifact_profile": "huabaosi-production",
+    "sidecar_binary_sha256": "<approved-huabaosi-production-sidecar-sha256>",
     "database_url_sha256": "<approved-production-database-url-sha256>",
     "image_generation_observation_passed": true,
     "image_generation_activation_approved": true,
@@ -31,6 +32,10 @@
     "first_record_evidence_retained": true
   },
   "real_activity_confirmation": {
+    "release_sha": "<production-release-sha>",
+    "runtime_artifact_profile": "qiwe-production",
+    "sidecar_binary_sha256": "<approved-qiwe-production-sidecar-sha256>",
+    "database_url_sha256": "<approved-production-database-url-sha256>",
     "qiwe_group_arrival_confirmed": true,
     "confirmed_by": "<safe-human-operator-id>",
     "confirmed_at": "YYYY-MM-DDTHH:MM:SSZ"

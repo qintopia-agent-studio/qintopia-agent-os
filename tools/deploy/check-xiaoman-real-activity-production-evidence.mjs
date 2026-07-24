@@ -84,6 +84,7 @@ const commonKeys = [
   "worker",
   "action_status",
   "production_release_sha",
+  "runtime_artifact_profile",
   "sidecar_binary_sha256",
   "database_url_sha256",
   "release_binary_verified",
@@ -212,6 +213,7 @@ for (const record of records) {
     record.success !== true ||
     record.safe_for_chat !== false ||
     !isGitSha(record.production_release_sha) ||
+    record.runtime_artifact_profile !== "qiwe-production" ||
     !isSha256(record.sidecar_binary_sha256) ||
     !isSha256(record.database_url_sha256) ||
     record.release_binary_verified !== true ||
@@ -223,6 +225,7 @@ for (const record of records) {
 }
 
 assertSame(records, "production_release_sha", "production release SHA");
+assertSame(records, "runtime_artifact_profile", "runtime artifact profile");
 assertSame(records, "sidecar_binary_sha256", "sidecar binary SHA-256");
 assertSame(records, "database_url_sha256", "database URL SHA-256");
 

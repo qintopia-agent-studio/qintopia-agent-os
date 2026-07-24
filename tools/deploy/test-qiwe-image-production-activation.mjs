@@ -18,6 +18,7 @@ const rollbackScript = path.join(
   "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh"
 );
 const fixedEnvFile = "/etc/qintopia/message-sidecar.env";
+const fixedReleaseCurrentDir = "/home/ubuntu/qintopia-agent-os-releases/current";
 const fixedSystemctl = "/usr/bin/systemctl";
 const fixedSha256sum = "/usr/bin/sha256sum";
 
@@ -29,8 +30,20 @@ try {
   const envFile = path.join(tmpRoot, "message-sidecar.env");
   const systemctl = path.join(tmpRoot, "systemctl");
   const sha256sum = path.join(tmpRoot, "sha256sum");
+  const observationFailureMarker = path.join(tmpRoot, "force-observation-failure");
+  const releaseSha = "0123456789abcdef0123456789abcdef01234567";
+  const releaseRoot = path.join(tmpRoot, "releases");
+  const releaseDir = path.join(releaseRoot, releaseSha);
+  const currentRelease = path.join(releaseRoot, "current");
+  const sidecarDir = path.join(releaseDir, "sidecar");
+  const sidecarBin = path.join(sidecarDir, "qintopia-message-sidecar");
+  const manifestPath = path.join(sidecarDir, "artifact-manifest.json");
   const activationFixture = path.join(tmpRoot, "activate-production-fixture.sh");
   const rollbackFixture = path.join(tmpRoot, "rollback-production-fixture.sh");
+  const observationFixture = path.join(
+    tmpRoot,
+    "qiwe-image-send-production-observation-smoke.sh"
+  );
 
   for (const sourcePath of [activationScript, rollbackScript]) {
     const source = fs.readFileSync(sourcePath, "utf8");
@@ -61,16 +74,25 @@ try {
   ) {
     throw new Error("activation must use the fixed sha256sum path");
   }
+  if (
+    !fs
+      .readFileSync(activationScript, "utf8")
+      .includes("QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1")
+  ) {
+    throw new Error("activation must run release-local QiWe production observation");
+  }
 
   fs.writeFileSync(
     activationFixture,
     fs
       .readFileSync(activationScript, "utf8")
       .replaceAll(fixedEnvFile, envFile)
+      .replaceAll(fixedReleaseCurrentDir, currentRelease)
       .replaceAll(fixedSystemctl, systemctl)
       .replaceAll(fixedSha256sum, sha256sum),
     "utf8"
   );
+  fs.chmodSync(activationFixture, 0o755);
   fs.writeFileSync(
     rollbackFixture,
     fs
@@ -79,6 +101,7 @@ try {
       .replaceAll(fixedSystemctl, systemctl),
     "utf8"
   );
+  fs.chmodSync(rollbackFixture, 0o755);
   fs.writeFileSync(
     systemctl,
     `#!/usr/bin/env bash
@@ -91,6 +114,51 @@ fi
     "utf8"
   );
   fs.chmodSync(systemctl, 0o755);
+  fs.writeFileSync(
+    observationFixture,
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
+  echo "ambient secret reached observation" >&2
+  exit 23
+fi
+if [[ -f "${observationFailureMarker}" ]]; then
+  echo "forced observation failure" >&2
+  exit 26
+fi
+if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE:-}" != "1" ]]; then
+  echo "missing observation enable flag" >&2
+  exit 24
+fi
+if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE:-}" != "enabled" ]]; then
+  echo "unexpected observation state" >&2
+  exit 25
+fi
+printf '%s\\n' "observation enabled" >>"${logPath}"
+`,
+    "utf8"
+  );
+  fs.chmodSync(observationFixture, 0o755);
+  fs.mkdirSync(sidecarDir, { recursive: true });
+  fs.writeFileSync(sidecarBin, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  fs.chmodSync(sidecarBin, 0o755);
+  fs.symlinkSync(releaseDir, currentRelease);
+  const writeManifest = (artifactProfile, cargoFeatures) =>
+    fs.writeFileSync(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          commit_sha: releaseSha,
+          validation: {
+            artifact_profile: artifactProfile,
+            cargo_features: cargoFeatures,
+          },
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
   fs.writeFileSync(
     sha256sum,
     `#!/usr/bin/env bash
@@ -122,11 +190,16 @@ printf '%s  -\\n' "${databaseHash}"
       cwd: repoRoot,
       env: {
         ...process.env,
+        QINTOPIA_UNRELATED_RUNTIME_SECRET: "must-not-reach-observation",
         ...extraEnv,
       },
       encoding: "utf8",
     });
 
+  writeManifest("huabaosi-production", [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ]);
   writeEnv("1");
   for (const script of [activationFixture, rollbackFixture]) {
     fs.writeFileSync(logPath, "", "utf8");
@@ -136,6 +209,23 @@ printf '%s  -\\n' "${databaseHash}"
         `${path.basename(script)} must fail before systemctl without approval`
       );
     }
+  }
+
+  fs.writeFileSync(logPath, "", "utf8");
+  const wrongArtifact = run(activationFixture, {
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
+      "approved-production-qiwe-image-send",
+  });
+  if (
+    wrongArtifact.status === 0 ||
+    fs.readFileSync(logPath, "utf8") !== "" ||
+    !wrongArtifact.stderr.includes(
+      "requires a separate reviewed QiWe production artifact"
+    )
+  ) {
+    throw new Error(
+      "activation must fail before preflight when release/current is not the reviewed QiWe production artifact"
+    );
   }
 
   writeEnv("0");
@@ -234,6 +324,7 @@ printf '%s  -\\n' "${databaseHash}"
     );
   }
 
+  writeManifest("qiwe-production", ["qiwe-production-adapter"]);
   writeEnv("1");
   fs.writeFileSync(logPath, "", "utf8");
   const preflightRejected = run(activationFixture, {
@@ -257,6 +348,30 @@ printf '%s  -\\n' "${databaseHash}"
   }
 
   fs.writeFileSync(logPath, "", "utf8");
+  fs.writeFileSync(observationFailureMarker, "1\n", "utf8");
+  const observationRejected = run(activationFixture, {
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
+      "approved-production-qiwe-image-send",
+  });
+  fs.rmSync(observationFailureMarker, { force: true });
+  const rejectedObservationLog = fs.readFileSync(logPath, "utf8");
+  if (observationRejected.status === 0) {
+    throw new Error("activation must fail when production observation fails");
+  }
+  for (const command of [
+    "enable --now qintopia-agentos-qiwe-image-send-worker.timer",
+    "disable --now qintopia-agentos-qiwe-image-send-worker.timer",
+    "stop qintopia-agentos-qiwe-image-send-worker.service",
+    "reset-failed qintopia-agentos-qiwe-image-send-worker.service",
+  ]) {
+    if (!rejectedObservationLog.includes(command)) {
+      throw new Error(
+        `activation must clean up enabled worker state after observation failure: ${command}`
+      );
+    }
+  }
+
+  fs.writeFileSync(logPath, "", "utf8");
   const activated = run(activationFixture, {
     QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
       "approved-production-qiwe-image-send",
@@ -270,6 +385,7 @@ printf '%s  -\\n' "${databaseHash}"
     "enable --now qintopia-agentos-qiwe-image-send-worker.timer",
     "is-enabled --quiet qintopia-agentos-qiwe-image-send-worker.timer",
     "is-active --quiet qintopia-agentos-qiwe-image-send-worker.timer",
+    "observation enabled",
   ]) {
     if (!activationLog.includes(command)) {
       throw new Error(`activation is missing systemctl command: ${command}`);

@@ -29,8 +29,10 @@ const requiredScripts = [
   "deploy:systemd:check",
   "deploy:release-model:check",
   "artifact:sidecar",
+  "artifact:sidecar:qiwe-production",
   "artifact:deploy-bundle",
   "artifact:prune:sidecar",
+  "artifact:prune:sidecar:qiwe-production",
   "artifact:prune:deploy-bundle",
   "test:qiwe",
   "test:sidecar",
@@ -914,6 +916,8 @@ if (artifactDoc) {
     "deploy/sidecar/scripts/prune-cos-artifacts.sh",
     "GitHub Artifact Fallback",
     "fetch-ci-artifact.sh",
+    "qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu",
+    "runtime_artifact_profile=qiwe-production",
   ]) {
     if (!artifactDoc.includes(requiredFragment)) {
       addError(

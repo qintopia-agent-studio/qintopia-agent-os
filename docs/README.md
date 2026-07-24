@@ -40,8 +40,10 @@ and historical source documents that still have audit or design value.
     [operations/release-current-model.md](operations/release-current-model.md)
 19. QiWe image-send staging runbook:
     [operations/qiwe-image-send-staging-runbook.md](operations/qiwe-image-send-staging-runbook.md)
-20. Reports index: [reports/README.md](reports/README.md)
-21. Completed migration archive:
+20. Xiaoman production evidence runbook:
+    [operations/xiaoman-production-evidence-runbook.md](operations/xiaoman-production-evidence-runbook.md)
+21. Reports index: [reports/README.md](reports/README.md)
+22. Completed migration archive:
     [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
 
 ## Package Entry Points

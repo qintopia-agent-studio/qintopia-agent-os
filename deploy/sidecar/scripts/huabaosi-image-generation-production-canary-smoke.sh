@@ -228,6 +228,45 @@ PY
 
 verify_release_boundary
 
+load_release_artifact_profile() {
+  python3 - "$(dirname "$SIDECAR_BIN")/artifact-manifest.json" "$EXPECTED_RELEASE_SHA" <<'PY'
+import json
+import os
+import stat
+import sys
+
+manifest_path, expected_release_sha = sys.argv[1:3]
+try:
+    metadata = os.lstat(manifest_path)
+except FileNotFoundError:
+    raise SystemExit("missing")
+if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+    raise SystemExit("type")
+if metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    raise SystemExit("mode")
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if manifest.get("commit_sha") != expected_release_sha:
+    raise SystemExit("commit")
+validation = manifest.get("validation", {})
+artifact_profile = validation.get("artifact_profile")
+cargo_features = validation.get("cargo_features")
+if artifact_profile != "huabaosi-production":
+    raise SystemExit("profile")
+if cargo_features != [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+]:
+    raise SystemExit("features")
+print(artifact_profile)
+PY
+}
+
+ARTIFACT_PROFILE="$(load_release_artifact_profile)" || {
+  echo "Huabaosi production canary requires the immutable Huabaosi production artifact manifest" >&2
+  exit 1
+}
+
 PRODUCTION_ENV_KEYS=(
   QINTOPIA_SIDECAR_DATABASE_URL
   QINTOPIA_OPERATIONS_ALLOWED_REVIEWER_IDS
@@ -403,14 +442,15 @@ run_sanitized() {
 emit_evidence() {
   local phase="$1"
   shift
-  python3 - "$phase" "$EXPECTED_RELEASE_SHA" "$EXPECTED_SIDECAR_HASH" "$EXPECTED_DATABASE_HASH" "$@" <<'PY'
+  python3 - "$phase" "$EXPECTED_RELEASE_SHA" "$EXPECTED_SIDECAR_HASH" "$EXPECTED_DATABASE_HASH" "$ARTIFACT_PROFILE" "$@" <<'PY'
 import json
 import sys
 
-phase, release_sha, binary_hash, database_hash, *values = sys.argv[1:]
+phase, release_sha, binary_hash, database_hash, artifact_profile, *values = sys.argv[1:]
 evidence = {
     "approved_database_url_sha256_matched": True,
     "approved_sidecar_sha256_matched": True,
+    "artifact_profile": artifact_profile,
     "database_url_sha256": database_hash,
     "phase": phase,
     "release_binary_verified": True,
@@ -419,7 +459,11 @@ evidence = {
     "success": True,
 }
 if phase == "preflight":
-    evidence.update({"action_status": values[0], "timer_active": False})
+    evidence.update({
+        "action_status": values[0],
+        "timer_active": False,
+        "timer_enabled": False,
+    })
 elif phase == "brief_review":
     evidence.update({
         "action_status": values[0],
@@ -458,6 +502,7 @@ elif phase == "revalidation":
         "database_writes_executed": False,
         "external_calls_executed": True,
         "height": int(values[5]),
+        "sensitive_fields_redacted": True,
         "width": int(values[4]),
     })
 else:

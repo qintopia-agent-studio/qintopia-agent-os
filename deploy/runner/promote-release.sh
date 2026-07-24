@@ -126,6 +126,7 @@ PY
 
 release_sha="$(json_get release_sha)"
 runtime_sha="$(json_get runtime_sha)"
+runtime_artifact_profile="$(json_get runtime_artifact_profile)"
 deploy_bundle_sha="$(json_get deploy_bundle_sha)"
 request_id="$(json_get request_id)"
 release_dir="${release_root}/${release_sha}"
@@ -275,6 +276,7 @@ install -d -m 0755 \
   "$staging_dir/sidecar" \
   "$staging_dir/deploy-bundle"
 
+QINTOPIA_SIDECAR_ARTIFACT_PROFILE="$runtime_artifact_profile" \
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --artifact-type sidecar \
   --sha "$runtime_sha" \
@@ -300,6 +302,7 @@ manifest = {
     "schema_version": 2,
     "release_sha": request["release_sha"],
     "runtime_sha": request["runtime_sha"],
+    "runtime_artifact_profile": request["runtime_artifact_profile"],
     "deploy_bundle_sha": request["deploy_bundle_sha"],
     "commit_sha": request["commit_sha"],
     "previous_sha": previous.rsplit("/", 1)[-1] if previous else "",
@@ -339,6 +342,7 @@ with open(requested_path, encoding="utf-8") as fh:
 keys = (
     "release_sha",
     "runtime_sha",
+    "runtime_artifact_profile",
     "deploy_bundle_sha",
     "commit_sha",
     "release_scope",

@@ -24,6 +24,9 @@ if (!fs.existsSync(path.join(repoRoot, readmePath))) {
     "risk-tiered",
     "secrets",
     "commit message",
+    "check:pr:quick",
+    "check:pr:heavy",
+    "check:pr:auto",
   ]) {
     if (!readme.includes(fragment)) {
       errors.push(`${readmePath}: must mention ${fragment}`);
@@ -33,6 +36,10 @@ if (!fs.existsSync(path.join(repoRoot, readmePath))) {
 
 const packageJson = JSON.parse(readText(packagePath));
 for (const scriptName of [
+  "check:pr:quick",
+  "check:pr:heavy",
+  "check:pr:postgres",
+  "check:pr:auto",
   "check:light",
   "registry:check",
   "secrets:check",
@@ -53,6 +60,7 @@ for (const requiredPath of [
   "commitlint.config.mjs",
   ".husky/commit-msg",
   "tools/ci/check-commit-messages.mjs",
+  "tools/ci/run-local-pr-checks.mjs",
   "tools/ci/check-pr-body.mjs",
   "tools/ci/check-release-please-pr.mjs",
   "tools/ci/xiaoman-production-claim-boundary.mjs",
