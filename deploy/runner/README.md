@@ -65,6 +65,15 @@ Publishing a non-prerelease GitHub Release is the production release entrypoint;
 workflow still uses the GitHub `production` environment approval gate before it can
 write the signed deploy request.
 
+For `workflow_dispatch`, the reviewed sidecar profile must already exist in COS before
+request upload. Ordinary manual deploys still use the Huabaosi production artifact, but
+the independent QiWe enablement chain must first publish
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` and then dispatch
+`Deploy Production` with `runtime_artifact_profile=qiwe-production`. The workflow now
+fetches both the resolved sidecar artifact and deploy bundle from COS before it writes a
+deploy request, so a missing or mismatched QiWe production artifact fails in GitHub
+Actions rather than only on the server runner.
+
 Rollback uses the separate `Rollback Production` workflow. It exposes a selectable
 published Release tag list for operators, resolves the chosen tag to a commit SHA, and
 then submits the same signed deploy request contract. GitHub Actions `choice` inputs are
@@ -87,6 +96,9 @@ Important fields:
 
 - `commit_sha`: reviewed `master` commit requested by the operator.
 - `runtime_sha`: sidecar runtime artifact SHA in COS.
+- `runtime_artifact_profile`: reviewed production sidecar artifact profile. Ordinary
+  release deploys use `huabaosi-production`; the independent QiWe enablement chain uses
+  `qiwe-production`.
 - `deploy_bundle_sha`: deploy bundle artifact SHA in COS.
 - `release_sha`: immutable release directory name. For normal releases this should match
   `deploy_bundle_sha` when only operator/plugin files changed, or the target commit SHA
@@ -215,15 +227,19 @@ The runner must not infer one SHA from another.
 ### Same-SHA Follow-up Requests
 
 A follow-up deployment for an existing immutable `release_sha` must reuse the existing
-manifest's exact `runtime_sha`, `deploy_bundle_sha`, `commit_sha`, `release_scope`, and
-`restart_targets`. The runner intentionally rejects a request that narrows or broadens
-any of those fields, even when the requested release SHA is unchanged. This prevents a
-second request from silently changing the operational identity of an existing release.
+manifest's exact `runtime_sha`, `runtime_artifact_profile`, `deploy_bundle_sha`,
+`commit_sha`, `release_scope`, and `restart_targets`. The runner intentionally rejects a
+request that narrows or broadens any of those fields, even when the requested release
+SHA is unchanged. This prevents a second request from silently changing the operational
+identity of an existing release.
 
 Before dispatching a same-SHA follow-up, read only the sanitized manifest fields from
 the promoted release evidence or the prior successful deploy result. Do not guess the
 restart targets from the current diff or from a later runbook summary. A mismatch fails
-before promotion, does not switch `current`, and does not require rollback.
+before promotion, does not switch `current`, and does not require rollback. Successful
+deploy results retain the same reviewed `commit_sha`, `runtime_sha`,
+`runtime_artifact_profile`, `deploy_bundle_sha`, `release_scope`, and `restart_targets`
+identity so this comparison can be made without re-reading mutable operator notes.
 
 The existing-release path also repairs metadata left by a previous runner only after the
 exact manifest identity matches, the complete release tree matches freshly fetched and

@@ -68,6 +68,27 @@ const runResolver = ({ currentTag, releases, results }) => {
   );
 };
 
+const trustedResult = ({
+  status = "succeeded",
+  releaseSha,
+  previousSha = "",
+  restartTargets,
+  workflowRunId,
+  startedAt,
+  profile = "huabaosi-production",
+}) => ({
+  status,
+  release_sha: releaseSha,
+  commit_sha: releaseSha,
+  runtime_sha: releaseSha,
+  runtime_artifact_profile: profile,
+  deploy_bundle_sha: releaseSha,
+  release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
+  previous_sha: previousSha,
+  workflow_run: { id: workflowRunId, run_started_at: startedAt },
+  restart_targets: restartTargets,
+});
+
 try {
   run("git", ["init", "-b", "master"]);
   run("git", ["config", "user.email", "codex@example.invalid"]);
@@ -95,19 +116,20 @@ try {
     currentTag: "v0.2.2",
     releases,
     results: [
-      {
+      trustedResult({
         status: "dry_run_succeeded",
-        release_sha: v021Sha,
-        workflow_run: { id: "101", run_started_at: "2026-07-08T05:00:00Z" },
-        restart_targets: ["hermes-erhua", "qintopia-system-services"],
-      },
-      {
-        status: "succeeded",
-        release_sha: v022Sha,
-        previous_sha: v020Sha,
-        workflow_run: { id: "102", run_started_at: "2026-07-08T06:00:00Z" },
-        restart_targets: ["qintopia-system-services"],
-      },
+        releaseSha: v021Sha,
+        workflowRunId: "101",
+        startedAt: "2026-07-08T05:00:00Z",
+        restartTargets: ["hermes-erhua", "qintopia-system-services"],
+      }),
+      trustedResult({
+        releaseSha: v022Sha,
+        previousSha: v020Sha,
+        workflowRunId: "102",
+        startedAt: "2026-07-08T06:00:00Z",
+        restartTargets: ["qintopia-system-services"],
+      }),
     ],
   });
   if (result.status !== 0) {
@@ -125,20 +147,20 @@ try {
     currentTag: "v0.2.2",
     releases,
     results: [
-      {
-        status: "succeeded",
-        release_sha: v021Sha,
-        previous_sha: v020Sha,
-        workflow_run: { id: "101", run_started_at: "2026-07-08T05:00:00Z" },
-        restart_targets: ["hermes-erhua", "qintopia-system-services"],
-      },
-      {
-        status: "succeeded",
-        release_sha: v022Sha,
-        previous_sha: v021Sha,
-        workflow_run: { id: "102", run_started_at: "2026-07-08T06:00:00Z" },
-        restart_targets: ["qintopia-system-services"],
-      },
+      trustedResult({
+        releaseSha: v021Sha,
+        previousSha: v020Sha,
+        workflowRunId: "101",
+        startedAt: "2026-07-08T05:00:00Z",
+        restartTargets: ["hermes-erhua", "qintopia-system-services"],
+      }),
+      trustedResult({
+        releaseSha: v022Sha,
+        previousSha: v021Sha,
+        workflowRunId: "102",
+        startedAt: "2026-07-08T06:00:00Z",
+        restartTargets: ["qintopia-system-services"],
+      }),
     ],
   });
   if (noRestart.status !== 0) {
@@ -154,20 +176,20 @@ try {
     currentTag: "v0.2.2",
     releases,
     results: [
-      {
-        status: "succeeded",
-        release_sha: v022Sha,
-        previous_sha: v021Sha,
-        workflow_run: { id: "102", run_started_at: "2026-07-08T06:00:00Z" },
-        restart_targets: ["qintopia-system-services"],
-      },
-      {
-        status: "succeeded",
-        release_sha: v021Sha,
-        previous_sha: v020Sha,
-        workflow_run: { id: "101", run_started_at: "2026-07-08T05:00:00Z" },
-        restart_targets: ["hermes-erhua", "qintopia-system-services"],
-      },
+      trustedResult({
+        releaseSha: v022Sha,
+        previousSha: v021Sha,
+        workflowRunId: "102",
+        startedAt: "2026-07-08T06:00:00Z",
+        restartTargets: ["qintopia-system-services"],
+      }),
+      trustedResult({
+        releaseSha: v021Sha,
+        previousSha: v020Sha,
+        workflowRunId: "101",
+        startedAt: "2026-07-08T05:00:00Z",
+        restartTargets: ["hermes-erhua", "qintopia-system-services"],
+      }),
     ],
   });
   if (newestFirst.status !== 0) {
@@ -183,6 +205,31 @@ try {
 
   if (!v020Sha || !v022Sha) {
     throw new Error("fixture commits were not created");
+  }
+
+  const malformedIdentity = runResolver({
+    currentTag: "v0.2.2",
+    releases,
+    results: [
+      { status: "succeeded", release_sha: v021Sha, restart_targets: ["hermes-erhua"] },
+      trustedResult({
+        releaseSha: v022Sha,
+        previousSha: v020Sha,
+        workflowRunId: "102",
+        startedAt: "2026-07-08T06:00:00Z",
+        restartTargets: ["qintopia-system-services"],
+      }),
+    ],
+  });
+  if (malformedIdentity.status !== 0) {
+    throw new Error(
+      `expected malformed prior result to be ignored\nstdout:\n${malformedIdentity.stdout}\nstderr:\n${malformedIdentity.stderr}`
+    );
+  }
+  if (malformedIdentity.stdout.trim() !== "hermes-erhua") {
+    throw new Error(
+      `expected malformed prior result to be ignored for restart base, got ${malformedIdentity.stdout.trim()}`
+    );
   }
 } finally {
   fs.rmSync(fixtureRepo, { recursive: true, force: true });

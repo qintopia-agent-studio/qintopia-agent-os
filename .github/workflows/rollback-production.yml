@@ -162,6 +162,7 @@ jobs:
 
           restart_targets="$(normalize_restart_targets "$INPUT_RESTART_TARGETS")"
           dry_run="$(normalize_boolean "dry_run" "$INPUT_DRY_RUN")"
+          runtime_artifact_profile="huabaosi-production"
           notes="Rollback Production to ${INPUT_RELEASE_TAG} (${release_url}). ${INPUT_NOTES}"
 
           notes_delimiter="rollback_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
@@ -170,6 +171,7 @@ jobs:
             echo "target-sha=${target_sha}"
             echo "restart-targets=${restart_targets}"
             echo "dry-run=${dry_run}"
+            echo "runtime-artifact-profile=huabaosi-production"
             echo "notes<<${notes_delimiter}"
             echo "$notes"
             echo "${notes_delimiter}"
@@ -216,6 +218,8 @@ jobs:
             --output-dir "${temp_dir}/deploy-bundle"
         env:
           ROLLBACK_TARGET_SHA: ${{ steps.resolve.outputs.target-sha }}
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE:
+            ${{ steps.resolve.outputs.runtime-artifact-profile }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
@@ -229,6 +233,8 @@ jobs:
         env:
           DEPLOY_COMMIT_SHA: ${{ steps.resolve.outputs.target-sha }}
           DEPLOY_RUNTIME_SHA: ${{ steps.resolve.outputs.target-sha }}
+          DEPLOY_RUNTIME_ARTIFACT_PROFILE:
+            ${{ steps.resolve.outputs.runtime-artifact-profile }}
           DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.target-sha }}
           DEPLOY_RELEASE_SHA: ${{ steps.resolve.outputs.target-sha }}
           DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins

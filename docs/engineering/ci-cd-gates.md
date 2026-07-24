@@ -83,6 +83,22 @@ integration uses only a disposable `qintopia_test` service and runs the guarded
 control-plane apply smoke with no production database URL, secrets, Feishu, QiWe, or
 external adapters.
 
+## Local Pre-PR Mirror
+
+Use the local PR tiers before opening a PR when you want to catch CI failures earlier:
+
+- `pnpm check:pr:quick` mirrors the ordinary `check:light` gate for everyday changes.
+- `pnpm check:pr:auto` always runs the quick tier, then escalates to the heavy Rust tier
+  when the branch diff touches sidecar, Postgres, deploy script, or CI workflow paths.
+- `pnpm check:pr:heavy` runs the full local quick + heavy Rust + disposable PostgreSQL
+  mirror and expects local `qintopia_test` on `127.0.0.1:5432`.
+- `pnpm check:pr:postgres` reruns only the disposable PostgreSQL tier after the local
+  database is ready.
+
+This does not weaken release or production gates. Release Please validation, published
+Release decisions, and production deploy workflows still keep the full remote safety
+boundary.
+
 ### Release Please PR Validation
 
 GitHub does not recursively trigger PR workflows when a workflow using `GITHUB_TOKEN`
@@ -153,13 +169,31 @@ Artifact publication is opt-in and lives in the `Artifacts` workflow. Use
 `workflow_dispatch` to choose:
 
 - `build_sidecar`
+- `build_qiwe_sidecar`
 - `build_deploy_bundle`
 - `upload_cos`
 
 As an explicit automation shortcut, a push to `master` whose head commit message
-contains `[publish-artifacts]` publishes both artifact families and uploads to COS.
-Normal docs, planning, and repository maintenance commits do not build or upload
-artifacts.
+contains `[publish-artifacts]` publishes only the ordinary Huabaosi production sidecar
+artifact plus the deploy bundle, then uploads them to COS. It does not auto-build the
+independent QiWe production artifact. Normal docs, planning, and repository maintenance
+commits do not build or upload artifacts.
+
+The artifact families are distinct:
+
+- `build_sidecar` builds the ordinary Huabaosi production artifact
+  `qintopia-message-sidecar-linux-x86_64-gnu`
+- `build_qiwe_sidecar` builds the independent QiWe production artifact
+  `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`
+- `build_deploy_bundle` builds `qintopia-agent-os-deploy-bundle`
+
+Production deploy routing is also distinct:
+
+- `release.published` remains the ordinary Huabaosi production deploy path and must use
+  `runtime_artifact_profile=huabaosi-production`
+- the independent QiWe production artifact is a separate reviewed follow-up and must be
+  deployed only through `Deploy Production` `workflow_dispatch` with
+  `runtime_artifact_profile=qiwe-production` after its COS upload exists
 
 Deployment must still use only an artifact from a successful workflow run for the
 approved commit SHA, and the paired CI `check` job must have passed for the same commit.

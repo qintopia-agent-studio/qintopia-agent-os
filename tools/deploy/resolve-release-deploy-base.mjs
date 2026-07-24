@@ -42,6 +42,38 @@ const workflowRuns = (runsJson) =>
 const deployResults = (resultsJson) =>
   Array.isArray(resultsJson) ? resultsJson : (resultsJson?.results ?? []);
 
+const approvedRuntimeArtifactProfiles = new Set([
+  "huabaosi-production",
+  "qiwe-production",
+]);
+
+const hasTrustedDeployIdentity = (result) => {
+  if (!result || typeof result !== "object") {
+    return false;
+  }
+  const requiredShas = [
+    result.release_sha,
+    result.commit_sha,
+    result.runtime_sha,
+    result.deploy_bundle_sha,
+  ];
+  if (requiredShas.some((value) => !/^[0-9a-f]{40}$/.test(String(value || "")))) {
+    return false;
+  }
+  if (
+    !approvedRuntimeArtifactProfiles.has(String(result.runtime_artifact_profile || ""))
+  ) {
+    return false;
+  }
+  if (!Array.isArray(result.release_scope) || result.release_scope.length === 0) {
+    return false;
+  }
+  if (!Array.isArray(result.restart_targets) || result.restart_targets.length === 0) {
+    return false;
+  }
+  return true;
+};
+
 const runReleaseTagCandidates = (runRecord) =>
   [
     runRecord?.head_branch,
@@ -103,7 +135,9 @@ const latestSuccessfulDeployedReleaseTag = ({
   );
   const succeededReleaseShas = new Set(
     results
-      .filter((result) => result?.status === "succeeded")
+      .filter(
+        (result) => result?.status === "succeeded" && hasTrustedDeployIdentity(result)
+      )
       .map((result) => String(result.release_sha || ""))
       .filter(Boolean)
   );

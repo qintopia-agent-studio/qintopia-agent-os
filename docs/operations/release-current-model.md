@@ -108,6 +108,14 @@ pending Feishu-backed JPEG, and authenticated same-byte revalidation to the immu
 release evidence. It does not approve the generated image or call QiWe. Enable ongoing
 scheduling through the separate activation script only after that canary is reviewed.
 
+The normal `release.published` deploy path remains the ordinary Huabaosi production
+artifact only. It builds/uploads `qintopia-message-sidecar-linux-x86_64-gnu`, records
+`runtime_artifact_profile=huabaosi-production`, and must not auto-switch to the
+independent QiWe production artifact. A later QiWe enablement deploy is a separate
+owner-approved `workflow_dispatch` follow-up that first publishes
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` to COS, then dispatches
+`Deploy Production` with `runtime_artifact_profile=qiwe-production`.
+
 The release assembly step should be idempotent: if the release directory already exists,
 the operator must verify its manifest and checksum instead of overwriting it blindly.
 

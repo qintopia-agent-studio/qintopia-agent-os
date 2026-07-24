@@ -105,6 +105,16 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /shared production boundary/);
 
+  const profileMismatchEvidence = path.join(tmpRoot, "profile-mismatch.txt");
+  fs.writeFileSync(
+    profileMismatchEvidence,
+    productionOutput({ runtimeArtifactProfile: "huabaosi-production" }),
+    "utf8"
+  );
+  result = runChecker(profileMismatchEvidence);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
+
   const routeMismatchEvidence = path.join(tmpRoot, "route-mismatch.txt");
   fs.writeFileSync(
     routeMismatchEvidence,
@@ -124,6 +134,7 @@ try {
       worker: "unreviewed-worker",
       action_status: "unreviewed",
       production_release_sha: releaseSha,
+      runtime_artifact_profile: "qiwe-production",
       sidecar_binary_sha256: sidecarHash,
       database_url_sha256: databaseHash,
       release_binary_verified: true,
@@ -175,6 +186,7 @@ function productionOutput(overrides = {}) {
   const common = {
     success: true,
     production_release_sha: releaseSha,
+    runtime_artifact_profile: overrides.runtimeArtifactProfile ?? "qiwe-production",
     sidecar_binary_sha256: sidecarHash,
     database_url_sha256: databaseHash,
     release_binary_verified: overrides.releaseBinaryVerified ?? true,

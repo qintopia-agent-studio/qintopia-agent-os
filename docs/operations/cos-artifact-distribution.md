@@ -34,6 +34,10 @@ qintopia-agent-os/
         artifact-manifest.json
         SHA256SUMS
         qintopia-message-sidecar.tar.gz
+      qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu/
+        artifact-manifest.json
+        SHA256SUMS
+        qintopia-message-sidecar.tar.gz
   deploy-bundle/
     <commit-sha>/
       qintopia-agent-os-deploy-bundle/
@@ -231,12 +235,19 @@ The `sidecar-artifact` job uploads to COS only when `TENCENT_COS_UPLOAD_ENABLED=
 and both upload secrets are present. If upload is disabled, CI still builds and uploads
 the GitHub Actions artifact.
 
+The manually dispatched `qiwe-sidecar-artifact` job can also upload the independent
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` artifact to COS. That
+artifact remains separate from the ordinary Huabaosi production artifact and is selected
+later only through `runtime_artifact_profile=qiwe-production` in the reviewed deploy
+request.
+
 After a successful COS upload, CI prunes old COS artifact directories and keeps the
 latest ten sidecar artifact SHA directories for
-`qintopia-message-sidecar-linux-x86_64-gnu` and the latest ten deploy bundle SHA
-directories for `qintopia-agent-os-deploy-bundle` by default. The prune steps use
-`QINTOPIA_COS_ARTIFACT_KEEP_COUNT`, defaulting to `10`, so COS retention matches the
-GitHub Actions artifact retention count.
+`qintopia-message-sidecar-linux-x86_64-gnu`, the latest ten SHA directories for
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and the latest ten deploy
+bundle SHA directories for `qintopia-agent-os-deploy-bundle` by default. The prune steps
+use `QINTOPIA_COS_ARTIFACT_KEEP_COUNT`, defaulting to `10`, so COS retention matches the
+GitHub Actions artifact retention count for each exact artifact name.
 
 ## Server Configuration
 
@@ -275,6 +286,15 @@ GitHub Actions runs:
 ```bash
 deploy/sidecar/scripts/upload-cos-artifact.sh \
   --artifact-dir dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu \
+  --sha "$GITHUB_SHA"
+```
+
+The independent QiWe production artifact uses the same upload path shape with a
+different artifact directory:
+
+```bash
+deploy/sidecar/scripts/upload-cos-artifact.sh \
+  --artifact-dir dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu \
   --sha "$GITHUB_SHA"
 ```
 
@@ -329,6 +349,16 @@ set -a
 . /etc/qintopia/cos-artifacts.env
 set +a
 
+deploy/sidecar/scripts/fetch-cos-artifact.sh \
+  --sha <approved-target-sha> \
+  --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+```
+
+For the independent QiWe production artifact, set the reviewed artifact profile before
+download:
+
+```bash
+export QINTOPIA_SIDECAR_ARTIFACT_PROFILE="qiwe-production"
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>

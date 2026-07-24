@@ -14,6 +14,10 @@ const log = [
   'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0407904Z     "environment": "production",',
   'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0408572Z     "status": "succeeded",',
   'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0410682Z     "release_sha": "d083e5ccfce2d07048e07c0ceb8c052671f65911",',
+  'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0411200Z     "commit_sha": "d083e5ccfce2d07048e07c0ceb8c052671f65911",',
+  'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0411250Z     "runtime_sha": "d083e5ccfce2d07048e07c0ceb8c052671f65911",',
+  'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0411300Z     "runtime_artifact_profile": "huabaosi-production",',
+  'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0411350Z     "deploy_bundle_sha": "d083e5ccfce2d07048e07c0ceb8c052671f65911",',
   'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0411580Z     "previous_sha": "b24c3f714b19962c5a7b57a486f7aa18c4ae3e86",',
   'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0421208Z     "rollback": {',
   'request-deploy\tWait for server deploy result\t2026-07-08T05:24:21.0421728Z       "attempted": false,',
@@ -31,6 +35,9 @@ if (results[0].status !== "succeeded") {
 }
 if (results[0].release_sha !== "d083e5ccfce2d07048e07c0ceb8c052671f65911") {
   throw new Error("release_sha was not extracted");
+}
+if (results[0].runtime_artifact_profile !== "huabaosi-production") {
+  throw new Error("runtime_artifact_profile was not extracted");
 }
 
 const withMetadata = attachWorkflowRunMetadata(results, {

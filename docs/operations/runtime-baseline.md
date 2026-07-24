@@ -64,6 +64,32 @@ Systemd services and Hermes-managed profile links should point at `current`. Rol
 switches `current` back to `previous` and restarts only the approved services or Hermes
 profile processes.
 
+The current production release flow is intentionally split in two:
+
+- normal `release.published` deployment uses the ordinary Huabaosi production sidecar
+  artifact and keeps `runtime_artifact_profile=huabaosi-production`
+- independent QiWe production enablement is a later owner-approved `Deploy Production`
+  `workflow_dispatch` follow-up that first publishes
+  `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` to COS, then deploys it
+  with `runtime_artifact_profile=qiwe-production`
+
+The final Xiaoman production evidence path is therefore also split: Huabaosi
+first-record canary evidence must retain the reviewed Huabaosi production sidecar
+SHA-256. Real Xiaoman/QiWe delivery evidence must retain the reviewed QiWe production
+sidecar SHA-256. Treating them as the same production binary is no longer a valid
+assumption.
+<p>Huabaosi production sidecar SHA-256</p>
+<p>QiWe production sidecar SHA-256</p>
+<p>Treating them as the same production binary is no longer a valid assumption</p>
+
+As of Friday, July 24, 2026, the repository-local implementation and validation for this
+reviewed production evidence chain have been re-verified. See
+[`../reports/2026-07-24-xiaoman-production-evidence-chain-local-verification.md`](../reports/2026-07-24-xiaoman-production-evidence-chain-local-verification.md).
+The remaining work for this chain is primarily owner-operated external evidence
+execution through the reviewed
+[`xiaoman-production-evidence-runbook.md`](xiaoman-production-evidence-runbook.md), not
+a large remaining repository implementation gap.
+
 ## Known Deprecated Or Legacy Areas
 
 | Area                                        | Direction                                                                                |
@@ -96,5 +122,8 @@ Current follow-up documentation should focus on:
 - Skill bundle rules for `skills/qiwe` and profile-local plugins.
 - External adapter allowlist and rollback evidence before real sends or workbench
   integrations are enabled.
+- Owner-operated Xiaoman production evidence capture through
+  `xiaoman-production-evidence-runbook.md`, including the separate Huabaosi and
+  `qiwe-production` sidecar SHA-256 retention.
 - Archive retention policy for M12 backups before any permanent deletion.
 - Secret and runtime-state exclusion rules per package.

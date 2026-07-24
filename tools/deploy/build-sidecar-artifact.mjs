@@ -18,6 +18,7 @@ const binaryName = "qintopia-message-sidecar";
 const targetTriple = resolveApprovedTarget();
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactName = `${binaryName}-${targetTriple}`;
+const artifactProfile = "huabaosi-production";
 const cargoFeatures = ["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"];
 const artifactDir = resolveContainedArtifactDir(outputRoot, artifactName);
 const binaryPath = path.join(
@@ -147,6 +148,7 @@ const manifest = {
     },
   ],
   validation: {
+    artifact_profile: artifactProfile,
     cargo_features: cargoFeatures,
     required_workflow_jobs: ["check", "sidecar-artifact"],
     server_verification: [

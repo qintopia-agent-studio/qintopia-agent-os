@@ -191,19 +191,34 @@ while (( SECONDS < deadline )); do
   set -e
 
   if [[ "$status" -eq 0 ]]; then
-    result_status="$(python3 - "$result_file" "$request_id" <<'PY'
+    result_status="$(python3 - "$result_file" "$request_file" "$request_id" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as fh:
     result = json.load(fh)
+with open(sys.argv[2], encoding="utf-8") as fh:
+    request = json.load(fh)
 
 if result.get("schema_version") != 1:
     raise SystemExit("deploy result schema_version is invalid")
-if result.get("request_id") != sys.argv[2]:
+if result.get("request_id") != sys.argv[3]:
     raise SystemExit("deploy result request_id mismatch")
 if result.get("environment") != "production":
     raise SystemExit("deploy result environment mismatch")
+for key in (
+    "release_sha",
+    "commit_sha",
+    "runtime_sha",
+    "runtime_artifact_profile",
+    "deploy_bundle_sha",
+):
+    if result.get(key) != request.get(key):
+        raise SystemExit(f"deploy result {key} mismatch")
+if result.get("release_scope") != request.get("release_scope"):
+    raise SystemExit("deploy result release_scope mismatch")
+if result.get("restart_targets") != request.get("restart_targets"):
+    raise SystemExit("deploy result restart_targets mismatch")
 
 print(result.get("status", ""))
 PY

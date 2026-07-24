@@ -11,8 +11,9 @@ X. Where do I start?"
 3. Read the listed package README or manifest before editing.
 4. Update documentation or manifest first when behavior, runtime, migration, or
    production-adjacent boundaries change.
-5. Run the listed validation commands, then `pnpm check:light`; run `pnpm check` when
-   runtime, database, QiWe, workflow, or deploy behavior changes.
+5. Run the listed validation commands, then `pnpm check:pr:auto`; run
+   `pnpm check:pr:heavy` when runtime, database, QiWe, workflow, or deploy behavior
+   changes and local disposable PostgreSQL is ready.
 
 Do not start from implementation language. Start from Agent, skill, workflow, MCP,
 runtime, deploy, fixture, or registry ownership.
@@ -129,15 +130,15 @@ Use these anchors after choosing the package:
 
 ## Validation Shortcuts
 
-| Touched area                | Minimum command                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------- |
-| docs and registry only      | `pnpm check:light`                                                                    |
-| Agent packages              | `pnpm agents:check` and `pnpm agents:profile-bundles:check`                           |
-| Skill package metadata      | relevant `pnpm skills:*:check` and `pnpm registry:check`                              |
-| Postgres context contract   | `pnpm skills:postgres-context:check`, then `pnpm test:sidecar` when behavior changes  |
-| Workflow package metadata   | `pnpm workflows:check`                                                                |
-| QiWe behavior               | `pnpm test:qiwe`                                                                      |
-| Sidecar runtime             | `pnpm fmt:sidecar`, `pnpm check:sidecar`, `pnpm test:sidecar`                         |
-| Postgres schema             | `pnpm policy:check`, `pnpm test:sidecar`, deployment preflight when preparing release |
-| Deploy/runtime templates    | `pnpm deploy:systemd:check`, `pnpm deploy:release-model:check`                        |
-| Production-adjacent changes | `pnpm check`                                                                          |
+| Touched area                | Minimum command                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| docs and registry only      | `pnpm check:pr:quick`                                                                                   |
+| Agent packages              | `pnpm agents:check` and `pnpm agents:profile-bundles:check`                                             |
+| Skill package metadata      | relevant `pnpm skills:*:check` and `pnpm registry:check`                                                |
+| Postgres context contract   | `pnpm skills:postgres-context:check`, then `pnpm test:sidecar` when behavior changes                    |
+| Workflow package metadata   | `pnpm workflows:check`                                                                                  |
+| QiWe behavior               | `pnpm test:qiwe`                                                                                        |
+| Sidecar runtime             | `pnpm fmt:sidecar`, `pnpm check:sidecar`, `pnpm test:sidecar`                                           |
+| Postgres schema             | `pnpm policy:check`, `pnpm test:sidecar`, deployment preflight when preparing release                   |
+| Deploy/runtime templates    | `pnpm deploy:systemd:check`, `pnpm deploy:release-model:check`                                          |
+| Production-adjacent changes | `pnpm check:pr:auto`, then `pnpm check:pr:heavy` when the local disposable PostgreSQL tier is available |

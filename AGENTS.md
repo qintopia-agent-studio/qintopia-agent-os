@@ -10,6 +10,7 @@
 - Product scope: `docs/product/agent-os-prd.md`
 - Agent OS design: `docs/agent-os/README.md`
 - Runtime baseline: `docs/operations/runtime-baseline.md`
+- Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`
 - Collaboration model: `docs/engineering/collaboration-model.md`
 - Migration policy: `docs/engineering/migration-policy.md`
 - Server change policy: `docs/engineering/server-change-policy.md`
@@ -36,8 +37,13 @@
 - Pre-commit quick checks: `.husky/pre-commit`
 - Repository check: `pnpm check`
 - Markdown lint: `pnpm lint:md`
+- Xiaoman production evidence chain local repository verification:
+  `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
+- Local PR quick tier: `pnpm check:pr:quick`
+- Local PR heavy tier: `pnpm check:pr:heavy`
+- Local PR auto tier: `pnpm check:pr:auto`
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
 - Release Please PR manual CI validation:
   `gh workflow run ci.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
@@ -45,6 +51,9 @@
   `gh workflow run pr-agent.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
 - Staging-only sidecar artifact for Huabaosi/QiWe evidence smokes:
   `pnpm artifact:sidecar:staging`
+- Independent QiWe production sidecar artifact: `pnpm artifact:sidecar:qiwe-production`
+- Independent QiWe production sidecar artifact prune:
+  `pnpm artifact:prune:sidecar:qiwe-production`
 - If the local pnpm version shim cannot verify a registry signature, do not set
   `pmOnFail=ignore`. Confirm the exact `package.json` script first; when it is a fixed
   repository-local Node entrypoint, run that entrypoint directly and record the failed
@@ -139,7 +148,10 @@
   approval. The activation script must fail before preflight or timer changes unless the
   persistent `QINTOPIA_SIDECAR_DATABASE_URL` hashes to the approved
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256`; never weaken this to a
-  format-only hash check. Activation and rollback must read the fixed reviewed
+  format-only hash check. After preflight and timer enablement, activation must rerun
+  the release-local QiWe production observation with `EXPECTED_STATE=enabled` so the
+  immutable `release/current` artifact profile and timer state are re-verified at the
+  reviewed boundary. Activation and rollback must read the fixed reviewed
   `/etc/qintopia/message-sidecar.env` and must not accept env-file or systemctl command
   overrides from the caller; use a fixed system PATH and absolute systemctl path:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`
@@ -148,14 +160,15 @@
 - Release-local QiWe production observations currently inspect the Huabaosi production
   sidecar artifact and may prove only the disabled image-send and callback-bridge state.
   They must require exactly `huabaosi-production-adapter` plus
-  `huabaosi-feishu-mirror-adapter`, reject `qiwe-production-adapter`, and fail closed if
+  `huabaosi-feishu-mirror-adapter` for the ordinary Huabaosi release and fail closed if
   either QiWe enable flag is `1`. Enabled QiWe production requires a separate reviewed
-  artifact and enablement boundary after staging evidence; never restore it by mixing
-  QiWe into the Huabaosi artifact.
+  `qiwe-production` artifact whose manifest profile is recorded in the deploy request as
+  `runtime_artifact_profile` and whose manifest carries exactly
+  `qiwe-production-adapter`; never restore QiWe by mixing it into the Huabaosi artifact.
 - Real Xiaoman activity production evidence export after owner-confirmed completion:
 
   ```bash
-  QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-production-sidecar-sha256> \
+  QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-qiwe-production-sidecar-sha256> \
   QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256=<approved-production-database-url-sha256> \
   qintopia-message-sidecar xiaoman-real-activity-production-evidence \
     --workflow-root-id <completed-xiaoman-activity-root-uuid> > production-evidence-output.txt
@@ -197,6 +210,26 @@
     --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
     --production-real-activity <production-evidence-output.txt> \
     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>
+  ```
+
+- One-shot final Xiaoman production completion manifest build + validation from retained
+  sanitized evidence:
+
+  ```bash
+  node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs \
+    --release-please-pr-number <release-please-pr-number> \
+    --release-please-head-sha <release-please-head-sha> \
+    --release-tag <published-release-tag> \
+    --released-commit-sha <published-release-commit-sha> \
+    --qiwe-production-enablement-pr-number <qiwe-production-enablement-pr-number> \
+    --qiwe-production-enablement-head-sha <qiwe-production-enablement-head-sha> \
+    --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
+    --huabaosi-staging <huabaosi-staging-output.txt> \
+    --qiwe-staging <qiwe-staging-output.txt> \
+    --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
+    --production-real-activity <production-evidence-output.txt> \
+    --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+    --output <completed-xiaoman-production-completion-evidence.json>
   ```
 
 - Combined Huabaosi/QiWe staging runtime readiness evidence:
@@ -252,6 +285,11 @@ Use `rg` and `rg --files` for search.
   failures before tests start. Prepare a non-empty diagnostic artifact before tool
   download so an installation failure cannot be obscured by a second missing-artifact
   error.
+- Local PR validation is also risk-tiered. Use `pnpm check:pr:auto` before opening an
+  ordinary PR; it always runs the quick tier and escalates to heavy Rust checks for
+  sidecar, Postgres, deploy script, and CI workflow changes. Use `pnpm check:pr:heavy`
+  when you want the full local quick + Rust + disposable PostgreSQL mirror and local
+  `qintopia_test` is ready on `127.0.0.1:5432`.
 - Do not develop directly on `master`; create a feature branch first.
 - Document first for new features, behavior changes, migrations, runtime changes, or
   production-adjacent work.
@@ -644,18 +682,20 @@ Use `rg` and `rg --files` for search.
   `tools/deploy/check-xiaoman-real-activity-production-evidence.mjs` and the full
   completion manifest plus staging/production evidence files pass
   `tools/deploy/check-xiaoman-production-completion-evidence.mjs`. The report may keep
-  only the fixed schema ids, AgentOS UUIDs, release/database hashes, the owner-approved
-  sidecar binary hash, release-binary verification booleans, `artifact_content_hash`,
-  reviewed PR numbers/head SHAs, production Release commit binding, and boolean
-  execution facts; it must not retain raw QiWe callback bodies, request ids, file
-  credentials, group ids, message ids, media URLs, database URLs, provider responses,
-  raw chat, or raw logs.
+  only the fixed schema ids, AgentOS UUIDs, release/database hashes, reviewed
+  `runtime_artifact_profile` facts, the owner-approved sidecar binary hash,
+  release-binary verification booleans, `artifact_content_hash`, reviewed PR
+  numbers/head SHAs, production Release commit binding, and boolean execution facts; it
+  must not retain raw QiWe callback bodies, request ids, file credentials, group ids,
+  message ids, media URLs, database URLs, provider responses, raw chat, or raw logs.
 - `xiaoman-real-activity-production-evidence` is a read-only retention exporter. It may
   run only from the immutable
   `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`
   binary whose resolved release directory matches `QINTOPIA_DEPLOYED_COMMIT_SHA` and
   whose SHA-256 matches `QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256`. It
-  must hash the configured database URL and match
+  must also prove the adjacent reviewed artifact manifest is bound to the same release
+  SHA and exactly `runtime_artifact_profile=qiwe-production` with only
+  `qiwe-production-adapter`. It must hash the configured database URL and match
   `QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256` before opening a
   database connection. It may read Postgres, hash the verified release-local sidecar
   binary, and emit the fixed `xiaoman_real_activity_production_evidence=` records for
@@ -666,7 +706,10 @@ Use `rg` and `rg --files` for search.
   responses, raw chat, or logs. Its send-ready query must bind the completed
   `group_message_request`, queued-state final confirmation, send-ready event payload,
   approved generated-image artifact id, and sanitized QiWe `sent` attempt before
-  emitting production-complete evidence.
+  emitting production-complete evidence. The final completion manifest must bind the
+  Huabaosi first-record canary to `runtime_artifact_profile=huabaosi-production` and the
+  retained real-activity/QiWe arrival evidence to
+  `runtime_artifact_profile=qiwe-production`.
 - In a separately owner-approved staging-feature build, `run-qiwe-image-send-worker` may
   only claim one reviewed send-ready work item, call the reviewed asynchronous
   URL-upload method, and persist hashed upload correlation. Its dry-run preview must
@@ -903,9 +946,13 @@ Use `rg` and `rg --files` for search.
   phase must preserve `release_binary_verified=true`,
   `approved_sidecar_sha256_matched=true`, and
   `approved_database_url_sha256_matched=true` so the standalone and final completion
-  checkers can prove the immutable release/database boundary. It must not approve the
-  generated image, enable timers, run the mirror worker, publish, call QiWe, send, or
-  retry terminal/ambiguous outcomes.
+  checkers can prove the immutable release/database boundary. The retained preflight
+  phase must also preserve `timer_enabled=false` and `timer_active=false`, and the
+  retained revalidation phase must preserve `sensitive_fields_redacted=true` so the
+  evidence itself proves the disabled one-shot timer boundary and authenticated
+  same-byte readback stayed sanitized. It must not approve the generated image, enable
+  timers, run the mirror worker, publish, call QiWe, send, or retry terminal/ambiguous
+  outcomes.
 - `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
   Hermes WeCom user-service active state through `systemctl --user`, fixed service
   command, fixed
@@ -1039,14 +1086,15 @@ Use `rg` and `rg --files` for search.
   external adapter payloads, or command output into COS deploy result JSON.
 - As of 2026-07-15, the corrected `v0.2.10` same-SHA follow-up deploy installed the new
   systemd units. A same-SHA request for an existing release must reuse the immutable
-  manifest's exact runtime, bundle, commit, scope, and restart-target fields; narrowing
-  `restart_targets` is rejected before promotion and does not trigger rollback. Content,
-  path, type, or symlink drift must fail before mutation. After the bounded metadata
-  repair allowed above, the existing tree must satisfy the same deploy-runner owner,
-  non-writable, directory accessibility, regular/symlink type, sidecar `0755`, and
-  metadata `0444` checks as a new staging tree. Same-SHA reuse must preserve a distinct
-  `previous` target. Production release and staging roots must be created explicitly as
-  `0755` so the validation contract does not depend on ambient `umask`.
+  manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and
+  restart-target fields; narrowing `restart_targets` is rejected before promotion and
+  does not trigger rollback. Content, path, type, or symlink drift must fail before
+  mutation. After the bounded metadata repair allowed above, the existing tree must
+  satisfy the same deploy-runner owner, non-writable, directory accessibility,
+  regular/symlink type, sidecar `0755`, and metadata `0444` checks as a new staging
+  tree. Same-SHA reuse must preserve a distinct `previous` target. Production release
+  and staging roots must be created explicitly as `0755` so the validation contract does
+  not depend on ambient `umask`.
 - PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
   live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
   profile symlink without that reviewed cutover, smoke evidence, and rollback note.

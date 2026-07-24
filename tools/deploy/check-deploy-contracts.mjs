@@ -60,6 +60,24 @@ if (!exists(sidecarAgentsPath)) {
   }
 }
 
+const rootAgentsPath = "AGENTS.md";
+if (!exists(rootAgentsPath)) {
+  addError(`${rootAgentsPath}: missing repository agent rules`);
+} else {
+  const rootAgents = readText(rootAgentsPath);
+  for (const fragment of [
+    "`node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`",
+    "Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`",
+    "`qiwe-production` artifact whose manifest profile is recorded in the deploy request as",
+    "`runtime_artifact_profile` and whose manifest carries exactly",
+    "A same-SHA request for an existing release must reuse the immutable",
+    "manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and",
+    "restart-target fields",
+  ]) {
+    requireFragment(rootAgentsPath, rootAgents, fragment);
+  }
+}
+
 const qiweImageSendPlanPath = "docs/plans/active/xiaoman-qiwe-image-send.md";
 if (!exists(qiweImageSendPlanPath)) {
   addError(`${qiweImageSendPlanPath}: missing Xiaoman QiWe image send plan`);
@@ -143,6 +161,8 @@ if (!exists(currentRoadmapPath)) {
     "`qiwe-production-adapter`",
     "Single-feature builds still",
     "fail closed",
+    "tools/deploy/finalize-xiaoman-production-completion-evidence.mjs",
+    "last retained-evidence step after all sanitized files exist",
   ]) {
     requireFragment(currentRoadmapPath, roadmap, fragment);
   }
@@ -397,6 +417,14 @@ if (!exists(releaseAcceptanceChecklistPath)) {
     "infrastructure",
     "activation-ready",
     "production-complete",
+    "Huabaosi canary evidence uses the ordinary Huabaosi production artifact",
+    "QiWe production artifact",
+    "Huabaosi canary sidecar SHA-256 separately from the QiWe real-activity sidecar SHA-256",
+    "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
+    "prefer the reviewed one-shot completion helper",
+    "pnpm deploy:xiaoman-production-evidence:finalize --",
+    "--staging-runtime-readiness <staging-runtime-readiness-output.txt>",
+    "--qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>",
   ]) {
     requireFragment(releaseAcceptanceChecklistPath, checklist, fragment);
   }
@@ -408,6 +436,91 @@ if (!exists(releaseAcceptanceChecklistPath)) {
     "gh release create",
   ]) {
     forbidFragment(releaseAcceptanceChecklistPath, checklist, fragment);
+  }
+}
+
+const docsReadmePath = "docs/README.md";
+if (!exists(docsReadmePath)) {
+  addError(`${docsReadmePath}: missing documentation hub`);
+} else {
+  const readme = readText(docsReadmePath);
+  for (const fragment of [
+    "Xiaoman production evidence runbook:",
+    "[operations/xiaoman-production-evidence-runbook.md](operations/xiaoman-production-evidence-runbook.md)",
+  ]) {
+    requireFragment(docsReadmePath, readme, fragment);
+  }
+}
+
+const docsReadmeZhCnPath = "docs/README.zh-CN.md";
+if (!exists(docsReadmeZhCnPath)) {
+  addError(`${docsReadmeZhCnPath}: missing Chinese documentation hub`);
+} else {
+  const readme = readText(docsReadmeZhCnPath);
+  for (const fragment of [
+    "小满生产证据 runbook：",
+    "[operations/xiaoman-production-evidence-runbook.md](operations/xiaoman-production-evidence-runbook.md)",
+  ]) {
+    requireFragment(docsReadmeZhCnPath, readme, fragment);
+  }
+}
+
+const packageJsonPath = "package.json";
+if (!exists(packageJsonPath)) {
+  addError(`${packageJsonPath}: missing package manifest`);
+} else {
+  const packageJson = JSON.parse(readText(packageJsonPath));
+  const scripts = packageJson?.scripts ?? {};
+  if (
+    scripts["deploy:xiaoman-production-evidence:local-check"] !==
+    "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs"
+  ) {
+    addError(
+      "package.json: deploy:xiaoman-production-evidence:local-check must run node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs"
+    );
+  }
+  if (
+    scripts["deploy:xiaoman-production-evidence:finalize"] !==
+    "node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs"
+  ) {
+    addError(
+      "package.json: deploy:xiaoman-production-evidence:finalize must run node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs"
+    );
+  }
+}
+
+const operationsReadmePath = "docs/operations/README.md";
+if (!exists(operationsReadmePath)) {
+  addError(`${operationsReadmePath}: missing operations index`);
+} else {
+  const readme = readText(operationsReadmePath);
+  for (const fragment of [
+    "[xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md)",
+    "owner-operated Huabaosi canary, QiWe follow-up deploy, real-activity retention, and",
+    "final completion-manifest sequence.",
+    "reviewed one-shot completion finalizer",
+    "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
+    "repository-local Xiaoman production evidence chain verification bundle",
+    "deploy:xiaoman-production-evidence:finalize",
+  ]) {
+    requireFragment(operationsReadmePath, readme, fragment);
+  }
+}
+
+const deployToolsReadmePath = "tools/deploy/README.md";
+if (!exists(deployToolsReadmePath)) {
+  addError(`${deployToolsReadmePath}: missing deploy tools README`);
+} else {
+  const readme = readText(deployToolsReadmePath);
+  for (const fragment of [
+    "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
+    "Use it before any owner-operated Huabaosi production canary, QiWe production follow-up",
+    "pnpm deploy:xiaoman-production-evidence:finalize --",
+    "--staging-runtime-readiness <staging-runtime-readiness-output.txt>",
+    "--production-real-activity <production-evidence-output.txt>",
+    "--output <completed-xiaoman-production-completion-evidence.json>",
+  ]) {
+    requireFragment(deployToolsReadmePath, readme, fragment);
   }
 }
 
@@ -424,6 +537,198 @@ if (exists(releaseCurrentModelPath)) {
     releaseCurrentModel,
     "exact-head Release Please validation"
   );
+  requireFragment(
+    releaseCurrentModelPath,
+    releaseCurrentModel,
+    "qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu"
+  );
+  requireFragment(
+    releaseCurrentModelPath,
+    releaseCurrentModel,
+    "runtime_artifact_profile=qiwe-production"
+  );
+}
+
+const runtimeBaselinePath = "docs/operations/runtime-baseline.md";
+if (exists(runtimeBaselinePath)) {
+  const baseline = readText(runtimeBaselinePath);
+  for (const fragment of [
+    "runtime_artifact_profile=huabaosi-production",
+    "runtime_artifact_profile=qiwe-production",
+    "Huabaosi production sidecar SHA-256",
+    "QiWe production sidecar SHA-256",
+    "Treating them as the same production binary is no longer a valid assumption",
+  ]) {
+    requireFragment(runtimeBaselinePath, baseline, fragment);
+  }
+}
+
+const xiaomanProductionCompletionGatePath =
+  "docs/plans/active/xiaoman-production-completion-gate.md";
+if (exists(xiaomanProductionCompletionGatePath)) {
+  const gate = readText(xiaomanProductionCompletionGatePath);
+  for (const fragment of [
+    "Updated: 2026-07-24",
+    "2026-07-24 Xiaoman production evidence chain local verification",
+    "That local verification does not satisfy the completion gates below.",
+    "Xiaoman production evidence runbook",
+    "not a large remaining repository implementation gap",
+    "runtime_artifact_profile=huabaosi-production",
+    "runtime_artifact_profile=qiwe-production",
+    "--production-real-activity <production-evidence-output.txt>",
+    "pnpm deploy:xiaoman-production-evidence:finalize --",
+    "--staging-runtime-readiness <staging-runtime-readiness-output.txt>",
+    "reviewed one-shot",
+  ]) {
+    requireFragment(xiaomanProductionCompletionGatePath, gate, fragment);
+  }
+  forbidFragment(
+    xiaomanProductionCompletionGatePath,
+    gate,
+    "--production-real-activity <production-real-activity-output.txt>"
+  );
+}
+
+const reportsReadmePath = "docs/reports/README.md";
+if (exists(reportsReadmePath)) {
+  const reportsReadme = readText(reportsReadmePath);
+  for (const fragment of [
+    "2026-07-24 Xiaoman production evidence PR body",
+    "2026-07-24 Xiaoman production evidence PR notes",
+    "2026-07-24 Xiaoman production test map",
+    "2026-07-24 Xiaoman production evidence chain local verification",
+    "single-page HTML handoff view",
+    "## Templates",
+    "templates/huabaosi-image-production-canary-evidence.md",
+    "templates/xiaoman-production-completion-evidence.json",
+    "templates/xiaoman-real-activity-production-evidence.md",
+    "tools/deploy/finalize-xiaoman-production-completion-evidence.mjs",
+    "retained staging and production evidence files",
+  ]) {
+    requireFragment(reportsReadmePath, reportsReadme, fragment);
+  }
+}
+
+const xiaomanProductionTestMapPath =
+  "docs/reports/2026-07-24-xiaoman-production-test-map.html";
+if (exists(xiaomanProductionTestMapPath)) {
+  const html = readText(xiaomanProductionTestMapPath);
+  for (const fragment of [
+    "<title>Xiaoman Production Test Map - 2026-07-24</title>",
+    "小满生产测试图",
+    "老板版摘要",
+    "代码基本完成，当前卡在真实生产证据",
+    "差 4 类真实外部动作",
+    "先执行，再收尾，不再扩主流程代码",
+    "仓库内校验已全绿",
+    "Huabaosi 生产 Canary",
+    "QiWe 生产 Follow-up Deploy",
+    "真实小满活动证据",
+    "企微群到达确认",
+    "最终 Completion Manifest",
+    "pnpm deploy:xiaoman-production-evidence:finalize -- ...",
+    "runtime_artifact_profile=huabaosi-production",
+    "runtime_artifact_profile=qiwe-production",
+    "production-complete",
+  ]) {
+    requireFragment(xiaomanProductionTestMapPath, html, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "postgres://",
+    "postgresql://",
+    "tenant_access_token",
+    "systemctl enable --now",
+  ]) {
+    forbidFragment(xiaomanProductionTestMapPath, html, fragment);
+  }
+}
+
+const xiaomanProductionEvidenceHandoffPath =
+  "docs/reports/2026-07-24-xiaoman-production-evidence-handoff.md";
+if (exists(xiaomanProductionEvidenceHandoffPath)) {
+  const handoff = readText(xiaomanProductionEvidenceHandoffPath);
+  for (const fragment of [
+    "2026-07-24-xiaoman-production-evidence-pr-body.md",
+    "2026-07-24-xiaoman-production-evidence-pr-notes.md",
+    "pnpm deploy:xiaoman-production-evidence:finalize --",
+  ]) {
+    requireFragment(xiaomanProductionEvidenceHandoffPath, handoff, fragment);
+  }
+}
+
+const xiaomanProductionEvidencePrNotesPath =
+  "docs/reports/2026-07-24-xiaoman-production-evidence-pr-notes.md";
+if (exists(xiaomanProductionEvidencePrNotesPath)) {
+  const notes = readText(xiaomanProductionEvidencePrNotesPath);
+  for (const fragment of [
+    "feat(deploy): harden Xiaoman production evidence chain handoff",
+    "production evidence capture remains",
+    "docs/reports/2026-07-24-xiaoman-production-test-map.html",
+    "pnpm deploy:xiaoman-production-evidence:finalize -- ...",
+  ]) {
+    requireFragment(xiaomanProductionEvidencePrNotesPath, notes, fragment);
+  }
+}
+
+const xiaomanLocalVerificationReportPath =
+  "docs/reports/2026-07-24-xiaoman-production-evidence-chain-local-verification.md";
+if (exists(xiaomanLocalVerificationReportPath)) {
+  const report = readText(xiaomanLocalVerificationReportPath);
+  for (const fragment of [
+    "repository-local verification only",
+    "It does not prove that production evidence has",
+    "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
+    "node tools/deploy/check-deploy-contracts.mjs",
+    "node tools/deploy/check-deploy-runner.mjs",
+    "node tools/deploy/test-build-sidecar-artifact.mjs",
+    "node tools/deploy/test-build-qiwe-production-sidecar-artifact.mjs",
+    "node tools/deploy/test-fetch-cos-artifact-permissions.mjs",
+    "runtime_artifact_profile=qiwe-production",
+    "artifact-manifest.json",
+    "SHA256SUMS",
+    "mode `0444`",
+    "sidecar binary at `0755`",
+    "owner-operated capture of real production evidence",
+    "Build and validate the final Xiaoman production completion manifest",
+    "finalize-xiaoman-production-completion-evidence.mjs",
+    "docs/operations/xiaoman-production-evidence-runbook.md",
+  ]) {
+    requireFragment(xiaomanLocalVerificationReportPath, report, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "postgres://",
+    "postgresql://",
+    "gh release create",
+    "systemctl enable",
+  ]) {
+    forbidFragment(xiaomanLocalVerificationReportPath, report, fragment);
+  }
+}
+
+const xiaomanLocalVerificationScriptPath =
+  "tools/deploy/check-xiaoman-production-evidence-chain-local.mjs";
+if (!exists(xiaomanLocalVerificationScriptPath)) {
+  addError(
+    `${xiaomanLocalVerificationScriptPath}: missing Xiaoman production evidence chain local check`
+  );
+} else {
+  const script = readText(xiaomanLocalVerificationScriptPath);
+  for (const fragment of [
+    '["node", ["tools/deploy/check-deploy-contracts.mjs"]]',
+    '["node", ["tools/deploy/check-deploy-runner.mjs"]]',
+    '["node", ["tools/deploy/test-build-sidecar-artifact.mjs"]]',
+    '["node", ["tools/deploy/test-build-qiwe-production-sidecar-artifact.mjs"]]',
+    '["node", ["tools/deploy/test-fetch-cos-artifact-permissions.mjs"]]',
+    '["node", ["tools/deploy/test-xiaoman-production-completion-manifest-builder.mjs"]]',
+    '["node", ["tools/deploy/test-xiaoman-production-completion-evidence.mjs"]]',
+    '"cargo",',
+    '"runtime/sidecar/Cargo.toml"',
+    "Xiaoman production evidence chain local check passed",
+  ]) {
+    requireFragment(xiaomanLocalVerificationScriptPath, script, fragment);
+  }
 }
 
 for (const [packagePath, requiredFragments] of Object.entries(packages)) {
@@ -531,6 +836,8 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
     "qiwe_image_callback_bridge_production_observation_state",
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "qiwe-production",
+    '"qiwe-production-adapter"',
     "enabled observation requires a separate reviewed QiWe production artifact",
     'allowlist = {"QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED"}',
   ]) {
@@ -545,7 +852,6 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
     "eval ",
     "tenant_access_token",
     "raw_body",
-    '"qiwe-production-adapter"',
   ]) {
     forbidFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
   }
@@ -841,6 +1147,12 @@ if (!exists(huabaosiImageProductionCanaryPath)) {
     'SYSTEMCTL="/usr/bin/systemctl"',
     "os.path.realpath",
     "stat.S_ISLNK",
+    "load_release_artifact_profile",
+    "artifact-manifest.json",
+    'artifact_profile != "huabaosi-production"',
+    '"huabaosi-production-adapter"',
+    '"huabaosi-feishu-mirror-adapter"',
+    "requires the immutable Huabaosi production artifact manifest",
     "production canary test mode is forbidden from production release roots",
     "production canary test mode may execute only a temporary fake sidecar",
     'timer_enabled_state="$("$SYSTEMCTL" is-enabled "$PROVIDER_TIMER" 2>/dev/null || true)"',
@@ -1616,6 +1928,8 @@ if (!exists(aliangProductionCanaryTestPath)) {
     "ambient QiWe credential reached Huabaosi child",
     "invalid production canary brief UUID must fail closed",
     "missing trainer reviewer allowlist entry must fail closed",
+    "missing artifact manifest must block production canary",
+    "wrong artifact manifest profile must block production canary",
     "starter parent work item mismatch must fail before generation",
     "duplicate production canary env key must fail closed",
     "revalidation identity mismatch must block canary completion",
@@ -1642,13 +1956,17 @@ if (!exists(huabaosiProductionCanaryEvidenceCheckPath)) {
     "generation",
     "revalidation",
     "release_binary_verified",
+    "artifact_profile",
     "approved_sidecar_sha256_matched",
     "approved_database_url_sha256_matched",
+    'record.artifact_profile !== "huabaosi-production"',
     'reviewer_id !== "trainer"',
     'generation.review_status !== "pending"',
     'generation.storage_backend !== "feishu-base"',
+    "preflight.timer_enabled !== false",
     "revalidation.database_writes_executed !== false",
     "revalidation.external_calls_executed !== true",
+    "revalidation.sensitive_fields_redacted !== true",
     '"artifact_uri"',
     '"provider_response"',
     '"target_group_id"',
@@ -1672,10 +1990,14 @@ if (!exists(huabaosiProductionCanaryEvidenceTestPath)) {
     "missing-phase.txt",
     "request-drift.txt",
     "send-leak.txt",
+    "redaction-mismatch.txt",
+    "timer-enabled-mismatch.txt",
     "missing-completion.txt",
     "mutable-boundary.txt",
     "sidecar-boundary.txt",
     "database-boundary.txt",
+    "profile-boundary.txt",
+    'artifact_profile: "huabaosi-production"',
     "authenticated same-byte readback",
     "forbidden sensitive fragment",
     "exactly five fixed phase records",
@@ -1827,6 +2149,7 @@ if (!exists(qiweImageSendProductionActivationPath)) {
   for (const fragment of [
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION",
     "approved-production-qiwe-image-send",
+    "qiwe-image-send-production-observation-smoke.sh",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
@@ -1838,6 +2161,9 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "database URL hash does not match the approved production hash",
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.timer",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1",
+    "QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE=enabled",
+    '"$OBSERVATION_SCRIPT" >/dev/null',
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
     '"$SYSTEMCTL" enable --now "$WORKER_TIMER"',
     '"$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"',
@@ -2028,10 +2354,14 @@ if (!exists(qiweImageProductionObservationPath)) {
     "requires the real systemctl command",
     '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
+    '"qiwe-production-adapter"',
+    "qiwe-production",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "parse_send_enablement",
     "expected state must be disabled, enabled, or auto",
     "production timer must not be active",
+    "production timer must be active",
+    "production timer must be enabled",
     "enabled observation requires a separate reviewed QiWe production artifact",
     "qiwe_image_send_production_observation_state=",
   ]) {
@@ -2041,7 +2371,6 @@ if (!exists(qiweImageProductionObservationPath)) {
     "cargo run",
     'source "$',
     ". /etc/qintopia",
-    '"qiwe-production-adapter"',
     "eval ",
     "env -i",
     "QINTOPIA_SIDECAR_DATABASE_URL",
@@ -2127,6 +2456,71 @@ if (exists(productionSidecarArtifactBuilderPath)) {
   }
 }
 
+const productionSidecarArtifactBuilderTestPath =
+  "tools/deploy/test-build-sidecar-artifact.mjs";
+if (!exists(productionSidecarArtifactBuilderTestPath)) {
+  addError(
+    `${productionSidecarArtifactBuilderTestPath}: missing production sidecar artifact builder test`
+  );
+} else {
+  const test = readText(productionSidecarArtifactBuilderTestPath);
+  for (const fragment of [
+    "build-sidecar-artifact.mjs",
+    'validation.artifact_profile, "huabaosi-production"',
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "dirty or unreadable git worktree",
+    "Production sidecar artifact builder test passed.",
+  ]) {
+    requireFragment(productionSidecarArtifactBuilderTestPath, test, fragment);
+  }
+}
+
+const qiweProductionSidecarArtifactBuilderPath =
+  "tools/deploy/build-qiwe-production-sidecar-artifact.mjs";
+if (exists(qiweProductionSidecarArtifactBuilderPath)) {
+  const builder = readText(qiweProductionSidecarArtifactBuilderPath);
+  for (const fragment of [
+    "assertContainedArtifactDirBoundary",
+    "resolveApprovedTarget",
+    "resolveContainedArtifactDir",
+    'const artifactProfile = "qiwe-production"',
+    '"qiwe-production-adapter"',
+    "manifestSha256",
+    "`${bundleSha256}  ${bundleName}`",
+    "`${manifestSha256}  artifact-manifest.json`",
+  ]) {
+    requireFragment(qiweProductionSidecarArtifactBuilderPath, builder, fragment);
+  }
+  for (const fragment of [
+    '"huabaosi-production-adapter"',
+    '"huabaosi-feishu-mirror-adapter"',
+    '"qiwe-staging-adapter"',
+    '"huabaosi-staging-adapter"',
+  ]) {
+    forbidFragment(qiweProductionSidecarArtifactBuilderPath, builder, fragment);
+  }
+}
+
+const qiweProductionSidecarArtifactBuilderTestPath =
+  "tools/deploy/test-build-qiwe-production-sidecar-artifact.mjs";
+if (!exists(qiweProductionSidecarArtifactBuilderTestPath)) {
+  addError(
+    `${qiweProductionSidecarArtifactBuilderTestPath}: missing QiWe production sidecar artifact builder test`
+  );
+} else {
+  const test = readText(qiweProductionSidecarArtifactBuilderTestPath);
+  for (const fragment of [
+    "build-qiwe-production-sidecar-artifact.mjs",
+    'validation.artifact_profile, "qiwe-production"',
+    'manifest.validation.cargo_features, ["qiwe-production-adapter"]',
+    "dirty or unreadable git worktree",
+    "QiWe production sidecar artifact builder test passed.",
+  ]) {
+    requireFragment(qiweProductionSidecarArtifactBuilderTestPath, test, fragment);
+  }
+}
+
 const sidecarArtifactBoundaryHelperPath =
   "tools/deploy/sidecar-artifact-build-boundary.mjs";
 if (!exists(sidecarArtifactBoundaryHelperPath)) {
@@ -2174,12 +2568,29 @@ if (exists(artifactsWorkflowPath)) {
     requireFragment(artifactsWorkflowPath, workflow, fragment);
   }
   const stagingJobStart = workflow.indexOf("  staging-sidecar-artifact:");
-  const stagingJobEnd = workflow.indexOf("  deploy-bundle-artifact:", stagingJobStart);
+  const qiweJobStart = workflow.indexOf("  qiwe-sidecar-artifact:", stagingJobStart);
+  const deployBundleJobStart = workflow.indexOf(
+    "  deploy-bundle-artifact:",
+    stagingJobStart
+  );
+  const stagingJobEnd =
+    qiweJobStart >= 0 && qiweJobStart < deployBundleJobStart
+      ? qiweJobStart
+      : deployBundleJobStart;
   const stagingJob = workflow.slice(stagingJobStart, stagingJobEnd);
   if (stagingJob.includes("upload-cos-artifact.sh")) {
     addError(
       `${artifactsWorkflowPath}: staging sidecar artifact job must not upload to COS`
     );
+  }
+  for (const fragment of [
+    "build_qiwe_sidecar",
+    "build-qiwe-sidecar",
+    "qiwe-sidecar-artifact:",
+    "node tools/deploy/build-qiwe-production-sidecar-artifact.mjs",
+    "qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu",
+  ]) {
+    requireFragment(artifactsWorkflowPath, workflow, fragment);
   }
 }
 
@@ -2442,6 +2853,7 @@ if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
 } else {
   const checker = readText(xiaomanRealActivityProductionEvidenceCheckPath);
   for (const fragment of [
+    "usage: node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>",
     "xiaoman_real_activity_production_evidence=",
     "signal_intake",
     "image_generation",
@@ -2451,6 +2863,8 @@ if (!exists(xiaomanRealActivityProductionEvidenceCheckPath)) {
     "qiwe_callback_send",
     "sanitized_evidence_retention",
     "artifact_content_hash",
+    "runtime_artifact_profile",
+    'record.runtime_artifact_profile !== "qiwe-production"',
     "callback_credential_schema",
     "raw_secret_fields_retained",
     "release_binary_verified",
@@ -2475,20 +2889,29 @@ if (!exists(xiaomanQiweArrivalConfirmationEvidenceCheckPath)) {
 } else {
   const checker = readText(xiaomanQiweArrivalConfirmationEvidenceCheckPath);
   for (const fragment of [
+    "usage: node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>",
     "xiaoman_qiwe_group_arrival_confirmation_evidence=",
     "xiaoman-qiwe-group-arrival-confirmation-evidence-v1",
     "check-xiaoman-real-activity-production-evidence.mjs",
+    "<production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>",
+    "production real activity evidence failed",
     "human_visible_group_check",
     "community_activity_group",
     "send_ready_work_item_id",
     "generated_image_artifact_id",
     "artifact_content_hash",
     "raw_secret_fields_retained",
+    "QiWe group arrival confirmation does not bind to the real activity send",
     "forbidden sensitive fragment",
     "Xiaoman QiWe group arrival confirmation evidence check passed.",
   ]) {
     requireFragment(xiaomanQiweArrivalConfirmationEvidenceCheckPath, checker, fragment);
   }
+  forbidFragment(
+    xiaomanQiweArrivalConfirmationEvidenceCheckPath,
+    checker,
+    "<group-arrival-confirmation-output.txt>"
+  );
   for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
     forbidFragment(xiaomanQiweArrivalConfirmationEvidenceCheckPath, checker, fragment);
   }
@@ -2503,6 +2926,7 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
 } else {
   const checker = readText(xiaomanProductionCompletionEvidenceCheckPath);
   for (const fragment of [
+    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completed-xiaoman-production-completion-evidence.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>",
     "xiaoman-production-completion-evidence-v1",
     "check-huabaosi-image-staging-evidence.mjs",
     "check-qiwe-image-staging-evidence.mjs",
@@ -2523,10 +2947,15 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
     "release_tag",
     "released_commit_sha",
     "included_in_release_sha",
+    "runtime_artifact_profile",
     "release facts do not bind to the deployed production release",
     "listener_service_timer_reviewed",
     "production_feature_boundary_reviewed",
     "huabaosi_production_activation",
+    "QiWe real activity production facts do not bind to retained evidence",
+    "Huabaosi production activation facts do not bind to canary evidence",
+    "--manifest <completed-xiaoman-production-completion-evidence.json>",
+    "--production-real-activity <production-evidence-output.txt>",
     "first_record_evidence_retained",
     "brief_review",
     "request_intake",
@@ -2540,6 +2969,16 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
   ]) {
     requireFragment(xiaomanProductionCompletionEvidenceCheckPath, checker, fragment);
   }
+  forbidFragment(
+    xiaomanProductionCompletionEvidenceCheckPath,
+    checker,
+    "--manifest <completion-manifest.json>"
+  );
+  forbidFragment(
+    xiaomanProductionCompletionEvidenceCheckPath,
+    checker,
+    "--production-real-activity <production-output.txt>"
+  );
   for (const fragment of ["fetch(", "systemctl", "process.env.QIWE_TOKEN"]) {
     forbidFragment(xiaomanProductionCompletionEvidenceCheckPath, checker, fragment);
   }
@@ -2554,6 +2993,7 @@ if (!exists(xiaomanProductionCompletionManifestBuilderPath)) {
 } else {
   const builder = readText(xiaomanProductionCompletionManifestBuilderPath);
   for (const fragment of [
+    "usage: node tools/deploy/build-xiaoman-production-completion-manifest.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> [--output <completed-xiaoman-production-completion-evidence.json>]",
     "xiaoman-production-completion-evidence-v1",
     "check-huabaosi-image-production-canary-evidence.mjs",
     "check-xiaoman-real-activity-production-evidence.mjs",
@@ -2584,17 +3024,21 @@ if (!exists(xiaomanProductionCompletionManifestBuilderPath)) {
     "--released-commit-sha",
     "--qiwe-production-enablement-pr-number",
     "--qiwe-production-enablement-head-sha",
-    "--huabaosi-production-canary",
-    "--production-real-activity",
-    "--qiwe-group-arrival-confirmation",
+    "--huabaosi-production-canary <huabaosi-production-canary-output.txt>",
+    "--production-real-activity <production-evidence-output.txt>",
+    "--qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>",
+    "--output <completed-xiaoman-production-completion-evidence.json>",
     "assertNoSensitiveOutput(output)",
     "forbiddenOutputPatterns",
     "released_commit_sha",
     "release_tag",
     "included_in_release_sha",
+    "runtime_artifact_profile",
     "qiwe_group_arrival_confirmed",
     "safeDiagnostic",
     "redacted-sensitive-diagnostic",
+    "artifact_profile=huabaosi-production",
+    "runtime_artifact_profile=qiwe-production",
     "forbiddenOutputPatterns.some",
     "must be merged in GitHub before manifest generation",
     "does not match GitHub state",
@@ -2615,6 +3059,21 @@ if (!exists(xiaomanProductionCompletionManifestBuilderPath)) {
   ]) {
     forbidFragment(xiaomanProductionCompletionManifestBuilderPath, builder, fragment);
   }
+  forbidFragment(
+    xiaomanProductionCompletionManifestBuilderPath,
+    builder,
+    "--production-real-activity <output.txt>"
+  );
+  forbidFragment(
+    xiaomanProductionCompletionManifestBuilderPath,
+    builder,
+    "--qiwe-group-arrival-confirmation <output.txt>"
+  );
+  forbidFragment(
+    xiaomanProductionCompletionManifestBuilderPath,
+    builder,
+    "[--output <manifest.json>]"
+  );
 }
 
 const xiaomanTextAnnouncementMvpPath =
@@ -2654,6 +3113,34 @@ if (!exists(xiaomanTextAnnouncementMvpPath)) {
   }
 }
 
+const xiaomanProductionCompletionFinalizerPath =
+  "tools/deploy/finalize-xiaoman-production-completion-evidence.mjs";
+if (!exists(xiaomanProductionCompletionFinalizerPath)) {
+  addError(
+    `${xiaomanProductionCompletionFinalizerPath}: missing Xiaoman production completion evidence finalizer`
+  );
+} else {
+  const finalizer = readText(xiaomanProductionCompletionFinalizerPath);
+  for (const fragment of [
+    "usage: node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --staging-runtime-readiness <staging-runtime-readiness-output.txt> --huabaosi-staging <huabaosi-staging-output.txt> --qiwe-staging <qiwe-staging-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --output <completed-xiaoman-production-completion-evidence.json>",
+    "build-xiaoman-production-completion-manifest.mjs",
+    "check-xiaoman-production-completion-evidence.mjs",
+    "--staging-runtime-readiness",
+    "--huabaosi-staging",
+    "--qiwe-staging",
+    "--huabaosi-production-canary",
+    "--production-real-activity",
+    "--qiwe-group-arrival-confirmation",
+    "--output",
+    "Xiaoman production completion evidence finalized:",
+  ]) {
+    requireFragment(xiaomanProductionCompletionFinalizerPath, finalizer, fragment);
+  }
+  for (const fragment of ["fetch(", "gh ", "systemctl", "QIWE_TOKEN="]) {
+    forbidFragment(xiaomanProductionCompletionFinalizerPath, finalizer, fragment);
+  }
+}
+
 const xiaomanRealActivityEvidenceRuntimePath =
   "runtime/sidecar/src/xiaoman_real_activity_evidence.rs";
 if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {
@@ -2672,6 +3159,10 @@ if (!exists(xiaomanRealActivityEvidenceRuntimePath)) {
     "canonicalize",
     "owner-approved SHA-256",
     "configured database URL does not match the owner-approved SHA-256",
+    "artifact-manifest.json",
+    "validation.artifact_profile",
+    "qiwe-production-adapter",
+    "reviewed QiWe production artifact",
     "database_url_sha256",
     "release_binary_verified",
     "approved_sidecar_sha256_matched",
@@ -2799,6 +3290,90 @@ if (!exists(xiaomanImageSendStagingEvidenceTemplatePath)) {
 
 const xiaomanRealActivityProductionEvidenceTemplatePath =
   "docs/reports/templates/xiaoman-real-activity-production-evidence.md";
+const huabaosiProductionCanaryEvidenceTemplatePath =
+  "docs/reports/templates/huabaosi-image-production-canary-evidence.md";
+const xiaomanProductionEvidenceRunbookPath =
+  "docs/operations/xiaoman-production-evidence-runbook.md";
+if (!exists(xiaomanProductionEvidenceRunbookPath)) {
+  addError(
+    `${xiaomanProductionEvidenceRunbookPath}: missing Xiaoman production evidence runbook`
+  );
+} else {
+  const runbook = readText(xiaomanProductionEvidenceRunbookPath);
+  for (const fragment of [
+    "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
+    "Do not continue to production evidence capture if this local check fails.",
+    "runtime_artifact_profile=huabaosi-production",
+    "runtime_artifact_profile=qiwe-production",
+    "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_SIDECAR_SHA256=<approved-huabaosi-production-sidecar-sha256>",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-qiwe-production-sidecar-sha256>",
+    "check-huabaosi-image-production-canary-evidence.mjs",
+    "check-xiaoman-real-activity-production-evidence.mjs",
+    "check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs",
+    "build-xiaoman-production-completion-manifest.mjs",
+    "finalize-xiaoman-production-completion-evidence.mjs",
+    "check-xiaoman-production-completion-evidence.mjs",
+    "Treating them as the same production binary is invalid.",
+    "owner-approved follow-up deploy with `runtime_artifact_profile=qiwe-production`",
+    "does not auto-merge a Release Please PR",
+    "does not publish a Release",
+  ]) {
+    requireFragment(xiaomanProductionEvidenceRunbookPath, runbook, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "postgres://",
+    "postgresql://",
+    "systemctl enable",
+    "gh release create",
+  ]) {
+    forbidFragment(xiaomanProductionEvidenceRunbookPath, runbook, fragment);
+  }
+}
+
+if (!exists(huabaosiProductionCanaryEvidenceTemplatePath)) {
+  addError(
+    `${huabaosiProductionCanaryEvidenceTemplatePath}: missing Huabaosi production canary evidence template`
+  );
+} else {
+  const template = readText(huabaosiProductionCanaryEvidenceTemplatePath);
+  for (const fragment of [
+    "node tools/deploy/check-huabaosi-image-production-canary-evidence.mjs",
+    "Production release SHA",
+    "Runtime artifact profile: `huabaosi-production`.",
+    "Packaged sidecar binary SHA-256",
+    "Production database URL SHA-256",
+    "Release-local binary verified",
+    "Owner-approved sidecar SHA-256 matched",
+    "Owner-approved database URL SHA-256 matched",
+    "Generated-image artifact UUID",
+    "Final JPEG `content_hash`",
+    "`preflight`",
+    "`brief_review`",
+    "`request_intake`",
+    "`generation`",
+    "`revalidation`",
+    "`artifact_profile`: `huabaosi-production`",
+    "`review_status`: `pending`",
+    "Huabaosi production canary evidence checker passed: yes/no.",
+    "Do not record provider endpoint, provider response, API key, token, database URL",
+  ]) {
+    requireFragment(huabaosiProductionCanaryEvidenceTemplatePath, template, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN=",
+    "QIWE_GUID=",
+    "postgres://",
+    "postgresql://",
+    "callback.json",
+    "systemctl enable",
+    "systemctl start",
+    "gh release",
+  ]) {
+    forbidFragment(huabaosiProductionCanaryEvidenceTemplatePath, template, fragment);
+  }
+}
+
 if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
   addError(
     `${xiaomanRealActivityProductionEvidenceTemplatePath}: missing Xiaoman real activity production evidence template`
@@ -2806,12 +3381,13 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
 } else {
   const template = readText(xiaomanRealActivityProductionEvidenceTemplatePath);
   for (const fragment of [
-    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256='<approved production sidecar binary sha256>'",
+    "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256='<approved qiwe production sidecar binary sha256>'",
     "QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256='<approved production database URL sha256>'",
     "qintopia-message-sidecar xiaoman-real-activity-production-evidence",
     "--workflow-root-id <completed-xiaoman-activity-root-uuid>",
     "node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>",
     "Production release SHA",
+    "Runtime artifact profile: `qiwe-production`.",
     "Release-local binary verified",
     "Owner-approved sidecar SHA-256 matched",
     "Production database URL SHA-256",
@@ -2822,6 +3398,7 @@ if (!exists(xiaomanRealActivityProductionEvidenceTemplatePath)) {
     "Final JPEG `artifact_content_hash`",
     "QiWe group arrival confirmed by human operator",
     "signal_intake",
+    "`runtime_artifact_profile`: `qiwe-production`",
     "image_generation",
     "human_approval",
     "send_ready",
@@ -2922,6 +3499,8 @@ if (!exists(xiaomanQiweArrivalConfirmationEvidenceTestPath)) {
   const test = readText(xiaomanQiweArrivalConfirmationEvidenceTestPath);
   for (const fragment of [
     "check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs",
+    "runtime_artifact_profile:",
+    'overrides.runtimeArtifactProfile ?? "qiwe-production"',
     "does not bind to the real activity send",
     "forbidden sensitive fragment",
     "production real activity evidence failed",
@@ -2971,10 +3550,15 @@ if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
     "exact_allowlists_reviewed",
     "production_feature_boundary_reviewed",
     "huabaosi_production_activation",
+    "runtime_artifact_profile",
+    "<approved-huabaosi-production-sidecar-sha256>",
     "image_generation_observation_passed",
     "feishu_mirror_activation_approved",
     "first_record_evidence_retained",
     "real_activity_confirmation",
+    "<approved-qiwe-production-sidecar-sha256>",
+    "sidecar_binary_sha256",
+    "database_url_sha256",
     "qiwe_group_arrival_confirmed",
   ]) {
     requireFragment(

@@ -58,13 +58,16 @@ exit 70
   fs.mkdirSync(path.dirname(bridge), { recursive: true });
   fs.writeFileSync(bridge, "# fixture bridge\n", "utf8");
   const manifestPath = path.join(releaseDir, "sidecar", "artifact-manifest.json");
-  const writeManifest = (cargoFeatures) =>
+  const writeManifest = (artifactProfile, cargoFeatures) =>
     fs.writeFileSync(
       manifestPath,
       `${JSON.stringify(
         {
           commit_sha: releaseSha,
-          validation: { cargo_features: cargoFeatures },
+          validation: {
+            artifact_profile: artifactProfile,
+            cargo_features: cargoFeatures,
+          },
         },
         null,
         2
@@ -75,7 +78,7 @@ exit 70
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
   ];
-  writeManifest(approvedCargoFeatures);
+  writeManifest("huabaosi-production", approvedCargoFeatures);
   fs.symlinkSync(releaseDir, currentRelease);
   fs.mkdirSync(path.dirname(plugin), { recursive: true });
   fs.symlinkSync(path.join(currentRelease, "skills", "qiwe"), plugin);
@@ -184,12 +187,15 @@ exit 70
     throw new Error("callback bridge observation accepted a non-symlink plugin path");
   }
 
-  writeManifest([...approvedCargoFeatures, "qiwe-production-adapter"]);
+  writeManifest("huabaosi-production", [
+    ...approvedCargoFeatures,
+    "qiwe-production-adapter",
+  ]);
   const mixedArtifact = run();
   if (mixedArtifact.status === 0) {
     throw new Error("observation accepted a mixed Huabaosi/QiWe production artifact");
   }
-  writeManifest(approvedCargoFeatures);
+  writeManifest("huabaosi-production", approvedCargoFeatures);
 
   const disabled = run();
   if (disabled.status !== 0) {
@@ -244,6 +250,36 @@ exit 70
   ) {
     throw new Error("enabled observation accepted the Huabaosi production artifact");
   }
+
+  writeManifest("qiwe-production", ["qiwe-production-adapter"]);
+  const enabledQiwe = run({
+    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: enabledEnv,
+  });
+  if (enabledQiwe.status !== 0) {
+    throw new Error(
+      `enabled QiWe callback observation failed\n${enabledQiwe.stdout}\n${enabledQiwe.stderr}`
+    );
+  }
+  if (
+    !enabledQiwe.stdout.includes(
+      "qiwe_image_callback_bridge_production_artifact_profile=qiwe-production"
+    )
+  ) {
+    throw new Error(
+      "enabled QiWe callback observation did not report the QiWe artifact profile"
+    );
+  }
+
+  const disabledQiwe = run({
+    QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: disabledEnv,
+  });
+  if (disabledQiwe.status !== 0) {
+    throw new Error(
+      `disabled QiWe callback observation failed\n${disabledQiwe.stdout}\n${disabledQiwe.stderr}`
+    );
+  }
+
+  writeManifest("huabaosi-production", approvedCargoFeatures);
 
   const expectedDisabled = run({
     QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_ENV_FILE: enabledEnv,

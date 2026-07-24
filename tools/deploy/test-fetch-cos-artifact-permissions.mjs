@@ -68,6 +68,7 @@ try {
           },
         ],
         validation: {
+          artifact_profile: "huabaosi-production",
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
@@ -154,6 +155,7 @@ exec ${JSON.stringify(systemTar)} "$@"
       cwd: repoRoot,
       env: {
         ...fetchEnv,
+        QINTOPIA_SIDECAR_ARTIFACT_PROFILE: "huabaosi-production",
         ARTIFACT_NAME: artifactName,
         ARTIFACT_TARGET: "linux-x86_64-gnu",
       },
@@ -184,6 +186,7 @@ exec ${JSON.stringify(systemTar)} "$@"
           },
         ],
         validation: {
+          artifact_profile: "huabaosi-production",
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
@@ -221,6 +224,7 @@ exec ${JSON.stringify(systemTar)} "$@"
       cwd: repoRoot,
       env: {
         ...fetchEnv,
+        QINTOPIA_SIDECAR_ARTIFACT_PROFILE: "huabaosi-production",
         ARTIFACT_NAME: artifactName,
         ARTIFACT_TARGET: "linux-x86_64-gnu",
       },
@@ -234,6 +238,69 @@ exec ${JSON.stringify(systemTar)} "$@"
     )
   ) {
     throw new Error("COS fetch accepted a QiWe-enabled Huabaosi production artifact");
+  }
+
+  const qiweArtifactName = "qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu";
+  fs.writeFileSync(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        commit_sha: sha,
+        artifact_name: qiweArtifactName,
+        target: "linux-x86_64-gnu",
+        files: [
+          {
+            path: "qintopia-message-sidecar",
+            sha256: sha256File(binaryPath),
+          },
+        ],
+        validation: {
+          artifact_profile: "qiwe-production",
+          cargo_features: ["qiwe-production-adapter"],
+        },
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(fixtureRoot, "SHA256SUMS"),
+    [
+      `${sha256File(binaryPath)}  qintopia-message-sidecar`,
+      `${sha256File(archivePath)}  qintopia-message-sidecar.tar.gz`,
+      `${sha256File(manifestPath)}  artifact-manifest.json`,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const qiweOutputRoot = path.join(tmpRoot, "qiwe-output");
+  const qiweResult = spawnSync(
+    "bash",
+    [
+      "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+      "--artifact-type",
+      "sidecar",
+      "--sha",
+      sha,
+      "--output-dir",
+      qiweOutputRoot,
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...fetchEnv,
+        QINTOPIA_SIDECAR_ARTIFACT_PROFILE: "qiwe-production",
+        ARTIFACT_NAME: qiweArtifactName,
+        ARTIFACT_TARGET: "linux-x86_64-gnu",
+      },
+      encoding: "utf8",
+    }
+  );
+  if (qiweResult.status !== 0) {
+    throw new Error(
+      `COS fetch rejected a reviewed QiWe artifact\n${qiweResult.stdout}\n${qiweResult.stderr}`
+    );
   }
 
   const payloadRoot = path.join(fixtureRoot, "payload");
@@ -346,7 +413,7 @@ exec ${JSON.stringify(systemTar)} "$@"
 
   const tarInvocations = fs.readFileSync(tarArgsPath, "utf8").trim().split("\n");
   if (
-    tarInvocations.length !== 3 ||
+    tarInvocations.length !== 4 ||
     tarInvocations.some((args) => !args.includes("--no-same-owner"))
   ) {
     throw new Error(
