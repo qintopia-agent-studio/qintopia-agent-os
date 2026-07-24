@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.29](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.28...v0.2.29) (2026-07-23)
+
+
+### Bug Fixes
+
+* **deploy:** isolate WeCom observation journal window ([#270](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/270)) ([b006ded](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b006dedf8d313333a6b8d4ea008b0ec9645b3e5c))
+
 ## [0.2.28](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.27...v0.2.28) (2026-07-23)
 
 
