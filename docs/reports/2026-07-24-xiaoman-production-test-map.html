@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Xiaoman Production Test Map - 2026-07-24</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --text: #18212f;
+        --muted: #5f6b7a;
+        --line: #d8dee8;
+        --accent: #1664d8;
+        --good: #0f8a4b;
+        --warn: #b26b00;
+        --soft-good: #eaf8f0;
+        --soft-warn: #fff6e7;
+        --soft-accent: #edf4ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+      }
+
+      .hero,
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 10px 28px rgba(24, 33, 47, 0.05);
+      }
+
+      .hero {
+        padding: 24px;
+        margin-bottom: 18px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        font-weight: 700;
+      }
+
+      h1 {
+        font-size: 28px;
+        line-height: 1.2;
+      }
+
+      h2 {
+        font-size: 18px;
+        line-height: 1.3;
+        margin-bottom: 14px;
+      }
+
+      p {
+        margin: 0;
+        line-height: 1.6;
+      }
+
+      .hero-sub {
+        margin-top: 12px;
+        color: var(--muted);
+        max-width: 860px;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--soft-accent);
+        font-size: 13px;
+        color: var(--text);
+      }
+
+      .chip.good {
+        background: var(--soft-good);
+        color: var(--good);
+        border-color: rgba(15, 138, 75, 0.18);
+      }
+
+      .chip.warn {
+        background: var(--soft-warn);
+        color: var(--warn);
+        border-color: rgba(178, 107, 0, 0.2);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .panel {
+        padding: 20px;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .step {
+        min-height: 154px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .step-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .step h3 {
+        margin-top: 10px;
+        font-size: 15px;
+      }
+
+      .step p {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .list-item {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+      }
+
+      .list-item strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 14px;
+      }
+
+      .list-item span {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      .mini-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .decision-card,
+      .role-card {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .decision-kicker,
+      .role-kicker {
+        display: inline-block;
+        margin-bottom: 8px;
+        font-size: 12px;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .decision-card h3,
+      .role-card h3 {
+        font-size: 15px;
+      }
+
+      .decision-card p,
+      .role-card p {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .decision-arrow {
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .artifact-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .artifact-card {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fcfdff;
+      }
+
+      .artifact-card strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .artifact-card span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr 1fr;
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .summary-card {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .summary-label {
+        display: inline-block;
+        margin-bottom: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent);
+      }
+
+      .summary-card h3 {
+        font-size: 16px;
+      }
+
+      .summary-card ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .summary-card li + li {
+        margin-top: 4px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        padding: 12px 10px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+
+      th {
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        background: #f2f5fa;
+        padding: 2px 5px;
+        border-radius: 4px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .status.good {
+        color: var(--good);
+        background: var(--soft-good);
+      }
+
+      .status.warn {
+        color: var(--warn);
+        background: var(--soft-warn);
+      }
+
+      .status.info {
+        color: var(--accent);
+        background: var(--soft-accent);
+      }
+
+      .note {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--accent);
+        border-radius: 6px;
+        background: #fbfdff;
+        color: var(--muted);
+      }
+
+      .footer {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .flow {
+          grid-template-columns: 1fr;
+        }
+
+        .mini-grid,
+        .artifact-strip,
+        .summary-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>小满生产测试图</h1>
+        <p class="hero-sub">
+          截至 2026-07-24，仓库内实现、校验器、契约、runbook、finalizer
+          已基本收口。现在可以把这张图当成“生产到底能怎么测、能测到哪一步、每一步交付什么文件”的执行面板。
+        </p>
+        <div class="chips">
+          <div class="chip good">仓库内校验已全绿</div>
+          <div class="chip warn">真实生产证据仍待执行</div>
+          <div class="chip">Huabaosi 与 QiWe 为分离 production artifact</div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-bottom: 18px">
+        <h2>老板版摘要</h2>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="summary-label">现在什么情况</div>
+            <h3>代码基本完成，当前卡在真实生产证据</h3>
+            <ul>
+              <li>QiWe 独立生产启用链已在仓库内收口。</li>
+              <li>Huabaosi 首条生产图片 canary 证据链已在仓库内收口。</li>
+              <li>本地总校验入口已经全绿，适合作为生产执行前基线。</li>
+            </ul>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">还差什么</div>
+            <h3>差 4 类真实外部动作</h3>
+            <ul>
+              <li>真实 Huabaosi production canary。</li>
+              <li>必要时补真实 <code>qiwe-production</code> follow-up deploy。</li>
+              <li>真实小满活动证据和企微群到达人工确认。</li>
+              <li>最终 completion manifest 收尾与留档。</li>
+            </ul>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">下一步怎么做</div>
+            <h3>先执行，再收尾，不再扩主流程代码</h3>
+            <ul>
+              <li>执行人按 runbook 跑真实生产步骤。</li>
+              <li>
+                所有 retained 文件齐全后，跑
+                <code>pnpm deploy:xiaoman-production-evidence:finalize -- ...</code>。
+              </li>
+              <li>
+                在 completion checker 通过前，不宣称 <code>production-complete</code>。
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid">
+        <section class="panel">
+          <h2>当前能测的生产路径</h2>
+          <div class="flow">
+            <div class="step">
+              <div class="step-num">1</div>
+              <h3>仓库内总校验</h3>
+              <p>先确认 repo-side 实现和契约完整，再决定是否进入真实生产证据捕获。</p>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <h3>Huabaosi 生产 Canary</h3>
+              <p>
+                验证首条真实生产图片 canary，产出可审计的 sanitized canary evidence。
+              </p>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <h3>QiWe 生产 Follow-up Deploy</h3>
+              <p>
+                如果 release/current 仍是普通 Huabaosi artifact，就切到独立
+                qiwe-production artifact。
+              </p>
+            </div>
+            <div class="step">
+              <div class="step-num">4</div>
+              <h3>真实小满活动证据</h3>
+              <p>走完整条小满到企微生产链路，导出 real-activity evidence。</p>
+            </div>
+            <div class="step">
+              <div class="step-num">5</div>
+              <h3>最终 Completion Manifest</h3>
+              <p>
+                把 staging 与 production 证据统一绑定到同一 released
+                commit，完成最终校验。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>一句话判断</h2>
+          <div class="list">
+            <div class="list-item">
+              <strong>现在不是继续补主流程代码</strong>
+              <span>当前主要是 owner-operated 的生产执行与证据留档。</span>
+            </div>
+            <div class="list-item">
+              <strong>可以测到真实生产边界</strong>
+              <span
+                >Huabaosi canary、QiWe production
+                follow-up、真实活动证据、群到达确认、final manifest 都有明确入口。</span
+              >
+            </div>
+            <div class="list-item">
+              <strong>不能直接宣称 production-complete</strong>
+              <span
+                >只要真实 canary、真实 activity、群到达确认、completion manifest
+                还有一项没留证，就不能算完成。</span
+              >
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h2>生产测试矩阵</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>阶段</th>
+                <th>现在能测什么</th>
+                <th>怎么测</th>
+                <th>产出物</th>
+                <th>当前状态</th>
+                <th>通过条件</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Repo 基线</td>
+                <td>仓库内总链路、checker、contracts、runner、finalizer</td>
+                <td>
+                  <code
+                    >node
+                    tools/deploy/check-xiaoman-production-evidence-chain-local.mjs</code
+                  >
+                </td>
+                <td>本地全链路通过</td>
+                <td><span class="status good">已可测</span></td>
+                <td>总校验全绿，才能进入真实 production evidence</td>
+              </tr>
+              <tr>
+                <td>Huabaosi Canary</td>
+                <td>首条真实生产图片 canary</td>
+                <td>
+                  <code>huabaosi-image-generation-production-canary-smoke.sh</code> +
+                  <code>check-huabaosi-image-production-canary-evidence.mjs</code>
+                </td>
+                <td><code>huabaosi-production-canary-output.txt</code></td>
+                <td><span class="status warn">待生产执行</span></td>
+                <td>
+                  证据必须证明 <code>runtime_artifact_profile=huabaosi-production</code>
+                </td>
+              </tr>
+              <tr>
+                <td>QiWe Follow-up Deploy</td>
+                <td>独立 <code>qiwe-production</code> artifact 上线</td>
+                <td>
+                  仅当 <code>release/current</code> 仍是普通 Huabaosi artifact 时执行
+                </td>
+                <td>deploy request / result evidence</td>
+                <td><span class="status info">条件触发</span></td>
+                <td>
+                  active release-local binary 必须切到
+                  <code>runtime_artifact_profile=qiwe-production</code>
+                </td>
+              </tr>
+              <tr>
+                <td>真实活动证据</td>
+                <td>小满真实生产活动从 signal 到 QiWe 送达</td>
+                <td>
+                  <code
+                    >qintopia-message-sidecar
+                    xiaoman-real-activity-production-evidence</code
+                  >
+                  + checker
+                </td>
+                <td><code>production-evidence-output.txt</code></td>
+                <td><span class="status warn">待生产执行</span></td>
+                <td>
+                  证据必须证明 <code>runtime_artifact_profile=qiwe-production</code>
+                </td>
+              </tr>
+              <tr>
+                <td>企微群到达确认</td>
+                <td>人工确认目标企微群已收到图片</td>
+                <td>
+                  <code
+                    >check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs</code
+                  >
+                </td>
+                <td><code>qiwe-group-arrival-confirmation-output.txt</code></td>
+                <td><span class="status warn">待生产执行</span></td>
+                <td>确认文件必须和同一 real-activity evidence 绑定</td>
+              </tr>
+              <tr>
+                <td>最终收尾</td>
+                <td>统一绑定所有 staging / production 证据</td>
+                <td>
+                  <code>pnpm deploy:xiaoman-production-evidence:finalize -- ...</code>
+                </td>
+                <td>
+                  <code>completed-xiaoman-production-completion-evidence.json</code>
+                </td>
+                <td><span class="status warn">依赖前置证据</span></td>
+                <td>completion checker 通过，才可宣称 production-complete</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note">
+          关键边界：Huabaosi canary 和 QiWe real-activity 不是同一个 production
+          artifact。 前者必须保留 <code>huabaosi-production</code> 侧的 sidecar
+          SHA-256， 后者必须保留 <code>qiwe-production</code> 侧的 sidecar SHA-256。
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 18px">
+        <h2>现在怎么决定先测哪一步</h2>
+        <div class="mini-grid">
+          <div class="decision-card">
+            <div class="decision-kicker">Decision 01</div>
+            <h3>本地总校验是否全绿</h3>
+            <p>
+              先跑
+              <code
+                >node
+                tools/deploy/check-xiaoman-production-evidence-chain-local.mjs</code
+              >。
+            </p>
+            <div class="decision-arrow">
+              不绿：先回到仓库修正；全绿：进入真实 production evidence。
+            </div>
+          </div>
+          <div class="decision-card">
+            <div class="decision-kicker">Decision 02</div>
+            <h3>release/current 是否还是普通 Huabaosi artifact</h3>
+            <p>
+              如果还是普通 artifact，真实 activity 之前要补 QiWe production follow-up
+              deploy。
+            </p>
+            <div class="decision-arrow">
+              仍是普通 artifact：先切 <code>qiwe-production</code>；已切：直接进真实
+              activity。
+            </div>
+          </div>
+          <div class="decision-card">
+            <div class="decision-kicker">Decision 03</div>
+            <h3>前置证据文件是否都已保留</h3>
+            <p>
+              Huabaosi canary、real activity、企微群到达确认、staging evidence 都要齐。
+            </p>
+            <div class="decision-arrow">
+              齐全：跑 finalizer；缺任意一项：不能宣称 production-complete。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 18px">
+        <h2>按角色看现在该做什么</h2>
+        <div class="mini-grid">
+          <div class="role-card">
+            <div class="role-kicker">Owner / 发布人</div>
+            <h3>决定是否进入真实生产证据捕获</h3>
+            <p>
+              确认 release 已发布，确认这次窗口就是要跑 Huabaosi
+              canary、真实小满活动和最终 evidence retention。
+            </p>
+          </div>
+          <div class="role-card">
+            <div class="role-kicker">执行人 / 刘珊</div>
+            <h3>按 runbook 执行，不再扩主流程代码</h3>
+            <p>
+              依次跑 canary、必要时补 follow-up deploy、导出 real-activity
+              evidence、保留企微群到达确认，最后跑 finalizer。
+            </p>
+          </div>
+          <div class="role-card">
+            <div class="role-kicker">审阅人 / 交接人</div>
+            <h3>只收 sanitized evidence</h3>
+            <p>
+              检查 retained 文件、artifact profile、两个 production sidecar SHA-256
+              是否分离，不接收 secrets 或 raw logs。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 18px">
+        <h2>最后要交付的文件</h2>
+        <div class="artifact-strip">
+          <div class="artifact-card">
+            <strong>Huabaosi Canary</strong>
+            <span
+              ><code>huabaosi-production-canary-output.txt</code
+              ><br />证明首条真实生产图片 canary。</span
+            >
+          </div>
+          <div class="artifact-card">
+            <strong>Real Activity</strong>
+            <span
+              ><code>production-evidence-output.txt</code><br />证明真实小满生产活动走到
+              QiWe delivery。</span
+            >
+          </div>
+          <div class="artifact-card">
+            <strong>Group Arrival</strong>
+            <span
+              ><code>qiwe-group-arrival-confirmation-output.txt</code
+              ><br />证明人工已确认目标企微群收到图片。</span
+            >
+          </div>
+          <div class="artifact-card">
+            <strong>Final Manifest</strong>
+            <span
+              ><code>completed-xiaoman-production-completion-evidence.json</code
+              ><br />统一绑定 staging 与 production 证据。</span
+            >
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 18px">
+        <h2>建议给执行人的最小包</h2>
+        <div class="list">
+          <div class="list-item">
+            <strong>1. 交付文档</strong>
+            <span
+              ><code
+                >docs/reports/2026-07-24-xiaoman-production-evidence-handoff.md</code
+              ></span
+            >
+          </div>
+          <div class="list-item">
+            <strong>2. 执行 runbook</strong>
+            <span
+              ><code>docs/operations/xiaoman-production-evidence-runbook.md</code></span
+            >
+          </div>
+          <div class="list-item">
+            <strong>3. 完成门槛</strong>
+            <span
+              ><code
+                >docs/plans/active/xiaoman-production-completion-gate.md</code
+              ></span
+            >
+          </div>
+          <div class="list-item">
+            <strong>4. 最终收尾命令</strong>
+            <span
+              ><code
+                >pnpm deploy:xiaoman-production-evidence:finalize -- ...</code
+              ></span
+            >
+          </div>
+        </div>
+      </section>
+
+      <p class="footer">
+        Source basis:
+        <code>docs/operations/xiaoman-production-evidence-runbook.md</code>,
+        <code>docs/plans/active/xiaoman-production-completion-gate.md</code>,
+        <code>docs/reports/2026-07-24-xiaoman-production-evidence-handoff.md</code>.
+      </p>
+    </main>
+  </body>
+</html>

@@ -81,7 +81,14 @@ const writeEnv = (extra = "", reviewerIds = "owner, trainer") => {
 
 const fakeSidecar = (
   name,
-  { mismatch = false, leak = false, starterParentMismatch = false } = {}
+  {
+    mismatch = false,
+    leak = false,
+    starterParentMismatch = false,
+    artifactProfile = "huabaosi-production",
+    cargoFeatures = ["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"],
+    writeManifest = true,
+  } = {}
 ) => {
   const filePath = path.join(tmpRoot, name);
   const revalidatedHash = mismatch ? `sha256:${"b".repeat(64)}` : contentHash;
@@ -186,6 +193,25 @@ case "\${1:-}" in
 esac
 `
   );
+  const manifestPath = path.join(path.dirname(filePath), "artifact-manifest.json");
+  if (fs.existsSync(manifestPath)) {
+    fs.chmodSync(manifestPath, 0o644);
+    fs.rmSync(manifestPath, { force: true });
+  }
+  if (writeManifest) {
+    fs.writeFileSync(
+      manifestPath,
+      `${JSON.stringify({
+        commit_sha: releaseSha,
+        validation: {
+          artifact_profile: artifactProfile,
+          cargo_features: cargoFeatures,
+        },
+      })}\n`,
+      "utf8"
+    );
+    fs.chmodSync(manifestPath, 0o444);
+  }
   return filePath;
 };
 
@@ -304,6 +330,7 @@ esac
     throw new Error(`unexpected production canary phases: ${phases.join(",")}`);
   }
   if (
+    evidence[0].artifact_profile !== "huabaosi-production" ||
     evidence[3].artifact_id !== generatedArtifactId ||
     evidence[4].artifact_id !== generatedArtifactId ||
     evidence[3].content_hash !== contentHash ||
@@ -478,6 +505,33 @@ esac
     throw new Error("duplicate production canary env key must fail closed");
   }
   writeEnv();
+
+  const missingManifestSidecar = fakeSidecar("sidecar-missing-manifest", {
+    writeManifest: false,
+  });
+  const missingManifest = run(missingManifestSidecar);
+  if (
+    missingManifest.status === 0 ||
+    !missingManifest.stderr.includes(
+      "requires the immutable Huabaosi production artifact manifest"
+    )
+  ) {
+    throw new Error("missing artifact manifest must block production canary");
+  }
+
+  const wrongProfileSidecar = fakeSidecar("sidecar-wrong-profile", {
+    artifactProfile: "qiwe-production",
+    cargoFeatures: ["qiwe-production-adapter"],
+  });
+  const wrongProfile = run(wrongProfileSidecar);
+  if (
+    wrongProfile.status === 0 ||
+    !wrongProfile.stderr.includes(
+      "requires the immutable Huabaosi production artifact manifest"
+    )
+  ) {
+    throw new Error("wrong artifact manifest profile must block production canary");
+  }
 
   const mismatchSidecar = fakeSidecar("sidecar-mismatch", { mismatch: true });
   fs.writeFileSync(commandLog, "", "utf8");

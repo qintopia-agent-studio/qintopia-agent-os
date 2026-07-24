@@ -19,7 +19,10 @@ Fallback environment:
 Optional environment:
   GITHUB_REPOSITORY  Defaults to qintopia-agent-studio/qintopia-agent-os.
   GITHUB_WORKFLOW    Defaults to ci.yml.
-  ARTIFACT_NAME      Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
+  QINTOPIA_SIDECAR_ARTIFACT_PROFILE
+                     huabaosi-production or qiwe-production. Defaults to
+                     huabaosi-production.
+  ARTIFACT_NAME      Defaults to the reviewed artifact name for the chosen profile.
   ARTIFACT_TARGET    Defaults to linux-x86_64-gnu.
   GITHUB_API_MAX_TIME       Defaults to 240 seconds.
   GITHUB_DOWNLOAD_MAX_TIME  Defaults to 900 seconds.
@@ -59,11 +62,26 @@ fi
 
 repo="${GITHUB_REPOSITORY:-qintopia-agent-studio/qintopia-agent-os}"
 workflow="${GITHUB_WORKFLOW:-ci.yml}"
-artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
 artifact_target="${ARTIFACT_TARGET:-linux-x86_64-gnu}"
 output_dir="${output_dir:-/tmp/qintopia-agent-os-artifacts/${sha}}"
 github_api_max_time="${GITHUB_API_MAX_TIME:-240}"
 github_download_max_time="${GITHUB_DOWNLOAD_MAX_TIME:-900}"
+artifact_profile="${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-huabaosi-production}"
+
+case "$artifact_profile" in
+  huabaosi-production)
+    artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
+    expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter"]'
+    ;;
+  qiwe-production)
+    artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu}"
+    expected_cargo_features='["qiwe-production-adapter"]'
+    ;;
+  *)
+    echo "QINTOPIA_SIDECAR_ARTIFACT_PROFILE must be huabaosi-production or qiwe-production" >&2
+    exit 2
+    ;;
+esac
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -253,6 +271,7 @@ unzip -o -q "$zip_path" -d "$output_dir"
   manifest_commit="$(jq -r '.commit_sha // empty' artifact-manifest.json)"
   manifest_artifact="$(jq -r '.artifact_name // empty' artifact-manifest.json)"
   manifest_target="$(jq -r '.target // empty' artifact-manifest.json)"
+  manifest_artifact_profile="$(jq -r '.validation.artifact_profile // empty' artifact-manifest.json)"
   manifest_cargo_features="$(jq -c '.validation.cargo_features // null' artifact-manifest.json)"
   manifest_binary_sha="$(
     jq -r \
@@ -272,7 +291,11 @@ unzip -o -q "$zip_path" -d "$output_dir"
     echo "artifact manifest target mismatch: got ${manifest_target}, expected ${artifact_target}" >&2
     exit 1
   fi
-  if [[ "$manifest_cargo_features" != '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter"]' ]]; then
+  if [[ "$manifest_artifact_profile" != "$artifact_profile" ]]; then
+    echo "artifact manifest profile mismatch: got ${manifest_artifact_profile}, expected ${artifact_profile}" >&2
+    exit 1
+  fi
+  if [[ "$manifest_cargo_features" != "$expected_cargo_features" ]]; then
     echo "artifact manifest Cargo features are not approved for production" >&2
     exit 1
   fi

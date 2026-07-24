@@ -67,7 +67,7 @@ else
   SIDECAR_BIN="${RELEASE_CURRENT_DIR}/sidecar/qintopia-message-sidecar"
 fi
 
-if ! RELEASE_SHA="$(python3 - "$SIDECAR_BIN" "$RELEASE_CURRENT_DIR" <<'PY'
+if ! RELEASE_FACTS="$(python3 - "$SIDECAR_BIN" "$RELEASE_CURRENT_DIR" <<'PY'
 import json
 import os
 import re
@@ -97,20 +97,41 @@ for path in (current_real, os.path.dirname(expected_bin), expected_bin):
 manifest_path = os.path.join(current_real, "sidecar", "artifact-manifest.json")
 with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
-if manifest.get("validation", {}).get("cargo_features") != [
-    "huabaosi-production-adapter",
-    "huabaosi-feishu-mirror-adapter",
-]:
+artifact_profile = manifest.get("validation", {}).get("artifact_profile", "")
+cargo_features = manifest.get("validation", {}).get("cargo_features")
+if artifact_profile == "huabaosi-production":
+    expected_features = [
+        "huabaosi-production-adapter",
+        "huabaosi-feishu-mirror-adapter",
+    ]
+elif artifact_profile == "qiwe-production":
+    expected_features = ["qiwe-production-adapter"]
+else:
+    raise SystemExit(1)
+if cargo_features != expected_features:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
     raise SystemExit(1)
 
-print(release_sha)
+print(json.dumps({"release_sha": release_sha, "artifact_profile": artifact_profile}))
 PY
 )"; then
   echo "QiWe image-send production observation requires the immutable release/current sidecar binary with reviewed production adapter features" >&2
   exit 1
 fi
+
+RELEASE_SHA="$(python3 - "$RELEASE_FACTS" <<'PY'
+import json
+import sys
+print(json.loads(sys.argv[1])["release_sha"])
+PY
+)"
+ARTIFACT_PROFILE="$(python3 - "$RELEASE_FACTS" <<'PY'
+import json
+import sys
+print(json.loads(sys.argv[1])["artifact_profile"])
+PY
+)"
 
 parse_send_enablement() {
   local path="$1"
@@ -181,20 +202,32 @@ if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$EXPECTED_STATE" == "enabled" ]]; then
+if [[ "$EXPECTED_STATE" == "enabled" && "$ARTIFACT_PROFILE" != "qiwe-production" ]]; then
   echo "QiWe image-send enabled observation requires a separate reviewed QiWe production artifact" >&2
   exit 1
 fi
 
-if "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
-  echo "QiWe image-send production timer must not be active" >&2
-  exit 1
-fi
-if "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
-  echo "QiWe image-send production timer must not be enabled" >&2
-  exit 1
+if [[ "$EXPECTED_STATE" == "enabled" ]]; then
+  if ! "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
+    echo "QiWe image-send production timer must be active" >&2
+    exit 1
+  fi
+  if ! "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
+    echo "QiWe image-send production timer must be enabled" >&2
+    exit 1
+  fi
+else
+  if "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
+    echo "QiWe image-send production timer must not be active" >&2
+    exit 1
+  fi
+  if "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
+    echo "QiWe image-send production timer must not be enabled" >&2
+    exit 1
+  fi
 fi
 
 echo "qiwe_image_send_production_observation_state=${EXPECTED_STATE}"
+echo "qiwe_image_send_production_artifact_profile=${ARTIFACT_PROFILE}"
 echo "qiwe_image_send_production_release_sha=${RELEASE_SHA}"
 echo "QiWe image-send production observation passed"

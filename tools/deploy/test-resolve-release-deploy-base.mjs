@@ -71,6 +71,17 @@ const assertSuccess = (name, currentTag, releases, runs, results, expectedTag) =
   }
 };
 
+const trustedResult = (releaseSha, profile = "huabaosi-production") => ({
+  status: "succeeded",
+  release_sha: releaseSha,
+  commit_sha: releaseSha,
+  runtime_sha: releaseSha,
+  runtime_artifact_profile: profile,
+  deploy_bundle_sha: releaseSha,
+  release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
+  restart_targets: ["qintopia-system-services"],
+});
+
 try {
   fs.mkdirSync(fixtureRepo, { recursive: true });
   runGit(["init"], fixtureRepo);
@@ -111,7 +122,7 @@ try {
         head_sha: v020Sha,
       },
     ],
-    [{ status: "succeeded", release_sha: v020Sha }],
+    [trustedResult(v020Sha)],
     "v0.2.0"
   );
 
@@ -127,7 +138,7 @@ try {
         head_sha: v020Sha,
       },
     ],
-    [{ status: "succeeded", release_sha: v020Sha }],
+    [trustedResult(v020Sha)],
     "v0.2.0"
   );
 
@@ -144,7 +155,7 @@ try {
         head_sha: v020Sha,
       },
     ],
-    [{ status: "succeeded", release_sha: v020Sha }],
+    [trustedResult(v020Sha)],
     "v0.2.0"
   );
 
@@ -175,10 +186,29 @@ try {
         head_sha: v020Sha,
       },
     ],
+    [{ status: "dry_run_succeeded", release_sha: v021Sha }, trustedResult(v020Sha)],
+    "v0.2.0"
+  );
+
+  assertSuccess(
+    "ignores-successful-result-without-trusted-identity",
+    "v0.2.2",
+    releases,
     [
-      { status: "dry_run_succeeded", release_sha: v021Sha },
-      { status: "succeeded", release_sha: v020Sha },
+      {
+        head_branch: "v0.2.1",
+        event: "release",
+        conclusion: "success",
+        head_sha: v021Sha,
+      },
+      {
+        head_branch: "v0.2.0",
+        event: "release",
+        conclusion: "success",
+        head_sha: v020Sha,
+      },
     ],
+    [{ status: "succeeded", release_sha: v021Sha }, trustedResult(v020Sha)],
     "v0.2.0"
   );
 

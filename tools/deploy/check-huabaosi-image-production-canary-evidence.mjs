@@ -95,6 +95,7 @@ const [preflight, briefReview, requestIntake, generation, revalidation] = record
 for (const record of records) {
   if (
     record.success !== true ||
+    record.artifact_profile !== "huabaosi-production" ||
     record.release_binary_verified !== true ||
     record.approved_sidecar_sha256_matched !== true ||
     record.approved_database_url_sha256_matched !== true ||
@@ -106,12 +107,14 @@ for (const record of records) {
   }
 }
 assertSame(records, "release_sha", "production release SHA");
+assertSame(records, "artifact_profile", "production artifact profile");
 assertSame(records, "sidecar_binary_sha256", "sidecar binary SHA-256");
 assertSame(records, "database_url_sha256", "database URL SHA-256");
 
 const commonKeys = [
   "approved_database_url_sha256_matched",
   "approved_sidecar_sha256_matched",
+  "artifact_profile",
   "database_url_sha256",
   "phase",
   "release_binary_verified",
@@ -122,12 +125,13 @@ const commonKeys = [
 
 assertExactKeys(
   preflight,
-  new Set([...commonKeys, "action_status", "timer_active"]),
+  new Set([...commonKeys, "action_status", "timer_active", "timer_enabled"]),
   "preflight"
 );
 if (
   preflight.action_status !== "adapter_config_ready" ||
-  preflight.timer_active !== false
+  preflight.timer_active !== false ||
+  preflight.timer_enabled !== false
 ) {
   fail("production canary preflight does not prove adapter readiness");
 }
@@ -222,6 +226,7 @@ assertExactKeys(
     "database_writes_executed",
     "external_calls_executed",
     "height",
+    "sensitive_fields_redacted",
     "width",
   ]),
   "revalidation"
@@ -234,7 +239,8 @@ if (
   revalidation.width !== generation.width ||
   revalidation.height !== generation.height ||
   revalidation.database_writes_executed !== false ||
-  revalidation.external_calls_executed !== true
+  revalidation.external_calls_executed !== true ||
+  revalidation.sensitive_fields_redacted !== true
 ) {
   fail(
     "production canary revalidation does not prove authenticated same-byte readback"

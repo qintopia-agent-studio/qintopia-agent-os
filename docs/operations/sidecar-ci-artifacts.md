@@ -6,7 +6,7 @@ local Node.js, pnpm, or Rust tooling.
 
 ## Artifact Contract
 
-The CI artifact name is:
+The ordinary production sidecar CI artifact name is:
 
 ```text
 qintopia-message-sidecar-linux-x86_64-gnu
@@ -28,7 +28,7 @@ The initial target is `linux-x86_64-gnu`, matching the current production server
 Linux x86_64, Ubuntu glibc
 ```
 
-Production sidecar artifacts are built with exactly the non-default
+This reviewed Huabaosi production artifact is built with exactly the non-default
 `huabaosi-production-adapter` and guarded `huabaosi-feishu-mirror-adapter` Cargo
 features, and record only those names in `cargo_features`. Neither
 `huabaosi-staging-adapter`, `qiwe-staging-adapter` may appear in this builder or a
@@ -97,6 +97,10 @@ The `Artifacts` workflow publishes release artifacts. It is opt-in:
 - include `[publish-artifacts]` in the `master` commit message when an automatic
   publication is intentional.
 
+That commit-message shortcut publishes only the ordinary Huabaosi production sidecar
+artifact plus the deploy bundle. It does not auto-build or auto-upload the independent
+QiWe production artifact.
+
 The staging-only artifact is stricter: it is never built from the push path and can be
 published only by a manual `workflow_dispatch` with `build_staging_sidecar=true`.
 
@@ -106,6 +110,27 @@ artifacts. This limits repository artifact storage without changing the server r
 model: once an artifact has been downloaded and verified on the server, the server copy
 under `/home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>` remains separate
 from GitHub artifact retention.
+
+The independent QiWe production sidecar artifact name is:
+
+```text
+qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
+```
+
+It is built only by the manually dispatched Artifacts workflow when
+`build_qiwe_sidecar=true`. Its manifest profile is `qiwe-production`, it compiles
+exactly `qiwe-production-adapter`, and it is deployable only when the production deploy
+request records `runtime_artifact_profile=qiwe-production`. It must never be mixed into
+the ordinary Huabaosi production artifact, and Huabaosi release/current observations
+must continue to fail closed if QiWe enablement is attempted through the wrong artifact.
+Publishing a normal GitHub Release does not deploy this artifact automatically; QiWe
+production enablement remains a separate reviewed `Deploy Production`
+`workflow_dispatch` follow-up after the artifact is already present in COS.
+
+The `qiwe-sidecar-artifact` job uploads the new artifact first, then runs
+`pnpm artifact:prune:sidecar:qiwe-production` with `actions: write` permission to delete
+older same-name artifacts. GitHub Actions therefore retains the latest ten artifacts for
+each exact production artifact name independently.
 
 The workflow can also build `qintopia-agent-os-deploy-bundle`, which contains reviewed
 operator files for M9-F: the Hermes MCP wrapper, systemd renderer, and deployment
@@ -129,6 +154,11 @@ Object layout:
 
 ```text
 cos://qintopia-agent-os-artifacts/qintopia-agent-os/sidecar/<commit-sha>/qintopia-message-sidecar-linux-x86_64-gnu/
+  artifact-manifest.json
+  SHA256SUMS
+  qintopia-message-sidecar.tar.gz
+
+cos://qintopia-agent-os-artifacts/qintopia-agent-os/sidecar/<commit-sha>/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu/
   artifact-manifest.json
   SHA256SUMS
   qintopia-message-sidecar.tar.gz
@@ -186,12 +216,13 @@ to COS upload. The verified accelerated upload for commit
 seconds.
 
 After each successful COS upload, the workflow runs
-`deploy/sidecar/scripts/prune-cos-artifacts.sh` for both `sidecar` and `deploy-bundle`.
-COS keeps the latest ten sidecar artifact SHA directories for
-`qintopia-message-sidecar-linux-x86_64-gnu` and the latest ten deploy bundle SHA
-directories for `qintopia-agent-os-deploy-bundle`, matching the GitHub Actions artifact
-retention count. This retention is implemented in CI because bucket lifecycle rules are
-time-based and cannot express "latest N builds".
+`deploy/sidecar/scripts/prune-cos-artifacts.sh` for both production sidecar artifact
+names and for `deploy-bundle`. COS keeps the latest ten sidecar artifact SHA directories
+for `qintopia-message-sidecar-linux-x86_64-gnu`, the latest ten SHA directories for
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and the latest ten deploy
+bundle SHA directories for `qintopia-agent-os-deploy-bundle`, matching the GitHub
+Actions artifact retention count. This retention is implemented in CI because bucket
+lifecycle rules are time-based and cannot express "latest N builds".
 
 Optional GitHub repository variables can override the workflow defaults:
 

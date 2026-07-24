@@ -125,6 +125,14 @@ trigger is `release.published`: manually publishing a normal GitHub Release is t
 production release entrypoint. The same workflow keeps `workflow_dispatch` only as an
 emergency or diagnostic path for explicitly named SHAs.
 
+That primary `release.published` path is intentionally still the ordinary Huabaosi
+production artifact path. It builds/uploads `qintopia-message-sidecar-linux-x86_64-gnu`,
+fixes `runtime_artifact_profile=huabaosi-production`, and rejects any attempt to treat
+Release publication as the QiWe production artifact deploy. The independent QiWe
+enablement chain remains a separate reviewed follow-up: publish
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` to COS first, then use the
+manual `workflow_dispatch` path with `runtime_artifact_profile=qiwe-production`.
+
 Merging the Release Please PR prepares a version but does not approve production
 deployment. Publishing the draft GitHub Release is the owner-approved production
 approval event for this repository. The `production` environment scopes COS and
@@ -284,8 +292,9 @@ The request schema is `deploy/runner/deploy-request.schema.json`. The result sch
 `deploy/runner/deploy-result.schema.json`.
 
 Profile activation requests identify the exact reviewed dry-run request. Results retain
-the fixed release scope, restart target, smoke phase, and restore evidence so approval
-and rollback can be audited independently.
+the fixed manifest identity (`commit_sha`, `runtime_sha`, `runtime_artifact_profile`,
+and `deploy_bundle_sha`), release scope, restart target, smoke phase, and restore
+evidence so approval and rollback can be audited independently.
 
 The server runner intentionally does not list `deploy-requests/production/pending/`.
 Tencent COS is object storage, not a queue, and ListBucket/prefix listing can be slower

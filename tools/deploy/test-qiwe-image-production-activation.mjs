@@ -31,6 +31,10 @@ try {
   const sha256sum = path.join(tmpRoot, "sha256sum");
   const activationFixture = path.join(tmpRoot, "activate-production-fixture.sh");
   const rollbackFixture = path.join(tmpRoot, "rollback-production-fixture.sh");
+  const observationFixture = path.join(
+    tmpRoot,
+    "qiwe-image-send-production-observation-smoke.sh"
+  );
 
   for (const sourcePath of [activationScript, rollbackScript]) {
     const source = fs.readFileSync(sourcePath, "utf8");
@@ -61,6 +65,13 @@ try {
   ) {
     throw new Error("activation must use the fixed sha256sum path");
   }
+  if (
+    !fs
+      .readFileSync(activationScript, "utf8")
+      .includes("QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1")
+  ) {
+    throw new Error("activation must run release-local QiWe production observation");
+  }
 
   fs.writeFileSync(
     activationFixture,
@@ -71,6 +82,7 @@ try {
       .replaceAll(fixedSha256sum, sha256sum),
     "utf8"
   );
+  fs.chmodSync(activationFixture, 0o755);
   fs.writeFileSync(
     rollbackFixture,
     fs
@@ -79,6 +91,7 @@ try {
       .replaceAll(fixedSystemctl, systemctl),
     "utf8"
   );
+  fs.chmodSync(rollbackFixture, 0o755);
   fs.writeFileSync(
     systemctl,
     `#!/usr/bin/env bash
@@ -91,6 +104,27 @@ fi
     "utf8"
   );
   fs.chmodSync(systemctl, 0o755);
+  fs.writeFileSync(
+    observationFixture,
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
+  echo "ambient secret reached observation" >&2
+  exit 23
+fi
+if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE:-}" != "1" ]]; then
+  echo "missing observation enable flag" >&2
+  exit 24
+fi
+if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE:-}" != "enabled" ]]; then
+  echo "unexpected observation state" >&2
+  exit 25
+fi
+printf '%s\\n' "observation enabled" >>"${logPath}"
+`,
+    "utf8"
+  );
+  fs.chmodSync(observationFixture, 0o755);
   fs.writeFileSync(
     sha256sum,
     `#!/usr/bin/env bash
@@ -122,6 +156,7 @@ printf '%s  -\\n' "${databaseHash}"
       cwd: repoRoot,
       env: {
         ...process.env,
+        QINTOPIA_UNRELATED_RUNTIME_SECRET: "must-not-reach-observation",
         ...extraEnv,
       },
       encoding: "utf8",
@@ -270,6 +305,7 @@ printf '%s  -\\n' "${databaseHash}"
     "enable --now qintopia-agentos-qiwe-image-send-worker.timer",
     "is-enabled --quiet qintopia-agentos-qiwe-image-send-worker.timer",
     "is-active --quiet qintopia-agentos-qiwe-image-send-worker.timer",
+    "observation enabled",
   ]) {
     if (!activationLog.includes(command)) {
       throw new Error(`activation is missing systemctl command: ${command}`);

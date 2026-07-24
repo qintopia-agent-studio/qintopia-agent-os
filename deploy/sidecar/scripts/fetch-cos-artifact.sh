@@ -26,7 +26,10 @@ Optional environment:
   TENCENT_COS_BUCKET_ALIAS   COSCLI bucket alias. Defaults to qintopia-agent-os-artifacts.
   TENCENT_COS_ENDPOINT       Optional COS endpoint, for example cos.accelerate.myqcloud.com.
   TENCENT_COS_SESSION_TOKEN  Temporary key token.
-  ARTIFACT_NAME              Defaults to qintopia-message-sidecar-linux-x86_64-gnu.
+  QINTOPIA_SIDECAR_ARTIFACT_PROFILE
+                            huabaosi-production or qiwe-production. Defaults to
+                            huabaosi-production.
+  ARTIFACT_NAME              Defaults to the reviewed artifact name for the chosen profile.
   ARTIFACT_TARGET            Defaults to linux-x86_64-gnu.
   QINTOPIA_COS_ARTIFACT_TYPE Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
   COSCLI_PATH                Existing coscli binary path.
@@ -39,6 +42,8 @@ USAGE
 sha=""
 output_dir=""
 artifact_type="${QINTOPIA_COS_ARTIFACT_TYPE:-sidecar}"
+artifact_profile="${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-huabaosi-production}"
+expected_cargo_features=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -180,7 +185,20 @@ fi
 
 case "$artifact_type" in
   sidecar)
-    artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
+    case "$artifact_profile" in
+      huabaosi-production)
+        artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
+        expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter"]'
+        ;;
+      qiwe-production)
+        artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu}"
+        expected_cargo_features='["qiwe-production-adapter"]'
+        ;;
+      *)
+        echo "QINTOPIA_SIDECAR_ARTIFACT_PROFILE must be huabaosi-production or qiwe-production" >&2
+        exit 2
+        ;;
+    esac
     artifact_target="${ARTIFACT_TARGET:-linux-x86_64-gnu}"
     output_dir="${output_dir:-/tmp/qintopia-agent-os-artifacts/${sha}}"
     ;;
@@ -367,8 +385,10 @@ fi
     test -f payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp
     test -f payload/deploy/sidecar/scripts/render-systemd-units.sh
   fi
+  QINTOPIA_EXPECTED_CARGO_FEATURES="$expected_cargo_features" \
   python3 - "$sha" "$artifact_name" "$artifact_target" "$artifact_type" <<'PY'
 import json
+import os
 import sys
 
 expected_sha, expected_artifact, expected_target, artifact_type = sys.argv[1:5]
@@ -378,6 +398,7 @@ with open("artifact-manifest.json", encoding="utf-8") as fh:
 manifest_commit = manifest.get("commit_sha", "")
 manifest_artifact = manifest.get("artifact_name", "")
 manifest_target = manifest.get("target", "")
+manifest_profile = manifest.get("validation", {}).get("artifact_profile", "")
 
 if manifest_commit != expected_sha:
     raise SystemExit(
@@ -394,10 +415,15 @@ if manifest_target != expected_target:
 
 if artifact_type == "sidecar":
     required_path = "qintopia-message-sidecar"
-    if manifest.get("validation", {}).get("cargo_features") != [
-        "huabaosi-production-adapter",
-        "huabaosi-feishu-mirror-adapter",
-    ]:
+    expected_profile = os.environ.get("QINTOPIA_SIDECAR_ARTIFACT_PROFILE", "")
+    expected_features = json.loads(
+        os.environ.get("QINTOPIA_EXPECTED_CARGO_FEATURES", "null")
+    )
+    if manifest_profile != expected_profile:
+        raise SystemExit(
+            f"artifact manifest profile mismatch: got {manifest_profile}, expected {expected_profile}"
+        )
+    if manifest.get("validation", {}).get("cargo_features") != expected_features:
         raise SystemExit("artifact manifest Cargo features are not approved for production")
 else:
     required_path = "qintopia-agent-os-deploy-bundle.tar.gz"

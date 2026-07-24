@@ -247,13 +247,17 @@ immutable `release/current` binary and fixed production env file, and it must no
 `--apply` or process callbacks. Because that binary is the Huabaosi production artifact,
 the observation may prove only the disabled QiWe worker and callback-bridge state. It
 must fail closed if either QiWe production enable flag is `1`; an enabled state requires
-a separate reviewed QiWe production artifact and must never be made possible by adding
-`qiwe-production-adapter` to the Huabaosi artifact.
+a separate reviewed QiWe production artifact whose manifest carries exactly
+`qiwe-production-adapter`, and it must never be made possible by adding that feature to
+the Huabaosi artifact.
 
 Production activation is guarded rather than automatic. It requires the persistent
 enablement flag, exact production owner phrase, canonical production database URL hash,
 and release-local `qiwe-image-send-production-preflight` before enabling the worker
-timer. That worker can upload one approved send-ready image and persist sanitized
+timer. After the timer is enabled, the activation boundary reruns the release-local
+production observation in `enabled` mode so the immutable `release/current` artifact
+profile and timer state are re-proved without passing secrets to child processes. That
+worker can upload one approved send-ready image and persist sanitized
 `awaiting_callback` state, but final `/msg/sendImage` still depends on one reviewed
 `cmd=20000` callback reaching `process-qiwe-image-send-callback --apply`. The activation
 and rollback scripts read only the fixed reviewed `/etc/qintopia/message-sidecar.env`

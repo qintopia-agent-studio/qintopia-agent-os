@@ -12,6 +12,10 @@
     "started_at",
     "finished_at",
     "release_sha",
+    "commit_sha",
+    "runtime_sha",
+    "runtime_artifact_profile",
+    "deploy_bundle_sha",
     "release_scope",
     "previous_sha",
     "current_target",
@@ -27,6 +31,12 @@
     "started_at": { "type": "string", "format": "date-time" },
     "finished_at": { "type": "string", "format": "date-time" },
     "release_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "runtime_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "runtime_artifact_profile": {
+      "enum": ["huabaosi-production", "qiwe-production"]
+    },
+    "deploy_bundle_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "release_scope": {
       "type": "array",
       "minItems": 1,

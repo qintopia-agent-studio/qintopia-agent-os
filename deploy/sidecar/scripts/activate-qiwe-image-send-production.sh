@@ -6,12 +6,19 @@ if [[ "${QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:-}" != "approved-product
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OBSERVATION_SCRIPT="${SCRIPT_DIR}/qiwe-image-send-production-observation-smoke.sh"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 SYSTEMCTL="/usr/bin/systemctl"
 SHA256SUM="/usr/bin/sha256sum"
 PREFLIGHT_SERVICE="qintopia-agentos-qiwe-image-send-preflight.service"
 WORKER_TIMER="qintopia-agentos-qiwe-image-send-worker.timer"
+
+if [[ ! -x "$OBSERVATION_SCRIPT" ]]; then
+  echo "QiWe image-send production activation requires the release-local observation script" >&2
+  exit 1
+fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "QiWe image-send production activation requires the persistent sidecar env file" >&2
@@ -85,6 +92,14 @@ require_database_hash_match() {
   fi
 }
 
+run_observation() {
+  env -i \
+    PATH="$PATH" \
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 \
+    QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE=enabled \
+    "$OBSERVATION_SCRIPT" >/dev/null
+}
+
 require_env_line "QINTOPIA_QIWE_IMAGE_SEND_ENABLED" "1"
 require_env_line "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-image-send"
 require_sha256_env_line "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256"
@@ -94,5 +109,6 @@ require_database_hash_match
 "$SYSTEMCTL" enable --now "$WORKER_TIMER"
 "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"
 "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"
+run_observation
 
 echo "QiWe image-send production timer activated"

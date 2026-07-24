@@ -60,13 +60,16 @@ exit 70
 `
   );
   const manifestPath = path.join(releaseDir, "sidecar", "artifact-manifest.json");
-  const writeManifest = (cargoFeatures) =>
+  const writeManifest = (artifactProfile, cargoFeatures) =>
     fs.writeFileSync(
       manifestPath,
       `${JSON.stringify(
         {
           commit_sha: releaseSha,
-          validation: { cargo_features: cargoFeatures },
+          validation: {
+            artifact_profile: artifactProfile,
+            cargo_features: cargoFeatures,
+          },
         },
         null,
         2
@@ -77,7 +80,7 @@ exit 70
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
   ];
-  writeManifest(approvedCargoFeatures);
+  writeManifest("huabaosi-production", approvedCargoFeatures);
   fs.symlinkSync(releaseDir, currentRelease);
   fs.writeFileSync(sidecarLog, "", "utf8");
 
@@ -180,12 +183,15 @@ exit 70
     throw new Error("observation accepted a sidecar outside release/current");
   }
 
-  writeManifest([...approvedCargoFeatures, "qiwe-production-adapter"]);
+  writeManifest("huabaosi-production", [
+    ...approvedCargoFeatures,
+    "qiwe-production-adapter",
+  ]);
   const mixedArtifact = run();
   if (mixedArtifact.status === 0) {
     throw new Error("observation accepted a mixed Huabaosi/QiWe production artifact");
   }
-  writeManifest(approvedCargoFeatures);
+  writeManifest("huabaosi-production", approvedCargoFeatures);
 
   fs.writeFileSync(sidecarLog, "", "utf8");
   const disabled = run();
@@ -256,6 +262,45 @@ exit 70
   ) {
     throw new Error("enabled observation accepted the Huabaosi production artifact");
   }
+
+  writeManifest("qiwe-production", ["qiwe-production-adapter"]);
+  const enabledQiwe = run({
+    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
+    FAKE_QIWE_TIMER_ENABLED: "1",
+    FAKE_QIWE_TIMER_ACTIVE: "1",
+  });
+  if (enabledQiwe.status !== 0) {
+    throw new Error(
+      `enabled QiWe observation failed\n${enabledQiwe.stdout}\n${enabledQiwe.stderr}`
+    );
+  }
+  if (
+    !enabledQiwe.stdout.includes(
+      "qiwe_image_send_production_artifact_profile=qiwe-production"
+    )
+  ) {
+    throw new Error(
+      "enabled QiWe observation did not report the QiWe artifact profile"
+    );
+  }
+
+  const enabledQiweWithoutTimer = run({
+    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
+  });
+  if (enabledQiweWithoutTimer.status === 0) {
+    throw new Error("enabled QiWe observation accepted a disabled production timer");
+  }
+
+  const disabledQiwe = run({
+    QINTOPIA_SIDECAR_ENV_FILE: disabledEnv,
+  });
+  if (disabledQiwe.status !== 0) {
+    throw new Error(
+      `disabled QiWe observation failed\n${disabledQiwe.stdout}\n${disabledQiwe.stderr}`
+    );
+  }
+
+  writeManifest("huabaosi-production", approvedCargoFeatures);
 
   const disabledTimerEnabled = run({
     QINTOPIA_SIDECAR_ENV_FILE: disabledEnv,

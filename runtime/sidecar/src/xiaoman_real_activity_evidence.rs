@@ -125,6 +125,7 @@ pub async fn run(
 
 struct ProductionBoundary {
     production_release_sha: String,
+    runtime_artifact_profile: String,
     sidecar_binary_sha256: String,
     database_url_sha256: String,
     release_binary_verified: bool,
@@ -155,6 +156,8 @@ impl ProductionBoundary {
         }
         let sidecar_path = env::current_exe().context("resolve current sidecar binary path")?;
         verify_release_binary_path(&sidecar_path, &production_release_sha)?;
+        let runtime_artifact_profile =
+            load_runtime_artifact_profile(&sidecar_path, &production_release_sha)?;
         let sidecar_bytes = fs::read(&sidecar_path).context("read current sidecar binary")?;
         let sidecar_binary_sha256 = sha256_hex(&sidecar_bytes);
         if sidecar_binary_sha256 != expected_sidecar_sha256 {
@@ -162,6 +165,7 @@ impl ProductionBoundary {
         }
         Ok(Self {
             production_release_sha,
+            runtime_artifact_profile,
             sidecar_binary_sha256,
             database_url_sha256,
             release_binary_verified: true,
@@ -177,6 +181,7 @@ impl ProductionBoundary {
             "worker": worker,
             "action_status": action_status,
             "production_release_sha": self.production_release_sha,
+            "runtime_artifact_profile": self.runtime_artifact_profile,
             "sidecar_binary_sha256": self.sidecar_binary_sha256,
             "database_url_sha256": self.database_url_sha256,
             "release_binary_verified": self.release_binary_verified,
@@ -223,6 +228,62 @@ fn verify_release_binary_path(sidecar_path: &Path, production_release_sha: &str)
 
 fn symlink_metadata(path: &Path) -> Result<fs::Metadata> {
     fs::symlink_metadata(path).with_context(|| format!("inspect {}", path.display()))
+}
+
+fn load_runtime_artifact_profile(
+    sidecar_path: &Path,
+    production_release_sha: &str,
+) -> Result<String> {
+    let manifest_path = sidecar_path
+        .parent()
+        .context("production sidecar binary parent is missing")?
+        .join("artifact-manifest.json");
+    let metadata = symlink_metadata(&manifest_path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        bail!("production sidecar artifact manifest is missing");
+    }
+    reject_group_or_world_writable(&manifest_path)?;
+    let manifest_bytes =
+        fs::read(&manifest_path).context("read current sidecar artifact manifest")?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes)
+        .context("parse current sidecar artifact manifest")?;
+    let manifest_commit_sha = manifest
+        .get("commit_sha")
+        .and_then(Value::as_str)
+        .context("current sidecar artifact manifest is missing commit_sha")?;
+    if manifest_commit_sha != production_release_sha {
+        bail!(
+            "current sidecar artifact manifest commit_sha does not match QINTOPIA_DEPLOYED_COMMIT_SHA"
+        );
+    }
+    let validation = manifest
+        .get("validation")
+        .and_then(Value::as_object)
+        .context("current sidecar artifact manifest is missing validation")?;
+    let artifact_profile = validation
+        .get("artifact_profile")
+        .and_then(Value::as_str)
+        .context("current sidecar artifact manifest is missing validation.artifact_profile")?;
+    let cargo_features = validation
+        .get("cargo_features")
+        .and_then(Value::as_array)
+        .context("current sidecar artifact manifest is missing validation.cargo_features")?
+        .iter()
+        .map(|value| {
+            value.as_str().map(str::to_owned).context(
+                "current sidecar artifact manifest validation.cargo_features contains a non-string entry",
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if artifact_profile != "qiwe-production" {
+        bail!(
+            "production real-activity evidence must run from the reviewed QiWe production artifact"
+        );
+    }
+    if cargo_features != ["qiwe-production-adapter"] {
+        bail!("production real-activity evidence requires exactly qiwe-production-adapter");
+    }
+    Ok(artifact_profile.to_string())
 }
 
 fn reject_group_or_world_writable(path: &Path) -> Result<()> {
@@ -700,6 +761,7 @@ mod tests {
     fn boundary() -> ProductionBoundary {
         ProductionBoundary {
             production_release_sha: "a".repeat(40),
+            runtime_artifact_profile: "qiwe-production".to_string(),
             sidecar_binary_sha256: "b".repeat(64),
             database_url_sha256: "c".repeat(64),
             release_binary_verified: true,
@@ -749,6 +811,7 @@ mod tests {
         let records = snapshot().records(&boundary()).unwrap();
         assert_eq!(records.len(), 7);
         assert_eq!(records[0]["phase"], "signal_intake");
+        assert_eq!(records[0]["runtime_artifact_profile"], "qiwe-production");
         assert_eq!(records[5]["external_send_executed"], true);
         assert_eq!(records[6]["raw_secret_fields_retained"], false);
         let serialized = records

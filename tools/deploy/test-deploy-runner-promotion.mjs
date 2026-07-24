@@ -49,7 +49,7 @@ try {
   fs.mkdirSync(stateDir, { recursive: true });
   fs.mkdirSync(releaseRoot, { recursive: true });
 
-  const request = {
+  const buildRequest = (runtimeArtifactProfile = "huabaosi-production") => ({
     schema_version: 1,
     request_id: requestId,
     environment: "production",
@@ -59,6 +59,7 @@ try {
     expires_at: "2099-07-06T01:00:00Z",
     commit_sha: sha,
     runtime_sha: sha,
+    runtime_artifact_profile: runtimeArtifactProfile,
     deploy_bundle_sha: sha,
     release_sha: sha,
     release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
@@ -72,7 +73,8 @@ try {
       request_key: `qintopia-agent-os/deploy-requests/production/requests/${requestId}.json`,
       result_key: `qintopia-agent-os/deploy-results/production/${requestId}.json`,
     },
-  };
+  });
+  const request = buildRequest();
   const signatureMetadata = {
     algorithm: "hmac-sha256",
     issuer: "github-actions",
@@ -178,6 +180,14 @@ exit 44
   if (deployResult.status !== "failed") {
     throw new Error(`expected failed result, got ${deployResult.status}`);
   }
+  if (
+    deployResult.commit_sha !== sha ||
+    deployResult.runtime_sha !== sha ||
+    deployResult.runtime_artifact_profile !== "huabaosi-production" ||
+    deployResult.deploy_bundle_sha !== sha
+  ) {
+    throw new Error("failed result did not retain deploy identity fields");
+  }
   if (deployResult.current_target) {
     throw new Error(
       "failed pre-promotion result must not report a promoted current target"
@@ -279,6 +289,14 @@ exit 0
     throw new Error(`expected rolled_back result, got ${promotedDeployResult.status}`);
   }
   if (
+    promotedDeployResult.commit_sha !== sha ||
+    promotedDeployResult.runtime_sha !== sha ||
+    promotedDeployResult.runtime_artifact_profile !== "huabaosi-production" ||
+    promotedDeployResult.deploy_bundle_sha !== sha
+  ) {
+    throw new Error("rolled_back result did not retain deploy identity fields");
+  }
+  if (
     promotedDeployResult.error !==
     "deployment failed during install-release-systemd-units (exit 55) and rollback succeeded"
   ) {
@@ -293,6 +311,121 @@ exit 0
   ) {
     throw new Error(
       `expected deploy-runner failure detail, got ${promotedDeployResult.checks[0].detail}`
+    );
+  }
+
+  fs.rmSync(stateDir, { recursive: true, force: true });
+  fs.rmSync(releaseRoot, { recursive: true, force: true });
+  fs.mkdirSync(path.join(stateDir, "results"), { recursive: true });
+  fs.mkdirSync(releaseRoot, { recursive: true });
+
+  const qiweRequest = buildRequest("qiwe-production");
+  qiweRequest.signature = {
+    ...signatureMetadata,
+    value: signRequest(qiweRequest, signatureMetadata),
+  };
+  fs.writeFileSync(requestFile, `${JSON.stringify(qiweRequest, null, 2)}\n`, "utf8");
+
+  writeExecutable(
+    "deploy/runner/promote-release.sh",
+    `#!/usr/bin/env bash
+set -euo pipefail
+request_file=""
+release_root=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --request-file)
+      request_file="\${2:-}"
+      shift 2
+      ;;
+    --release-root)
+      release_root="\${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "\${release_root}/${sha}"
+python3 - "$request_file" "\${release_root}/${sha}/manifest.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(sys.argv[2], "w", encoding="utf-8") as fh:
+    json.dump(
+        {"runtime_artifact_profile": request["runtime_artifact_profile"]},
+        fh,
+        ensure_ascii=False,
+        indent=2,
+    )
+    fh.write("\\n")
+PY
+ln -sfn "\${release_root}/${sha}" "\${release_root}/current"
+`
+  );
+  writeExecutable(
+    "deploy/runner/install-release-systemd-units.sh",
+    `#!/usr/bin/env bash
+exit 0
+`
+  );
+  writeExecutable(
+    "deploy/runner/rollback-release.sh",
+    `#!/usr/bin/env bash
+exit 0
+`
+  );
+
+  const qiweResult = spawnSync(
+    "bash",
+    [
+      path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner"),
+      "--request-file",
+      requestFile,
+    ],
+    {
+      cwd: tmpRoot,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
+        QINTOPIA_RELEASE_ROOT: releaseRoot,
+        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+        TENCENT_COS_REGION: "ap-shanghai",
+      },
+      encoding: "utf8",
+    }
+  );
+
+  if (qiweResult.status !== 0) {
+    throw new Error(
+      `expected qiwe runner success, got ${qiweResult.status}\nstdout:\n${qiweResult.stdout}\nstderr:\n${qiweResult.stderr}`
+    );
+  }
+
+  const qiweDeployResult = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  if (qiweDeployResult.status !== "succeeded") {
+    throw new Error(`expected succeeded result, got ${qiweDeployResult.status}`);
+  }
+  if (
+    qiweDeployResult.commit_sha !== sha ||
+    qiweDeployResult.runtime_sha !== sha ||
+    qiweDeployResult.runtime_artifact_profile !== "qiwe-production" ||
+    qiweDeployResult.deploy_bundle_sha !== sha
+  ) {
+    throw new Error("qiwe succeeded result did not retain deploy identity fields");
+  }
+  const qiweManifest = JSON.parse(
+    fs.readFileSync(path.join(releaseRoot, sha, "manifest.json"), "utf8")
+  );
+  if (qiweManifest.runtime_artifact_profile !== "qiwe-production") {
+    throw new Error(
+      "runner success path did not preserve qiwe runtime_artifact_profile"
     );
   }
 } finally {

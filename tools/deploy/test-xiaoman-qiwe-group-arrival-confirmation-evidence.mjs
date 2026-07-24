@@ -176,6 +176,7 @@ function productionOutput(overrides = {}) {
   const common = {
     success: true,
     production_release_sha: releaseSha,
+    runtime_artifact_profile: overrides.runtimeArtifactProfile ?? "qiwe-production",
     sidecar_binary_sha256: sidecarHash,
     database_url_sha256: databaseHash,
     release_binary_verified: true,
