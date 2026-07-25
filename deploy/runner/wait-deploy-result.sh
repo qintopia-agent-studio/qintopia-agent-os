@@ -191,19 +191,86 @@ while (( SECONDS < deadline )); do
   set -e
 
   if [[ "$status" -eq 0 ]]; then
-    result_status="$(python3 - "$result_file" "$request_id" <<'PY'
+    result_status="$(python3 - "$result_file" "$request_file" "$request_id" <<'PY'
 import json
+import re
 import sys
+
+sha_pattern = re.compile(r"^[0-9a-f]{40}$")
+approved_profiles = {"huabaosi-production", "qiwe-production"}
+
+
+def normalized_sha(value):
+    value = str(value or "")
+    return value if sha_pattern.fullmatch(value) else "0" * 40
+
+
+def normalized_identity(request):
+    runtime_artifact_profile = str(request.get("runtime_artifact_profile") or "")
+    if runtime_artifact_profile not in approved_profiles:
+        runtime_artifact_profile = "huabaosi-production"
+
+    release_scope = request.get("release_scope")
+    if not isinstance(release_scope, list) or not release_scope:
+        release_scope = ["sidecar-runtime"]
+
+    restart_targets = request.get("restart_targets")
+    if not isinstance(restart_targets, list) or not restart_targets:
+        restart_targets = ["qintopia-system-services"]
+
+    return {
+        "release_sha": normalized_sha(request.get("release_sha")),
+        "commit_sha": normalized_sha(request.get("commit_sha")),
+        "runtime_sha": normalized_sha(request.get("runtime_sha")),
+        "runtime_artifact_profile": runtime_artifact_profile,
+        "deploy_bundle_sha": normalized_sha(request.get("deploy_bundle_sha")),
+        "release_scope": release_scope,
+        "restart_targets": restart_targets,
+    }
+
+
+def validation_failed_result(result):
+    if result.get("status") != "failed":
+        return False
+    checks = result.get("checks")
+    if not isinstance(checks, list):
+        return False
+    for check in checks:
+        if (
+            isinstance(check, dict)
+            and check.get("name") == "deploy-request-validation"
+            and check.get("status") == "failed"
+        ):
+            return True
+    return False
+
 
 with open(sys.argv[1], encoding="utf-8") as fh:
     result = json.load(fh)
+with open(sys.argv[2], encoding="utf-8") as fh:
+    request = json.load(fh)
 
 if result.get("schema_version") != 1:
     raise SystemExit("deploy result schema_version is invalid")
-if result.get("request_id") != sys.argv[2]:
+if result.get("request_id") != sys.argv[3]:
     raise SystemExit("deploy result request_id mismatch")
 if result.get("environment") != "production":
     raise SystemExit("deploy result environment mismatch")
+
+expected_identity = normalized_identity(request) if validation_failed_result(result) else request
+for key in (
+    "release_sha",
+    "commit_sha",
+    "runtime_sha",
+    "runtime_artifact_profile",
+    "deploy_bundle_sha",
+):
+    if result.get(key) != expected_identity.get(key):
+        raise SystemExit(f"deploy result {key} mismatch")
+if result.get("release_scope") != expected_identity.get("release_scope"):
+    raise SystemExit("deploy result release_scope mismatch")
+if result.get("restart_targets") != expected_identity.get("restart_targets"):
+    raise SystemExit("deploy result restart_targets mismatch")
 
 print(result.get("status", ""))
 PY

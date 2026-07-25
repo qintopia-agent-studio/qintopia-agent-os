@@ -33,6 +33,20 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /authenticated same-byte readback/);
 
+  const redactionMismatch = writeEvidence("redaction-mismatch.txt", {
+    revalidation: { sensitive_fields_redacted: false },
+  });
+  result = runChecker(redactionMismatch);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /authenticated same-byte readback/);
+
+  const timerEnabledMismatch = writeEvidence("timer-enabled-mismatch.txt", {
+    preflight: { timer_enabled: true },
+  });
+  result = runChecker(timerEnabledMismatch);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /adapter readiness/);
+
   const rawSecret = path.join(tmpRoot, "raw-secret.txt");
   fs.writeFileSync(
     rawSecret,
@@ -105,6 +119,13 @@ try {
   result = runChecker(databaseBoundary);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /shared production boundary/);
+
+  const profileBoundary = writeEvidence("profile-boundary.txt", {
+    generation: { artifact_profile: "qiwe-production" },
+  });
+  result = runChecker(profileBoundary);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
@@ -132,6 +153,7 @@ function productionOutput(overrides = {}) {
   const common = {
     approved_database_url_sha256_matched: true,
     approved_sidecar_sha256_matched: true,
+    artifact_profile: "huabaosi-production",
     database_url_sha256: databaseHash,
     release_binary_verified: true,
     release_sha: releaseSha,
@@ -144,6 +166,7 @@ function productionOutput(overrides = {}) {
       phase: "preflight",
       action_status: "adapter_config_ready",
       timer_active: false,
+      timer_enabled: false,
     },
     {
       ...common,
@@ -187,6 +210,7 @@ function productionOutput(overrides = {}) {
       database_writes_executed: false,
       external_calls_executed: true,
       height: 1024,
+      sensitive_fields_redacted: true,
       width: 1024,
     },
   ].map((record) => deepMerge(record, overrides[record.phase] ?? {}));

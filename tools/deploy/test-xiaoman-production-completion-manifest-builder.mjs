@@ -26,7 +26,8 @@ const releaseTag = "v0.2.21";
 const releasePleaseHeadSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const qiweEnablementHeadSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const sidecarHash = "1".repeat(64);
-const productionSidecarHash = "2".repeat(64);
+const huabaosiProductionSidecarHash = "2".repeat(64);
+const qiweProductionSidecarHash = "5".repeat(64);
 const stagingDatabaseHash = "3".repeat(64);
 const productionDatabaseHash = "4".repeat(64);
 const contentHash = `sha256:${"a".repeat(64)}`;
@@ -51,9 +52,17 @@ try {
   assert.equal(generated.qiwe_production_enablement.head_sha, qiweEnablementHeadSha);
   assert.equal(
     generated.huabaosi_production_activation.sidecar_binary_sha256,
-    productionSidecarHash
+    huabaosiProductionSidecarHash
+  );
+  assert.equal(
+    generated.huabaosi_production_activation.runtime_artifact_profile,
+    "huabaosi-production"
   );
   assert.deepEqual(generated.real_activity_confirmation, {
+    release_sha: productionReleaseSha,
+    runtime_artifact_profile: "qiwe-production",
+    sidecar_binary_sha256: qiweProductionSidecarHash,
+    database_url_sha256: productionDatabaseHash,
     qiwe_group_arrival_confirmed: true,
     confirmed_by: "owner",
     confirmed_at: "2026-07-20T06:30:00Z",
@@ -109,6 +118,31 @@ try {
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /QiWe production enablement PR must be merged/);
+
+  const wrongCanaryProfile = writeEvidenceFiles({
+    huabaosiProductionCanary: {
+      generation: { artifact_profile: "qiwe-production" },
+      revalidation: { artifact_profile: "qiwe-production" },
+    },
+  });
+  result = runBuilder(
+    wrongCanaryProfile,
+    path.join(tmpRoot, "wrong-canary-profile-manifest.json")
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
+
+  const wrongRealActivityProfile = writeEvidenceFiles({
+    production: {
+      common: { runtime_artifact_profile: "huabaosi-production" },
+    },
+  });
+  result = runBuilder(
+    wrongRealActivityProfile,
+    path.join(tmpRoot, "wrong-real-activity-profile-manifest.json")
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /shared production boundary/);
 
   result = runBuilder(files, path.join(tmpRoot, "unreleased-qiwe-pr-manifest.json"), {
     FAKE_COMPARE_STATUS: "diverged",
@@ -480,10 +514,11 @@ function huabaosiProductionCanaryOutput(overrides = {}) {
   const common = {
     approved_database_url_sha256_matched: true,
     approved_sidecar_sha256_matched: true,
+    artifact_profile: "huabaosi-production",
     database_url_sha256: productionDatabaseHash,
     release_binary_verified: true,
     release_sha: productionReleaseSha,
-    sidecar_binary_sha256: productionSidecarHash,
+    sidecar_binary_sha256: huabaosiProductionSidecarHash,
     success: true,
   };
   const records = [
@@ -492,6 +527,7 @@ function huabaosiProductionCanaryOutput(overrides = {}) {
       phase: "preflight",
       action_status: "adapter_config_ready",
       timer_active: false,
+      timer_enabled: false,
     },
     {
       ...common,
@@ -535,6 +571,7 @@ function huabaosiProductionCanaryOutput(overrides = {}) {
       database_writes_executed: false,
       external_calls_executed: true,
       height: 1024,
+      sensitive_fields_redacted: true,
       width: 1024,
     },
   ].map((record) => deepMerge(record, overrides[record.phase] ?? {}));
@@ -557,17 +594,19 @@ function productionOutput(overrides = {}) {
   const common = {
     success: true,
     production_release_sha: productionReleaseSha,
-    sidecar_binary_sha256: productionSidecarHash,
+    runtime_artifact_profile:
+      overrides.common?.runtime_artifact_profile ?? "qiwe-production",
+    sidecar_binary_sha256: qiweProductionSidecarHash,
     database_url_sha256: productionDatabaseHash,
     release_binary_verified: true,
     approved_sidecar_sha256_matched: true,
     approved_database_url_sha256_matched: true,
     safe_for_chat: false,
-    ...(overrides.common ?? {}),
   };
+  const mergedCommon = { ...common, ...(overrides.common ?? {}) };
   return [
     {
-      ...common,
+      ...mergedCommon,
       phase: "signal_intake",
       worker: "xiaoman-activity-signal-worker",
       action_status: "signal_ingest_submitted",
@@ -580,7 +619,7 @@ function productionOutput(overrides = {}) {
       external_send_executed: false,
     },
     {
-      ...common,
+      ...mergedCommon,
       phase: "image_generation",
       worker: "huabaosi-image-generation-worker",
       action_status: "generated_image_created",
@@ -600,7 +639,7 @@ function productionOutput(overrides = {}) {
       external_send_executed: false,
     },
     {
-      ...common,
+      ...mergedCommon,
       phase: "human_approval",
       worker: "huabaosi-generated-image-review",
       action_status: "generated_image_approved",
@@ -615,7 +654,7 @@ function productionOutput(overrides = {}) {
       external_send_executed: false,
     },
     {
-      ...common,
+      ...mergedCommon,
       phase: "send_ready",
       worker: "operations-group-send-ready",
       action_status: "send_ready_recorded",
@@ -630,7 +669,7 @@ function productionOutput(overrides = {}) {
       external_send_executed: false,
     },
     {
-      ...common,
+      ...mergedCommon,
       phase: "qiwe_upload",
       worker: "qiwe-image-send-adapter",
       action_status: "image_upload_accepted",
@@ -644,7 +683,7 @@ function productionOutput(overrides = {}) {
       external_send_executed: false,
     },
     {
-      ...common,
+      ...mergedCommon,
       phase: "qiwe_callback_send",
       worker: "qiwe-image-send-adapter",
       action_status: "image_send_completed",
@@ -660,7 +699,7 @@ function productionOutput(overrides = {}) {
       external_send_executed: true,
     },
     {
-      ...common,
+      ...mergedCommon,
       phase: "sanitized_evidence_retention",
       worker: "xiaoman-real-activity-production-evidence",
       action_status: "sanitized_evidence_retained",

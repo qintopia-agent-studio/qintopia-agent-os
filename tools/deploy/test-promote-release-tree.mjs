@@ -43,7 +43,7 @@ const writeChecksums = (directory, names) => {
   );
 };
 
-const writeRequest = () => {
+const writeRequest = (runtimeArtifactProfile = "huabaosi-production") => {
   const requestPath = path.join(tmpRoot, "request.json");
   writeFile(
     requestPath,
@@ -51,6 +51,7 @@ const writeRequest = () => {
       {
         release_sha: sha,
         runtime_sha: sha,
+        runtime_artifact_profile: runtimeArtifactProfile,
         deploy_bundle_sha: sha,
         commit_sha: sha,
         request_id: "deploy-20260719T000000Z-0123456789ab",
@@ -140,6 +141,7 @@ try {
 set -euo pipefail
 artifact_type=""
 output_dir=""
+sidecar_profile_log="$FIXTURE_ROOT/sidecar-profile.log"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --artifact-type) artifact_type="$2"; shift 2 ;;
@@ -150,6 +152,9 @@ while [[ $# -gt 0 ]]; do
 done
 mkdir -p "$output_dir"
 chmod 0755 "$output_dir"
+if [[ "$artifact_type" == "sidecar" ]]; then
+  printf '%s\n' "\${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-}" >> "$sidecar_profile_log"
+fi
 cp -a "$FIXTURE_ROOT/$artifact_type/." "$output_dir/"
 `,
     0o755
@@ -174,6 +179,14 @@ exec /usr/bin/id "$@"
   if (promoted.status !== 0) {
     throw new Error(`new release promotion failed: ${promoted.stderr}`);
   }
+  const promotedManifest = JSON.parse(
+    fs.readFileSync(path.join(validRoot, sha, "manifest.json"), "utf8")
+  );
+  if (promotedManifest.runtime_artifact_profile !== "huabaosi-production") {
+    throw new Error(
+      "promoted manifest did not retain huabaosi runtime_artifact_profile"
+    );
+  }
 
   const releaseDir = fs.realpathSync(path.join(validRoot, "current"));
   const previousDir = path.join(validRoot, previousSha);
@@ -190,6 +203,31 @@ exec /usr/bin/id "$@"
   }
   if (fs.realpathSync(path.join(validRoot, "current")) !== releaseDir) {
     throw new Error("valid same-SHA reuse changed current");
+  }
+
+  const qiweRoot = path.join(tmpRoot, "qiwe-releases");
+  const qiweRequestFile = writeRequest("qiwe-production");
+  const qiwePromoted = runPromotion(qiweRequestFile, qiweRoot);
+  if (qiwePromoted.status !== 0) {
+    throw new Error(`qiwe promotion failed: ${qiwePromoted.stderr}`);
+  }
+  const qiweManifest = JSON.parse(
+    fs.readFileSync(path.join(qiweRoot, sha, "manifest.json"), "utf8")
+  );
+  if (qiweManifest.runtime_artifact_profile !== "qiwe-production") {
+    throw new Error("qiwe promotion did not retain runtime_artifact_profile");
+  }
+  const sidecarProfileLog = fs
+    .readFileSync(path.join(fixtureRoot, "sidecar-profile.log"), "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  if (sidecarProfileLog.at(-1) !== "qiwe-production") {
+    throw new Error(
+      `qiwe promotion did not pass QINTOPIA_SIDECAR_ARTIFACT_PROFILE, got ${JSON.stringify(
+        sidecarProfileLog
+      )}`
+    );
   }
 
   fs.chmodSync(sidecarFixture, 0o777);

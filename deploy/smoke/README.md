@@ -106,8 +106,9 @@ An explicit `no_claimable_*` worker result is a valid empty-queue observation on
 it reports `dry_run=true`, `apply_requested=false`, and empty artifact ids/previews.
 When a worker returns an actual preview, its limitations or guardrails must still state
 the external-adapter boundary. A release that changes the deploy runner's systemd unit
-allowlist needs one owner-approved follow-up deployment for the same SHA because its
-first promotion is processed by the previous release runner.
+allowlist needs one owner-approved same-SHA follow-up deployment for runner/bootstrap
+continuity because its first promotion is processed by the previous release runner. This
+is separate from the independent QiWe production artifact follow-up deploy path.
 
 ## Validation
 

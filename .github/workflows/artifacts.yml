@@ -8,6 +8,11 @@ on:
         required: true
         default: true
         type: boolean
+      build_qiwe_sidecar:
+        description: Build and publish the dedicated QiWe production sidecar artifact.
+        required: true
+        default: false
+        type: boolean
       build_staging_sidecar:
         description:
           Build and publish the staging-only sidecar artifact for owner-approved
@@ -57,6 +62,7 @@ jobs:
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
       build-sidecar: ${{ steps.plan.outputs.build-sidecar }}
+      build-qiwe-sidecar: ${{ steps.plan.outputs.build-qiwe-sidecar }}
       build-staging-sidecar: ${{ steps.plan.outputs.build-staging-sidecar }}
       build-deploy-bundle: ${{ steps.plan.outputs.build-deploy-bundle }}
       upload-cos: ${{ steps.plan.outputs.upload-cos }}
@@ -72,6 +78,7 @@ jobs:
 
           publish=false
           build_sidecar=false
+          build_qiwe_sidecar=false
           build_staging_sidecar=false
           build_deploy_bundle=false
           upload_cos=false
@@ -79,6 +86,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             publish=true
             build_sidecar="${{ inputs.build_sidecar }}"
+            build_qiwe_sidecar="${{ inputs.build_qiwe_sidecar }}"
             build_staging_sidecar="${{ inputs.build_staging_sidecar }}"
             build_deploy_bundle="${{ inputs.build_deploy_bundle }}"
             upload_cos="${{ inputs.upload_cos }}"
@@ -86,6 +94,7 @@ jobs:
             if [[ "$HEAD_COMMIT_MESSAGE" == *"[publish-artifacts]"* ]]; then
               publish=true
               build_sidecar=true
+              build_qiwe_sidecar=false
               build_staging_sidecar=false
               build_deploy_bundle=true
               upload_cos=true
@@ -95,6 +104,7 @@ jobs:
           {
             echo "publish=${publish}"
             echo "build-sidecar=${build_sidecar}"
+            echo "build-qiwe-sidecar=${build_qiwe_sidecar}"
             echo "build-staging-sidecar=${build_staging_sidecar}"
             echo "build-deploy-bundle=${build_deploy_bundle}"
             echo "upload-cos=${upload_cos}"
@@ -102,6 +112,7 @@ jobs:
 
           printf 'publish=%s\n' "$publish"
           printf 'build-sidecar=%s\n' "$build_sidecar"
+          printf 'build-qiwe-sidecar=%s\n' "$build_qiwe_sidecar"
           printf 'build-staging-sidecar=%s\n' "$build_staging_sidecar"
           printf 'build-deploy-bundle=%s\n' "$build_deploy_bundle"
           printf 'upload-cos=%s\n' "$upload_cos"
@@ -248,6 +259,94 @@ jobs:
         run: >-
           node tools/deploy/prune-github-artifacts.mjs --artifact-name
           qintopia-message-sidecar-staging-linux-x86_64-gnu
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  qiwe-sidecar-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: publish-plan
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' && needs.publish-plan.outputs.publish
+      == 'true' && needs.publish-plan.outputs.build-qiwe-sidecar == 'true' }}
+
+    permissions:
+      actions: write
+      contents: read
+
+    env:
+      TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+      TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Build QiWe production sidecar artifact
+        run: node tools/deploy/build-qiwe-production-sidecar-artifact.mjs
+
+      - name: Upload QiWe production sidecar artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
+          path: dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Validate Tencent COS upload configuration
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && (env.TENCENT_COS_SECRET_ID == ''
+          || env.TENCENT_COS_SECRET_KEY == '') }}
+        run: >-
+          echo "Tencent COS upload is enabled, but TENCENT_COS_SECRET_ID or
+          TENCENT_COS_SECRET_KEY is missing." >&2; exit 2
+
+      - name: Upload QiWe production sidecar artifact to Tencent COS
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID != '' &&
+          env.TENCENT_COS_SECRET_KEY != '' }}
+        run: >-
+          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-dir
+          dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
+          --sha "$GITHUB_SHA"
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Prune old QiWe production sidecar artifacts from Tencent COS
+        if: >-
+          ${{ needs.publish-plan.outputs.upload-cos == 'true' &&
+          env.TENCENT_COS_UPLOAD_ENABLED == 'true' && env.TENCENT_COS_SECRET_ID != '' &&
+          env.TENCENT_COS_SECRET_KEY != '' }}
+        run: >-
+          deploy/sidecar/scripts/prune-cos-artifacts.sh --artifact-name
+          qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ env.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_PREFIX: ${{ env.TENCENT_COS_PREFIX }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Prune old QiWe production sidecar artifacts
+        run: >-
+          node tools/deploy/prune-github-artifacts.mjs --artifact-name
+          qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
         env:
           GITHUB_TOKEN: ${{ github.token }}
 

@@ -103,22 +103,41 @@ for path in (
 manifest_path = os.path.join(current_real, "sidecar", "artifact-manifest.json")
 with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
-if manifest.get("validation", {}).get("cargo_features") != [
-    "huabaosi-production-adapter",
-    "huabaosi-feishu-mirror-adapter",
-]:
+artifact_profile = manifest.get("validation", {}).get("artifact_profile", "")
+cargo_features = manifest.get("validation", {}).get("cargo_features")
+if artifact_profile == "huabaosi-production":
+    expected_features = [
+        "huabaosi-production-adapter",
+        "huabaosi-feishu-mirror-adapter",
+    ]
+elif artifact_profile == "qiwe-production":
+    expected_features = ["qiwe-production-adapter"]
+else:
+    raise SystemExit(1)
+if cargo_features != expected_features:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
     raise SystemExit(1)
 
-print(release_sha)
+print(json.dumps({"release_sha": release_sha, "artifact_profile": artifact_profile}))
 PY
 )"; then
   echo "QiWe image callback bridge production observation requires release/current sidecar and Erhua plugin to resolve to the immutable production release" >&2
   exit 1
 fi
 
-RELEASE_SHA="$RELEASE_FACTS"
+RELEASE_SHA="$(python3 - "$RELEASE_FACTS" <<'PY'
+import json
+import sys
+print(json.loads(sys.argv[1])["release_sha"])
+PY
+)"
+ARTIFACT_PROFILE="$(python3 - "$RELEASE_FACTS" <<'PY'
+import json
+import sys
+print(json.loads(sys.argv[1])["artifact_profile"])
+PY
+)"
 
 ENV_FACTS="$(python3 - "$HERMES_ENV_FILE" <<'PY'
 import json
@@ -183,11 +202,12 @@ if [[ "$EXPECTED_STATE" != "$OBSERVED_STATE" ]]; then
   echo "QiWe image callback bridge observed state does not match expected state" >&2
   exit 1
 fi
-if [[ "$OBSERVED_STATE" == "enabled" ]]; then
+if [[ "$OBSERVED_STATE" == "enabled" && "$ARTIFACT_PROFILE" != "qiwe-production" ]]; then
   echo "QiWe image callback bridge enabled observation requires a separate reviewed QiWe production artifact" >&2
   exit 1
 fi
 
 echo "qiwe_image_callback_bridge_production_observation_state=${OBSERVED_STATE}"
+echo "qiwe_image_callback_bridge_production_artifact_profile=${ARTIFACT_PROFILE}"
 echo "qiwe_image_callback_bridge_production_release_sha=${RELEASE_SHA}"
 echo "QiWe image callback bridge production observation passed"

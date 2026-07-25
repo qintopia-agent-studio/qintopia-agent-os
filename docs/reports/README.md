@@ -3,6 +3,11 @@
 - [2026-07-23 Huabaosi WeCom observation journal window](2026-07-23-huabaosi-wecom-observation-journal-window.md)
 - [2026-07-23 Xiaoman QiWe disabled observation artifact drift](2026-07-23-xiaoman-qiwe-disabled-observation-artifact-drift.md)
 - [2026-07-23 Rust quality prebuilt tool installation](2026-07-23-rust-quality-prebuilt-tool-install.md)
+- [2026-07-24 Xiaoman production evidence handoff](2026-07-24-xiaoman-production-evidence-handoff.md)
+- [2026-07-24 Xiaoman production evidence chain local verification](2026-07-24-xiaoman-production-evidence-chain-local-verification.md)
+- [2026-07-24 Xiaoman production evidence PR body](2026-07-24-xiaoman-production-evidence-pr-body.md)
+- [2026-07-24 Xiaoman production evidence PR notes](2026-07-24-xiaoman-production-evidence-pr-notes.md)
+- [2026-07-24 Xiaoman production test map](2026-07-24-xiaoman-production-test-map.html)
 - [2026-07-17 Erhua weather broadcast current-only output](2026-07-17-erhua-weather-broadcast-current-only.md)
 - [2026-07-18 v0.2.15 release decision evidence](2026-07-18-v0215-release-decision-evidence.md)
 - [2026-07-19 production release metadata permissions](2026-07-19-production-release-metadata-permissions.md)
@@ -15,6 +20,10 @@
 
 This directory links internal sync reports and generated reports that are useful for
 team onboarding, architecture review, or migration decisions.
+
+The Xiaoman production test map is a single-page HTML handoff view for what production
+can be tested now, how to run each test, what file each step should retain, and which
+steps still block any `production-complete` claim.
 
 ## Current References
 
@@ -86,12 +95,18 @@ team onboarding, architecture review, or migration decisions.
 
 ## Templates
 
-| Template                                                        | Use                                                                                                 |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `templates/qiwe-image-send-staging-evidence.md`                 | Sanitized owner-approved QiWe isolated staging upload/callback evidence note                        |
-| `templates/xiaoman-production-completion-evidence.json`         | Non-secret manifest for the final Xiaoman production-complete evidence checker                      |
-| `templates/xiaoman-qiwe-group-arrival-confirmation-evidence.md` | Sanitized human confirmation that the real Xiaoman image message arrived in the intended QiWe group |
-| `templates/xiaoman-real-activity-production-evidence.md`        | Sanitized one-real-activity production completion evidence after QiWe group delivery                |
+| Template                                                        | Use                                                                                                  |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `templates/huabaosi-image-production-canary-evidence.md`        | Sanitized first-record Huabaosi production canary evidence note before any production-complete claim |
+| `templates/qiwe-image-send-staging-evidence.md`                 | Sanitized owner-approved QiWe isolated staging upload/callback evidence note                         |
+| `templates/xiaoman-production-completion-evidence.json`         | Non-secret manifest for the final Xiaoman production-complete evidence checker                       |
+| `templates/xiaoman-qiwe-group-arrival-confirmation-evidence.md` | Sanitized human confirmation that the real Xiaoman image message arrived in the intended QiWe group  |
+| `templates/xiaoman-real-activity-production-evidence.md`        | Sanitized one-real-activity production completion evidence after QiWe group delivery                 |
+
+The final completion manifest may be produced with the reviewed one-shot helper
+`tools/deploy/finalize-xiaoman-production-completion-evidence.mjs` after the retained
+staging and production evidence files have already passed their dedicated checkers.
+<p>retained staging and production evidence files</p>
 
 ## Rules
 

@@ -61,7 +61,14 @@ deploy request, uploads that request to COS, and lets the server deploy runner p
 the selected release through the same release/current path used by normal deploys. A
 historical Release whose artifacts have already been pruned fails in GitHub Actions
 before a rollback request is submitted. The workflow uses the `production` environment
-gate and defaults to `dry_run: true`.
+gate, defaults to `dry_run: true`, and records the reviewed `runtime_artifact_profile`
+explicitly in the rollback request instead of relying on the ordinary deploy default.
+The workflow records the reviewed `runtime_artifact_profile` explicitly in the rollback
+request. The reviewed `runtime_artifact_profile` input may be `huabaosi-production` or
+`qiwe-production`, and it must match the validated rollback artifact fetched from COS
+before request assembly.
+<p>`runtime_artifact_profile` explicitly in the rollback request.</p>
+<p>must match the validated rollback artifact</p>
 
 ## Validation
 

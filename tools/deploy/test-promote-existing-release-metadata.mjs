@@ -37,7 +37,7 @@ const writeChecksums = (directory, names) => {
   );
 };
 
-const writeRequest = (requestId) => {
+const writeRequest = (requestId, runtimeArtifactProfile = "huabaosi-production") => {
   const requestPath = path.join(tmpRoot, `${requestId}.json`);
   writeFile(
     requestPath,
@@ -46,6 +46,7 @@ const writeRequest = (requestId) => {
         request_id: requestId,
         commit_sha: sha,
         runtime_sha: sha,
+        runtime_artifact_profile: runtimeArtifactProfile,
         deploy_bundle_sha: sha,
         release_sha: sha,
         release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
@@ -243,6 +244,39 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
   }
   if (fs.existsSync(chownLog)) {
     throw new Error("symlinked manifest reached metadata mutation");
+  }
+
+  fs.rmSync(path.join(releaseRoot, "current"), { force: true });
+  fs.rmSync(path.join(releaseRoot, "previous"), { force: true });
+  fs.rmSync(releaseDir, { recursive: true, force: true });
+
+  const qiweInitial = runPromotion(
+    writeRequest("deploy-20260719T060400Z-0123456789ab", "qiwe-production")
+  );
+  if (qiweInitial.status !== 0) {
+    throw new Error(
+      `qiwe initial promotion failed\n${qiweInitial.stdout}\n${qiweInitial.stderr}`
+    );
+  }
+  const qiweManifest = JSON.parse(
+    fs.readFileSync(path.join(releaseDir, "manifest.json"), "utf8")
+  );
+  if (qiweManifest.runtime_artifact_profile !== "qiwe-production") {
+    throw new Error("qiwe initial promotion did not record runtime_artifact_profile");
+  }
+
+  const profileMismatch = runPromotion(
+    writeRequest("deploy-20260719T060500Z-0123456789ab", "huabaosi-production")
+  );
+  if (
+    profileMismatch.status === 0 ||
+    !profileMismatch.stderr.includes(
+      "existing release manifest runtime_artifact_profile mismatch"
+    )
+  ) {
+    throw new Error(
+      `same-SHA runtime_artifact_profile mismatch must fail\n${profileMismatch.stdout}\n${profileMismatch.stderr}`
+    );
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

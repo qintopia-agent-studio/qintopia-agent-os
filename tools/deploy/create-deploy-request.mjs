@@ -10,6 +10,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 const repoRoot = process.cwd();
 const fixedCosPrefix = "qintopia-agent-os";
 const shaPattern = /^[0-9a-f]{40}$/;
+const runtimeArtifactProfiles = new Set(["huabaosi-production", "qiwe-production"]);
 
 const argValue = (name, fallback = "") => {
   const index = process.argv.indexOf(name);
@@ -34,6 +35,17 @@ const requireSha = (name, value) => {
   const normalized = requireValue(name, value);
   if (!shaPattern.test(normalized)) {
     console.error(`${name} must be a lowercase 40-character git SHA`);
+    process.exit(2);
+  }
+  return normalized;
+};
+
+const requireRuntimeArtifactProfile = (name, value) => {
+  const normalized = requireValue(name, value);
+  if (!runtimeArtifactProfiles.has(normalized)) {
+    console.error(
+      `${name} must be one of ${Array.from(runtimeArtifactProfiles).join(", ")}`
+    );
     process.exit(2);
   }
   return normalized;
@@ -97,6 +109,13 @@ const commitSha = requireSha(
 const runtimeSha = requireSha(
   "--runtime-sha",
   argValue("--runtime-sha", process.env.DEPLOY_RUNTIME_SHA || commitSha)
+);
+const runtimeArtifactProfile = requireRuntimeArtifactProfile(
+  "--runtime-artifact-profile",
+  argValue(
+    "--runtime-artifact-profile",
+    process.env.DEPLOY_RUNTIME_ARTIFACT_PROFILE || "huabaosi-production"
+  )
 );
 const deployBundleSha = requireSha(
   "--deploy-bundle-sha",
@@ -170,6 +189,7 @@ const request = {
   expires_at: expiresAt(ttlMinutes),
   commit_sha: commitSha,
   runtime_sha: runtimeSha,
+  runtime_artifact_profile: runtimeArtifactProfile,
   deploy_bundle_sha: deployBundleSha,
   release_sha: releaseSha,
   release_scope: releaseScope,

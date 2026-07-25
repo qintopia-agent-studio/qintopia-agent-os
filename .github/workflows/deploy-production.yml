@@ -14,6 +14,14 @@ on:
         description: Sidecar runtime artifact SHA. Defaults to commit_sha when equal.
         required: false
         type: string
+      runtime_artifact_profile:
+        description: Reviewed production sidecar artifact profile.
+        required: true
+        default: huabaosi-production
+        type: choice
+        options:
+          - huabaosi-production
+          - qiwe-production
       deploy_bundle_sha:
         description: Deploy bundle artifact SHA. Defaults to commit_sha when equal.
         required: false
@@ -194,6 +202,8 @@ jobs:
         env:
           INPUT_COMMIT_SHA: ${{ github.event.inputs.commit_sha || '' }}
           INPUT_RUNTIME_SHA: ${{ github.event.inputs.runtime_sha || '' }}
+          INPUT_RUNTIME_ARTIFACT_PROFILE:
+            ${{ github.event.inputs.runtime_artifact_profile || '' }}
           INPUT_DEPLOY_BUNDLE_SHA: ${{ github.event.inputs.deploy_bundle_sha || '' }}
           INPUT_RELEASE_SHA: ${{ github.event.inputs.release_sha || '' }}
           INPUT_RELEASE_SCOPE: ${{ github.event.inputs.release_scope || '' }}
@@ -234,6 +244,20 @@ jobs:
                 ;;
               *)
                 echo "${name} must be true or false." >&2
+                exit 2
+                ;;
+            esac
+          }
+
+          normalize_runtime_artifact_profile() {
+            local value="$1"
+            require_single_line "runtime_artifact_profile" "$value"
+            case "$value" in
+              huabaosi-production|qiwe-production)
+                printf '%s' "$value"
+                ;;
+              *)
+                echo "runtime_artifact_profile must be huabaosi-production or qiwe-production." >&2
                 exit 2
                 ;;
             esac
@@ -392,6 +416,7 @@ jobs:
             rollback_on_smoke_failure="true"
             profile_dry_run_request_id=""
             notes="GitHub Release ${RELEASE_TAG_NAME}: ${RELEASE_HTML_URL}"
+            runtime_artifact_profile="huabaosi-production"
             echo "release-tag=${RELEASE_TAG_NAME}" >> "$GITHUB_OUTPUT"
             echo "build-artifacts=true" >> "$GITHUB_OUTPUT"
           else
@@ -406,6 +431,7 @@ jobs:
             rollback_on_smoke_failure="${INPUT_ROLLBACK_ON_SMOKE_FAILURE:-true}"
             profile_dry_run_request_id="$INPUT_PROFILE_DRY_RUN_REQUEST_ID"
             notes="$INPUT_NOTES"
+            runtime_artifact_profile="${INPUT_RUNTIME_ARTIFACT_PROFILE:-huabaosi-production}"
             echo "release-tag=" >> "$GITHUB_OUTPUT"
             echo "build-artifacts=false" >> "$GITHUB_OUTPUT"
           fi
@@ -423,7 +449,13 @@ jobs:
             runtime_sha="$commit_sha"
             deploy_bundle_sha="$commit_sha"
             release_sha="$commit_sha"
+            if [[ "$runtime_artifact_profile" != "huabaosi-production" ]]; then
+              echo "Release-published production deploys must use runtime_artifact_profile=huabaosi-production." >&2
+              exit 2
+            fi
           fi
+
+          runtime_artifact_profile="$(normalize_runtime_artifact_profile "$runtime_artifact_profile")"
 
           release_scope="$(normalize_csv_allowlist \
             "release_scope" \
@@ -456,6 +488,7 @@ jobs:
           {
             echo "commit-sha=${commit_sha}"
             echo "runtime-sha=${runtime_sha}"
+            echo "runtime-artifact-profile=${runtime_artifact_profile}"
             echo "deploy-bundle-sha=${deploy_bundle_sha}"
             echo "release-sha=${release_sha}"
             echo "release-scope=${release_scope}"
@@ -534,6 +567,31 @@ jobs:
             --artifact-type deploy-bundle \
             --artifact-name qintopia-agent-os-deploy-bundle
 
+      - name: Validate deploy artifacts in Tencent COS
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          deploy/sidecar/scripts/fetch-cos-artifact.sh \
+            --artifact-type sidecar \
+            --sha "${RUNTIME_SHA}" \
+            --output-dir "${temp_dir}/sidecar"
+          deploy/sidecar/scripts/fetch-cos-artifact.sh \
+            --artifact-type deploy-bundle \
+            --sha "${DEPLOY_BUNDLE_SHA}" \
+            --output-dir "${temp_dir}/deploy-bundle"
+        env:
+          RUNTIME_SHA: ${{ steps.resolve.outputs.runtime-sha }}
+          DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.deploy-bundle-sha }}
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE:
+            ${{ steps.resolve.outputs.runtime-artifact-profile }}
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
       - name: Create deploy request
         run:
           node tools/deploy/create-deploy-request.mjs --output
@@ -541,6 +599,8 @@ jobs:
         env:
           DEPLOY_COMMIT_SHA: ${{ steps.resolve.outputs.commit-sha }}
           DEPLOY_RUNTIME_SHA: ${{ steps.resolve.outputs.runtime-sha }}
+          DEPLOY_RUNTIME_ARTIFACT_PROFILE:
+            ${{ steps.resolve.outputs.runtime-artifact-profile }}
           DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.deploy-bundle-sha }}
           DEPLOY_RELEASE_SHA: ${{ steps.resolve.outputs.release-sha }}
           DEPLOY_RELEASE_SCOPE: ${{ steps.resolve.outputs.release-scope }}

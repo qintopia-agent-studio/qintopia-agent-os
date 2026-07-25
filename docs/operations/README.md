@@ -21,6 +21,11 @@ deployment docs.
   `current`/`previous` symlink, promotion, rollback, and Hermes mount model.
 - [production-deploy-runner.md](production-deploy-runner.md): GitHub Release-triggered
   production deploy requests, COS pull runner, release promotion, and rollback model.
+- [xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md):
+  owner-operated Huabaosi canary, QiWe follow-up deploy, real-activity retention, and
+  final completion-manifest sequence. The same runbook also includes the reviewed
+  one-shot completion finalizer for the last retained-evidence step.
+  <p>reviewed one-shot completion finalizer</p>
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):
@@ -51,6 +56,12 @@ deployment docs.
 - `pnpm agents:check`: validates active Agent package templates and dry-run
   expectations.
 - `pnpm artifact:sidecar`: builds the sidecar release artifact layout locally.
+- `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`: reruns the
+  repository-local Xiaoman production evidence chain verification bundle before any
+  owner-operated production evidence capture.
+- `pnpm deploy:xiaoman-production-evidence:finalize -- --release-please-pr-number ...`:
+  builds the final Xiaoman production completion manifest and immediately revalidates it
+  against the retained staging and production evidence files.
 - `pnpm deploy:postgres:schema:preflight`: runs the read-only Postgres schema gate for
   M9 after production env is loaded.
 - `pnpm deploy:systemd:check`: validates the M9.3 sidecar systemd unit renderer without

@@ -15,12 +15,32 @@ CI helpers must:
 ## Validation
 
 ```bash
+pnpm check:pr:auto
+pnpm check:pr:quick
+pnpm check:pr:heavy
+pnpm check:pr:postgres
 pnpm tools:ci:check
 pnpm commitlint:check
 pnpm pr:check-body
 pnpm release-please:check
 pnpm pr:tools:check
 ```
+
+## Local Pre-PR Tiers
+
+- `pnpm check:pr:quick`: local mirror of the ordinary PR light gate before opening a PR.
+- `pnpm check:pr:heavy`: quick tier plus the sidecar-heavy Rust checks and the local
+  PostgreSQL tier. Use it before high-risk PRs that touch sidecar, Postgres, deploy
+  scripts, or CI itself.
+- `pnpm check:pr:postgres`: reruns only the disposable PostgreSQL tier against local
+  `qintopia_test` at `127.0.0.1:5432`.
+- `pnpm check:pr:auto`: inspects the current branch diff, always runs the quick tier,
+  escalates to the heavy Rust tier when production-adjacent high-risk paths changed, and
+  runs the PostgreSQL tier too when the disposable local database is ready.
+
+The local PostgreSQL tier uses only `qintopia_test`, the reviewed ignored Rust tests,
+and the guarded apply smoke. It does not need production secrets and must fail closed
+when the disposable database is not ready.
 
 ## Release Please PRs
 
@@ -44,6 +64,10 @@ sidecar/PostgreSQL cost unless they touch the sidecar, Postgres, deploy sidecar 
 or the CI workflow itself. Manual workflow dispatches and authenticated Release Please
 validation always force the full heavy tier. The PR-attached release status is published
 only after the main, Rust, and PostgreSQL jobs all succeed.
+
+The matching local path is `pnpm check:pr:auto` for day-to-day work and
+`pnpm check:pr:heavy` when you want the full local Rust/PostgreSQL mirror before pushing
+a high-risk PR.
 
 If the bot update also suppresses the ruleset-required `PR-Agent review assistant`, run
 `pr-agent.yml` manually with the same exact release head and explicit PR number. The

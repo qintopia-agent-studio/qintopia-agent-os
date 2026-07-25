@@ -98,6 +98,7 @@ const manifest = {
   },
   huabaosi_production_activation: {
     release_sha: options.releasedCommitSha,
+    runtime_artifact_profile: huabaosiGeneration.artifact_profile,
     sidecar_binary_sha256: huabaosiGeneration.sidecar_binary_sha256,
     database_url_sha256: huabaosiGeneration.database_url_sha256,
     image_generation_observation_passed: true,
@@ -107,6 +108,10 @@ const manifest = {
     first_record_evidence_retained: true,
   },
   real_activity_confirmation: {
+    release_sha: options.releasedCommitSha,
+    runtime_artifact_profile: productionRetention.runtime_artifact_profile,
+    sidecar_binary_sha256: productionRetention.sidecar_binary_sha256,
+    database_url_sha256: productionRetention.database_url_sha256,
     qiwe_group_arrival_confirmed: true,
     confirmed_by: qiweGroupArrivalConfirmation.confirmed_by,
     confirmed_at: qiweGroupArrivalConfirmation.confirmed_at,
@@ -191,7 +196,7 @@ function parseArgs(argv) {
 
 function usage() {
   fail(
-    "usage: node tools/deploy/build-xiaoman-production-completion-manifest.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --huabaosi-production-canary <output.txt> --production-real-activity <output.txt> --qiwe-group-arrival-confirmation <output.txt> [--output <manifest.json>]"
+    "usage: node tools/deploy/build-xiaoman-production-completion-manifest.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> [--output <completed-xiaoman-production-completion-evidence.json>]"
   );
 }
 
@@ -365,10 +370,18 @@ function assertReleaseFactsBind(huabaosiGeneration, productionRetention, options
   ) {
     fail("evidence release SHA does not match the released commit SHA");
   }
-  for (const key of ["sidecar_binary_sha256", "database_url_sha256"]) {
-    if (huabaosiGeneration[key] !== productionRetention[key]) {
-      fail(`Huabaosi canary and real activity evidence ${key} values differ`);
-    }
+  if (huabaosiGeneration.artifact_profile !== "huabaosi-production") {
+    fail("Huabaosi canary evidence must retain artifact_profile=huabaosi-production");
+  }
+  if (productionRetention.runtime_artifact_profile !== "qiwe-production") {
+    fail("real activity evidence must retain runtime_artifact_profile=qiwe-production");
+  }
+  if (
+    huabaosiGeneration.database_url_sha256 !== productionRetention.database_url_sha256
+  ) {
+    fail(
+      "Huabaosi canary and real activity evidence database_url_sha256 values differ"
+    );
   }
   if (
     huabaosiGeneration.release_binary_verified !== true ||

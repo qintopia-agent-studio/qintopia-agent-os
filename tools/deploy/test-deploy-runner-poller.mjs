@@ -40,7 +40,7 @@ case "\${QINTOPIA_FAKE_COS_MODE:-}" in
     echo "NoSuchKey: object not found" >&2
     exit 1
     ;;
-  processed|failed|remote-result|active)
+  processed|failed|remote-result|active|invalid-request)
     if [[ "$source_path" == *"/qintopia-agent-os/deploy-requests/production/current.json" ]]; then
       cat >"$dest_path" <<'JSON'
 {
@@ -55,12 +55,41 @@ JSON
       exit 0
     fi
     if [[ "$source_path" == *"/qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json" ]]; then
+      if [[ "\${QINTOPIA_FAKE_COS_MODE:-}" == "invalid-request" ]]; then
+        cat >"$dest_path" <<'JSON'
+{
+  "schema_version": 1,
+  "environment": "production",
+  "repository": "qintopia-agent-studio/qintopia-agent-os",
+  "request_id": "deploy-20260706T000000Z-0123456789ab",
+  "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+  "runtime_sha": "0123456789abcdef0123456789abcdef01234567",
+  "runtime_artifact_profile": "qiwe-production",
+  "deploy_bundle_sha": "89abcdef0123456789abcdef0123456789abcdef",
+  "release_sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "release_scope": ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
+  "restart_targets": ["qintopia-system-services", "hermes-erhua"],
+  "cos": {
+    "request_key": "qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-bad.json",
+    "result_key": "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json"
+  }
+}
+JSON
+        exit 0
+      fi
       cat >"$dest_path" <<'JSON'
 {
   "schema_version": 1,
   "environment": "production",
   "repository": "qintopia-agent-studio/qintopia-agent-os",
   "request_id": "deploy-20260706T000000Z-0123456789ab",
+  "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+  "runtime_sha": "0123456789abcdef0123456789abcdef01234567",
+  "runtime_artifact_profile": "qiwe-production",
+  "deploy_bundle_sha": "89abcdef0123456789abcdef0123456789abcdef",
+  "release_sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "release_scope": ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
+  "restart_targets": ["qintopia-system-services", "hermes-erhua"],
   "cos": {
     "request_key": "qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json",
     "result_key": "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json"
@@ -144,6 +173,17 @@ with open(result_path, "w", encoding="utf-8") as fh:
             "request_id": request["request_id"],
             "environment": "production",
             "status": "dry_run_succeeded",
+            "release_sha": request["release_sha"],
+            "commit_sha": request["commit_sha"],
+            "runtime_sha": request["runtime_sha"],
+            "runtime_artifact_profile": request["runtime_artifact_profile"],
+            "deploy_bundle_sha": request["deploy_bundle_sha"],
+            "release_scope": request["release_scope"],
+            "previous_sha": "",
+            "current_target": "",
+            "restart_targets": request["restart_targets"],
+            "checks": [{"name": "deploy-runner", "status": "passed"}],
+            "rollback": {"attempted": False, "status": "not_needed"},
         },
         fh,
     )
@@ -264,6 +304,64 @@ try {
   );
   if (!fs.existsSync(uploadedResult)) {
     throw new Error("active-pointer: deploy result was not uploaded");
+  }
+  const uploadedResultJson = JSON.parse(fs.readFileSync(uploadedResult, "utf8"));
+  if (
+    uploadedResultJson.runtime_artifact_profile !== "qiwe-production" ||
+    uploadedResultJson.release_scope?.length !== 3
+  ) {
+    throw new Error(
+      "active-pointer: uploaded deploy result did not retain identity fields"
+    );
+  }
+
+  const invalidRequestStateDir = path.join(tmpRoot, "invalid-request");
+  const invalidRequestUploadDir = path.join(tmpRoot, "invalid-request-uploads");
+  fs.mkdirSync(path.join(invalidRequestStateDir, "requests", "pending"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(invalidRequestStateDir, "requests", "processed"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(invalidRequestStateDir, "requests", "failed"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(invalidRequestStateDir, "results"), { recursive: true });
+  fs.mkdirSync(invalidRequestUploadDir, { recursive: true });
+  const invalidRequest = spawnSync("bash", [poller], {
+    cwd: repoRoot,
+    env: {
+      ...baseEnv,
+      QINTOPIA_DEPLOY_RUNNER_STATE_DIR: invalidRequestStateDir,
+      QINTOPIA_FAKE_COS_MODE: "invalid-request",
+      QINTOPIA_FAKE_COS_UPLOAD_DIR: invalidRequestUploadDir,
+      QINTOPIA_FAKE_RUNNER_EXPECTED: "idle",
+    },
+    encoding: "utf8",
+  });
+  if (invalidRequest.status === 0) {
+    throw new Error("invalid-request: expected invalid request to fail");
+  }
+  const invalidUploadedResult = path.join(
+    invalidRequestUploadDir,
+    "deploy-results",
+    requestName
+  );
+  if (!fs.existsSync(invalidUploadedResult)) {
+    throw new Error("invalid-request: fallback deploy result was not uploaded");
+  }
+  const invalidUploadedResultJson = JSON.parse(
+    fs.readFileSync(invalidUploadedResult, "utf8")
+  );
+  if (
+    invalidUploadedResultJson.status !== "failed" ||
+    invalidUploadedResultJson.runtime_artifact_profile !== "qiwe-production" ||
+    invalidUploadedResultJson.deploy_bundle_sha !==
+      "89abcdef0123456789abcdef0123456789abcdef"
+  ) {
+    throw new Error(
+      "invalid-request: fallback deploy result did not retain request identity"
+    );
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

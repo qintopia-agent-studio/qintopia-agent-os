@@ -41,6 +41,9 @@ send externally.
   `/home/ubuntu/qintopia-agent-os-releases/current`.
 - Confirm `tools/deploy/build-deploy-bundle.mjs` packages those scripts.
 - Confirm `tools/deploy/check-deploy-contracts.mjs` guards those scripts.
+- If the follow-up deploy will use `runtime_artifact_profile=qiwe-production`, confirm
+  the independent artifact `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`
+  has already been built and uploaded to COS before dispatching `Deploy Production`.
 - For the final Huabaosi image canary Release, confirm the bundle contains
   `deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh` and the
   contract check covers its immutable release, timer, reviewer, pending-image, and
@@ -63,6 +66,44 @@ send externally.
   checkout.
 - Confirm the expected release-local scripts exist and are executable under
   `/home/ubuntu/qintopia-agent-os-releases/current`.
+- If the release is intended to support final Xiaoman production-complete evidence,
+  confirm operators will retain two reviewed production sidecar SHA-256 values: Huabaosi
+  canary evidence uses the ordinary Huabaosi production artifact, while real
+  Xiaoman/QiWe delivery evidence uses the separately deployed QiWe production artifact.
+  <p>Huabaosi canary evidence uses the ordinary Huabaosi production artifact.</p>
+- If the release is intended to support final Xiaoman production-complete evidence,
+  rerun the reviewed repository-local verification bundle before any owner-operated
+  production evidence capture:
+
+  ```bash
+  node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs
+  ```
+
+- If the release is intended to support final Xiaoman production-complete evidence,
+  follow [Xiaoman production evidence runbook](xiaoman-production-evidence-runbook.md)
+  for the owner-operated Huabaosi canary, QiWe follow-up deploy, real-activity export,
+  group arrival confirmation, and final completion-manifest sequence.
+- If the release is intended to support final Xiaoman production-complete evidence,
+  prefer the reviewed one-shot completion helper for the last owner-operated step after
+  all sanitized evidence files are retained:
+
+  ```bash
+  pnpm deploy:xiaoman-production-evidence:finalize -- \
+    --release-please-pr-number <release-please-pr-number> \
+    --release-please-head-sha <release-please-head-sha> \
+    --release-tag <published-release-tag> \
+    --released-commit-sha <published-release-commit-sha> \
+    --qiwe-production-enablement-pr-number <qiwe-production-enablement-pr-number> \
+    --qiwe-production-enablement-head-sha <qiwe-production-enablement-head-sha> \
+    --staging-runtime-readiness <staging-runtime-readiness-output.txt> \
+    --huabaosi-staging <huabaosi-staging-output.txt> \
+    --qiwe-staging <qiwe-staging-output.txt> \
+    --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
+    --production-real-activity <production-evidence-output.txt> \
+    --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+    --output <completed-xiaoman-production-completion-evidence.json>
+  ```
+
 - For staging runtime provisioning, confirm the renderer exists at:
 
   ```text
@@ -97,4 +138,11 @@ For Xiaoman-adjacent releases, classify the Release as `infrastructure`,
 infrastructure-only while Huabaosi staging final JPEG evidence, QiWe staging
 upload/callback/send evidence, cross-flow hash evidence, QiWe production enablement,
 Huabaosi production activation, Feishu mirror activation, or one real Xiaoman
-activity-to-QiWe group-send arrival is missing.
+activity-to-QiWe group-send arrival is missing. Final production-complete evidence must
+also retain the Huabaosi canary sidecar SHA-256 separately from the QiWe real-activity
+sidecar SHA-256. They are reviewed production artifacts for different deploy profiles.
+<p>Huabaosi canary sidecar SHA-256 separately from the QiWe real-activity sidecar SHA-256.</p>
+Repository-local verification for this reviewed chain was re-confirmed on Friday, July
+24, 2026 in
+[2026-07-24 Xiaoman production evidence chain local verification](../reports/2026-07-24-xiaoman-production-evidence-chain-local-verification.md).
+That report does not replace the real production evidence gates above.

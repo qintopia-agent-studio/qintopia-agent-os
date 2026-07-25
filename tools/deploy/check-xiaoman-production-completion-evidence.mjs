@@ -145,15 +145,39 @@ if (huabaosiGeneration.content_hash !== qiweCallback.artifact_content_hash) {
 
 const production = completion.huabaosi_production_activation;
 assertCompletionReleaseBinding(completion, production.release_sha);
+assertCompletionReleaseBinding(
+  completion,
+  completion.real_activity_confirmation.release_sha
+);
 if (
-  production.release_sha !== productionRetention.production_release_sha ||
-  production.sidecar_binary_sha256 !== productionRetention.sidecar_binary_sha256 ||
-  production.database_url_sha256 !== productionRetention.database_url_sha256 ||
   production.release_sha !== huabaosiProductionCanary.release_sha ||
+  production.runtime_artifact_profile !== huabaosiProductionCanary.artifact_profile ||
   production.sidecar_binary_sha256 !== huabaosiProductionCanary.sidecar_binary_sha256 ||
   production.database_url_sha256 !== huabaosiProductionCanary.database_url_sha256
 ) {
-  fail("Huabaosi production activation facts do not bind to retained evidence");
+  fail("Huabaosi production activation facts do not bind to canary evidence");
+}
+
+if (
+  completion.real_activity_confirmation.release_sha !==
+    productionRetention.production_release_sha ||
+  completion.real_activity_confirmation.runtime_artifact_profile !==
+    productionRetention.runtime_artifact_profile ||
+  completion.real_activity_confirmation.sidecar_binary_sha256 !==
+    productionRetention.sidecar_binary_sha256 ||
+  completion.real_activity_confirmation.database_url_sha256 !==
+    productionRetention.database_url_sha256
+) {
+  fail("QiWe real activity production facts do not bind to retained evidence");
+}
+
+if (
+  production.database_url_sha256 !==
+  completion.real_activity_confirmation.database_url_sha256
+) {
+  fail(
+    "Huabaosi canary and QiWe real activity do not bind the same production database"
+  );
 }
 
 if (
@@ -227,7 +251,7 @@ function parseArgs(argv) {
 
 function usage() {
   fail(
-    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completion-manifest.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>"
+    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completed-xiaoman-production-completion-evidence.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>"
   );
 }
 
@@ -252,6 +276,7 @@ function assertHuabaosiProductionCanary(records) {
   for (const record of records) {
     if (
       record.success !== true ||
+      record.artifact_profile !== "huabaosi-production" ||
       record.release_binary_verified !== true ||
       record.approved_sidecar_sha256_matched !== true ||
       record.approved_database_url_sha256_matched !== true ||
@@ -267,15 +292,24 @@ function assertHuabaosiProductionCanary(records) {
       fail(`Huabaosi production canary ${key} differs across phases`);
     }
   }
+  if (!records.every((record) => record.artifact_profile === "huabaosi-production")) {
+    fail("Huabaosi production canary artifact_profile differs across phases");
+  }
 
   assertExactKeys(
     preflight,
-    new Set([...huabaosiCanaryCommonKeys(), "action_status", "timer_active"]),
+    new Set([
+      ...huabaosiCanaryCommonKeys(),
+      "action_status",
+      "timer_active",
+      "timer_enabled",
+    ]),
     "Huabaosi production canary preflight"
   );
   if (
     preflight.action_status !== "adapter_config_ready" ||
-    preflight.timer_active !== false
+    preflight.timer_active !== false ||
+    preflight.timer_enabled !== false
   ) {
     fail(
       "Huabaosi production canary preflight does not prove disabled timer readiness"
@@ -372,6 +406,7 @@ function assertHuabaosiProductionCanary(records) {
       "database_writes_executed",
       "external_calls_executed",
       "height",
+      "sensitive_fields_redacted",
       "width",
     ]),
     "Huabaosi production canary revalidation"
@@ -384,13 +419,15 @@ function assertHuabaosiProductionCanary(records) {
     revalidation.width !== generation.width ||
     revalidation.height !== generation.height ||
     revalidation.database_writes_executed !== false ||
-    revalidation.external_calls_executed !== true
+    revalidation.external_calls_executed !== true ||
+    revalidation.sensitive_fields_redacted !== true
   ) {
     fail("Huabaosi production canary revalidation does not prove same-byte readback");
   }
 
   return {
     artifact_id: generation.artifact_id,
+    artifact_profile: generation.artifact_profile,
     content_hash: generation.content_hash,
     database_url_sha256: generation.database_url_sha256,
     release_sha: generation.release_sha,
@@ -402,6 +439,7 @@ function huabaosiCanaryCommonKeys() {
   return [
     "approved_database_url_sha256_matched",
     "approved_sidecar_sha256_matched",
+    "artifact_profile",
     "database_url_sha256",
     "phase",
     "release_binary_verified",
@@ -523,6 +561,7 @@ function assertHuabaosiProductionActivation(record) {
     record,
     new Set([
       "release_sha",
+      "runtime_artifact_profile",
       "sidecar_binary_sha256",
       "database_url_sha256",
       "image_generation_observation_passed",
@@ -535,6 +574,7 @@ function assertHuabaosiProductionActivation(record) {
   );
   if (
     !isGitSha(record.release_sha) ||
+    record.runtime_artifact_profile !== "huabaosi-production" ||
     !isSha256(record.sidecar_binary_sha256) ||
     !isSha256(record.database_url_sha256) ||
     record.image_generation_observation_passed !== true ||
@@ -550,10 +590,22 @@ function assertHuabaosiProductionActivation(record) {
 function assertRealActivityConfirmation(record) {
   assertExactKeys(
     record,
-    new Set(["qiwe_group_arrival_confirmed", "confirmed_by", "confirmed_at"]),
+    new Set([
+      "release_sha",
+      "runtime_artifact_profile",
+      "sidecar_binary_sha256",
+      "database_url_sha256",
+      "qiwe_group_arrival_confirmed",
+      "confirmed_by",
+      "confirmed_at",
+    ]),
     "real activity confirmation"
   );
   if (
+    !isGitSha(record.release_sha) ||
+    record.runtime_artifact_profile !== "qiwe-production" ||
+    !isSha256(record.sidecar_binary_sha256) ||
+    !isSha256(record.database_url_sha256) ||
     record.qiwe_group_arrival_confirmed !== true ||
     !isSafeLabel(record.confirmed_by) ||
     !isUtcSecondTimestamp(record.confirmed_at)
