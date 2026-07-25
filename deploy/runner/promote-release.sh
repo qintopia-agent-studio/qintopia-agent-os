@@ -132,6 +132,40 @@ request_id="$(json_get request_id)"
 release_dir="${release_root}/${release_sha}"
 staging_dir="${release_root}/.staging-${release_sha}"
 current_target="$(readlink -f "${release_root}/current" 2>/dev/null || true)"
+adopted_manifest_tmp=""
+
+cleanup() {
+  if [[ -n "$adopted_manifest_tmp" && -f "$adopted_manifest_tmp" ]]; then
+    rm -f "$adopted_manifest_tmp"
+  fi
+}
+trap cleanup EXIT
+
+build_adopted_existing_manifest() {
+  local existing_dir="$1"
+  local output_path="$2"
+  python3 - "$existing_dir/manifest.json" "$existing_dir/sidecar/artifact-manifest.json" "$output_path" <<'PY'
+import json
+import sys
+
+manifest_path, sidecar_manifest_path, output_path = sys.argv[1:4]
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+
+if not manifest.get("runtime_artifact_profile"):
+    with open(sidecar_manifest_path, encoding="utf-8") as fh:
+        sidecar_manifest = json.load(fh)
+
+    artifact_profile = sidecar_manifest.get("validation", {}).get("artifact_profile")
+    if artifact_profile not in {"huabaosi-production", "qiwe-production"}:
+        raise SystemExit("existing release sidecar artifact manifest profile is unavailable")
+    manifest["runtime_artifact_profile"] = artifact_profile
+
+with open(output_path, "w", encoding="utf-8") as fh:
+    json.dump(manifest, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
 
 repair_existing_release_metadata() {
   local existing_dir="$1"
@@ -329,7 +363,17 @@ fi
 
 if [[ -e "$release_dir" ]]; then
   echo "release already exists: ${release_dir}; verifying manifest"
-  python3 - "$release_dir/manifest.json" "$staging_dir/manifest.json" <<'PY'
+  if [[ ! -d "$release_dir" || -L "$release_dir" ]]; then
+    echo "existing release path must be a non-symlink directory: ${release_dir}" >&2
+    exit 1
+  fi
+  if [[ ! -f "${release_dir}/manifest.json" || -L "${release_dir}/manifest.json" ]]; then
+    echo "existing release manifest must be a non-symlink regular file" >&2
+    exit 1
+  fi
+  adopted_manifest_tmp="$(mktemp "${release_root}/.existing-manifest-${release_sha}.XXXXXX.json")"
+  build_adopted_existing_manifest "$release_dir" "$adopted_manifest_tmp"
+  python3 - "$adopted_manifest_tmp" "$staging_dir/manifest.json" <<'PY'
 import json
 import sys
 
@@ -353,6 +397,8 @@ for key in keys:
         raise SystemExit(f"existing release manifest {key} mismatch")
 PY
   repair_existing_release_metadata "$release_dir" "$staging_dir"
+  mv "$adopted_manifest_tmp" "${release_dir}/manifest.json"
+  adopted_manifest_tmp=""
   validate_release_tree "$release_dir"
   rm -rf "$staging_dir"
 else

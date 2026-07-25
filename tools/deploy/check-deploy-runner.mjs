@@ -738,6 +738,7 @@ for (const fragment of [
   '"commit_sha"',
   '"release_scope"',
   '"restart_targets"',
+  "existing release sidecar artifact manifest profile is unavailable",
   'repair_existing_release_metadata "$release_dir" "$staging_dir"',
   "existing release content differs from freshly verified artifacts",
   'chown -hR root:root "$existing_dir"',
