@@ -1092,6 +1092,12 @@ Use `rg` and `rg --files` for search.
   previous runner. Use a reviewed follow-up `workflow_dispatch` request for the same
   published SHA to activate the new runner behavior; do not bootstrap it with server
   edits.
+- As of `v0.2.30`, an existing release first assembled by `v0.2.29` may have a
+  `manifest.json` that omits `runtime_artifact_profile` even though the immutable
+  sidecar artifact manifest already records the reviewed profile. The same-SHA repair
+  path must adopt that profile from `sidecar/artifact-manifest.json`, then persist it
+  back into the release manifest before exact identity comparison. Do not hot-edit the
+  server manifest by hand.
 - Deploy result diagnostics may include only bounded non-secret runner facts such as the
   fixed failure stage, numeric exit status, promotion state, and profile activation
   attempt state. Do not upload raw server logs, journal output, env files, secrets,

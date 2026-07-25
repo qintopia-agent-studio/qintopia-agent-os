@@ -243,6 +243,13 @@ deploy results retain the same reviewed `commit_sha`, `runtime_sha`,
 `runtime_artifact_profile`, `deploy_bundle_sha`, `release_scope`, and `restart_targets`
 identity so this comparison can be made without re-reading mutable operator notes.
 
+The `v0.2.29` runner wrote release manifests without `runtime_artifact_profile`. A
+same-SHA follow-up assembled by `v0.2.30+` must adopt the missing reviewed profile from
+the immutable `sidecar/artifact-manifest.json`, persist it into the existing release
+manifest, and only then compare the exact identity. This compatibility path is limited
+to the missing profile field; it must still fail closed for any other manifest drift or
+for an unavailable sidecar artifact profile.
+
 The existing-release path also repairs metadata left by a previous runner only after the
 exact manifest identity matches, the complete release tree matches freshly fetched and
 verified artifacts, and both packaged `SHA256SUMS` files pass. It then makes the release

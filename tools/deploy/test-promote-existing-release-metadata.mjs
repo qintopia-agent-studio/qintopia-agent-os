@@ -105,7 +105,15 @@ try {
   );
   writeFile(
     path.join(sidecarFixture, "artifact-manifest.json"),
-    `${JSON.stringify({ commit_sha: sha, artifact_name: "sidecar-fixture" })}\n`,
+    `${JSON.stringify(
+      {
+        commit_sha: sha,
+        artifact_name: "sidecar-fixture",
+        validation: { artifact_profile: "huabaosi-production" },
+      },
+      null,
+      2
+    )}\n`,
     0o444
   );
   writeChecksums(sidecarFixture, [
@@ -169,6 +177,15 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
   }
 
   const releaseDir = path.join(releaseRoot, sha);
+  const manifestPath = path.join(releaseDir, "manifest.json");
+  const existingManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  delete existingManifest.runtime_artifact_profile;
+  fs.writeFileSync(
+    manifestPath,
+    `${JSON.stringify(existingManifest, null, 2)}\n`,
+    "utf8"
+  );
+
   const staleEvidence = [
     "sidecar/artifact-manifest.json",
     "sidecar/SHA256SUMS",
@@ -177,6 +194,53 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
     "deploy-bundle/SHA256SUMS",
     "deploy-bundle/qintopia-agent-os-deploy-bundle.tar.gz",
   ];
+  fs.writeFileSync(
+    path.join(releaseDir, "deploy/runner-fixture.sh"),
+    "#!/usr/bin/env bash\nexit 99\n",
+    "utf8"
+  );
+  const driftedMissingProfile = runPromotion(
+    writeRequest("deploy-20260719T060050Z-0123456789ab")
+  );
+  if (
+    driftedMissingProfile.status === 0 ||
+    !driftedMissingProfile.stderr.includes(
+      "existing release content differs from freshly verified artifacts"
+    )
+  ) {
+    throw new Error(
+      `same-SHA drift with missing runtime_artifact_profile must fail before mutation\n${driftedMissingProfile.stdout}\n${driftedMissingProfile.stderr}`
+    );
+  }
+  const unchangedManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if ("runtime_artifact_profile" in unchangedManifest) {
+    throw new Error(
+      "failed same-SHA drift unexpectedly persisted runtime_artifact_profile"
+    );
+  }
+  if (fs.existsSync(chownLog)) {
+    throw new Error("drift with missing profile reached metadata mutation");
+  }
+
+  fs.writeFileSync(
+    path.join(releaseDir, "deploy/runner-fixture.sh"),
+    "#!/usr/bin/env bash\nexit 0\n",
+    "utf8"
+  );
+  const adoptedProfile = runPromotion(
+    writeRequest("deploy-20260719T060075Z-0123456789ab")
+  );
+  if (adoptedProfile.status !== 0) {
+    throw new Error(
+      `same-SHA runtime_artifact_profile adoption failed\n${adoptedProfile.stdout}\n${adoptedProfile.stderr}`
+    );
+  }
+  const adoptedManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (adoptedManifest.runtime_artifact_profile !== "huabaosi-production") {
+    throw new Error("same-SHA adoption did not restore runtime_artifact_profile");
+  }
+  fs.rmSync(chownLog, { force: true });
+
   for (const relative of staleEvidence) {
     fs.chmodSync(path.join(releaseDir, relative), 0o640);
   }
@@ -224,7 +288,6 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
     "#!/usr/bin/env bash\nexit 0\n",
     "utf8"
   );
-  const manifestPath = path.join(releaseDir, "manifest.json");
   const outsideManifest = path.join(tmpRoot, "outside-manifest.json");
   fs.writeFileSync(outsideManifest, fs.readFileSync(manifestPath));
   fs.rmSync(manifestPath);
