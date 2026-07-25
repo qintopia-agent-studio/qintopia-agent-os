@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.30](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.29...v0.2.30) (2026-07-25)
+
+
+### Features
+
+* **deploy:** harden xiaoman production evidence handoff ([#272](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/272)) ([103d7ad](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/103d7ad2493c797ca011d01946feef22bebecdee))
+
 ## [0.2.29](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.28...v0.2.29) (2026-07-23)
 
 
