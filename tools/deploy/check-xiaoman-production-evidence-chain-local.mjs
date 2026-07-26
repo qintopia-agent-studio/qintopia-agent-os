@@ -6,6 +6,13 @@ import process from "node:process";
 
 const repoRoot = process.cwd();
 
+const checkEnv = {
+  ...process.env,
+  QINTOPIA_SIDECAR_DATABASE_URL:
+    process.env.QINTOPIA_SIDECAR_DATABASE_URL ??
+    "postgres://postgres:postgres@127.0.0.1:5432/qintopia_test",
+};
+
 const checks = [
   ["node", ["tools/deploy/check-deploy-contracts.mjs"]],
   ["node", ["tools/deploy/check-deploy-runner.mjs"]],
@@ -62,6 +69,7 @@ for (const [index, [command, args]] of checks.entries()) {
   execFileSync(command, args, {
     cwd: repoRoot,
     stdio: "inherit",
+    env: checkEnv,
   });
 }
 
