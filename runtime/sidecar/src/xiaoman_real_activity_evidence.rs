@@ -710,11 +710,11 @@ fn validate_generated_image_metadata(
     }
     if text_field(metadata, "mime_type")? != "image/jpeg"
         || text_field(metadata, "storage_provider")? != "feishu-base"
-        || i64_field(metadata, "width")? != 1024
-        || i64_field(metadata, "height")? != 1024
+        || i64_field(metadata, "width")? != 1254
+        || i64_field(metadata, "height")? != 1254
         || i64_field(metadata, "byte_size")? <= 0
     {
-        bail!("generated image metadata is not the reviewed Feishu-backed 1024 JPEG");
+        bail!("generated image metadata is not the reviewed Feishu-backed 1254 JPEG");
     }
     Ok(())
 }
@@ -793,8 +793,8 @@ mod tests {
                 content_hash: format!("sha256:{}", "d".repeat(64)),
                 storage_backend: "feishu-base".to_string(),
                 mime_type: "image/jpeg".to_string(),
-                width: 1024,
-                height: 1024,
+                width: 1254,
+                height: 1254,
                 byte_size: 4096,
                 approval_authenticated_feishu_revalidation: true,
             },
@@ -842,16 +842,16 @@ mod tests {
     fn generated_image_metadata_requires_creation_event_parity() {
         let metadata = json!({
             "mime_type": "image/jpeg",
-            "width": 1024,
-            "height": 1024,
+            "width": 1254,
+            "height": 1254,
             "byte_size": 4096,
             "storage_provider": "feishu-base",
         });
         let creation = json!({
             "content_hash": format!("sha256:{}", "f".repeat(64)),
             "mime_type": "image/jpeg",
-            "width": 1024,
-            "height": 1024,
+            "width": 1254,
+            "height": 1254,
             "byte_size": 4096,
             "storage_provider": "feishu-base",
             "external_publish_executed": false,

@@ -193,12 +193,12 @@ function productionOutput(overrides = {}) {
       artifact_id: artifactId,
       byte_size: 123456,
       content_hash: contentHash,
-      height: 1024,
+      height: 1254,
       image_generation_work_item_id: imageWorkItemId,
       mime_type: "image/jpeg",
       review_status: "pending",
       storage_backend: "feishu-base",
-      width: 1024,
+      width: 1254,
     },
     {
       ...common,
@@ -209,9 +209,9 @@ function productionOutput(overrides = {}) {
       content_hash: contentHash,
       database_writes_executed: false,
       external_calls_executed: true,
-      height: 1024,
+      height: 1254,
       sensitive_fields_redacted: true,
-      width: 1024,
+      width: 1254,
     },
   ].map((record) => deepMerge(record, overrides[record.phase] ?? {}));
   return [

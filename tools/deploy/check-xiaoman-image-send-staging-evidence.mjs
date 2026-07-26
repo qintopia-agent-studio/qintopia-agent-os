@@ -144,8 +144,8 @@ if (
   huabaosiGeneration.artifact_count !== 1 ||
   huabaosiGeneration.review_status !== "pending" ||
   huabaosiGeneration.mime_type !== "image/jpeg" ||
-  huabaosiGeneration.width !== 1024 ||
-  huabaosiGeneration.height !== 1024 ||
+  huabaosiGeneration.width !== 1254 ||
+  huabaosiGeneration.height !== 1254 ||
   !Number.isInteger(huabaosiGeneration.byte_size) ||
   huabaosiGeneration.byte_size <= 0 ||
   huabaosiGeneration.storage_backend !== "feishu-base" ||

@@ -876,8 +876,8 @@ SET
     'media_transform', 'png_to_jpeg_white_background_q92_v1',
     'jpeg_quality', 92,
     'alpha_background', '#ffffff',
-    'width', 1024,
-    'height', 1024,
+    'width', 1254,
+    'height', 1254,
     'byte_size', 4096,
     'approved_brief_artifact_id', '${xiaoman_promotion_artifact_id}',
     'approved_brief_content_hash', (SELECT content_hash FROM qintopia_agent_os.artifacts WHERE id = '${xiaoman_promotion_artifact_id}'::uuid),
@@ -904,8 +904,8 @@ INSERT INTO qintopia_agent_os.work_item_events (
     'media_transform', 'png_to_jpeg_white_background_q92_v1',
     'jpeg_quality', 92,
     'alpha_background', '#ffffff',
-    'width', 1024,
-    'height', 1024,
+    'width', 1254,
+    'height', 1254,
     'byte_size', 4096,
     'external_publish_executed', false
   )

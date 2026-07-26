@@ -49,7 +49,7 @@ the intended group.
 | Step | Evidence phase                 | Required result                                                                              | Passed |
 | ---- | ------------------------------ | -------------------------------------------------------------------------------------------- | ------ |
 | 1    | `signal_intake`                | `signal_ingest_submitted`, one Xiaoman activity root created from a real event signal        |        |
-| 2    | `image_generation`             | `generated_image_created`, one Feishu-backed 1024x1024 JPEG with `review_status=pending`     |        |
+| 2    | `image_generation`             | `generated_image_created`, one Feishu-backed 1254x1254 JPEG with `review_status=pending`     |        |
 | 3    | `human_approval`               | `generated_image_approved`, Feishu attachment revalidated before approval                    |        |
 | 4    | `send_ready`                   | `send_ready_recorded`, `review_policy=human_final_confirmation`, target alias is allowlisted |        |
 | 5    | `qiwe_upload`                  | `image_upload_accepted`, async upload requested, no message send yet                         |        |

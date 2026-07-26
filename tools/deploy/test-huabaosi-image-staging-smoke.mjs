@@ -53,7 +53,7 @@ case "$1" in
     printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"config_valid":true,"missing_configuration":[],"safe_for_chat":false}'
     ;;
   run-huabaosi-image-generation-worker)
-    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"feishu-base://huabaosi-generated-image/22222222-3333-4444-8555-666666666666"},"safe_for_chat":false}'
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1254,"height":1254,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"feishu-base://huabaosi-generated-image/22222222-3333-4444-8555-666666666666"},"safe_for_chat":false}'
     ;;
   *)
     echo "unexpected command: $*" >&2
@@ -89,7 +89,7 @@ case "$1" in
     printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","action_status":"adapter_config_ready","generation_enabled":true,"adapter_compiled":true,"config_valid":true,"missing_configuration":[],"safe_for_chat":false}'
     ;;
   run-huabaosi-image-generation-worker)
-    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1024,"height":1024,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"https://media.example.test/final.jpg"},"safe_for_chat":false}'
+    printf '%s\\n' '{"success":true,"worker":"huabaosi-image-generation-worker","dry_run":false,"apply_requested":true,"action_status":"generated_image_created","artifact_ids":["22222222-3333-4444-8555-666666666666"],"artifact_preview":{"artifact_type":"generated_image","review_status":"pending","mime_type":"image/jpeg","width":1254,"height":1254,"byte_size":123456,"content_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifact_uri":"https://media.example.test/final.jpg"},"safe_for_chat":false}'
     ;;
   *)
     echo "unexpected command: $*" >&2

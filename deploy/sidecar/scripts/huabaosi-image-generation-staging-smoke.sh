@@ -535,8 +535,8 @@ assert payload["artifact_preview"]["artifact_type"] == "generated_image"
 assert payload["artifact_preview"]["review_status"] == "pending"
 assert payload["artifact_preview"]["mime_type"] == "image/jpeg"
 assert payload["artifact_preview"]["artifact_uri"].startswith("feishu-base://"), "generated image storage boundary is not Feishu Base"
-assert payload["artifact_preview"]["width"] == 1024
-assert payload["artifact_preview"]["height"] == 1024
+assert payload["artifact_preview"]["width"] == 1254
+assert payload["artifact_preview"]["height"] == 1254
 assert payload["artifact_preview"]["byte_size"] > 0
 content_hash = payload["artifact_preview"]["content_hash"]
 assert content_hash.startswith("sha256:") and len(content_hash) == 71

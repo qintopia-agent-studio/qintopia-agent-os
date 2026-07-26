@@ -204,8 +204,8 @@ if (
   generation.byte_size <= 0 ||
   generation.byte_size > 10 * 1024 * 1024 ||
   !isCanonicalContentHash(generation.content_hash) ||
-  generation.width !== 1024 ||
-  generation.height !== 1024 ||
+  generation.width !== 1254 ||
+  generation.height !== 1254 ||
   generation.image_generation_work_item_id !==
     requestIntake.image_generation_work_item_id ||
   generation.mime_type !== "image/jpeg" ||

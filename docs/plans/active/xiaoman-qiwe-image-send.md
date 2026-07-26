@@ -35,7 +35,7 @@ non-deprecated asynchronous URL upload rather than a stable AgentOS artifact URI
 ## Final Artifact Format Decision
 
 The official send-image page names JPG as the supported image format and asynchronous
-upload uses `fileType=1` for JPG. The provider source remains a fully decoded 1024x1024
+upload uses `fileType=1` for JPG. The provider source remains a fully decoded 1254x1254
 PNG, but Huabaosi deterministically composites alpha over white and encodes a quality-92
 JPEG before media upload. Only the exact read-back JPEG bytes become the pending
 `generated_image` reviewed by humans and referenced by QiWe. The artifact records the

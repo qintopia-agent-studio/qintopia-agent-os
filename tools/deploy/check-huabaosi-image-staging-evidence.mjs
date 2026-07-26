@@ -104,8 +104,8 @@ if (
   generation.artifact_count !== 1 ||
   generation.mime_type !== "image/jpeg" ||
   generation.review_status !== "pending" ||
-  generation.width !== 1024 ||
-  generation.height !== 1024 ||
+  generation.width !== 1254 ||
+  generation.height !== 1254 ||
   !Number.isInteger(generation.byte_size) ||
   generation.byte_size <= 0 ||
   generation.storage_backend !== "feishu-base" ||

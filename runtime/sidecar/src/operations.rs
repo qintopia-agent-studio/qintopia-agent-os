@@ -5255,10 +5255,10 @@ fn validate_generated_image_approval_with_evidence(
             bail!("generated_image approval requires canonical worker metadata");
         }
     }
-    if json_i64(&context.metadata, "width") != Some(1024)
-        || json_i64(&context.metadata, "height") != Some(1024)
+    if json_i64(&context.metadata, "width") != Some(1254)
+        || json_i64(&context.metadata, "height") != Some(1254)
     {
-        bail!("generated_image approval requires 1024x1024 JPEG metadata");
+        bail!("generated_image approval requires 1254x1254 JPEG metadata");
     }
     let provider_source_content_hash =
         json_string(&context.metadata, "provider_source_content_hash").unwrap_or_default();
@@ -7570,8 +7570,8 @@ mod tests {
                 "media_transform": "png_to_jpeg_white_background_q92_v1",
                 "jpeg_quality": 92,
                 "alpha_background": "#ffffff",
-                "width": 1024,
-                "height": 1024,
+                "width": 1254,
+                "height": 1254,
                 "byte_size": 4096,
                 "approved_brief_artifact_id": brief_id,
                 "approved_brief_content_hash": brief_hash,
