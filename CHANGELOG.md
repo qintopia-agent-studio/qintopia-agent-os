@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.32](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.31...v0.2.32) (2026-07-26)
+
+
+### Bug Fixes
+
+* **deploy:** keep xiaoman evidence smokes bash compatible ([#278](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/278)) ([80d08ad](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/80d08ad755a9d8ec5aa6e6bfe8b06fc6dd51189c))
+* **sidecar:** compile qiwe-production adapter error boundary ([8e2744d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8e2744dc1e9f4531c83f341642fcd2053e80eb6e))
+* **sidecar:** compile qiwe-production adapter error boundary ([2e23fd9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2e23fd92a49739890ecc544bc9db7f994784ea5b))
+* **sidecar:** compile qiwe-production adapter error boundary ([#276](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/276)) ([8e2744d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8e2744dc1e9f4531c83f341642fcd2053e80eb6e))
+
 ## [0.2.31](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.30...v0.2.31) (2026-07-25)
 
 
