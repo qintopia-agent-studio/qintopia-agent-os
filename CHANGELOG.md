@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.35](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.34...v0.2.35) (2026-07-26)
+
+
+### Features
+
+* **xiaoman:** add promotion details mutation ([a73d9ca](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a73d9ca1e01f157a23942bc3753dd91b1da2318f))
+
 ## [0.2.34](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.33...v0.2.34) (2026-07-26)
 
 
