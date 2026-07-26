@@ -47,6 +47,7 @@ const checks = [
     "node",
     [
       "tools/agents/pr-doctor.mjs",
+      "--body-only",
       "docs/reports/2026-07-24-xiaoman-production-evidence-pr-body.md",
     ],
   ],
