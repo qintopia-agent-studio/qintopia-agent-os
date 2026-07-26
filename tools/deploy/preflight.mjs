@@ -821,6 +821,7 @@ if (exists("deploy/sidecar/scripts/postgres-schema-preflight.sh")) {
     "2026-07-13.002",
     "2026-07-14.001",
     "2026-07-15.001",
+    "2026-07-15.002",
     "PGHOST",
     "PGDATABASE",
   ]) {

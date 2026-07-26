@@ -36,6 +36,7 @@ const WRITE_OPERATIONS: &[&str] = &[
     "status-update",
     "gap-update",
     "phase-update",
+    "promotion-details-update",
     "handoff-create",
     "signal-ingest",
 ];
@@ -97,6 +98,8 @@ struct ActivityPayload {
     #[serde(default)]
     event_signal_id: String,
     #[serde(default)]
+    source_event_signal_id: String,
+    #[serde(default)]
     mutation_id: String,
     #[serde(default)]
     signal_type: String,
@@ -116,6 +119,14 @@ struct ActivityPayload {
     location: String,
     #[serde(default)]
     related_member_names: Vec<String>,
+    #[serde(default)]
+    activity_owner_name: String,
+    #[serde(default)]
+    preannounce_decision: String,
+    #[serde(default)]
+    preannounce_channels: Vec<String>,
+    #[serde(default)]
+    human_reviewer: String,
 }
 
 #[derive(Debug, Clone)]
@@ -345,7 +356,7 @@ async fn execute_with_config(
         );
     } else if matches!(
         operation.as_str(),
-        "status-update" | "gap-update" | "phase-update"
+        "status-update" | "gap-update" | "phase-update" | "promotion-details-update"
     ) {
         execute_event_signal_mutation(cli, &mut report, &payload, apply_requested).await?;
     } else if operation == "handoff-create" {
@@ -391,7 +402,7 @@ fn base_report(
         guardrails: vec![
             "validates wrapper payload before any data access".to_string(),
             "fixture replay is allowed for local acceptance only".to_string(),
-            "status-update, gap-update, and phase-update write one allowlisted AgentOS event-signal field with mutation audit".to_string(),
+            "status-update, gap-update, phase-update, and promotion-details-update write allowlisted AgentOS event-signal values with mutation audit".to_string(),
             "technical report is for logs, not WeCom users".to_string(),
             "record_ref is hashed; raw Base record ids are not included in records".to_string(),
         ],
@@ -426,6 +437,7 @@ async fn execute_event_signal_mutation(
             "status-update" => "event_signal_status_preview",
             "gap-update" => "event_signal_gap_preview",
             "phase-update" => "event_signal_phase_preview",
+            "promotion-details-update" => "event_signal_promotion_details_preview",
             _ => unreachable!("mutation operation validated before execution"),
         }
         .to_string();
@@ -465,7 +477,7 @@ async fn apply_event_signal_mutation(
         .context("begin event signal mutation transaction")?;
     let row = sqlx::query(
         r#"
-        SELECT status, gap_summary, signal_type, activity_phase
+        SELECT status, gap_summary, signal_type, activity_phase, owner_name, metadata
         FROM qintopia_agent_os.event_signals
         WHERE id = $1
           AND owner_agent = 'xiaoman'
@@ -585,6 +597,48 @@ async fn apply_event_signal_mutation(
                     .unwrap_or(ActivityPhase::Pre.as_str())
             })
         }
+        "promotion-details-update" => {
+            let signal_type: String = row.try_get("signal_type")?;
+            if signal_type != "活动/聚会" {
+                bail!("promotion-details-update requires an activity event signal");
+            }
+            let previous_owner: String = row.try_get("owner_name")?;
+            let previous_metadata: Value = row.try_get("metadata")?;
+            let promotion_review = new_value
+                .get("promotion_review")
+                .cloned()
+                .context("promotion-details-update value missing promotion_review")?;
+            let next_owner = new_value
+                .get("owner_name")
+                .and_then(Value::as_str)
+                .context("promotion-details-update value missing owner_name")?;
+            let result = sqlx::query(
+                r#"
+                UPDATE qintopia_agent_os.event_signals
+                SET owner_name = $2,
+                    metadata = COALESCE(metadata, '{}'::jsonb)
+                        || jsonb_build_object('promotion_review', $3::jsonb),
+                    updated_at = now()
+                WHERE id = $1
+                "#,
+            )
+            .bind(event_signal_id)
+            .bind(next_owner)
+            .bind(promotion_review.to_string())
+            .execute(&mut *tx)
+            .await
+            .context("update Xiaoman event signal promotion details")?;
+            if result.rows_affected() != 1 {
+                bail!("event signal promotion details update did not affect exactly one row");
+            }
+            json!({
+                "owner_name": previous_owner,
+                "promotion_review": previous_metadata
+                    .get("promotion_review")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}))
+            })
+        }
         _ => unreachable!("mutation operation validated before execution"),
     };
 
@@ -620,6 +674,7 @@ async fn apply_event_signal_mutation(
             "status-update" => "event_signal_status_updated",
             "gap-update" => "event_signal_gap_updated",
             "phase-update" => "event_signal_phase_updated",
+            "promotion-details-update" => "event_signal_promotion_details_updated",
             _ => unreachable!("mutation operation validated before execution"),
         },
         mutation_applied: true,
@@ -639,8 +694,59 @@ fn event_signal_mutation_value(payload: &ActivityPayload) -> Result<Value> {
         "phase-update" => Ok(json!({
             "activity_phase": activity_phase(&payload.activity_phase)?.as_str()
         })),
+        "promotion-details-update" => Ok(json!({
+            "owner_name": normalize_promotion_owner(&payload.activity_owner_name)?,
+            "promotion_review": promotion_review_value(payload)?,
+        })),
         _ => bail!("operation is not an event-signal mutation"),
     }
+}
+
+fn normalize_promotion_owner(value: &str) -> Result<String> {
+    normalize_activity_detail(value, "activity_owner_name", 120)
+}
+
+fn normalize_activity_detail(value: &str, field: &str, max_chars: usize) -> Result<String> {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        bail!("{field} is required");
+    }
+    if normalized.chars().count() > max_chars {
+        bail!("{field} must be {max_chars} characters or fewer");
+    }
+    if contains_disallowed_mutation_text(&normalized) {
+        bail!("{field} contains disallowed sensitive or raw internal content");
+    }
+    Ok(normalized)
+}
+
+fn promotion_review_value(payload: &ActivityPayload) -> Result<Value> {
+    let decision = payload.preannounce_decision.trim();
+    if !matches!(decision, "需要" | "不需要") {
+        bail!("preannounce_decision must be 需要 or 不需要");
+    }
+    let mut channels = Vec::new();
+    for channel in &payload.preannounce_channels {
+        let channel = channel.trim();
+        if !matches!(channel, "朋友圈" | "小红书") {
+            bail!("preannounce_channels contains an unsupported channel");
+        }
+        if !channels.contains(&channel) {
+            channels.push(channel);
+        }
+    }
+    if decision == "需要" && channels.is_empty() {
+        bail!("preannounce_channels is required when preannounce_decision is 需要");
+    }
+    if decision == "不需要" && !channels.is_empty() {
+        bail!("preannounce_channels must be empty when preannounce_decision is 不需要");
+    }
+    Ok(json!({
+        "location": normalize_activity_detail(&payload.location, "location", 240)?,
+        "preannounce_decision": decision,
+        "preannounce_channels": channels,
+        "human_reviewer": normalize_activity_detail(&payload.human_reviewer, "human_reviewer", 120)?,
+    }))
 }
 
 fn validate_status_transition(previous: &str, next: &str) -> Result<()> {
@@ -1184,15 +1290,25 @@ fn handoff_work_item_request(payload: &ActivityPayload) -> Result<WorkItemCreate
     }
 
     let source_record_ref = activity_record_ref(table_role, &payload.source_record_id);
+    let source_event_signal_id = if payload.source_event_signal_id.trim().is_empty() {
+        None
+    } else {
+        Some(
+            Uuid::parse_str(payload.source_event_signal_id.trim())
+                .context("source_event_signal_id must be a UUID")?,
+        )
+    };
     let source_refs = json!({
         "source_record_ref": source_record_ref.clone(),
         "table_role": table_role,
         "wrapper_operation": payload.operation,
+        "source_event_signal_id": source_event_signal_id.map(|id| id.to_string()),
     });
     let payload_value = json!({
         "handoff_type": payload.handoff_type,
         "source_record_ref": source_record_ref.clone(),
         "table_role": table_role,
+        "source_event_signal_id": source_event_signal_id.map(|id| id.to_string()),
     });
 
     Ok(WorkItemCreateRequest {
@@ -1206,7 +1322,7 @@ fn handoff_work_item_request(payload: &ActivityPayload) -> Result<WorkItemCreate
         priority: "normal".to_string(),
         source_type: "xiaoman_activity".to_string(),
         source_refs,
-        source_event_signal_id: None,
+        source_event_signal_id,
         payload: payload_value,
         payload_redaction_policy: "summary_only".to_string(),
         idempotency_key: String::new(),
@@ -1534,6 +1650,7 @@ impl EventSignalIngestCandidate {
             target_agent: String::new(),
             brief_summary: self.summary.clone(),
             event_signal_id: self.id.to_string(),
+            source_event_signal_id: String::new(),
             mutation_id: String::new(),
             signal_type: self.signal_type.clone(),
             activity_title: self.title.clone(),
@@ -1548,6 +1665,10 @@ impl EventSignalIngestCandidate {
             priority: self.priority.clone(),
             location: String::new(),
             related_member_names: self.related_member_names.clone(),
+            activity_owner_name: String::new(),
+            preannounce_decision: String::new(),
+            preannounce_channels: Vec::new(),
+            human_reviewer: String::new(),
         }
     }
 }
@@ -2169,6 +2290,17 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
             ])?;
             validate_event_signal_mutation_payload(payload)?;
         }
+        "promotion-details-update" => {
+            require_fields(&[
+                ("event_signal_id", &payload.event_signal_id),
+                ("mutation_id", &payload.mutation_id),
+                ("activity_owner_name", &payload.activity_owner_name),
+                ("location", &payload.location),
+                ("preannounce_decision", &payload.preannounce_decision),
+                ("human_reviewer", &payload.human_reviewer),
+            ])?;
+            validate_event_signal_mutation_payload(payload)?;
+        }
         "handoff-create" => {
             require_fields(&[
                 ("source_record_id", &payload.source_record_id),
@@ -2181,6 +2313,10 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
             }
             if !HANDOFF_TARGETS.contains(&payload.target_agent.as_str()) {
                 bail!("target_agent is not allowed");
+            }
+            if !payload.source_event_signal_id.trim().is_empty() {
+                Uuid::parse_str(payload.source_event_signal_id.trim())
+                    .context("source_event_signal_id must be a UUID")?;
             }
         }
         "signal-ingest" => {
@@ -2241,6 +2377,16 @@ fn validate_event_signal_mutation_payload(payload: &ActivityPayload) -> Result<(
                 bail!("phase-update must not include gap_summary");
             }
             activity_phase(&payload.activity_phase)?;
+        }
+        "promotion-details-update" => {
+            if !payload.status.trim().is_empty()
+                || !payload.gap_summary.trim().is_empty()
+                || !payload.activity_phase.trim().is_empty()
+            {
+                bail!("promotion-details-update must not include status, gap_summary, or activity_phase");
+            }
+            normalize_promotion_owner(&payload.activity_owner_name)?;
+            promotion_review_value(payload)?;
         }
         _ => bail!("operation is not an event-signal mutation"),
     }
@@ -2938,6 +3084,42 @@ mod tests {
         assert_eq!(report.mutation_applied, Some(false));
     }
 
+    #[tokio::test]
+    async fn promotion_details_update_dry_run_is_agentos_only() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "promotion-details-update",
+            "event_signal_id": "88888888-8888-4888-8888-888888888888",
+            "mutation_id": "99999999-9999-4999-8999-999999999999",
+            "activity_owner_name": "小满",
+            "location": "秦托邦社区公区一楼",
+            "preannounce_decision": "需要",
+            "preannounce_channels": ["朋友圈"],
+            "human_reviewer": "刘珊"
+        }));
+
+        validate("promotion-details-update", &payload)
+            .expect("promotion details payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "promotion-details-update".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("promotion details should preview without database access");
+
+        assert_eq!(report.source, "agentos_event_signals");
+        assert_eq!(
+            report.action_status,
+            "event_signal_promotion_details_preview"
+        );
+        assert_eq!(report.mutation_applied, Some(false));
+        assert!(!report.safe_for_chat);
+    }
+
     #[test]
     fn event_signal_mutations_reject_feishu_record_identifiers() {
         let payload = payload(json!({
@@ -3024,6 +3206,41 @@ mod tests {
             .expect_err("phase update must reject a second mutable field")
             .to_string()
             .contains("must not include gap_summary"));
+
+        let details_without_channel = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "promotion-details-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "activity_owner_name": "小满",
+            "location": "秦托邦一楼",
+            "preannounce_decision": "需要",
+            "human_reviewer": "刘珊"
+        }));
+        assert!(
+            validate("promotion-details-update", &details_without_channel)
+                .expect_err("promotion details must require a channel")
+                .to_string()
+                .contains("preannounce_channels is required")
+        );
+
+        let details_with_feishu_id = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "promotion-details-update",
+            "event_signal_id": "66666666-6666-4666-8666-666666666666",
+            "mutation_id": "77777777-7777-4777-8777-777777777777",
+            "record_id": "rec_feishu",
+            "activity_owner_name": "小满",
+            "location": "秦托邦一楼",
+            "preannounce_decision": "不需要",
+            "human_reviewer": "刘珊"
+        }));
+        assert!(
+            validate("promotion-details-update", &details_with_feishu_id)
+                .expect_err("promotion details must not accept Feishu ids")
+                .to_string()
+                .contains("must not use Feishu record_id or table_role")
+        );
     }
 
     #[test]

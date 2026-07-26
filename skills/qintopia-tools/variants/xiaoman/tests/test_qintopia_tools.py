@@ -968,6 +968,9 @@ class QintopiaToolsTest(unittest.TestCase):
                             "promotion_status": "可宣传",
                             "material_summary": "适合邻里共创和新朋友参与",
                             "owner_name": "小满",
+                            "preannounce_decision": "需要",
+                            "preannounce_channels": "朋友圈",
+                            "human_reviewer": "刘珊",
                         }
                     ],
                     "audience": "秦托邦成员群",
@@ -1013,9 +1016,69 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertTrue(report["success"])
         self.assertEqual(report["promotion_assessment"], "needs_more_info")
         self.assertEqual(report["after_human_confirmation"]["status"], "needs_human_review")
-        self.assertIn("activity_date", report["missing_fields"])
-        self.assertIn("location", report["missing_fields"])
+        self.assertIn("活动时间", report["missing_fields"])
+        self.assertIn("活动地点", report["missing_fields"])
+        self.assertIn("负责人", report["missing_fields"])
+        self.assertIn("是否需要前宣", report["missing_fields"])
         self.assertNotIn("payload", report["after_human_confirmation"])
+
+    def test_xiaoman_activity_promotion_details_update_builds_agentos_command(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_promotion_details_update(
+                {
+                    "event_signal_id": "11111111-1111-4111-8111-111111111111",
+                    "mutation_id": "22222222-2222-4222-8222-222222222222",
+                    "activity_owner_name": "小满",
+                    "location": "秦托邦社区公区一楼",
+                    "preannounce_decision": "需要",
+                    "preannounce_channels": ["朋友圈"],
+                    "human_reviewer": "刘珊",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["operation"], "promotion-details-update")
+        self.assertTrue(report["dry_run"])
+        self.assertFalse(report["payload"].get("record_id"))
+        self.assertEqual(report["payload"]["preannounce_channels"], ["朋友圈"])
+        self.assertIn("promotion-details-update", report["action"]["command"])
+
+    def test_xiaoman_activity_promotion_details_complete_draft_and_handoff_payload(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_promotion_review_draft(
+                {
+                    "activity": {
+                        "table_role": "activity_plan",
+                        "record_ref": "activity_plan:abc123def456",
+                        "title": "瑜伽体验",
+                        "activity_date": "2026-07-27",
+                        "start_time": "周六下午",
+                        "status": "待宣传",
+                    },
+                    "promotion_details": {
+                        "activity_owner_name": "小满",
+                        "location": "秦托邦社区公区一楼",
+                        "preannounce_decision": "需要",
+                        "preannounce_channels": ["朋友圈"],
+                        "human_reviewer": "刘珊",
+                    },
+                    "source_event_signal_id": "33333333-3333-4333-8333-333333333333",
+                }
+            )
+        )
+
+        self.assertEqual(report["missing_fields"], [])
+        self.assertEqual(report["promotion_assessment"], "promote")
+        self.assertIn("负责人：小满", report["after_human_confirmation"]["payload"]["brief_summary"])
+        self.assertEqual(
+            report["after_human_confirmation"]["payload"]["source_event_signal_id"],
+            "33333333-3333-4333-8333-333333333333",
+        )
 
     def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
         payload = json.loads(
@@ -1600,6 +1663,16 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("record_id", status_schema["properties"])
         self.assertNotIn("table_role", status_schema["properties"])
 
+        details_schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA[
+            "parameters"
+        ]
+        self.assertIn("activity_owner_name", details_schema["properties"])
+        self.assertEqual(
+            details_schema["properties"]["preannounce_decision"]["enum"],
+            ["需要", "不需要"],
+        )
+        self.assertNotIn("record_id", details_schema["properties"])
+
     def test_register_exposes_frontline_tools_without_raw_dify_by_default(self):
         class FakeCtx:
             def __init__(self) -> None:
@@ -1625,6 +1698,7 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_demo_script_generate", ctx.names)
         self.assertIn("qintopia_external_disclosure_filter", ctx.names)
         self.assertIn("qintopia_conversation_summary", ctx.names)
+        self.assertIn("qintopia_xiaoman_activity_promotion_details_update", ctx.names)
         self.assertNotIn("qintopia_dify_dataset_list", ctx.names)
         self.assertNotIn("qintopia_dify_knowledge_retrieve", ctx.names)
 

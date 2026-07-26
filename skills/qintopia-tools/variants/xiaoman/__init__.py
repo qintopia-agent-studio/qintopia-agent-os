@@ -104,6 +104,9 @@ XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
     "status": 120,
     "promotion_status": 120,
     "owner_name": 120,
+    "preannounce_decision": 40,
+    "preannounce_channels": 120,
+    "human_reviewer": 120,
     "initiator_name": 120,
     "material_summary": 500,
     "gap_summary": 500,
@@ -933,6 +936,60 @@ QINTOPIA_XIAOMAN_ACTIVITY_PHASE_UPDATE_SCHEMA = {
 }
 
 
+QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA = {
+    "description": (
+        "Record the structured human reply needed to prepare a Xiaoman activity "
+        "promotion brief. It updates only the Agent OS event signal through the "
+        "sidecar and never writes Feishu, calls a provider, or sends a message."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "event_signal_id": {
+                "type": "string",
+                "description": "Internal qintopia_agent_os.event_signals UUID.",
+            },
+            "mutation_id": {
+                "type": "string",
+                "description": "Caller-supplied UUID retained across exact retries.",
+            },
+            "activity_owner_name": {
+                "type": "string",
+                "description": "Activity owner from the human reply.",
+            },
+            "location": {
+                "type": "string",
+                "description": "Human-confirmed public activity location.",
+            },
+            "preannounce_decision": {
+                "type": "string",
+                "enum": ["需要", "不需要"],
+                "description": "Whether the activity needs pre-announcement.",
+            },
+            "preannounce_channels": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["朋友圈", "小红书"]},
+                "description": "Required when preannounce_decision is 需要.",
+            },
+            "human_reviewer": {
+                "type": "string",
+                "description": "Human reviewer who supplied or confirmed the details.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": [
+            "event_signal_id",
+            "mutation_id",
+            "activity_owner_name",
+            "location",
+            "preannounce_decision",
+            "human_reviewer",
+        ],
+        "additionalProperties": False,
+    },
+}
+
+
 QINTOPIA_XIAOMAN_ACTIVITY_HANDOFF_CREATE_SCHEMA = {
     "description": (
         "Create a controlled Xiaoman activity handoff request, such as a visual "
@@ -992,6 +1049,25 @@ QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_REVIEW_DRAFT_SCHEMA = {
             "tone": {
                 "type": "string",
                 "description": "Draft tone. Defaults to 温和、清楚、可行动.",
+            },
+            "promotion_details": {
+                "type": "object",
+                "description": "Structured promotion_details returned by the Agent OS mutation command.",
+                "properties": {
+                    "activity_owner_name": {"type": "string"},
+                    "location": {"type": "string"},
+                    "preannounce_decision": {"type": "string", "enum": ["需要", "不需要"]},
+                    "preannounce_channels": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["朋友圈", "小红书"]},
+                    },
+                    "human_reviewer": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+            "source_event_signal_id": {
+                "type": "string",
+                "description": "Internal event signal UUID used by the controlled handoff.",
             },
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
@@ -4094,9 +4170,20 @@ def _xiaoman_activity_record_text(record: dict[str, str], key: str, max_len: int
 
 def _xiaoman_activity_promotion_missing_fields(record: dict[str, str]) -> list[str]:
     missing = []
-    for key in ["title", "activity_date", "location", "record_ref"]:
+    for key in ["title", "activity_date", "location", "record_ref", "owner_name"]:
         if not _xiaoman_activity_record_text(record, key):
-            missing.append(key)
+            missing.append({
+                "title": "活动标题",
+                "activity_date": "活动时间",
+                "location": "活动地点",
+                "record_ref": "活动记录",
+                "owner_name": "负责人",
+            }[key])
+    decision = _xiaoman_activity_record_text(record, "preannounce_decision")
+    if not decision:
+        missing.append("是否需要前宣")
+    elif decision == "需要" and not _xiaoman_activity_record_text(record, "preannounce_channels"):
+        missing.append("前宣渠道")
     return missing
 
 
@@ -4140,7 +4227,45 @@ def _xiaoman_activity_promotion_brief_summary(record: dict[str, str], goal: str)
         or _xiaoman_activity_record_text(record, "notes", max_len=500)
         or "活动亮点待补充"
     )
-    return _body_text(f"{title}｜{when}｜{location}｜{material}｜目的：{goal}", max_len=1200)
+    owner = _xiaoman_activity_record_text(record, "owner_name", max_len=120)
+    preannounce = _xiaoman_activity_record_text(record, "preannounce_decision", max_len=40)
+    channels = _xiaoman_activity_record_text(record, "preannounce_channels", max_len=120)
+    details = "；".join(
+        part
+        for part in [
+            f"负责人：{owner}" if owner else "",
+            f"前宣：{preannounce}" if preannounce else "",
+            f"渠道：{channels}" if channels else "",
+        ]
+        if part
+    )
+    return _body_text(f"{title}｜{when}｜{location}｜{material}｜{details}｜目的：{goal}", max_len=1200)
+
+
+def _xiaoman_activity_merge_promotion_details(
+    record: dict[str, str], details: Any
+) -> dict[str, str]:
+    if not isinstance(details, dict):
+        return record
+    merged = dict(record)
+    owner = _clean_text(details.get("activity_owner_name"), max_len=120)
+    location = _clean_text(details.get("location"), max_len=240)
+    decision = _clean_text(details.get("preannounce_decision"), max_len=40)
+    reviewer = _clean_text(details.get("human_reviewer"), max_len=120)
+    channels = details.get("preannounce_channels")
+    if owner:
+        merged["owner_name"] = owner
+    if location:
+        merged["location"] = location
+    if decision:
+        merged["preannounce_decision"] = decision
+    if isinstance(channels, list):
+        merged["preannounce_channels"] = "、".join(
+            _clean_text(channel, max_len=40) for channel in channels if _clean_text(channel, max_len=40)
+        )
+    if reviewer:
+        merged["human_reviewer"] = reviewer
+    return merged
 
 
 def handle_qintopia_xiaoman_activity_promotion_review_draft(args: dict[str, Any], **_: Any) -> str:
@@ -4158,6 +4283,7 @@ def handle_qintopia_xiaoman_activity_promotion_review_draft(args: dict[str, Any]
     record = _xiaoman_activity_select_sanitized_record(args)
     if not record:
         return _xiaoman_activity_error(skill, "activity or records are required", actor_agent=actor_agent)
+    record = _xiaoman_activity_merge_promotion_details(record, args.get("promotion_details"))
 
     title = _xiaoman_activity_record_text(record, "title") or "待补充活动标题"
     when = _xiaoman_activity_when_text(record) or "时间待确认"
@@ -4170,6 +4296,9 @@ def handle_qintopia_xiaoman_activity_promotion_review_draft(args: dict[str, Any]
     record_ref = _xiaoman_activity_record_text(record, "record_ref", max_len=240)
     table_role = _xiaoman_activity_record_text(record, "table_role", max_len=80)
     owner_name = _xiaoman_activity_record_text(record, "owner_name", max_len=120)
+    preannounce_decision = _xiaoman_activity_record_text(record, "preannounce_decision", max_len=40)
+    preannounce_channels = _xiaoman_activity_record_text(record, "preannounce_channels", max_len=120)
+    human_reviewer = _xiaoman_activity_record_text(record, "human_reviewer", max_len=120)
     audience = _clean_text(args.get("audience") or "秦托邦成员", max_len=160)
     promotion_goal = _body_text(args.get("promotion_goal") or "让合适的人知道并决定是否参与", max_len=300)
     tone = _clean_text(args.get("tone") or "温和、清楚、可行动", max_len=120)
@@ -4201,6 +4330,7 @@ def handle_qintopia_xiaoman_activity_promotion_review_draft(args: dict[str, Any]
                 "risk_level": "medium",
                 "dry_run": True,
                 "actor_agent": "xiaoman",
+                "source_event_signal_id": _clean_text(args.get("source_event_signal_id"), max_len=80),
             },
         }
     else:
@@ -4236,6 +4366,9 @@ def handle_qintopia_xiaoman_activity_promotion_review_draft(args: dict[str, Any]
                     "record_ref": record_ref,
                     "table_role": table_role,
                     "owner_name": owner_name,
+                    "preannounce_decision": preannounce_decision,
+                    "preannounce_channels": preannounce_channels,
+                    "human_reviewer": human_reviewer,
                 },
             },
             "after_human_confirmation": controlled_path,
@@ -4246,6 +4379,51 @@ def handle_qintopia_xiaoman_activity_promotion_review_draft(args: dict[str, Any]
                 "human confirmation is required before any controlled record path",
             ],
         }
+    )
+
+
+def handle_qintopia_xiaoman_activity_promotion_details_update(args: dict[str, Any], **_: Any) -> str:
+    skill = "qintopia_xiaoman_activity_promotion_details_update"
+    channels = args.get("preannounce_channels") or []
+    if not isinstance(channels, list):
+        return _xiaoman_activity_error(skill, "preannounce_channels must be an array", actor_agent=_xiaoman_activity_actor(args))
+    normalized_channels = []
+    for channel in channels:
+        value = _clean_text(channel, max_len=40)
+        if value not in {"朋友圈", "小红书"}:
+            return _xiaoman_activity_error(skill, "preannounce_channels contains an unsupported channel", actor_agent=_xiaoman_activity_actor(args))
+        if value not in normalized_channels:
+            normalized_channels.append(value)
+    decision = _clean_text(args.get("preannounce_decision"), max_len=40)
+    if decision not in {"需要", "不需要"}:
+        return _xiaoman_activity_error(skill, "preannounce_decision must be 需要 or 不需要", actor_agent=_xiaoman_activity_actor(args))
+    if decision == "需要" and not normalized_channels:
+        return _xiaoman_activity_error(skill, "preannounce_channels is required when preannounce_decision is 需要", actor_agent=_xiaoman_activity_actor(args))
+    if decision == "不需要" and normalized_channels:
+        return _xiaoman_activity_error(skill, "preannounce_channels must be empty when preannounce_decision is 不需要", actor_agent=_xiaoman_activity_actor(args))
+    payload = {
+        "event_signal_id": _clean_text(args.get("event_signal_id"), max_len=64),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=64),
+        "activity_owner_name": _clean_text(args.get("activity_owner_name"), max_len=120),
+        "location": _clean_text(args.get("location"), max_len=240),
+        "preannounce_decision": decision,
+        "preannounce_channels": normalized_channels,
+        "human_reviewer": _clean_text(args.get("human_reviewer"), max_len=120),
+    }
+    return _xiaoman_activity_command(
+        skill=skill,
+        operation="promotion-details-update",
+        args=args,
+        payload=payload,
+        required=[
+            "event_signal_id",
+            "mutation_id",
+            "activity_owner_name",
+            "location",
+            "preannounce_decision",
+            "human_reviewer",
+        ],
+        writes_business_state=True,
     )
 
 
@@ -5277,6 +5455,15 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_PHASE_UPDATE_SCHEMA["description"],
         emoji="🧭",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_activity_promotion_details_update",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA,
+        handler=handle_qintopia_xiaoman_activity_promotion_details_update,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA["description"],
+        emoji="🧾",
     )
     ctx.register_tool(
         name="qintopia_xiaoman_activity_handoff_create",
