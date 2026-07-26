@@ -51,7 +51,7 @@ production evidence chain:
 - `node tools/deploy/test-xiaoman-production-completion-manifest-builder.mjs`
 - `node tools/deploy/test-xiaoman-production-completion-evidence.mjs`
 - `node tools/deploy/test-finalize-xiaoman-production-completion-evidence.mjs`
-- `node tools/agents/pr-doctor.mjs docs/reports/2026-07-24-xiaoman-production-evidence-pr-body.md`
+- `node tools/agents/pr-doctor.mjs --body-only docs/reports/2026-07-24-xiaoman-production-evidence-pr-body.md`
 - `cargo test --manifest-path runtime/sidecar/Cargo.toml xiaoman_real_activity_evidence`
 
 ## Notable Fix During Verification

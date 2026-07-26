@@ -7,45 +7,51 @@ import { commandExists, run } from "./run-command.mjs";
 
 const errors = [];
 const warnings = [];
-
-if (!commandExists("git")) {
-  errors.push("git is not installed or not on PATH");
-}
-
-if (!commandExists("gh")) {
-  errors.push("GitHub CLI is missing; run pnpm pr:bootstrap");
-}
+const args = process.argv.slice(2);
+const bodyOnly = args[0] === "--body-only";
 
 let branch = "";
-try {
-  branch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
-  if (branch === "master") {
-    errors.push(
-      "current branch is master; create a feature branch before opening a PR"
-    );
+if (!bodyOnly) {
+  if (!commandExists("git")) {
+    errors.push("git is not installed or not on PATH");
   }
-} catch {
-  errors.push("not inside a git repository");
-}
 
-if (branch && branch !== "master") {
+  if (!commandExists("gh")) {
+    errors.push("GitHub CLI is missing; run pnpm pr:bootstrap");
+  }
+
   try {
-    run("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+    branch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
+    if (branch === "master") {
+      errors.push(
+        "current branch is master; create a feature branch before opening a PR"
+      );
+    }
   } catch {
-    warnings.push("current branch has no upstream; push with git push -u origin HEAD");
+    errors.push("not inside a git repository");
+  }
+
+  if (branch && branch !== "master") {
+    try {
+      run("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+    } catch {
+      warnings.push(
+        "current branch has no upstream; push with git push -u origin HEAD"
+      );
+    }
+  }
+
+  try {
+    const porcelain = run("git", ["status", "--porcelain"]);
+    if (porcelain) {
+      warnings.push("working tree has uncommitted changes");
+    }
+  } catch {
+    // Already reported as not in a git repository.
   }
 }
 
-try {
-  const porcelain = run("git", ["status", "--porcelain"]);
-  if (porcelain) {
-    warnings.push("working tree has uncommitted changes");
-  }
-} catch {
-  // Already reported as not in a git repository.
-}
-
-const bodyFile = process.argv[2] || process.env.PR_BODY_FILE || "";
+const bodyFile = (bodyOnly ? args[1] : args[0]) || process.env.PR_BODY_FILE || "";
 if (bodyFile) {
   if (!fs.existsSync(bodyFile)) {
     errors.push(`PR body file does not exist: ${bodyFile}`);
