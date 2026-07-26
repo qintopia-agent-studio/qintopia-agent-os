@@ -1284,10 +1284,6 @@ fn build_feishu_fields(
         "生成时间".to_string(),
         json!(artifact.created_at.timestamp_millis()),
     );
-    fields.insert(
-        "更新时间".to_string(),
-        json!(artifact.updated_at.timestamp_millis()),
-    );
     if let Some(file_token) = attachment_token {
         fields.insert("最终JPEG".to_string(), json!([{"file_token": file_token}]));
     }
@@ -1968,7 +1964,6 @@ fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_toke
         "转换规则": REQUIRED_TRANSFORM,
         "审核状态": "待审核",
         "生成时间": now,
-        "更新时间": now,
     })
 }
 
@@ -3101,6 +3096,7 @@ mod tests {
         assert_eq!(fields["最终JPEG"][0]["file_token"], "fileFixture");
         assert_eq!(fields["MIME类型"], "image/jpeg");
         assert_eq!(fields["转换规则"], REQUIRED_TRANSFORM);
+        assert!(fields.get("更新时间").is_none());
         assert!(fields.get("生成 Prompt").is_none());
     }
 
@@ -3409,6 +3405,7 @@ mod tests {
             },
             "fileFixture",
         );
+        assert!(fields.get("更新时间").is_none());
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake Feishu server");
         let address = listener.local_addr().expect("fake server address");
         let search_body = serde_json::to_vec(&json!({
