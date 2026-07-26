@@ -35,7 +35,9 @@ if (!bodyOnly) {
     try {
       run("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
     } catch {
-      warnings.push("current branch has no upstream; push with git push -u origin HEAD");
+      warnings.push(
+        "current branch has no upstream; push with git push -u origin HEAD"
+      );
     }
   }
 
