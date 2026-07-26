@@ -192,7 +192,9 @@ assert_no_sensitive_output() {
     "base_token"
   )
 
-  forbidden+=("${SENSITIVE_VALUES[@]}")
+  if ((${#SENSITIVE_VALUES[@]} > 0)); then
+    forbidden+=("${SENSITIVE_VALUES[@]}")
+  fi
 
   local token
   for token in "${forbidden[@]}"; do

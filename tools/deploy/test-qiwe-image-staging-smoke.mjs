@@ -71,7 +71,7 @@ if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
 fi
 case "$1" in
   qiwe-image-send-staging-preflight)
-    if IFS= read -r -t 0.1 unexpected_input; then
+    if IFS= read -r -t 1 unexpected_input; then
       exit 65
     fi
     printf '%s\n' '{"success":true,"worker":"qiwe-image-send-adapter","action_status":"staging_adapter_ready","adapter_compiled":true,"feishu_delivery_bridge_compiled":true,"send_enabled":true,"owner_approval_valid":true,"config_valid":true,"database_boundary_valid":true,"webhook_ready":true,"allowed_host_count":1,"media_allowed_host_count":1,"allowed_group_count":1,"missing_configuration":[],"protocol":"qiwe_feishu_temp_storage_then_async_upload_then_send_image_staging_v1","safe_for_chat":false,"limitations":[],"guardrails":[]}'
@@ -81,7 +81,7 @@ case "$1" in
     fi
     ;;
   run-qiwe-image-send-worker)
-    if IFS= read -r -t 0.1 unexpected_input; then
+    if IFS= read -r -t 1 unexpected_input; then
       exit 65
     fi
     [[ "$2" == "--once" && "$3" == "--work-item-id" && "$4" == "${workItemId}" && "$5" == "--apply" ]]
