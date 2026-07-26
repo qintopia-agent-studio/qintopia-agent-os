@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.34](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.33...v0.2.34) (2026-07-26)
+
+
+### Bug Fixes
+
+* align huabaosi image evidence contract ([#284](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/284)) ([077ba8b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/077ba8bdccee9cdf5958de92b98900355843fc0a))
+* **deploy:** provide local evidence chain database fixture ([#281](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/281)) ([95b3a38](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/95b3a38c6a57442977ada1dee79e2a1169ec3941))
+* **deploy:** validate evidence PR body on master ([#283](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/283)) ([415dabb](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/415dabb5529d3a990808a0b1eb6904a1b63d43c4))
+
 ## [0.2.33](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.32...v0.2.33) (2026-07-26)
 
 
