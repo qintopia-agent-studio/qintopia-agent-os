@@ -183,17 +183,17 @@ isolated storage service accepts this contract.
 ## JPEG Final Artifact Decision
 
 QiWe's reviewed asynchronous image-upload contract documents JPG input. The existing
-provider contract remains unchanged and continues to accept only a decoded 1024x1024 PNG
+provider contract remains unchanged and continues to accept only a decoded 1254x1254 PNG
 from `b64_json`. Before media upload, the Rust worker will convert that source into the
 single final `generated_image` reviewed by humans and referenced downstream:
 
 ```text
 provider b64_json PNG
-  -> validate bounded 1024x1024 PNG
+  -> validate bounded 1254x1254 PNG
   -> decode RGBA
   -> composite alpha over #ffffff with integer arithmetic
   -> encode baseline JPEG at quality 92
-  -> validate 1024x1024 JPEG
+  -> validate 1254x1254 JPEG
   -> upload and same-byte readback
   -> pending generated_image (image/jpeg)
 ```

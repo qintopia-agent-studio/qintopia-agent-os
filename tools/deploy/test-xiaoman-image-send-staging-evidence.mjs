@@ -163,7 +163,7 @@ function huabaosiOutput(hash, overrides = {}) {
     content_hash: hash,
     database_url_sha256: overrides.generation_database_url_sha256 ?? databaseHash,
     dry_run: false,
-    height: 1024,
+    height: 1254,
     mime_type: "image/jpeg",
     phase: "generation",
     review_status: "pending",
@@ -171,7 +171,7 @@ function huabaosiOutput(hash, overrides = {}) {
     sidecar_binary_sha256: overrides.sidecar_binary_sha256 ?? sidecarHash,
     storage_backend: overrides.storage_backend ?? "feishu-base",
     success: true,
-    width: 1024,
+    width: 1254,
     work_item_id: "11111111-2222-4333-8444-555555555555",
     worker: "huabaosi-image-generation-worker",
   };

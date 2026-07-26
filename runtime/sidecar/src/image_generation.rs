@@ -299,6 +299,20 @@ impl GenerationAttemptError {
         }
     }
 
+    fn ambiguous_external(
+        stage: &'static str,
+        external_generation_executed: Option<bool>,
+        source: anyhow::Error,
+    ) -> Self {
+        Self {
+            class: GenerationFailureClass::AmbiguousProvider,
+            stage,
+            external_generation_executed,
+            external_media_write_executed: None,
+            source,
+        }
+    }
+
     fn terminal(
         stage: &'static str,
         external_generation_executed: Option<bool>,
@@ -2343,7 +2357,7 @@ fn generate_and_store_with(
                 },
             )
             .map_err(|source| {
-                GenerationAttemptError::terminal("feishu_storage", Some(true), None, source)
+                GenerationAttemptError::ambiguous_external("feishu_storage", Some(true), source)
             })?;
             (
                 result.artifact_uri,
@@ -2886,6 +2900,21 @@ mod tests {
         assert_eq!(error.failure().external_generation_executed, Some(false));
         assert_eq!(error.failure().external_media_write_executed, Some(false));
         assert!(error.to_string().contains("invalid header value"));
+        assert!(!should_retry_generation(error.class, 1));
+    }
+
+    #[test]
+    fn feishu_storage_failure_preserves_unknown_external_write_state() {
+        let error = GenerationAttemptError::ambiguous_external(
+            "feishu_storage",
+            Some(true),
+            anyhow!("sanitized Feishu storage failure"),
+        );
+
+        assert_eq!(error.class, GenerationFailureClass::AmbiguousProvider);
+        assert_eq!(error.stage, "feishu_storage");
+        assert_eq!(error.failure().external_generation_executed, Some(true));
+        assert_eq!(error.failure().external_media_write_executed, None);
         assert!(!should_retry_generation(error.class, 1));
     }
 
