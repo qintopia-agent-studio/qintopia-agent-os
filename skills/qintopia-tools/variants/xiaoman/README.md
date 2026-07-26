@@ -59,13 +59,20 @@ shared `qintopia` toolset.
   `qintopia_xiaoman_activity_phase_update`: create sidecar commands for AgentOS
   `event_signals` mutations with `event_signal_id` and `mutation_id`; they do not accept
   Feishu `record_id` / `table_role` as write identifiers.
+- `qintopia_xiaoman_activity_promotion_details_update`: records the structured human
+  reply for an activity promotion brief (owner, location, pre-announcement decision,
+  channels, and reviewer) in the AgentOS event signal. It is idempotent, defaults to
+  dry-run, and does not write Feishu, call an external provider, or send.
 - `qintopia_xiaoman_activity_announcement_prepare`: prepares the text-only community
   activity announcement MVP for operations review. It turns sanitized activity records
   into a draft for 刘珊, missing-field follow-ups, and an Erhua handoff draft that still
   requires human confirmation before any group delivery.
 - `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
   `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
-  to `huabaosi.create_visual_asset`.
+  to `huabaosi.create_visual_asset`. A completed promotion brief may use this path to
+  create one internal visual work item; the collaboration worker creates a pending
+  `poster_brief`, while image generation and publication remain separate human-gated
+  steps.
 - `qintopia_xiaoman_activity_promotion_review_draft`: turns already-read sanitized
   activity records into a human-reviewable summary, promotion assessment, copy draft,
   poster brief, and controlled record-path payload. It does not read Feishu, write

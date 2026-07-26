@@ -12,6 +12,15 @@ Adds the pre-network `uploading` state and terminalizes stale or legacy unrecord
 claims when AgentOS cannot prove that QiWe did not accept an upload. Unknown upload
 outcomes cannot be retried automatically.
 
+## `2026-07-15.002`
+
+Migration: `migrations/202607150002_xiaoman_promotion_details.sql` Design note:
+`docs/data-design/2026-07-15-xiaoman-promotion-details.md`
+
+Adds the atomic Xiaoman promotion-details mutation using existing event-signal owner
+and metadata fields. It does not add a business table, write Feishu, call a provider,
+generate an image, or send a message.
+
 ## `2026-07-14.002`
 
 Migration: `migrations/202607140002_qiwe_image_send_state.sql` Design note:

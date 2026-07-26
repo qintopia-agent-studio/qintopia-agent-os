@@ -378,6 +378,56 @@ assert_sql_equals \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE mutation_id = '${xiaoman_gap_mutation_id}'::uuid;"
 
+xiaoman_promotion_mutation_id="$(psql_value "SELECT gen_random_uuid();")"
+xiaoman_promotion_mutation_payload="$(
+  python3 - "$xiaoman_signal_id" "$xiaoman_promotion_mutation_id" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "actor_agent": "xiaoman",
+    "operation": "promotion-details-update",
+    "event_signal_id": sys.argv[1],
+    "mutation_id": sys.argv[2],
+    "activity_owner_name": "小满",
+    "location": "秦托邦社区公区一楼",
+    "preannounce_decision": "需要",
+    "preannounce_channels": ["朋友圈"],
+    "human_reviewer": "刘珊",
+}, ensure_ascii=False))
+PY
+)"
+
+xiaoman_promotion_preview="$(run_json xiaoman_promotion_preview xiaoman-activity promotion-details-update --dry-run --payload-json "$xiaoman_promotion_mutation_payload")"
+assert_json "$xiaoman_promotion_preview" "data['success'] is True"
+assert_json "$xiaoman_promotion_preview" "data['action_status'] == 'event_signal_promotion_details_preview'"
+assert_json "$xiaoman_promotion_preview" "data['mutation_applied'] is False"
+
+xiaoman_promotion_apply="$(run_json xiaoman_promotion_apply xiaoman-activity promotion-details-update --apply --payload-json "$xiaoman_promotion_mutation_payload")"
+assert_json "$xiaoman_promotion_apply" "data['success'] is True"
+assert_json "$xiaoman_promotion_apply" "data['action_status'] == 'event_signal_promotion_details_updated'"
+assert_json "$xiaoman_promotion_apply" "data['mutation_applied'] is True"
+
+assert_sql_equals \
+  xiaoman_promotion_details_updated_agentos_fact \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signals WHERE id = '${xiaoman_signal_id}'::uuid AND owner_name = '小满' AND metadata->'promotion_review'->>'location' = '秦托邦社区公区一楼' AND metadata->'promotion_review'->>'preannounce_decision' = '需要' AND metadata->'promotion_review'->'preannounce_channels' ? '朋友圈' AND metadata->'promotion_review'->>'human_reviewer' = '刘珊';"
+
+assert_sql_equals \
+  xiaoman_promotion_mutation_audited_once \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE event_signal_id = '${xiaoman_signal_id}'::uuid AND mutation_id = '${xiaoman_promotion_mutation_id}'::uuid AND operation = 'promotion-details-update' AND previous_value->>'owner_name' = 'operations-apply-smoke-owner' AND new_value->>'owner_name' = '小满' AND new_value->'promotion_review'->>'location' = '秦托邦社区公区一楼' AND metadata->>'feishu_write_executed' = 'false' AND metadata->>'external_send_executed' = 'false';"
+
+xiaoman_promotion_again="$(run_json xiaoman_promotion_again xiaoman-activity promotion-details-update --apply --payload-json "$xiaoman_promotion_mutation_payload")"
+assert_json "$xiaoman_promotion_again" "data['success'] is True"
+assert_json "$xiaoman_promotion_again" "data['action_status'] == 'event_signal_mutation_idempotent_existing'"
+assert_json "$xiaoman_promotion_again" "data['mutation_applied'] is False"
+
+assert_sql_equals \
+  xiaoman_promotion_mutation_not_duplicated \
+  1 \
+  "SELECT count(*) FROM qintopia_agent_os.event_signal_mutations WHERE mutation_id = '${xiaoman_promotion_mutation_id}'::uuid;"
+
 assert_sql_equals \
   xiaoman_mutations_do_not_touch_feishu_publish_state \
   1 \

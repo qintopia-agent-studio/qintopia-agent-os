@@ -220,6 +220,7 @@ required_versions=(
   "2026-07-13.002|202607130002_huabaosi_image_generation.sql"
   "2026-07-14.001|202607140001_xiaoman_event_signal_mutations.sql"
   "2026-07-15.001|202607150001_xiaoman_activity_phases.sql"
+  "2026-07-15.002|202607150002_xiaoman_promotion_details.sql"
 )
 
 required_capabilities=(
