@@ -148,7 +148,10 @@ if "$SYSTEMCTL" is-active --quiet "$PROVIDER_TIMER" >/dev/null 2>&1; then
 fi
 
 verify_release_boundary() {
-  readarray -t release_facts < <(python3 - "$RELEASE_ROOT" "$SIDECAR_BIN" "$ENV_FILE" "$EXPECTED_RELEASE_SHA" "$TEST_MODE" <<'PY'
+  release_facts=()
+  while IFS= read -r fact; do
+    release_facts+=("$fact")
+  done < <(python3 - "$RELEASE_ROOT" "$SIDECAR_BIN" "$ENV_FILE" "$EXPECTED_RELEASE_SHA" "$TEST_MODE" <<'PY'
 import hashlib
 import os
 import stat
@@ -212,7 +215,7 @@ with open(binary, "rb") as handle:
         digest.update(chunk)
 print(digest.hexdigest())
 PY
-)
+  )
   case "${release_facts[0]:-}" in
     "$EXPECTED_SIDECAR_HASH") ;;
     path_not_absolute|release_parent_mismatch|release_sha_mismatch|env_path_mismatch|binary_outside_release|release_path_missing|release_path_symlink|release_path_type|release_owner_mismatch|release_mode_mismatch|env_file_type|env_owner_mismatch|env_file_writable)
@@ -567,7 +570,10 @@ print(data["review_status"])
   echo "poster brief review returned an invalid report" >&2
   exit 1
 fi
-mapfile -t review_facts <<<"$parsed_facts"
+review_facts=()
+while IFS= read -r fact; do
+  review_facts+=("$fact")
+done <<<"$parsed_facts"
 BRIEF_WORK_ITEM_ID="${review_facts[2]}"
 emit_evidence brief_review "${review_facts[@]}"
 
@@ -593,7 +599,10 @@ print(item["work_item_id"])
   echo "image request intake returned an invalid report" >&2
   exit 1
 fi
-mapfile -t intake_facts <<<"$parsed_facts"
+intake_facts=()
+while IFS= read -r fact; do
+  intake_facts+=("$fact")
+done <<<"$parsed_facts"
 IMAGE_WORK_ITEM_ID="${intake_facts[1]}"
 emit_evidence request_intake "${intake_facts[0]}" "$BRIEF_ARTIFACT_ID" "$BRIEF_WORK_ITEM_ID" "$IMAGE_WORK_ITEM_ID"
 
@@ -629,7 +638,10 @@ print(artifact["review_status"])
   echo "image generation worker returned an invalid report" >&2
   exit 1
 fi
-mapfile -t generation_facts <<<"$parsed_facts"
+generation_facts=()
+while IFS= read -r fact; do
+  generation_facts+=("$fact")
+done <<<"$parsed_facts"
 GENERATED_ARTIFACT_ID="${generation_facts[1]}"
 emit_evidence generation "${generation_facts[0]}" "$GENERATED_ARTIFACT_ID" "${generation_facts[2]}" "${generation_facts[3]}" "${generation_facts[4]}" "${generation_facts[5]}" "$IMAGE_WORK_ITEM_ID" "${generation_facts[6]}" "${generation_facts[7]}"
 
@@ -656,7 +668,10 @@ print(data["height"])
   echo "Feishu primary storage revalidation returned an invalid report" >&2
   exit 1
 fi
-mapfile -t revalidation_facts <<<"$parsed_facts"
+revalidation_facts=()
+while IFS= read -r fact; do
+  revalidation_facts+=("$fact")
+done <<<"$parsed_facts"
 emit_evidence revalidation "${revalidation_facts[@]}"
 
 echo "Huabaosi production canary passed: one Feishu-backed JPEG remains pending human review; no generated-image approval, mirror, publish, QiWe, or send was executed"

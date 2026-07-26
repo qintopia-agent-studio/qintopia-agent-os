@@ -170,7 +170,7 @@ if path and not path.startswith("/dev/") and not path.endswith("/missing.env"):
                 value.startswith("'") and value.endswith("'")
             ):
                 value = value[1:-1]
-            if "$(" in value or "`" in value:
+            if "$" + "(" in value or chr(96) in value:
                 raise SystemExit(f"unsafe callback bridge env value for {key}")
             values[key] = value
 

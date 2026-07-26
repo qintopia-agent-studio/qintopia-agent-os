@@ -155,7 +155,10 @@ if [[ -z "${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-readarray -t database_facts < <(printf '%s' "$QINTOPIA_SIDECAR_DATABASE_URL" | python3 -c '
+database_facts=()
+while IFS= read -r fact; do
+  database_facts+=("$fact")
+done < <(printf '%s' "$QINTOPIA_SIDECAR_DATABASE_URL" | python3 -c '
 import hashlib
 import sys
 from urllib.parse import unquote, urlparse
@@ -180,7 +183,10 @@ if [[ "$TEST_MODE" == "1" && "${database_facts[2]:-}" != "127.0.0.1" && "${datab
 fi
 
 if [[ "$TEST_MODE" == "1" ]]; then
-  readarray -t qiwe_api_facts < <(printf '%s' "${QIWE_API_URL:-}" | python3 -c '
+  qiwe_api_facts=()
+  while IFS= read -r fact; do
+    qiwe_api_facts+=("$fact")
+  done < <(printf '%s' "${QIWE_API_URL:-}" | python3 -c '
 import sys
 from urllib.parse import urlparse
 
@@ -200,7 +206,10 @@ fi
 
 verify_sidecar_binary() {
   local label="$1"
-  readarray -t sidecar_facts < <(python3 - "$MONOREPO_ROOT" "$SIDECAR_BIN" "$EXPECTED_RELEASE_SHA" "$TEST_MODE" <<'PY'
+  sidecar_facts=()
+  while IFS= read -r fact; do
+    sidecar_facts+=("$fact")
+  done < <(python3 - "$MONOREPO_ROOT" "$SIDECAR_BIN" "$EXPECTED_RELEASE_SHA" "$TEST_MODE" <<'PY'
 import hashlib
 import os
 import stat

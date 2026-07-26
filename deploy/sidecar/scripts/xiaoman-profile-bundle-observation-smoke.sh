@@ -46,7 +46,7 @@ if [[ "$values_owner" != "$observer_uid" ]]; then
   exit 1
 fi
 
-read -r expected_soul_hash expected_profile_hash < <(
+expected_hashes="$(
   python3 - "$bundle_manifest" <<'PY'
 import json
 import sys
@@ -60,7 +60,8 @@ if set(files) != {"SOUL.md", "profile.yaml"}:
     raise SystemExit("bundle file allowlist mismatch")
 print(files["SOUL.md"]["production_source_sha256"], files["profile.yaml"]["production_source_sha256"])
 PY
-)
+)"
+read -r expected_soul_hash expected_profile_hash <<<"$expected_hashes"
 
 hash_file() {
   if command -v sha256sum >/dev/null 2>&1; then
