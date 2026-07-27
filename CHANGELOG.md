@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.43](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.42...v0.2.43) (2026-07-27)
+
+
+### Bug Fixes
+
+* **deploy:** accept combined staging env in qiwe smoke ([55386b1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/55386b1fd55b9598efc0e9e99f16562b965c0b32))
+* **deploy:** accept combined staging env in qiwe smoke ([ab1c0a6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ab1c0a6b6d34ac4f67071a89039e9bc07a805472))
+
 ## [0.2.42](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.41...v0.2.42) (2026-07-27)
 
 
