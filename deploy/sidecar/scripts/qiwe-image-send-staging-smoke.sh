@@ -93,6 +93,30 @@ STAGING_ENV_KEYS=(
   QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS
 )
 
+# The reviewed renderer emits one combined staging env for the Huabaosi and QiWe
+# exercises. Keep Huabaosi-only values out of the QiWe child process while still
+# rejecting every unreviewed key.
+IGNORED_STAGING_ENV_KEYS=(
+  QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED
+  QINTOPIA_HUABAOSI_IMAGE_PROVIDER
+  QINTOPIA_HUABAOSI_IMAGE_MODEL
+  QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL
+  QINTOPIA_HUABAOSI_IMAGE_API_KEY
+  QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL
+  QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA
+  QINTOPIA_DEPLOYED_COMMIT_SHA
+  QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256
+  QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN
+  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS
+  QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID
+  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS
+  QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH
+  QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION
+  QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES
+)
+
 for key in "${STAGING_ENV_KEYS[@]}"; do
   unset "$key"
 done
@@ -118,8 +142,16 @@ load_staging_env() {
     case " ${STAGING_ENV_KEYS[*]} " in
       *" ${key} "*) ;;
       *)
-        echo "staging env contains an unsupported key at line ${line_number}" >&2
-        return 1
+        case " ${IGNORED_STAGING_ENV_KEYS[*]} " in
+          *" ${key} "*)
+            loaded_keys+="${key}|"
+            continue
+            ;;
+          *)
+            echo "staging env contains an unsupported key at line ${line_number}" >&2
+            return 1
+            ;;
+        esac
         ;;
     esac
     case "$loaded_keys" in

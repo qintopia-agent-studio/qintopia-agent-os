@@ -50,6 +50,24 @@ try {
     [
       "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
       "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1",
+      "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1",
+      "QINTOPIA_HUABAOSI_IMAGE_PROVIDER=openai-compatible",
+      "QINTOPIA_HUABAOSI_IMAGE_MODEL=gpt-image-2",
+      "QINTOPIA_HUABAOSI_IMAGE_API_BASE_URL=https://image.example.test/v1",
+      "QINTOPIA_HUABAOSI_IMAGE_API_KEY=huabaosi-api-key-must-not-reach-child",
+      "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base",
+      "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED=1",
+      "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL=approved-huabaosi-feishu-artifact-mirror",
+      `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`,
+      `QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`,
+      `QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256=${databaseHash}`,
+      "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN=fake-huabaosi-base-token",
+      "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS=fake-huabaosi-base-token",
+      "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID=example-huabaosi-artifacts",
+      "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS=example-huabaosi-artifacts",
+      "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH=/tmp/huabaosi-profile.env",
+      "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION=huabaosi-generated-image-v1",
+      "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES=25000000",
       `QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`,
       "QIWE_API_URL=https://qiwe.example.test/qiwe/api/qw/doApi",
       "QIWE_TOKEN=fake-qiwe-token-must-not-appear",
@@ -68,6 +86,10 @@ printf '%s\n' "$*" >>"${sidecarLog}"
 if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
   echo "ambient secret reached child process" >&2
   exit 23
+fi
+if [[ -n "\${QINTOPIA_HUABAOSI_IMAGE_API_KEY:-}" ]]; then
+  echo "Huabaosi credential reached QiWe child process" >&2
+  exit 24
 fi
 case "$1" in
   qiwe-image-send-staging-preflight)
