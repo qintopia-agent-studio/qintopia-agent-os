@@ -52,6 +52,21 @@ const REQUIRED_HEIGHT: i64 = 1254;
 const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 const MAX_FEISHU_RESPONSE_BYTES: usize = 1024 * 1024;
 const OFFICIAL_FEISHU_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
+const PRIMARY_STORAGE_FIELD_NAMES: &[&str] = &[
+    "AgentOS产物ID",
+    "Schema版本",
+    "AgentOS工作项ID",
+    "图片请求ID",
+    "最终JPEG",
+    "JPEG SHA-256",
+    "文件MD5",
+    "字节数",
+    "宽度",
+    "高度",
+    "MIME类型",
+    "源PNG SHA-256",
+    "转换规则",
+];
 
 const ENABLE_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED";
 const APPROVAL_ENV: &str = "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL";
@@ -2382,7 +2397,8 @@ impl FeishuClient {
     ) -> std::result::Result<Option<FeishuRecord>, MirrorFailure> {
         let endpoint = self.bitable_endpoint(base_token, table_id, "records/search")?;
         let request = json!({
-            "field_names": ["AgentOS产物ID"],
+            // Revalidation compares the complete immutable identity, including the attachment.
+            "field_names": PRIMARY_STORAGE_FIELD_NAMES,
             "filter": {
                 "conjunction": "and",
                 "conditions": [{
@@ -3474,7 +3490,12 @@ mod tests {
                         br#"{"code":0,"tenant_access_token":"tenantFixture"}"#.to_vec(),
                     ),
                     "/open-apis/bitable/v1/apps/baseTokenFixture/tables/tblFixture/records/search" => {
-                        assert!(request_text.contains("AgentOS产物ID"));
+                        for field_name in PRIMARY_STORAGE_FIELD_NAMES {
+                            assert!(
+                                request_text.contains(field_name),
+                                "revalidation search omitted field {field_name}"
+                            );
+                        }
                         ("application/json", search_body.clone())
                     }
                     _ => {
