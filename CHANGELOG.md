@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.38](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.37...v0.2.38) (2026-07-27)
+
+
+### Bug Fixes
+
+* **ci:** publish release required statuses ([4737485](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/473748568d0e08810985ca617c98d9916be53f7a))
+* **ci:** publish release required statuses ([5074248](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/507424827869e03e220cdabc66bedc4c48fbfd20))
+* **sidecar:** retain Feishu storage failure stage ([#291](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/291)) ([7823441](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/78234419d6cc4c3d86b5a204a463370b5685787e))
+
 ## [0.2.37](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.36...v0.2.37) (2026-07-27)
 
 
