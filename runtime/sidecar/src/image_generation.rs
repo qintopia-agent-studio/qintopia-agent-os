@@ -101,8 +101,10 @@ const STORAGE_BACKEND_ENV: &str = "QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND";
 const HTTP_STORAGE_BACKEND: &str = "http-media";
 const FEISHU_STORAGE_BACKEND: &str = "feishu-base";
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
-const REVIEWED_DATABASE_URL_SHA256_ALLOWLIST: &[&str] =
-    &["c6dc2730b2a3fdabf05d88e021340b748c5c5b5d06d8ec24b38feef387d39330"];
+const REVIEWED_DATABASE_URL_SHA256_ALLOWLIST: &[&str] = &[
+    "c6dc2730b2a3fdabf05d88e021340b748c5c5b5d06d8ec24b38feef387d39330",
+    "be30c6feef7c9ea5e5d1916a88dd0277f885d8eb56ed0ade88864bc368a97502",
+];
 const REQUIRED_IMAGE_CONFIGURATION: &[&str] = &[
     "QINTOPIA_HUABAOSI_IMAGE_PROVIDER",
     "QINTOPIA_HUABAOSI_IMAGE_MODEL",
@@ -2741,6 +2743,12 @@ mod tests {
         assert!(
             validate_staging_database_boundary_with_allowlist(database_url, false, &["0"]).is_err()
         );
+    }
+
+    #[test]
+    fn reviewed_staging_allowlist_contains_current_runtime_hash() {
+        assert!(REVIEWED_DATABASE_URL_SHA256_ALLOWLIST
+            .contains(&"be30c6feef7c9ea5e5d1916a88dd0277f885d8eb56ed0ade88864bc368a97502"));
     }
 
     #[test]
