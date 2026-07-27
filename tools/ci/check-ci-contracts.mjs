@@ -408,6 +408,9 @@ if (ciWorkflow) {
         "needs.rust-quality-baseline.result",
         "needs.xiaoman-postgres-integration.result",
         "statuses/${HEAD_SHA}",
+        "check_state",
+        'context="check"',
+        'state="$check_state"',
         'context="Release Please validation"',
         'state="$state"',
         'target_url="$RUN_URL"',
@@ -753,6 +756,38 @@ if (prAgentWorkflow) {
     errors.push(
       ".github/workflows/pr-agent.yml: manual authenticated Release Please validation must skip external PR-Agent"
     );
+  }
+  if (parsedPrAgentWorkflow?.permissions?.statuses !== "write") {
+    errors.push(
+      ".github/workflows/pr-agent.yml: manual Release Please validation needs statuses: write"
+    );
+  }
+  const prAgentStatusStep = prAgentSteps.find(
+    (step) => step?.name === "Publish Release Please PR-Agent status"
+  );
+  const prAgentStatusCondition = String(prAgentStatusStep?.if ?? "");
+  const prAgentStatusScript = String(prAgentStatusStep?.run ?? "");
+  for (const requiredFragment of [
+    "github.event_name == 'workflow_dispatch'",
+    "steps.release-please.outputs.head-sha",
+  ]) {
+    if (!prAgentStatusCondition.includes(requiredFragment)) {
+      errors.push(
+        `.github/workflows/pr-agent.yml: manual PR-Agent status condition must include ${requiredFragment}`
+      );
+    }
+  }
+  for (const requiredFragment of [
+    "statuses/${HEAD_SHA}",
+    'context="PR-Agent review assistant"',
+    'state="$STATE"',
+    'target_url="$RUN_URL"',
+  ]) {
+    if (!prAgentStatusScript.includes(requiredFragment)) {
+      errors.push(
+        `.github/workflows/pr-agent.yml: manual PR-Agent status publisher must include ${requiredFragment}`
+      );
+    }
   }
   if (prAgentEnv["pr_description.add_original_user_description"] !== "false") {
     errors.push(

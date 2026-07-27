@@ -29,6 +29,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
+  statuses: write
 
 jobs:
   pr-agent:
@@ -92,6 +93,27 @@ jobs:
             exit 1
           fi
           echo "generated=${generated}" >> "$GITHUB_OUTPUT"
+          echo "head-sha=${head_sha:-${{ github.event.pull_request.head.sha || '' }}}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Release Please PR-Agent status
+        if: >-
+          ${{ always() && github.event_name == 'workflow_dispatch' &&
+          steps.release-please.outputs.head-sha != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.release-please.outputs.head-sha }}
+          RUN_URL:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
+          STATE:
+            ${{ steps.release-please.outcome == 'success' && 'success' || 'failure' }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$STATE" \
+            -f context="PR-Agent review assistant" \
+            -f description="Authenticated Release Please no-review validation $STATE" \
+            -f target_url="$RUN_URL"
 
       - name: Run PR-Agent
         if: ${{ steps.release-please.outputs.generated != 'true' }}
