@@ -308,9 +308,9 @@ else
     # Refresh the signed redirect between bounded attempts so a slow server can
     # resume the same artifact instead of restarting after the URL expires.
     printf '%s\n' 'max-time = 120'
-    printf '%s\n' 'retry = 5'
-    printf '%s\n' 'retry-delay = 5'
-    printf '%s\n' 'retry-all-errors'
+    # The outer loop refreshes the signed URL; curl must return after one
+    # bounded attempt instead of retrying against an expiring URL internally.
+    printf '%s\n' 'retry = 0'
     printf '%s\n' 'fail'
     printf '%s\n' 'silent'
     printf '%s\n' 'show-error'

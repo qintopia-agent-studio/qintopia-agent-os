@@ -264,6 +264,8 @@ try {
     "download_deadline",
     "continue-at = -",
     "Refresh the signed redirect between bounded attempts",
+    "retry = 0",
+    "outer loop refreshes the signed URL",
     "GitHub artifact download did not complete within",
   ]) {
     if (!scriptText.includes(requiredDownloadFragment)) {
