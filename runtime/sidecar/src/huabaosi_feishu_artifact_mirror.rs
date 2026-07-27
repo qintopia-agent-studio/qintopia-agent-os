@@ -301,7 +301,7 @@ pub(crate) struct FeishuPrimaryStorageResult {
 }
 
 #[derive(Debug)]
-struct MirrorFailure {
+pub(crate) struct MirrorFailure {
     stage: &'static str,
     code: &'static str,
     external_write_executed: Option<bool>,
@@ -1456,7 +1456,33 @@ impl MirrorFailure {
             automatic_retry_allowed,
         }
     }
+
+    pub(crate) fn stage(&self) -> &'static str {
+        self.stage
+    }
+
+    pub(crate) fn code(&self) -> &'static str {
+        self.code
+    }
 }
+
+impl std::fmt::Display for MirrorFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.code == "adapter_not_compiled" {
+            return write!(
+                formatter,
+                "Huabaosi Feishu storage adapter is not compiled into this binary"
+            );
+        }
+        write!(
+            formatter,
+            "Huabaosi Feishu storage failed at {} with {}",
+            self.stage, self.code
+        )
+    }
+}
+
+impl std::error::Error for MirrorFailure {}
 
 fn mirror_is_current(artifact: &MirrorArtifact) -> bool {
     artifact.workbench_status.as_deref() == Some("active")
@@ -1828,7 +1854,7 @@ fn mirror_to_feishu(
 pub(crate) fn store_primary_generated_image(
     config: &FeishuPrimaryStorageConfig,
     image: &FeishuPrimaryStorageImage<'_>,
-) -> Result<FeishuPrimaryStorageResult> {
+) -> std::result::Result<FeishuPrimaryStorageResult, MirrorFailure> {
     #[cfg(not(any(
         feature = "huabaosi-production-adapter",
         feature = "huabaosi-staging-adapter",
@@ -1836,7 +1862,7 @@ pub(crate) fn store_primary_generated_image(
     )))]
     {
         let _ = (config, image);
-        bail!("Huabaosi Feishu storage adapter is not compiled into this binary");
+        Err(MirrorFailure::policy("adapter_not_compiled"))
     }
 
     #[cfg(any(
@@ -1845,43 +1871,45 @@ pub(crate) fn store_primary_generated_image(
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     {
-        validate_primary_storage_image(image, config.max_media_bytes)?;
-        let credentials =
-            read_feishu_credentials(&config.profile_env_path).map_err(primary_storage_error)?;
-        let client = FeishuClient::authenticate(&config.api_root, &credentials)
-            .map_err(primary_storage_error)?;
-        let existing = client
-            .search_record(&config.base_token, &config.table_id, image.artifact_id)
-            .map_err(primary_storage_error)?;
-        let file_token = client
-            .upload_media(&config.base_token, image.artifact_id, image.bytes)
-            .map_err(primary_storage_error)?;
-        let mut readback = client
-            .download_media(file_token.as_str(), config.max_media_bytes)
-            .map_err(primary_storage_error)?;
+        validate_primary_storage_image(image, config.max_media_bytes)
+            .map_err(|_| MirrorFailure::policy("image_validation_failed"))?;
+        let credentials = read_feishu_credentials(&config.profile_env_path)?;
+        let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+        let existing =
+            client.search_record(&config.base_token, &config.table_id, image.artifact_id)?;
+        let file_token = client.upload_media(&config.base_token, image.artifact_id, image.bytes)?;
+        let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
         if readback.as_slice() != image.bytes {
             readback.zeroize();
-            bail!("Huabaosi Feishu storage readback did not match uploaded JPEG");
+            return Err(MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            ));
         }
-        validate_primary_storage_bytes(image, &readback)?;
+        validate_primary_storage_bytes(image, &readback).map_err(|_| {
+            MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            )
+        })?;
         readback.zeroize();
 
         let fields = build_primary_storage_fields(image, file_token.as_str());
         let record = match existing {
             Some(record) => {
-                client
-                    .update_record(
-                        &config.base_token,
-                        &config.table_id,
-                        &record.record_id,
-                        &fields,
-                    )
-                    .map_err(primary_storage_error)?;
+                client.update_record(
+                    &config.base_token,
+                    &config.table_id,
+                    &record.record_id,
+                    &fields,
+                )?;
                 record
             }
-            None => client
-                .create_record(&config.base_token, &config.table_id, &fields)
-                .map_err(primary_storage_error)?,
+            None => client.create_record(&config.base_token, &config.table_id, &fields)?,
         };
 
         Ok(FeishuPrimaryStorageResult {
@@ -1968,11 +1996,12 @@ fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_toke
 }
 
 #[cfg(any(
+    test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
     feature = "huabaosi-feishu-mirror-adapter"
 ))]
-fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
+pub(crate) fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
     anyhow::anyhow!(
         "Huabaosi Feishu storage failed at {} with {}",
         failure.stage,

@@ -42,7 +42,7 @@ use crate::{
     feature = "huabaosi-staging-adapter"
 ))]
 use crate::huabaosi_feishu_artifact_mirror::{
-    store_primary_generated_image, FeishuPrimaryStorageImage,
+    primary_storage_error, store_primary_generated_image, FeishuPrimaryStorageImage,
 };
 
 #[cfg(any(
@@ -268,6 +268,7 @@ impl GenerationFailureClass {
 struct GenerationAttemptError {
     class: GenerationFailureClass,
     stage: &'static str,
+    failure_code: Option<&'static str>,
     external_generation_executed: Option<bool>,
     external_media_write_executed: Option<bool>,
     source: anyhow::Error,
@@ -285,6 +286,7 @@ impl GenerationAttemptError {
         Self {
             class: GenerationFailureClass::RetryableProvider,
             stage,
+            failure_code: None,
             external_generation_executed,
             external_media_write_executed,
             source,
@@ -295,20 +297,23 @@ impl GenerationAttemptError {
         Self {
             class: GenerationFailureClass::AmbiguousProvider,
             stage,
+            failure_code: None,
             external_generation_executed: None,
             external_media_write_executed: Some(false),
             source,
         }
     }
 
-    fn ambiguous_external(
+    fn ambiguous_external_with_code(
         stage: &'static str,
+        failure_code: Option<&'static str>,
         external_generation_executed: Option<bool>,
         source: anyhow::Error,
     ) -> Self {
         Self {
             class: GenerationFailureClass::AmbiguousProvider,
             stage,
+            failure_code,
             external_generation_executed,
             external_media_write_executed: None,
             source,
@@ -324,6 +329,7 @@ impl GenerationAttemptError {
         Self {
             class: GenerationFailureClass::Terminal,
             stage,
+            failure_code: None,
             external_generation_executed,
             external_media_write_executed,
             source,
@@ -334,6 +340,7 @@ impl GenerationAttemptError {
         GenerationFailure {
             class: self.class,
             stage: self.stage,
+            failure_code: self.failure_code,
             external_generation_executed: self.external_generation_executed,
             external_media_write_executed: self.external_media_write_executed,
         }
@@ -350,6 +357,7 @@ impl fmt::Display for GenerationAttemptError {
 struct GenerationFailure {
     class: GenerationFailureClass,
     stage: &'static str,
+    failure_code: Option<&'static str>,
     external_generation_executed: Option<bool>,
     external_media_write_executed: Option<bool>,
 }
@@ -702,6 +710,7 @@ async fn run_once(
                     GenerationFailure {
                         class: GenerationFailureClass::Terminal,
                         stage: "workflow_root_resolution",
+                        failure_code: None,
                         external_generation_executed: Some(false),
                         external_media_write_executed: Some(false),
                     },
@@ -723,6 +732,7 @@ async fn run_once(
                     GenerationFailure {
                         class: GenerationFailureClass::Terminal,
                         stage: "worker_execution",
+                        failure_code: None,
                         external_generation_executed: None,
                         external_media_write_executed: None,
                     },
@@ -756,6 +766,7 @@ async fn run_once(
                     GenerationFailure {
                         class: GenerationFailureClass::Terminal,
                         stage: "persistence",
+                        failure_code: None,
                         external_generation_executed: Some(true),
                         external_media_write_executed: Some(true),
                     },
@@ -1997,6 +2008,7 @@ async fn record_generation_failure(
         "max_attempts": MAX_GENERATION_ATTEMPTS,
         "failure_class": failure.class.as_str(),
         "failure_stage": failure.stage,
+        "failure_code": failure.failure_code,
         "retry_delay_seconds": retry_delay_seconds,
         "retry_scheduled": retry_scheduled,
         "retry_exhausted": retry_exhausted,
@@ -2358,8 +2370,15 @@ fn generate_and_store_with(
                     height: metadata.height,
                 },
             )
-            .map_err(|source| {
-                GenerationAttemptError::ambiguous_external("feishu_storage", Some(true), source)
+            .map_err(|failure| {
+                let stage = failure.stage();
+                let code = failure.code();
+                GenerationAttemptError::ambiguous_external_with_code(
+                    stage,
+                    Some(code),
+                    Some(true),
+                    primary_storage_error(failure),
+                )
             })?;
             (
                 result.artifact_uri,
@@ -2913,8 +2932,9 @@ mod tests {
 
     #[test]
     fn feishu_storage_failure_preserves_unknown_external_write_state() {
-        let error = GenerationAttemptError::ambiguous_external(
+        let error = GenerationAttemptError::ambiguous_external_with_code(
             "feishu_storage",
+            None,
             Some(true),
             anyhow!("sanitized Feishu storage failure"),
         );
