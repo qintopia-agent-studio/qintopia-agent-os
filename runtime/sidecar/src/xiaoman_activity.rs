@@ -1731,6 +1731,7 @@ impl ActivityRecord {
         let title = field_string(
             fields,
             &[
+                "活动主题",
                 "活动名称",
                 "活动标题",
                 "活动信息",
@@ -1769,7 +1770,7 @@ impl ActivityRecord {
                 ],
             ),
             end_time: field_string(fields, &["结束时间", "end_time", "endTime"]),
-            location: field_string(fields, &["地点", "活动地点", "location"]),
+            location: field_string(fields, &["计划地点", "地点", "活动地点", "location"]),
             status: field_string(fields, &["小满运营状态", "活动状态", "状态", "status"]),
             promotion_status: field_string(fields, &["宣发判断", "宣发状态", "promotion_status"]),
             owner_name: field_string(fields, &["负责人", "负责同学", "owner", "owner_name"]),
@@ -2790,6 +2791,29 @@ mod tests {
         assert!(!serde_json::to_string(&view)
             .unwrap()
             .contains("rec_feishu_plan_1"));
+    }
+
+    #[test]
+    fn feishu_plan_record_mapping_uses_plan_field_names() {
+        let value = json!({
+            "record_id": "rec_feishu_plan_fields_1",
+            "fields": {
+                "活动主题": "周六瑜伽体验",
+                "计划时间": "2026-08-01 15:00:00",
+                "计划地点": "秦托邦社区公区一楼",
+                "小满运营状态": "待宣发判断",
+                "宣发判断": "需要前宣"
+            }
+        });
+
+        let record = ActivityRecord::from_feishu_value(&value, "activity_plan")
+            .expect("Feishu plan record should map");
+
+        assert_eq!(record.title, "周六瑜伽体验");
+        assert_eq!(record.start_time.as_deref(), Some("2026-08-01 15:00:00"));
+        assert_eq!(record.location.as_deref(), Some("秦托邦社区公区一楼"));
+        assert_eq!(record.status.as_deref(), Some("待宣发判断"));
+        assert_eq!(record.promotion_status.as_deref(), Some("需要前宣"));
     }
 
     #[test]
