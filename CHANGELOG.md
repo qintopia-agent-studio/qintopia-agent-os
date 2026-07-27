@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.36](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.35...v0.2.36) (2026-07-27)
+
+
+### Bug Fixes
+
+* **xiaoman:** map activity plan fields ([#287](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/287)) ([9259b1a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9259b1af46b57cacc8e465cd8aa9a74c191b3186))
+
 ## [0.2.35](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.34...v0.2.35) (2026-07-26)
 
 
