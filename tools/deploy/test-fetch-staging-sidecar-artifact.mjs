@@ -259,6 +259,19 @@ try {
   ) {
     throw new Error("artifact download must capture a signed redirect URL first");
   }
+  for (const requiredDownloadFragment of [
+    "artifact_size",
+    "download_deadline",
+    "continue-at = -",
+    "Refresh the signed redirect between bounded attempts",
+    "GitHub artifact download did not complete within",
+  ]) {
+    if (!scriptText.includes(requiredDownloadFragment)) {
+      throw new Error(
+        `artifact download must preserve resumable signed-URL behavior (${requiredDownloadFragment})`
+      );
+    }
+  }
 
   const good = writeFixtureArtifact("good");
   const releaseRoot = path.join(tmpRoot, "good", "qintopia-agent-os-staging-releases");

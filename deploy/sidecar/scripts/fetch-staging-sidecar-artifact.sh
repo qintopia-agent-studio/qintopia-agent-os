@@ -305,7 +305,9 @@ else
   download_curl_config="${tmp_dir}/github-download-curl.conf"
   {
     printf '%s\n' 'connect-timeout = 20'
-    printf 'max-time = %s\n' "$github_download_max_time"
+    # Refresh the signed redirect between bounded attempts so a slow server can
+    # resume the same artifact instead of restarting after the URL expires.
+    printf '%s\n' 'max-time = 120'
     printf '%s\n' 'retry = 5'
     printf '%s\n' 'retry-delay = 5'
     printf '%s\n' 'retry-all-errors'
@@ -327,6 +329,7 @@ else
 
   run_id=""
   download_url=""
+  artifact_size=""
   while IFS= read -r candidate_run_id; do
     [[ -z "$candidate_run_id" ]] && continue
     artifacts_json="${tmp_dir}/artifacts-${candidate_run_id}.json"
@@ -338,9 +341,15 @@ else
         '.artifacts[] | select(.name == $name and .expired == false) | .archive_download_url' \
         "$artifacts_json" | head -n 1
     )"
-    if [[ -n "$candidate_download_url" ]]; then
+    candidate_artifact_size="$(
+      jq -r --arg name "$artifact_name" \
+        '.artifacts[] | select(.name == $name and .expired == false) | .size_in_bytes' \
+        "$artifacts_json" | head -n 1
+    )"
+    if [[ -n "$candidate_download_url" && "$candidate_artifact_size" =~ ^[1-9][0-9]*$ ]]; then
       run_id="$candidate_run_id"
       download_url="$candidate_download_url"
+      artifact_size="$candidate_artifact_size"
       break
     fi
   done < <(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[].id' "$runs_json")
@@ -351,17 +360,43 @@ else
   fi
 
   zip_path="${tmp_dir}/${artifact_name}.zip"
-  signed_download_url="$(
-    curl --config "$curl_config" \
-      --output /dev/null \
-      --write-out "%{redirect_url}" \
-      "$download_url"
-  )"
-  if [[ -z "$signed_download_url" ]]; then
-    echo "GitHub artifact download did not return a signed redirect URL" >&2
-    exit 1
-  fi
-  curl --config "$download_curl_config" "$signed_download_url" -o "$zip_path"
+  download_started_at="$(date +%s)"
+  download_deadline=$((download_started_at + github_download_max_time))
+  while :; do
+    if [[ -f "$zip_path" ]]; then
+      current_size="$(stat -c '%s' "$zip_path" 2>/dev/null || printf '0')"
+      if [[ "$current_size" == "$artifact_size" ]]; then
+        break
+      fi
+      if ((current_size > artifact_size)); then
+        rm -f "$zip_path"
+      fi
+    fi
+
+    if (( $(date +%s) >= download_deadline )); then
+      echo "GitHub artifact download did not complete within ${github_download_max_time}s" >&2
+      exit 1
+    fi
+
+    signed_download_url="$(
+      curl --config "$curl_config" \
+        --output /dev/null \
+        --write-out "%{redirect_url}" \
+        "$download_url"
+    )"
+    if [[ -z "$signed_download_url" ]]; then
+      echo "GitHub artifact download did not return a signed redirect URL" >&2
+      exit 1
+    fi
+
+    set +e
+    curl --config "$download_curl_config" "$signed_download_url" -o "$zip_path"
+    download_status=$?
+    set -e
+    if ((download_status != 0)); then
+      sleep 2
+    fi
+  done
   validate_artifact_zip "$zip_path"
   unzip -o -q "$zip_path" -d "$artifact_dir"
 fi
