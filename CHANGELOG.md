@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.39](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.38...v0.2.39) (2026-07-27)
+
+
+### Bug Fixes
+
+* **sidecar:** return fields for Feishu image revalidation ([b8dbd96](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b8dbd96547e08b3c5682117b4079c566fd3edd22))
+
 ## [0.2.38](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.37...v0.2.38) (2026-07-27)
 
 
