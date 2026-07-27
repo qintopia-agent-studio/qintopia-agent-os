@@ -2295,7 +2295,16 @@ fn validate_primary_storage_readback(
     feature = "huabaosi-feishu-mirror-adapter"
 ))]
 fn field_text(fields: &Map<String, Value>, name: &str) -> Option<String> {
-    fields.get(name).and_then(Value::as_str).map(str::to_string)
+    let value = fields.get(name)?;
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    let items = value.as_array()?;
+    let item = items.first()?.as_object()?;
+    if items.len() != 1 {
+        return None;
+    }
+    item.get("text").and_then(Value::as_str).map(str::to_string)
 }
 
 #[cfg(any(
@@ -3316,6 +3325,29 @@ mod tests {
             mirror_to_feishu(&artifact, &validated, Uuid::nil(), &config).expect("mirror succeeds");
         assert_eq!(record_id, "recFixture");
         server.join().expect("fake Feishu server completes");
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn feishu_text_fields_accept_scalar_and_single_rich_text_values() {
+        let fields = json!({
+            "scalar": "plain text",
+            "rich": [{"text": "rich text", "type": 1}],
+            "empty": [],
+            "multiple": [{"text": "one"}, {"text": "two"}],
+            "missing_text": [{"type": 1}],
+        });
+        let fields = fields.as_object().expect("test fields object");
+
+        assert_eq!(field_text(fields, "scalar").as_deref(), Some("plain text"));
+        assert_eq!(field_text(fields, "rich").as_deref(), Some("rich text"));
+        assert_eq!(field_text(fields, "empty"), None);
+        assert_eq!(field_text(fields, "multiple"), None);
+        assert_eq!(field_text(fields, "missing_text"), None);
     }
 
     #[test]
