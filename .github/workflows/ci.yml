@@ -475,6 +475,15 @@ jobs:
           set -euo pipefail
           state=failure
           description="Full Release Please validation failed"
+          check_state=failure
+          if [[ "${{ needs.check.result }}" == "success" ]]; then
+            check_state=success
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$check_state" \
+            -f context="check" \
+            -f description="Release Please exact-head check ${check_state}" \
+            -f target_url="$RUN_URL"
           if [[ "${{ needs.check.result }}" == "success" && \
             "${{ needs.rust-quality-baseline.result }}" == "success" && \
             "${{ needs.xiaoman-postgres-integration.result }}" == "success" ]]; then

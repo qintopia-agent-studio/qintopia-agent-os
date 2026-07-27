@@ -118,9 +118,12 @@ The dispatch reads the PR through the GitHub API and fails unless it is open, ta
 its head SHA equals the workflow checkout SHA. Only then does it run the dedicated
 manifest/changelog validator and force the complete light, runtime, Rust quality, and
 disposable PostgreSQL tiers. Workflow-dispatch check suites are not listed automatically
-in the PR rollup, so a final aggregation job publishes a fixed
-`Release Please validation` commit status on the verified head SHA only after every
-required job succeeds. That status must pass and be visible on the PR before merge. This
+in the PR rollup, so the final aggregation job publishes fixed `check` and
+`Release Please validation` commit statuses on the verified head SHA after their
+corresponding jobs finish. The manual PR-Agent dispatch similarly publishes the existing
+`PR-Agent review assistant` status after its authenticated no-review job succeeds. These
+statuses repair the workflow-dispatch-to-PR visibility gap; they do not add checks or
+weaken the ruleset. They must pass and be visible on the PR before merge. This
 validation does not approve publication; merging and publishing remain one owner release
 decision.
 

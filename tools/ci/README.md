@@ -62,8 +62,11 @@ Rust quality and disposable PostgreSQL integration jobs are risk-tiered separate
 ordinary Hermes, deploy-runner, documentation, or metadata changes do not pay the full
 sidecar/PostgreSQL cost unless they touch the sidecar, Postgres, deploy sidecar scripts,
 or the CI workflow itself. Manual workflow dispatches and authenticated Release Please
-validation always force the full heavy tier. The PR-attached release status is published
-only after the main, Rust, and PostgreSQL jobs all succeed.
+validation always force the full heavy tier. The PR-attached `check` and release
+statuses are published after their corresponding jobs finish; the manual PR-Agent
+dispatch publishes its existing required status after the authenticated no-review job
+succeeds. This keeps workflow-dispatch validation visible to the master ruleset without
+adding another check tier.
 
 The matching local path is `pnpm check:pr:auto` for day-to-day work and
 `pnpm check:pr:heavy` when you want the full local Rust/PostgreSQL mirror before pushing
