@@ -2599,6 +2599,16 @@ if (exists(artifactsWorkflowPath)) {
       addError(`${artifactsWorkflowPath}: staging job must include ${fragment}`);
     }
   }
+  if (
+    stagingJob.includes(
+      "    env:\n      TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}"
+    ) ||
+    stagingJob.includes(
+      "    env:\n      TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}"
+    )
+  ) {
+    addError(`${artifactsWorkflowPath}: staging COS secrets must remain step-scoped`);
+  }
   for (const fragment of [
     "build_qiwe_sidecar",
     "build-qiwe-sidecar",
