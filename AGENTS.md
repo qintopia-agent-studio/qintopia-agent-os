@@ -364,9 +364,12 @@ Use `rg` and `rg --files` for search.
   by the deploy runner.
 - A production same-SHA follow-up may repair owner and mode metadata only after the
   existing manifest identity matches the request, the complete release tree matches
-  freshly fetched verified artifacts, and both packaged checksum files pass. It must
-  fail before metadata mutation on any content or path drift; do not hot-fix release
-  ownership with server-side `chown` or `chmod` outside this reviewed runner path.
+  freshly fetched verified artifacts, and both packaged checksum files pass. The only
+  identity exception is an explicit switch between the reviewed Huabaosi and QiWe
+  runtime profiles; that path verifies every non-sidecar path and replaces only the
+  verified sidecar payload. It must fail before metadata mutation on any other content
+  or path drift; do not hot-fix release ownership with server-side `chown` or `chmod`
+  outside this reviewed runner path.
 - Staging sidecar provisioning runs as the `ubuntu` operator, not root. It must create
   the fixed staging release root, release directory, and sidecar directory with explicit
   mode `0755` independent of ambient `umask`, then freeze the immutable release and
@@ -1113,14 +1116,15 @@ Use `rg` and `rg --files` for search.
 - As of 2026-07-15, the corrected `v0.2.10` same-SHA follow-up deploy installed the new
   systemd units. A same-SHA request for an existing release must reuse the immutable
   manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and
-  restart-target fields; narrowing `restart_targets` is rejected before promotion and
-  does not trigger rollback. Content, path, type, or symlink drift must fail before
-  mutation. After the bounded metadata repair allowed above, the existing tree must
-  satisfy the same deploy-runner owner, non-writable, directory accessibility,
-  regular/symlink type, sidecar `0755`, and metadata `0444` checks as a new staging
-  tree. Same-SHA reuse must preserve a distinct `previous` target. Production release
-  and staging roots must be created explicitly as `0755` so the validation contract does
-  not depend on ambient `umask`.
+  restart-target fields; the reviewed Huabaosi/QiWe runtime profile switch is the only
+  allowed profile exception. Narrowing `restart_targets` is rejected before promotion
+  and does not trigger rollback. Content, path, type, or symlink drift must fail before
+  mutation. After the bounded metadata repair or profile switch allowed above, the
+  existing tree must satisfy the same deploy-runner owner, non-writable, directory
+  accessibility, regular/symlink type, sidecar `0755`, and metadata `0444` checks as a
+  new staging tree. Same-SHA reuse must preserve a distinct `previous` target.
+  Production release and staging roots must be created explicitly as `0755` so the
+  validation contract does not depend on ambient `umask`.
 - PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
   live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
   profile symlink without that reviewed cutover, smoke evidence, and rollback note.

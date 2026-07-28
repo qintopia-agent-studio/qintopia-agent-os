@@ -133,10 +133,24 @@ release_dir="${release_root}/${release_sha}"
 staging_dir="${release_root}/.staging-${release_sha}"
 current_target="$(readlink -f "${release_root}/current" 2>/dev/null || true)"
 adopted_manifest_tmp=""
+profile_switch_backup_dir=""
+profile_switch_active=false
 
 cleanup() {
+  if [[ "$profile_switch_active" == "true" ]]; then
+    rm -rf "${release_dir}/sidecar" 2>/dev/null || true
+    if [[ -n "$profile_switch_backup_dir" && -d "$profile_switch_backup_dir/sidecar" ]]; then
+      mv "$profile_switch_backup_dir/sidecar" "${release_dir}/sidecar" 2>/dev/null || true
+    fi
+    if [[ -n "$profile_switch_backup_dir" && -f "$profile_switch_backup_dir/manifest.json" ]]; then
+      cp -a "$profile_switch_backup_dir/manifest.json" "${release_dir}/manifest.json" 2>/dev/null || true
+    fi
+  fi
   if [[ -n "$adopted_manifest_tmp" && -f "$adopted_manifest_tmp" ]]; then
     rm -f "$adopted_manifest_tmp"
+  fi
+  if [[ -n "$profile_switch_backup_dir" ]]; then
+    rm -rf "$profile_switch_backup_dir"
   fi
 }
 trap cleanup EXIT
@@ -373,7 +387,7 @@ if [[ -e "$release_dir" ]]; then
   fi
   adopted_manifest_tmp="$(mktemp "${release_root}/.existing-manifest-${release_sha}.XXXXXX.json")"
   build_adopted_existing_manifest "$release_dir" "$adopted_manifest_tmp"
-  python3 - "$adopted_manifest_tmp" "$staging_dir/manifest.json" <<'PY'
+  profile_mode="$(python3 - "$adopted_manifest_tmp" "$staging_dir/manifest.json" <<'PY'
 import json
 import sys
 
@@ -386,7 +400,6 @@ with open(requested_path, encoding="utf-8") as fh:
 keys = (
     "release_sha",
     "runtime_sha",
-    "runtime_artifact_profile",
     "deploy_bundle_sha",
     "commit_sha",
     "release_scope",
@@ -395,12 +408,109 @@ keys = (
 for key in keys:
     if manifest.get(key) != requested.get(key):
         raise SystemExit(f"existing release manifest {key} mismatch")
+existing_profile = manifest.get("runtime_artifact_profile")
+requested_profile = requested.get("runtime_artifact_profile")
+if existing_profile == requested_profile:
+    print("same")
+elif {existing_profile, requested_profile} == {
+    "huabaosi-production",
+    "qiwe-production",
+}:
+    print("profile-switch")
+else:
+    raise SystemExit("existing release manifest runtime_artifact_profile mismatch")
 PY
+  )"
+  if [[ "$profile_mode" == "profile-switch" ]]; then
+    python3 - "$release_dir" "$staging_dir" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+existing_root, requested_root = sys.argv[1:3]
+
+def inventory(root):
+    entries = {}
+    for directory, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        relative_directory = os.path.relpath(directory, root)
+        if relative_directory == ".":
+            relative_directory = ""
+        if relative_directory == "sidecar" or relative_directory.startswith("sidecar/"):
+            dirnames[:] = []
+            continue
+
+        retained_directories = []
+        for name in sorted(dirnames):
+            relative = os.path.join(relative_directory, name)
+            if relative == "sidecar":
+                continue
+            path = os.path.join(directory, name)
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode):
+                entries[relative] = ("symlink", os.readlink(path))
+            elif stat.S_ISDIR(metadata.st_mode):
+                entries[relative] = ("directory",)
+                retained_directories.append(name)
+            else:
+                raise SystemExit(f"unsupported existing path: {relative}")
+        dirnames[:] = retained_directories
+
+        for name in sorted(filenames):
+            relative = os.path.join(relative_directory, name)
+            if relative == "manifest.json":
+                continue
+            path = os.path.join(directory, name)
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode):
+                entries[relative] = ("symlink", os.readlink(path))
+            elif stat.S_ISREG(metadata.st_mode):
+                digest = hashlib.sha256()
+                with open(path, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                entries[relative] = ("file", digest.hexdigest())
+            else:
+                raise SystemExit(f"unsupported existing path: {relative}")
+    return entries
+
+if inventory(existing_root) != inventory(requested_root):
+    raise SystemExit(
+        "existing release content outside sidecar differs from freshly verified artifacts"
+    )
+PY
+    profile_switch_backup_dir="$(mktemp -d "${release_root}/.profile-switch-${release_sha}.XXXXXX")"
+    mv "${release_dir}/sidecar" "$profile_switch_backup_dir/sidecar"
+    profile_switch_active=true
+    cp -a "${release_dir}/manifest.json" "$profile_switch_backup_dir/manifest.json"
+    mv "${staging_dir}/sidecar" "${release_dir}/sidecar"
+    mkdir -p "${staging_dir}/sidecar"
+    cp -a "${release_dir}/sidecar/." "${staging_dir}/sidecar/"
+    python3 - "$adopted_manifest_tmp" "$staging_dir/manifest.json" <<'PY'
+import json
+import sys
+
+adopted_path, requested_path = sys.argv[1:3]
+with open(requested_path, encoding="utf-8") as fh:
+    requested = json.load(fh)
+with open(adopted_path, encoding="utf-8") as fh:
+    adopted = json.load(fh)
+adopted["runtime_artifact_profile"] = requested["runtime_artifact_profile"]
+with open(adopted_path, "w", encoding="utf-8") as fh:
+    json.dump(adopted, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+  fi
   repair_existing_release_metadata "$release_dir" "$staging_dir"
   mv "$adopted_manifest_tmp" "${release_dir}/manifest.json"
   adopted_manifest_tmp=""
   validate_release_tree "$release_dir"
   rm -rf "$staging_dir"
+  if [[ "$profile_switch_active" == "true" ]]; then
+    rm -rf "$profile_switch_backup_dir"
+    profile_switch_backup_dir=""
+    profile_switch_active=false
+  fi
 else
   mv "$staging_dir" "$release_dir"
 fi
