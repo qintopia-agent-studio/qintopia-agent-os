@@ -16,7 +16,7 @@ The fixed staging runtime boundary is:
 
 The current server observation
 `docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md` shows both fixed
-paths are absent on `paxon-server`. Real staging cannot start until an owner-approved
+paths are absent on the target server. Real staging cannot start until an owner-approved
 operator provisions those inputs and records the approved hashes.
 
 ## Required Owner Inputs
@@ -109,8 +109,9 @@ The staging release root must be immutable for the staging exercise:
   exercise, never as a production artifact.
 
 The reviewed artifact source for the combined Huabaosi/QiWe staging exercise is the
-manually dispatched GitHub Actions artifact
-`qintopia-message-sidecar-staging-linux-x86_64-gnu`. Its manifest must show exactly
+manually dispatched staging artifact
+`qintopia-message-sidecar-staging-linux-x86_64-gnu`, published to GitHub Actions and,
+when enabled, Tencent COS. Its manifest must show exactly
 `cargo_features: [huabaosi-staging-adapter, qiwe-staging-adapter]`, `staging_only=true`,
 and `production_eligible=false`. Do not use the production
 `qintopia-message-sidecar-linux-x86_64-gnu` artifact for staging evidence, and do not
@@ -168,15 +169,17 @@ an explicit owner-reviewed rollback step before rerunning the renderer.
 ## Provision Staging Sidecar Artifact
 
 After owner approval, provision the staging-only artifact with the reviewed helper from
-the deploy bundle:
+the deploy bundle. Prefer COS so the server does not depend on GitHub artifact download
+endpoints:
 
 ```bash
 QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL=approved-staging-sidecar-provision \
   deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh \
-  --sha '<approved staging release sha>'
+  --source cos --sha '<approved staging release sha>'
 ```
 
-The helper downloads only the successful `artifacts.yml` GitHub Actions artifact named
+The helper downloads only the fixed COS object path (or, with `--source github`, the
+successful `artifacts.yml` GitHub Actions artifact) named
 `qintopia-message-sidecar-staging-linux-x86_64-gnu`, verifies `SHA256SUMS`, verifies the
 manifest staging feature boundary, and rejects production-eligible manifests. It
 installs the binary and evidence files under

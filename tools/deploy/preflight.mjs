@@ -298,6 +298,10 @@ if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
   );
   for (const requiredFragment of [
     "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL",
+    "QINTOPIA_STAGING_SIDECAR_PROVISION_SOURCE",
+    "--source <cos|github>",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE=combined-staging",
+    "fetch-cos-artifact.sh",
     "approved-staging-sidecar-provision",
     'repo="qintopia-agent-studio/qintopia-agent-os"',
     'workflow="artifacts.yml"',
@@ -459,6 +463,9 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     'tar --no-same-owner -xzf "${output_dir}/qintopia-message-sidecar.tar.gz" -C "$output_dir"',
     'tar --no-same-owner -xzf "${output_dir}/qintopia-agent-os-deploy-bundle.tar.gz" -C "$output_dir"',
     "qintopia-message-sidecar",
+    "combined-staging",
+    "huabaosi-image-generation-staging-smoke.sh",
+    "qiwe-image-send-staging-smoke.sh",
     "huabaosi-production-adapter",
     "sha256sum -c SHA256SUMS",
   ]) {

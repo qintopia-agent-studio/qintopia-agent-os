@@ -51,16 +51,17 @@ It is built only by the manually dispatched Artifacts workflow when
 `build_staging_sidecar=true`. It compiles exactly `huabaosi-staging-adapter` and
 `qiwe-staging-adapter`, records `staging_only=true` and `production_eligible=false` in
 the manifest, and packages the exact Huabaosi and QiWe staging smoke runners with their
-own manifest and `SHA256SUMS` identities. It is retained only as a GitHub Actions
-artifact, and all packaged files must be installed together under
-`/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>` for
-owner-approved Huabaosi/QiWe staging evidence. The `huabaosi-staging-adapter` feature
-includes the guarded Feishu Base primary-storage upload and readback client because the
-staging values require `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`; it still
-requires the staging approval phrase, reviewed database hash, Base/table allowlists, and
-profile boundary before external I/O. It is never uploaded to COS, never included in the
-production release build, and must not be fetched or promoted by production deployment
-scripts.
+own manifest and `SHA256SUMS` identities. It is always retained as a GitHub Actions
+artifact for audit and fallback, and when COS upload is explicitly enabled it is also
+published under the separate staging artifact path. All packaged files must be installed
+together under `/home/ubuntu/qintopia-agent-os-staging-releases/<approved 40-hex sha>`
+for owner-approved Huabaosi/QiWe staging evidence. The `huabaosi-staging-adapter`
+feature includes the guarded Feishu Base primary-storage upload and readback client
+because the staging values require
+`QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`; it still requires the staging
+approval phrase, reviewed database hash, Base/table allowlists, and profile boundary
+before external I/O. It is never included in the production release build, and must not
+be fetched or promoted by production deployment scripts.
 
 ## CI Requirements
 
@@ -177,8 +178,9 @@ Configured COS destination:
 | Region  | `ap-shanghai`                            |
 | Prefix  | `qintopia-agent-os`                      |
 
-The `sidecar-artifact` workflow uploads the artifact directory to COS only when
-`TENCENT_COS_UPLOAD_ENABLED=true` and these GitHub repository secrets are present:
+The `sidecar-artifact`, staging-sidecar-artifact, and qiwe-sidecar-artifact jobs upload
+their artifact directory to COS only when `TENCENT_COS_UPLOAD_ENABLED=true` and these
+GitHub repository secrets are present:
 
 - `TENCENT_COS_SECRET_ID`
 - `TENCENT_COS_SECRET_KEY`
@@ -216,9 +218,10 @@ to COS upload. The verified accelerated upload for commit
 seconds.
 
 After each successful COS upload, the workflow runs
-`deploy/sidecar/scripts/prune-cos-artifacts.sh` for both production sidecar artifact
-names and for `deploy-bundle`. COS keeps the latest ten sidecar artifact SHA directories
-for `qintopia-message-sidecar-linux-x86_64-gnu`, the latest ten SHA directories for
+`deploy/sidecar/scripts/prune-cos-artifacts.sh` for each uploaded artifact name and for
+`deploy-bundle`. COS keeps the latest ten sidecar artifact SHA directories for
+`qintopia-message-sidecar-linux-x86_64-gnu`,
+`qintopia-message-sidecar-staging-linux-x86_64-gnu`, the latest ten SHA directories for
 `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and the latest ten deploy
 bundle SHA directories for `qintopia-agent-os-deploy-bundle`, matching the GitHub
 Actions artifact retention count. This retention is implemented in CI because bucket
@@ -245,6 +248,20 @@ deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
   --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
 ```
+
+For the combined Huabaosi/QiWe staging exercise, use the staging provisioner with the
+COS source. It preserves the fixed staging release root and all staging-only manifest,
+checksum, feature, and file-permission checks:
+
+```bash
+QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL=approved-staging-sidecar-provision \
+  deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh \
+  --source cos --sha <approved-staging-sha>
+```
+
+Set `QINTOPIA_STAGING_SIDECAR_PROVISION_SOURCE=cos` to make COS the default for this
+helper. The default remains GitHub Actions so the existing fallback path stays available
+when COS is unavailable.
 
 For Tencent Cloud Lighthouse app servers, CVM Role is not available. Use a server-local
 read-only COS SecretId/SecretKey file instead:

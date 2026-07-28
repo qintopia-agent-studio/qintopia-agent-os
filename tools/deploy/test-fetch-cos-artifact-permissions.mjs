@@ -16,6 +16,7 @@ const binRoot = path.join(tmpRoot, "bin");
 const tarArgsPath = path.join(tmpRoot, "tar-args.log");
 const sha = "0123456789abcdef0123456789abcdef01234567";
 const artifactName = "qintopia-message-sidecar-linux-x86_64-gnu";
+const stagingArtifactName = "qintopia-message-sidecar-staging-linux-x86_64-gnu";
 const deployBundleArtifactName = "qintopia-agent-os-deploy-bundle";
 const systemTar = "/usr/bin/tar";
 
@@ -42,6 +43,15 @@ try {
   const binaryPath = path.join(fixtureRoot, "qintopia-message-sidecar");
   fs.writeFileSync(binaryPath, "#!/usr/bin/env bash\nexit 0\n", "utf8");
   fs.chmodSync(binaryPath, 0o755);
+
+  for (const runnerName of [
+    "huabaosi-image-generation-staging-smoke.sh",
+    "qiwe-image-send-staging-smoke.sh",
+  ]) {
+    const runnerPath = path.join(fixtureRoot, runnerName);
+    fs.writeFileSync(runnerPath, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    fs.chmodSync(runnerPath, 0o755);
+  }
 
   const archivePath = path.join(fixtureRoot, "qintopia-message-sidecar.tar.gz");
   const tarResult = spawnSync(
@@ -332,6 +342,83 @@ exec ${JSON.stringify(systemTar)} "$@"
     );
   }
 
+  const stagingManifestPath = path.join(fixtureRoot, "artifact-manifest.json");
+  const stagingFiles = [
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+    "huabaosi-image-generation-staging-smoke.sh",
+    "qiwe-image-send-staging-smoke.sh",
+  ];
+  fs.writeFileSync(
+    stagingManifestPath,
+    `${JSON.stringify(
+      {
+        commit_sha: sha,
+        artifact_name: stagingArtifactName,
+        target: "linux-x86_64-gnu",
+        files: stagingFiles.map((fileName) => ({
+          path: fileName,
+          sha256: sha256File(path.join(fixtureRoot, fileName)),
+        })),
+        validation: {
+          cargo_features: ["huabaosi-staging-adapter", "qiwe-staging-adapter"],
+          staging_only: true,
+          production_eligible: false,
+        },
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(fixtureRoot, "SHA256SUMS"),
+    [
+      ...stagingFiles.map(
+        (fileName) => `${sha256File(path.join(fixtureRoot, fileName))}  ${fileName}`
+      ),
+      `${sha256File(stagingManifestPath)}  artifact-manifest.json`,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const stagingOutputRoot = path.join(tmpRoot, "staging-output");
+  const stagingResult = spawnSync(
+    "bash",
+    [
+      "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+      "--artifact-type",
+      "sidecar",
+      "--sha",
+      sha,
+      "--output-dir",
+      stagingOutputRoot,
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...fetchEnv,
+        QINTOPIA_SIDECAR_ARTIFACT_PROFILE: "combined-staging",
+        ARTIFACT_NAME: stagingArtifactName,
+        ARTIFACT_TARGET: "linux-x86_64-gnu",
+      },
+      encoding: "utf8",
+    }
+  );
+  if (stagingResult.status !== 0) {
+    throw new Error(
+      `COS combined staging fetch fixture failed\n${stagingResult.stdout}\n${stagingResult.stderr}`
+    );
+  }
+  requireMode(
+    path.join(stagingOutputRoot, "huabaosi-image-generation-staging-smoke.sh"),
+    0o555
+  );
+  requireMode(path.join(stagingOutputRoot, "qiwe-image-send-staging-smoke.sh"), 0o555);
+  requireMode(path.join(stagingOutputRoot, "qintopia-message-sidecar"), 0o755);
+  requireMode(path.join(stagingOutputRoot, "artifact-manifest.json"), 0o444);
+  requireMode(path.join(stagingOutputRoot, "SHA256SUMS"), 0o444);
+
   const payloadRoot = path.join(fixtureRoot, "payload");
   const contextMcpPath = path.join(
     payloadRoot,
@@ -442,7 +529,7 @@ exec ${JSON.stringify(systemTar)} "$@"
 
   const tarInvocations = fs.readFileSync(tarArgsPath, "utf8").trim().split("\n");
   if (
-    tarInvocations.length !== 5 ||
+    tarInvocations.length !== 6 ||
     tarInvocations.some((args) => !args.includes("--no-same-owner"))
   ) {
     throw new Error(

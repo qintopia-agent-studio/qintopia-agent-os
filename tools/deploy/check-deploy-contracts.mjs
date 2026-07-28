@@ -223,6 +223,10 @@ if (!exists(stagingArtifactProvisionPath)) {
   const provisioner = readText(stagingArtifactProvisionPath);
   for (const fragment of [
     "QINTOPIA_STAGING_SIDECAR_PROVISION_APPROVAL",
+    "QINTOPIA_STAGING_SIDECAR_PROVISION_SOURCE",
+    "--source <cos|github>",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE=combined-staging",
+    "fetch-cos-artifact.sh",
     "approved-staging-sidecar-provision",
     'repo="qintopia-agent-studio/qintopia-agent-os"',
     'workflow="artifacts.yml"',
@@ -2584,10 +2588,16 @@ if (exists(artifactsWorkflowPath)) {
       ? qiweJobStart
       : deployBundleJobStart;
   const stagingJob = workflow.slice(stagingJobStart, stagingJobEnd);
-  if (stagingJob.includes("upload-cos-artifact.sh")) {
-    addError(
-      `${artifactsWorkflowPath}: staging sidecar artifact job must not upload to COS`
-    );
+  for (const fragment of [
+    "Upload staging sidecar artifact to Tencent COS",
+    "Prune old staging sidecar artifacts from Tencent COS",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE: combined-staging",
+    "TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}",
+    "TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}",
+  ]) {
+    if (!stagingJob.includes(fragment)) {
+      addError(`${artifactsWorkflowPath}: staging job must include ${fragment}`);
+    }
   }
   for (const fragment of [
     "build_qiwe_sidecar",
