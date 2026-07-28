@@ -28,10 +28,15 @@ use crate::bounded_http::{HttpClient, HttpResponse};
     feature = "qiwe-production-adapter"
 ))]
 use crate::qiwe_image_send_state::QiweUploadClaim;
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
+use crate::qiwe_image_send_state::UploadFailureDisposition;
 #[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 use crate::qiwe_image_send_state::{
     CallbackClaimOutcome, QiweCallbackFileIdentity, SendFailureDisposition,
-    UploadFailureDisposition,
 };
 use crate::{config::Cli, db, qiwe_image_send_state, url_policy};
 use url::Url;
@@ -148,6 +153,12 @@ pub struct QiweImageSendWorkerReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact_content_hash: Option<String>,
     pub external_upload_requested: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_failure_stage: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_failure_http_status: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_request_may_have_been_sent: Option<bool>,
     pub callback_received: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub callback_credential_schema: Option<&'static str>,
@@ -390,8 +401,76 @@ impl Drop for QiweSendReceipt {
 ))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UploadCallFailure {
-    Rejected,
-    OutcomeUnknown,
+    Rejected {
+        stage: &'static str,
+        http_status: Option<u16>,
+    },
+    OutcomeUnknown {
+        stage: &'static str,
+        http_status: Option<u16>,
+        request_may_have_been_sent: bool,
+    },
+}
+
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
+impl UploadCallFailure {
+    fn rejected(stage: &'static str) -> Self {
+        Self::Rejected {
+            stage,
+            http_status: None,
+        }
+    }
+
+    fn unknown(stage: &'static str) -> Self {
+        Self::OutcomeUnknown {
+            stage,
+            http_status: None,
+            request_may_have_been_sent: true,
+        }
+    }
+
+    fn unknown_with_status(stage: &'static str, http_status: u16) -> Self {
+        Self::OutcomeUnknown {
+            stage,
+            http_status: Some(http_status),
+            request_may_have_been_sent: true,
+        }
+    }
+
+    fn disposition(&self) -> UploadFailureDisposition {
+        match self {
+            Self::Rejected { .. } => UploadFailureDisposition::Rejected,
+            Self::OutcomeUnknown { .. } => UploadFailureDisposition::OutcomeUnknown,
+        }
+    }
+
+    fn stage(&self) -> &'static str {
+        match self {
+            Self::Rejected { stage, .. } | Self::OutcomeUnknown { stage, .. } => stage,
+        }
+    }
+
+    fn http_status(&self) -> Option<u16> {
+        match self {
+            Self::Rejected { http_status, .. } | Self::OutcomeUnknown { http_status, .. } => {
+                *http_status
+            }
+        }
+    }
+
+    fn request_may_have_been_sent(&self) -> bool {
+        match self {
+            Self::Rejected { .. } => false,
+            Self::OutcomeUnknown {
+                request_may_have_been_sent,
+                ..
+            } => *request_may_have_been_sent,
+        }
+    }
 }
 
 #[cfg(any(
@@ -777,7 +856,7 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
     .await;
     let upload = match upload {
         Ok(upload) => upload,
-        Err(_) => Err(UploadCallFailure::OutcomeUnknown),
+        Err(_) => Err(UploadCallFailure::unknown("upload_worker_join")),
     };
     match upload {
         Ok(request_id) => {
@@ -827,19 +906,16 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
             Ok(())
         }
         Err(failure) => {
-            let disposition = match failure {
-                UploadCallFailure::Rejected => UploadFailureDisposition::Rejected,
-                UploadCallFailure::OutcomeUnknown => UploadFailureDisposition::OutcomeUnknown,
-            };
-            qiwe_image_send_state::record_upload_failure(&pool, &claim, disposition).await?;
-            let report = worker_report(WorkerReportState {
+            qiwe_image_send_state::record_upload_failure(&pool, &claim, failure.disposition())
+                .await?;
+            let mut report = worker_report(WorkerReportState {
                 success: false,
                 dry_run: false,
                 apply_requested: true,
                 phase: "upload",
                 action_status: match failure {
-                    UploadCallFailure::Rejected => "image_upload_rejected",
-                    UploadCallFailure::OutcomeUnknown => "image_upload_outcome_unknown",
+                    UploadCallFailure::Rejected { .. } => "image_upload_rejected",
+                    UploadCallFailure::OutcomeUnknown { .. } => "image_upload_outcome_unknown",
                 }
                 .to_string(),
                 work_item_id: Some(claim_id),
@@ -847,6 +923,9 @@ async fn run_enabled_upload_worker(cli: &Cli, work_item_id: Option<Uuid>) -> Res
                 callback_received: false,
                 external_send_executed: Some(false),
             });
+            report.upload_failure_stage = Some(failure.stage());
+            report.upload_failure_http_status = failure.http_status();
+            report.upload_request_may_have_been_sent = Some(failure.request_may_have_been_sent());
             println!("{}", serde_json::to_string_pretty(&report)?);
             Ok(())
         }
@@ -1200,10 +1279,10 @@ fn request_claim_upload_with(
         .artifact_uri
         .starts_with(FEISHU_PRIMARY_STORAGE_URI_PREFIX)
     {
-        let bytes = feishu_bytes.ok_or(UploadCallFailure::Rejected)?;
+        let bytes = feishu_bytes.ok_or_else(|| UploadCallFailure::rejected("feishu_bytes"))?;
         request_feishu_bridge_upload_with(config, claim, bytes, client)
     } else if feishu_bytes.is_some() {
-        Err(UploadCallFailure::Rejected)
+        Err(UploadCallFailure::rejected("unexpected_feishu_bytes"))
     } else {
         request_async_upload_with(config, claim, client)
     }
@@ -1219,8 +1298,8 @@ fn request_async_upload_with(
     claim: &QiweUploadClaim,
     client: &HttpClient,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
-    let artifact_url =
-        strict_media_url(&claim.artifact_uri).map_err(|_| UploadCallFailure::Rejected)?;
+    let artifact_url = strict_media_url(&claim.artifact_uri)
+        .map_err(|_| UploadCallFailure::rejected("artifact_url_validation"))?;
     request_async_upload_url_with(
         config,
         claim,
@@ -1244,10 +1323,10 @@ fn request_async_upload_url_with(
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
     let host = file_url
         .host_str()
-        .ok_or(UploadCallFailure::Rejected)?
+        .ok_or_else(|| UploadCallFailure::rejected("async_upload_url_host"))?
         .to_ascii_lowercase();
     if !allowed_hosts.contains(&host) {
-        return Err(UploadCallFailure::Rejected);
+        return Err(UploadCallFailure::rejected("async_upload_host_allowlist"));
     }
     let body = Zeroizing::new(
         build_async_upload_request_from_validated_url(
@@ -1256,7 +1335,7 @@ fn request_async_upload_url_with(
             file_url,
             "image/jpeg",
         )
-        .map_err(|_| UploadCallFailure::Rejected)?,
+        .map_err(|_| UploadCallFailure::rejected("async_upload_request_build"))?,
     );
     let response = client
         .request(
@@ -1272,13 +1351,16 @@ fn request_async_upload_url_with(
         )
         .map_err(|error| {
             if error.request_may_have_been_sent() {
-                UploadCallFailure::OutcomeUnknown
+                UploadCallFailure::unknown("async_upload_request")
             } else {
-                UploadCallFailure::Rejected
+                UploadCallFailure::rejected("async_upload_request")
             }
         })?;
     if !(200..300).contains(&response.status) {
-        return Err(UploadCallFailure::Rejected);
+        return Err(UploadCallFailure::unknown_with_status(
+            "async_upload_response",
+            response.status,
+        ));
     }
     parse_upload_acceptance_for_call(&response)
 }
@@ -1294,7 +1376,8 @@ fn request_feishu_bridge_upload_with(
     bytes: &[u8],
     client: &HttpClient,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
-    validate_claim_bytes(claim, bytes).map_err(|_| UploadCallFailure::Rejected)?;
+    validate_claim_bytes(claim, bytes)
+        .map_err(|_| UploadCallFailure::rejected("feishu_delivery_validation"))?;
     let cloud_url = request_temporary_storage_upload_with(config, claim, bytes, client)?;
     readback_temporary_storage_with(config, claim, &cloud_url, client)?;
     let cloud_url = strict_temporary_storage_url(
@@ -1302,13 +1385,13 @@ fn request_feishu_bridge_upload_with(
         &config.media_allowed_hosts,
         client.allows_insecure_http(),
     )
-    .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    .map_err(|_| UploadCallFailure::unknown("temporary_storage_url_validation"))?;
     let async_upload = cloud_url
         .with_url(|url| {
             request_async_upload_url_with(config, claim, url, &config.media_allowed_hosts, client)
         })
-        .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
-    async_upload.map_err(|_| UploadCallFailure::OutcomeUnknown)
+        .map_err(|_| UploadCallFailure::unknown("temporary_storage_url_parse"))?;
+    async_upload
 }
 
 #[cfg(any(
@@ -1322,11 +1405,11 @@ fn request_temporary_storage_upload_with(
     bytes: &[u8],
     client: &HttpClient,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
-    let file_api_url =
-        file_api_url_from_api_url(&config.api_url).map_err(|_| UploadCallFailure::Rejected)?;
+    let file_api_url = file_api_url_from_api_url(&config.api_url)
+        .map_err(|_| UploadCallFailure::rejected("temporary_storage_api_url"))?;
     let boundary = format!("qintopia-{}", Uuid::new_v4().simple());
     let body = build_temporary_storage_upload_body(&boundary, &config.guid, &claim.filename, bytes)
-        .map_err(|_| UploadCallFailure::Rejected)?;
+        .map_err(|_| UploadCallFailure::rejected("temporary_storage_request_build"))?;
     let response = client
         .request(
             "POST",
@@ -1344,13 +1427,16 @@ fn request_temporary_storage_upload_with(
         )
         .map_err(|error| {
             if error.request_may_have_been_sent() {
-                UploadCallFailure::OutcomeUnknown
+                UploadCallFailure::unknown("temporary_storage_upload_request")
             } else {
-                UploadCallFailure::Rejected
+                UploadCallFailure::rejected("temporary_storage_upload_request")
             }
         })?;
     if !(200..300).contains(&response.status) {
-        return Err(UploadCallFailure::OutcomeUnknown);
+        return Err(UploadCallFailure::unknown_with_status(
+            "temporary_storage_upload_response",
+            response.status,
+        ));
     }
     parse_temporary_storage_acceptance_for_call(
         &response,
@@ -1369,16 +1455,26 @@ fn parse_temporary_storage_acceptance_for_call(
     allowed_hosts: &BTreeSet<String>,
     allow_insecure_http: bool,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
-    validate_json_body_size(&response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    let status = response.status;
+    validate_json_body_size(&response.body).map_err(|_| {
+        UploadCallFailure::unknown_with_status("temporary_storage_response_size", status)
+    })?;
     let mut response: ApiResponse<TemporaryStorageAcceptedData> =
-        serde_json::from_slice(&response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+        serde_json::from_slice(&response.body).map_err(|_| {
+            UploadCallFailure::unknown_with_status("temporary_storage_response_parse", status)
+        })?;
     let cloud_url_value = Zeroizing::new(std::mem::take(&mut response.data.cloud_url));
     if response.code != 0 {
-        return Err(UploadCallFailure::OutcomeUnknown);
+        return Err(UploadCallFailure::unknown_with_status(
+            "temporary_storage_response_code",
+            status,
+        ));
     }
     let cloud_url =
         strict_temporary_storage_url(&cloud_url_value, allowed_hosts, allow_insecure_http)
-            .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+            .map_err(|_| {
+                UploadCallFailure::unknown_with_status("temporary_storage_url_validation", status)
+            })?;
     Ok(Zeroizing::new(cloud_url.as_str().to_string()))
 }
 
@@ -1398,9 +1494,9 @@ fn readback_temporary_storage_with(
         &config.media_allowed_hosts,
         client.allows_insecure_http(),
     )
-    .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
-    let max_bytes =
-        usize::try_from(claim.artifact_byte_size).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    .map_err(|_| UploadCallFailure::unknown("temporary_storage_readback_url"))?;
+    let max_bytes = usize::try_from(claim.artifact_byte_size)
+        .map_err(|_| UploadCallFailure::unknown("temporary_storage_readback_size"))?;
     let response = cloud_url
         .with_url(|url| {
             client.request(
@@ -1411,12 +1507,20 @@ fn readback_temporary_storage_with(
                 max_bytes,
             )
         })
-        .map_err(|_| UploadCallFailure::OutcomeUnknown)?
-        .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+        .map_err(|_| UploadCallFailure::unknown("temporary_storage_readback_url_parse"))?
+        .map_err(|_| UploadCallFailure::unknown("temporary_storage_readback_request"))?;
     if !(200..300).contains(&response.status) {
-        return Err(UploadCallFailure::OutcomeUnknown);
+        return Err(UploadCallFailure::unknown_with_status(
+            "temporary_storage_readback_response",
+            response.status,
+        ));
     }
-    validate_claim_bytes(claim, &response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)
+    validate_claim_bytes(claim, &response.body).map_err(|_| {
+        UploadCallFailure::unknown_with_status(
+            "temporary_storage_readback_validation",
+            response.status,
+        )
+    })
 }
 
 #[cfg(any(
@@ -1427,14 +1531,22 @@ fn readback_temporary_storage_with(
 fn parse_upload_acceptance_for_call(
     response: &HttpResponse,
 ) -> std::result::Result<Zeroizing<String>, UploadCallFailure> {
-    validate_json_body_size(&response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
-    let response: ApiResponse<UploadAcceptedData> =
-        serde_json::from_slice(&response.body).map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+    let status = response.status;
+    validate_json_body_size(&response.body).map_err(|_| {
+        UploadCallFailure::unknown_with_status("async_upload_response_size", status)
+    })?;
+    let response: ApiResponse<UploadAcceptedData> = serde_json::from_slice(&response.body)
+        .map_err(|_| {
+            UploadCallFailure::unknown_with_status("async_upload_response_parse", status)
+        })?;
     if response.code != 0 {
-        return Err(UploadCallFailure::Rejected);
+        return Err(UploadCallFailure::unknown_with_status(
+            "async_upload_response_code",
+            status,
+        ));
     }
     validate_plain_value(&response.data.request_id, "QiWe upload request id")
-        .map_err(|_| UploadCallFailure::OutcomeUnknown)?;
+        .map_err(|_| UploadCallFailure::unknown_with_status("async_upload_request_id", status))?;
     Ok(Zeroizing::new(response.data.request_id))
 }
 
@@ -1614,6 +1726,9 @@ fn worker_report(state: WorkerReportState) -> QiweImageSendWorkerReport {
         work_item_id: state.work_item_id,
         artifact_content_hash: None,
         external_upload_requested: state.external_upload_requested,
+        upload_failure_stage: None,
+        upload_failure_http_status: None,
+        upload_request_may_have_been_sent: None,
         callback_received: state.callback_received,
         callback_credential_schema: None,
         callback_additional_field_count: None,
@@ -2743,27 +2858,37 @@ mod tests {
         .expect("accepted upload request id");
         assert_eq!(accepted.as_str(), "upload-request-1");
 
+        let failure = parse_upload_acceptance_for_call(&http_json_response(
+            200,
+            br#"{"code":1,"data":{"requestId":"upload-request-1"}}"#,
+        ))
+        .expect_err("provider rejection is uncertain after request");
         assert_eq!(
-            parse_upload_acceptance_for_call(&http_json_response(
-                200,
-                br#"{"code":1,"data":{"requestId":"upload-request-1"}}"#,
-            ))
-            .expect_err("provider rejection is known"),
-            UploadCallFailure::Rejected
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "async_upload_response_code");
+        assert_eq!(failure.http_status(), Some(200));
+        assert!(failure.request_may_have_been_sent());
+
+        let failure = parse_upload_acceptance_for_call(&http_json_response(200, br#"not-json"#))
+            .expect_err("malformed response is uncertain");
         assert_eq!(
-            parse_upload_acceptance_for_call(&http_json_response(200, br#"not-json"#))
-                .expect_err("malformed response is uncertain"),
-            UploadCallFailure::OutcomeUnknown
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "async_upload_response_parse");
+
+        let failure = parse_upload_acceptance_for_call(&http_json_response(
+            200,
+            br#"{"code":0,"data":{"requestId":"upload-request-1\nsecret"}}"#,
+        ))
+        .expect_err("invalid request id is uncertain");
         assert_eq!(
-            parse_upload_acceptance_for_call(&http_json_response(
-                200,
-                br#"{"code":0,"data":{"requestId":"upload-request-1\nsecret"}}"#,
-            ))
-            .expect_err("invalid request id is uncertain"),
-            UploadCallFailure::OutcomeUnknown
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "async_upload_request_id");
     }
 
     #[test]
@@ -3627,10 +3752,13 @@ mod tests {
             Some(&bytes),
             &HttpClient::test_only(),
         );
+        let failure = result.expect_err("drifted readback fails closed");
         assert_eq!(
-            result.expect_err("drifted readback fails closed"),
-            UploadCallFailure::OutcomeUnknown
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "temporary_storage_readback_validation");
+        assert_eq!(failure.http_status(), Some(200));
         server.join().expect("join drift fake server");
     }
 
@@ -3641,11 +3769,14 @@ mod tests {
             200,
             br#"{"code":1,"data":{"cloudUrl":"https://temporary.example.test/possibly-written.jpg"}}"#,
         );
+        let failure = parse_temporary_storage_acceptance_for_call(&business_failure, &hosts, false)
+            .expect_err("business failure cannot prove no temporary write");
         assert_eq!(
-            parse_temporary_storage_acceptance_for_call(&business_failure, &hosts, false)
-                .expect_err("business failure cannot prove no temporary write"),
-            UploadCallFailure::OutcomeUnknown
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "temporary_storage_response_code");
+        assert_eq!(failure.http_status(), Some(200));
 
         let bytes = b"reviewed-final-jpeg-bytes".to_vec();
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind non-2xx fake server");
@@ -3665,10 +3796,13 @@ mod tests {
             Some(&bytes),
             &HttpClient::test_only(),
         );
+        let failure = result.expect_err("non-2xx cannot prove no temporary write");
         assert_eq!(
-            result.expect_err("non-2xx cannot prove no temporary write"),
-            UploadCallFailure::OutcomeUnknown
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "temporary_storage_upload_response");
+        assert_eq!(failure.http_status(), Some(502));
         server.join().expect("join non-2xx fake server");
     }
 
@@ -3713,10 +3847,13 @@ mod tests {
             Some(&bytes),
             &HttpClient::test_only(),
         );
+        let failure = result.expect_err("async failure after temporary write is ambiguous");
         assert_eq!(
-            result.expect_err("async failure after temporary write is ambiguous"),
-            UploadCallFailure::OutcomeUnknown
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "async_upload_response_code");
+        assert_eq!(failure.http_status(), Some(200));
         server.join().expect("join async failure fake server");
     }
 
@@ -3729,11 +3866,13 @@ mod tests {
             br#"{"code":0,"data":{"cloudUrl":"https://temporary.example.test/reviewed.jpg"}}"#,
         );
 
+        let failure = parse_temporary_storage_acceptance_for_call(&response, &api_hosts, false)
+            .expect_err("temporary URL must not use the API allowlist");
         assert_eq!(
-            parse_temporary_storage_acceptance_for_call(&response, &api_hosts, false)
-                .expect_err("temporary URL must not use the API allowlist"),
-            UploadCallFailure::OutcomeUnknown
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
         );
+        assert_eq!(failure.stage(), "temporary_storage_url_validation");
         assert_eq!(
             parse_temporary_storage_acceptance_for_call(&response, &media_hosts, false)
                 .expect("temporary URL uses reviewed media allowlist")
@@ -3989,10 +4128,10 @@ mod tests {
         config.token = "token\r\nInjected: true".to_string();
         let result =
             request_async_upload_with(&config, &test_upload_claim(), &HttpClient::test_only());
-        assert_eq!(
-            result.expect_err("injected header fails"),
-            UploadCallFailure::Rejected
-        );
+        let failure = result.expect_err("injected header fails");
+        assert_eq!(failure.disposition(), UploadFailureDisposition::Rejected);
+        assert_eq!(failure.stage(), "async_upload_request");
+        assert!(!failure.request_may_have_been_sent());
     }
 
     #[test]
