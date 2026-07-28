@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.45](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.44...v0.2.45) (2026-07-28)
+
+
+### Bug Fixes
+
+* **qiwe:** expose sanitized upload failure stages ([649dd1f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/649dd1fc01e83f6550b8f1be0ed9ef37e5de0270))
+* **qiwe:** expose sanitized upload failure stages ([0b0b214](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0b0b2141c067b570121030a217f72a615cf4d34a))
+* **qiwe:** preserve ambiguity after bridge write ([3598fd8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3598fd850dc25272a7e19093f34f0c2de0f1ec8f))
+
 ## [0.2.44](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.43...v0.2.44) (2026-07-28)
 
 
