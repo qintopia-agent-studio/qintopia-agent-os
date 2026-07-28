@@ -38,6 +38,12 @@ qintopia-agent-os/
         artifact-manifest.json
         SHA256SUMS
         qintopia-message-sidecar.tar.gz
+      qintopia-message-sidecar-staging-linux-x86_64-gnu/
+        artifact-manifest.json
+        SHA256SUMS
+        qintopia-message-sidecar.tar.gz
+        huabaosi-image-generation-staging-smoke.sh
+        qiwe-image-send-staging-smoke.sh
   deploy-bundle/
     <commit-sha>/
       qintopia-agent-os-deploy-bundle/

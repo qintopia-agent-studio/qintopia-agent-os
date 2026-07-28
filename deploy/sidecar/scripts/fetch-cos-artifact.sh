@@ -27,8 +27,8 @@ Optional environment:
   TENCENT_COS_ENDPOINT       Optional COS endpoint, for example cos.accelerate.myqcloud.com.
   TENCENT_COS_SESSION_TOKEN  Temporary key token.
   QINTOPIA_SIDECAR_ARTIFACT_PROFILE
-                            huabaosi-production or qiwe-production. Defaults to
-                            huabaosi-production.
+                            huabaosi-production, qiwe-production, or combined-staging.
+                            Defaults to huabaosi-production.
   ARTIFACT_NAME              Defaults to the reviewed artifact name for the chosen profile.
   ARTIFACT_TARGET            Defaults to linux-x86_64-gnu.
   QINTOPIA_COS_ARTIFACT_TYPE Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
@@ -194,8 +194,12 @@ case "$artifact_type" in
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu}"
         expected_cargo_features='["qiwe-production-adapter"]'
         ;;
+      combined-staging)
+        artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-staging-linux-x86_64-gnu}"
+        expected_cargo_features='["huabaosi-staging-adapter","qiwe-staging-adapter"]'
+        ;;
       *)
-        echo "QINTOPIA_SIDECAR_ARTIFACT_PROFILE must be huabaosi-production or qiwe-production" >&2
+        echo "QINTOPIA_SIDECAR_ARTIFACT_PROFILE must be huabaosi-production, qiwe-production, or combined-staging" >&2
         exit 2
         ;;
     esac
@@ -239,6 +243,12 @@ case "$payload_mode" in
     exit 2
     ;;
 esac
+if [[ "$artifact_type" == "sidecar" && "$artifact_profile" == "combined-staging" ]]; then
+  payload_files+=(
+    huabaosi-image-generation-staging-smoke.sh
+    qiwe-image-send-staging-smoke.sh
+  )
+fi
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -381,6 +391,10 @@ fi
   test -f SHA256SUMS
   if [[ "$artifact_type" == "sidecar" ]]; then
     test -f qintopia-message-sidecar
+    if [[ "$artifact_profile" == "combined-staging" ]]; then
+      test -f huabaosi-image-generation-staging-smoke.sh
+      test -f qiwe-image-send-staging-smoke.sh
+    fi
   else
     test -f payload/deploy/sidecar/scripts/hermes/qintopia-context-mcp
     test -f payload/deploy/sidecar/scripts/render-systemd-units.sh
@@ -420,12 +434,48 @@ if artifact_type == "sidecar":
     expected_features = json.loads(
         os.environ.get("QINTOPIA_EXPECTED_CARGO_FEATURES", "null")
     )
-    if manifest_profile != expected_profile:
+    if expected_profile == "combined-staging":
+        if manifest_profile not in ("", "combined-staging"):
+            raise SystemExit(
+                f"artifact manifest profile mismatch: got {manifest_profile}, expected combined-staging"
+            )
+    elif manifest_profile != expected_profile:
         raise SystemExit(
             f"artifact manifest profile mismatch: got {manifest_profile}, expected {expected_profile}"
         )
     if manifest.get("validation", {}).get("cargo_features") != expected_features:
-        raise SystemExit("artifact manifest Cargo features are not approved for production")
+        if expected_profile == "huabaosi-production":
+            raise SystemExit("artifact manifest Cargo features are not approved for production")
+        raise SystemExit("artifact manifest Cargo features are not approved for the selected profile")
+    if expected_profile == "combined-staging":
+        validation = manifest.get("validation", {})
+        if validation.get("staging_only") is not True:
+            raise SystemExit("staging artifact must set staging_only=true")
+        if validation.get("production_eligible") is not False:
+            raise SystemExit("staging artifact must set production_eligible=false")
+        required = {
+            "artifact-manifest.json",
+            "qintopia-message-sidecar",
+            "qintopia-message-sidecar.tar.gz",
+            "huabaosi-image-generation-staging-smoke.sh",
+            "qiwe-image-send-staging-smoke.sh",
+        }
+        checksums = {}
+        with open("SHA256SUMS", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) != 2:
+                    raise SystemExit("SHA256SUMS entries must use exactly two fields")
+                checksums[parts[1]] = parts[0]
+        if set(checksums) != required:
+            raise SystemExit("SHA256SUMS entries must exactly match the combined staging allowlist")
+        manifest_files = {
+            item.get("path"): item.get("sha256")
+            for item in manifest.get("files", [])
+        }
+        for path in required - {"artifact-manifest.json"}:
+            if manifest_files.get(path) != checksums.get(path):
+                raise SystemExit(f"manifest checksum does not match SHA256SUMS for {path}")
 else:
     required_path = "qintopia-agent-os-deploy-bundle.tar.gz"
 
@@ -452,6 +502,9 @@ PY
     chmod 0755 qintopia-message-sidecar
     if [[ "$payload_mode" == "bundle" ]]; then
       chmod 0444 qintopia-message-sidecar.tar.gz
+    fi
+    if [[ "$artifact_profile" == "combined-staging" ]]; then
+      chmod 0555 huabaosi-image-generation-staging-smoke.sh qiwe-image-send-staging-smoke.sh
     fi
   else
     chmod 0444 qintopia-agent-os-deploy-bundle.tar.gz

@@ -4,9 +4,9 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh --sha <commit-sha> [--release-root <dir>]
+  deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh --sha <commit-sha> [--source <cos|github>] [--release-root <dir>]
 
-Downloads the staging-only sidecar GitHub Actions artifact, verifies its staging
+Downloads the staging-only sidecar artifact from COS or GitHub Actions, verifies its staging
 manifest and checksums, and installs it under the fixed immutable staging release root.
 
 Required environment:
@@ -20,9 +20,16 @@ Preferred GitHub App environment:
 Fallback environment:
   GITHUB_TOKEN  Token with read access to Actions artifacts for this private repo.
 
+COS source environment:
+  TENCENT_COS_BUCKET, TENCENT_COS_REGION
+  TENCENT_COS_AUTH_MODE=CvmRole and TENCENT_COS_CVM_ROLE_NAME, or
+  TENCENT_COS_SECRET_ID and TENCENT_COS_SECRET_KEY
+
 Optional environment:
   GITHUB_API_MAX_TIME       Defaults to 240 seconds.
   GITHUB_DOWNLOAD_MAX_TIME  Defaults to 900 seconds.
+  QINTOPIA_STAGING_SIDECAR_PROVISION_SOURCE  Defaults to github. Use cos for the
+                                             server-preferred distribution path.
 
 Test-only:
   QINTOPIA_STAGING_SIDECAR_PROVISION_TEST_MODE=1
@@ -33,6 +40,7 @@ USAGE
 sha=""
 release_root="/home/ubuntu/qintopia-agent-os-staging-releases"
 artifact_zip=""
+source="${QINTOPIA_STAGING_SIDECAR_PROVISION_SOURCE:-github}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -42,6 +50,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --release-root)
       release_root="${2:-}"
+      shift 2
+      ;;
+    --source)
+      source="${2:-}"
       shift 2
       ;;
     --artifact-zip)
@@ -63,6 +75,15 @@ done
 test_mode="${QINTOPIA_STAGING_SIDECAR_PROVISION_TEST_MODE:-0}"
 if [[ "$test_mode" != "0" && "$test_mode" != "1" ]]; then
   echo "QINTOPIA_STAGING_SIDECAR_PROVISION_TEST_MODE must be 0 or 1" >&2
+  exit 2
+fi
+
+if [[ "$source" != "github" && "$source" != "cos" ]]; then
+  echo "--source must be github or cos" >&2
+  exit 2
+fi
+if [[ "$test_mode" == "1" && "$source" != "github" ]]; then
+  echo "test mode supports only the GitHub artifact zip source" >&2
   exit 2
 fi
 
@@ -92,6 +113,7 @@ artifact_name="qintopia-message-sidecar-staging-linux-x86_64-gnu"
 artifact_target="linux-x86_64-gnu"
 github_api_max_time="${GITHUB_API_MAX_TIME:-240}"
 github_download_max_time="${GITHUB_DOWNLOAD_MAX_TIME:-900}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 validate_timeout_seconds() {
   local name="$1"
@@ -106,7 +128,7 @@ validate_timeout_seconds() {
   fi
 }
 
-if [[ "$test_mode" != "1" ]]; then
+if [[ "$test_mode" != "1" && "$source" == "github" ]]; then
   if [[ -n "${GITHUB_REPOSITORY:-}" && "$GITHUB_REPOSITORY" != "$repo" ]]; then
     echo "GITHUB_REPOSITORY override is not allowed for staging artifact provision" >&2
     exit 2
@@ -126,12 +148,14 @@ require_command() {
   fi
 }
 
-require_command jq
 require_command python3
 require_command sha256sum
 require_command tar
-require_command unzip
-if [[ "$test_mode" != "1" ]]; then
+if [[ "$test_mode" == "1" || "$source" == "github" ]]; then
+  require_command unzip
+fi
+if [[ "$test_mode" != "1" && "$source" == "github" ]]; then
+  require_command jq
   require_command curl
   require_command openssl
 fi
@@ -284,6 +308,14 @@ if [[ "$test_mode" == "1" ]]; then
   validate_artifact_zip "$artifact_zip"
   unzip -o -q "$artifact_zip" -d "$artifact_dir"
   run_id="local-test"
+elif [[ "$source" == "cos" ]]; then
+  QINTOPIA_SIDECAR_ARTIFACT_PROFILE=combined-staging \
+    ARTIFACT_NAME="$artifact_name" \
+    ARTIFACT_TARGET="$artifact_target" \
+    "$script_dir/fetch-cos-artifact.sh" \
+      --sha "$sha" \
+      --output-dir "$artifact_dir"
+  run_id="cos"
 else
   github_api_token="$(get_github_token)"
   curl_config="${tmp_dir}/github-curl.conf"

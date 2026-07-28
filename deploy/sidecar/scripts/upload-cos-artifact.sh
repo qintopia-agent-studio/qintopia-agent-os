@@ -28,12 +28,15 @@ Optional environment:
   COSCLI_ERR_RETRY_INTERVAL_SECONDS  Transfer retry interval. Defaults to 3.
   TENCENT_COS_ARTIFACT_PAYLOAD        Object payload mode: bundle or raw. Defaults to bundle.
   QINTOPIA_COS_ARTIFACT_TYPE          Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
+  QINTOPIA_SIDECAR_ARTIFACT_PROFILE    Sidecar profile: huabaosi-production, qiwe-production,
+                                      or combined-staging. Defaults to production Huabaosi.
 USAGE
 }
 
 artifact_dir=""
 sha=""
 artifact_type="${QINTOPIA_COS_ARTIFACT_TYPE:-sidecar}"
+artifact_profile="${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-huabaosi-production}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -212,6 +215,22 @@ case "$artifact_type" in
 esac
 
 artifact_name="$(basename "$artifact_dir")"
+if [[ "$artifact_type" == "sidecar" ]]; then
+  case "$artifact_profile" in
+    huabaosi-production|qiwe-production)
+      ;;
+    combined-staging)
+      if [[ "$artifact_name" != "qintopia-message-sidecar-staging-linux-x86_64-gnu" ]]; then
+        echo "combined-staging requires the reviewed staging artifact name" >&2
+        exit 2
+      fi
+      ;;
+    *)
+      echo "QINTOPIA_SIDECAR_ARTIFACT_PROFILE must be huabaosi-production, qiwe-production, or combined-staging" >&2
+      exit 2
+      ;;
+  esac
+fi
 if [[ -z "$sha" ]]; then
   sha="$(python3 - "$manifest_path" <<'PY'
 import json
@@ -342,6 +361,44 @@ case "$payload_mode" in
     exit 2
     ;;
 esac
+
+if [[ "$artifact_type" == "sidecar" && "$artifact_profile" == "combined-staging" ]]; then
+  payload_files+=(
+    huabaosi-image-generation-staging-smoke.sh
+    qiwe-image-send-staging-smoke.sh
+  )
+fi
+
+for file_name in "${payload_files[@]}"; do
+  if [[ ! -f "${artifact_dir}/${file_name}" ]]; then
+    echo "artifact file not found: ${artifact_dir}/${file_name}" >&2
+    exit 1
+  fi
+done
+
+if [[ "$artifact_type" == "sidecar" && "$artifact_profile" == "combined-staging" ]]; then
+  python3 - "$manifest_path" "$artifact_name" <<'PY'
+import json
+import sys
+
+manifest_path, expected_artifact = sys.argv[1:3]
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+
+if manifest.get("artifact_name") != expected_artifact:
+    raise SystemExit("staging artifact manifest name mismatch")
+validation = manifest.get("validation", {})
+if validation.get("cargo_features") != [
+    "huabaosi-staging-adapter",
+    "qiwe-staging-adapter",
+]:
+    raise SystemExit("staging artifact Cargo features are not approved")
+if validation.get("staging_only") is not True:
+    raise SystemExit("staging artifact must set staging_only=true")
+if validation.get("production_eligible") is not False:
+    raise SystemExit("staging artifact must set production_eligible=false")
+PY
+fi
 transfer_args=(
   --part-size "$(positive_int_env COSCLI_PART_SIZE_MB 4)"
   --thread-num "$(positive_int_env COSCLI_THREAD_NUM 8)"

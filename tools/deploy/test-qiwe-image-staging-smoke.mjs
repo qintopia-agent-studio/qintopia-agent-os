@@ -91,6 +91,24 @@ if [[ -n "\${QINTOPIA_HUABAOSI_IMAGE_API_KEY:-}" ]]; then
   echo "Huabaosi credential reached QiWe child process" >&2
   exit 24
 fi
+for key in \
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED \
+  QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL \
+  QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA \
+  QINTOPIA_DEPLOYED_COMMIT_SHA \
+  QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 \
+  QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN \
+  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS \
+  QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID \
+  QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS \
+  QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH \
+  QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION \
+  QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES; do
+  if [[ -z "\${!key:-}" ]]; then
+    echo "shared Feishu delivery configuration did not reach QiWe child process: \${key}" >&2
+    exit 25
+  fi
+done
 case "$1" in
   qiwe-image-send-staging-preflight)
     if IFS= read -r -t 1 unexpected_input; then
