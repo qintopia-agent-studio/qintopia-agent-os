@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.47](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.46...v0.2.47) (2026-07-28)
+
+
+### Bug Fixes
+
+* **deploy:** allow reviewed same-sha runtime profile switch ([8f000e9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8f000e96e1c1cd9ba813e7f8baeaabcc96e36e9b))
+* **deploy:** allow reviewed same-sha runtime profile switch ([4f05421](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4f0542141b6490cccea459a778044294659350b4))
+
 ## [0.2.46](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.45...v0.2.46) (2026-07-28)
 
 
