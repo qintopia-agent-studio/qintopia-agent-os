@@ -205,6 +205,21 @@ cp -a "$source_root/." "$output_dir/"
     0o755
   );
   writeFile(
+    path.join(fakeBin, "cp"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+destination="\${@: -1}"
+if [[ "\${FAIL_DURING_COMPANION_COPY:-0}" == "1" && "$destination" == "\${FAIL_DURING_COMPANION_COPY_DESTINATION:-}" ]]; then
+  mkdir -p "$destination"
+  printf '%s\n' 'partial companion fixture' > "$destination/partial-copy"
+  echo "simulated companion copy failure" >&2
+  exit 74
+fi
+/bin/cp "$@"
+`,
+    0o755
+  );
+  writeFile(
     path.join(fakeBin, "chown"),
     `#!/usr/bin/env bash
 set -euo pipefail
@@ -466,6 +481,41 @@ fi
     );
   }
   fs.rmSync(path.join(coscliOutput, "unexpected.txt"));
+
+  const failedDuringCompanionCopy = runPromotion(
+    writeRequest("deploy-20260719T060565Z-0123456789ab"),
+    {
+      extraEnv: {
+        FAIL_DURING_COMPANION_COPY: "1",
+        FAIL_DURING_COMPANION_COPY_DESTINATION: path.join(
+          companionRoot,
+          "qiwe-production"
+        ),
+      },
+    }
+  );
+  if (
+    failedDuringCompanionCopy.status === 0 ||
+    !failedDuringCompanionCopy.stderr.includes("simulated companion copy failure")
+  ) {
+    throw new Error(
+      `partial companion copy failure was not exercised\n${failedDuringCompanionCopy.stdout}\n${failedDuringCompanionCopy.stderr}`
+    );
+  }
+  if (!fs.readFileSync(manifestPath).equals(manifestBeforeFailedRepair)) {
+    throw new Error("failed companion copy did not restore the original manifest");
+  }
+  requireMode(manifestPath, 0o640);
+  if (fs.existsSync(companionRoot) || !fs.existsSync(coscliOutput)) {
+    throw new Error("failed companion copy left partial release state");
+  }
+  if (
+    fs
+      .readdirSync(releaseRoot)
+      .some((name) => name.startsWith(".existing-manifest-backup-"))
+  ) {
+    throw new Error("failed companion copy left a manifest backup");
+  }
 
   const failureMarker = path.join(tmpRoot, "failed-after-manifest-install");
   const failedAfterManifestInstall = runPromotion(

@@ -694,10 +694,10 @@ PY
       install -d -m 0755 "${release_dir}/sidecar-profiles"
       companion_parent_created=true
     fi
+    companion_install_active=true
     cp -a \
       "${staging_dir}/${companion_relative_dir}" \
       "${release_dir}/sidecar-profiles/${companion_runtime_artifact_profile}"
-    companion_install_active=true
   fi
 
   repair_existing_release_metadata "$release_dir" "$staging_dir"
