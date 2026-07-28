@@ -120,13 +120,14 @@ qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
 
 It is built only by the manually dispatched Artifacts workflow when
 `build_qiwe_sidecar=true`. Its manifest profile is `qiwe-production`, it compiles
-exactly `qiwe-production-adapter`, and it is deployable only when the production deploy
-request records `runtime_artifact_profile=qiwe-production`. It must never be mixed into
-the ordinary Huabaosi production artifact, and Huabaosi release/current observations
-must continue to fail closed if QiWe enablement is attempted through the wrong artifact.
-Publishing a normal GitHub Release does not deploy this artifact automatically; QiWe
-production enablement remains a separate reviewed `Deploy Production`
-`workflow_dispatch` follow-up after the artifact is already present in COS.
+exactly `qiwe-production-adapter` and `huabaosi-feishu-mirror-adapter`, and it is
+deployable only when the production deploy request records
+`runtime_artifact_profile=qiwe-production`. It must never be mixed into the ordinary
+Huabaosi production artifact, and Huabaosi release/current observations must continue to
+fail closed if QiWe enablement is attempted through the wrong artifact. Publishing a
+normal GitHub Release does not deploy this artifact automatically; QiWe production
+enablement remains a separate reviewed `Deploy Production` `workflow_dispatch` follow-up
+after the artifact is already present in COS.
 
 The `qiwe-sidecar-artifact` job uploads the new artifact first, then runs
 `pnpm artifact:prune:sidecar:qiwe-production` with `actions: write` permission to delete

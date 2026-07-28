@@ -133,7 +133,10 @@ if manifest.get("commit_sha") != release_sha:
 validation = manifest.get("validation", {})
 if validation.get("artifact_profile") != "qiwe-production":
     raise SystemExit(1)
-if validation.get("cargo_features") != ["qiwe-production-adapter"]:
+if validation.get("cargo_features") != [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+]:
     raise SystemExit(1)
 PY
   then

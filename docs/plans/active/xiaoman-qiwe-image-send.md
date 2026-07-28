@@ -248,8 +248,8 @@ immutable `release/current` binary and fixed production env file, and it must no
 the observation may prove only the disabled QiWe worker and callback-bridge state. It
 must fail closed if either QiWe production enable flag is `1`; an enabled state requires
 a separate reviewed QiWe production artifact whose manifest carries exactly
-`qiwe-production-adapter`, and it must never be made possible by adding that feature to
-the Huabaosi artifact.
+`qiwe-production-adapter` plus `huabaosi-feishu-mirror-adapter`, and it must never be
+made possible by adding either feature to the Huabaosi artifact.
 
 Production activation is guarded rather than automatic. It requires the persistent
 enablement flag, exact production owner phrase, canonical production database URL hash,

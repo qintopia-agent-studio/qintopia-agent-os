@@ -19,7 +19,7 @@ const targetTriple = resolveApprovedTarget();
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactProfile = "qiwe-production";
 const artifactName = `${binaryName}-${artifactProfile}-${targetTriple}`;
-const cargoFeatures = ["qiwe-production-adapter"];
+const cargoFeatures = ["qiwe-production-adapter", "huabaosi-feishu-mirror-adapter"];
 const artifactDir = resolveContainedArtifactDir(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,

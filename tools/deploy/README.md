@@ -150,8 +150,9 @@ pnpm artifact:sidecar:qiwe-production
 
 This writes
 `dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` with
-manifest profile `qiwe-production` and exactly `qiwe-production-adapter`. Use it only
-with deploy requests whose `runtime_artifact_profile=qiwe-production`.
+manifest profile `qiwe-production` and exactly `qiwe-production-adapter` plus
+`huabaosi-feishu-mirror-adapter`. Use it only with deploy requests whose
+`runtime_artifact_profile=qiwe-production`.
 
 The CI artifact job uses Rust 1.96.0 to match `runtime/sidecar/Cargo.toml`
 `rust-version`. Server deployment downloads the uploaded artifact and does not require

@@ -283,8 +283,7 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
   if (
     artifactFetchScript.includes(
       '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
-    ) ||
-    artifactFetchScript.includes('"qiwe-production-adapter",')
+    )
   ) {
     addError(
       "deploy/sidecar/scripts/fetch-ci-artifact.sh: Huabaosi production artifact validation must not accept qiwe-production-adapter"
@@ -478,8 +477,7 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
   if (
     cosFetchScript.includes(
       '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
-    ) ||
-    cosFetchScript.includes('"qiwe-production-adapter",')
+    )
   ) {
     addError(
       "deploy/sidecar/scripts/fetch-cos-artifact.sh: Huabaosi production artifact validation must not accept qiwe-production-adapter"

@@ -75,7 +75,7 @@ case "$artifact_profile" in
     ;;
   qiwe-production)
     artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu}"
-    expected_cargo_features='["qiwe-production-adapter"]'
+    expected_cargo_features='["qiwe-production-adapter","huabaosi-feishu-mirror-adapter"]'
     ;;
   *)
     echo "QINTOPIA_SIDECAR_ARTIFACT_PROFILE must be huabaosi-production or qiwe-production" >&2

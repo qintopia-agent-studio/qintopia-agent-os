@@ -41,7 +41,10 @@ try {
     "qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu"
   );
   assert.equal(manifest.validation.artifact_profile, "qiwe-production");
-  assert.deepEqual(manifest.validation.cargo_features, ["qiwe-production-adapter"]);
+  assert.deepEqual(manifest.validation.cargo_features, [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ]);
   assert.equal(
     manifest.files.find((entry) => entry.path === "qintopia-message-sidecar")?.mode,
     "0755"
@@ -153,8 +156,8 @@ function createFixtureRepo() {
       "  process.exit(1);",
       "}",
       "const featureIndex = args.indexOf('--features');",
-      "if (featureIndex === -1 || args[featureIndex + 1] !== 'qiwe-production-adapter') {",
-      '  process.stderr.write("builder must compile exactly qiwe-production-adapter\\n");',
+      "if (featureIndex === -1 || args[featureIndex + 1] !== 'qiwe-production-adapter,huabaosi-feishu-mirror-adapter') {",
+      '  process.stderr.write("builder must compile exactly the QiWe production adapter and Feishu mirror adapter\\n");',
       "  process.exit(1);",
       "}",
       "const binaryPath = path.join(process.cwd(), 'runtime', 'sidecar', 'target', 'release', 'qintopia-message-sidecar');",

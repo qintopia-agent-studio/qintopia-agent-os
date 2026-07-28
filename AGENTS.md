@@ -150,14 +150,15 @@
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256`; never weaken this to a
   format-only hash check. It must also prove `release/current` already resolves to the
   separate reviewed `qiwe-production` artifact with exactly `qiwe-production-adapter`
-  before preflight or timer enablement. After preflight and timer enablement, activation
-  must rerun the release-local QiWe production observation with `EXPECTED_STATE=enabled`
-  so the immutable `release/current` artifact profile and timer state are re-verified at
-  the reviewed boundary; if that final observation fails, activation must immediately
-  disable the timer, stop/reset the worker service, and exit non-zero. Activation and
-  rollback must read the fixed reviewed `/etc/qintopia/message-sidecar.env` and must not
-  accept env-file or systemctl command overrides from the caller; use a fixed system
-  PATH and absolute systemctl path:
+  and `huabaosi-feishu-mirror-adapter` before preflight or timer enablement. After
+  preflight and timer enablement, activation must rerun the release-local QiWe
+  production observation with `EXPECTED_STATE=enabled` so the immutable
+  `release/current` artifact profile and timer state are re-verified at the reviewed
+  boundary; if that final observation fails, activation must immediately disable the
+  timer, stop/reset the worker service, and exit non-zero. Activation and rollback must
+  read the fixed reviewed `/etc/qintopia/message-sidecar.env` and must not accept
+  env-file or systemctl command overrides from the caller; use a fixed system PATH and
+  absolute systemctl path:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`
 - QiWe image-send immediate timer rollback:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ROLLBACK=approved-production-qiwe-image-send-rollback deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh`
@@ -350,7 +351,7 @@ Use `rg` and `rg --files` for search.
 - Any script expected to exist under `/home/ubuntu/qintopia-agent-os-releases/current`
   after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
   guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does
-  not put it on `paxon-server`.
+  not put it on the production release root.
 - Production COS fetch must leave `artifact-manifest.json`, `SHA256SUMS`, and packaged
   archives mode `0444`, while the sidecar binary remains `0755`. These files are
   immutable non-secret release evidence needed by unprivileged release-local
@@ -1055,16 +1056,17 @@ Use `rg` and `rg --files` for search.
   and fail disabled/default release checks when any QiWe live adapter is present. It
   must not open network or database connections, emit tokens, device/group ids, media
   URLs, file credentials, or message identifiers, write Feishu, or send externally. The
-  production artifact may compile only the reviewed `qiwe-production-adapter`; it must
-  still fail closed unless the dedicated `qiwe-image-send-production-preflight`
-  validates the exact owner approval phrase, actual database URL hash, Feishu delivery
-  config, live feature bridge, enablement flag, and allowlisted configuration before
-  timer activation. Final request construction must recheck the target group allowlist,
-  response parsing must fail closed unless both `code=0` and `isSendSuccess=1`, and this
-  disabled-state preflight must fail when the send-enable flag is `1`. All future
-  outbound header values must reject every control character before socket connection.
-  Its `missing_configuration` field follows the same public-name-only rule as the image
-  preflight and must never include enable flags or configuration values.
+  production artifact may compile only the reviewed `qiwe-production-adapter` and
+  `huabaosi-feishu-mirror-adapter` pair; it must still fail closed unless the dedicated
+  `qiwe-image-send-production-preflight` validates the exact owner approval phrase,
+  actual database URL hash, Feishu delivery config, live feature bridge, enablement
+  flag, and allowlisted configuration before timer activation. Final request
+  construction must recheck the target group allowlist, response parsing must fail
+  closed unless both `code=0` and `isSendSuccess=1`, and this disabled-state preflight
+  must fail when the send-enable flag is `1`. All future outbound header values must
+  reject every control character before socket connection. Its `missing_configuration`
+  field follows the same public-name-only rule as the image preflight and must never
+  include enable flags or configuration values.
 - `xiaoman-activity-production-preflight-smoke.sh` is a read-only composition of Xiaoman
   timer observation smokes, shared evidence/visual timer observation, Xiaoman downstream
   evidence/visual preview, and the group send-ready timer observation. It must not set

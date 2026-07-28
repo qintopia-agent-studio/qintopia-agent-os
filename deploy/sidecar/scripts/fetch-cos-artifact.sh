@@ -192,7 +192,7 @@ case "$artifact_type" in
         ;;
       qiwe-production)
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu}"
-        expected_cargo_features='["qiwe-production-adapter"]'
+        expected_cargo_features='["qiwe-production-adapter","huabaosi-feishu-mirror-adapter"]'
         ;;
       combined-staging)
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-staging-linux-x86_64-gnu}"

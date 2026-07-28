@@ -111,7 +111,10 @@ if artifact_profile == "huabaosi-production":
         "huabaosi-feishu-mirror-adapter",
     ]
 elif artifact_profile == "qiwe-production":
-    expected_features = ["qiwe-production-adapter"]
+    expected_features = [
+        "qiwe-production-adapter",
+        "huabaosi-feishu-mirror-adapter",
+    ]
 else:
     raise SystemExit(1)
 if cargo_features != expected_features:

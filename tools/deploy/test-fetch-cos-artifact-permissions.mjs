@@ -295,7 +295,7 @@ exec ${JSON.stringify(systemTar)} "$@"
         ],
         validation: {
           artifact_profile: "qiwe-production",
-          cargo_features: ["qiwe-production-adapter"],
+          cargo_features: ["qiwe-production-adapter", "huabaosi-feishu-mirror-adapter"],
         },
       },
       null,

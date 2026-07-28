@@ -263,7 +263,10 @@ exit 70
     throw new Error("enabled observation accepted the Huabaosi production artifact");
   }
 
-  writeManifest("qiwe-production", ["qiwe-production-adapter"]);
+  writeManifest("qiwe-production", [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ]);
   const enabledQiwe = run({
     QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
     FAKE_QIWE_TIMER_ENABLED: "1",
