@@ -22,8 +22,8 @@ deployment docs.
 - [production-deploy-runner.md](production-deploy-runner.md): GitHub Release-triggered
   production deploy requests, COS pull runner, release promotion, and rollback model.
 - [xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md):
-  owner-operated Huabaosi canary, QiWe follow-up deploy, real-activity retention, and
-  final completion-manifest sequence. The same runbook also includes the reviewed
+  owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,
+  and final completion-manifest sequence. The same runbook also includes the reviewed
   one-shot completion finalizer for the last retained-evidence step.
   <p>reviewed one-shot completion finalizer</p>
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):

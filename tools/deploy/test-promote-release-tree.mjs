@@ -44,7 +44,7 @@ const writeChecksums = (directory, names) => {
 };
 
 const writeRequest = (runtimeArtifactProfile = "huabaosi-production") => {
-  const requestPath = path.join(tmpRoot, "request.json");
+  const requestPath = path.join(tmpRoot, `${runtimeArtifactProfile}-request.json`);
   writeFile(
     requestPath,
     `${JSON.stringify(
@@ -113,6 +113,32 @@ try {
     "artifact-manifest.json",
   ]);
 
+  const qiweSidecarFixture = path.join(fixtureRoot, "sidecar-qiwe");
+  writeFile(
+    path.join(qiweSidecarFixture, "qintopia-message-sidecar"),
+    "#!/usr/bin/env bash\n# qiwe companion\nexit 0\n",
+    0o755
+  );
+  writeFile(
+    path.join(qiweSidecarFixture, "qintopia-message-sidecar.tar.gz"),
+    "qiwe sidecar archive fixture\n",
+    0o444
+  );
+  writeFile(
+    path.join(qiweSidecarFixture, "artifact-manifest.json"),
+    `${JSON.stringify({
+      commit_sha: sha,
+      artifact_name: "qiwe-sidecar-fixture",
+      validation: { artifact_profile: "qiwe-production" },
+    })}\n`,
+    0o444
+  );
+  writeChecksums(qiweSidecarFixture, [
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+    "artifact-manifest.json",
+  ]);
+
   const deployFixture = path.join(fixtureRoot, "deploy-bundle");
   writeFile(
     path.join(deployFixture, "qintopia-agent-os-deploy-bundle.tar.gz"),
@@ -155,7 +181,11 @@ chmod 0755 "$output_dir"
 if [[ "$artifact_type" == "sidecar" ]]; then
   printf '%s\n' "\${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-}" >> "$sidecar_profile_log"
 fi
-cp -a "$FIXTURE_ROOT/$artifact_type/." "$output_dir/"
+source_root="$FIXTURE_ROOT/$artifact_type"
+if [[ "$artifact_type" == "sidecar" && "\${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-}" == "qiwe-production" ]]; then
+  source_root="$FIXTURE_ROOT/sidecar-qiwe"
+fi
+cp -a "$source_root/." "$output_dir/"
 `,
     0o755
   );
@@ -182,10 +212,43 @@ exec /usr/bin/id "$@"
   const promotedManifest = JSON.parse(
     fs.readFileSync(path.join(validRoot, sha, "manifest.json"), "utf8")
   );
+  const promotedManifestMode =
+    fs.statSync(path.join(validRoot, sha, "manifest.json")).mode & 0o777;
+  if (promotedManifestMode !== 0o444) {
+    throw new Error(
+      `promoted manifest mode ${promotedManifestMode.toString(8)} != 444`
+    );
+  }
   if (promotedManifest.runtime_artifact_profile !== "huabaosi-production") {
     throw new Error(
       "promoted manifest did not retain huabaosi runtime_artifact_profile"
     );
+  }
+  if (
+    promotedManifest.companion_runtime_artifact_profiles?.join(",") !==
+    "qiwe-production"
+  ) {
+    throw new Error("promoted manifest did not record the QiWe companion runtime");
+  }
+  const primaryBinary = fs.readFileSync(
+    path.join(validRoot, sha, "sidecar", "qintopia-message-sidecar"),
+    "utf8"
+  );
+  const companionBinary = fs.readFileSync(
+    path.join(
+      validRoot,
+      sha,
+      "sidecar-profiles",
+      "qiwe-production",
+      "qintopia-message-sidecar"
+    ),
+    "utf8"
+  );
+  if (
+    !primaryBinary.includes("exit 0") ||
+    !companionBinary.includes("qiwe companion")
+  ) {
+    throw new Error("promotion did not keep independent Huabaosi and QiWe binaries");
   }
 
   const releaseDir = fs.realpathSync(path.join(validRoot, "current"));
@@ -205,26 +268,22 @@ exec /usr/bin/id "$@"
     throw new Error("valid same-SHA reuse changed current");
   }
 
-  const qiweRoot = path.join(tmpRoot, "qiwe-releases");
   const qiweRequestFile = writeRequest("qiwe-production");
-  const qiwePromoted = runPromotion(qiweRequestFile, qiweRoot);
-  if (qiwePromoted.status !== 0) {
-    throw new Error(`qiwe promotion failed: ${qiwePromoted.stderr}`);
-  }
-  const qiweManifest = JSON.parse(
-    fs.readFileSync(path.join(qiweRoot, sha, "manifest.json"), "utf8")
+  expectFailure(
+    runPromotion(qiweRequestFile, path.join(tmpRoot, "qiwe-primary-releases")),
+    "QiWe is installed as a companion runtime"
   );
-  if (qiweManifest.runtime_artifact_profile !== "qiwe-production") {
-    throw new Error("qiwe promotion did not retain runtime_artifact_profile");
-  }
   const sidecarProfileLog = fs
     .readFileSync(path.join(fixtureRoot, "sidecar-profile.log"), "utf8")
     .trim()
     .split("\n")
     .filter(Boolean);
-  if (sidecarProfileLog.at(-1) !== "qiwe-production") {
+  if (
+    !sidecarProfileLog.includes("huabaosi-production") ||
+    !sidecarProfileLog.includes("qiwe-production")
+  ) {
     throw new Error(
-      `qiwe promotion did not pass QINTOPIA_SIDECAR_ARTIFACT_PROFILE, got ${JSON.stringify(
+      `promotion did not fetch both reviewed artifact profiles, got ${JSON.stringify(
         sidecarProfileLog
       )}`
     );

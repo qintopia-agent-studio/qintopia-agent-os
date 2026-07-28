@@ -29,6 +29,10 @@ try {
     recursive: true,
   });
   fs.mkdirSync(scriptsDir, { recursive: true });
+  fs.mkdirSync(path.join(releaseDir, "deploy", "runner"), { recursive: true });
+  fs.mkdirSync(path.join(releaseDir, "sidecar-profiles", "qiwe-production"), {
+    recursive: true,
+  });
   fs.copyFileSync(
     path.join(repoRoot, "deploy", "sidecar", "scripts", "render-systemd-units.sh"),
     path.join(scriptsDir, "render-systemd-units.sh")
@@ -38,6 +42,24 @@ try {
     path.join(releaseDir, "sidecar", "qintopia-message-sidecar"),
     "#!/usr/bin/env bash\nexit 0\n"
   );
+  writeExecutable(
+    path.join(
+      releaseDir,
+      "sidecar-profiles",
+      "qiwe-production",
+      "qintopia-message-sidecar"
+    ),
+    "#!/usr/bin/env bash\nexit 0\n"
+  );
+  for (const unitName of [
+    "qintopia-agent-os-deploy-runner.service",
+    "qintopia-agent-os-deploy-runner.timer",
+  ]) {
+    fs.copyFileSync(
+      path.join(repoRoot, "deploy", "runner", unitName),
+      path.join(releaseDir, "deploy", "runner", unitName)
+    );
+  }
   fs.mkdirSync(releaseRoot, { recursive: true });
   fs.symlinkSync(releaseDir, path.join(releaseRoot, "current"));
   const resolvedReleaseDir = fs.realpathSync(releaseDir);
@@ -129,6 +151,15 @@ esac
     "qintopia-agentos-qiwe-image-send-worker.service",
   ]) {
     const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
+    const qiweBin = `${resolvedReleaseDir}/sidecar-profiles/qiwe-production/qintopia-message-sidecar`;
+    if (!unit.includes(`ExecStart=${qiweBin}`)) {
+      throw new Error(`${unitName} must execute the QiWe companion binary`);
+    }
+    if (
+      unit.includes(`ExecStart=${resolvedReleaseDir}/sidecar/qintopia-message-sidecar`)
+    ) {
+      throw new Error(`${unitName} must not execute the Huabaosi binary`);
+    }
     for (const forbidden of [
       "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA",
       "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
@@ -137,6 +168,22 @@ esac
         throw new Error(`${unitName} must not inherit ${forbidden}`);
       }
     }
+  }
+  const runnerUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agent-os-deploy-runner.service"),
+    "utf8"
+  );
+  for (const required of [
+    "StateDirectory=qintopia-agent-os-deploy",
+    "StateDirectoryMode=0700",
+    "WorkingDirectory=/var/lib/qintopia-agent-os-deploy",
+  ]) {
+    if (!runnerUnit.includes(required)) {
+      throw new Error(`deploy runner unit is missing ${required}`);
+    }
+  }
+  if (!fs.existsSync(path.join(unitDir, "qintopia-agent-os-deploy-runner.timer"))) {
+    throw new Error("deploy runner timer was not installed from the release");
   }
   for (const timer of [
     "qintopia-agentos-xiaoman-activity-signal-worker.timer",

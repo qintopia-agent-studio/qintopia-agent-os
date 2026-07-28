@@ -190,13 +190,14 @@ The artifact families are distinct:
   `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`
 - `build_deploy_bundle` builds `qintopia-agent-os-deploy-bundle`
 
-Production deploy routing is also distinct:
+Production deploy routing keeps the artifacts distinct inside one release:
 
-- `release.published` remains the ordinary Huabaosi production deploy path and must use
-  `runtime_artifact_profile=huabaosi-production`
-- the independent QiWe production artifact is a separate reviewed follow-up and must be
-  deployed only through `Deploy Production` `workflow_dispatch` with
-  `runtime_artifact_profile=qiwe-production` after its COS upload exists
+- `release.published` builds, uploads, prunes, and read-validates both production
+  artifacts in the existing workflow jobs
+- the signed request keeps `runtime_artifact_profile=huabaosi-production` as the primary
+  runtime, while promotion installs the reviewed `qiwe-production` artifact at
+  `sidecar-profiles/qiwe-production`
+- the request profile is not a global Huabaosi/QiWe switch
 
 Deployment must still use only an artifact from a successful workflow run for the
 approved commit SHA, and the paired CI `check` job must have passed for the same commit.

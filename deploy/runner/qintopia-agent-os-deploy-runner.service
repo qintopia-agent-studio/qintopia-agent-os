@@ -7,7 +7,9 @@ Wants=network-online.target
 Type=oneshot
 User=root
 Group=root
-WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
+StateDirectory=qintopia-agent-os-deploy
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/qintopia-agent-os-deploy
 Environment=QINTOPIA_COS_ENV_FILE=/etc/qintopia/cos-artifacts.env
 Environment=QINTOPIA_DEPLOY_RUNNER_STATE_DIR=/var/lib/qintopia-agent-os-deploy
 ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/deploy/runner/poll-deploy-requests.sh

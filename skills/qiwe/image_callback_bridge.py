@@ -23,6 +23,14 @@ PROCESSOR_MODE_PRODUCTION = "production"
 STAGING_RELEASES_ROOT = Path("/home/ubuntu/qintopia-agent-os-staging-releases")
 PRODUCTION_RELEASES_ROOT = Path("/home/ubuntu/qintopia-agent-os-releases")
 PRODUCTION_RELEASE_CURRENT_DIR = PRODUCTION_RELEASES_ROOT / "current"
+PRODUCTION_PROCESSOR_RELATIVE_PATH = (
+    Path("sidecar-profiles") / "qiwe-production" / PROCESSOR_BASENAME
+)
+PRODUCTION_ARTIFACT_PROFILE = "qiwe-production"
+PRODUCTION_ARTIFACT_FEATURES = [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+]
 STAGING_APPROVAL = "approved-staging-qiwe-image-send"
 PRODUCTION_APPROVAL = "approved-production-qiwe-image-send"
 COMMON_PROCESSOR_ENV_ALLOWLIST = (
@@ -164,6 +172,12 @@ class QiWeImageCallbackBridge:
             processor_bin, processor_root, processor_sha256, processor_mode
         )
         self.processor_sha256 = processor_sha256
+        if processor_mode == PROCESSOR_MODE_PRODUCTION:
+            release_sha = PRODUCTION_RELEASE_CURRENT_DIR.resolve(strict=True).name
+            self.processor_env["QINTOPIA_DEPLOYED_COMMIT_SHA"] = release_sha
+            self.processor_env[
+                "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA"
+            ] = release_sha
 
     @classmethod
     def from_environment(
@@ -195,20 +209,27 @@ class QiWeImageCallbackBridge:
                     "image_callback_processor_mode", PROCESSOR_MODE_STAGING
                 )
             )
+            processor_bin = str(
+                os.getenv("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN")
+                or extra.get("image_callback_processor_bin", "")
+            )
+            processor_root = os.getenv(
+                "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT"
+            ) or str(extra.get("image_callback_processor_root", ""))
+            processor_sha256 = os.getenv(
+                "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256"
+            ) or str(extra.get("image_callback_processor_sha256", ""))
+            if enabled and processor_mode == PROCESSOR_MODE_PRODUCTION:
+                (
+                    processor_bin,
+                    processor_root,
+                    processor_sha256,
+                ) = _production_processor_identity()
             return cls(
                 enabled=enabled,
-                processor_bin=str(
-                    os.getenv("QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN")
-                    or extra.get("image_callback_processor_bin", "")
-                ),
-                processor_root=os.getenv(
-                    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT"
-                )
-                or str(extra.get("image_callback_processor_root", "")),
-                processor_sha256=os.getenv(
-                    "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_SHA256"
-                )
-                or str(extra.get("image_callback_processor_sha256", "")),
+                processor_bin=processor_bin,
+                processor_root=processor_root,
+                processor_sha256=processor_sha256,
                 processor_mode=processor_mode,
                 timeout_seconds=timeout_seconds,
                 staging_approval=os.getenv(
@@ -452,35 +473,141 @@ def _validated_production_processor_path(
         resolved_current = PRODUCTION_RELEASE_CURRENT_DIR.resolve(strict=True)
         resolved = candidate.resolve(strict=True)
         resolved_root = root.resolve(strict=True)
-        resolved_sidecar = candidate.parent.resolve(strict=True)
+        resolved_companion = candidate.parent.resolve(strict=True)
+        resolved_profiles = candidate.parent.parent.resolve(strict=True)
     except OSError as exc:
         raise ValueError("callback processor path does not exist") from exc
     if (
         root != PRODUCTION_RELEASE_CURRENT_DIR
         or candidate
-        != PRODUCTION_RELEASE_CURRENT_DIR / "sidecar" / PROCESSOR_BASENAME
+        != PRODUCTION_RELEASE_CURRENT_DIR / PRODUCTION_PROCESSOR_RELATIVE_PATH
         or not PRODUCTION_RELEASE_CURRENT_DIR.is_symlink()
         or len(resolved_current.name) != 40
         or any(char not in "0123456789abcdef" for char in resolved_current.name)
         or resolved_current.parent != resolved_releases_root
         or resolved_root != resolved_current
-        or resolved_sidecar.name != "sidecar"
-        or resolved_sidecar.parent != resolved_current
-        or resolved.parent != resolved_sidecar
+        or resolved_profiles.name != "sidecar-profiles"
+        or resolved_profiles.parent != resolved_current
+        or resolved_companion.name != PRODUCTION_ARTIFACT_PROFILE
+        or resolved_companion.parent != resolved_profiles
+        or resolved.parent != resolved_companion
         or resolved
-        != resolved_current / "sidecar" / PROCESSOR_BASENAME
+        != resolved_current / PRODUCTION_PROCESSOR_RELATIVE_PATH
         or candidate.is_symlink()
         or candidate.parent.is_symlink()
+        or candidate.parent.parent.is_symlink()
         or PRODUCTION_RELEASES_ROOT.is_symlink()
         or not resolved.is_file()
         or not os.access(resolved, os.X_OK)
     ):
         raise ValueError("callback processor must be the production release/current executable")
     _validate_processor_path_chain(
-        resolved_releases_root, resolved_current, resolved_sidecar, resolved
+        resolved_releases_root,
+        resolved_current,
+        resolved_profiles,
+        resolved_companion,
+        resolved,
     )
+    artifact_sha256 = _production_artifact_binary_sha256(resolved_current)
+    if artifact_sha256 != expected_sha256:
+        raise ValueError("callback processor SHA-256 does not match the reviewed artifact")
     _validate_processor_digest(resolved, expected_sha256)
     return str(candidate), str(root)
+
+
+def _production_processor_identity() -> tuple[str, str, str]:
+    try:
+        resolved_releases_root = PRODUCTION_RELEASES_ROOT.resolve(strict=True)
+        resolved_current = PRODUCTION_RELEASE_CURRENT_DIR.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("production release/current does not exist") from exc
+    if (
+        PRODUCTION_RELEASES_ROOT.is_symlink()
+        or not PRODUCTION_RELEASE_CURRENT_DIR.is_symlink()
+        or resolved_current.parent != resolved_releases_root
+        or len(resolved_current.name) != 40
+        or any(char not in "0123456789abcdef" for char in resolved_current.name)
+    ):
+        raise ValueError("production release/current is invalid")
+    expected_sha256 = _production_artifact_binary_sha256(resolved_current)
+    return (
+        str(PRODUCTION_RELEASE_CURRENT_DIR / PRODUCTION_PROCESSOR_RELATIVE_PATH),
+        str(PRODUCTION_RELEASE_CURRENT_DIR),
+        expected_sha256,
+    )
+
+
+def _production_artifact_binary_sha256(resolved_release: Path) -> str:
+    artifact_dir = resolved_release / "sidecar-profiles" / PRODUCTION_ARTIFACT_PROFILE
+    processor = artifact_dir / PROCESSOR_BASENAME
+    manifest_path = artifact_dir / "artifact-manifest.json"
+    checksums_path = artifact_dir / "SHA256SUMS"
+    for path in (artifact_dir, processor, manifest_path, checksums_path):
+        if path.is_symlink():
+            raise ValueError("production QiWe artifact path must not be a symlink")
+    if (
+        not artifact_dir.is_dir()
+        or not processor.is_file()
+        or not manifest_path.is_file()
+        or not checksums_path.is_file()
+    ):
+        raise ValueError("production QiWe artifact is incomplete")
+    _validate_processor_path_chain(
+        artifact_dir, processor, manifest_path, checksums_path
+    )
+    if manifest_path.stat().st_size > 1024 * 1024:
+        raise ValueError("production QiWe artifact manifest is too large")
+    if checksums_path.stat().st_size > 64 * 1024:
+        raise ValueError("production QiWe artifact checksums are too large")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("production QiWe artifact manifest is invalid") from exc
+    if not isinstance(manifest, dict) or manifest.get("commit_sha") != resolved_release.name:
+        raise ValueError("production QiWe artifact manifest release is invalid")
+    validation = manifest.get("validation")
+    if (
+        not isinstance(validation, dict)
+        or validation.get("artifact_profile") != PRODUCTION_ARTIFACT_PROFILE
+        or validation.get("cargo_features") != PRODUCTION_ARTIFACT_FEATURES
+    ):
+        raise ValueError("production QiWe artifact profile is invalid")
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise ValueError("production QiWe artifact manifest files are invalid")
+    processor_entries = [
+        entry
+        for entry in files
+        if isinstance(entry, dict) and entry.get("path") == PROCESSOR_BASENAME
+    ]
+    if len(processor_entries) != 1:
+        raise ValueError("production QiWe artifact binary identity is invalid")
+    expected_sha256 = processor_entries[0].get("sha256")
+    if (
+        not isinstance(expected_sha256, str)
+        or not _is_canonical_sha256(expected_sha256)
+        or processor_entries[0].get("mode") != "0755"
+    ):
+        raise ValueError("production QiWe artifact binary metadata is invalid")
+    try:
+        checksum_lines = checksums_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError("production QiWe artifact checksums are invalid") from exc
+    checksums: dict[str, str] = {}
+    for line in checksum_lines:
+        if len(line) < 67 or line[64:66] != "  ":
+            raise ValueError("production QiWe artifact checksums are invalid")
+        digest, filename = line[:64], line[66:]
+        if (
+            not _is_canonical_sha256(digest)
+            or not filename
+            or filename in checksums
+        ):
+            raise ValueError("production QiWe artifact checksums are invalid")
+        checksums[filename] = digest
+    if checksums.get(PROCESSOR_BASENAME) != expected_sha256:
+        raise ValueError("production QiWe artifact checksum does not match manifest")
+    return expected_sha256
 
 
 def _validate_processor_path_chain(*paths: Path) -> None:

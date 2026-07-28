@@ -5,6 +5,7 @@ TARGET_SHA="${QINTOPIA_M9_TARGET_SHA:-m9-preview}"
 MONOREPO_DIR="${QINTOPIA_MONOREPO_DIR:-/home/ubuntu/qintopia-agent-os-monorepo}"
 ARTIFACT_ROOT="${QINTOPIA_ARTIFACT_ROOT:-/home/ubuntu/qintopia-agent-os-artifacts}"
 ARTIFACT_DIR="${QINTOPIA_ARTIFACT_DIR:-}"
+QIWE_ARTIFACT_DIR="${QINTOPIA_QIWE_ARTIFACT_DIR:-}"
 ENV_FILE="${QINTOPIA_SIDECAR_ENV_FILE:-/etc/qintopia/message-sidecar.env}"
 IDENTITY_ENV_FILE="${QINTOPIA_QIWE_ENV_FILE:-/home/ubuntu/.hermes/profiles/erhua/.env}"
 MIGRATIONS_DIR="${QINTOPIA_SIDECAR_MIGRATIONS_DIR:-${MONOREPO_DIR}/runtime/postgres/migrations}"
@@ -24,6 +25,8 @@ Options:
   --target-sha <sha>        Approved monorepo commit SHA for artifact path.
   --monorepo-dir <path>     Server monorepo checkout path.
   --artifact-dir <path>     Verified CI artifact directory.
+  --qiwe-artifact-dir <path>
+                            Verified QiWe companion artifact directory.
   --artifact-root <path>    Artifact root used with --target-sha.
   --env-file <path>         Server sidecar environment file.
   --identity-env-file <path>
@@ -52,6 +55,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --artifact-dir)
       ARTIFACT_DIR="${2:-}"
+      shift 2
+      ;;
+    --qiwe-artifact-dir)
+      QIWE_ARTIFACT_DIR="${2:-}"
       shift 2
       ;;
     --artifact-root)
@@ -100,7 +107,19 @@ if [[ -z "$ARTIFACT_DIR" ]]; then
   ARTIFACT_DIR="${ARTIFACT_ROOT}/${TARGET_SHA}"
 fi
 
+if [[ -z "$QIWE_ARTIFACT_DIR" ]]; then
+  case "$ARTIFACT_DIR" in
+    */sidecar)
+      QIWE_ARTIFACT_DIR="${ARTIFACT_DIR%/sidecar}/sidecar-profiles/qiwe-production"
+      ;;
+    *)
+      QIWE_ARTIFACT_DIR="${ARTIFACT_DIR}/sidecar-profiles/qiwe-production"
+      ;;
+  esac
+fi
+
 BIN="${ARTIFACT_DIR}/qintopia-message-sidecar"
+QIWE_BIN="${QIWE_ARTIFACT_DIR}/qintopia-message-sidecar"
 
 if [[ -z "$OUTPUT_DIR" ]]; then
   if [[ "$CHECK_ONLY" == "1" ]]; then
@@ -173,6 +192,7 @@ render_oneshot_service() {
   if [[ -n "${4:-}" ]]; then
     extra_environment_line="${4}"$'\n'
   fi
+  local runtime_bin="${5:-$BIN}"
 
   write_file "$service_name" <<EOF
 [Unit]
@@ -188,7 +208,7 @@ WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
 ${extra_environment_line}Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
-ExecStart=${BIN} ${command}
+ExecStart=${runtime_bin} ${command}
 NoNewPrivileges=true
 PrivateTmp=true
 EOF
@@ -203,6 +223,7 @@ render_guarded_oneshot_service() {
   if [[ -n "${5:-}" ]]; then
     extra_environment_line="${5}"$'\n'
   fi
+  local runtime_bin="${6:-$BIN}"
 
   write_file "$service_name" <<EOF
 [Unit]
@@ -218,8 +239,8 @@ WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
 ${extra_environment_line}Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
-ExecStartPre=${BIN} ${preflight_command}
-ExecStart=${BIN} ${command}
+ExecStartPre=${runtime_bin} ${preflight_command}
+ExecStart=${runtime_bin} ${command}
 NoNewPrivileges=true
 PrivateTmp=true
 EOF
@@ -256,6 +277,8 @@ Target SHA: ${TARGET_SHA}
 Monorepo checkout: ${MONOREPO_DIR}
 Artifact directory: ${ARTIFACT_DIR}
 Runtime binary: ${BIN}
+QiWe companion artifact directory: ${QIWE_ARTIFACT_DIR}
+QiWe runtime binary: ${QIWE_BIN}
 Environment file: ${ENV_FILE}
 Optional identity environment file: ${IDENTITY_ENV_FILE}
 Migrations directory: ${MIGRATIONS_DIR}
@@ -501,12 +524,16 @@ render_all() {
   render_oneshot_service \
     "qintopia-agentos-qiwe-image-send-preflight.service" \
     "Qintopia AgentOS QiWe Image Send Production Preflight" \
-    "qiwe-image-send-production-preflight"
+    "qiwe-image-send-production-preflight" \
+    "" \
+    "$QIWE_BIN"
   render_guarded_oneshot_service \
     "qintopia-agentos-qiwe-image-send-worker.service" \
     "Qintopia AgentOS QiWe Image Send Worker" \
     "qiwe-image-send-production-preflight" \
-    "run-qiwe-image-send-worker --once --apply"
+    "run-qiwe-image-send-worker --once --apply" \
+    "" \
+    "$QIWE_BIN"
   render_timer \
     "qintopia-agentos-qiwe-image-send-worker.timer" \
     "Run Qintopia AgentOS QiWe image send worker" \
@@ -578,7 +605,14 @@ validate_output() {
   for file in "$OUTPUT_DIR"/*.service; do
     grep -F "WorkingDirectory=${MONOREPO_DIR}" "$file" >/dev/null
     grep -F "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}" "$file" >/dev/null
-    grep -F "ExecStart=${BIN}" "$file" >/dev/null
+    case "$(basename "$file")" in
+      qintopia-agentos-qiwe-image-send-preflight.service | qintopia-agentos-qiwe-image-send-worker.service)
+        grep -F "ExecStart=${QIWE_BIN}" "$file" >/dev/null
+        ;;
+      *)
+        grep -F "ExecStart=${BIN}" "$file" >/dev/null
+        ;;
+    esac
   done
 
   if grep -R -F "/home/ubuntu/qintopia-msg-sidecar" "$OUTPUT_DIR"/*.service >/dev/null; then

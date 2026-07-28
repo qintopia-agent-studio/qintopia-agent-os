@@ -35,7 +35,7 @@ try {
   const releaseRoot = path.join(tmpRoot, "releases");
   const releaseDir = path.join(releaseRoot, releaseSha);
   const currentRelease = path.join(releaseRoot, "current");
-  const sidecarDir = path.join(releaseDir, "sidecar");
+  const sidecarDir = path.join(releaseDir, "sidecar-profiles", "qiwe-production");
   const sidecarBin = path.join(sidecarDir, "qintopia-message-sidecar");
   const manifestPath = path.join(sidecarDir, "artifact-manifest.json");
   const activationFixture = path.join(tmpRoot, "activate-production-fixture.sh");
@@ -219,9 +219,7 @@ printf '%s  -\\n' "${databaseHash}"
   if (
     wrongArtifact.status === 0 ||
     fs.readFileSync(logPath, "utf8") !== "" ||
-    !wrongArtifact.stderr.includes(
-      "requires a separate reviewed QiWe production artifact"
-    )
+    !wrongArtifact.stderr.includes("requires the reviewed QiWe companion artifact")
   ) {
     throw new Error(
       "activation must fail before preflight when release/current is not the reviewed QiWe production artifact"

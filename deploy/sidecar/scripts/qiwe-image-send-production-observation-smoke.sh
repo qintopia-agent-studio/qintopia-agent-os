@@ -64,7 +64,7 @@ fi
 if [[ -n "${QINTOPIA_SIDECAR_BIN:-}" ]]; then
   SIDECAR_BIN="$QINTOPIA_SIDECAR_BIN"
 else
-  SIDECAR_BIN="${RELEASE_CURRENT_DIR}/sidecar/qintopia-message-sidecar"
+  SIDECAR_BIN="${RELEASE_CURRENT_DIR}/sidecar-profiles/qiwe-production/qintopia-message-sidecar"
 fi
 
 if ! RELEASE_FACTS="$(python3 - "$SIDECAR_BIN" "$RELEASE_CURRENT_DIR" <<'PY'
@@ -83,34 +83,34 @@ release_sha = os.path.basename(current_real)
 if not re.fullmatch(r"[0-9a-f]{40}", release_sha):
     raise SystemExit(1)
 
-expected_bin = os.path.join(current_real, "sidecar", "qintopia-message-sidecar")
+companion_dir = os.path.join(current_real, "sidecar-profiles", "qiwe-production")
+expected_bin = os.path.join(companion_dir, "qintopia-message-sidecar")
 if os.path.realpath(bin_path) != expected_bin:
     raise SystemExit(1)
 if os.path.islink(bin_path) or not os.path.isfile(bin_path) or not os.access(bin_path, os.X_OK):
     raise SystemExit(1)
 
-for path in (current_real, os.path.dirname(expected_bin), expected_bin):
+for path in (
+    current_real,
+    os.path.join(current_real, "sidecar-profiles"),
+    companion_dir,
+    expected_bin,
+):
     mode = os.stat(path).st_mode
     if mode & (stat.S_IWGRP | stat.S_IWOTH):
         raise SystemExit(1)
 
-manifest_path = os.path.join(current_real, "sidecar", "artifact-manifest.json")
+manifest_path = os.path.join(companion_dir, "artifact-manifest.json")
 with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
 artifact_profile = manifest.get("validation", {}).get("artifact_profile", "")
 cargo_features = manifest.get("validation", {}).get("cargo_features")
-if artifact_profile == "huabaosi-production":
-    expected_features = [
-        "huabaosi-production-adapter",
-        "huabaosi-feishu-mirror-adapter",
-    ]
-elif artifact_profile == "qiwe-production":
-    expected_features = [
-        "qiwe-production-adapter",
-        "huabaosi-feishu-mirror-adapter",
-    ]
-else:
+if artifact_profile != "qiwe-production":
     raise SystemExit(1)
+expected_features = [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+]
 if cargo_features != expected_features:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
@@ -202,11 +202,6 @@ fi
 
 if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   echo "systemctl is required for QiWe image-send production observation" >&2
-  exit 1
-fi
-
-if [[ "$EXPECTED_STATE" == "enabled" && "$ARTIFACT_PROFILE" != "qiwe-production" ]]; then
-  echo "QiWe image-send enabled observation requires a separate reviewed QiWe production artifact" >&2
   exit 1
 fi
 

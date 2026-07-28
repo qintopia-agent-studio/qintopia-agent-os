@@ -68,8 +68,9 @@ if (!exists(rootAgentsPath)) {
   for (const fragment of [
     "`node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`",
     "Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`",
-    "`qiwe-production` artifact whose manifest profile is recorded in the deploy request as",
-    "`runtime_artifact_profile` and whose manifest carries exactly",
+    "Production release requests use `runtime_artifact_profile=huabaosi-production`",
+    "install `qiwe-production` as a companion",
+    "derive that path and SHA-256 from the companion manifest and `SHA256SUMS`",
     "A same-SHA request for an existing release must reuse the immutable",
     "manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and",
     "restart-target fields",
@@ -421,7 +422,7 @@ if (!exists(releaseAcceptanceChecklistPath)) {
     "activation-ready",
     "production-complete",
     "Huabaosi canary evidence uses the ordinary Huabaosi production artifact",
-    "QiWe production artifact",
+    "QiWe companion in the same release",
     "Huabaosi canary sidecar SHA-256 separately from the QiWe real-activity sidecar SHA-256",
     "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
     "prefer the reviewed one-shot completion helper",
@@ -499,7 +500,7 @@ if (!exists(operationsReadmePath)) {
   const readme = readText(operationsReadmePath);
   for (const fragment of [
     "[xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md)",
-    "owner-operated Huabaosi canary, QiWe follow-up deploy, real-activity retention, and",
+    "owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,",
     "final completion-manifest sequence.",
     "reviewed one-shot completion finalizer",
     "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
@@ -517,7 +518,7 @@ if (!exists(deployToolsReadmePath)) {
   const readme = readText(deployToolsReadmePath);
   for (const fragment of [
     "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
-    "Use it before any owner-operated Huabaosi production canary, QiWe production follow-up",
+    "Use it before any owner-operated Huabaosi production canary, QiWe companion",
     "pnpm deploy:xiaoman-production-evidence:finalize --",
     "--staging-runtime-readiness <staging-runtime-readiness-output.txt>",
     "--production-real-activity <production-evidence-output.txt>",
@@ -548,7 +549,12 @@ if (exists(releaseCurrentModelPath)) {
   requireFragment(
     releaseCurrentModelPath,
     releaseCurrentModel,
-    "runtime_artifact_profile=qiwe-production"
+    "sidecar-profiles/qiwe-production/"
+  );
+  requireFragment(
+    releaseCurrentModelPath,
+    releaseCurrentModel,
+    "not a global Huabaosi/QiWe switch"
   );
 }
 
@@ -557,7 +563,7 @@ if (exists(runtimeBaselinePath)) {
   const baseline = readText(runtimeBaselinePath);
   for (const fragment of [
     "runtime_artifact_profile=huabaosi-production",
-    "runtime_artifact_profile=qiwe-production",
+    "sidecar-profiles/qiwe-production",
     "Huabaosi production sidecar SHA-256",
     "QiWe production sidecar SHA-256",
     "Treating them as the same production binary is no longer a valid assumption",
@@ -834,14 +840,12 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
     "QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED",
     "/home/ubuntu/.hermes/profiles/erhua/.env",
     "/home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform",
-    "/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar",
+    "/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar",
     "skills/qiwe/image_callback_bridge.py",
     "qiwe_image_callback_bridge_production_observation_state",
-    "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
     "qiwe-production",
     '"qiwe-production-adapter"',
-    "enabled observation requires a separate reviewed QiWe production artifact",
     'allowlist = {"QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ENABLED"}',
   ]) {
     requireFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
@@ -855,8 +859,50 @@ if (!exists(qiweCallbackBridgeProductionObservationPath)) {
     "eval ",
     "tenant_access_token",
     "raw_body",
+    "huabaosi-production-adapter",
+    "/current/sidecar/qintopia-message-sidecar",
   ]) {
     forbidFragment(qiweCallbackBridgeProductionObservationPath, smoke, fragment);
+  }
+}
+
+const qiweCallbackBridgePath = "skills/qiwe/image_callback_bridge.py";
+if (!exists(qiweCallbackBridgePath)) {
+  addError(`${qiweCallbackBridgePath}: missing QiWe callback bridge`);
+} else {
+  const bridge = readText(qiweCallbackBridgePath);
+  for (const fragment of [
+    'Path("sidecar-profiles") / "qiwe-production" / PROCESSOR_BASENAME',
+    "if enabled and processor_mode == PROCESSOR_MODE_PRODUCTION:",
+    ") = _production_processor_identity()",
+    'artifact_dir / "artifact-manifest.json"',
+    'artifact_dir / "SHA256SUMS"',
+    'manifest.get("commit_sha") != resolved_release.name',
+    'validation.get("artifact_profile") != PRODUCTION_ARTIFACT_PROFILE',
+    'validation.get("cargo_features") != PRODUCTION_ARTIFACT_FEATURES',
+    "checksums.get(PROCESSOR_BASENAME) != expected_sha256",
+    "artifact_sha256 = _production_artifact_binary_sha256(resolved_current)",
+    "_validate_processor_digest(resolved, expected_sha256)",
+    'self.processor_env["QINTOPIA_DEPLOYED_COMMIT_SHA"] = release_sha',
+    '"QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA"',
+  ]) {
+    requireFragment(qiweCallbackBridgePath, bridge, fragment);
+  }
+}
+
+const qiweCallbackBridgeTestPath = "skills/qiwe/tests/test_image_callback_bridge.py";
+if (!exists(qiweCallbackBridgeTestPath)) {
+  addError(`${qiweCallbackBridgeTestPath}: missing QiWe callback bridge tests`);
+} else {
+  const tests = readText(qiweCallbackBridgeTestPath);
+  for (const fragment of [
+    "test_production_environment_derives_current_companion_identity",
+    '"QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_BIN": "/stale/release/qintopia-message-sidecar"',
+    '"QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_ROOT": "/stale/release"',
+    "self.assertEqual(bridge.processor_sha256, digest)",
+    'bridge.processor_env["QINTOPIA_DEPLOYED_COMMIT_SHA"]',
+  ]) {
+    requireFragment(qiweCallbackBridgeTestPath, tests, fragment);
   }
 }
 
@@ -2163,7 +2209,7 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     'SYSTEMCTL="/usr/bin/systemctl"',
     'SHA256SUM="/usr/bin/sha256sum"',
     "database URL hash does not match the approved production hash",
-    "requires a separate reviewed QiWe production artifact",
+    "requires the reviewed QiWe companion artifact",
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.timer",
     "qintopia-agentos-qiwe-image-send-worker.service",
@@ -2355,13 +2401,12 @@ if (!exists(qiweImageProductionObservationPath)) {
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE",
     "/home/ubuntu/qintopia-agent-os-releases/current",
     "/etc/qintopia/message-sidecar.env",
-    "sidecar/qintopia-message-sidecar",
+    "sidecar-profiles/qiwe-production/qintopia-message-sidecar",
     "artifact-manifest.json",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_TEST_MODE",
     "requires the fixed production env file",
     "requires the fixed production release/current path",
     "requires the real systemctl command",
-    '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
     '"qiwe-production-adapter"',
     "qiwe-production",
@@ -2371,7 +2416,6 @@ if (!exists(qiweImageProductionObservationPath)) {
     "production timer must not be active",
     "production timer must be active",
     "production timer must be enabled",
-    "enabled observation requires a separate reviewed QiWe production artifact",
     "qiwe_image_send_production_observation_state=",
   ]) {
     requireFragment(qiweImageProductionObservationPath, observation, fragment);
@@ -2394,6 +2438,8 @@ if (!exists(qiweImageProductionObservationPath)) {
     '"$SIDECAR_BIN" run-qiwe-image-send-worker',
     "--apply",
     "process-qiwe-image-send-callback",
+    '"huabaosi-production-adapter"',
+    '"sidecar", "qintopia-message-sidecar"',
   ]) {
     forbidFragment(qiweImageProductionObservationPath, observation, fragment);
   }
@@ -3339,7 +3385,8 @@ if (!exists(xiaomanProductionEvidenceRunbookPath)) {
     "finalize-xiaoman-production-completion-evidence.mjs",
     "check-xiaoman-production-completion-evidence.mjs",
     "Treating them as the same production binary is invalid.",
-    "owner-approved follow-up deploy with `runtime_artifact_profile=qiwe-production`",
+    "## 2. QiWe Companion Verification",
+    "sidecar-profiles/qiwe-production/qintopia-message-sidecar",
     "does not auto-merge a Release Please PR",
     "does not publish a Release",
   ]) {

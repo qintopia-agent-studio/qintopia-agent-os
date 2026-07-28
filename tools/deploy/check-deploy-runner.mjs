@@ -67,6 +67,7 @@ const requiredFiles = [
   "deploy/restart-target-rules.yaml",
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
+  "deploy/sidecar/scripts/render-systemd-units.sh",
   "tools/deploy/create-deploy-request.mjs",
   "tools/deploy/collect-release-deploy-results.mjs",
   "tools/deploy/resolve-release-deploy-base.mjs",
@@ -82,6 +83,7 @@ const requiredFiles = [
   "tools/deploy/test-promote-existing-release-metadata.mjs",
   "tools/deploy/test-promote-release-tree.mjs",
   "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
+  "tools/deploy/test-release-systemd-install.mjs",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
 ];
@@ -349,6 +351,27 @@ if (exists(".github/workflows/deploy-production.yml")) {
       ".github/workflows/deploy-production.yml: must deploy from published GitHub releases"
     );
   }
+  const productionJobNames = Object.keys(workflow?.jobs || {}).sort();
+  if (
+    JSON.stringify(productionJobNames) !==
+    JSON.stringify(["build-release-artifacts", "request-deploy"])
+  ) {
+    addError(
+      ".github/workflows/deploy-production.yml: dual-runtime publication must stay within the existing two jobs"
+    );
+  }
+  const runtimeProfileInput =
+    workflow?.on?.workflow_dispatch?.inputs?.runtime_artifact_profile;
+  if (
+    runtimeProfileInput?.type !== "choice" ||
+    runtimeProfileInput?.default !== "huabaosi-production" ||
+    JSON.stringify(runtimeProfileInput?.options) !==
+      JSON.stringify(["huabaosi-production"])
+  ) {
+    addError(
+      ".github/workflows/deploy-production.yml: primary runtime profile must be fixed to huabaosi-production; QiWe is a companion"
+    );
+  }
   const job = workflow?.jobs?.["request-deploy"];
   if (job?.environment !== "production") {
     addError(
@@ -468,14 +491,22 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "build-release-artifacts:",
     "Download release build artifact",
     "Build release sidecar artifact",
+    "Build release QiWe companion artifact",
     "Build release deploy bundle",
     "Upload release sidecar artifact to Tencent COS",
+    "Upload release QiWe companion artifact to Tencent COS",
     "Upload release deploy bundle to Tencent COS",
     "Validate deploy artifacts in Tencent COS",
     "QINTOPIA_SIDECAR_ARTIFACT_PROFILE",
     "RUNTIME_SHA",
     "DEPLOY_BUNDLE_SHA",
     "fetch-cos-artifact.sh",
+    "node tools/deploy/build-qiwe-production-sidecar-artifact.mjs",
+    "qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE: huabaosi-production",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE: qiwe-production",
+    "sidecar-profiles/qiwe-production",
+    "runtime_artifact_profile must be huabaosi-production; QiWe is installed as a companion runtime.",
     "Wait for server deploy result",
     "previous_release_tag",
     "repos/${GITHUB_REPOSITORY}/releases?per_page=100",
@@ -587,18 +618,9 @@ fi`;
       ".github/workflows/rollback-production.yml: restart_targets must use a choice input"
     );
   }
-  if (runtimeArtifactProfileInput?.type !== "choice") {
+  if (runtimeArtifactProfileInput !== undefined) {
     addError(
-      ".github/workflows/rollback-production.yml: runtime_artifact_profile must use a choice input"
-    );
-  }
-  const runtimeArtifactProfileOptions = runtimeArtifactProfileInput?.options ?? [];
-  if (
-    runtimeArtifactProfileInput?.default !== "huabaosi-production" ||
-    runtimeArtifactProfileOptions.join(",") !== "huabaosi-production,qiwe-production"
-  ) {
-    addError(
-      ".github/workflows/rollback-production.yml: runtime_artifact_profile options must be exactly [huabaosi-production, qiwe-production] with huabaosi-production as default"
+      ".github/workflows/rollback-production.yml: runtime_artifact_profile must not be a global rollback input"
     );
   }
   if (!restartTargetsInput?.options?.includes("all-hermes-and-system")) {
@@ -626,6 +648,26 @@ fi`;
       addError(`.github/workflows/rollback-production.yml: forbidden ${forbidden}`);
     }
   }
+  const unavailableTargetGuard = `echo "Rollback target v0.2.0 is a legacy single-runtime release and cannot satisfy the required Huabaosi primary plus QiWe companion contract." >&2
+echo "No owner-triggered dual-runtime rollback target is currently verified; no deploy request was created." >&2
+exit 2`;
+  if (countExactOccurrences(executableResolveRun, unavailableTargetGuard) !== 1) {
+    addError(
+      ".github/workflows/rollback-production.yml: legacy v0.2.0 rollback must fail closed exactly once before artifact access or request creation"
+    );
+  }
+  for (const forbidden of [
+    "inputs.runtime_artifact_profile",
+    "INPUT_RUNTIME_ARTIFACT_PROFILE",
+    "normalize_runtime_artifact_profile",
+    "huabaosi-production|qiwe-production",
+  ]) {
+    if (workflowText.includes(forbidden)) {
+      addError(
+        `.github/workflows/rollback-production.yml: global runtime profile switch is forbidden (${forbidden})`
+      );
+    }
+  }
   for (const fragment of [
     "workflow_dispatch:",
     "type: choice",
@@ -633,10 +675,13 @@ fi`;
     'gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}"',
     "Rollback target must be a published non-prerelease GitHub Release.",
     "git merge-base --is-ancestor",
-    "runtime_artifact_profile must be huabaosi-production or qiwe-production.",
+    'runtime_artifact_profile="huabaosi-production"',
     "runtime-artifact-profile=${runtime_artifact_profile}",
     "Validate rollback artifacts in Tencent COS",
     "fetch-cos-artifact.sh",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE=huabaosi-production",
+    "QINTOPIA_SIDECAR_ARTIFACT_PROFILE=qiwe-production",
+    "${temp_dir}/sidecar-profiles/qiwe-production",
     "ROLLBACK_TARGET_SHA",
     "QINTOPIA_SIDECAR_ARTIFACT_PROFILE",
     "DEPLOY_RUNTIME_ARTIFACT_PROFILE",
@@ -734,6 +779,16 @@ for (const fragment of [
   "staging_dir/manifest.json",
   '"runtime_sha"',
   '"runtime_artifact_profile"',
+  'if [[ "$runtime_artifact_profile" != "huabaosi-production" ]]',
+  'companion_runtime_artifact_profile="qiwe-production"',
+  'companion_relative_dir="sidecar-profiles/${companion_runtime_artifact_profile}"',
+  'QINTOPIA_SIDECAR_ARTIFACT_PROFILE="huabaosi-production"',
+  'QINTOPIA_SIDECAR_ARTIFACT_PROFILE="$companion_runtime_artifact_profile"',
+  '--output-dir "${staging_dir}/${companion_relative_dir}"',
+  '"companion_runtime_artifact_profiles": ["qiwe-production"]',
+  'test -x "${staging_dir}/${companion_relative_dir}/qintopia-message-sidecar"',
+  "companion_install_active=true",
+  '"${release_dir}/sidecar-profiles/${companion_runtime_artifact_profile}"',
   '"deploy_bundle_sha"',
   '"commit_sha"',
   '"release_scope"',
@@ -761,11 +816,11 @@ const rollbackReadmeText = exists("deploy/rollback/README.md")
   ? readText("deploy/rollback/README.md")
   : "";
 for (const fragment of [
-  "`runtime_artifact_profile` explicitly in the rollback request",
-  "reviewed `runtime_artifact_profile` input",
-  "`huabaosi-production`",
-  "`qiwe-production`",
-  "must match the validated rollback artifact",
+  "No owner-triggered dual-runtime rollback target is currently verified",
+  "fails before artifact",
+  "Huabaosi primary sidecar, QiWe companion sidecar, and deploy",
+  "`runtime_artifact_profile=huabaosi-production`",
+  "global profile choice.",
 ]) {
   if (!rollbackReadmeText.includes(fragment)) {
     addError(`deploy/rollback/README.md: missing ${fragment}`);
@@ -1303,12 +1358,17 @@ if (exists("deploy/runner/install-release-systemd-units.sh")) {
   const installer = readText("deploy/runner/install-release-systemd-units.sh");
   for (const fragment of [
     "render-systemd-units.sh",
+    '--qiwe-artifact-dir "${release_dir}/sidecar-profiles/qiwe-production"',
     "qintopia-agentos-xiaoman-activity-signal-worker.timer",
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
     "qintopia-agentos-operations-group-send-ready.timer",
     '"$systemctl_bin" daemon-reload',
+    "runner_unit_files=(",
+    "qintopia-agent-os-deploy-runner.service",
+    "qintopia-agent-os-deploy-runner.timer",
+    'source_path="${release_dir}/deploy/runner/${unit_file}"',
   ]) {
     if (!installer.includes(fragment)) {
       addError(`release systemd installer is missing ${fragment}`);
@@ -1318,6 +1378,52 @@ if (exists("deploy/runner/install-release-systemd-units.sh")) {
     if (installer.includes(forbidden)) {
       addError(`release systemd installer must not contain ${forbidden}`);
     }
+  }
+}
+
+if (exists("deploy/runner/qintopia-agent-os-deploy-runner.service")) {
+  const runnerService = readText(
+    "deploy/runner/qintopia-agent-os-deploy-runner.service"
+  );
+  for (const fragment of [
+    "User=root",
+    "Group=root",
+    "StateDirectory=qintopia-agent-os-deploy",
+    "StateDirectoryMode=0700",
+    "WorkingDirectory=/var/lib/qintopia-agent-os-deploy",
+    "Environment=QINTOPIA_DEPLOY_RUNNER_STATE_DIR=/var/lib/qintopia-agent-os-deploy",
+    "/var/lib/qintopia-agent-os-deploy",
+  ]) {
+    if (!runnerService.includes(fragment)) {
+      addError(`deploy runner service is missing ${fragment}`);
+    }
+  }
+  if (
+    runnerService.includes(
+      "WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current"
+    )
+  ) {
+    addError("deploy runner service must not write COSCLI state under release/current");
+  }
+}
+
+if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
+  const renderer = readText("deploy/sidecar/scripts/render-systemd-units.sh");
+  for (const fragment of [
+    'QIWE_BIN="${QIWE_ARTIFACT_DIR}/qintopia-message-sidecar"',
+    "qintopia-agentos-qiwe-image-send-preflight.service",
+    "qintopia-agentos-qiwe-image-send-worker.service",
+    'grep -F "ExecStart=${QIWE_BIN}"',
+    'grep -F "ExecStart=${BIN}"',
+  ]) {
+    if (!renderer.includes(fragment)) {
+      addError(`release systemd renderer is missing ${fragment}`);
+    }
+  }
+  if (countExactOccurrences(renderer, '    "$QIWE_BIN"') !== 2) {
+    addError(
+      "release systemd renderer must bind exactly the QiWe preflight and worker services to the companion binary"
+    );
   }
 }
 

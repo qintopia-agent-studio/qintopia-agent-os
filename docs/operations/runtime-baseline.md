@@ -64,16 +64,14 @@ Systemd services and Hermes-managed profile links should point at `current`. Rol
 switches `current` back to `previous` and restarts only the approved services or Hermes
 profile processes.
 
-The current production release flow is intentionally split in two:
+The current production release flow keeps two compile-reviewed runtimes in one release:
 
-- normal `release.published` deployment uses the ordinary Huabaosi production sidecar
-  artifact and keeps `runtime_artifact_profile=huabaosi-production`
-- independent QiWe production enablement is a later owner-approved `Deploy Production`
-  `workflow_dispatch` follow-up that first publishes
-  `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` to COS, then deploys it
-  with `runtime_artifact_profile=qiwe-production`
+- normal `release.published` deployment keeps the Huabaosi artifact primary and records
+  `runtime_artifact_profile=huabaosi-production`
+- the same workflow also publishes and installs the QiWe artifact under
+  `sidecar-profiles/qiwe-production`; it never replaces the primary binary
 
-The final Xiaoman production evidence path is therefore also split: Huabaosi
+The final Xiaoman production evidence path still records two binary identities: Huabaosi
 first-record canary evidence must retain the reviewed Huabaosi production sidecar
 SHA-256. Real Xiaoman/QiWe delivery evidence must retain the reviewed QiWe production
 sidecar SHA-256. Treating them as the same production binary is no longer a valid

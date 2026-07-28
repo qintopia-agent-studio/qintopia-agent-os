@@ -86,8 +86,8 @@ Rerun the full repository-local Xiaoman production evidence chain verification b
 node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs
 ```
 
-Use it before any owner-operated Huabaosi production canary, QiWe production follow-up
-deploy, real-activity evidence export, or final completion-manifest capture.
+Use it before any owner-operated Huabaosi production canary, QiWe companion
+verification, real-activity evidence export, or final completion-manifest capture.
 
 After the owner has retained the reviewed staging and production evidence files, build
 and validate the final Xiaoman production completion manifest in one step:
@@ -151,8 +151,9 @@ pnpm artifact:sidecar:qiwe-production
 This writes
 `dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` with
 manifest profile `qiwe-production` and exactly `qiwe-production-adapter` plus
-`huabaosi-feishu-mirror-adapter`. Use it only with deploy requests whose
-`runtime_artifact_profile=qiwe-production`.
+`huabaosi-feishu-mirror-adapter`. Production promotion installs it only at
+`sidecar-profiles/qiwe-production`; deploy requests keep
+`runtime_artifact_profile=huabaosi-production` for the primary runtime.
 
 The CI artifact job uses Rust 1.96.0 to match `runtime/sidecar/Cargo.toml`
 `rust-version`. Server deployment downloads the uploaded artifact and does not require

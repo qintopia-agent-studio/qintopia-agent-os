@@ -37,7 +37,11 @@ const writeChecksums = (directory, names) => {
   );
 };
 
-const writeRequest = (requestId, runtimeArtifactProfile = "huabaosi-production") => {
+const writeRequest = (
+  requestId,
+  runtimeArtifactProfile = "huabaosi-production",
+  overrides = {}
+) => {
   const requestPath = path.join(tmpRoot, `${requestId}.json`);
   writeFile(
     requestPath,
@@ -52,6 +56,7 @@ const writeRequest = (requestId, runtimeArtifactProfile = "huabaosi-production")
         release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
         restart_targets: ["qintopia-system-services", "hermes-erhua"],
         dry_run: false,
+        ...overrides,
       },
       null,
       2
@@ -60,7 +65,7 @@ const writeRequest = (requestId, runtimeArtifactProfile = "huabaosi-production")
   return requestPath;
 };
 
-const runPromotion = (requestPath) =>
+const runPromotion = (requestPath, { dryRun = false, extraEnv = {} } = {}) =>
   spawnSync(
     "bash",
     [
@@ -69,6 +74,7 @@ const runPromotion = (requestPath) =>
       requestPath,
       "--release-root",
       releaseRoot,
+      ...(dryRun ? ["--dry-run"] : []),
     ],
     {
       cwd: tmpRoot,
@@ -76,7 +82,9 @@ const runPromotion = (requestPath) =>
         ...process.env,
         CHOWN_LOG: chownLog,
         FIXTURE_ROOT: fixtureRoot,
+        QINTOPIA_DEPLOY_RUNNER_QUARANTINE_ROOT: path.join(tmpRoot, "quarantine"),
         PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+        ...extraEnv,
       },
       encoding: "utf8",
     }
@@ -204,6 +212,22 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
 `,
     0o755
   );
+  writeFile(
+    path.join(fakeBin, "mv"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+destination="\${@: -1}"
+/bin/mv "$@"
+if [[ "\${FAIL_AFTER_MANIFEST_INSTALL:-0}" == "1" && "$destination" == */manifest.json ]]; then
+  marker="\${FAIL_AFTER_MANIFEST_INSTALL_MARKER:?}"
+  if [[ ! -e "$marker" ]]; then
+    touch "$marker"
+    chmod 0644 "$(dirname "$destination")/sidecar-profiles/qiwe-production/SHA256SUMS"
+  fi
+fi
+`,
+    0o755
+  );
 
   const first = runPromotion(writeRequest("deploy-20260719T060000Z-0123456789ab"));
   if (first.status !== 0) {
@@ -212,8 +236,10 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
 
   const releaseDir = path.join(releaseRoot, sha);
   const manifestPath = path.join(releaseDir, "manifest.json");
+  requireMode(manifestPath, 0o444);
   const existingManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   delete existingManifest.runtime_artifact_profile;
+  fs.chmodSync(manifestPath, 0o640);
   fs.writeFileSync(
     manifestPath,
     `${JSON.stringify(existingManifest, null, 2)}\n`,
@@ -224,6 +250,9 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
     "sidecar/artifact-manifest.json",
     "sidecar/SHA256SUMS",
     "sidecar/qintopia-message-sidecar.tar.gz",
+    "sidecar-profiles/qiwe-production/artifact-manifest.json",
+    "sidecar-profiles/qiwe-production/SHA256SUMS",
+    "sidecar-profiles/qiwe-production/qintopia-message-sidecar.tar.gz",
     "deploy-bundle/artifact-manifest.json",
     "deploy-bundle/SHA256SUMS",
     "deploy-bundle/qintopia-agent-os-deploy-bundle.tar.gz",
@@ -273,6 +302,7 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
   if (adoptedManifest.runtime_artifact_profile !== "huabaosi-production") {
     throw new Error("same-SHA adoption did not restore runtime_artifact_profile");
   }
+  requireMode(manifestPath, 0o444);
   fs.rmSync(chownLog, { force: true });
 
   for (const relative of staleEvidence) {
@@ -291,6 +321,7 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
   }
   requireMode(path.join(releaseDir, "sidecar/qintopia-message-sidecar"), 0o755);
   requireMode(path.join(releaseDir, "deploy/runner-fixture.sh"), 0o755);
+  requireMode(manifestPath, 0o444);
   const chownArgs = fs.readFileSync(chownLog, "utf8").trim();
   if (chownArgs !== `-hR root:root ${releaseDir}`) {
     throw new Error(`unexpected metadata repair chown: ${chownArgs}`);
@@ -363,25 +394,158 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
       "huabaosi initial promotion did not record runtime_artifact_profile"
     );
   }
-
-  const profileSwitch = runPromotion(
-    writeRequest("deploy-20260719T060500Z-0123456789ab", "qiwe-production")
+  const huabaosiBinary = path.join(releaseDir, "sidecar", "qintopia-message-sidecar");
+  const huabaosiBinaryHash = sha256File(huabaosiBinary);
+  const companionRoot = path.join(releaseDir, "sidecar-profiles");
+  fs.rmSync(companionRoot, { recursive: true, force: true });
+  delete huabaosiManifest.companion_runtime_artifact_profiles;
+  fs.chmodSync(manifestPath, 0o640);
+  fs.writeFileSync(
+    manifestPath,
+    `${JSON.stringify(huabaosiManifest, null, 2)}\n`,
+    "utf8"
   );
-  if (profileSwitch.status !== 0) {
-    throw new Error(
-      `same-SHA runtime_artifact_profile switch failed\n${profileSwitch.stdout}\n${profileSwitch.stderr}`
+  const manifestBeforeFailedRepair = fs.readFileSync(manifestPath);
+
+  const coscliOutput = path.join(releaseDir, "coscli_output");
+  for (const timestamp of ["20260728_190405", "20260728_190921"]) {
+    const diagnosticDir = path.join(coscliOutput, timestamp);
+    fs.mkdirSync(diagnosticDir, { recursive: true });
+    fs.chmodSync(diagnosticDir, 0o755);
+    writeFile(
+      path.join(diagnosticDir, "process.log"),
+      "bounded COSCLI fixture\n",
+      0o644
     );
   }
-  const switchedManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  const switchedSidecarManifest = JSON.parse(
-    fs.readFileSync(path.join(releaseDir, "sidecar/artifact-manifest.json"), "utf8")
+  fs.chmodSync(coscliOutput, 0o755);
+
+  const compatibleDryRun = runPromotion(
+    writeRequest("deploy-20260719T060500Z-0123456789ab"),
+    { dryRun: true }
+  );
+  if (compatibleDryRun.status !== 0) {
+    throw new Error(
+      `compatible dry-run failed\n${compatibleDryRun.stdout}\n${compatibleDryRun.stderr}`
+    );
+  }
+  if (!fs.existsSync(coscliOutput) || fs.existsSync(companionRoot)) {
+    throw new Error("dry-run mutated contamination or installed the companion runtime");
+  }
+
+  const scopeMismatchDryRun = runPromotion(
+    writeRequest("deploy-20260719T060525Z-0123456789ab", "huabaosi-production", {
+      release_scope: ["sidecar-runtime"],
+    }),
+    { dryRun: true }
   );
   if (
-    switchedManifest.runtime_artifact_profile !== "qiwe-production" ||
-    switchedSidecarManifest.validation?.artifact_profile !== "qiwe-production"
+    scopeMismatchDryRun.status === 0 ||
+    !scopeMismatchDryRun.stderr.includes(
+      "existing release manifest release_scope mismatch"
+    )
   ) {
     throw new Error(
-      "same-SHA runtime profile switch did not install the requested sidecar"
+      `dry-run must detect manifest identity mismatch\n${scopeMismatchDryRun.stdout}\n${scopeMismatchDryRun.stderr}`
+    );
+  }
+
+  writeFile(path.join(coscliOutput, "unexpected.txt"), "not COSCLI evidence\n", 0o644);
+  const malformedContamination = runPromotion(
+    writeRequest("deploy-20260719T060550Z-0123456789ab"),
+    { dryRun: true }
+  );
+  if (
+    malformedContamination.status === 0 ||
+    !malformedContamination.stderr.includes(
+      "existing COSCLI diagnostic directory name is invalid"
+    )
+  ) {
+    throw new Error(
+      `arbitrary release contamination must fail\n${malformedContamination.stdout}\n${malformedContamination.stderr}`
+    );
+  }
+  fs.rmSync(path.join(coscliOutput, "unexpected.txt"));
+
+  const failureMarker = path.join(tmpRoot, "failed-after-manifest-install");
+  const failedAfterManifestInstall = runPromotion(
+    writeRequest("deploy-20260719T060575Z-0123456789ab"),
+    {
+      extraEnv: {
+        FAIL_AFTER_MANIFEST_INSTALL: "1",
+        FAIL_AFTER_MANIFEST_INSTALL_MARKER: failureMarker,
+      },
+    }
+  );
+  if (
+    failedAfterManifestInstall.status === 0 ||
+    !failedAfterManifestInstall.stderr.includes(
+      "release tree mode mismatch: sidecar-profiles/qiwe-production/SHA256SUMS expected 0444 got 0644"
+    )
+  ) {
+    throw new Error(
+      `post-install validation failure was not exercised\n${failedAfterManifestInstall.stdout}\n${failedAfterManifestInstall.stderr}`
+    );
+  }
+  if (!fs.readFileSync(manifestPath).equals(manifestBeforeFailedRepair)) {
+    throw new Error("failed same-SHA repair did not restore the original manifest");
+  }
+  requireMode(manifestPath, 0o640);
+  if (fs.existsSync(companionRoot) || !fs.existsSync(coscliOutput)) {
+    throw new Error(
+      "failed same-SHA repair did not restore the original release shape"
+    );
+  }
+  if (
+    fs
+      .readdirSync(releaseRoot)
+      .some((name) => name.startsWith(".existing-manifest-backup-"))
+  ) {
+    throw new Error(
+      "failed same-SHA repair left a manifest backup in the release root"
+    );
+  }
+
+  const companionInstall = runPromotion(
+    writeRequest("deploy-20260719T060600Z-0123456789ab")
+  );
+  if (companionInstall.status !== 0) {
+    throw new Error(
+      `companion installation failed\n${companionInstall.stdout}\n${companionInstall.stderr}`
+    );
+  }
+  const installedCompanionManifest = JSON.parse(
+    fs.readFileSync(
+      path.join(companionRoot, "qiwe-production", "artifact-manifest.json"),
+      "utf8"
+    )
+  );
+  if (installedCompanionManifest.validation?.artifact_profile !== "qiwe-production") {
+    throw new Error("same-SHA repair did not install the QiWe companion artifact");
+  }
+  if (sha256File(huabaosiBinary) !== huabaosiBinaryHash) {
+    throw new Error("QiWe companion installation changed the Huabaosi binary");
+  }
+  requireMode(manifestPath, 0o444);
+  if (fs.existsSync(coscliOutput)) {
+    throw new Error("successful repair left COSCLI diagnostics inside the release");
+  }
+  const quarantineRoot = path.join(tmpRoot, "quarantine");
+  const quarantines = fs.readdirSync(quarantineRoot);
+  if (
+    quarantines.length !== 1 ||
+    !fs.existsSync(
+      path.join(
+        quarantineRoot,
+        quarantines[0],
+        "coscli_output",
+        "20260728_190405",
+        "process.log"
+      )
+    )
+  ) {
+    throw new Error(
+      "successful repair did not retain COSCLI diagnostics in quarantine"
     );
   }
 } finally {

@@ -88,6 +88,8 @@ try {
       "m9f-check",
       "--artifact-dir",
       "/home/ubuntu/qintopia-agent-os-releases/current/sidecar",
+      "--qiwe-artifact-dir",
+      "/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production",
       "--monorepo-dir",
       "/home/ubuntu/qintopia-agent-os-releases/current",
       "--migrations-dir",
@@ -121,6 +123,29 @@ try {
     }
     if (unit.includes("/home/ubuntu/qintopia-msg-sidecar")) {
       addError(`${unitName}: still references legacy standalone checkout`);
+    }
+  }
+  for (const unitName of [
+    "qintopia-agentos-qiwe-image-send-preflight.service",
+    "qintopia-agentos-qiwe-image-send-worker.service",
+  ]) {
+    const unitPath = path.join(renderedDir, unitName);
+    if (!fs.existsSync(unitPath)) {
+      addError(`rendered systemd output: missing ${unitName}`);
+      continue;
+    }
+    const unit = fs.readFileSync(unitPath, "utf8");
+    const qiweBin =
+      "/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar";
+    if (!unit.includes(`ExecStart=${qiweBin}`)) {
+      addError(`${unitName}: must execute ${qiweBin}`);
+    }
+    if (
+      unit.includes(
+        "ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar"
+      )
+    ) {
+      addError(`${unitName}: must not execute the Huabaosi production binary`);
     }
   }
 } catch (error) {

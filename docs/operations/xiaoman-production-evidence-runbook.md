@@ -1,6 +1,6 @@
 # Xiaoman Production Evidence Runbook
 
-Updated: 2026-07-24
+Updated: 2026-07-28
 
 This runbook is the owner-operated sequence for retaining the final Xiaoman production
 evidence bundle after reviewed code has already shipped. It does not publish a Release,
@@ -15,8 +15,9 @@ explicit owner decision.
 
 - Huabaosi first-record canary runs from the ordinary production artifact with
   `runtime_artifact_profile=huabaosi-production`.
-- Real Xiaoman/QiWe delivery evidence runs from the separately deployed production
-  artifact with `runtime_artifact_profile=qiwe-production`.
+- Real Xiaoman/QiWe delivery evidence runs from the `sidecar-profiles/qiwe-production`
+  companion in the same immutable release and records
+  `runtime_artifact_profile=qiwe-production`.
 - The production database URL SHA-256 may stay the same across both phases.
 - The Huabaosi production sidecar SHA-256 and QiWe production sidecar SHA-256 must be
   retained separately. Treating them as the same production binary is invalid.
@@ -33,9 +34,11 @@ Prepare these owner-reviewed facts before starting:
 - QiWe production enablement PR number and exact merged head SHA included in the same
   published release commit;
 - production database URL SHA-256;
-- Huabaosi production sidecar SHA-256 for the release/current binary used by the canary;
-- QiWe production sidecar SHA-256 for the release/current binary used by the real
-  activity evidence exporter;
+- Huabaosi production sidecar SHA-256 for the `release/current/sidecar` binary used by
+  the canary;
+- QiWe production sidecar SHA-256 for the
+  `release/current/sidecar-profiles/qiwe-production` binary used by the real activity
+  evidence exporter;
 - one approved pending Huabaosi `poster_brief` artifact UUID for the canary;
 - one completed real Xiaoman production workflow root UUID after the QiWe delivery has
   visibly arrived in the intended group;
@@ -72,14 +75,25 @@ Retain only the sanitized `huabaosi-production-canary-output.txt` after the chec
 passes, then copy the reviewed fields into
 [`../reports/templates/huabaosi-image-production-canary-evidence.md`](../reports/templates/huabaosi-image-production-canary-evidence.md).
 
-## 2. QiWe Production Artifact Follow-Up Deploy
+## 2. QiWe Companion Verification
 
-If the current production `release/current` still points at the ordinary Huabaosi
-artifact, first publish the reviewed independent QiWe artifact to COS and dispatch the
-owner-approved follow-up deploy with `runtime_artifact_profile=qiwe-production`.
+Confirm the published release contains both reviewed artifacts and that QiWe production
+observations resolve the companion rather than the primary Huabaosi binary. Before
+activation, both QiWe paths should normally remain disabled:
 
-Keep the deploy request/result evidence that proves the QiWe production artifact was the
-active release-local binary before capturing the real activity evidence.
+```bash
+QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE=disabled \
+deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh
+
+QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE=1 \
+QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE=disabled \
+deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh
+```
+
+After owner-approved activation, rerun the corresponding observation with
+`EXPECTED_STATE=enabled`. Keep sanitized deploy and observation evidence proving both
+runtime identities belong to the same Release SHA.
 
 ## 3. Real Xiaoman Production Activity Evidence
 
@@ -89,7 +103,8 @@ sanitized release-local evidence from the reviewed QiWe production binary:
 ```bash
 QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_SIDECAR_SHA256=<approved-qiwe-production-sidecar-sha256> \
 QINTOPIA_XIAOMAN_REAL_ACTIVITY_PRODUCTION_DATABASE_URL_SHA256=<approved-production-database-url-sha256> \
-qintopia-message-sidecar xiaoman-real-activity-production-evidence \
+/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar \
+  xiaoman-real-activity-production-evidence \
   --workflow-root-id <completed-xiaoman-activity-root-uuid> \
   > production-evidence-output.txt
 

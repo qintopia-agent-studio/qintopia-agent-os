@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-28 Xiaoman production runtime cutover failure](2026-07-28-xiaoman-production-runtime-cutover-failure.md)
 - [2026-07-23 Huabaosi WeCom observation journal window](2026-07-23-huabaosi-wecom-observation-journal-window.md)
 - [2026-07-23 Xiaoman QiWe disabled observation artifact drift](2026-07-23-xiaoman-qiwe-disabled-observation-artifact-drift.md)
 - [2026-07-23 Rust quality prebuilt tool installation](2026-07-23-rust-quality-prebuilt-tool-install.md)
@@ -92,6 +93,7 @@ steps still block any `production-complete` claim.
 | `2026-07-19-v0216-existing-release-validation.md`                                  | adopt-input | v0.2.16 same-SHA release validation and rollback-pointer gap           |
 | `2026-07-19-staging-sidecar-provision-umask.md`                                    | adopt-input | Staging release directory mode and cleanup remediation                 |
 | `2026-07-19-aliang-provider-timeout-canary.md`                                     | adopt-input | Aliang canary timeout evidence, rollback, and remediation              |
+| `2026-07-28-xiaoman-production-runtime-cutover-failure.md`                         | adopt-input | Dual-runtime release cutover failure and remediation                   |
 
 ## Templates
 

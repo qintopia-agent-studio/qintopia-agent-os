@@ -129,7 +129,7 @@ PY
 }
 
 print_sanitized_coscli_details() {
-  python3 - "${PWD}/coscli_output" <<'PY'
+  python3 - "$1/coscli_output" <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -256,6 +256,8 @@ cleanup() {
 }
 trap cleanup EXIT
 chmod 700 "$tmp_dir"
+coscli_work_dir="${tmp_dir}/coscli-work"
+mkdir -m 0700 "$coscli_work_dir"
 
 coscli_path="${COSCLI_PATH:-}"
 if [[ -z "$coscli_path" ]]; then
@@ -286,18 +288,20 @@ run_coscli() {
 
   set +e
   local output_path="${tmp_dir}/coscli-output.log"
-  python3 - "$output_path" "$timeout_seconds" "$coscli_path" "$@" <<'PY'
+  python3 - "$output_path" "$timeout_seconds" "$coscli_work_dir" "$coscli_path" "$@" <<'PY'
 import subprocess
 import sys
 
 output_path = sys.argv[1]
 timeout_seconds = int(sys.argv[2])
-command = sys.argv[3:]
+working_directory = sys.argv[3]
+command = sys.argv[4:]
 
 with open(output_path, "wb") as output:
     try:
         completed = subprocess.run(
             command,
+            cwd=working_directory,
             stdout=output,
             stderr=subprocess.STDOUT,
             timeout=timeout_seconds,
@@ -321,7 +325,7 @@ PY
     echo "Source object prefix: ${remote_base}/" >&2
     echo "Credentials were not printed. Check server COS auth and object read permissions." >&2
     print_sanitized_coscli_output "$output_path"
-    print_sanitized_coscli_details
+    print_sanitized_coscli_details "$coscli_work_dir"
     exit "$status"
   fi
 }

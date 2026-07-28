@@ -199,7 +199,8 @@ fn verify_release_binary_path(sidecar_path: &Path, production_release_sha: &str)
         bail!("production release/current does not match QINTOPIA_DEPLOYED_COMMIT_SHA");
     }
     let expected = current_real
-        .join("sidecar")
+        .join("sidecar-profiles")
+        .join("qiwe-production")
         .join("qintopia-message-sidecar");
     let sidecar_real = fs::canonicalize(sidecar_path).context("resolve current sidecar binary")?;
     if sidecar_real != expected {

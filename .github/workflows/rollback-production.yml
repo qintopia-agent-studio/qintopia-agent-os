@@ -10,15 +10,6 @@ on:
         type: choice
         options:
           - v0.2.0
-      runtime_artifact_profile:
-        description:
-          Reviewed production sidecar artifact profile for the rollback target.
-        required: true
-        default: huabaosi-production
-        type: choice
-        options:
-          - huabaosi-production
-          - qiwe-production
       restart_targets:
         description: Restart target set after rollback promotion.
         required: true
@@ -92,7 +83,6 @@ jobs:
         shell: bash
         env:
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
-          INPUT_RUNTIME_ARTIFACT_PROFILE: ${{ inputs.runtime_artifact_profile }}
           INPUT_RESTART_TARGETS: ${{ inputs.restart_targets }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_NOTES: ${{ inputs.notes || '' }}
@@ -141,20 +131,6 @@ jobs:
             esac
           }
 
-          normalize_runtime_artifact_profile() {
-            local value="$1"
-            require_single_line "runtime_artifact_profile" "$value"
-            case "$value" in
-              huabaosi-production|qiwe-production)
-                printf '%s' "$value"
-                ;;
-              *)
-                echo "runtime_artifact_profile must be huabaosi-production or qiwe-production." >&2
-                exit 2
-                ;;
-            esac
-          }
-
           require_single_line "release_tag" "$INPUT_RELEASE_TAG"
           if [[ ! "$INPUT_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "release_tag must be a semver-style vX.Y.Z tag." >&2
@@ -164,6 +140,10 @@ jobs:
             echo "Rollback target must be v0.2.0 (verified candidate after v0.2.3 audit)." >&2
             exit 2
           fi
+
+          echo "Rollback target v0.2.0 is a legacy single-runtime release and cannot satisfy the required Huabaosi primary plus QiWe companion contract." >&2
+          echo "No owner-triggered dual-runtime rollback target is currently verified; no deploy request was created." >&2
+          exit 2
 
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}")"
           release_draft="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.draft));')"
@@ -185,7 +165,7 @@ jobs:
           fi
 
           restart_targets="$(normalize_restart_targets "$INPUT_RESTART_TARGETS")"
-          runtime_artifact_profile="$(normalize_runtime_artifact_profile "$INPUT_RUNTIME_ARTIFACT_PROFILE")"
+          runtime_artifact_profile="huabaosi-production"
           dry_run="$(normalize_boolean "dry_run" "$INPUT_DRY_RUN")"
           notes="Rollback Production to ${INPUT_RELEASE_TAG} (${release_url}). ${INPUT_NOTES}"
 
@@ -206,7 +186,7 @@ jobs:
             echo
             echo "- Release tag: ${INPUT_RELEASE_TAG}"
             echo "- Target SHA: ${target_sha}"
-            echo "- Runtime artifact profile: ${runtime_artifact_profile}"
+            echo "- Primary runtime artifact profile: ${runtime_artifact_profile}"
             echo "- Restart targets: ${restart_targets}"
             echo "- Dry run: ${dry_run}"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -233,18 +213,22 @@ jobs:
           set -euo pipefail
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
-          deploy/sidecar/scripts/fetch-cos-artifact.sh \
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE=huabaosi-production \
+            deploy/sidecar/scripts/fetch-cos-artifact.sh \
             --artifact-type sidecar \
             --sha "${ROLLBACK_TARGET_SHA}" \
             --output-dir "${temp_dir}/sidecar"
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE=qiwe-production \
+            deploy/sidecar/scripts/fetch-cos-artifact.sh \
+            --artifact-type sidecar \
+            --sha "${ROLLBACK_TARGET_SHA}" \
+            --output-dir "${temp_dir}/sidecar-profiles/qiwe-production"
           deploy/sidecar/scripts/fetch-cos-artifact.sh \
             --artifact-type deploy-bundle \
             --sha "${ROLLBACK_TARGET_SHA}" \
             --output-dir "${temp_dir}/deploy-bundle"
         env:
           ROLLBACK_TARGET_SHA: ${{ steps.resolve.outputs.target-sha }}
-          QINTOPIA_SIDECAR_ARTIFACT_PROFILE:
-            ${{ steps.resolve.outputs.runtime-artifact-profile }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
