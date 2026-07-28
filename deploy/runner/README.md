@@ -229,26 +229,28 @@ The runner must not infer one SHA from another.
 ### Same-SHA Follow-up Requests
 
 A follow-up deployment for an existing immutable `release_sha` must reuse the existing
-manifest's exact `runtime_sha`, `runtime_artifact_profile`, `deploy_bundle_sha`,
-`commit_sha`, `release_scope`, and `restart_targets`. The runner intentionally rejects a
-request that narrows or broadens any of those fields, even when the requested release
-SHA is unchanged. This prevents a second request from silently changing the operational
-identity of an existing release.
+manifest's exact `runtime_sha`, `deploy_bundle_sha`, `commit_sha`, `release_scope`, and
+`restart_targets`. The runtime profile may change only between the two reviewed
+production profiles (`huabaosi-production` and `qiwe-production`). In that case the
+runner verifies every non-sidecar path against freshly fetched artifacts, replaces only
+the verified sidecar payload, and updates the profile metadata. Any other identity
+mismatch fails before promotion.
 
 Before dispatching a same-SHA follow-up, read only the sanitized manifest fields from
 the promoted release evidence or the prior successful deploy result. Do not guess the
 restart targets from the current diff or from a later runbook summary. A mismatch fails
 before promotion, does not switch `current`, and does not require rollback. Successful
 deploy results retain the same reviewed `commit_sha`, `runtime_sha`,
-`runtime_artifact_profile`, `deploy_bundle_sha`, `release_scope`, and `restart_targets`
-identity so this comparison can be made without re-reading mutable operator notes.
+`deploy_bundle_sha`, `release_scope`, and `restart_targets` identity, plus the active
+runtime profile, so this comparison can be made without re-reading mutable operator
+notes.
 
 The `v0.2.29` runner wrote release manifests without `runtime_artifact_profile`. A
 same-SHA follow-up assembled by `v0.2.30+` must adopt the missing reviewed profile from
 the immutable `sidecar/artifact-manifest.json`, persist it into the existing release
-manifest, and only then compare the exact identity. This compatibility path is limited
-to the missing profile field; it must still fail closed for any other manifest drift or
-for an unavailable sidecar artifact profile.
+manifest, and only then compare the identity. This compatibility path and the explicit
+two-profile switch both fail closed for any other manifest drift or unavailable sidecar
+artifact profile.
 
 The existing-release path also repairs metadata left by a previous runner only after the
 exact manifest identity matches, the complete release tree matches freshly fetched and

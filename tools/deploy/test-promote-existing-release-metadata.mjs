@@ -122,6 +122,36 @@ try {
     "artifact-manifest.json",
   ]);
 
+  const qiweSidecarFixture = path.join(fixtureRoot, "sidecar-qiwe");
+  writeFile(
+    path.join(qiweSidecarFixture, "qintopia-message-sidecar"),
+    "#!/usr/bin/env bash\n# qiwe profile\nexit 0\n",
+    0o755
+  );
+  writeFile(
+    path.join(qiweSidecarFixture, "qintopia-message-sidecar.tar.gz"),
+    "qiwe sidecar archive fixture\n",
+    0o444
+  );
+  writeFile(
+    path.join(qiweSidecarFixture, "artifact-manifest.json"),
+    `${JSON.stringify(
+      {
+        commit_sha: sha,
+        artifact_name: "sidecar-qiwe-fixture",
+        validation: { artifact_profile: "qiwe-production" },
+      },
+      null,
+      2
+    )}\n`,
+    0o444
+  );
+  writeChecksums(qiweSidecarFixture, [
+    "qintopia-message-sidecar",
+    "qintopia-message-sidecar.tar.gz",
+    "artifact-manifest.json",
+  ]);
+
   const deployFixture = path.join(fixtureRoot, "deploy-bundle");
   writeFile(
     path.join(deployFixture, "qintopia-agent-os-deploy-bundle.tar.gz"),
@@ -158,7 +188,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 mkdir -p "$output_dir"
-cp -a "$FIXTURE_ROOT/$artifact_type/." "$output_dir/"
+source_root="$FIXTURE_ROOT/$artifact_type"
+if [[ "$artifact_type" == "sidecar" && "\${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-}" == "qiwe-production" ]]; then
+  source_root="$FIXTURE_ROOT/sidecar-qiwe"
+fi
+cp -a "$source_root/." "$output_dir/"
 `,
     0o755
   );
@@ -313,32 +347,41 @@ printf '%s\n' "$*" >> "$CHOWN_LOG"
   fs.rmSync(path.join(releaseRoot, "previous"), { force: true });
   fs.rmSync(releaseDir, { recursive: true, force: true });
 
-  const qiweInitial = runPromotion(
-    writeRequest("deploy-20260719T060400Z-0123456789ab", "qiwe-production")
+  const huabaosiInitial = runPromotion(
+    writeRequest("deploy-20260719T060400Z-0123456789ab", "huabaosi-production")
   );
-  if (qiweInitial.status !== 0) {
+  if (huabaosiInitial.status !== 0) {
     throw new Error(
-      `qiwe initial promotion failed\n${qiweInitial.stdout}\n${qiweInitial.stderr}`
+      `huabaosi initial promotion failed\n${huabaosiInitial.stdout}\n${huabaosiInitial.stderr}`
     );
   }
-  const qiweManifest = JSON.parse(
+  const huabaosiManifest = JSON.parse(
     fs.readFileSync(path.join(releaseDir, "manifest.json"), "utf8")
   );
-  if (qiweManifest.runtime_artifact_profile !== "qiwe-production") {
-    throw new Error("qiwe initial promotion did not record runtime_artifact_profile");
+  if (huabaosiManifest.runtime_artifact_profile !== "huabaosi-production") {
+    throw new Error(
+      "huabaosi initial promotion did not record runtime_artifact_profile"
+    );
   }
 
-  const profileMismatch = runPromotion(
-    writeRequest("deploy-20260719T060500Z-0123456789ab", "huabaosi-production")
+  const profileSwitch = runPromotion(
+    writeRequest("deploy-20260719T060500Z-0123456789ab", "qiwe-production")
+  );
+  if (profileSwitch.status !== 0) {
+    throw new Error(
+      `same-SHA runtime_artifact_profile switch failed\n${profileSwitch.stdout}\n${profileSwitch.stderr}`
+    );
+  }
+  const switchedManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const switchedSidecarManifest = JSON.parse(
+    fs.readFileSync(path.join(releaseDir, "sidecar/artifact-manifest.json"), "utf8")
   );
   if (
-    profileMismatch.status === 0 ||
-    !profileMismatch.stderr.includes(
-      "existing release manifest runtime_artifact_profile mismatch"
-    )
+    switchedManifest.runtime_artifact_profile !== "qiwe-production" ||
+    switchedSidecarManifest.validation?.artifact_profile !== "qiwe-production"
   ) {
     throw new Error(
-      `same-SHA runtime_artifact_profile mismatch must fail\n${profileMismatch.stdout}\n${profileMismatch.stderr}`
+      "same-SHA runtime profile switch did not install the requested sidecar"
     );
   }
 } finally {
