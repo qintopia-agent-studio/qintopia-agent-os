@@ -280,8 +280,8 @@ fn load_runtime_artifact_profile(
             "production real-activity evidence must run from the reviewed QiWe production artifact"
         );
     }
-    if cargo_features != ["qiwe-production-adapter"] {
-        bail!("production real-activity evidence requires exactly qiwe-production-adapter");
+    if cargo_features != ["qiwe-production-adapter", "huabaosi-feishu-mirror-adapter"] {
+        bail!("production real-activity evidence requires the QiWe and Feishu mirror adapters");
     }
     Ok(artifact_profile.to_string())
 }

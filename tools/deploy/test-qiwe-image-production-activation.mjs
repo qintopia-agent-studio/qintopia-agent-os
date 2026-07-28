@@ -324,7 +324,10 @@ printf '%s  -\\n' "${databaseHash}"
     );
   }
 
-  writeManifest("qiwe-production", ["qiwe-production-adapter"]);
+  writeManifest("qiwe-production", [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ]);
   writeEnv("1");
   fs.writeFileSync(logPath, "", "utf8");
   const preflightRejected = run(activationFixture, {

@@ -205,8 +205,7 @@ for (const artifactFetchPath of [
     if (
       fetcher.includes(
         '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
-      ) ||
-      fetcher.includes('"qiwe-production-adapter",')
+      )
     ) {
       addError(
         `${artifactFetchPath}: Huabaosi production artifact validation must not accept qiwe-production-adapter`
@@ -2496,6 +2495,7 @@ if (exists(qiweProductionSidecarArtifactBuilderPath)) {
     "resolveContainedArtifactDir",
     'const artifactProfile = "qiwe-production"',
     '"qiwe-production-adapter"',
+    '"huabaosi-feishu-mirror-adapter"',
     "manifestSha256",
     "`${bundleSha256}  ${bundleName}`",
     "`${manifestSha256}  artifact-manifest.json`",
@@ -2504,7 +2504,6 @@ if (exists(qiweProductionSidecarArtifactBuilderPath)) {
   }
   for (const fragment of [
     '"huabaosi-production-adapter"',
-    '"huabaosi-feishu-mirror-adapter"',
     '"qiwe-staging-adapter"',
     '"huabaosi-staging-adapter"',
   ]) {
@@ -2523,7 +2522,7 @@ if (!exists(qiweProductionSidecarArtifactBuilderTestPath)) {
   for (const fragment of [
     "build-qiwe-production-sidecar-artifact.mjs",
     'validation.artifact_profile, "qiwe-production"',
-    'manifest.validation.cargo_features, ["qiwe-production-adapter"]',
+    '"huabaosi-feishu-mirror-adapter"',
     "dirty or unreadable git worktree",
     "QiWe production sidecar artifact builder test passed.",
   ]) {
