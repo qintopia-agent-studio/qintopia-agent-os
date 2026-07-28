@@ -814,6 +814,11 @@ pub enum Command {
         #[arg(long, default_value = "community_activity_group")]
         target_group_alias: String,
 
+        /// Target allowlisted QiWe group id for the future final-confirmed send.
+        /// When provided, this takes precedence over target_group_alias.
+        #[arg(long, env = "QINTOPIA_XIAOMAN_ACTIVITY_TARGET_GROUP_ID")]
+        target_group_id: Option<String>,
+
         /// Safe message text summary for final confirmation. This is not sent by this worker.
         #[arg(long, default_value = "活动海报已审核，请确认是否发送。")]
         message_text: String,
