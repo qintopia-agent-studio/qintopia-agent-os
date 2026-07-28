@@ -415,6 +415,7 @@ async fn main() -> Result<()> {
             batch_size,
             work_item_id,
             target_group_alias,
+            target_group_id,
             message_text,
         } => {
             operations::run_xiaoman_activity_send_request_starter_worker(
@@ -425,6 +426,7 @@ async fn main() -> Result<()> {
                 batch_size,
                 work_item_id,
                 target_group_alias,
+                target_group_id,
                 message_text,
             )
             .await

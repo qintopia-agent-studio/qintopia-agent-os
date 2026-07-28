@@ -901,6 +901,7 @@ pub async fn run_xiaoman_activity_send_request_starter_worker(
     batch_size: i64,
     work_item_id: Option<Uuid>,
     target_group_alias: String,
+    target_group_id: Option<String>,
     message_text: String,
 ) -> Result<()> {
     if check_only && apply {
@@ -923,6 +924,7 @@ pub async fn run_xiaoman_activity_send_request_starter_worker(
         batch_size,
         work_item_id,
         &target_group_alias,
+        target_group_id.as_deref(),
         &message_text,
         &policy,
     )
@@ -1232,6 +1234,7 @@ async fn run_xiaoman_activity_send_request_starter_batch(
     batch_size: i64,
     work_item_id: Option<Uuid>,
     target_group_alias: &str,
+    target_group_id: Option<&str>,
     message_text: &str,
     policy: &OperationsPolicy,
 ) -> Result<XiaomanActivitySendRequestStarterWorkerReport> {
@@ -1240,7 +1243,12 @@ async fn run_xiaoman_activity_send_request_starter_batch(
     let mut work_items = Vec::new();
 
     for candidate in &candidates {
-        let request = xiaoman_activity_send_request(candidate, target_group_alias, message_text)?;
+        let request = xiaoman_activity_send_request(
+            candidate,
+            target_group_alias,
+            target_group_id,
+            message_text,
+        )?;
         let report = if apply_requested {
             create_work_item(pool, request, true, policy).await?
         } else {
@@ -4699,13 +4707,22 @@ fn xiaoman_activity_promotion_child_request(
 fn xiaoman_activity_send_request(
     candidate: &XiaomanActivitySendRequestCandidate,
     target_group_alias: &str,
+    target_group_id: Option<&str>,
     message_text: &str,
 ) -> Result<WorkItemCreateRequest> {
     let workflow_type = candidate.activity_phase.workflow_type();
     let activity_route = candidate.activity_phase.route();
-    let target_group_alias = normalize_key(target_group_alias);
+    let target_group_id = target_group_id
+        .map(str::trim)
+        .filter(|item| !item.is_empty());
+    let target_group_alias = if target_group_id.is_some() {
+        None
+    } else {
+        let normalized = normalize_key(target_group_alias);
+        require_non_empty("target_group_alias", &normalized)?;
+        Some(normalized)
+    };
     let message_text = message_text.trim();
-    require_non_empty("target_group_alias", &target_group_alias)?;
     require_non_empty("message_text", message_text)?;
     if message_text.chars().count() > 500 {
         bail!("message_text must be 500 characters or fewer");
@@ -4737,6 +4754,7 @@ fn xiaoman_activity_send_request(
             "image_generation_work_item_id": candidate.image_generation_work_item_id,
             "target_channel": "qiwe",
             "target_group_alias": target_group_alias,
+            "target_group_id": target_group_id,
             "message_text": message_text,
             "send_executed": false,
         }),
@@ -6994,6 +7012,7 @@ mod tests {
         let request = xiaoman_activity_send_request(
             &candidate,
             "community_activity_group",
+            None,
             "活动海报已审核，请确认是否发送。",
         )
         .expect("request should build");
@@ -7026,6 +7045,7 @@ mod tests {
         let request = xiaoman_activity_send_request(
             &candidate,
             "community_activity_group",
+            None,
             "活动复盘图片已审核，请确认是否发送。",
         )
         .expect("recap send request should build");
@@ -7053,6 +7073,7 @@ mod tests {
         let err = xiaoman_activity_send_request(
             &candidate,
             "community_activity_group",
+            None,
             "raw private chat transcript",
         )
         .expect_err("sensitive message should be rejected");
@@ -7065,20 +7086,43 @@ mod tests {
     #[test]
     fn xiaoman_send_request_starter_rejects_empty_group_alias() {
         let candidate = xiaoman_send_candidate();
-        let err =
-            xiaoman_activity_send_request(&candidate, "  ", "活动海报已审核，请确认是否发送。")
-                .expect_err("target group alias is required");
+        let err = xiaoman_activity_send_request(
+            &candidate,
+            "  ",
+            None,
+            "活动海报已审核，请确认是否发送。",
+        )
+        .expect_err("target group alias is required");
 
         assert!(err.to_string().contains("target_group_alias is required"));
+    }
+
+    #[test]
+    fn xiaoman_send_request_starter_prefers_target_group_id() {
+        let candidate = xiaoman_send_candidate();
+        let request = xiaoman_activity_send_request(
+            &candidate,
+            "ignored_alias",
+            Some("10859791146538059"),
+            "活动海报已审核，请确认是否发送。",
+        )
+        .expect("request should build with target group id");
+
+        assert!(request.payload["target_group_alias"].is_null());
+        assert_eq!(request.payload["target_group_id"], "10859791146538059");
     }
 
     #[test]
     fn xiaoman_send_request_starter_rejects_overlong_message_text() {
         let candidate = xiaoman_send_candidate();
         let long_message = "活动".repeat(251);
-        let err =
-            xiaoman_activity_send_request(&candidate, "community_activity_group", &long_message)
-                .expect_err("message text length must be bounded");
+        let err = xiaoman_activity_send_request(
+            &candidate,
+            "community_activity_group",
+            None,
+            &long_message,
+        )
+        .expect_err("message text length must be bounded");
 
         assert!(err
             .to_string()
