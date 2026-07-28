@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.46](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.45...v0.2.46) (2026-07-28)
+
+
+### Bug Fixes
+
+* **qiwe:** compile Feishu bridge in production artifact ([#308](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/308)) ([6c34220](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6c34220f7963ff29cdd009b04ab290842d454db3))
+
 ## [0.2.45](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.44...v0.2.45) (2026-07-28)
 
 
