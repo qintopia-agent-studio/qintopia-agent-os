@@ -471,6 +471,17 @@ impl UploadCallFailure {
             } => *request_may_have_been_sent,
         }
     }
+
+    fn ambiguous_after_external_write(self) -> Self {
+        match self {
+            Self::Rejected { stage, http_status } => Self::OutcomeUnknown {
+                stage,
+                http_status,
+                request_may_have_been_sent: true,
+            },
+            failure @ Self::OutcomeUnknown { .. } => failure,
+        }
+    }
 }
 
 #[cfg(any(
@@ -1391,7 +1402,7 @@ fn request_feishu_bridge_upload_with(
             request_async_upload_url_with(config, claim, url, &config.media_allowed_hosts, client)
         })
         .map_err(|_| UploadCallFailure::unknown("temporary_storage_url_parse"))?;
-    async_upload
+    async_upload.map_err(UploadCallFailure::ambiguous_after_external_write)
 }
 
 #[cfg(any(
@@ -2889,6 +2900,19 @@ mod tests {
             UploadFailureDisposition::OutcomeUnknown
         );
         assert_eq!(failure.stage(), "async_upload_request_id");
+    }
+
+    #[test]
+    fn async_failure_after_feishu_external_write_is_always_ambiguous() {
+        let failure = UploadCallFailure::rejected("async_upload_request_build")
+            .ambiguous_after_external_write();
+        assert_eq!(
+            failure.disposition(),
+            UploadFailureDisposition::OutcomeUnknown
+        );
+        assert_eq!(failure.stage(), "async_upload_request_build");
+        assert_eq!(failure.http_status(), None);
+        assert!(failure.request_may_have_been_sent());
     }
 
     #[test]
