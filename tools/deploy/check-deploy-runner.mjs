@@ -1425,8 +1425,8 @@ if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
     'QIWE_BIN="${QIWE_ARTIFACT_DIR}/qintopia-message-sidecar"',
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.service",
-    'grep -F "ExecStart=${QIWE_BIN}"',
-    'grep -F "ExecStart=${BIN}"',
+    'grep -F " ${QIWE_BIN} "',
+    'grep -F " ${BIN} "',
   ]) {
     if (!renderer.includes(fragment)) {
       addError(`release systemd renderer is missing ${fragment}`);
