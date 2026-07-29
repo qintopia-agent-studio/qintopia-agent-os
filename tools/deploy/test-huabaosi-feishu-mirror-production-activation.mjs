@@ -76,6 +76,9 @@ printf '%s\\n' "$*" >>"${logPath}"
 if [[ "\${FAKE_PREFLIGHT_FAIL:-0}" == "1" && "$1" == "start" ]]; then
   exit 1
 fi
+if [[ "$1" == "show" ]]; then
+  printf '%s\\n' "\${FAKE_TIMER_NEXT_ELAPSE:-5min}"
+fi
 `,
     "utf8"
   );
@@ -132,9 +135,11 @@ fi
   const activationLog = fs.readFileSync(logPath, "utf8");
   for (const command of [
     "start qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
-    "enable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+    "enable qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+    "restart qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
     "is-enabled --quiet qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
     "is-active --quiet qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
+    "show --property=NextElapseUSecMonotonic --value qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
   ]) {
     if (!activationLog.includes(command)) {
       throw new Error(`activation is missing systemctl command: ${command}`);
@@ -149,6 +154,22 @@ fi
   }
 
   fs.writeFileSync(logPath, "", "utf8");
+  const elapsedTimer = run(activationScript, {
+    QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
+      "approved-production-huabaosi-feishu-artifact-mirror",
+    FAKE_TIMER_NEXT_ELAPSE: "infinity",
+  });
+  const elapsedTimerLog = fs.readFileSync(logPath, "utf8");
+  if (
+    elapsedTimer.status === 0 ||
+    !elapsedTimerLog.includes(
+      "disable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
+    )
+  ) {
+    throw new Error("activation accepted a timer without a future trigger");
+  }
+
+  fs.writeFileSync(logPath, "", "utf8");
   const failedPreflight = run(activationScript, {
     QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION:
       "approved-production-huabaosi-feishu-artifact-mirror",
@@ -158,9 +179,7 @@ fi
     failedPreflight.status === 0 ||
     fs
       .readFileSync(logPath, "utf8")
-      .includes(
-        "enable --now qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer"
-      )
+      .includes("enable qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer")
   ) {
     throw new Error("activation must not enable the timer when preflight fails");
   }

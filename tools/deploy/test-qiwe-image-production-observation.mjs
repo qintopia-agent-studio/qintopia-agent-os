@@ -52,6 +52,10 @@ set -euo pipefail
 printf '%s\\n' "$*" >>"${systemctlLog}"
 if [[ "\${FAKE_QIWE_TIMER_ENABLED:-0}" == "1" && "$1" == "is-enabled" ]]; then exit 0; fi
 if [[ "\${FAKE_QIWE_TIMER_ACTIVE:-0}" == "1" && "$1" == "is-active" ]]; then exit 0; fi
+if [[ "$1" == "show" ]]; then
+  if [[ "\${FAKE_QIWE_TIMER_SCHEDULED:-0}" == "1" ]]; then printf '%s\\n' '1min'; else printf '%s\\n' 'infinity'; fi
+  exit 0
+fi
 exit 1
 `
   );
@@ -269,6 +273,7 @@ exit 70
     QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
     FAKE_QIWE_TIMER_ENABLED: "1",
     FAKE_QIWE_TIMER_ACTIVE: "1",
+    FAKE_QIWE_TIMER_SCHEDULED: "1",
   });
   if (enabledQiwe.status !== 0) {
     throw new Error(
@@ -290,6 +295,16 @@ exit 70
   });
   if (enabledQiweWithoutTimer.status === 0) {
     throw new Error("enabled QiWe observation accepted a disabled production timer");
+  }
+
+  const enabledQiweWithoutSchedule = run({
+    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
+    FAKE_QIWE_TIMER_ENABLED: "1",
+    FAKE_QIWE_TIMER_ACTIVE: "1",
+    FAKE_QIWE_TIMER_SCHEDULED: "0",
+  });
+  if (enabledQiweWithoutSchedule.status === 0) {
+    throw new Error("enabled QiWe observation accepted an elapsed production timer");
   }
 
   const disabledQiwe = run({

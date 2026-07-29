@@ -51,8 +51,15 @@ if [[ "${#enablement_values[@]}" -ne 1 || "${enablement_values[0]}" != "1" ]]; t
 fi
 
 "$SYSTEMCTL" start "$PREFLIGHT_SERVICE"
-"$SYSTEMCTL" enable --now "$WORKER_TIMER"
+"$SYSTEMCTL" enable "$WORKER_TIMER"
+"$SYSTEMCTL" restart "$WORKER_TIMER"
 "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"
 "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"
+timer_next_elapse="$("$SYSTEMCTL" show --property=NextElapseUSecMonotonic --value "$WORKER_TIMER")"
+if [[ -z "$timer_next_elapse" || "$timer_next_elapse" == "0" || "$timer_next_elapse" == "infinity" ]]; then
+  "$SYSTEMCTL" disable --now "$WORKER_TIMER" >/dev/null 2>&1 || true
+  echo "Huabaosi Feishu mirror production timer has no future trigger" >&2
+  exit 1
+fi
 
 echo "Huabaosi Feishu artifact mirror production timer activated"

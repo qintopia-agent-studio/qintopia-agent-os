@@ -54,6 +54,9 @@ try {
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${logPath}"
+if [[ "$1" == "show" ]]; then
+  printf '%s\n' "\${FAKE_TIMER_NEXT_ELAPSE:-5min}"
+fi
 `,
     "utf8"
   );
@@ -87,13 +90,31 @@ printf '%s\n' "$*" >>"${logPath}"
   const activationLog = fs.readFileSync(logPath, "utf8");
   for (const command of [
     "start qintopia-agentos-huabaosi-image-generation-preflight.service",
-    "enable --now qintopia-agentos-huabaosi-image-generation-worker.timer",
+    "enable qintopia-agentos-huabaosi-image-generation-worker.timer",
+    "restart qintopia-agentos-huabaosi-image-generation-worker.timer",
     "is-enabled --quiet qintopia-agentos-huabaosi-image-generation-worker.timer",
     "is-active --quiet qintopia-agentos-huabaosi-image-generation-worker.timer",
+    "show --property=NextElapseUSecMonotonic --value qintopia-agentos-huabaosi-image-generation-worker.timer",
   ]) {
     if (!activationLog.includes(command)) {
       throw new Error(`activation is missing systemctl command: ${command}`);
     }
+  }
+
+  fs.writeFileSync(logPath, "", "utf8");
+  const elapsedTimer = run(activationFixture, {
+    QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION:
+      "approved-production-image-generation",
+    FAKE_TIMER_NEXT_ELAPSE: "infinity",
+  });
+  const elapsedTimerLog = fs.readFileSync(logPath, "utf8");
+  if (
+    elapsedTimer.status === 0 ||
+    !elapsedTimerLog.includes(
+      "disable --now qintopia-agentos-huabaosi-image-generation-worker.timer"
+    )
+  ) {
+    throw new Error("activation accepted a timer without a future trigger");
   }
 
   fs.writeFileSync(logPath, "", "utf8");

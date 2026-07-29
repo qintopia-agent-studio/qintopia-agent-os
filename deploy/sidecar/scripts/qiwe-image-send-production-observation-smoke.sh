@@ -214,6 +214,11 @@ if [[ "$EXPECTED_STATE" == "enabled" ]]; then
     echo "QiWe image-send production timer must be enabled" >&2
     exit 1
   fi
+  timer_next_elapse="$("$SYSTEMCTL" show --property=NextElapseUSecMonotonic --value "$WORKER_TIMER_NAME")"
+  if [[ -z "$timer_next_elapse" || "$timer_next_elapse" == "0" || "$timer_next_elapse" == "infinity" ]]; then
+    echo "QiWe image-send production timer must have a future trigger" >&2
+    exit 1
+  fi
 else
   if "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER_NAME" >/dev/null 2>&1; then
     echo "QiWe image-send production timer must not be active" >&2

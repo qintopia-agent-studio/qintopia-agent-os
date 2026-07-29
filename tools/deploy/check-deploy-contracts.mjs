@@ -1150,6 +1150,8 @@ if (!exists(huabaosiImageProductionObservationPath)) {
     'assert_no_sensitive_output "image worker dry-run stderr"',
     "generation_enabled",
     "adapter_compiled",
+    "NextElapseUSecMonotonic",
+    "provider timer must have a future trigger",
     "generation_flag//[[:space:]]/",
     "safe_for_chat",
     "contains forbidden sensitive output",
@@ -2072,9 +2074,11 @@ if (!exists(aliangProductionActivationPath)) {
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
     "qintopia-agentos-huabaosi-image-generation-worker.timer",
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
-    '"$SYSTEMCTL" enable --now "$WORKER_TIMER"',
+    '"$SYSTEMCTL" enable "$WORKER_TIMER"',
+    '"$SYSTEMCTL" restart "$WORKER_TIMER"',
     '"$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"',
     '"$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"',
+    "NextElapseUSecMonotonic",
   ]) {
     requireFragment(aliangProductionActivationPath, activation, fragment);
   }
@@ -2132,6 +2136,8 @@ if (!exists(huabaosiFeishuMirrorProductionObservationPath)) {
     "artifact-manifest.json",
     '"huabaosi-production-adapter"',
     '"huabaosi-feishu-mirror-adapter"',
+    "NextElapseUSecMonotonic",
+    "production timer must have a future trigger",
   ]) {
     requireFragment(
       huabaosiFeishuMirrorProductionObservationPath,
@@ -2164,9 +2170,11 @@ if (!exists(huabaosiFeishuMirrorActivationPath)) {
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-preflight.service",
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer",
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
-    '"$SYSTEMCTL" enable --now "$WORKER_TIMER"',
+    '"$SYSTEMCTL" enable "$WORKER_TIMER"',
+    '"$SYSTEMCTL" restart "$WORKER_TIMER"',
     '"$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"',
     '"$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"',
+    "NextElapseUSecMonotonic",
     "requires exactly one persistent enablement flag",
   ]) {
     requireFragment(huabaosiFeishuMirrorActivationPath, activation, fragment);
@@ -2217,9 +2225,11 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE=enabled",
     '"$OBSERVATION_SCRIPT" >/dev/null',
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
-    '"$SYSTEMCTL" enable --now "$WORKER_TIMER"',
+    '"$SYSTEMCTL" enable "$WORKER_TIMER"',
+    '"$SYSTEMCTL" restart "$WORKER_TIMER"',
     '"$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"',
     '"$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"',
+    "NextElapseUSecMonotonic",
     '"$SYSTEMCTL" disable --now "$WORKER_TIMER"',
     '"$SYSTEMCTL" stop "$WORKER_SERVICE"',
     '"$SYSTEMCTL" reset-failed "$WORKER_SERVICE"',
@@ -2327,6 +2337,8 @@ if (!exists(renderSystemdUnitsPath)) {
     "qintopia-agentos-qiwe-image-send-worker.service",
     "run-qiwe-image-send-worker --once --apply",
     "qintopia-agentos-qiwe-image-send-worker.timer",
+    "render_activation_timer",
+    "OnActiveSec=${activation_sec}",
   ]) {
     requireFragment(renderSystemdUnitsPath, renderer, fragment);
   }
@@ -2424,6 +2436,8 @@ if (!exists(qiweImageProductionObservationPath)) {
     "production timer must not be active",
     "production timer must be active",
     "production timer must be enabled",
+    "NextElapseUSecMonotonic",
+    "production timer must have a future trigger",
     "qiwe_image_send_production_observation_state=",
   ]) {
     requireFragment(qiweImageProductionObservationPath, observation, fragment);

@@ -110,6 +110,9 @@ printf '%s\n' "$*" >>"${logPath}"
 if [[ "\${SYSTEMCTL_FAIL_PREFLIGHT:-0}" == "1" && "$*" == "start qintopia-agentos-qiwe-image-send-preflight.service" ]]; then
   exit 23
 fi
+if [[ "$1" == "show" ]]; then
+  printf '%s\n' "\${FAKE_TIMER_NEXT_ELAPSE:-1min}"
+fi
 `,
     "utf8"
   );
@@ -340,7 +343,7 @@ printf '%s  -\\n' "${databaseHash}"
       "start qintopia-agentos-qiwe-image-send-preflight.service"
     ) ||
     rejectedActivationLog.includes(
-      "enable --now qintopia-agentos-qiwe-image-send-worker.timer"
+      "enable qintopia-agentos-qiwe-image-send-worker.timer"
     )
   ) {
     throw new Error(
@@ -360,7 +363,8 @@ printf '%s  -\\n' "${databaseHash}"
     throw new Error("activation must fail when production observation fails");
   }
   for (const command of [
-    "enable --now qintopia-agentos-qiwe-image-send-worker.timer",
+    "enable qintopia-agentos-qiwe-image-send-worker.timer",
+    "restart qintopia-agentos-qiwe-image-send-worker.timer",
     "disable --now qintopia-agentos-qiwe-image-send-worker.timer",
     "stop qintopia-agentos-qiwe-image-send-worker.service",
     "reset-failed qintopia-agentos-qiwe-image-send-worker.service",
@@ -383,14 +387,32 @@ printf '%s  -\\n' "${databaseHash}"
   const activationLog = fs.readFileSync(logPath, "utf8");
   for (const command of [
     "start qintopia-agentos-qiwe-image-send-preflight.service",
-    "enable --now qintopia-agentos-qiwe-image-send-worker.timer",
+    "enable qintopia-agentos-qiwe-image-send-worker.timer",
+    "restart qintopia-agentos-qiwe-image-send-worker.timer",
     "is-enabled --quiet qintopia-agentos-qiwe-image-send-worker.timer",
     "is-active --quiet qintopia-agentos-qiwe-image-send-worker.timer",
+    "show --property=NextElapseUSecMonotonic --value qintopia-agentos-qiwe-image-send-worker.timer",
     "observation enabled",
   ]) {
     if (!activationLog.includes(command)) {
       throw new Error(`activation is missing systemctl command: ${command}`);
     }
+  }
+
+  fs.writeFileSync(logPath, "", "utf8");
+  const elapsedTimer = run(activationFixture, {
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
+      "approved-production-qiwe-image-send",
+    FAKE_TIMER_NEXT_ELAPSE: "infinity",
+  });
+  const elapsedTimerLog = fs.readFileSync(logPath, "utf8");
+  if (
+    elapsedTimer.status === 0 ||
+    !elapsedTimerLog.includes(
+      "disable --now qintopia-agentos-qiwe-image-send-worker.timer"
+    )
+  ) {
+    throw new Error("activation accepted a timer without a future trigger");
   }
 
   writeEnv("0");

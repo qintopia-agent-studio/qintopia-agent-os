@@ -251,6 +251,12 @@ assert_provider_state() {
       echo "Huabaosi provider timer must be enabled" >&2
       exit 1
     fi
+    local timer_next_elapse
+    timer_next_elapse="$("$SYSTEMCTL" show --property=NextElapseUSecMonotonic --value "$PROVIDER_TIMER_NAME")"
+    if [[ -z "$timer_next_elapse" || "$timer_next_elapse" == "0" || "$timer_next_elapse" == "infinity" ]]; then
+      echo "Huabaosi provider timer must have a future trigger" >&2
+      exit 1
+    fi
   else
     if "$SYSTEMCTL" is-active --quiet "$PROVIDER_TIMER_NAME" >/dev/null 2>&1; then
       echo "Huabaosi provider timer must not be active" >&2

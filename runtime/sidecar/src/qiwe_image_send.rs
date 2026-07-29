@@ -1980,16 +1980,7 @@ const fn qiwe_live_adapter_compiled() -> bool {
 }
 
 const fn feishu_delivery_bridge_compiled() -> bool {
-    cfg!(any(
-        all(
-            feature = "huabaosi-staging-adapter",
-            feature = "qiwe-staging-adapter"
-        ),
-        all(
-            feature = "huabaosi-feishu-mirror-adapter",
-            feature = "qiwe-production-adapter"
-        )
-    ))
+    qiwe_image_send_state::feishu_delivery_bridge_compiled()
 }
 
 impl AdapterConfig {

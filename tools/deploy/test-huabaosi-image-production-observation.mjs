@@ -69,6 +69,14 @@ fi
 if [[ "\${FAKE_PROVIDER_TIMER_ENABLED:-0}" == "1" && "$1" == "is-enabled" ]]; then
   exit 0
 fi
+if [[ "$1" == "show" ]]; then
+  if [[ "\${FAKE_PROVIDER_TIMER_SCHEDULED:-0}" == "1" ]]; then
+    printf '%s\n' '5min'
+  else
+    printf '%s\n' 'infinity'
+  fi
+  exit 0
+fi
 exit 1
 `
   );
@@ -276,6 +284,7 @@ exit 0
       FAKE_PROVIDER_UNIT_PRESENT: "1",
       FAKE_PROVIDER_TIMER_ACTIVE: "1",
       FAKE_PROVIDER_TIMER_ENABLED: "1",
+      FAKE_PROVIDER_TIMER_SCHEDULED: "1",
     },
     [
       "QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=1",
@@ -296,8 +305,21 @@ exit 0
   }
 
   for (const missingState of [
-    { FAKE_PROVIDER_TIMER_ACTIVE: "0", FAKE_PROVIDER_TIMER_ENABLED: "1" },
-    { FAKE_PROVIDER_TIMER_ACTIVE: "1", FAKE_PROVIDER_TIMER_ENABLED: "0" },
+    {
+      FAKE_PROVIDER_TIMER_ACTIVE: "0",
+      FAKE_PROVIDER_TIMER_ENABLED: "1",
+      FAKE_PROVIDER_TIMER_SCHEDULED: "1",
+    },
+    {
+      FAKE_PROVIDER_TIMER_ACTIVE: "1",
+      FAKE_PROVIDER_TIMER_ENABLED: "0",
+      FAKE_PROVIDER_TIMER_SCHEDULED: "1",
+    },
+    {
+      FAKE_PROVIDER_TIMER_ACTIVE: "1",
+      FAKE_PROVIDER_TIMER_ENABLED: "1",
+      FAKE_PROVIDER_TIMER_SCHEDULED: "0",
+    },
   ]) {
     const invalidEnabled = runObservation(
       {

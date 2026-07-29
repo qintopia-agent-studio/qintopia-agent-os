@@ -268,6 +268,29 @@ WantedBy=timers.target
 EOF
 }
 
+render_activation_timer() {
+  local timer_name="$1"
+  local description="$2"
+  local service_name="$3"
+  local activation_sec="$4"
+  local active_sec="$5"
+
+  write_file "$timer_name" <<EOF
+[Unit]
+Description=${description}
+
+[Timer]
+OnActiveSec=${activation_sec}
+OnUnitActiveSec=${active_sec}
+AccuracySec=30s
+Persistent=true
+Unit=${service_name}
+
+[Install]
+WantedBy=timers.target
+EOF
+}
+
 render_plan() {
   write_file "_M9_SYSTEMD_PLAN.txt" <<EOF
 M9 sidecar systemd render plan
@@ -495,7 +518,7 @@ render_all() {
     "huabaosi-image-generation-preflight" \
     "run-huabaosi-image-generation-worker --once --apply" \
     "$huabaosi_image_release_environment"
-  render_timer \
+  render_activation_timer \
     "qintopia-agentos-huabaosi-image-generation-worker.timer" \
     "Run Qintopia AgentOS Huabaosi image generation worker" \
     "qintopia-agentos-huabaosi-image-generation-worker.service" \
@@ -513,7 +536,7 @@ render_all() {
     "huabaosi-feishu-artifact-mirror-preflight" \
     "run-huabaosi-feishu-artifact-mirror-worker --once --apply" \
     "$huabaosi_feishu_release_environment"
-  render_timer \
+  render_activation_timer \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer" \
     "Run Qintopia AgentOS Huabaosi Feishu artifact mirror worker" \
     "qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.service" \
@@ -533,7 +556,7 @@ render_all() {
     "run-qiwe-image-send-worker --once --apply" \
     "" \
     "$QIWE_BIN"
-  render_timer \
+  render_activation_timer \
     "qintopia-agentos-qiwe-image-send-worker.timer" \
     "Run Qintopia AgentOS QiWe image send worker" \
     "qintopia-agentos-qiwe-image-send-worker.service" \
