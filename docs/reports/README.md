@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-29 QiWe Feishu primary-storage revalidation failure](2026-07-29-qiwe-feishu-primary-storage-revalidation-failure.md)
 - [2026-07-29 QiWe Feishu release identity binding](2026-07-29-qiwe-feishu-release-identity-binding.md)
 - [2026-07-29 Xiaoman Feishu production boundary cutover](2026-07-29-xiaoman-feishu-production-boundary-cutover.md)
 - [2026-07-29 systemd release environment precedence](2026-07-29-systemd-release-env-precedence.md)
