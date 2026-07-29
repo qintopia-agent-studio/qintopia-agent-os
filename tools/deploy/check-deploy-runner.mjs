@@ -738,7 +738,11 @@ for (const fragment of [
   'if [[ -e "${RELEASE_ROOT}/current" || -L "${RELEASE_ROOT}/current" ]]',
   'previous_sha="${previous_target##*/}"',
   "promoted_current=true",
-  'promote-release.sh \\\n    "${promote_args[@]}" || return $?',
+  'RUNNER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"',
+  '"${RUNNER_DIR}/promote-release.sh"',
+  '"${RUNNER_DIR}/install-release-systemd-units.sh"',
+  '"${RUNNER_DIR}/smoke-release.sh"',
+  '"${RUNNER_DIR}/rollback-release.sh"',
   'deploy_stage="install-release-systemd-units"',
   'deploy_stage="smoke-release"',
   '"failure_stage": deploy_failure_stage',
@@ -796,6 +800,13 @@ for (const fragment of [
   "existing release sidecar artifact manifest profile is unavailable",
   'repair_existing_release_metadata "$release_dir" "$staging_dir"',
   "existing release content differs from freshly verified artifacts",
+  'PROMOTER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"',
+  'FETCH_COS_ARTIFACT="${REPOSITORY_ROOT}/deploy/sidecar/scripts/fetch-cos-artifact.sh"',
+  '"$FETCH_COS_ARTIFACT"',
+  'python_bytecode_relative_dir="runtime/hermes/__pycache__"',
+  "validate_existing_python_bytecode_cache",
+  "existing Hermes bytecode cache contents are invalid",
+  "quarantine_existing_python_bytecode_cache",
   'chown -hR root:root "$existing_dir"',
   "sha256sum -c SHA256SUMS",
 ]) {
@@ -925,6 +936,7 @@ for (const fragment of [
   '"doctor_succeeded"',
   "verify_runtime_provider.py",
   "verify-activated",
+  "export PYTHONDONTWRITEBYTECODE=1",
 ]) {
   if (!smokeText.includes(fragment)) {
     addError(`deploy/runner/smoke-release.sh: missing ${fragment}`);

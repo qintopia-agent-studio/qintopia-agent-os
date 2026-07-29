@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+export PYTHONDONTWRITEBYTECODE=1
 
 restart_targets=""
 release_root="${QINTOPIA_RELEASE_ROOT:-/home/ubuntu/qintopia-agent-os-releases}"

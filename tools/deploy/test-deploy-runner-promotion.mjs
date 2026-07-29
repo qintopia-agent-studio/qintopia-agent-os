@@ -44,6 +44,13 @@ const signRequest = (request, metadata) =>
     .digest("hex");
 
 try {
+  const runnerPath = writeExecutable(
+    "deploy/runner/qintopia-agent-os-deploy-runner",
+    fs.readFileSync(
+      path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner"),
+      "utf8"
+    )
+  );
   const stateDir = path.join(tmpRoot, "state");
   const releaseRoot = path.join(tmpRoot, "releases");
   fs.mkdirSync(stateDir, { recursive: true });
@@ -139,29 +146,21 @@ exit 44
 `
   );
 
-  const result = spawnSync(
-    "bash",
-    [
-      path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner"),
-      "--request-file",
-      requestFile,
-    ],
-    {
-      cwd: tmpRoot,
-      env: {
-        ...process.env,
-        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
-        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
-        QINTOPIA_RELEASE_ROOT: releaseRoot,
-        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
-        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
-        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
-        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
-        TENCENT_COS_REGION: "ap-shanghai",
-      },
-      encoding: "utf8",
-    }
-  );
+  const result = spawnSync("bash", [runnerPath, "--request-file", requestFile], {
+    cwd: stateDir,
+    env: {
+      ...process.env,
+      PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+      QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
+      QINTOPIA_RELEASE_ROOT: releaseRoot,
+      QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+      DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+      DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+      TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+      TENCENT_COS_REGION: "ap-shanghai",
+    },
+    encoding: "utf8",
+  });
 
   if (result.status !== 42) {
     throw new Error(
@@ -256,13 +255,9 @@ exit 0
 
   const promotedResult = spawnSync(
     "bash",
-    [
-      path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner"),
-      "--request-file",
-      requestFile,
-    ],
+    [runnerPath, "--request-file", requestFile],
     {
-      cwd: tmpRoot,
+      cwd: stateDir,
       env: {
         ...process.env,
         PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -378,29 +373,21 @@ exit 0
 `
   );
 
-  const qiweResult = spawnSync(
-    "bash",
-    [
-      path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner"),
-      "--request-file",
-      requestFile,
-    ],
-    {
-      cwd: tmpRoot,
-      env: {
-        ...process.env,
-        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
-        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
-        QINTOPIA_RELEASE_ROOT: releaseRoot,
-        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
-        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
-        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
-        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
-        TENCENT_COS_REGION: "ap-shanghai",
-      },
-      encoding: "utf8",
-    }
-  );
+  const qiweResult = spawnSync("bash", [runnerPath, "--request-file", requestFile], {
+    cwd: stateDir,
+    env: {
+      ...process.env,
+      PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+      QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
+      QINTOPIA_RELEASE_ROOT: releaseRoot,
+      QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+      DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+      DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+      TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+      TENCENT_COS_REGION: "ap-shanghai",
+    },
+    encoding: "utf8",
+  });
 
   if (qiweResult.status !== 0) {
     throw new Error(

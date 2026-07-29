@@ -727,6 +727,7 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertFalse(smoke_evidence["inference_called"])
             self.assertFalse(smoke_evidence["external_delivery"])
             self.assertEqual(0o600, stat.S_IMODE(evidence.stat().st_mode))
+            self.assertFalse((release / "runtime/hermes/__pycache__").exists())
 
 
 if __name__ == "__main__":

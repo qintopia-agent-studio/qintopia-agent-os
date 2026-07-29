@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+RUNNER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 STATE_DIR="${QINTOPIA_DEPLOY_RUNNER_STATE_DIR:-/var/lib/qintopia-agent-os-deploy}"
 REQUEST_DIR="${STATE_DIR}/requests"
 RESULT_DIR="${STATE_DIR}/results"
@@ -481,7 +482,7 @@ run_promotion() {
     promote_args+=(--dry-run)
   fi
   deploy_stage="promote-release"
-  deploy/runner/promote-release.sh \
+  "${RUNNER_DIR}/promote-release.sh" \
     "${promote_args[@]}" || return $?
   if [[ "$dry_run" == "true" ]]; then
     deploy_stage="write-dry-run-result"
@@ -489,11 +490,11 @@ run_promotion() {
   else
     promoted_current=true
     deploy_stage="install-release-systemd-units"
-    deploy/runner/install-release-systemd-units.sh \
+    "${RUNNER_DIR}/install-release-systemd-units.sh" \
       --release-root "$RELEASE_ROOT" \
       --release-sha "$release_sha" || return $?
     deploy_stage="smoke-release"
-    deploy/runner/smoke-release.sh \
+    "${RUNNER_DIR}/smoke-release.sh" \
       --release-root "$RELEASE_ROOT" \
       --restart-targets "$restart_targets" \
       --log-since "$started_at" || return $?
@@ -546,8 +547,8 @@ run_promotion() {
     elif [[ "$promoted_current" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
       rollback_target="$(readlink -f "${RELEASE_ROOT}/previous" 2>/dev/null || true)"
       rollback_ok=true
-      deploy/runner/rollback-release.sh --release-root "$RELEASE_ROOT" || rollback_ok=false
-      deploy/runner/smoke-release.sh \
+      "${RUNNER_DIR}/rollback-release.sh" --release-root "$RELEASE_ROOT" || rollback_ok=false
+      "${RUNNER_DIR}/smoke-release.sh" \
         --release-root "$RELEASE_ROOT" \
         --restart-targets "$restart_targets" \
         --skip-erhua-provider-check \

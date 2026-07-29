@@ -8,13 +8,18 @@ import process from "node:process";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
-const promoteScript = path.join(repoRoot, "deploy/runner/promote-release.sh");
 const originalUmask = process.umask(0o077);
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-promote-tree-"));
+const runnerState = path.join(tmpRoot, "runner-state");
+const promoteScript = path.join(tmpRoot, "deploy/runner/promote-release.sh");
 const fixtureRoot = path.join(tmpRoot, "fixtures");
 const fakeBin = path.join(tmpRoot, "bin");
 const sha = "0123456789abcdef0123456789abcdef01234567";
 const previousSha = "89abcdef0123456789abcdef0123456789abcdef";
+fs.mkdirSync(path.dirname(promoteScript), { recursive: true });
+fs.mkdirSync(runnerState, { recursive: true });
+fs.copyFileSync(path.join(repoRoot, "deploy/runner/promote-release.sh"), promoteScript);
+fs.chmodSync(promoteScript, 0o755);
 
 const sha256File = (filePath) => {
   const hash = crypto.createHash("sha256");
@@ -71,7 +76,7 @@ const runPromotion = (requestFile, releaseRoot, extraEnv = {}) =>
     "bash",
     [promoteScript, "--request-file", requestFile, "--release-root", releaseRoot],
     {
-      cwd: tmpRoot,
+      cwd: runnerState,
       env: {
         ...process.env,
         ...extraEnv,

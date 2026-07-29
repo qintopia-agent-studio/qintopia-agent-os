@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROMOTER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPOSITORY_ROOT="$(cd -- "${PROMOTER_DIR}/../.." && pwd -P)"
+FETCH_COS_ARTIFACT="${REPOSITORY_ROOT}/deploy/sidecar/scripts/fetch-cos-artifact.sh"
+
 usage() {
   cat <<'USAGE'
 Usage:
@@ -141,6 +145,7 @@ fi
 
 companion_runtime_artifact_profile="qiwe-production"
 companion_relative_dir="sidecar-profiles/${companion_runtime_artifact_profile}"
+python_bytecode_relative_dir="runtime/hermes/__pycache__"
 release_dir="${release_root}/${release_sha}"
 staging_dir="${release_root}/.staging-${release_sha}"
 current_target="$(readlink -f "${release_root}/current" 2>/dev/null || true)"
@@ -150,6 +155,8 @@ existing_manifest_backup_tmp=""
 quarantine_container=""
 quarantined_coscli_source=""
 quarantined_coscli_target=""
+quarantined_python_bytecode_source=""
+quarantined_python_bytecode_target=""
 quarantine_active=false
 companion_install_active=false
 companion_parent_created=false
@@ -170,6 +177,9 @@ cleanup() {
     fi
   fi
   if [[ "$promotion_complete" != "true" && "$quarantine_active" == "true" ]]; then
+    if [[ -d "$quarantined_python_bytecode_target" && ! -e "$quarantined_python_bytecode_source" ]]; then
+      mv "$quarantined_python_bytecode_target" "$quarantined_python_bytecode_source" 2>/dev/null || true
+    fi
     if [[ -d "$quarantined_coscli_target" && ! -e "$quarantined_coscli_source" ]]; then
       mv "$quarantined_coscli_target" "$quarantined_coscli_source" 2>/dev/null || true
     fi
@@ -274,16 +284,61 @@ for name in entries:
 PY
 }
 
+validate_existing_python_bytecode_cache() {
+  local cache_root="$1"
+  local expected_uid
+  expected_uid="$(id -u)"
+  python3 - "$cache_root" "$expected_uid" <<'PY'
+import os
+import re
+import stat
+import sys
+
+root = sys.argv[1]
+expected_uid = int(sys.argv[2])
+cache_name = re.compile(r"^render_profile_overlay\.cpython-[0-9]{2,3}\.pyc$")
+
+try:
+    root_metadata = os.lstat(root)
+except FileNotFoundError:
+    raise SystemExit("existing Hermes bytecode cache is missing") from None
+if (
+    not stat.S_ISDIR(root_metadata.st_mode)
+    or stat.S_ISLNK(root_metadata.st_mode)
+    or root_metadata.st_uid != expected_uid
+    or stat.S_IMODE(root_metadata.st_mode) != 0o700
+):
+    raise SystemExit("existing Hermes bytecode cache metadata is invalid")
+
+entries = sorted(os.listdir(root))
+if len(entries) != 1 or not cache_name.fullmatch(entries[0]):
+    raise SystemExit("existing Hermes bytecode cache contents are invalid")
+
+cache_file = os.path.join(root, entries[0])
+metadata = os.lstat(cache_file)
+if (
+    not stat.S_ISREG(metadata.st_mode)
+    or stat.S_ISLNK(metadata.st_mode)
+    or metadata.st_uid != expected_uid
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+    or metadata.st_nlink != 1
+    or metadata.st_size <= 0
+    or metadata.st_size > 1024 * 1024
+):
+    raise SystemExit("existing Hermes bytecode cache file metadata is invalid")
+PY
+}
+
 verify_existing_release_content() {
   local existing_dir="$1"
   local requested_dir="$2"
-  python3 - "$existing_dir" "$requested_dir" "$companion_relative_dir" <<'PY'
+  python3 - "$existing_dir" "$requested_dir" "$companion_relative_dir" "$python_bytecode_relative_dir" <<'PY'
 import hashlib
 import os
 import stat
 import sys
 
-existing_root, requested_root, companion_relative = sys.argv[1:4]
+existing_root, requested_root, companion_relative, python_bytecode_relative = sys.argv[1:5]
 
 
 def digest(path):
@@ -305,7 +360,7 @@ def inventory(root, *, existing):
         for name in sorted(dirnames):
             path = os.path.join(directory, name)
             relative = os.path.join(relative_directory, name)
-            if existing and relative == "coscli_output":
+            if existing and relative in ("coscli_output", python_bytecode_relative):
                 continue
             metadata = os.lstat(path)
             if stat.S_ISLNK(metadata.st_mode):
@@ -397,12 +452,9 @@ verify_existing_release_checksums() {
   fi
 }
 
-quarantine_existing_coscli_output() {
-  local existing_dir="$1"
-  local source_path="${existing_dir}/coscli_output"
-  if [[ ! -d "$source_path" || -L "$source_path" ]]; then
-    echo "validated COSCLI diagnostic root changed before quarantine" >&2
-    return 1
+ensure_quarantine_container() {
+  if [[ -n "$quarantine_container" ]]; then
+    return
   fi
   if [[ -e "$quarantine_root" ]]; then
     python3 - "$quarantine_root" "$(id -u)" <<'PY'
@@ -426,9 +478,33 @@ PY
   fi
   quarantine_container="$(mktemp -d "${quarantine_root}/${release_sha}-${request_id}.XXXXXX")"
   chmod 0700 "$quarantine_container"
+}
+
+quarantine_existing_coscli_output() {
+  local existing_dir="$1"
+  local source_path="${existing_dir}/coscli_output"
+  if [[ ! -d "$source_path" || -L "$source_path" ]]; then
+    echo "validated COSCLI diagnostic root changed before quarantine" >&2
+    return 1
+  fi
+  ensure_quarantine_container
   quarantined_coscli_source="$source_path"
   quarantined_coscli_target="${quarantine_container}/coscli_output"
   mv "$quarantined_coscli_source" "$quarantined_coscli_target"
+  quarantine_active=true
+}
+
+quarantine_existing_python_bytecode_cache() {
+  local existing_dir="$1"
+  local source_path="${existing_dir}/${python_bytecode_relative_dir}"
+  if [[ ! -d "$source_path" || -L "$source_path" ]]; then
+    echo "validated Hermes bytecode cache changed before quarantine" >&2
+    return 1
+  fi
+  ensure_quarantine_container
+  quarantined_python_bytecode_source="$source_path"
+  quarantined_python_bytecode_target="${quarantine_container}/hermes-python-bytecode"
+  mv "$quarantined_python_bytecode_source" "$quarantined_python_bytecode_target"
   quarantine_active=true
 }
 
@@ -578,18 +654,18 @@ install -d -m 0755 \
   "$staging_dir/deploy-bundle"
 
 QINTOPIA_SIDECAR_ARTIFACT_PROFILE="huabaosi-production" \
-deploy/sidecar/scripts/fetch-cos-artifact.sh \
+"$FETCH_COS_ARTIFACT" \
   --artifact-type sidecar \
   --sha "$runtime_sha" \
   --output-dir "${staging_dir}/sidecar"
 
 QINTOPIA_SIDECAR_ARTIFACT_PROFILE="$companion_runtime_artifact_profile" \
-deploy/sidecar/scripts/fetch-cos-artifact.sh \
+"$FETCH_COS_ARTIFACT" \
   --artifact-type sidecar \
   --sha "$runtime_sha" \
   --output-dir "${staging_dir}/${companion_relative_dir}"
 
-deploy/sidecar/scripts/fetch-cos-artifact.sh \
+"$FETCH_COS_ARTIFACT" \
   --artifact-type deploy-bundle \
   --sha "$deploy_bundle_sha" \
   --output-dir "${staging_dir}/deploy-bundle"
@@ -674,11 +750,17 @@ PY
     coscli_diagnostics_present=true
   fi
 
+  python_bytecode_present=false
+  if [[ -e "${release_dir}/${python_bytecode_relative_dir}" || -L "${release_dir}/${python_bytecode_relative_dir}" ]]; then
+    validate_existing_python_bytecode_cache "${release_dir}/${python_bytecode_relative_dir}"
+    python_bytecode_present=true
+  fi
+
   companion_state="$(verify_existing_release_content "$release_dir" "$staging_dir")"
   verify_existing_release_checksums "$release_dir" "$companion_state"
 
   if [[ "$dry_run" == "true" ]]; then
-    echo "Dry run validated existing release ${release_sha}; companion_state=${companion_state}; coscli_diagnostics=${coscli_diagnostics_present}"
+    echo "Dry run validated existing release ${release_sha}; companion_state=${companion_state}; coscli_diagnostics=${coscli_diagnostics_present}; python_bytecode=${python_bytecode_present}"
     exit 0
   fi
 
@@ -687,6 +769,9 @@ PY
 
   if [[ "$coscli_diagnostics_present" == "true" ]]; then
     quarantine_existing_coscli_output "$release_dir"
+  fi
+  if [[ "$python_bytecode_present" == "true" ]]; then
+    quarantine_existing_python_bytecode_cache "$release_dir"
   fi
 
   if [[ "$companion_state" == "missing" ]]; then
