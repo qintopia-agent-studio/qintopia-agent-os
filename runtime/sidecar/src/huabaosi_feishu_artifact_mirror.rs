@@ -513,7 +513,7 @@ pub async fn run_primary_storage_revalidation(cli: &Cli, artifact_id: Uuid) -> R
         let database_url = cli.database_url_required()?;
         let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
-        let artifact = peek_candidate(&pool, Some(artifact_id))
+        let artifact = peek_primary_storage_artifact(&pool, artifact_id)
             .await?
             .context("Huabaosi generated image artifact was not found")?;
         let workflow_root_id = resolve_workflow_root_pool(&pool, artifact.work_item_id).await?;
@@ -548,7 +548,7 @@ pub(crate) async fn revalidate_primary_storage_for_approval(
     ))]
     {
         let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
-        let artifact = peek_candidate(pool, Some(artifact_id))
+        let artifact = peek_primary_storage_artifact(pool, artifact_id)
             .await?
             .context("Huabaosi generated image artifact was not found")?;
         let workflow_root_id = resolve_workflow_root_pool(pool, artifact.work_item_id).await?;
@@ -589,7 +589,7 @@ pub(crate) async fn revalidate_primary_storage_for_delivery(
     database_url: &str,
 ) -> Result<FeishuPrimaryStorageDeliveryArtifact> {
     let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
-    let artifact = peek_candidate(pool, Some(artifact_id))
+    let artifact = peek_primary_storage_artifact(pool, artifact_id)
         .await?
         .context("Huabaosi generated image artifact was not found")?;
     if artifact.review_status != "approved"
@@ -1564,6 +1564,86 @@ const CANDIDATE_SELECT: &str = r#"
     LIMIT 1
 "#;
 
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+const PRIMARY_STORAGE_ARTIFACT_SELECT: &str = r#"
+    SELECT
+        artifact.id,
+        artifact.work_item_id,
+        artifact.review_status,
+        artifact.title,
+        artifact.artifact_uri,
+        artifact.content_hash,
+        artifact.source_ids,
+        artifact.metadata,
+        artifact.reviewed_at,
+        artifact.reviewed_by,
+        artifact.review_decision_reason,
+        artifact.created_at,
+        artifact.updated_at,
+        mirror.last_synced_at,
+        mirror.status AS workbench_status,
+        creation.data AS creation_event_data
+    FROM qintopia_agent_os.artifacts artifact
+    JOIN qintopia_agent_os.work_items item
+      ON item.id = artifact.work_item_id
+    LEFT JOIN qintopia_agent_os.human_workbench_refs mirror
+      ON mirror.artifact_id = artifact.id
+     AND mirror.provider = 'feishu_base_huabaosi_generated_image'
+     AND mirror.external_id = artifact.id::text
+    LEFT JOIN LATERAL (
+        SELECT event.data
+        FROM qintopia_agent_os.work_item_events event
+        WHERE event.artifact_id = artifact.id
+          AND event.event_type = 'generated_image_created'
+          AND event.actor_type = 'worker'
+          AND event.actor_id = 'huabaosi-image-generation-worker'
+        ORDER BY event.created_at DESC, event.id DESC
+        LIMIT 1
+    ) creation ON true
+    WHERE artifact.id = $1
+      AND artifact.artifact_type = 'generated_image'
+      AND artifact.created_by_agent = 'huabaosi'
+      AND artifact.artifact_uri = $2
+      AND item.work_item_type = 'image_generation_request'
+      AND item.capability_key = 'huabaosi.generate_image_asset'
+      AND item.target_agent = 'huabaosi'
+    LIMIT 1
+"#;
+
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn primary_storage_artifact_uri(artifact_id: Uuid) -> String {
+    format!("feishu-base://huabaosi-generated-image/{artifact_id}")
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter",
+    all(test, feature = "postgres-integration-tests")
+))]
+async fn peek_primary_storage_artifact(
+    pool: &PgPool,
+    artifact_id: Uuid,
+) -> Result<Option<MirrorArtifact>> {
+    let row = sqlx::query(PRIMARY_STORAGE_ARTIFACT_SELECT)
+        .bind(artifact_id)
+        .bind(primary_storage_artifact_uri(artifact_id))
+        .fetch_optional(pool)
+        .await
+        .context("peek Huabaosi generated image from Feishu primary storage")?;
+    row.map(artifact_from_row).transpose()
+}
+
 async fn peek_candidate(
     pool: &PgPool,
     artifact_id: Option<Uuid>,
@@ -2033,7 +2113,7 @@ pub(crate) fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
 fn validate_primary_storage_artifact(
     artifact: &MirrorArtifact,
 ) -> Result<ValidatedPrimaryStorageArtifact> {
-    let expected_uri = format!("feishu-base://huabaosi-generated-image/{}", artifact.id);
+    let expected_uri = primary_storage_artifact_uri(artifact.id);
     if artifact.artifact_uri != expected_uri {
         bail!("Huabaosi Feishu-backed artifact URI does not match the generated image id");
     }
@@ -3100,6 +3180,19 @@ mod tests {
         assert!(CANDIDATE_SELECT.contains("AND artifact.artifact_uri LIKE 'https://%'"));
     }
 
+    #[test]
+    fn huabaosi_feishu_primary_storage_query_requires_exact_uri() {
+        let artifact_id = Uuid::nil();
+
+        assert!(PRIMARY_STORAGE_ARTIFACT_SELECT.contains("WHERE artifact.id = $1"));
+        assert!(PRIMARY_STORAGE_ARTIFACT_SELECT.contains("AND artifact.artifact_uri = $2"));
+        assert!(!PRIMARY_STORAGE_ARTIFACT_SELECT.contains("LIKE 'https://%'"));
+        assert_eq!(
+            primary_storage_artifact_uri(artifact_id),
+            format!("feishu-base://huabaosi-generated-image/{artifact_id}")
+        );
+    }
+
     #[cfg(feature = "huabaosi-feishu-mirror-adapter")]
     #[test]
     fn huabaosi_feishu_artifact_mirror_observation_preflight_uses_non_secret_boundary() {
@@ -3904,6 +3997,36 @@ mod tests {
         assert!(!serialized.contains("base_token"));
         assert_eq!(state.1["schema_version"], SCHEMA_VERSION);
         assert_eq!(state.2["external_send_executed"], false);
+
+        let primary_storage_uri = primary_storage_artifact_uri(fixture.id);
+        sqlx::query(
+            r#"
+            UPDATE qintopia_agent_os.artifacts
+            SET artifact_uri = $2,
+                review_status = 'approved',
+                reviewed_at = now(),
+                reviewed_by = 'integration-owner'
+            WHERE id = $1
+            "#,
+        )
+        .bind(fixture.id)
+        .bind(&primary_storage_uri)
+        .execute(&pool)
+        .await
+        .expect("move integration artifact to Feishu primary storage");
+
+        assert!(
+            peek_candidate(&pool, Some(fixture.id))
+                .await
+                .expect("execute HTTPS mirror candidate query")
+                .is_none(),
+            "Feishu primary-storage artifact re-entered the HTTPS mirror queue"
+        );
+        let primary_storage_artifact = peek_primary_storage_artifact(&pool, fixture.id)
+            .await
+            .expect("execute primary-storage artifact query")
+            .expect("load Feishu primary-storage artifact");
+        assert_eq!(primary_storage_artifact.artifact_uri, primary_storage_uri);
 
         sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = $1")
             .bind(request_id)
