@@ -12,8 +12,14 @@ const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-same-sha-repair-
 const fixtureRoot = path.join(tmpRoot, "fixtures");
 const releaseRoot = path.join(tmpRoot, "releases");
 const fakeBin = path.join(tmpRoot, "bin");
+const runnerState = path.join(tmpRoot, "runner-state");
 const chownLog = path.join(tmpRoot, "chown.log");
 const sha = "0123456789abcdef0123456789abcdef01234567";
+const promoterPath = path.join(tmpRoot, "deploy/runner/promote-release.sh");
+fs.mkdirSync(path.dirname(promoterPath), { recursive: true });
+fs.mkdirSync(runnerState, { recursive: true });
+fs.copyFileSync(path.join(repoRoot, "deploy/runner/promote-release.sh"), promoterPath);
+fs.chmodSync(promoterPath, 0o755);
 
 const sha256File = (filePath) => {
   const hash = crypto.createHash("sha256");
@@ -69,7 +75,7 @@ const runPromotion = (requestPath, { dryRun = false, extraEnv = {} } = {}) =>
   spawnSync(
     "bash",
     [
-      path.join(repoRoot, "deploy/runner/promote-release.sh"),
+      promoterPath,
       "--request-file",
       requestPath,
       "--release-root",
@@ -77,7 +83,7 @@ const runPromotion = (requestPath, { dryRun = false, extraEnv = {} } = {}) =>
       ...(dryRun ? ["--dry-run"] : []),
     ],
     {
-      cwd: tmpRoot,
+      cwd: runnerState,
       env: {
         ...process.env,
         CHOWN_LOG: chownLog,
@@ -175,6 +181,11 @@ try {
     path.join(deployFixture, "payload/deploy/runner-fixture.sh"),
     "#!/usr/bin/env bash\nexit 0\n",
     0o755
+  );
+  writeFile(
+    path.join(deployFixture, "payload/runtime/hermes/render_profile_overlay.py"),
+    "# immutable renderer fixture\n",
+    0o644
   );
   writeChecksums(deployFixture, [
     "qintopia-agent-os-deploy-bundle.tar.gz",
@@ -434,6 +445,14 @@ fi
     );
   }
   fs.chmodSync(coscliOutput, 0o755);
+  const pythonBytecodeCache = path.join(releaseDir, "runtime/hermes/__pycache__");
+  fs.mkdirSync(pythonBytecodeCache, { recursive: true });
+  fs.chmodSync(pythonBytecodeCache, 0o700);
+  const pythonBytecodeFile = path.join(
+    pythonBytecodeCache,
+    "render_profile_overlay.cpython-312.pyc"
+  );
+  writeFile(pythonBytecodeFile, "bounded Python bytecode fixture\n", 0o600);
 
   const compatibleDryRun = runPromotion(
     writeRequest("deploy-20260719T060500Z-0123456789ab"),
@@ -444,7 +463,11 @@ fi
       `compatible dry-run failed\n${compatibleDryRun.stdout}\n${compatibleDryRun.stderr}`
     );
   }
-  if (!fs.existsSync(coscliOutput) || fs.existsSync(companionRoot)) {
+  if (
+    !fs.existsSync(coscliOutput) ||
+    !fs.existsSync(pythonBytecodeCache) ||
+    fs.existsSync(companionRoot)
+  ) {
     throw new Error("dry-run mutated contamination or installed the companion runtime");
   }
 
@@ -482,6 +505,27 @@ fi
   }
   fs.rmSync(path.join(coscliOutput, "unexpected.txt"));
 
+  const unexpectedBytecode = path.join(
+    pythonBytecodeCache,
+    "unexpected.cpython-312.pyc"
+  );
+  writeFile(unexpectedBytecode, "unexpected bytecode fixture\n", 0o600);
+  const malformedBytecode = runPromotion(
+    writeRequest("deploy-20260719T060555Z-0123456789ab"),
+    { dryRun: true }
+  );
+  if (
+    malformedBytecode.status === 0 ||
+    !malformedBytecode.stderr.includes(
+      "existing Hermes bytecode cache contents are invalid"
+    )
+  ) {
+    throw new Error(
+      `arbitrary Python bytecode contamination must fail\n${malformedBytecode.stdout}\n${malformedBytecode.stderr}`
+    );
+  }
+  fs.rmSync(unexpectedBytecode);
+
   const failedDuringCompanionCopy = runPromotion(
     writeRequest("deploy-20260719T060565Z-0123456789ab"),
     {
@@ -506,7 +550,11 @@ fi
     throw new Error("failed companion copy did not restore the original manifest");
   }
   requireMode(manifestPath, 0o640);
-  if (fs.existsSync(companionRoot) || !fs.existsSync(coscliOutput)) {
+  if (
+    fs.existsSync(companionRoot) ||
+    !fs.existsSync(coscliOutput) ||
+    !fs.existsSync(pythonBytecodeCache)
+  ) {
     throw new Error("failed companion copy left partial release state");
   }
   if (
@@ -541,7 +589,11 @@ fi
     throw new Error("failed same-SHA repair did not restore the original manifest");
   }
   requireMode(manifestPath, 0o640);
-  if (fs.existsSync(companionRoot) || !fs.existsSync(coscliOutput)) {
+  if (
+    fs.existsSync(companionRoot) ||
+    !fs.existsSync(coscliOutput) ||
+    !fs.existsSync(pythonBytecodeCache)
+  ) {
     throw new Error(
       "failed same-SHA repair did not restore the original release shape"
     );
@@ -580,6 +632,9 @@ fi
   if (fs.existsSync(coscliOutput)) {
     throw new Error("successful repair left COSCLI diagnostics inside the release");
   }
+  if (fs.existsSync(pythonBytecodeCache)) {
+    throw new Error("successful repair left Python bytecode inside the release");
+  }
   const quarantineRoot = path.join(tmpRoot, "quarantine");
   const quarantines = fs.readdirSync(quarantineRoot);
   if (
@@ -592,10 +647,18 @@ fi
         "20260728_190405",
         "process.log"
       )
+    ) ||
+    !fs.existsSync(
+      path.join(
+        quarantineRoot,
+        quarantines[0],
+        "hermes-python-bytecode",
+        path.basename(pythonBytecodeFile)
+      )
     )
   ) {
     throw new Error(
-      "successful repair did not retain COSCLI diagnostics in quarantine"
+      "successful repair did not retain bounded diagnostics in quarantine"
     );
   }
 } finally {

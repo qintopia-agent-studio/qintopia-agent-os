@@ -14,6 +14,12 @@ No failed attempt enabled Huabaosi image generation, Huabaosi Feishu mirroring, 
 image sending. The associated timers remained disabled and inactive, and no image or
 message was sent by these attempts.
 
+On 2026-07-29, the initial `v0.2.49` deployment succeeded and promoted commit
+`2c77fd4f78a678ef20a8c7a8b348a7e6fabcf06e`, but it was still executed by the previous
+runner and did not install the QiWe companion. The required same-SHA follow-up run
+`30414627945` failed closed before mutation because the initial Erhua smoke created one
+root-owned `render_profile_overlay.cpython-*.pyc` file under the immutable release.
+
 ## Root Causes
 
 1. The deploy-runner service used `release/current` as its working directory. COSCLI
@@ -27,6 +33,11 @@ message was sent by these attempts.
    dependent on deployment order.
 4. The Hermes callback bridge accepted runtime-local processor path and digest values
    that could remain pinned to an old direct release after `release/current` moved.
+5. `smoke-release.sh` invoked Python modules without disabling bytecode output, allowing
+   its `umask 077` process to create a root-owned `runtime/hermes/__pycache__` tree.
+6. The new runner unit moved its working directory to deploy state, while the runner and
+   promoter still located helper scripts relative to the working directory rather than
+   the immutable release containing the executing runner.
 
 ## Corrected Release Model
 
@@ -64,6 +75,12 @@ evidence use the companion path. A combined production binary remains forbidden.
   values and bind child release SHA values to resolved `release/current`.
 - Build, upload, prune, and read-validate both runtime artifacts inside the existing
   production workflow jobs. No CI job is added.
+- Resolve runner and promoter helper scripts from the immutable executing release, so
+  `/var/lib/qintopia-agent-os-deploy` can remain the working directory without changing
+  code provenance.
+- Disable Python bytecode writes during release smoke. For the first-stage legacy
+  residue only, accept the exact observed root-owned cache shape after strict metadata
+  validation and move it into the existing root-only quarantine transaction.
 
 ## Validation Boundary
 

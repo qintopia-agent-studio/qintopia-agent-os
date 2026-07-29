@@ -37,6 +37,17 @@ use the QiWe companion path.
   disabled and inactive. Neither failed deploy switched `current` or sent an image.
 - The current release has one global `sidecar/` slot. Switching that slot to the QiWe
   artifact would remove Huabaosi image-generation capability.
+- The published `v0.2.49` Release deployed commit
+  `2c77fd4f78a678ef20a8c7a8b348a7e6fabcf06e`, but its initial request was handled by the
+  previous runner and therefore promoted only the Huabaosi primary runtime.
+- The required same-SHA follow-up run `30414627945` failed closed before mutation. The
+  initial Erhua smoke had created the single root-owned
+  `runtime/hermes/__pycache__/render_profile_overlay.cpython-*.pyc` entry inside the
+  immutable release, so exact existing-tree verification rejected it.
+- The reviewed runner unit moves `WorkingDirectory` to
+  `/var/lib/qintopia-agent-os-deploy`, but the runner and promoter still invoke helper
+  scripts through repository-relative paths. Installing that unit without pinning the
+  helper root would make the next deploy fail outside the release directory.
 
 ## Decisions
 
@@ -59,6 +70,11 @@ use the QiWe companion path.
 7. The legacy owner-triggered rollback workflow stays unavailable until a published
    target contains a reviewed Huabaosi primary, QiWe companion, and dual-runtime deploy
    bundle. It must not expose Huabaosi/QiWe as a global profile choice.
+8. The runner resolves helper scripts from the immutable release containing the running
+   runner, independent of process working directory and later `current` symlink changes.
+9. Release smoke disables Python bytecode writes. The one observed legacy bytecode cache
+   shape is validated exactly and moved to the existing root-only quarantine during a
+   same-SHA repair; arbitrary cache names, modes, owners, links, or extra files fail.
 
 ## Implementation Increments
 
@@ -73,6 +89,8 @@ use the QiWe companion path.
 5. Extend the existing Release workflow to publish and verify both artifacts.
 6. Record the failed-deploy evidence, resolution, rollback boundary, and first rollout
    procedure in an indexed report.
+7. Pin runner helper paths to the executing release and prevent or strictly quarantine
+   the bounded Python bytecode contamination produced by the first-stage smoke.
 
 ## Acceptance
 
@@ -83,6 +101,11 @@ use the QiWe companion path.
   files, symlinks, or unsupported file types fail before mutation.
 - A legacy Huabaosi-only release gains the QiWe companion while the Huabaosi binary and
   manifest hashes remain unchanged.
+- A runner launched with `/var/lib/qintopia-agent-os-deploy` as its working directory
+  still executes only helper scripts from its own immutable release.
+- Erhua release smoke leaves no `__pycache__` or `.pyc` inside the release tree.
+- The exact observed root-owned bytecode cache passes dry-run without mutation and moves
+  to quarantine on apply; any broader cache shape fails before release mutation.
 - Rendered Huabaosi/internal units execute `sidecar/`; rendered QiWe units execute
   `sidecar-profiles/qiwe-production/`.
 - Enabled QiWe observation, activation, callback processing, and real-activity evidence
