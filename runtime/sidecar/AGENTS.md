@@ -157,11 +157,13 @@ From the monorepo root, prefer:
   production owner/database gate and must never fall back to staging approval or staging
   database hashing. Runtime env flags are not a substitute for the compile and owner
   gates. Callback JSON is accepted from bounded stdin only, never CLI arguments or
-  environment variables. File credentials may open the send gate only when callback
-  filename, canonical MD5, and byte size exactly match the approved final JPEG identity
-  snapshotted at upload. Callback credentials, request ids, media URLs, target groups,
-  tokens, device ids, response bodies, and provider message ids must not appear in
-  reports or logs; sensitive in-memory buffers must be zeroized on drop.
+  environment variables. File credentials may open the send gate only when canonical MD5
+  and byte size exactly match the approved final JPEG identity snapshotted at upload. A
+  callback filename is optional and must match when supplied; the send filename must
+  always come from the transaction-locked approved artifact. Callback credentials,
+  request ids, media URLs, target groups, tokens, device ids, response bodies, and
+  provider message ids must not appear in reports or logs; sensitive in-memory buffers
+  must be zeroized on drop.
 - A staging-feature callback apply must validate explicit enablement, API/media/group
   allowlists, and webhook readiness before reading stdin. Upload apply must validate the
   same adapter configuration before connecting to Postgres.

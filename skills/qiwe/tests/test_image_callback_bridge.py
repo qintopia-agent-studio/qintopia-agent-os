@@ -20,7 +20,15 @@ from image_callback_bridge import (
 )
 
 
-def callback_body() -> bytes:
+def callback_body(*, include_filename: bool = True) -> bytes:
+    msg_data = {
+        "fileAesKey": "raw-aes-secret",
+        "fileId": "raw-file-secret",
+        "fileMd5": "98e7c2acf4391f8b4a2bbd39e364c5e3",
+        "fileSize": 48300,
+    }
+    if include_filename:
+        msg_data["filename"] = "private-activity-poster.jpg"
     return json.dumps(
         {
             "code": 0,
@@ -28,13 +36,7 @@ def callback_body() -> bytes:
                 {
                     "requestId": "raw-request-secret",
                     "cmd": 20000,
-                    "msgData": {
-                        "fileAesKey": "raw-aes-secret",
-                        "fileId": "raw-file-secret",
-                        "fileMd5": "98e7c2acf4391f8b4a2bbd39e364c5e3",
-                        "fileSize": 48300,
-                        "filename": "private-activity-poster.jpg",
-                    },
+                    "msgData": msg_data,
                 }
             ],
         }
@@ -201,6 +203,10 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
 
     def test_detects_reviewed_callback_envelope_without_exposing_values(self) -> None:
         self.assertTrue(is_async_image_callback(callback_body()))
+        self.assertTrue(is_async_image_callback(callback_body(include_filename=False)))
+        missing_core = json.loads(callback_body(include_filename=False))
+        del missing_core["data"][0]["msgData"]["fileMd5"]
+        self.assertFalse(is_async_image_callback(json.dumps(missing_core).encode()))
         self.assertFalse(
             is_async_image_callback(b'{"outer":{"CMD":"20000","secret":"value"}}')
         )
@@ -284,6 +290,35 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
             "private-activity-poster.jpg",
         ):
             self.assertNotIn(secret, serialized)
+
+    def test_no_filename_callback_streams_to_processor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            releases_root = Path(tmp)
+            with mock.patch.object(
+                image_callback_bridge, "STAGING_RELEASES_ROOT", releases_root
+            ):
+                processor = self.make_processor(
+                    releases_root,
+                    json.dumps(
+                        callback_report(
+                            callback_credential_schema=(
+                                "fileAesKey+fileId+fileMd5+fileSize"
+                            )
+                        ),
+                        separators=(",", ":"),
+                    ),
+                )
+                result = asyncio.run(
+                    self.bridge(processor).process(
+                        callback_body(include_filename=False)
+                    )
+                )
+
+        self.assertTrue(result.processed)
+        self.assertEqual(
+            result.callback_credential_schema,
+            "fileAesKey+fileId+fileMd5+fileSize",
+        )
 
     def test_processor_environment_is_exactly_allowlisted(self) -> None:
         self.assertEqual(

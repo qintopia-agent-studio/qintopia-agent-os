@@ -734,12 +734,14 @@ Use `rg` and `rg --files` for search.
   additionally require the exact reviewed one-shot owner approval phrase before adapter
   configuration, callback stdin, Postgres, or network access; feature compilation,
   enable flags, or credentials alone are insufficient.
-  `process-qiwe-image-send-callback` must read one bounded callback from stdin, keep
-  file credentials memory-only, require callback filename/MD5/byte size to match the
-  approved final JPEG before committing `sending`, commit that state before one send
-  call, and terminalize every outcome. Scheduling or production enablement must remain
-  bound to approved staging evidence, isolated group allowlists, release/database hash
-  gates, and rollback.
+  `process-qiwe-image-send-callback` must read one bounded callback from stdin and keep
+  file credentials memory-only. It must always match callback MD5 and byte size to the
+  approved final JPEG; a callback filename is optional, but when present it must also
+  match. The filename sent to QiWe must come from the transaction-locked approved
+  artifact before committing `sending`, not from a fallback or unknown callback field.
+  Commit that state before one send call and terminalize every outcome. Scheduling or
+  production enablement must remain bound to approved staging evidence, isolated group
+  allowlists, release/database hash gates, and rollback.
 - The Feishu-backed QiWe staging bridge may claim `feishu-base://` generated images only
   when the immutable staging artifact contains both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter`. It must commit the existing `uploading` attempt before Feishu
@@ -830,12 +832,14 @@ Use `rg` and `rg --files` for search.
   enabled but any gate is invalid, callback handling must return a non-2xx response; it
   must not silently downgrade to disabled and acknowledge an unprocessed callback.
   Callback detection must require the reviewed top-level QiWe success envelope, bounded
-  `data` list, request id, `msgData` object, and complete credential-field presence. It
-  must fail closed on excessive JSON depth and must not classify an arbitrary nested
-  `cmd=20000` field as an image callback. The child process may inherit only the fixed
-  staging callback allowlist: sidecar database URL and pool size, approved database
-  hash, send/webhook/owner gates, QiWe API URL/token/guid, API/media host allowlists,
-  and target-group allowlist. It must not inherit Hermes webhook secrets, NATS, Feishu,
+  `data` list, request id, `msgData` object, and the complete core credential fields
+  `fileAesKey`, `fileId`, `fileMd5`, and `fileSize`. `filename`/`fileName` is optional
+  because the approved upload claim already locks the send filename. It must fail closed
+  on excessive JSON depth and must not classify an arbitrary nested `cmd=20000` field as
+  an image callback. The child process may inherit only the fixed staging callback
+  allowlist: sidecar database URL and pool size, approved database hash,
+  send/webhook/owner gates, QiWe API URL/token/guid, API/media host allowlists, and
+  target-group allowlist. It must not inherit Hermes webhook secrets, NATS, Feishu,
   proxy, or unrelated runtime variables. Any explicit callback-processor enable value
   other than `0` or `1` is configuration invalid and must also return a non-2xx callback
   response. The processor path must be exactly

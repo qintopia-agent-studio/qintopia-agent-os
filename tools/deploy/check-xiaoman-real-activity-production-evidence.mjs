@@ -15,6 +15,8 @@ const evidenceFile = path.resolve(args[0]);
 const evidenceText = fs.readFileSync(evidenceFile, "utf8");
 
 const allowedCallbackSchemas = new Set([
+  "fileAesKey+fileId+fileMd5+fileSize",
+  "fileAeskey+fileId+fileMd5+fileSize",
   "fileAesKey+fileId+fileMd5+fileSize+filename",
   "fileAeskey+fileId+fileMd5+fileSize+fileName",
   "file_aes_key+file_id+file_md5+file_size+filename",

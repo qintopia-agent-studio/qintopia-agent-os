@@ -58,8 +58,10 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
   HTTP responses. An explicitly enabled but invalid bridge returns HTTP 503 so an
   unprocessed callback is not acknowledged and silently lost. Callback detection
   requires the reviewed top-level QiWe success envelope, bounded event list, request id,
-  and complete `msgData` credential-field presence; arbitrary nested `cmd=20000` values
-  do not bypass ordinary message parsing.
+  and complete `msgData` core credential fields (`fileAesKey`, `fileId`, `fileMd5`, and
+  `fileSize`). `filename`/`fileName` is optional and never becomes a fallback for the
+  transaction-locked approved artifact filename; arbitrary nested `cmd=20000` values do
+  not bypass ordinary message parsing.
 - In staging mode the child receives only the fixed staging database, QiWe adapter,
   owner gate, and host/group allowlist environment. Its processor must be the exact
   `<40-hex-sha>/sidecar/qintopia-message-sidecar` under the fixed owner-reviewed

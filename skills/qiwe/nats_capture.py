@@ -252,7 +252,7 @@ def _canonicalize_callback_msg_data_summary(value: Any) -> Dict[str, Any]:
         "msg_data_present": _value_for_key(value, "msgdatapresent") is True,
         "required_fields_present": all(
             presence[field]
-            for field in ("file_aes_key", "file_id", "file_md5", "file_size", "filename")
+            for field in ("file_aes_key", "file_id", "file_md5", "file_size")
         ),
         "unknown_field_count": max(0, unknown_field_count),
     }
@@ -321,7 +321,7 @@ def _callback_msg_data_summary(value: Any) -> Dict[str, Any]:
         "msg_data_present": True,
         "required_fields_present": all(
             presence[field]
-            for field in ("file_aes_key", "file_id", "file_md5", "file_size", "filename")
+            for field in ("file_aes_key", "file_id", "file_md5", "file_size")
         ),
         "unknown_field_count": len(normalized_keys - known_fields),
     }

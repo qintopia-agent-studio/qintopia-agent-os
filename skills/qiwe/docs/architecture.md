@@ -262,14 +262,13 @@ echo file AES keys, file ids, or raw media credentials back to the Agent.
 For new AgentOS image sends, an HTTPS artifact URI is not itself a valid
 `/msg/sendImage` payload. The reviewed protocol first calls
 `/cloud/cdnUploadByUrlAsync`, persists only the returned `requestId` correlation, waits
-for one `cmd=20000` Webhook result with complete file credentials, and only then builds
-the send request. The older synchronous URL and local upload APIs are marked for
-deprecation and must not be used as a fallback. The adapter remains disabled while the
-deterministic provider-PNG-to-final-JPEG path, isolated media readback, and complete
-callback credential shape await owner-approved staging evidence. Request construction
-must recheck the target group allowlist at the final boundary. A send result is
-successful only when QiWe returns both `code=0` and `isSendSuccess=1`; any other value
-remains a terminal unconfirmed send result.
+for one `cmd=20000` Webhook result with `fileAesKey`, `fileId`, `fileMd5`, and
+`fileSize`, and only then builds the send request. A callback filename is optional; the
+filename sent to QiWe always comes from the transaction-locked approved artifact. The
+older synchronous URL and local upload APIs are marked for deprecation and must not be
+used as a fallback. Request construction must recheck the target group allowlist at the
+final boundary. A send result is successful only when QiWe returns both `code=0` and
+`isSendSuccess=1`; any other value remains a terminal unconfirmed send result.
 
 Approved message correction/moderation uses:
 
