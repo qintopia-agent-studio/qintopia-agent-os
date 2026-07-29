@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.52](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.51...v0.2.52) (2026-07-29)
+
+
+### Bug Fixes
+
+* **runtime:** repair Xiaoman production delivery gates ([#320](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/320)) ([9f63af8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9f63af82e354c8cc8f587896b1476debfd682cc5))
+
 ## [0.2.51](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.50...v0.2.51) (2026-07-29)
 
 
