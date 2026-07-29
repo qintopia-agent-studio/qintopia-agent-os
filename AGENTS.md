@@ -454,7 +454,8 @@ Use `rg` and `rg --files` for search.
 - Huabaosi image-generation production systemd services must bind
   `QINTOPIA_DEPLOYED_COMMIT_SHA`, `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA`, and
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA` to the immutable release SHA when
-  units are rendered. Feishu-mirror-only services bind the deployed and Feishu release
+  units are rendered. Feishu-mirror-only services and QiWe production services that use
+  the Feishu primary-storage delivery bridge bind the deployed and Feishu release
   variables, but must not inherit the image adapter release variable. The read-only
   image production observation must derive all three release-bound values from the
   verified `release/current` target and pass the persistent image approval, database

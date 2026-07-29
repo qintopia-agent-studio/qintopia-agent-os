@@ -171,22 +171,37 @@ esac
   ]) {
     const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
     const qiweBin = `${resolvedReleaseDir}/sidecar-profiles/qiwe-production/qintopia-message-sidecar`;
-    if (!unit.includes(`ExecStart=${releaseExecPrefix} ${qiweBin}`)) {
+    const qiweExecPrefix = `${releaseExecPrefix} QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`;
+    const expectedCommand = unitName.includes("preflight")
+      ? "qiwe-image-send-production-preflight"
+      : "run-qiwe-image-send-worker --once --apply";
+    if (!unit.includes(`ExecStart=${qiweExecPrefix} ${qiweBin} ${expectedCommand}`)) {
       throw new Error(`${unitName} must execute the QiWe companion binary`);
     }
     if (
+      unitName.includes("worker") &&
+      !unit.includes(
+        `ExecStartPre=${qiweExecPrefix} ${qiweBin} qiwe-image-send-production-preflight`
+      )
+    ) {
+      throw new Error(`${unitName} must preflight the release-bound QiWe companion`);
+    }
+    if (
       unit.includes(
-        `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar`
+        `ExecStart=${qiweExecPrefix} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar`
       )
     ) {
       throw new Error(`${unitName} must not execute the Huabaosi binary`);
     }
+    if (unit.includes("QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA")) {
+      throw new Error(`${unitName} must not inherit Huabaosi image release binding`);
+    }
     for (const forbidden of [
-      "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA",
-      "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+      "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=",
+      "Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=",
     ]) {
       if (unit.includes(forbidden)) {
-        throw new Error(`${unitName} must not inherit ${forbidden}`);
+        throw new Error(`${unitName} must not use vulnerable ${forbidden}`);
       }
     }
   }
