@@ -52,6 +52,7 @@ def callback_report(**overrides):
         "phase": "callback",
         "action_status": "image_send_completed",
         "work_item_id": str(uuid.uuid4()),
+        "artifact_content_hash": f"sha256:{'a' * 64}",
         "external_upload_requested": False,
         "callback_received": True,
         "callback_credential_schema": "fileAesKey+fileId+fileMd5+fileSize+filename",
@@ -460,6 +461,23 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
                 inconsistent = asyncio.run(
                     self.bridge(processor).process(callback_body())
                 )
+                processor = self.make_processor(
+                    releases_root,
+                    json.dumps(
+                        callback_report(artifact_content_hash="sha256:not-canonical")
+                    ),
+                )
+                invalid_content_hash = asyncio.run(
+                    self.bridge(processor).process(callback_body())
+                )
+                missing_hash_report = callback_report()
+                missing_hash_report.pop("artifact_content_hash")
+                processor = self.make_processor(
+                    releases_root, json.dumps(missing_hash_report)
+                )
+                missing_content_hash = asyncio.run(
+                    self.bridge(processor).process(callback_body())
+                )
                 processor.write_text(
                     "#!/usr/bin/env python3\n"
                     "import sys\n"
@@ -476,6 +494,10 @@ class QiWeImageCallbackBridgeTests(unittest.TestCase):
         self.assertFalse(invalid.processed)
         self.assertEqual(inconsistent.reason, "processor_failed")
         self.assertFalse(inconsistent.processed)
+        self.assertEqual(invalid_content_hash.reason, "processor_failed")
+        self.assertFalse(invalid_content_hash.processed)
+        self.assertEqual(missing_content_hash.reason, "processor_failed")
+        self.assertFalse(missing_content_hash.processed)
         self.assertEqual(oversized.reason, "processor_failed")
         self.assertFalse(oversized.processed)
 

@@ -510,7 +510,7 @@ function huabaosiProductionCanaryOutput(overrides = {}) {
   const briefArtifactId = "88888888-9999-4aaa-8bbb-cccccccccccc";
   const briefWorkItemId = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
   const imageWorkItemId = "55555555-6666-4777-8888-999999999999";
-  const generatedImageArtifactId = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+  const generatedImageArtifactId = "66666666-7777-8888-8999-aaaaaaaaaaaa";
   const common = {
     approved_database_url_sha256_matched: true,
     approved_sidecar_sha256_matched: true,
@@ -589,7 +589,7 @@ function productionOutput(overrides = {}) {
   const sourceEventSignalId = "33333333-4444-4555-8666-777777777777";
   const workflowRootId = "44444444-5555-4666-8777-888888888888";
   const imageWorkItemId = "55555555-6666-4777-8888-999999999999";
-  const generatedImageArtifactId = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+  const generatedImageArtifactId = "66666666-7777-8888-8999-aaaaaaaaaaaa";
   const sendReadyWorkItemId = "77777777-8888-4999-8aaa-bbbbbbbbbbbb";
   const common = {
     success: true,
@@ -736,7 +736,7 @@ function qiweGroupArrivalConfirmationOutput(overrides = {}) {
       target_group_alias: "community_activity_group",
       workflow_root_id: "44444444-5555-4666-8777-888888888888",
       send_ready_work_item_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
-      generated_image_artifact_id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      generated_image_artifact_id: "66666666-7777-8888-8999-aaaaaaaaaaaa",
       artifact_content_hash: contentHash,
       external_send_executed: true,
       raw_secret_fields_retained: false,

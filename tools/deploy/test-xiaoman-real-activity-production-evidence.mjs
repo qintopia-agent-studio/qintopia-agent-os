@@ -181,7 +181,7 @@ function productionOutput(overrides = {}) {
   const sourceEventSignalId = "11111111-2222-4333-8444-555555555555";
   const workflowRootId = "22222222-3333-4444-8555-666666666666";
   const imageWorkItemId = "33333333-4444-4555-8666-777777777777";
-  const generatedImageArtifactId = "44444444-5555-4666-8777-888888888888";
+  const generatedImageArtifactId = "44444444-5555-8666-8777-888888888888";
   const sendReadyWorkItemId = "55555555-6666-4777-8888-999999999999";
   const common = {
     success: true,
