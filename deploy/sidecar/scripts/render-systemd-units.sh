@@ -547,14 +547,14 @@ render_all() {
     "qintopia-agentos-qiwe-image-send-preflight.service" \
     "Qintopia AgentOS QiWe Image Send Production Preflight" \
     "qiwe-image-send-production-preflight" \
-    "" \
+    "$huabaosi_feishu_release_environment" \
     "$QIWE_BIN"
   render_guarded_oneshot_service \
     "qintopia-agentos-qiwe-image-send-worker.service" \
     "Qintopia AgentOS QiWe Image Send Worker" \
     "qiwe-image-send-production-preflight" \
     "run-qiwe-image-send-worker --once --apply" \
-    "" \
+    "$huabaosi_feishu_release_environment" \
     "$QIWE_BIN"
   render_activation_timer \
     "qintopia-agentos-qiwe-image-send-worker.timer" \

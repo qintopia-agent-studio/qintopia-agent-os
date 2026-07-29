@@ -137,19 +137,31 @@ try {
     const unit = fs.readFileSync(unitPath, "utf8");
     const qiweBin =
       "/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar";
-    if (
-      !unit.includes(
-        `ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check ${qiweBin}`
-      )
-    ) {
+    const qiweExecPrefix =
+      "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=m9f-check";
+    const expectedCommand = unitName.includes("preflight")
+      ? "qiwe-image-send-production-preflight"
+      : "run-qiwe-image-send-worker --once --apply";
+    if (!unit.includes(`${qiweExecPrefix} ${qiweBin} ${expectedCommand}`)) {
       addError(`${unitName}: must execute ${qiweBin}`);
     }
     if (
+      unitName.includes("worker") &&
+      !unit.includes(
+        `${qiweExecPrefix.replace("ExecStart=", "ExecStartPre=")} ${qiweBin} qiwe-image-send-production-preflight`
+      )
+    ) {
+      addError(`${unitName}: must preflight the release-bound QiWe companion`);
+    }
+    if (
       unit.includes(
-        "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check /home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar"
+        `${qiweExecPrefix} /home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`
       )
     ) {
       addError(`${unitName}: must not execute the Huabaosi production binary`);
+    }
+    if (unit.includes("QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA")) {
+      addError(`${unitName}: must not inherit Huabaosi image release binding`);
     }
   }
 } catch (error) {
