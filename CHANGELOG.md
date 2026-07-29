@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.51](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.50...v0.2.51) (2026-07-29)
+
+
+### Bug Fixes
+
+* **deploy:** bind release identity at exec boundary ([#318](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/318)) ([7272f51](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7272f51090430173d682c149bfa32fd0a9c98ceb))
+
 ## [0.2.50](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.49...v0.2.50) (2026-07-29)
 
 
