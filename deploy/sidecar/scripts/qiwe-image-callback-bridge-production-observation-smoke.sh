@@ -9,7 +9,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MONOREPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 DEFAULT_RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
-DEFAULT_SIDECAR_BIN="/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar"
+DEFAULT_SIDECAR_BIN="/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar"
 DEFAULT_HERMES_ENV_FILE="/home/ubuntu/.hermes/profiles/erhua/.env"
 DEFAULT_PLUGIN_PATH="/home/ubuntu/.hermes/profiles/erhua/plugins/qiwe-platform"
 RELEASE_CURRENT_DIR="${QINTOPIA_RELEASE_CURRENT_DIR:-$DEFAULT_RELEASE_CURRENT_DIR}"
@@ -53,7 +53,7 @@ fi
 if [[ "$RELEASE_CURRENT_DIR" == "$DEFAULT_RELEASE_CURRENT_DIR" ]]; then
   SIDECAR_BIN="$DEFAULT_SIDECAR_BIN"
 else
-  SIDECAR_BIN="${RELEASE_CURRENT_DIR}/sidecar/qintopia-message-sidecar"
+  SIDECAR_BIN="${RELEASE_CURRENT_DIR}/sidecar-profiles/qiwe-production/qintopia-message-sidecar"
 fi
 PLUGIN_BRIDGE="${RELEASE_CURRENT_DIR}/skills/qiwe/image_callback_bridge.py"
 
@@ -75,7 +75,8 @@ release_sha = os.path.basename(current_real)
 if not re.fullmatch(r"[0-9a-f]{40}", release_sha):
     raise SystemExit(1)
 
-expected_bin = os.path.join(current_real, "sidecar", "qintopia-message-sidecar")
+companion_dir = os.path.join(current_real, "sidecar-profiles", "qiwe-production")
+expected_bin = os.path.join(companion_dir, "qintopia-message-sidecar")
 expected_plugin = os.path.join(current_real, "skills", "qiwe")
 expected_bridge = os.path.join(expected_plugin, "image_callback_bridge.py")
 if os.path.realpath(bin_path) != expected_bin:
@@ -91,7 +92,8 @@ if os.path.islink(bridge_path) or not os.path.isfile(bridge_path):
 
 for path in (
     current_real,
-    os.path.dirname(expected_bin),
+    os.path.join(current_real, "sidecar-profiles"),
+    companion_dir,
     expected_bin,
     expected_plugin,
     expected_bridge,
@@ -100,23 +102,17 @@ for path in (
     if mode & (stat.S_IWGRP | stat.S_IWOTH):
         raise SystemExit(1)
 
-manifest_path = os.path.join(current_real, "sidecar", "artifact-manifest.json")
+manifest_path = os.path.join(companion_dir, "artifact-manifest.json")
 with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
 artifact_profile = manifest.get("validation", {}).get("artifact_profile", "")
 cargo_features = manifest.get("validation", {}).get("cargo_features")
-if artifact_profile == "huabaosi-production":
-    expected_features = [
-        "huabaosi-production-adapter",
-        "huabaosi-feishu-mirror-adapter",
-    ]
-elif artifact_profile == "qiwe-production":
-    expected_features = [
-        "qiwe-production-adapter",
-        "huabaosi-feishu-mirror-adapter",
-    ]
-else:
+if artifact_profile != "qiwe-production":
     raise SystemExit(1)
+expected_features = [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+]
 if cargo_features != expected_features:
     raise SystemExit(1)
 if manifest.get("commit_sha") != release_sha:
@@ -205,11 +201,6 @@ if [[ "$EXPECTED_STATE" != "$OBSERVED_STATE" ]]; then
   echo "QiWe image callback bridge observed state does not match expected state" >&2
   exit 1
 fi
-if [[ "$OBSERVED_STATE" == "enabled" && "$ARTIFACT_PROFILE" != "qiwe-production" ]]; then
-  echo "QiWe image callback bridge enabled observation requires a separate reviewed QiWe production artifact" >&2
-  exit 1
-fi
-
 echo "qiwe_image_callback_bridge_production_observation_state=${OBSERVED_STATE}"
 echo "qiwe_image_callback_bridge_production_artifact_profile=${ARTIFACT_PROFILE}"
 echo "qiwe_image_callback_bridge_production_release_sha=${RELEASE_SHA}"

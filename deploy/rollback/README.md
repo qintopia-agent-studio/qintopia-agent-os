@@ -26,7 +26,8 @@ does not support dynamically populated `workflow_dispatch` choices, so the selec
 version list is updated in `.github/workflows/rollback-production.yml` as part of
 release operations.
 
-Current verified evidence indicates different rollback paths after `v0.2.3`:
+Current verified evidence indicates different rollback paths after the dual-runtime
+cutover:
 
 - Server-local automatic rollback path:
   - The production host `previous` symlink currently resolves to the server-local
@@ -37,13 +38,18 @@ Current verified evidence indicates different rollback paths after `v0.2.3`:
     Actions rollback path.
 - GitHub Actions rollback path:
   - Uses the signed deploy-request queue (`current.json` + request object in COS).
-  - It must target a published, non-prerelease Release tag and requires paired COS
-    assets (`sidecar-runtime` and `deploy-bundle`) before request assembly.
-  - This path is now limited to `v0.2.0` as the only currently verified candidate.
+  - It must target a published, non-prerelease Release tag whose deploy bundle already
+    implements the dual-runtime release model.
+  - It requires the Huabaosi primary artifact, QiWe companion artifact, and deploy
+    bundle for the exact target SHA before request assembly.
+  - No owner-triggered dual-runtime rollback target is currently verified. The workflow
+    keeps `v0.2.0` visible only as historical audit context and fails before artifact
+    access, secret-bearing upload steps, or deploy-request creation.
 
 Verified release/evidence points relevant to `v0.2.3`:
 
-- `v0.2.0`: published release + paired COS assets verified.
+- `v0.2.0`: published release + historical paired COS assets verified, but its deploy
+  bundle predates the dual-runtime model and is not a valid current rollback target.
 - `v0.2.1`: deploy run evidence shows failure; pairing evidence is insufficient.
 - `v0.2.2`: historical output exists in server context (`previous` currently resolves to
   `d083e5ccfce2d07048e07c0ceb8c052671f65911`), but it is only a server-local fallback
@@ -52,23 +58,17 @@ Verified release/evidence points relevant to `v0.2.3`:
 For any future rollback candidate, operator guidance is strict:
 
 - the candidate must be a published, non-prerelease GitHub Release; and
-- COS must contain both `sidecar-runtime` and `deploy-bundle` assets for that SHA.
+- COS must contain the Huabaosi primary sidecar, QiWe companion sidecar, and deploy
+  bundle assets for that SHA; and
+- the target deploy bundle must implement and validate the same dual-runtime layout.
 
-The workflow does not SSH to production and does not edit server files directly. It
-resolves the selected published Release tag to its commit SHA, verifies both the sidecar
-and deploy-bundle artifacts for that SHA from COS, creates the existing HMAC-signed
-deploy request, uploads that request to COS, and lets the server deploy runner promote
-the selected release through the same release/current path used by normal deploys. A
-historical Release whose artifacts have already been pruned fails in GitHub Actions
-before a rollback request is submitted. The workflow uses the `production` environment
-gate, defaults to `dry_run: true`, and records the reviewed `runtime_artifact_profile`
-explicitly in the rollback request instead of relying on the ordinary deploy default.
-The workflow records the reviewed `runtime_artifact_profile` explicitly in the rollback
-request. The reviewed `runtime_artifact_profile` input may be `huabaosi-production` or
-`qiwe-production`, and it must match the validated rollback artifact fetched from COS
-before request assembly.
-<p>`runtime_artifact_profile` explicitly in the rollback request.</p>
-<p>must match the validated rollback artifact</p>
+The workflow does not SSH to production and does not edit server files directly. While
+no valid target exists, it fails closed in `Resolve rollback target` and cannot reach
+COS validation or request upload. Re-enabling it requires one reviewed change that
+updates the allowlisted tag and SHA, removes the explicit unavailable-target guard, and
+proves all three target artifacts. The resulting request must keep
+`runtime_artifact_profile=huabaosi-production`; QiWe remains a companion and is never a
+global profile choice.
 
 ## Validation
 

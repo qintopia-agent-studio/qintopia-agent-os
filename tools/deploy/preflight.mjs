@@ -923,7 +923,8 @@ if (artifactDoc) {
     "GitHub Artifact Fallback",
     "fetch-ci-artifact.sh",
     "qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu",
-    "runtime_artifact_profile=qiwe-production",
+    "sidecar-profiles/qiwe-production",
+    "runtime_artifact_profile=huabaosi-production",
   ]) {
     if (!artifactDoc.includes(requiredFragment)) {
       addError(

@@ -111,7 +111,7 @@ release_sha = os.path.basename(current_real)
 if not re.fullmatch(r"[0-9a-f]{40}", release_sha):
     raise SystemExit(1)
 
-sidecar_dir = os.path.join(current_real, "sidecar")
+sidecar_dir = os.path.join(current_real, "sidecar-profiles", "qiwe-production")
 sidecar_bin = os.path.join(sidecar_dir, "qintopia-message-sidecar")
 manifest_path = os.path.join(sidecar_dir, "artifact-manifest.json")
 
@@ -140,7 +140,7 @@ if validation.get("cargo_features") != [
     raise SystemExit(1)
 PY
   then
-    echo "QiWe image-send production activation requires a separate reviewed QiWe production artifact" >&2
+    echo "QiWe image-send production activation requires the reviewed QiWe companion artifact" >&2
     exit 1
   fi
 }

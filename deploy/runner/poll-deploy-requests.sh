@@ -55,6 +55,8 @@ cleanup() {
 }
 trap cleanup EXIT
 chmod 700 "$tmp_dir"
+coscli_work_dir="${tmp_dir}/coscli-work"
+mkdir -m 0700 "$coscli_work_dir"
 
 coscli_path="${COSCLI_PATH:-}"
 if [[ -z "$coscli_path" ]]; then
@@ -65,10 +67,17 @@ if [[ -z "$coscli_path" ]]; then
   fi
 fi
 
+run_coscli() {
+  (
+    cd "$coscli_work_dir"
+    "$coscli_path" "$@"
+  )
+}
+
 config_path="${tmp_dir}/cos.yaml"
 touch "$config_path"
 if [[ "$auth_mode" == "CvmRole" ]]; then
-  "$coscli_path" config set \
+  run_coscli config set \
     --mode CvmRole \
     --cvm_role_name "$TENCENT_COS_CVM_ROLE_NAME" \
     -c "$config_path" \
@@ -79,7 +88,7 @@ else
   if [[ -n "${TENCENT_COS_SESSION_TOKEN:-}" ]]; then
     auth_args+=(--session_token "$TENCENT_COS_SESSION_TOKEN")
   fi
-  "$coscli_path" config set \
+  run_coscli config set \
     -c "$config_path" \
     --init-skip \
     --disable-log \
@@ -98,7 +107,7 @@ bucket_config_args=(
 if [[ -n "${TENCENT_COS_ENDPOINT:-}" ]]; then
   bucket_config_args+=(-e "$TENCENT_COS_ENDPOINT")
 fi
-"$coscli_path" config add "${bucket_config_args[@]}" >/dev/null
+run_coscli config add "${bucket_config_args[@]}" >/dev/null
 
 prefix="qintopia-agent-os"
 pointer_key="${prefix}/deploy-requests/production/current.json"
@@ -112,7 +121,7 @@ cos_cp_probe() {
   local source="$1"
   local destination="$2"
   local output_file="$3"
-  "$coscli_path" cp "$source" "$destination" \
+  run_coscli cp "$source" "$destination" \
     -c "$config_path" \
     2>"$output_file" \
     1>>"$output_file"
@@ -202,7 +211,7 @@ if [[ -e "${STATE_DIR}/requests/failed/${request_name}" ]]; then
   echo "Deploy request already failed; idle until current.json changes: ${request_id}" >&2
   exit 0
 fi
-"$coscli_path" cp "cos://${bucket_alias}/${request_key}" "$request_file" \
+run_coscli cp "cos://${bucket_alias}/${request_key}" "$request_file" \
   -c "$config_path" \
   --disable-log
 
@@ -314,7 +323,7 @@ PY
 fi
 
 if [[ -f "$result_file" ]]; then
-  "$coscli_path" cp "$result_file" "cos://${bucket_alias}/${result_key}" \
+  run_coscli cp "$result_file" "cos://${bucket_alias}/${result_key}" \
     -c "$config_path" \
     --disable-log
 fi

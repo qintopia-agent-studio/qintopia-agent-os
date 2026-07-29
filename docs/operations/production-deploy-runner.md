@@ -125,18 +125,14 @@ trigger is `release.published`: manually publishing a normal GitHub Release is t
 production release entrypoint. The same workflow keeps `workflow_dispatch` only as an
 emergency or diagnostic path for explicitly named SHAs.
 
-That primary `release.published` path is intentionally still the ordinary Huabaosi
-production artifact path. It builds/uploads `qintopia-message-sidecar-linux-x86_64-gnu`,
-fixes `runtime_artifact_profile=huabaosi-production`, and rejects any attempt to treat
-Release publication as the QiWe production artifact deploy. The independent QiWe
-enablement chain remains a separate reviewed follow-up: publish
-`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` to COS first, then use the
-manual `workflow_dispatch` path with `runtime_artifact_profile=qiwe-production`.
+That primary `release.published` path builds/uploads both
+`qintopia-message-sidecar-linux-x86_64-gnu` and
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` in the existing jobs. The
+signed request fixes `runtime_artifact_profile=huabaosi-production`; promotion installs
+the QiWe artifact as a companion instead of replacing the primary Huabaosi runtime.
 
-The separate `Rollback Production` workflow also records a reviewed
-`runtime_artifact_profile` explicitly. Operators may choose `huabaosi-production` or
-`qiwe-production`, and the workflow must validate that choice against the fetched COS
-artifact before it writes the rollback request.
+A rollback target must have a reviewed complete primary and companion artifact set for
+the target commit. Do not use `runtime_artifact_profile` as a global runtime switch.
 
 Merging the Release Please PR prepares a version but does not approve production
 deployment. Publishing the draft GitHub Release is the owner-approved production

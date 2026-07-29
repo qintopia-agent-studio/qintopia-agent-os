@@ -38,7 +38,12 @@ try {
   const releaseRoot = path.join(tmpRoot, "releases");
   const releaseDir = path.join(releaseRoot, releaseSha);
   const currentRelease = path.join(releaseRoot, "current");
-  const sidecar = path.join(releaseDir, "sidecar", "qintopia-message-sidecar");
+  const sidecar = path.join(
+    releaseDir,
+    "sidecar-profiles",
+    "qiwe-production",
+    "qintopia-message-sidecar"
+  );
 
   writeExecutable(
     systemctl,
@@ -59,7 +64,12 @@ echo "fake sidecar must not run during production observation" >&2
 exit 70
 `
   );
-  const manifestPath = path.join(releaseDir, "sidecar", "artifact-manifest.json");
+  const manifestPath = path.join(
+    releaseDir,
+    "sidecar-profiles",
+    "qiwe-production",
+    "artifact-manifest.json"
+  );
   const writeManifest = (artifactProfile, cargoFeatures) =>
     fs.writeFileSync(
       manifestPath,
@@ -77,10 +87,10 @@ exit 70
       "utf8"
     );
   const approvedCargoFeatures = [
-    "huabaosi-production-adapter",
+    "qiwe-production-adapter",
     "huabaosi-feishu-mirror-adapter",
   ];
-  writeManifest("huabaosi-production", approvedCargoFeatures);
+  writeManifest("qiwe-production", approvedCargoFeatures);
   fs.symlinkSync(releaseDir, currentRelease);
   fs.writeFileSync(sidecarLog, "", "utf8");
 
@@ -184,14 +194,16 @@ exit 70
   }
 
   writeManifest("huabaosi-production", [
-    ...approvedCargoFeatures,
-    "qiwe-production-adapter",
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
   ]);
-  const mixedArtifact = run();
-  if (mixedArtifact.status === 0) {
-    throw new Error("observation accepted a mixed Huabaosi/QiWe production artifact");
+  const wrongCompanionArtifact = run();
+  if (wrongCompanionArtifact.status === 0) {
+    throw new Error(
+      "observation accepted a Huabaosi artifact in the QiWe companion path"
+    );
   }
-  writeManifest("huabaosi-production", approvedCargoFeatures);
+  writeManifest("qiwe-production", approvedCargoFeatures);
 
   fs.writeFileSync(sidecarLog, "", "utf8");
   const disabled = run();
@@ -253,20 +265,6 @@ exit 70
     throw new Error("duplicate allowlisted env key did not fail at env parsing");
   }
 
-  const enabled = run({
-    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
-  });
-  if (
-    enabled.status === 0 ||
-    !enabled.stderr.includes("requires a separate reviewed QiWe production artifact")
-  ) {
-    throw new Error("enabled observation accepted the Huabaosi production artifact");
-  }
-
-  writeManifest("qiwe-production", [
-    "qiwe-production-adapter",
-    "huabaosi-feishu-mirror-adapter",
-  ]);
   const enabledQiwe = run({
     QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
     FAKE_QIWE_TIMER_ENABLED: "1",
@@ -302,8 +300,6 @@ exit 70
       `disabled QiWe observation failed\n${disabledQiwe.stdout}\n${disabledQiwe.stderr}`
     );
   }
-
-  writeManifest("huabaosi-production", approvedCargoFeatures);
 
   const disabledTimerEnabled = run({
     QINTOPIA_SIDECAR_ENV_FILE: disabledEnv,

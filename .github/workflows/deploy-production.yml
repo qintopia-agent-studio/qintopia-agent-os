@@ -15,13 +15,12 @@ on:
         required: false
         type: string
       runtime_artifact_profile:
-        description: Reviewed production sidecar artifact profile.
+        description: Primary runtime profile. QiWe is installed as a companion.
         required: true
         default: huabaosi-production
         type: choice
         options:
           - huabaosi-production
-          - qiwe-production
       deploy_bundle_sha:
         description: Deploy bundle artifact SHA. Defaults to commit_sha when equal.
         required: false
@@ -145,6 +144,11 @@ jobs:
         env:
           GITHUB_SHA: ${{ steps.release.outputs.commit-sha }}
 
+      - name: Build release QiWe companion artifact
+        run: node tools/deploy/build-qiwe-production-sidecar-artifact.mjs
+        env:
+          GITHUB_SHA: ${{ steps.release.outputs.commit-sha }}
+
       - name: Build release deploy bundle
         run: node tools/deploy/build-deploy-bundle.mjs
         env:
@@ -156,6 +160,7 @@ jobs:
           name: qintopia-agent-os-release-build
           path: |
             dist/sidecar-artifacts/qintopia-message-sidecar-linux-x86_64-gnu
+            dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
             dist/deploy-bundles/qintopia-agent-os-deploy-bundle
           retention-days: 14
           if-no-files-found: error
@@ -253,11 +258,11 @@ jobs:
             local value="$1"
             require_single_line "runtime_artifact_profile" "$value"
             case "$value" in
-              huabaosi-production|qiwe-production)
+              huabaosi-production)
                 printf '%s' "$value"
                 ;;
               *)
-                echo "runtime_artifact_profile must be huabaosi-production or qiwe-production." >&2
+                echo "runtime_artifact_profile must be huabaosi-production; QiWe is installed as a companion runtime." >&2
                 exit 2
                 ;;
             esac
@@ -536,6 +541,21 @@ jobs:
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
           TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE: huabaosi-production
+
+      - name: Upload release QiWe companion artifact to Tencent COS
+        if: ${{ steps.resolve.outputs.build-artifacts == 'true' }}
+        run: >-
+          deploy/sidecar/scripts/upload-cos-artifact.sh --artifact-dir
+          dist/sidecar-artifacts/qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
+          --sha "${{ steps.resolve.outputs.runtime-sha }}"
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE: qiwe-production
 
       - name: Upload release deploy bundle to Tencent COS
         if: ${{ steps.resolve.outputs.build-artifacts == 'true' }}
@@ -564,6 +584,8 @@ jobs:
           deploy/sidecar/scripts/prune-cos-artifacts.sh \
             --artifact-name qintopia-message-sidecar-linux-x86_64-gnu
           deploy/sidecar/scripts/prune-cos-artifacts.sh \
+            --artifact-name qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu
+          deploy/sidecar/scripts/prune-cos-artifacts.sh \
             --artifact-type deploy-bundle \
             --artifact-name qintopia-agent-os-deploy-bundle
 
@@ -573,10 +595,16 @@ jobs:
           set -euo pipefail
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
-          deploy/sidecar/scripts/fetch-cos-artifact.sh \
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE=huabaosi-production \
+            deploy/sidecar/scripts/fetch-cos-artifact.sh \
             --artifact-type sidecar \
             --sha "${RUNTIME_SHA}" \
             --output-dir "${temp_dir}/sidecar"
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE=qiwe-production \
+            deploy/sidecar/scripts/fetch-cos-artifact.sh \
+            --artifact-type sidecar \
+            --sha "${RUNTIME_SHA}" \
+            --output-dir "${temp_dir}/sidecar-profiles/qiwe-production"
           deploy/sidecar/scripts/fetch-cos-artifact.sh \
             --artifact-type deploy-bundle \
             --sha "${DEPLOY_BUNDLE_SHA}" \
@@ -584,8 +612,6 @@ jobs:
         env:
           RUNTIME_SHA: ${{ steps.resolve.outputs.runtime-sha }}
           DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.deploy-bundle-sha }}
-          QINTOPIA_SIDECAR_ARTIFACT_PROFILE:
-            ${{ steps.resolve.outputs.runtime-artifact-profile }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}

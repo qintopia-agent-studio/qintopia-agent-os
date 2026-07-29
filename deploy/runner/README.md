@@ -65,14 +65,11 @@ Publishing a non-prerelease GitHub Release is the production release entrypoint;
 workflow still uses the GitHub `production` environment approval gate before it can
 write the signed deploy request.
 
-For `workflow_dispatch`, the reviewed sidecar profile must already exist in COS before
-request upload. Ordinary manual deploys still use the Huabaosi production artifact, but
-the independent QiWe enablement chain must first publish
-`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` and then dispatch
-`Deploy Production` with `runtime_artifact_profile=qiwe-production`. The workflow now
-fetches both the resolved sidecar artifact and deploy bundle from COS before it writes a
-deploy request, so a missing or mismatched QiWe production artifact fails in GitHub
-Actions rather than only on the server runner.
+For `workflow_dispatch`, both reviewed production sidecar artifacts must already exist
+in COS before request upload. The primary profile remains `huabaosi-production`; the
+workflow fetches Huabaosi, the QiWe companion, and the deploy bundle before it writes a
+request, so a missing or mismatched companion fails in GitHub Actions rather than only
+on the server runner.
 
 Rollback uses the separate `Rollback Production` workflow. It exposes a selectable
 published Release tag list for operators, resolves the chosen tag to a commit SHA, and
@@ -98,9 +95,9 @@ Important fields:
 
 - `commit_sha`: reviewed `master` commit requested by the operator.
 - `runtime_sha`: sidecar runtime artifact SHA in COS.
-- `runtime_artifact_profile`: reviewed production sidecar artifact profile. Ordinary
-  release deploys use `huabaosi-production`; the independent QiWe enablement chain uses
-  `qiwe-production`.
+- `runtime_artifact_profile`: primary production sidecar artifact profile, fixed to
+  `huabaosi-production`. The release manifest separately records
+  `companion_runtime_artifact_profiles=["qiwe-production"]`.
 - `deploy_bundle_sha`: deploy bundle artifact SHA in COS.
 - `release_sha`: immutable release directory name. For normal releases this should match
   `deploy_bundle_sha` when only operator/plugin files changed, or the target commit SHA
@@ -223,6 +220,7 @@ releases must write a normalized `manifest.json` with separate fields:
 - `request_id`
 - `release_scope`
 - `restart_targets`
+- `companion_runtime_artifact_profiles`
 
 The runner must not infer one SHA from another.
 
@@ -230,11 +228,10 @@ The runner must not infer one SHA from another.
 
 A follow-up deployment for an existing immutable `release_sha` must reuse the existing
 manifest's exact `runtime_sha`, `deploy_bundle_sha`, `commit_sha`, `release_scope`, and
-`restart_targets`. The runtime profile may change only between the two reviewed
-production profiles (`huabaosi-production` and `qiwe-production`). In that case the
-runner verifies every non-sidecar path against freshly fetched artifacts, replaces only
-the verified sidecar payload, and updates the profile metadata. Any other identity
-mismatch fails before promotion.
+`restart_targets`. The primary runtime profile remains `huabaosi-production`. A legacy
+Huabaosi-only release may add the complete missing `sidecar-profiles/qiwe-production`
+tree after exact inventory verification; the primary sidecar payload cannot be replaced.
+Any partial companion or other identity mismatch fails before promotion.
 
 Before dispatching a same-SHA follow-up, read only the sanitized manifest fields from
 the promoted release evidence or the prior successful deploy result. Do not guess the
@@ -248,15 +245,14 @@ notes.
 The `v0.2.29` runner wrote release manifests without `runtime_artifact_profile`. A
 same-SHA follow-up assembled by `v0.2.30+` must adopt the missing reviewed profile from
 the immutable `sidecar/artifact-manifest.json`, persist it into the existing release
-manifest, and only then compare the identity. This compatibility path and the explicit
-two-profile switch both fail closed for any other manifest drift or unavailable sidecar
-artifact profile.
+manifest, and only then compare the identity. This compatibility path and companion
+installation both fail closed for any other manifest drift or unavailable artifact.
 
 The existing-release path also repairs metadata left by a previous runner only after the
 exact manifest identity matches, the complete release tree matches freshly fetched and
-verified artifacts, and both packaged `SHA256SUMS` files pass. It then makes the release
-tree root-owned and copies only modes from the fresh staging tree. Any missing, extra,
-changed, symlink-drifted, or unsupported path fails before metadata mutation.
+verified artifacts, and all three packaged `SHA256SUMS` files pass. It then makes the
+release tree root-owned and copies only modes from the fresh staging tree. Any missing,
+extra, changed, symlink-drifted, or unsupported path fails before metadata mutation.
 
 ## Server Units
 

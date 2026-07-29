@@ -108,13 +108,12 @@ pending Feishu-backed JPEG, and authenticated same-byte revalidation to the immu
 release evidence. It does not approve the generated image or call QiWe. Enable ongoing
 scheduling through the separate activation script only after that canary is reviewed.
 
-The normal `release.published` deploy path remains the ordinary Huabaosi production
-artifact only. It builds/uploads `qintopia-message-sidecar-linux-x86_64-gnu`, records
-`runtime_artifact_profile=huabaosi-production`, and must not auto-switch to the
-independent QiWe production artifact. A later QiWe enablement deploy is a separate
-owner-approved `workflow_dispatch` follow-up that first publishes
-`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` to COS, then dispatches
-`Deploy Production` with `runtime_artifact_profile=qiwe-production`.
+The normal `release.published` deploy path builds and verifies two independent
+production artifacts. It installs `qintopia-message-sidecar-linux-x86_64-gnu` as
+`sidecar/`, records `runtime_artifact_profile=huabaosi-production`, and installs
+`qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` as
+`sidecar-profiles/qiwe-production/`. The request profile is the primary runtime
+identity, not a global Huabaosi/QiWe switch.
 
 The release assembly step should be idempotent: if the release directory already exists,
 the operator must verify its manifest and checksum instead of overwriting it blindly.
@@ -141,6 +140,12 @@ WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations
 Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-sha>
 ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
+```
+
+QiWe image-send services use the independent companion:
+
+```text
+ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar <qiwe-subcommand>
 ```
 
 After each promotion, render and reinstall these units from the immutable release so

@@ -84,6 +84,7 @@ trap cleanup EXIT
 "$render_script" \
   --target-sha "$release_sha" \
   --artifact-dir "${release_dir}/sidecar" \
+  --qiwe-artifact-dir "${release_dir}/sidecar-profiles/qiwe-production" \
   --monorepo-dir "$release_dir" \
   --migrations-dir "${release_dir}/runtime/postgres/migrations" \
   --output-dir "$render_dir"
@@ -132,6 +133,20 @@ for unit_file in "${unit_files[@]}"; do
   source_path="${render_dir}/${unit_file}"
   if [[ ! -f "$source_path" ]]; then
     echo "rendered unit is missing: ${unit_file}" >&2
+    exit 1
+  fi
+  install -m 0644 "$source_path" "${unit_dir}/${unit_file}"
+done
+
+runner_unit_files=(
+  qintopia-agent-os-deploy-runner.service
+  qintopia-agent-os-deploy-runner.timer
+)
+
+for unit_file in "${runner_unit_files[@]}"; do
+  source_path="${release_dir}/deploy/runner/${unit_file}"
+  if [[ ! -f "$source_path" ]]; then
+    echo "release deploy runner unit is missing: ${unit_file}" >&2
     exit 1
   fi
   install -m 0644 "$source_path" "${unit_dir}/${unit_file}"

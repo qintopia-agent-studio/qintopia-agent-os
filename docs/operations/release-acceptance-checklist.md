@@ -41,9 +41,10 @@ send externally.
   `/home/ubuntu/qintopia-agent-os-releases/current`.
 - Confirm `tools/deploy/build-deploy-bundle.mjs` packages those scripts.
 - Confirm `tools/deploy/check-deploy-contracts.mjs` guards those scripts.
-- If the follow-up deploy will use `runtime_artifact_profile=qiwe-production`, confirm
-  the independent artifact `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`
-  has already been built and uploaded to COS before dispatching `Deploy Production`.
+- Confirm both production artifacts were built for the exact Release SHA and are
+  available in COS before dispatching `Deploy Production`:
+  `qintopia-message-sidecar-linux-x86_64-gnu` and
+  `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`.
 - For the final Huabaosi image canary Release, confirm the bundle contains
   `deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh` and the
   contract check covers its immutable release, timer, reviewer, pending-image, and
@@ -69,7 +70,7 @@ send externally.
 - If the release is intended to support final Xiaoman production-complete evidence,
   confirm operators will retain two reviewed production sidecar SHA-256 values: Huabaosi
   canary evidence uses the ordinary Huabaosi production artifact, while real
-  Xiaoman/QiWe delivery evidence uses the separately deployed QiWe production artifact.
+  Xiaoman/QiWe delivery evidence uses the QiWe companion in the same release.
   <p>Huabaosi canary evidence uses the ordinary Huabaosi production artifact.</p>
 - If the release is intended to support final Xiaoman production-complete evidence,
   rerun the reviewed repository-local verification bundle before any owner-operated
@@ -81,8 +82,8 @@ send externally.
 
 - If the release is intended to support final Xiaoman production-complete evidence,
   follow [Xiaoman production evidence runbook](xiaoman-production-evidence-runbook.md)
-  for the owner-operated Huabaosi canary, QiWe follow-up deploy, real-activity export,
-  group arrival confirmation, and final completion-manifest sequence.
+  for the owner-operated Huabaosi canary, QiWe companion observation, real-activity
+  export, group arrival confirmation, and final completion-manifest sequence.
 - If the release is intended to support final Xiaoman production-complete evidence,
   prefer the reviewed one-shot completion helper for the last owner-operated step after
   all sanitized evidence files are retained:

@@ -243,9 +243,10 @@ the GitHub Actions artifact.
 
 The manually dispatched `qiwe-sidecar-artifact` job can also upload the independent
 `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` artifact to COS. That
-artifact remains separate from the ordinary Huabaosi production artifact and is selected
-later only through `runtime_artifact_profile=qiwe-production` in the reviewed deploy
-request.
+artifact remains separate from the ordinary Huabaosi production artifact. Normal Release
+publication uploads both artifacts; promotion installs QiWe as the fixed
+`sidecar-profiles/qiwe-production` companion while the request keeps the Huabaosi
+artifact primary.
 
 After a successful COS upload, CI prunes old COS artifact directories and keeps the
 latest ten sidecar artifact SHA directories for
@@ -357,7 +358,7 @@ set +a
 
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
-  --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+  --output-dir /home/ubuntu/qintopia-agent-os-releases/<approved-target-sha>/sidecar
 ```
 
 For the independent QiWe production artifact, set the reviewed artifact profile before
@@ -367,7 +368,7 @@ download:
 export QINTOPIA_SIDECAR_ARTIFACT_PROFILE="qiwe-production"
 deploy/sidecar/scripts/fetch-cos-artifact.sh \
   --sha <approved-target-sha> \
-  --output-dir /home/ubuntu/qintopia-agent-os-artifacts/<approved-target-sha>
+  --output-dir /home/ubuntu/qintopia-agent-os-releases/<approved-target-sha>/sidecar-profiles/qiwe-production
 ```
 
 The download script verifies:
