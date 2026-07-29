@@ -1544,6 +1544,7 @@ const CANDIDATE_SELECT: &str = r#"
     ) creation ON true
     WHERE artifact.artifact_type = 'generated_image'
       AND artifact.created_by_agent = 'huabaosi'
+      AND artifact.artifact_uri LIKE 'https://%'
       AND item.work_item_type = 'image_generation_request'
       AND item.capability_key = 'huabaosi.generate_image_asset'
       AND item.target_agent = 'huabaosi'
@@ -3092,6 +3093,11 @@ mod tests {
                 "fixture report leaked {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn huabaosi_feishu_artifact_mirror_candidate_query_requires_https() {
+        assert!(CANDIDATE_SELECT.contains("AND artifact.artifact_uri LIKE 'https://%'"));
     }
 
     #[cfg(feature = "huabaosi-feishu-mirror-adapter")]

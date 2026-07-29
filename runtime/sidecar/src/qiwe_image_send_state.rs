@@ -1558,12 +1558,24 @@ fn parse_feishu_primary_storage_uri(value: &str) -> Result<Uuid> {
     Ok(artifact_id)
 }
 
-const fn feishu_delivery_bridge_compiled() -> bool {
-    cfg!(all(
-        feature = "huabaosi-staging-adapter",
-        feature = "qiwe-staging-adapter"
+pub(crate) const fn feishu_delivery_bridge_compiled() -> bool {
+    cfg!(any(
+        all(
+            feature = "huabaosi-staging-adapter",
+            feature = "qiwe-staging-adapter"
+        ),
+        all(
+            feature = "huabaosi-feishu-mirror-adapter",
+            feature = "qiwe-production-adapter"
+        )
     ))
 }
+
+#[cfg(all(
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "qiwe-production-adapter"
+))]
+const _: () = assert!(feishu_delivery_bridge_compiled());
 
 fn upload_protocol_for_claim(claim: &QiweUploadClaim) -> Result<&'static str> {
     if claim

@@ -164,6 +164,11 @@ if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   done
   "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"
   "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"
+  timer_next_elapse="$("$SYSTEMCTL" show --property=NextElapseUSecMonotonic --value "$WORKER_TIMER")"
+  if [[ -z "$timer_next_elapse" || "$timer_next_elapse" == "0" || "$timer_next_elapse" == "infinity" ]]; then
+    echo "Huabaosi Feishu mirror production timer must have a future trigger" >&2
+    exit 1
+  fi
 else
   if "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER" >/dev/null 2>&1; then
     echo "Huabaosi Feishu mirror timer must not be enabled" >&2

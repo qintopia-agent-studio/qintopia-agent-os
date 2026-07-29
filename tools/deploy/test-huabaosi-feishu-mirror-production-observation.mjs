@@ -69,6 +69,10 @@ printf '%s\\n' "$*" >>"${systemctlLog}"
 if [[ "\${FAKE_MIRROR_UNIT_PRESENT:-0}" == "1" && ( "$1" == "cat" || "$1" == "start" ) ]]; then exit 0; fi
 if [[ "\${FAKE_MIRROR_TIMER_ENABLED:-0}" == "1" && "$1" == "is-enabled" ]]; then exit 0; fi
 if [[ "\${FAKE_MIRROR_TIMER_ACTIVE:-0}" == "1" && "$1" == "is-active" ]]; then exit 0; fi
+if [[ "$1" == "show" ]]; then
+  if [[ "\${FAKE_MIRROR_TIMER_SCHEDULED:-0}" == "1" ]]; then printf '%s\\n' '5min'; else printf '%s\\n' 'infinity'; fi
+  exit 0
+fi
 exit 1
 `
   );
@@ -242,6 +246,7 @@ esac
     FAKE_MIRROR_UNIT_PRESENT: "1",
     FAKE_MIRROR_TIMER_ENABLED: "1",
     FAKE_MIRROR_TIMER_ACTIVE: "1",
+    FAKE_MIRROR_TIMER_SCHEDULED: "1",
   });
   if (enabled.status !== 0) {
     throw new Error(`enabled observation failed\n${enabled.stdout}\n${enabled.stderr}`);
@@ -262,6 +267,17 @@ esac
   });
   if (incomplete.status === 0) {
     throw new Error("observation accepted an inactive production timer");
+  }
+
+  const elapsed = run({
+    QINTOPIA_SIDECAR_ENV_FILE: enabledEnv,
+    FAKE_MIRROR_UNIT_PRESENT: "1",
+    FAKE_MIRROR_TIMER_ENABLED: "1",
+    FAKE_MIRROR_TIMER_ACTIVE: "1",
+    FAKE_MIRROR_TIMER_SCHEDULED: "0",
+  });
+  if (elapsed.status === 0) {
+    throw new Error("observation accepted a timer without a future trigger");
   }
 
   const redactionSentinel = ["feishu", "observation", "redaction", "sentinel"].join(

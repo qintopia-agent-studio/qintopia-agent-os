@@ -220,6 +220,16 @@ esac
       throw new Error(`expected rendered timer ${timer}`);
     }
   }
+  for (const [timer, firstTrigger] of [
+    ["qintopia-agentos-huabaosi-image-generation-worker.timer", "11min"],
+    ["qintopia-agentos-huabaosi-feishu-artifact-mirror-worker.timer", "12min"],
+    ["qintopia-agentos-qiwe-image-send-worker.timer", "13min"],
+  ]) {
+    const unit = fs.readFileSync(path.join(unitDir, timer), "utf8");
+    if (!unit.includes(`OnActiveSec=${firstTrigger}`) || unit.includes("OnBootSec=")) {
+      throw new Error(`${timer} must schedule its first run from manual activation`);
+    }
+  }
   const log = fs.readFileSync(systemctlLog, "utf8");
   for (const required of [
     "daemon-reload",

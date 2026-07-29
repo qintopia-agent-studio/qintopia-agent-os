@@ -166,12 +166,19 @@ require_database_hash_match
 require_qiwe_production_artifact
 
 "$SYSTEMCTL" start "$PREFLIGHT_SERVICE"
-"$SYSTEMCTL" enable --now "$WORKER_TIMER"
+"$SYSTEMCTL" enable "$WORKER_TIMER"
+"$SYSTEMCTL" restart "$WORKER_TIMER"
 if ! "$SYSTEMCTL" is-enabled --quiet "$WORKER_TIMER"; then
   cleanup_failed_activation
   exit 1
 fi
 if ! "$SYSTEMCTL" is-active --quiet "$WORKER_TIMER"; then
+  cleanup_failed_activation
+  exit 1
+fi
+timer_next_elapse="$("$SYSTEMCTL" show --property=NextElapseUSecMonotonic --value "$WORKER_TIMER")"
+if [[ -z "$timer_next_elapse" || "$timer_next_elapse" == "0" || "$timer_next_elapse" == "infinity" ]]; then
+  echo "QiWe image-send production timer has no future trigger" >&2
   cleanup_failed_activation
   exit 1
 fi
