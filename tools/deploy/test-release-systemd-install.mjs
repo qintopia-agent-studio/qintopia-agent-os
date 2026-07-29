@@ -105,14 +105,19 @@ esac
     path.join(unitDir, "qintopia-message-sidecar.service"),
     "utf8"
   );
+  const releaseExecPrefix = `/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`;
   for (const required of [
     `WorkingDirectory=${resolvedReleaseDir}`,
-    `Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`,
-    `ExecStart=${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run`,
+    `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run`,
   ]) {
     if (!sidecarUnit.includes(required)) {
       throw new Error(`sidecar unit is missing ${required}`);
     }
+  }
+  if (sidecarUnit.includes("Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=")) {
+    throw new Error(
+      "sidecar unit must bind deployed commit SHA after EnvironmentFile at the exec boundary"
+    );
   }
   for (const unitName of [
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
@@ -120,12 +125,19 @@ esac
   ]) {
     const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
     for (const required of [
-      `Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`,
-      `Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${releaseSha}`,
-      `Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`,
+      `${releaseExecPrefix} QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${releaseSha} QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`,
     ]) {
       if (!unit.includes(required)) {
         throw new Error(`${unitName} is missing ${required}`);
+      }
+    }
+    for (const forbidden of [
+      "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=",
+      "Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=",
+      "Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=",
+    ]) {
+      if (unit.includes(forbidden)) {
+        throw new Error(`${unitName} must not use vulnerable ${forbidden}`);
       }
     }
   }
@@ -135,11 +147,18 @@ esac
   ]) {
     const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
     for (const required of [
-      `Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`,
-      `Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`,
+      `${releaseExecPrefix} QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`,
     ]) {
       if (!unit.includes(required)) {
         throw new Error(`${unitName} is missing ${required}`);
+      }
+    }
+    for (const forbidden of [
+      "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=",
+      "Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=",
+    ]) {
+      if (unit.includes(forbidden)) {
+        throw new Error(`${unitName} must not use vulnerable ${forbidden}`);
       }
     }
     if (unit.includes("QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA")) {
@@ -152,11 +171,13 @@ esac
   ]) {
     const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
     const qiweBin = `${resolvedReleaseDir}/sidecar-profiles/qiwe-production/qintopia-message-sidecar`;
-    if (!unit.includes(`ExecStart=${qiweBin}`)) {
+    if (!unit.includes(`ExecStart=${releaseExecPrefix} ${qiweBin}`)) {
       throw new Error(`${unitName} must execute the QiWe companion binary`);
     }
     if (
-      unit.includes(`ExecStart=${resolvedReleaseDir}/sidecar/qintopia-message-sidecar`)
+      unit.includes(
+        `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar`
+      )
     ) {
       throw new Error(`${unitName} must not execute the Huabaosi binary`);
     }

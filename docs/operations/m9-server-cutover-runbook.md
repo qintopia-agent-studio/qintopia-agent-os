@@ -415,10 +415,9 @@ M9-F release/current service shape:
 
 ```text
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
-ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
 EnvironmentFile=/etc/qintopia/message-sidecar.env
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations
-Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-target-sha>
+ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=<approved-target-sha> /home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar <subcommand>
 ```
 
 For M9-F, repoint the remaining already-active legacy workers first. Do not enable the

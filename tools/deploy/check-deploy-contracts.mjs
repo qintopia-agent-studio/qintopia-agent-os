@@ -2313,8 +2313,9 @@ if (!exists(renderSystemdUnitsPath)) {
 } else {
   const renderer = readText(renderSystemdUnitsPath);
   for (const fragment of [
-    'local huabaosi_feishu_release_environment="Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"',
-    'local huabaosi_image_release_environment="Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"',
+    'local huabaosi_feishu_release_environment="QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"',
+    'local huabaosi_image_release_environment="QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA}',
+    "ExecStart=/usr/bin/env ${release_environment}",
     '"$huabaosi_image_release_environment"',
     '"$huabaosi_feishu_release_environment"',
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
@@ -2328,6 +2329,13 @@ if (!exists(renderSystemdUnitsPath)) {
     "qintopia-agentos-qiwe-image-send-worker.timer",
   ]) {
     requireFragment(renderSystemdUnitsPath, renderer, fragment);
+  }
+  for (const fragment of [
+    "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}",
+    "Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA}",
+    "Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}",
+  ]) {
+    forbidFragment(renderSystemdUnitsPath, renderer, fragment);
   }
   forbidFragment(renderSystemdUnitsPath, renderer, '"qiwe-image-send-preflight"');
 }

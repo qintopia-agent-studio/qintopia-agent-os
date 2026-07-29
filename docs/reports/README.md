@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-29 systemd release environment precedence](2026-07-29-systemd-release-env-precedence.md)
 - [2026-07-28 Xiaoman production runtime cutover failure](2026-07-28-xiaoman-production-runtime-cutover-failure.md)
 - [2026-07-23 Huabaosi WeCom observation journal window](2026-07-23-huabaosi-wecom-observation-journal-window.md)
 - [2026-07-23 Xiaoman QiWe disabled observation artifact drift](2026-07-23-xiaoman-qiwe-disabled-observation-artifact-drift.md)

@@ -212,6 +212,14 @@ from the immutable release, installs it, reloads systemd, and enables only Agent
 internal workflow timers. This keeps `QINTOPIA_DEPLOYED_COMMIT_SHA`, `WorkingDirectory`,
 and sidecar binary paths aligned with `current`.
 
+Systemd applies `EnvironmentFile=` values after `Environment=` values. Release-owned
+identity must therefore be injected as fixed `/usr/bin/env KEY=<release-value>`
+assignments on `ExecStart` and `ExecStartPre`, after the persistent environment has been
+loaded. Do not rely on `Environment=` for `QINTOPIA_DEPLOYED_COMMIT_SHA`, Huabaosi image
+release SHA, or Huabaosi Feishu release SHA when the same key may exist in the
+persistent environment file. Persistent runtime configuration is not an authoritative
+release identity source.
+
 The first release that introduces this runner behavior needs one follow-up approved
 `workflow_dispatch` request for the same published SHA after the release has become
 `current`: that first promotion is still processed by the prior runner, while the second

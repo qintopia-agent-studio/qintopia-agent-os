@@ -171,9 +171,10 @@ Group=ubuntu
 WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 ${extra_env_file}
-Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
-ExecStart=${BIN} ${command}
+# EnvironmentFile values override Environment values. Bind immutable release identity
+# at the final exec boundary so stale persistent values cannot shadow this release.
+ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} ${BIN} ${command}
 Restart=always
 RestartSec=${restart_sec}
 NoNewPrivileges=true
@@ -188,9 +189,9 @@ render_oneshot_service() {
   local service_name="$1"
   local description="$2"
   local command="$3"
-  local extra_environment_line=""
+  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}"
   if [[ -n "${4:-}" ]]; then
-    extra_environment_line="${4}"$'\n'
+    release_environment+=" ${4}"
   fi
   local runtime_bin="${5:-$BIN}"
 
@@ -206,9 +207,8 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
-Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
-${extra_environment_line}Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
-ExecStart=${runtime_bin} ${command}
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
+ExecStart=/usr/bin/env ${release_environment} ${runtime_bin} ${command}
 NoNewPrivileges=true
 PrivateTmp=true
 EOF
@@ -219,9 +219,9 @@ render_guarded_oneshot_service() {
   local description="$2"
   local preflight_command="$3"
   local command="$4"
-  local extra_environment_line=""
+  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}"
   if [[ -n "${5:-}" ]]; then
-    extra_environment_line="${5}"$'\n'
+    release_environment+=" ${5}"
   fi
   local runtime_bin="${6:-$BIN}"
 
@@ -237,10 +237,9 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
-Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}
-${extra_environment_line}Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
-ExecStartPre=${runtime_bin} ${preflight_command}
-ExecStart=${runtime_bin} ${command}
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
+ExecStartPre=/usr/bin/env ${release_environment} ${runtime_bin} ${preflight_command}
+ExecStart=/usr/bin/env ${release_environment} ${runtime_bin} ${command}
 NoNewPrivileges=true
 PrivateTmp=true
 EOF
@@ -327,8 +326,8 @@ EOF
 }
 
 render_all() {
-  local huabaosi_feishu_release_environment="Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"
-  local huabaosi_image_release_environment="Environment=QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"$'\n'"${huabaosi_feishu_release_environment}"
+  local huabaosi_feishu_release_environment="QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"
+  local huabaosi_image_release_environment="QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA} ${huabaosi_feishu_release_environment}"
 
   mkdir -p "$OUTPUT_DIR"
   render_plan
@@ -605,15 +604,21 @@ validate_output() {
   for file in "$OUTPUT_DIR"/*.service; do
     grep -F "WorkingDirectory=${MONOREPO_DIR}" "$file" >/dev/null
     grep -F "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}" "$file" >/dev/null
+    grep -F "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}" "$file" >/dev/null
     case "$(basename "$file")" in
       qintopia-agentos-qiwe-image-send-preflight.service | qintopia-agentos-qiwe-image-send-worker.service)
-        grep -F "ExecStart=${QIWE_BIN}" "$file" >/dev/null
+        grep -F " ${QIWE_BIN} " "$file" >/dev/null
         ;;
       *)
-        grep -F "ExecStart=${BIN}" "$file" >/dev/null
+        grep -F " ${BIN} " "$file" >/dev/null
         ;;
     esac
   done
+
+  if grep -R -E '^Environment=QINTOPIA_(DEPLOYED_COMMIT_SHA|HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA|HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA)=' "$OUTPUT_DIR"/*.service >/dev/null; then
+    echo "Rendered units must bind immutable release identity at the exec boundary." >&2
+    exit 4
+  fi
 
   if grep -R -F "/home/ubuntu/qintopia-msg-sidecar" "$OUTPUT_DIR"/*.service >/dev/null; then
     echo "Rendered units still reference the legacy standalone checkout." >&2

@@ -112,10 +112,10 @@ try {
     const unit = fs.readFileSync(unitPath, "utf8");
     for (const requiredFragment of [
       "WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current",
-      "ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar",
+      "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check",
+      "/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar",
       command,
       "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations",
-      "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check",
     ]) {
       if (!unit.includes(requiredFragment)) {
         addError(`${unitName}: missing ${requiredFragment}`);
@@ -137,12 +137,16 @@ try {
     const unit = fs.readFileSync(unitPath, "utf8");
     const qiweBin =
       "/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar";
-    if (!unit.includes(`ExecStart=${qiweBin}`)) {
+    if (
+      !unit.includes(
+        `ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check ${qiweBin}`
+      )
+    ) {
       addError(`${unitName}: must execute ${qiweBin}`);
     }
     if (
       unit.includes(
-        "ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar"
+        "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check /home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar"
       )
     ) {
       addError(`${unitName}: must not execute the Huabaosi production binary`);
