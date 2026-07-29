@@ -417,6 +417,45 @@ enum UploadCallFailure {
     feature = "qiwe-staging-adapter",
     feature = "qiwe-production-adapter"
 ))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TemporaryStorageUrlValidationFailure {
+    InvalidLength,
+    PathAmbiguity,
+    Parse,
+    SchemeNotAllowed,
+    HostMissing,
+    UserinfoNotAllowed,
+    QueryNotAllowed,
+    FragmentNotAllowed,
+    HostNotAllowlisted,
+}
+
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
+impl TemporaryStorageUrlValidationFailure {
+    const fn stage(self) -> &'static str {
+        match self {
+            Self::InvalidLength => "temporary_storage_url_invalid_length",
+            Self::PathAmbiguity => "temporary_storage_url_path_ambiguity",
+            Self::Parse => "temporary_storage_url_parse_failed",
+            Self::SchemeNotAllowed => "temporary_storage_url_scheme_not_allowed",
+            Self::HostMissing => "temporary_storage_url_host_missing",
+            Self::UserinfoNotAllowed => "temporary_storage_url_userinfo_not_allowed",
+            Self::QueryNotAllowed => "temporary_storage_url_query_not_allowed",
+            Self::FragmentNotAllowed => "temporary_storage_url_fragment_not_allowed",
+            Self::HostNotAllowlisted => "temporary_storage_url_host_not_allowlisted",
+        }
+    }
+}
+
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 impl UploadCallFailure {
     fn rejected(stage: &'static str) -> Self {
         Self::Rejected {
@@ -1396,7 +1435,7 @@ fn request_feishu_bridge_upload_with(
         &config.media_allowed_hosts,
         client.allows_insecure_http(),
     )
-    .map_err(|_| UploadCallFailure::unknown("temporary_storage_url_validation"))?;
+    .map_err(|failure| UploadCallFailure::unknown(failure.stage()))?;
     let async_upload = cloud_url
         .with_url(|url| {
             request_async_upload_url_with(config, claim, url, &config.media_allowed_hosts, client)
@@ -1483,9 +1522,7 @@ fn parse_temporary_storage_acceptance_for_call(
     }
     let cloud_url =
         strict_temporary_storage_url(&cloud_url_value, allowed_hosts, allow_insecure_http)
-            .map_err(|_| {
-                UploadCallFailure::unknown_with_status("temporary_storage_url_validation", status)
-            })?;
+            .map_err(|failure| UploadCallFailure::unknown_with_status(failure.stage(), status))?;
     Ok(Zeroizing::new(cloud_url.as_str().to_string()))
 }
 
@@ -1505,7 +1542,7 @@ fn readback_temporary_storage_with(
         &config.media_allowed_hosts,
         client.allows_insecure_http(),
     )
-    .map_err(|_| UploadCallFailure::unknown("temporary_storage_readback_url"))?;
+    .map_err(|failure| UploadCallFailure::unknown(failure.stage()))?;
     let max_bytes = usize::try_from(claim.artifact_byte_size)
         .map_err(|_| UploadCallFailure::unknown("temporary_storage_readback_size"))?;
     let response = cloud_url
@@ -2136,28 +2173,32 @@ fn strict_temporary_storage_url(
     value: &str,
     allowed_hosts: &BTreeSet<String>,
     allow_insecure_http: bool,
-) -> Result<SensitiveUrl> {
+) -> std::result::Result<SensitiveUrl, TemporaryStorageUrlValidationFailure> {
     if value.is_empty() || value.len() > 4096 {
-        bail!("QiWe temporary-storage URL length is invalid");
+        return Err(TemporaryStorageUrlValidationFailure::InvalidLength);
     }
-    url_policy::reject_path_separator_ambiguity(value, "QiWe temporary-storage URL")?;
-    let url = Url::parse(value).context("parse QiWe temporary-storage URL")?;
-    let scheme_allowed = url.scheme() == "https" || (allow_insecure_http && url.scheme() == "http");
-    if !scheme_allowed
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        bail!("QiWe temporary-storage URL is outside the reviewed boundary");
+    if url_policy::reject_path_separator_ambiguity(value, "QiWe temporary-storage URL").is_err() {
+        return Err(TemporaryStorageUrlValidationFailure::PathAmbiguity);
     }
-    let host = url
-        .host_str()
-        .context("QiWe temporary-storage URL host is missing")?
-        .to_ascii_lowercase();
+    let url = Url::parse(value).map_err(|_| TemporaryStorageUrlValidationFailure::Parse)?;
+    if url.scheme() != "https" && !(allow_insecure_http && url.scheme() == "http") {
+        return Err(TemporaryStorageUrlValidationFailure::SchemeNotAllowed);
+    }
+    let Some(host) = url.host_str() else {
+        return Err(TemporaryStorageUrlValidationFailure::HostMissing);
+    };
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(TemporaryStorageUrlValidationFailure::UserinfoNotAllowed);
+    }
+    if url.query().is_some() {
+        return Err(TemporaryStorageUrlValidationFailure::QueryNotAllowed);
+    }
+    if url.fragment().is_some() {
+        return Err(TemporaryStorageUrlValidationFailure::FragmentNotAllowed);
+    }
+    let host = host.to_ascii_lowercase();
     if !allowed_hosts.contains(&host) {
-        bail!("QiWe temporary-storage URL host is not allowlisted");
+        return Err(TemporaryStorageUrlValidationFailure::HostNotAllowlisted);
     }
     Ok(SensitiveUrl::new(Zeroizing::new(value.to_string())))
 }
@@ -3887,7 +3928,10 @@ mod tests {
             failure.disposition(),
             UploadFailureDisposition::OutcomeUnknown
         );
-        assert_eq!(failure.stage(), "temporary_storage_url_validation");
+        assert_eq!(
+            failure.stage(),
+            "temporary_storage_url_host_not_allowlisted"
+        );
         assert_eq!(
             parse_temporary_storage_acceptance_for_call(&response, &media_hosts, false)
                 .expect("temporary URL uses reviewed media allowlist")
@@ -3980,6 +4024,56 @@ mod tests {
             b"jpeg-qintopia-fixed-boundary-bytes"
         )
         .is_err());
+    }
+
+    #[test]
+    fn temporary_storage_url_failures_use_fixed_non_sensitive_categories() {
+        let hosts = BTreeSet::from(["temporary.example.test".to_string()]);
+        for (url, expected_stage) in [
+            ("", "temporary_storage_url_invalid_length"),
+            (
+                "https://temporary.example.test/reviewed\\private.jpg",
+                "temporary_storage_url_path_ambiguity",
+            ),
+            ("not-a-url", "temporary_storage_url_parse_failed"),
+            (
+                "http://temporary.example.test/reviewed.jpg",
+                "temporary_storage_url_scheme_not_allowed",
+            ),
+            (
+                "https://user:password@temporary.example.test/reviewed.jpg",
+                "temporary_storage_url_userinfo_not_allowed",
+            ),
+            (
+                "https://temporary.example.test/reviewed.jpg?token=private",
+                "temporary_storage_url_query_not_allowed",
+            ),
+            (
+                "https://temporary.example.test/reviewed.jpg#private",
+                "temporary_storage_url_fragment_not_allowed",
+            ),
+            (
+                "https://other.example.test/reviewed.jpg",
+                "temporary_storage_url_host_not_allowlisted",
+            ),
+        ] {
+            let failure = strict_temporary_storage_url(url, &hosts, false)
+                .err()
+                .expect("fixture URL must be rejected");
+            assert_eq!(failure.stage(), expected_stage);
+            assert!(!failure.stage().contains("temporary.example.test"));
+            assert!(!failure.stage().contains("private"));
+        }
+
+        let response = http_json_response(
+            200,
+            br#"{"code":0,"data":{"cloudUrl":"https://temporary.example.test/reviewed.jpg?token=private"}}"#,
+        );
+        let failure = parse_temporary_storage_acceptance_for_call(&response, &hosts, false)
+            .expect_err("signed query remains rejected until runtime evidence is reviewed");
+        assert_eq!(failure.stage(), "temporary_storage_url_query_not_allowed");
+        assert_eq!(failure.http_status(), Some(200));
+        assert!(failure.request_may_have_been_sent());
     }
 
     #[test]
