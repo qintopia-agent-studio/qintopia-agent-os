@@ -359,8 +359,21 @@ pub struct QiweImageCredentials {
     file_id: String,
     file_md5: String,
     file_size: u64,
-    #[serde(alias = "fileName")]
-    filename: String,
+    #[serde(
+        default,
+        alias = "fileName",
+        deserialize_with = "deserialize_present_filename"
+    )]
+    filename: Option<String>,
+}
+
+fn deserialize_present_filename<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(Some)
 }
 
 impl Drop for QiweImageCredentials {
@@ -368,7 +381,9 @@ impl Drop for QiweImageCredentials {
         self.file_aes_key.zeroize();
         self.file_id.zeroize();
         self.file_md5.zeroize();
-        self.filename.zeroize();
+        if let Some(filename) = self.filename.as_mut() {
+            filename.zeroize();
+        }
     }
 }
 
@@ -1092,7 +1107,7 @@ async fn run_enabled_callback_processor(
     let database_url = cli.database_url_required()?;
     let pool = db::connect(database_url, cli.db_max_connections).await?;
     let callback_file = QiweCallbackFileIdentity {
-        filename: &parsed.credentials.filename,
+        filename: parsed.credentials.filename.as_deref(),
         file_md5: &parsed.credentials.file_md5,
         file_size: parsed.credentials.file_size,
     };
@@ -1146,6 +1161,7 @@ async fn run_enabled_callback_processor(
     let send_body = match build_send_image_request(
         &config.guid,
         &send_claim.target_group_id,
+        &send_claim.filename,
         &parsed.credentials,
         &config.allowed_groups,
     ) {
@@ -1726,8 +1742,8 @@ fn classify_callback_credential_shape(msg_data: &Value) -> Result<CallbackCreden
     }
     let filename_is_canonical = fields.contains_key("filename");
     let filename_is_alias = fields.contains_key("fileName");
-    if filename_is_canonical == filename_is_alias {
-        bail!("QiWe callback must contain exactly one filename field spelling");
+    if filename_is_canonical && filename_is_alias {
+        bail!("QiWe callback must not contain both filename field spellings");
     }
     if !["fileId", "fileMd5", "fileSize"]
         .into_iter()
@@ -1737,11 +1753,18 @@ fn classify_callback_credential_shape(msg_data: &Value) -> Result<CallbackCreden
     }
 
     // Field names are staging evidence; values remain memory-only, so aliases collapse into fixed public schema IDs.
-    let schema_id = match (aes_key_is_canonical, filename_is_canonical) {
-        (true, true) => "fileAesKey+fileId+fileMd5+fileSize+filename",
-        (false, true) => "fileAeskey+fileId+fileMd5+fileSize+filename",
-        (true, false) => "fileAesKey+fileId+fileMd5+fileSize+fileName",
-        (false, false) => "fileAeskey+fileId+fileMd5+fileSize+fileName",
+    let schema_id = match (
+        aes_key_is_canonical,
+        filename_is_canonical,
+        filename_is_alias,
+    ) {
+        (true, true, false) => "fileAesKey+fileId+fileMd5+fileSize+filename",
+        (false, true, false) => "fileAeskey+fileId+fileMd5+fileSize+filename",
+        (true, false, true) => "fileAesKey+fileId+fileMd5+fileSize+fileName",
+        (false, false, true) => "fileAeskey+fileId+fileMd5+fileSize+fileName",
+        (true, false, false) => "fileAesKey+fileId+fileMd5+fileSize",
+        (false, false, false) => "fileAeskey+fileId+fileMd5+fileSize",
+        _ => unreachable!("ambiguous filename spellings were rejected"),
     };
     let reviewed_fields = [
         "fileAesKey",
@@ -1839,6 +1862,7 @@ fn validate_contract() -> Result<()> {
     build_send_image_request(
         "contract-device",
         "contract-group",
+        "contract-image.jpg",
         &credentials,
         &allowed_group_ids,
     )?;
@@ -1893,7 +1917,7 @@ fn preflight_report(state: PreflightReportState) -> QiweImageSendPreflightReport
         safe_for_chat: false,
         limitations: vec![
             "this preflight validates local configuration only; it does not contact QiWe, upload media, or send a message".to_string(),
-            "the official async upload callback must provide complete file credentials before a send request can be built".to_string(),
+            "the official async upload callback must provide the four core file credentials; the send filename comes from the transaction-locked approved artifact".to_string(),
             "the generated-image contract requires the deterministic final JPEG; owner-approved staging must still verify isolated media upload and same-byte readback".to_string(),
         ],
         guardrails: vec![
@@ -2309,11 +2333,13 @@ pub fn parse_async_upload_callback(
 pub fn build_send_image_request(
     guid: &str,
     target_group_id: &str,
+    filename: &str,
     credentials: &QiweImageCredentials,
     allowed_group_ids: &BTreeSet<String>,
 ) -> Result<Vec<u8>> {
     validate_plain_value(guid, "QiWe device id")?;
     validate_plain_value(target_group_id, "QiWe target group id")?;
+    validate_jpeg_filename(filename)?;
     if !allowed_group_ids.contains(target_group_id) {
         bail!("QiWe target group id is not allowlisted");
     }
@@ -2326,7 +2352,7 @@ pub fn build_send_image_request(
             file_id: &credentials.file_id,
             file_md5: &credentials.file_md5,
             file_size: credentials.file_size,
-            filename: &credentials.filename,
+            filename,
             to_id: target_group_id,
         },
     })
@@ -2367,7 +2393,9 @@ impl QiweImageCredentials {
         validate_plain_value(&self.file_aes_key, "QiWe file AES key")?;
         validate_plain_value(&self.file_id, "QiWe file id")?;
         validate_canonical_md5(&self.file_md5, "QiWe file MD5")?;
-        validate_jpeg_filename(&self.filename)?;
+        if let Some(filename) = self.filename.as_deref() {
+            validate_jpeg_filename(filename)?;
+        }
         if self.file_size == 0 {
             bail!("QiWe file size must be positive");
         }
@@ -2805,10 +2833,12 @@ mod tests {
             Value::String("98e7c2acf4391f8b4a2bbd39e364c5e3".to_string()),
         );
         msg_data.insert("fileSize".to_string(), Value::from(48_301));
-        msg_data.insert(
-            filename_field.to_string(),
-            Value::String("private-activity-poster.jpg".to_string()),
-        );
+        if !filename_field.is_empty() {
+            msg_data.insert(
+                filename_field.to_string(),
+                Value::String("private-activity-poster.jpg".to_string()),
+            );
+        }
         for (name, value) in additional_fields {
             msg_data.insert((*name).to_string(), value.clone());
         }
@@ -2966,14 +2996,20 @@ mod tests {
         let credentials = parse_async_upload_callback(callback, "upload-request-1")
             .expect("parse matching callback");
         let allowed_group_ids = BTreeSet::from(["group-id".to_string()]);
-        let request =
-            build_send_image_request("device-guid", "group-id", &credentials, &allowed_group_ids)
-                .expect("build send request");
+        let request = build_send_image_request(
+            "device-guid",
+            "group-id",
+            "approved-activity-poster.jpg",
+            &credentials,
+            &allowed_group_ids,
+        )
+        .expect("build send request");
         let value: Value = serde_json::from_slice(&request).expect("parse send request");
 
         assert_eq!(value["method"], SEND_IMAGE_METHOD);
         assert_eq!(value["params"]["fileAesKey"], "aes-key");
         assert_eq!(value["params"]["fileId"], "file-id");
+        assert_eq!(value["params"]["filename"], "approved-activity-poster.jpg");
         assert_eq!(value["params"]["toId"], "group-id");
     }
 
@@ -3023,6 +3059,8 @@ mod tests {
         for msg_data in [
             r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":0,"filename":"activity-poster.jpg"}"#,
             r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.png"}"#,
+            r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":null}"#,
+            r#"{"fileAesKey":"aes-key","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"fileName":null}"#,
             r#"{"fileAesKey":"aes-key\nsecret","fileId":"file-id","fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3","fileSize":48300,"filename":"activity-poster.jpg"}"#,
         ] {
             let callback = format!(
@@ -3132,13 +3170,14 @@ mod tests {
             file_id: "file-id".to_string(),
             file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
             file_size: 48_300,
-            filename: "activity-poster.jpg".to_string(),
+            filename: Some("activity-poster.jpg".to_string()),
         };
         let allowed_group_ids = BTreeSet::from(["reviewed-group".to_string()]);
 
         assert!(build_send_image_request(
             "device-guid",
             "unreviewed-group",
+            "activity-poster.jpg",
             &credentials,
             &allowed_group_ids,
         )
@@ -3152,13 +3191,14 @@ mod tests {
             file_id: "file-id".to_string(),
             file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
             file_size: 48_300,
-            filename: "activity-poster.jpg".to_string(),
+            filename: Some("activity-poster.jpg".to_string()),
         };
         let allowed_group_ids = BTreeSet::from(["group-id".to_string()]);
 
         assert!(build_send_image_request(
             "device-guid",
             "GROUP-ID",
+            "activity-poster.jpg",
             &credentials,
             &allowed_group_ids,
         )
@@ -3174,31 +3214,48 @@ mod tests {
                 file_id: "file-id".to_string(),
                 file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
                 file_size: 0,
-                filename: "activity-poster.jpg".to_string(),
+                filename: Some("activity-poster.jpg".to_string()),
             },
             QiweImageCredentials {
                 file_aes_key: "aes-key\nsecret".to_string(),
                 file_id: "file-id".to_string(),
                 file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
                 file_size: 48_300,
-                filename: "activity-poster.jpg".to_string(),
+                filename: Some("activity-poster.jpg".to_string()),
             },
             QiweImageCredentials {
                 file_aes_key: "aes-key".to_string(),
                 file_id: "file-id".to_string(),
                 file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
                 file_size: 48_300,
-                filename: "activity-poster.png".to_string(),
+                filename: Some("activity-poster.png".to_string()),
             },
         ] {
             assert!(build_send_image_request(
                 "device-guid",
                 "group-id",
+                "activity-poster.jpg",
                 &credentials,
                 &allowed_group_ids,
             )
             .is_err());
         }
+
+        let valid_credentials = QiweImageCredentials {
+            file_aes_key: "aes-key".to_string(),
+            file_id: "file-id".to_string(),
+            file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
+            file_size: 48_300,
+            filename: None,
+        };
+        assert!(build_send_image_request(
+            "device-guid",
+            "group-id",
+            "untrusted-poster.png",
+            &valid_credentials,
+            &allowed_group_ids,
+        )
+        .is_err());
     }
 
     #[test]
@@ -4110,8 +4167,7 @@ mod tests {
                   "fileAesKey":"fake-aes-secret",
                   "fileId":"fake-file-secret",
                   "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
-                  "fileSize":48300,
-                  "filename":"activity-poster.jpg"
+                  "fileSize":48300
                 }
               }]
             }"#,
@@ -4120,6 +4176,7 @@ mod tests {
         let send_body = build_send_image_request(
             &config.guid,
             "group-id",
+            &claim.filename,
             &callback.credentials,
             &config.allowed_groups,
         )
@@ -4303,27 +4360,33 @@ mod tests {
 
     #[test]
     fn callback_parser_reports_each_reviewed_credential_schema() {
-        for (aes_key_field, filename_field, schema_id) in [
+        for (aes_key_field, filename_field, schema_id, expected_filename) in [
             (
                 "fileAesKey",
                 "filename",
                 "fileAesKey+fileId+fileMd5+fileSize+filename",
+                Some("private-activity-poster.jpg"),
             ),
             (
                 "fileAeskey",
                 "filename",
                 "fileAeskey+fileId+fileMd5+fileSize+filename",
+                Some("private-activity-poster.jpg"),
             ),
             (
                 "fileAesKey",
                 "fileName",
                 "fileAesKey+fileId+fileMd5+fileSize+fileName",
+                Some("private-activity-poster.jpg"),
             ),
             (
                 "fileAeskey",
                 "fileName",
                 "fileAeskey+fileId+fileMd5+fileSize+fileName",
+                Some("private-activity-poster.jpg"),
             ),
+            ("fileAesKey", "", "fileAesKey+fileId+fileMd5+fileSize", None),
+            ("fileAeskey", "", "fileAeskey+fileId+fileMd5+fileSize", None),
         ] {
             let body = test_callback_body(aes_key_field, filename_field, &[]);
             let parsed = parse_single_async_upload_callback(&body)
@@ -4331,7 +4394,7 @@ mod tests {
 
             assert_eq!(parsed.request_id, "callback-request-secret");
             assert_eq!(parsed.credentials.file_aes_key, "callback-aes-secret");
-            assert_eq!(parsed.credentials.filename, "private-activity-poster.jpg");
+            assert_eq!(parsed.credentials.filename.as_deref(), expected_filename);
             assert_eq!(parsed.credential_shape.schema_id, schema_id);
             assert_eq!(parsed.credential_shape.additional_field_count, 0);
         }
@@ -4614,12 +4677,13 @@ mod tests {
         build_send_image_request(
             "fake-device-guid",
             "group-id",
+            "activity-poster.jpg",
             &QiweImageCredentials {
                 file_aes_key: "fake-aes-secret".to_string(),
                 file_id: "fake-file-secret".to_string(),
                 file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3".to_string(),
                 file_size: 48_300,
-                filename: "activity-poster.jpg".to_string(),
+                filename: None,
             },
             &BTreeSet::from(["group-id".to_string()]),
         )

@@ -285,7 +285,7 @@ function productionOutput(overrides = {}) {
       dry_run: false,
       external_upload_requested: false,
       callback_received: true,
-      callback_credential_schema: "fileAesKey+fileId+fileMd5+fileSize+filename",
+      callback_credential_schema: "fileAesKey+fileId+fileMd5+fileSize",
       callback_additional_field_count: 0,
       external_send_executed: true,
     },

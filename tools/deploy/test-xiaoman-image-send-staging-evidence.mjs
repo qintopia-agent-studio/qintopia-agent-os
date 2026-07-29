@@ -224,7 +224,7 @@ function qiweOutput(hash) {
       apply_requested: true,
       artifact_content_hash: hash,
       callback_additional_field_count: 0,
-      callback_credential_schema: "fileAesKey+fileId+fileMd5+fileSize+filename",
+      callback_credential_schema: "fileAeskey+fileId+fileMd5+fileSize",
       callback_received: true,
       dry_run: false,
       external_send_executed: true,

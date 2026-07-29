@@ -56,11 +56,12 @@ pub struct QiweCallbackSendClaim {
     pub generated_image_artifact_id: Uuid,
     pub artifact_content_hash: String,
     pub claim_token: String,
+    pub filename: String,
     pub target_group_id: String,
 }
 
 pub struct QiweCallbackFileIdentity<'a> {
-    pub filename: &'a str,
+    pub filename: Option<&'a str>,
     pub file_md5: &'a str,
     pub file_size: u64,
 }
@@ -74,6 +75,7 @@ pub struct QiweCallbackCredentialShapeEvidence {
 impl Drop for QiweCallbackSendClaim {
     fn drop(&mut self) {
         self.claim_token.zeroize();
+        self.filename.zeroize();
         self.target_group_id.zeroize();
     }
 }
@@ -744,7 +746,7 @@ pub async fn claim_callback_for_send(
         bail!("QiWe callback correlation is no longer awaiting callback");
     }
 
-    let (target_group_id, claim_is_current) =
+    let (target_group_id, filename, claim_is_current) =
         lock_callback_policy(&mut tx, &attempt, callback_file).await?;
     if !claim_is_current {
         expire_awaiting_callback_attempt(&mut tx, &attempt, Some(&callback_payload_sha256)).await?;
@@ -822,6 +824,7 @@ pub async fn claim_callback_for_send(
         generated_image_artifact_id: attempt.generated_image_artifact_id,
         artifact_content_hash: attempt.artifact_content_hash,
         claim_token: attempt.claim_token,
+        filename,
         target_group_id,
     }))
 }
@@ -1671,7 +1674,7 @@ async fn lock_callback_policy(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     attempt: &StoredAttempt,
     callback_file: &QiweCallbackFileIdentity<'_>,
-) -> Result<(String, bool)> {
+) -> Result<(String, String, bool)> {
     let row = sqlx::query(
         r#"
         SELECT request.payload->>'target_group_id' AS target_group_id,
@@ -1756,13 +1759,15 @@ async fn lock_callback_policy(
     {
         bail!("QiWe callback target or artifact changed after upload acceptance");
     }
-    if callback_file.filename != artifact_filename
+    if callback_file
+        .filename
+        .is_some_and(|filename| filename != artifact_filename.as_str())
         || callback_file.file_md5 != attempt.artifact_file_md5
         || callback_file.file_size != attempt.artifact_byte_size
     {
         bail!("QiWe callback file identity does not match the approved generated image");
     }
-    Ok((target_group_id, claim_is_current))
+    Ok((target_group_id, artifact_filename, claim_is_current))
 }
 
 async fn lock_sending_claim(
@@ -1871,7 +1876,9 @@ fn validate_canonical_md5(value: &str, label: &str) -> Result<()> {
 }
 
 fn validate_callback_file_identity(callback: &QiweCallbackFileIdentity<'_>) -> Result<()> {
-    validate_jpeg_filename(callback.filename)?;
+    if let Some(filename) = callback.filename {
+        validate_jpeg_filename(filename)?;
+    }
     validate_canonical_md5(callback.file_md5, "QiWe callback file MD5")?;
     if callback.file_size == 0 {
         bail!("QiWe callback file size must be positive");
@@ -1957,7 +1964,7 @@ mod tests {
     #[cfg(feature = "postgres-integration-tests")]
     fn integration_callback_file_identity() -> QiweCallbackFileIdentity<'static> {
         QiweCallbackFileIdentity {
-            filename: "qiwe-state-integration.jpg",
+            filename: None,
             file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
             file_size: 48_300,
         }
@@ -2117,6 +2124,7 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_string(),
             claim_token: "qiwe-image-send-adapter:test-token".to_string(),
+            filename: "activity.jpg".to_string(),
             target_group_id: "test-group-id".to_string(),
         }
     }
@@ -2141,7 +2149,7 @@ mod tests {
 
     fn callback_file_fixture() -> QiweCallbackFileIdentity<'static> {
         QiweCallbackFileIdentity {
-            filename: "activity.jpg",
+            filename: Some("activity.jpg"),
             file_md5: "98e7c2acf4391f8b4a2bbd39e364c5e3",
             file_size: 48_300,
         }
@@ -2555,6 +2563,7 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_string(),
             claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
+            filename: "secret-approved.jpg".to_string(),
             target_group_id: "secret-group-id".to_string(),
         };
 
@@ -2563,6 +2572,7 @@ mod tests {
         assert!(debug.contains("QiweCallbackSendClaim"));
         assert!(debug.contains("attempt_id"));
         assert!(!debug.contains("secret-token"));
+        assert!(!debug.contains("secret-approved.jpg"));
         assert!(!debug.contains("secret-group-id"));
     }
 
@@ -2576,6 +2586,7 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_string(),
             claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
+            filename: "secret-approved.jpg".to_string(),
             target_group_id: "secret-group-id".to_string(),
         });
 
@@ -2583,6 +2594,7 @@ mod tests {
 
         assert!(debug.contains("Ready"));
         assert!(!debug.contains("secret-token"));
+        assert!(!debug.contains("secret-approved.jpg"));
         assert!(!debug.contains("secret-group-id"));
     }
 
@@ -2734,12 +2746,11 @@ mod tests {
             "fileAesKey":"raw-aes-secret",
             "fileId":"raw-file-secret",
             "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
-            "fileSize":48300,
-            "filename":"qiwe-state-integration.jpg"
+            "fileSize":48300
           }
         }"#;
         let mismatched_file = QiweCallbackFileIdentity {
-            filename: "different-image.jpg",
+            filename: Some("different-image.jpg"),
             ..integration_callback_file_identity()
         };
         let mismatch_error = claim_callback_for_send(&pool, request_id, callback, &mismatched_file)
@@ -2762,6 +2773,7 @@ mod tests {
             CallbackClaimOutcome::Expired => panic!("current callback claim expired"),
         };
         assert_eq!(callback_claim.attempt_id, attempt_id);
+        assert_eq!(callback_claim.filename, "qiwe-state-integration.jpg");
         assert_eq!(callback_claim.target_group_id, "integration-group-id");
         let duplicate = claim_callback_for_send(
             &pool,
@@ -2794,7 +2806,7 @@ mod tests {
                 timestamp: 8,
             },
             Some(QiweCallbackCredentialShapeEvidence {
-                schema_id: "fileAesKey+fileId+fileMd5+fileSize+filename",
+                schema_id: "fileAesKey+fileId+fileMd5+fileSize",
                 additional_field_count: 0,
             }),
         )
@@ -2828,7 +2840,7 @@ mod tests {
         assert!(stored.2.starts_with("sha256:"));
         assert_eq!(
             stored.3["attempt"]["audit_metadata"]["callback_credential_schema"],
-            "fileAesKey+fileId+fileMd5+fileSize+filename"
+            "fileAesKey+fileId+fileMd5+fileSize"
         );
         assert_eq!(
             stored.3["attempt"]["audit_metadata"]["callback_additional_field_count"],

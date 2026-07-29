@@ -139,7 +139,7 @@ case "$1" in
     if [[ -f "${callbackLeakValueFlag}" ]]; then
       action_status="${callbackSecret}"
     fi
-    printf '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"callback","action_status":"%s","work_item_id":"${workItemId}","artifact_content_hash":"${artifactContentHash}","external_upload_requested":false,"callback_received":true,"callback_credential_schema":"fileAesKey+fileId+fileMd5+fileSize+filename","callback_additional_field_count":0,"external_send_executed":true,"safe_for_chat":false,"limitations":[],"guardrails":[]}\n' "$action_status"
+    printf '{"success":true,"dry_run":false,"apply_requested":true,"worker":"qiwe-image-send-adapter","phase":"callback","action_status":"%s","work_item_id":"${workItemId}","artifact_content_hash":"${artifactContentHash}","external_upload_requested":false,"callback_received":true,"callback_credential_schema":"fileAesKey+fileId+fileMd5+fileSize","callback_additional_field_count":0,"external_send_executed":true,"safe_for_chat":false,"limitations":[],"guardrails":[]}\n' "$action_status"
     ;;
   *)
     exit 64
@@ -335,7 +335,7 @@ esac
     callbackEvidence[1].work_item_id !== workItemId ||
     callbackEvidence[1].artifact_content_hash !== artifactContentHash ||
     callbackEvidence[1].callback_credential_schema !==
-      "fileAesKey+fileId+fileMd5+fileSize+filename" ||
+      "fileAesKey+fileId+fileMd5+fileSize" ||
     callbackEvidence[1].callback_additional_field_count !== 0 ||
     callbackEvidence[1].external_send_executed !== true ||
     callbackEvidence[1].sidecar_binary_sha256 !== sidecarHash

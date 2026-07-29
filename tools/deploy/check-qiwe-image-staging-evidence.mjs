@@ -122,6 +122,8 @@ const allowedCallbackKeys = new Set([
 ]);
 
 const allowedCredentialSchemas = new Set([
+  "fileAesKey+fileId+fileMd5+fileSize",
+  "fileAeskey+fileId+fileMd5+fileSize",
   "fileAesKey+fileId+fileMd5+fileSize+filename",
   "fileAeskey+fileId+fileMd5+fileSize+filename",
   "fileAesKey+fileId+fileMd5+fileSize+fileName",

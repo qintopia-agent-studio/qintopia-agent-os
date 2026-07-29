@@ -599,6 +599,8 @@ assert len(payload["artifact_content_hash"]) == 71
 assert payload["external_upload_requested"] is False
 assert payload["callback_received"] is True
 assert payload["callback_credential_schema"] in {
+    "fileAesKey+fileId+fileMd5+fileSize",
+    "fileAeskey+fileId+fileMd5+fileSize",
     "fileAesKey+fileId+fileMd5+fileSize+filename",
     "fileAeskey+fileId+fileMd5+fileSize+filename",
     "fileAesKey+fileId+fileMd5+fileSize+fileName",

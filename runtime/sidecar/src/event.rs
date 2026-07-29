@@ -149,8 +149,7 @@ fn canonicalize_callback_msg_data_summary(value: &Value) -> Value {
         "required_fields_present": file_aes_key
             && file_id
             && file_md5
-            && file_size
-            && filename,
+            && file_size,
         "field_presence": {
             "cloud_url": cloud_url,
             "file_aes_key": file_aes_key,
@@ -270,8 +269,7 @@ fn callback_msg_data_summary(value: Option<&Value>) -> Value {
         "required_fields_present": file_aes_key
             && file_id
             && file_md5
-            && file_size
-            && filename,
+            && file_size,
         "field_presence": {
             "cloud_url": cloud_url,
             "file_aes_key": file_aes_key,
@@ -642,7 +640,6 @@ mod tests {
                         "fileId": "file-secret",
                         "fileMd5": "98e7c2acf4391f8b4a2bbd39e364c5e3",
                         "fileSize": 48300,
-                        "filename": "private-activity.jpg",
                         "cloudUrl": "https://media.example.test/private.jpg?token=secret",
                         "unexpectedCredential": "unknown-secret"
                     }
@@ -661,6 +658,10 @@ mod tests {
         assert_eq!(
             event.payload["callback_events"][0]["msg_data_summary"]["required_fields_present"],
             json!(true)
+        );
+        assert_eq!(
+            event.payload["callback_events"][0]["msg_data_summary"]["field_presence"]["filename"],
+            json!(false)
         );
         assert_eq!(
             event.payload["callback_events"][0]["msg_data_summary"]["unknown_field_count"],

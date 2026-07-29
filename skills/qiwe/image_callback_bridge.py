@@ -68,6 +68,8 @@ PRODUCTION_PROCESSOR_ENV_ALLOWLIST = (
     "QINTOPIA_HUABAOSI_MEDIA_MAX_BYTES",
 )
 CALLBACK_SCHEMAS = {
+    "fileAesKey+fileId+fileMd5+fileSize",
+    "fileAeskey+fileId+fileMd5+fileSize",
     "fileAesKey+fileId+fileMd5+fileSize+filename",
     "fileAeskey+fileId+fileMd5+fileSize+filename",
     "fileAesKey+fileId+fileMd5+fileSize+fileName",
@@ -383,7 +385,6 @@ def _is_async_image_callback_event(value: Any) -> bool:
         "fileid",
         "filemd5",
         "filesize",
-        "filename",
     }.issubset(fields)
 
 

@@ -370,7 +370,6 @@ class QiWeParserTests(unittest.TestCase):
                         "fileId": "callback-file-secret",
                         "fileMd5": "callback-md5-secret",
                         "fileSize": 48300,
-                        "filename": "callback-private.jpg",
                         "cloudUrl": "https://media.example.test/private.jpg?token=secret",
                         "unknownCredential": "callback-unknown-secret",
                     },
@@ -423,6 +422,12 @@ class QiWeParserTests(unittest.TestCase):
                 "required_fields_present"
             ],
             True,
+        )
+        self.assertIs(
+            raw_event["payload"]["callback_events"][0]["msg_data_summary"][
+                "field_presence"
+            ]["filename"],
+            False,
         )
         self.assertEqual(message_event["message_id"], message_id)
         self.assertEqual(message_event["raw"], raw_event["payload"])

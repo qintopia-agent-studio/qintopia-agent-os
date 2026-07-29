@@ -47,8 +47,10 @@ sending: owner-approved staging must still prove the provider, isolated media st
 JPEG upload/readback, and QiWe callback behavior together.
 
 The async callback documentation shows correlation but its public example contains only
-`cloudUrl`. The send step remains blocked unless a staging callback proves that complete
-file credentials are returned. Missing or ambiguous credentials must never fall back to
+`cloudUrl`. Production evidence on 2026-07-29 proved that the real callback contains
+`fileAesKey`, `fileId`, `fileMd5`, and `fileSize`, but no callback filename. The
+`/msg/sendImage` filename therefore comes only from the approved JPEG identity locked by
+the upload claim. Missing core credentials or ambiguous aliases must never fall back to
 the deprecated synchronous API.
 
 ## State Machine
@@ -61,7 +63,8 @@ approved generated_image + internal send-ready
   -> POST /cloud/cdnUploadByUrlAsync
   -> persist sanitized requestId correlation and wait
   -> ingest exactly one cmd=20000 callback with matching requestId
-  -> validate complete file credentials without exposing them
+  -> validate core file credentials and optional callback filename without exposing them
+  -> recover the send filename from the transaction-locked approved JPEG
   -> POST /msg/sendImage once
   -> persist send_executed or sanitized terminal failure
 ```
@@ -74,8 +77,9 @@ target, or missing final confirmation must stop before sending.
 
 - Rust request builders match the documented async upload and send-image shapes.
 - Response parsers cap JSON bodies before parsing and reject non-zero API status.
-- Callback parsing requires exactly one matching `cmd=20000` event and complete file
-  credentials.
+- Callback parsing requires exactly one matching `cmd=20000` event and complete core
+  file credentials. A callback filename is optional; when present it must match the
+  locked approved JPEG.
 - Send request construction requires the target group in the reviewed allowlist. Send
   response parsing requires both `code=0` and `isSendSuccess=1`, matching the existing
   QiWe rich-message adapter fixtures; every other value fails closed.
@@ -112,12 +116,14 @@ target, or missing final confirmation must stop before sending.
   callback processing or send enablement.
 - The additive `qiwe_image_send_attempts` state records hashed upload correlation,
   callback idempotency, unique per-attempt claims, immutable artifact/target hashes, and
-  the approved final JPEG MD5 and byte size. Callback credentials remain memory-only;
-  their filename, MD5, and byte size must match the approved artifact before the
-  callback can open the send gate. The callback transition commits `sending` before an
-  external send can occur, and ambiguous outcomes are terminal/manual rather than
-  automatically retried. After that send gate, HTTP failures or provider non-success
-  responses remain ambiguous unless the bounded client proves the request was not sent.
+  the approved final JPEG filename, MD5, and byte size. Callback credentials remain
+  memory-only; their MD5 and byte size must match the approved artifact, and an optional
+  callback filename must also match. The send filename always comes from the locked
+  approved artifact before the callback can open the send gate. The callback transition
+  commits `sending` before an external send can occur, and ambiguous outcomes are
+  terminal/manual rather than automatically retried. After that send gate, HTTP failures
+  or provider non-success responses remain ambiguous unless the bounded client proves
+  the request was not sent.
 - The upload worker now persists `uploading` in the claim transaction before external
   I/O. If it cannot prove that an interrupted upload stayed local, that attempt and the
   work item become terminal ambiguous state with no automatic retry. Dry-run and
@@ -140,12 +146,13 @@ target, or missing final confirmation must stop before sending.
   bytes, multipart body, and temporary URL are memory-only and zeroized; default and
   single-feature builds reject this route, while production requires the matching
   Huabaosi Feishu mirror plus QiWe production feature pair.
-- Callback parsing classifies the raw `msgData` field names into one of four fixed,
-  reviewed credential schema ids before deserializing credential values. Reports expose
-  only that fixed id and an additional-field count. They reject simultaneous canonical
-  and alias spellings and never expose the request id, credential values, filename, MD5,
-  unknown field names, or unknown values. This makes an owner-approved staging callback
-  safe to inspect, but it is instrumentation only and is not staging evidence.
+- Callback parsing classifies the raw `msgData` field names into one of six fixed,
+  reviewed credential schema ids, including the two real no-filename shapes, before
+  deserializing credential values. Reports expose only that fixed id and an
+  additional-field count. They reject simultaneous canonical and alias spellings and
+  never expose the request id, credential values, filename, MD5, unknown field names, or
+  unknown values. This makes an owner-approved staging callback safe to inspect, but it
+  is instrumentation only and is not staging evidence.
 - The existing Hermes webhook has a disabled-by-default bridge that recognizes
   `cmd=20000` before ordinary Agent dispatch and streams the bounded callback only to a
   fixed `process-qiwe-image-send-callback --apply` child over stdin. Enablement requires
