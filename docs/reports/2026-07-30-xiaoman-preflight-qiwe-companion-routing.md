@@ -78,11 +78,14 @@ scanned work. The callback report fix in `v0.2.57` therefore still needs one fre
 activity callback before the release can be treated as newly end-to-end accepted.
 
 The current production signal ingress extracts `event_signals` from human-authored QiWe
-messages. Writing the Feishu activity-plan table alone does not create that AgentOS
-fact, and the configured signal source is not Erhua's home group. Do not insert a
-synthetic event signal through SQL, reuse the terminal `v0.2.56` request, or claim a
-form-origin acceptance until a reviewed form-to-event-signal ingress exists. That bridge
-would be a separate feature and is outside this minimal repair.
+messages. The configured event-signal target and Erhua's `QIWE_HOME_GROUP` resolve to
+the same group, whose runtime metadata display name is `秦托邦的小伙伴（新）`. A fresh
+acceptance input must therefore be posted by a human in that group; bot-authored
+messages are excluded by the event-signal classifier. Writing the Feishu activity-plan
+table alone does not create that AgentOS fact. Do not insert a synthetic event signal
+through SQL, reuse the terminal `v0.2.56` request, or claim a form-origin acceptance
+until a reviewed form-to-event-signal ingress exists. That bridge would be a separate
+feature and is outside this minimal repair.
 
 ## Release And Acceptance Boundary
 
