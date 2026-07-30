@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-29 QiWe callback report and Xiaoman evidence contract drift](2026-07-29-qiwe-callback-report-and-xiaoman-evidence-contract-drift.md)
 - [2026-07-29 QiWe production callback missing filename](2026-07-29-qiwe-production-callback-missing-filename.md)
 - [2026-07-29 QiWe temporary-storage URL validation failure](2026-07-29-qiwe-temporary-storage-url-validation-failure.md)
 - [2026-07-29 QiWe Feishu primary-storage revalidation failure](2026-07-29-qiwe-feishu-primary-storage-revalidation-failure.md)

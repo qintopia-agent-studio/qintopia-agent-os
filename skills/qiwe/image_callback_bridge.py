@@ -104,6 +104,8 @@ REPORT_KEYS = {
     "limitations",
     "guardrails",
 }
+OPTIONAL_REPORT_KEYS = {"artifact_content_hash"}
+CONTENT_BOUND_ACTIONS = {"send_request_rejected", "image_send_completed"}
 
 
 @dataclass(frozen=True)
@@ -411,6 +413,14 @@ def _is_canonical_sha256(value: str) -> bool:
     return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
 
 
+def _is_canonical_content_hash(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and value.startswith("sha256:")
+        and _is_canonical_sha256(value.removeprefix("sha256:"))
+    )
+
+
 def _validated_processor_path(
     value: str,
     root_value: str,
@@ -634,7 +644,12 @@ def _validate_processor_digest(processor: Path, expected_sha256: str) -> None:
 
 
 def _validate_report(report: Any) -> None:
-    if not isinstance(report, dict) or set(report) != REPORT_KEYS:
+    if not isinstance(report, dict):
+        raise ValueError("callback processor report shape is invalid")
+    report_keys = set(report)
+    if not REPORT_KEYS <= report_keys or not report_keys <= (
+        REPORT_KEYS | OPTIONAL_REPORT_KEYS
+    ):
         raise ValueError("callback processor report shape is invalid")
     if (
         report["worker"] != "qiwe-image-send-adapter"
@@ -649,6 +664,13 @@ def _validate_report(report: Any) -> None:
     action_status = report["action_status"]
     if not isinstance(action_status, str) or action_status not in ACTION_BOUNDARIES:
         raise ValueError("callback processor action is not allowlisted")
+    artifact_content_hash = report.get("artifact_content_hash")
+    if artifact_content_hash is not None and not _is_canonical_content_hash(
+        artifact_content_hash
+    ):
+        raise ValueError("callback artifact content hash is invalid")
+    if action_status in CONTENT_BOUND_ACTIONS and artifact_content_hash is None:
+        raise ValueError("callback artifact content hash is required")
     schema = report["callback_credential_schema"]
     if schema not in CALLBACK_SCHEMAS:
         raise ValueError("callback credential schema is not allowlisted")
