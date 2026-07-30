@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.58](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.57...v0.2.58) (2026-07-30)
+
+
+### Bug Fixes
+
+* **deploy:** route Xiaoman preflight to QiWe companion ([#332](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/332)) ([b9ca505](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b9ca505c182fcd87f9fda03b1c82e266ccc769a0))
+
 ## [0.2.57](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.56...v0.2.57) (2026-07-30)
 
 
