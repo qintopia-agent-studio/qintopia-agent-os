@@ -32,6 +32,8 @@ for (const fragment of [
   'CHILD_PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
   'env -i "${child_env[@]}" "$script_path"',
   '"PATH=${CHILD_PATH}"',
+  'local sidecar_bin="$4"',
+  "sidecar-profiles/qiwe-production/qintopia-message-sidecar",
   "QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE",
   "operations-group-send-ready-timer-observation-smoke.sh",
 ]) {
@@ -52,6 +54,117 @@ for (const fragment of [
 }
 
 try {
+  const aggregateReleaseRoot = path.join(tmpRoot, "aggregate-release");
+  const aggregateScriptDir = path.join(aggregateReleaseRoot, "deploy/sidecar/scripts");
+  const aggregateScript = path.join(
+    aggregateScriptDir,
+    "xiaoman-activity-production-preflight-smoke.sh"
+  );
+  const aggregateRouteLog = path.join(tmpRoot, "aggregate-routes.log");
+  const primarySidecar = path.join(
+    aggregateReleaseRoot,
+    "sidecar/qintopia-message-sidecar"
+  );
+  const qiweSidecar = path.join(
+    aggregateReleaseRoot,
+    "sidecar-profiles/qiwe-production/qintopia-message-sidecar"
+  );
+  const aggregateSteps = [
+    [
+      "xiaoman-activity-signal-timer-observation-smoke.sh",
+      "QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "xiaoman-legacy-cron-observation-smoke.sh",
+      "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "xiaoman-activity-promotion-starter-timer-observation-smoke.sh",
+      "QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_STARTER_TIMER_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "operations-downstream-timers-observation-smoke.sh",
+      "QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "xiaoman-activity-downstream-observation-smoke.sh",
+      "QINTOPIA_XIAOMAN_ACTIVITY_DOWNSTREAM_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "xiaoman-activity-image-generation-starter-observation-smoke.sh",
+      "QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "huabaosi-image-generation-production-observation-smoke.sh",
+      "QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "xiaoman-activity-send-request-starter-observation-smoke.sh",
+      "QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "operations-group-send-ready-timer-observation-smoke.sh",
+      "QINTOPIA_OPERATIONS_GROUP_SEND_READY_TIMER_OBSERVATION_ENABLE",
+      primarySidecar,
+    ],
+    [
+      "qiwe-image-send-production-observation-smoke.sh",
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE",
+      qiweSidecar,
+    ],
+    [
+      "qiwe-image-callback-bridge-production-observation-smoke.sh",
+      "QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_PRODUCTION_OBSERVATION_ENABLE",
+      qiweSidecar,
+    ],
+  ];
+
+  fs.mkdirSync(aggregateScriptDir, { recursive: true });
+  fs.copyFileSync(aggregatePreflightPath, aggregateScript);
+  fs.chmodSync(aggregateScript, 0o755);
+  writeExecutable(primarySidecar, "#!/usr/bin/env bash\nexit 0\n");
+  writeExecutable(qiweSidecar, "#!/usr/bin/env bash\nexit 0\n");
+
+  for (const [scriptName, enableKey] of aggregateSteps) {
+    writeExecutable(
+      path.join(aggregateScriptDir, scriptName),
+      `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$(printenv ${enableKey})" == "1" ]]
+printf '%s|%s\n' "${scriptName}" "\${QINTOPIA_SIDECAR_BIN:-}" >>"${aggregateRouteLog}"
+`
+    );
+  }
+
+  const aggregateResult = spawnSync("bash", [aggregateScript], {
+    cwd: aggregateReleaseRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_XIAOMAN_ACTIVITY_PRODUCTION_PREFLIGHT_ENABLE: "1",
+      QINTOPIA_SIDECAR_BIN: "/ambient/wrong-sidecar",
+    },
+    encoding: "utf8",
+  });
+  assertPassed("aggregate production preflight routing", aggregateResult);
+
+  const actualRoutes = fs.readFileSync(aggregateRouteLog, "utf8").trim().split("\n");
+  const expectedRoutes = aggregateSteps.map(
+    ([scriptName, _enableKey, expectedSidecar]) => `${scriptName}|${expectedSidecar}`
+  );
+  if (JSON.stringify(actualRoutes) !== JSON.stringify(expectedRoutes)) {
+    throw new Error(
+      `aggregate production preflight binary routing mismatch\nexpected:\n${expectedRoutes.join("\n")}\nactual:\n${actualRoutes.join("\n")}`
+    );
+  }
+
   const binDir = path.join(tmpRoot, "bin");
   const sidecarLog = path.join(tmpRoot, "sidecar.log");
   const sidecar = path.join(binDir, "qintopia-message-sidecar");
