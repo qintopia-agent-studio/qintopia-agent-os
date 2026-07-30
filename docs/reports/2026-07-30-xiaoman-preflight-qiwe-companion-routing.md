@@ -46,6 +46,44 @@ binary profiles, replaces all child observations with recorders, executes the re
 aggregate script, and asserts the exact route for every child. Repository deploy,
 preflight-readiness, production-evidence, PR-tier, and PR-doctor checks must also pass.
 
+## v0.2.57 Live Read-Only Verification
+
+The following production facts were rechecked on 2026-07-30 without changing runtime
+state:
+
+- GitHub Release `v0.2.57` was published for commit
+  `9255cddeec726cd4e47a48e62e1ce8ac6eeba2cb`. Its CI, artifact, and production deploy
+  workflows completed successfully.
+- Production `release/current` resolved to that exact commit.
+- The Huabaosi image-generation production observation passed against the primary
+  artifact.
+- The QiWe image-send observation passed with `state=disabled`,
+  `artifact_profile=qiwe-production`, and the same release SHA.
+- The Erhua QiWe callback-bridge observation passed with `state=enabled`,
+  `artifact_profile=qiwe-production`, and the same release SHA. The Erhua gateway was
+  active on the post-deploy process started at 12:12:31 CST.
+- The unmodified `v0.2.57` aggregate preflight passed its first nine Xiaoman,
+  operations, and Huabaosi observations, then reproduced the expected QiWe rejection:
+  `requires the immutable release/current sidecar binary with reviewed production adapter features`.
+
+These results accept the immutable `v0.2.57` deployment, artifact separation, and
+current read-only runtime state. The aggregate failure is fully explained by this
+composition defect rather than by a failed QiWe companion or callback-bridge binding.
+
+## Remaining End-To-End Hold
+
+No image callback processor event was recorded after the `v0.2.57` deployment, and the
+release-local Xiaoman activity signal worker reported `no_eligible_signals` with zero
+scanned work. The callback report fix in `v0.2.57` therefore still needs one fresh real
+activity callback before the release can be treated as newly end-to-end accepted.
+
+The current production signal ingress extracts `event_signals` from human-authored QiWe
+messages. Writing the Feishu activity-plan table alone does not create that AgentOS
+fact, and the configured signal source is not Erhua's home group. Do not insert a
+synthetic event signal through SQL, reuse the terminal `v0.2.56` request, or claim a
+form-origin acceptance until a reviewed form-to-event-signal ingress exists. That bridge
+would be a separate feature and is outside this minimal repair.
+
 ## Release And Acceptance Boundary
 
 Published release `v0.2.57` is immutable and does not contain this repair. Its runtime
