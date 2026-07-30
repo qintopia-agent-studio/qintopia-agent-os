@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-30 Xiaoman preflight QiWe companion routing](2026-07-30-xiaoman-preflight-qiwe-companion-routing.md)
 - [2026-07-29 QiWe callback report and Xiaoman evidence contract drift](2026-07-29-qiwe-callback-report-and-xiaoman-evidence-contract-drift.md)
 - [2026-07-29 QiWe production callback missing filename](2026-07-29-qiwe-production-callback-missing-filename.md)
 - [2026-07-29 QiWe temporary-storage URL validation failure](2026-07-29-qiwe-temporary-storage-url-validation-failure.md)
