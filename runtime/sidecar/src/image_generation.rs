@@ -171,6 +171,7 @@ struct ImageGenerationWorkItem {
     approved_brief_text: String,
     image_specification: String,
     prompt_hash: String,
+    revision_instruction: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -585,6 +586,7 @@ fn fixture_work_item() -> ImageGenerationWorkItem {
         approved_brief_text: "活动主题：fixture 活动。".to_string(),
         image_specification: SPECIFICATION.to_string(),
         prompt_hash: "sha256:fixture-prompt".to_string(),
+        revision_instruction: None,
     }
 }
 
@@ -1173,8 +1175,19 @@ fn build_prompt(work_item: &ImageGenerationWorkItem) -> Result<String> {
     if brief.is_empty() || brief.len() > 12_000 || brief.contains('\0') {
         bail!("approved poster brief is not safe for image generation");
     }
+    let revision = work_item
+        .revision_instruction
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if revision.is_some_and(|value| value.chars().count() > 2_000 || value.contains('\0')) {
+        bail!("poster revision instruction is not safe for image generation");
+    }
+    let revision_block = revision
+        .map(|value| format!("\n\nAuthorized revision instruction:\n{value}"))
+        .unwrap_or_default();
     Ok(format!(
-        "Create a factual community activity poster image at {IMAGE_SIZE}. Use only the approved brief below. Do not invent event facts, people, brands, or contact details.\n\nApproved brief:\n{brief}"
+        "Create a factual community activity poster image at {IMAGE_SIZE}. Use only the approved brief and authorized revision instruction below. Do not invent or change event facts, people, brands, or contact details.\n\nApproved brief:\n{brief}{revision_block}"
     ))
 }
 
@@ -1377,7 +1390,8 @@ async fn load_work_item(
             artifact.content_hash AS approved_brief_content_hash,
             COALESCE(artifact.content_text, artifact.summary) AS approved_brief_text,
             request.payload->>'image_specification' AS image_specification,
-            request.payload->>'prompt_hash' AS prompt_hash
+            request.payload->>'prompt_hash' AS prompt_hash,
+            request.payload->>'revision_instruction' AS revision_instruction
         FROM qintopia_agent_os.work_items request
         JOIN qintopia_agent_os.artifacts artifact
           ON artifact.id = (request.payload->>'approved_brief_artifact_id')::uuid
@@ -1437,7 +1451,8 @@ async fn claim_work_item(
                 artifact.content_hash AS approved_brief_content_hash,
                 COALESCE(artifact.content_text, artifact.summary) AS approved_brief_text,
                 request.payload->>'image_specification' AS image_specification,
-                request.payload->>'prompt_hash' AS prompt_hash
+                request.payload->>'prompt_hash' AS prompt_hash,
+                request.payload->>'revision_instruction' AS revision_instruction
             FROM qintopia_agent_os.work_items request
             JOIN qintopia_agent_os.artifacts artifact
               ON artifact.id = (request.payload->>'approved_brief_artifact_id')::uuid
@@ -1477,7 +1492,8 @@ async fn claim_work_item(
             claimable.approved_brief_content_hash,
             claimable.approved_brief_text,
             claimable.image_specification,
-            claimable.prompt_hash
+            claimable.prompt_hash,
+            claimable.revision_instruction
         "#,
     )
     .bind(CAPABILITY_KEY)
@@ -1586,6 +1602,7 @@ fn work_item_from_row(row: sqlx::postgres::PgRow) -> Result<ImageGenerationWorkI
         approved_brief_text: row.try_get("approved_brief_text")?,
         image_specification: row.try_get("image_specification")?,
         prompt_hash: row.try_get("prompt_hash")?,
+        revision_instruction: row.try_get("revision_instruction")?,
     })
 }
 
@@ -3830,6 +3847,7 @@ mod tests {
                 .to_string(),
             image_specification: SPECIFICATION.to_string(),
             prompt_hash: "sha256:prompt".to_string(),
+            revision_instruction: None,
         }
     }
 

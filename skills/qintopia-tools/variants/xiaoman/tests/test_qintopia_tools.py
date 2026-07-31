@@ -77,6 +77,12 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
                 "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
                 "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS",
+                "QINTOPIA_OPERATIONS_INTAKE_SOCKET",
+                "HERMES_SESSION_PLATFORM",
+                "HERMES_SESSION_CONVERSATION_TYPE",
+                "HERMES_SESSION_CHAT_ID",
+                "HERMES_SESSION_USER_ID",
+                "HERMES_SESSION_MESSAGE_ID",
             ]
         }
         os.environ["QINTOPIA_DIFY_KB_BASE_URL"] = "http://dify.example.test/v1"
@@ -91,6 +97,12 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS", None)
+        os.environ.pop("QINTOPIA_OPERATIONS_INTAKE_SOCKET", None)
+        os.environ.pop("HERMES_SESSION_PLATFORM", None)
+        os.environ.pop("HERMES_SESSION_CONVERSATION_TYPE", None)
+        os.environ.pop("HERMES_SESSION_CHAT_ID", None)
+        os.environ.pop("HERMES_SESSION_USER_ID", None)
+        os.environ.pop("HERMES_SESSION_MESSAGE_ID", None)
         self.module = load_plugin()
 
     def tearDown(self) -> None:
@@ -1699,6 +1711,8 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_external_disclosure_filter", ctx.names)
         self.assertIn("qintopia_conversation_summary", ctx.names)
         self.assertIn("qintopia_xiaoman_activity_promotion_details_update", ctx.names)
+        self.assertIn("qintopia_xiaoman_poster_production_request", ctx.names)
+        self.assertIn("qintopia_xiaoman_poster_workflow_status", ctx.names)
         self.assertNotIn("qintopia_dify_dataset_list", ctx.names)
         self.assertNotIn("qintopia_dify_knowledge_retrieve", ctx.names)
 
@@ -1724,6 +1738,124 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_dify_indexing_status_get", ctx.names)
         self.assertIn("qintopia_dify_segment_list", ctx.names)
         self.assertIn("qintopia_dify_segment_get", ctx.names)
+
+    def test_poster_request_uses_trusted_session_and_returns_accepted_status(self):
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {
+                "success": True,
+                "accepted": True,
+                "deduped": False,
+                "workflow_root_id": "11111111-1111-4111-8111-111111111111",
+                "visual_work_item_id": "22222222-2222-4222-8222-222222222222",
+                "workflow_status": "queued",
+            }
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {
+                    "request": "请为周末晚餐生成海报，时间周六18:00，地点秦托邦会客厅",
+                    "activity_facts": {
+                        "source": "originating_request",
+                        "title": "周末晚餐",
+                        "schedule": "周六18:00",
+                        "location": "秦托邦会客厅",
+                    },
+                }
+            )
+        )
+
+        self.assertTrue(response["accepted"])
+        self.assertEqual(response["user_status"], "已接单")
+        self.assertEqual(captured["session"]["conversation_id"], "oc_chat_fixture")
+        self.assertEqual(captured["session"]["requester_user_id"], "ou_user_fixture")
+        self.assertTrue(captured["idempotency_key"].startswith("poster_production_request:sha256:"))
+        self.assertEqual(captured["activity_facts"]["title"], "周末晚餐")
+
+    def test_poster_request_without_activity_facts_still_uses_async_intake(self):
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {"success": True, "accepted": True, "user_status": "需补充"}
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "生成海报"}
+            )
+        )
+        self.assertEqual(response["user_status"], "需补充")
+        self.assertEqual(captured["activity_facts"], {})
+
+    def test_poster_request_rejects_missing_or_group_session_without_intake(self):
+        called = False
+
+        def fake_intake(_payload):
+            nonlocal called
+            called = True
+            return {}
+
+        self.module._poster_intake_call = fake_intake
+        missing = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "生成海报"}
+            )
+        )
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "group"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_group_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        grouped = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "生成海报"}
+            )
+        )
+
+        self.assertEqual(missing["error"], "trusted_direct_session_required")
+        self.assertEqual(grouped["error"], "trusted_direct_session_required")
+        self.assertFalse(called)
+
+    def test_poster_revision_uses_same_trusted_intake_without_target_arguments(self):
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_revision_fixture"
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {"success": True, "accepted": True, "workflow_status": "生成中"}
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {
+                    "request": "标题再大一点，其他活动事实保持不变",
+                    "workflow_root_id": "11111111-1111-4111-8111-111111111111",
+                    "revision_of_artifact_id": "22222222-2222-4222-8222-222222222222",
+                }
+            )
+        )
+        self.assertTrue(response["accepted"])
+        self.assertEqual(captured["operation"], "poster_revision_request")
+        self.assertNotIn("conversation_id", captured)
+        self.assertNotIn("reviewer_id", captured)
 
 
 if __name__ == "__main__":

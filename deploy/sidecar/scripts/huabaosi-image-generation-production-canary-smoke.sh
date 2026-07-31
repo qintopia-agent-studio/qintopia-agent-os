@@ -259,6 +259,7 @@ if artifact_profile != "huabaosi-production":
 if cargo_features != [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "xiaoman-feishu-poster-adapter",
 ]:
     raise SystemExit("features")
 print(artifact_profile)

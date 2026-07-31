@@ -39,6 +39,12 @@ not contain:
 - generated runtime memory
 - server-local credentials
 
+`poster_production_request` is intentionally no longer executed by
+`qintopia_collab_call_agent`. It returns `poster_production_moved_to_agentos_intake`
+immediately and never starts `hermes_cli.main --profile huabaosi -z`. Xiaoman must use
+the trusted-session `qintopia_xiaoman_poster_production_request` tool instead. Other
+short-running whitelisted collaboration calls keep their existing behavior.
+
 ## Migration Plan
 
 1. Include the package in the release/deploy bundle.
@@ -52,6 +58,12 @@ not contain:
 5. Stop before M12 cleanup. Cleanup requires a separate readiness audit.
 
 ## Validation
+
+Repository validation includes a subprocess-negative regression test:
+
+```bash
+pnpm mcp:collab:check
+```
 
 Minimum validation after each profile repoint:
 

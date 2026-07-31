@@ -68,8 +68,9 @@ From the monorepo root, prefer:
   approval phrase, deployed release SHA binding, database URL hash binding, and adapter
   policy before Postgres or external I/O; shell scripts cannot be the only enforcement
   point.
-- Production sidecar artifacts compile exactly `huabaosi-production-adapter` and the
-  guarded `huabaosi-feishu-mirror-adapter`. QiWe live features, staging adapters, mixed
+- Production sidecar artifacts compile exactly `huabaosi-production-adapter`, the
+  guarded `huabaosi-feishu-mirror-adapter`, and the default-disabled
+  `xiaoman-feishu-poster-adapter`. QiWe live features, staging adapters, mixed
   staging/production builds, and all-features production artifacts remain forbidden.
   Mirror apply must still fail before Postgres or external I/O unless the exact owner
   phrase, deployed release SHA, database hash, fixed Base/table allowlists, schema,
@@ -82,6 +83,11 @@ From the monorepo root, prefer:
   the explicit owner activation scripts may enable external timers. Feishu primary
   storage for the first canary is part of the Huabaosi production adapter path and still
   creates only pending AgentOS artifacts.
+- Xiaoman Feishu poster apply must fail before Postgres or external I/O unless the exact
+  owner phrase, release SHA, database hash, official API host, app credentials, and
+  direct-chat/user/media allowlists pass. Persist an attempt before upload, terminalize
+  expired in-flight attempts as ambiguous, verify card callbacks inside the sidecar, and
+  never create group-send authorization.
 - The dedicated QiWe production sidecar artifact is separate and compile-reviewed. Its
   manifest profile is `qiwe-production`, its artifact name is
   `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and it must compile

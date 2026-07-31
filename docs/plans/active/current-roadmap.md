@@ -132,14 +132,14 @@ unless correcting historical evidence.
      [Xiaoman Feishu-To-QiWe Delivery Boundary](xiaoman-feishu-qiwe-delivery-boundary.md).
      Only the matched Huabaosi/QiWe staging live feature pair may claim this storage
      type: staging requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`.
-     Huabaosi production artifacts must contain only `huabaosi-production-adapter` plus
-     the guarded `huabaosi-feishu-mirror-adapter` and must not bundle
-     `qiwe-production-adapter`. Single-feature builds still fail closed. This is
-     code-level implementation evidence, not real staging or send evidence. A read-only
-     2026-07-16 Asia/Shanghai server observation confirmed that `paxon-server` still
-     lacks the fixed staging env file and immutable staging release root, so real
-     staging must first provision those owner-reviewed inputs instead of treating local
-     fake smokes as runtime evidence.
+     Huabaosi production artifacts must contain only `huabaosi-production-adapter`, the
+     guarded `huabaosi-feishu-mirror-adapter`, and the default-disabled
+     `xiaoman-feishu-poster-adapter`, and must not bundle `qiwe-production-adapter`.
+     Single-feature builds still fail closed. This is code-level implementation
+     evidence, not real staging or send evidence. A read-only 2026-07-16 Asia/Shanghai
+     server observation confirmed that `paxon-server` still lacks the fixed staging env
+     file and immutable staging release root, so real staging must first provision those
+     owner-reviewed inputs instead of treating local fake smokes as runtime evidence.
    - As of Friday, July 24, 2026, the repository-local implementation for the reviewed
      Xiaoman production evidence chain has been re-verified: deploy contracts, deploy
      runner checks, Huabaosi production canary evidence checks, QiWe production

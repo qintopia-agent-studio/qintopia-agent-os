@@ -46,7 +46,8 @@ pub(crate) struct HttpRequestError {
         feature = "huabaosi-wecom-canary-gateway",
         feature = "huabaosi-production-adapter",
         feature = "huabaosi-staging-adapter",
-        feature = "huabaosi-feishu-mirror-adapter"
+        feature = "huabaosi-feishu-mirror-adapter",
+        feature = "xiaoman-feishu-poster-adapter"
     ))]
     request_may_have_been_sent: bool,
     source: anyhow::Error,
@@ -65,7 +66,8 @@ impl HttpRequestError {
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
                 feature = "huabaosi-staging-adapter",
-                feature = "huabaosi-feishu-mirror-adapter"
+                feature = "huabaosi-feishu-mirror-adapter",
+                feature = "xiaoman-feishu-poster-adapter"
             ))]
             request_may_have_been_sent: false,
             source,
@@ -82,7 +84,8 @@ impl HttpRequestError {
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
                 feature = "huabaosi-staging-adapter",
-                feature = "huabaosi-feishu-mirror-adapter"
+                feature = "huabaosi-feishu-mirror-adapter",
+                feature = "xiaoman-feishu-poster-adapter"
             ))]
             request_may_have_been_sent: false,
             source,
@@ -99,7 +102,8 @@ impl HttpRequestError {
                 feature = "huabaosi-wecom-canary-gateway",
                 feature = "huabaosi-production-adapter",
                 feature = "huabaosi-staging-adapter",
-                feature = "huabaosi-feishu-mirror-adapter"
+                feature = "huabaosi-feishu-mirror-adapter",
+                feature = "xiaoman-feishu-poster-adapter"
             ))]
             request_may_have_been_sent: true,
             source,
@@ -117,7 +121,8 @@ impl HttpRequestError {
         feature = "huabaosi-wecom-canary-gateway",
         feature = "huabaosi-production-adapter",
         feature = "huabaosi-staging-adapter",
-        feature = "huabaosi-feishu-mirror-adapter"
+        feature = "huabaosi-feishu-mirror-adapter",
+        feature = "xiaoman-feishu-poster-adapter"
     ))]
     pub(crate) fn request_may_have_been_sent(&self) -> bool {
         self.request_may_have_been_sent

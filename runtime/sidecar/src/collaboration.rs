@@ -10,6 +10,33 @@ use crate::{config::Cli, db};
 const WORKER_ID: &str = "collaboration-worker";
 const SUPPORTED_WORK_ITEM_TYPE: &str = "visual_asset_request";
 const SUPPORTED_CAPABILITY: &str = "huabaosi.create_visual_asset";
+const DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL: &str = r#"
+AND (
+    COALESCE(
+        visual.payload->'generation_authorization'->>'mode',
+        ''
+    ) <> 'originating_generation_request'
+    OR (
+        visual.payload->'poster_fact_gate'->>'status' = 'complete'
+        AND visual.payload->'poster_fact_gate'->>'source' IN (
+            'originating_request',
+            'trusted_activity_record'
+        )
+        AND jsonb_typeof(
+            visual.payload->'poster_fact_gate'->'missing_fields'
+        ) = 'array'
+        AND jsonb_array_length(
+            visual.payload->'poster_fact_gate'->'missing_fields'
+        ) = 0
+        AND jsonb_typeof(
+            visual.payload->'poster_fact_gate'->'conflict_fields'
+        ) = 'array'
+        AND jsonb_array_length(
+            visual.payload->'poster_fact_gate'->'conflict_fields'
+        ) = 0
+    )
+)
+"#;
 
 #[derive(Debug, Serialize)]
 pub struct CollaborationWorkerReport {
@@ -44,6 +71,7 @@ struct WorkItem {
     target_agent: String,
     capability_key: String,
     brief_summary: String,
+    source_type: String,
     source_refs: Value,
     payload: Value,
     review_policy: String,
@@ -64,7 +92,14 @@ struct ArtifactDraft {
     content_text: String,
     content_hash: String,
     review_status: String,
+    authorization: Option<GenerationAuthorization>,
     evidence_context: Option<EvidenceContext>,
+}
+
+#[derive(Debug, Clone)]
+struct GenerationAuthorization {
+    actor_ref: String,
+    source_message_ref: String,
 }
 
 pub async fn run(
@@ -110,6 +145,7 @@ fn run_fixture(apply_requested: bool) -> Result<CollaborationWorkerReport> {
         target_agent: "huabaosi".to_string(),
         capability_key: SUPPORTED_CAPABILITY.to_string(),
         brief_summary: "周末共创晚餐活动运营海报".to_string(),
+        source_type: "manual_request".to_string(),
         source_refs: json!({"source_record_ref": "activity_occurrence:fixture"}),
         payload: json!({"handoff_type": "visual_asset_request"}),
         review_policy: "before_external_use".to_string(),
@@ -196,7 +232,28 @@ async fn run_once(
     };
     let mut artifact_ids = Vec::new();
     for draft in &drafts {
-        artifact_ids.push(upsert_artifact(&mut tx, &work_item, draft).await?);
+        let artifact_id = upsert_artifact(&mut tx, &work_item, draft).await?;
+        if let Some(authorization) = &draft.authorization {
+            append_event_in_tx(
+                &mut tx,
+                WorkItemEvent {
+                    work_item_id: Some(work_item.id),
+                    artifact_id: Some(artifact_id),
+                    event_type: "review_decision_recorded",
+                    actor_type: "human",
+                    actor_id: &authorization.actor_ref,
+                    message: "poster brief authorized by originating generation request",
+                    data: json!({
+                        "review_status": "approved",
+                        "review_source": "originating_generation_request",
+                        "source_message_ref": authorization.source_message_ref,
+                        "group_send_authorized": false,
+                    }),
+                },
+            )
+            .await?;
+        }
+        artifact_ids.push(artifact_id);
     }
     update_work_item_after_artifacts(&mut tx, &work_item).await?;
     append_event_in_tx(
@@ -224,11 +281,29 @@ async fn run_once(
     Ok(report_from_drafts(
         true,
         false,
-        "artifacts_created",
+        if drafts.iter().any(|draft| draft.authorization.is_some()) {
+            "artifacts_created_and_authorized"
+        } else {
+            "artifacts_created"
+        },
         Some(work_item.id),
         artifact_ids,
         &drafts,
     ))
+}
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) async fn run_once_for_postgres_integration(
+    pool: &PgPool,
+    work_item_id: Uuid,
+) -> Result<()> {
+    let report = run_once(pool, true, Some(work_item_id)).await?;
+    if report.action_status != "artifacts_created_and_authorized"
+        && report.action_status != "artifacts_created"
+    {
+        bail!("poster integration collaboration worker did not create an artifact");
+    }
+    Ok(())
 }
 
 async fn peek_work_item(pool: &PgPool, work_item_id: Option<Uuid>) -> Result<Option<WorkItem>> {
@@ -239,10 +314,10 @@ async fn peek_work_item(pool: &PgPool, work_item_id: Option<Uuid>) -> Result<Opt
 }
 
 async fn peek_next_work_item(pool: &PgPool) -> Result<Option<WorkItem>> {
-    let row = sqlx::query(
+    let row = sqlx::query(&format!(
         r#"
         SELECT id, parent_work_item_id, work_item_type, requester_agent, target_agent,
-               capability_key, brief_summary, source_refs, payload, review_policy
+               capability_key, brief_summary, source_type, source_refs, payload, review_policy
         FROM qintopia_agent_os.work_items visual
         WHERE (
               (visual.status = 'queued' AND visual.available_at <= now())
@@ -270,10 +345,11 @@ async fn peek_next_work_item(pool: &PgPool) -> Result<Option<WorkItem>> {
                     AND evidence.status = 'completed'
               )
           )
+          {DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL}
         ORDER BY visual.priority DESC, visual.available_at ASC, visual.created_at ASC
         LIMIT 1
         "#,
-    )
+    ))
     .bind(SUPPORTED_WORK_ITEM_TYPE)
     .bind(SUPPORTED_CAPABILITY)
     .fetch_optional(pool)
@@ -283,21 +359,22 @@ async fn peek_next_work_item(pool: &PgPool) -> Result<Option<WorkItem>> {
 }
 
 async fn peek_work_item_by_id(pool: &PgPool, work_item_id: Uuid) -> Result<Option<WorkItem>> {
-    let row = sqlx::query(
+    let row = sqlx::query(&format!(
         r#"
         SELECT id, parent_work_item_id, work_item_type, requester_agent, target_agent,
-               capability_key, brief_summary, source_refs, payload, review_policy
-        FROM qintopia_agent_os.work_items
-        WHERE id = $1
+               capability_key, brief_summary, source_type, source_refs, payload, review_policy
+        FROM qintopia_agent_os.work_items visual
+        WHERE visual.id = $1
           AND (
-              (status = 'queued' AND available_at <= now())
-              OR (status = 'processing' AND claim_expires_at <= now())
+              (visual.status = 'queued' AND visual.available_at <= now())
+              OR (visual.status = 'processing' AND visual.claim_expires_at <= now())
           )
-          AND work_item_type = $2
-          AND capability_key = $3
+          AND visual.work_item_type = $2
+          AND visual.capability_key = $3
+          {DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL}
         LIMIT 1
         "#,
-    )
+    ))
     .bind(work_item_id)
     .bind(SUPPORTED_WORK_ITEM_TYPE)
     .bind(SUPPORTED_CAPABILITY)
@@ -321,7 +398,8 @@ async fn claim_next_work_item(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<Option<WorkItem>> {
     let row = sqlx::query(
-        r#"
+        &format!(
+            r#"
         WITH claimed AS (
             SELECT visual.id
             FROM qintopia_agent_os.work_items visual
@@ -351,6 +429,7 @@ async fn claim_next_work_item(
                         AND evidence.status = 'completed'
                   )
               )
+              {DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL}
             ORDER BY visual.priority DESC, visual.available_at ASC, visual.created_at ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED
@@ -367,8 +446,9 @@ async fn claim_next_work_item(
         WHERE items.id = claimed.id
         RETURNING items.id, items.parent_work_item_id, items.work_item_type,
                   items.requester_agent, items.target_agent, items.capability_key,
-                  items.brief_summary, items.source_refs, items.payload, items.review_policy
+                  items.brief_summary, items.source_type, items.source_refs, items.payload, items.review_policy
         "#,
+        ),
     )
     .bind(SUPPORTED_WORK_ITEM_TYPE)
     .bind(SUPPORTED_CAPABILITY)
@@ -384,17 +464,19 @@ async fn claim_work_item_by_id(
     work_item_id: Uuid,
 ) -> Result<Option<WorkItem>> {
     let row = sqlx::query(
-        r#"
+        &format!(
+            r#"
         WITH claimed AS (
-            SELECT id
-            FROM qintopia_agent_os.work_items
-            WHERE id = $1
+            SELECT visual.id
+            FROM qintopia_agent_os.work_items visual
+            WHERE visual.id = $1
               AND (
-                  (status = 'queued' AND available_at <= now())
-                  OR (status = 'processing' AND claim_expires_at <= now())
+                  (visual.status = 'queued' AND visual.available_at <= now())
+                  OR (visual.status = 'processing' AND visual.claim_expires_at <= now())
               )
-              AND work_item_type = $2
-              AND capability_key = $3
+              AND visual.work_item_type = $2
+              AND visual.capability_key = $3
+              {DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL}
             LIMIT 1
             FOR UPDATE SKIP LOCKED
         )
@@ -410,8 +492,9 @@ async fn claim_work_item_by_id(
         WHERE items.id = claimed.id
         RETURNING items.id, items.parent_work_item_id, items.work_item_type,
                   items.requester_agent, items.target_agent, items.capability_key,
-                  items.brief_summary, items.source_refs, items.payload, items.review_policy
+                  items.brief_summary, items.source_type, items.source_refs, items.payload, items.review_policy
         "#,
+        ),
     )
     .bind(work_item_id)
     .bind(SUPPORTED_WORK_ITEM_TYPE)
@@ -432,6 +515,7 @@ fn work_item_from_row(row: sqlx::postgres::PgRow) -> Result<WorkItem> {
         target_agent: row.try_get("target_agent")?,
         capability_key: row.try_get("capability_key")?,
         brief_summary: row.try_get("brief_summary")?,
+        source_type: row.try_get("source_type")?,
         source_refs: row.try_get("source_refs")?,
         payload: row.try_get("payload")?,
         review_policy: row.try_get("review_policy")?,
@@ -573,15 +657,95 @@ fn build_artifact_drafts(
         "{}|{}|{}",
         work_item.id, "poster_brief", content_text
     ));
+    let authorization = generation_authorization(work_item)?;
     Ok(vec![ArtifactDraft {
         artifact_type: "poster_brief".to_string(),
         title,
         summary,
         content_text,
         content_hash,
-        review_status: "pending".to_string(),
+        review_status: if authorization.is_some() {
+            "approved".to_string()
+        } else {
+            "pending".to_string()
+        },
+        authorization,
         evidence_context: evidence_context.cloned(),
     }])
+}
+
+fn generation_authorization(work_item: &WorkItem) -> Result<Option<GenerationAuthorization>> {
+    let Some(value) = work_item.payload.get("generation_authorization") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    if work_item.source_type != "feishu_direct_request" {
+        bail!("generation authorization is allowed only for trusted Feishu direct intake");
+    }
+    let mode = value
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let actor_ref = value
+        .get("actor_ref")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let source_message_ref = value
+        .get("source_message_ref")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let source_ref_matches = work_item
+        .source_refs
+        .get("source_message_ref")
+        .and_then(Value::as_str)
+        == Some(source_message_ref);
+    let origin_ref_valid = work_item
+        .payload
+        .get("origin_conversation_ref")
+        .and_then(Value::as_str)
+        .is_some_and(valid_opaque_ref);
+    let fact_gate_complete = direct_generation_fact_gate_complete(&work_item.payload);
+    if mode != "originating_generation_request"
+        || !valid_opaque_ref(actor_ref)
+        || !valid_opaque_ref(source_message_ref)
+        || !source_ref_matches
+        || !origin_ref_valid
+        || !fact_gate_complete
+        || value.get("group_send_authorized").and_then(Value::as_bool) != Some(false)
+    {
+        bail!("generation authorization provenance is invalid");
+    }
+    Ok(Some(GenerationAuthorization {
+        actor_ref: actor_ref.to_string(),
+        source_message_ref: source_message_ref.to_string(),
+    }))
+}
+
+fn direct_generation_fact_gate_complete(payload: &Value) -> bool {
+    let Some(fact_gate) = payload.get("poster_fact_gate") else {
+        return false;
+    };
+    fact_gate.get("status").and_then(Value::as_str) == Some("complete")
+        && matches!(
+            fact_gate.get("source").and_then(Value::as_str),
+            Some("originating_request" | "trusted_activity_record")
+        )
+        && fact_gate
+            .get("missing_fields")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+        && fact_gate
+            .get("conflict_fields")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+}
+
+fn valid_opaque_ref(value: &str) -> bool {
+    value.len() == 71
+        && value.starts_with("sha256:")
+        && value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn safe_source_refs(value: &Value) -> String {
@@ -619,9 +783,18 @@ async fn upsert_artifact(
                 risk_labels,
                 information_class,
                 metadata,
-                review_requested_at
+                review_requested_at,
+                reviewed_at,
+                reviewed_by,
+                review_decision_reason
             )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY['external_use_review_required']::text[], 'internal_ops', $10, now())
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9,
+            ARRAY['external_use_review_required']::text[], 'internal_ops', $10, now(),
+            CASE WHEN $3 = 'approved' THEN now() ELSE NULL END,
+            $11,
+            $12
+        )
         ON CONFLICT (work_item_id, content_hash) WHERE content_hash IS NOT NULL AND content_hash <> ''
         DO UPDATE SET
             summary = EXCLUDED.summary,
@@ -651,7 +824,11 @@ async fn upsert_artifact(
         "evidence_work_item_id": draft.evidence_context.as_ref().map(|context| context.work_item_id),
         "evidence_artifact_id": draft.evidence_context.as_ref().map(|context| context.artifact_id),
         "evidence_content_hash": draft.evidence_context.as_ref().map(|context| &context.content_hash),
+        "authorization_mode": draft.authorization.as_ref().map(|_| "originating_generation_request"),
+        "source_message_ref": draft.authorization.as_ref().map(|authorization| &authorization.source_message_ref),
     }))
+    .bind(draft.authorization.as_ref().map(|authorization| &authorization.actor_ref))
+    .bind(draft.authorization.as_ref().map(|_| "authorized by originating poster generation request"))
     .fetch_one(&mut **tx)
     .await
     .context("upsert collaboration artifact")?;
@@ -662,11 +839,13 @@ async fn update_work_item_after_artifacts(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     work_item: &WorkItem,
 ) -> Result<()> {
+    let completed = generation_authorization(work_item)?.is_some();
     sqlx::query(
         r#"
         UPDATE qintopia_agent_os.work_items
         SET
-            status = 'awaiting_review',
+            status = CASE WHEN $2 THEN 'completed' ELSE 'awaiting_review' END,
+            claimed_by = NULL,
             locked_at = NULL,
             claim_expires_at = NULL,
             last_error = NULL,
@@ -675,6 +854,7 @@ async fn update_work_item_after_artifacts(
         "#,
     )
     .bind(work_item.id)
+    .bind(completed)
     .execute(&mut **tx)
     .await
     .context("mark work item awaiting review")?;
@@ -942,6 +1122,7 @@ mod tests {
             target_agent: "huabaosi".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "contains app_token".to_string(),
+            source_type: "manual_request".to_string(),
             source_refs: json!({}),
             payload: json!({}),
             review_policy: "before_external_use".to_string(),
@@ -975,6 +1156,7 @@ mod tests {
             target_agent: "huabaosi".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "周末共创晚餐活动运营海报".to_string(),
+            source_type: "manual_request".to_string(),
             source_refs: json!({"source_record_ref": "activity_occurrence:test"}),
             payload: json!({"workflow_type": "activity_promotion"}),
             review_policy: "before_external_use".to_string(),
@@ -998,6 +1180,7 @@ mod tests {
             target_agent: "huabaosi".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "周末共创晚餐活动复盘".to_string(),
+            source_type: "manual_request".to_string(),
             source_refs: json!({"source_record_ref": "activity_occurrence:test"}),
             payload: json!({
                 "workflow_type": "activity_recap",
@@ -1025,6 +1208,7 @@ mod tests {
             target_agent: "huabaosi".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "周末共创晚餐活动运营海报".to_string(),
+            source_type: "manual_request".to_string(),
             source_refs: json!({"source_record_ref": "activity_occurrence:test"}),
             payload: json!({"workflow_type": "activity_promotion"}),
             review_policy: "before_external_use".to_string(),
@@ -1047,6 +1231,165 @@ mod tests {
     }
 
     #[test]
+    fn trusted_direct_generation_request_approves_brief_without_second_prompt() {
+        let opaque = format!("sha256:{}", "a".repeat(64));
+        let actor = format!("sha256:{}", "b".repeat(64));
+        let work_item = WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: Some(Uuid::new_v4()),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "按已确认活动信息生成海报".to_string(),
+            source_type: "feishu_direct_request".to_string(),
+            source_refs: json!({"source_message_ref": opaque}),
+            payload: json!({
+                "workflow_type": "activity_promotion",
+                "origin_conversation_ref": format!("sha256:{}", "c".repeat(64)),
+                "poster_fact_gate": {
+                    "status": "complete",
+                    "source": "originating_request",
+                    "missing_fields": [],
+                    "conflict_fields": []
+                },
+                "generation_authorization": {
+                    "mode": "originating_generation_request",
+                    "actor_ref": actor,
+                    "source_message_ref": opaque,
+                    "group_send_authorized": false
+                }
+            }),
+            review_policy: "before_external_use".to_string(),
+        };
+        let evidence = EvidenceContext {
+            work_item_id: Uuid::new_v4(),
+            artifact_id: Uuid::new_v4(),
+            content_hash: "sha256:evidence".to_string(),
+        };
+
+        let drafts =
+            build_artifact_drafts(&work_item, Some(&evidence)).expect("brief should build");
+
+        assert_eq!(drafts[0].review_status, "approved");
+        assert_eq!(
+            drafts[0].authorization.as_ref().unwrap().actor_ref,
+            format!("sha256:{}", "b".repeat(64))
+        );
+    }
+
+    #[test]
+    fn direct_generation_authorization_requires_a_complete_source_grounded_fact_gate() {
+        let opaque = format!("sha256:{}", "a".repeat(64));
+        let build_work_item = |poster_fact_gate: Value| WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: Some(Uuid::new_v4()),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "待核对活动事实的海报".to_string(),
+            source_type: "feishu_direct_request".to_string(),
+            source_refs: json!({"source_message_ref": opaque}),
+            payload: json!({
+                "workflow_type": "activity_promotion",
+                "origin_conversation_ref": format!("sha256:{}", "c".repeat(64)),
+                "poster_fact_gate": poster_fact_gate,
+                "generation_authorization": {
+                    "mode": "originating_generation_request",
+                    "actor_ref": format!("sha256:{}", "b".repeat(64)),
+                    "source_message_ref": opaque,
+                    "group_send_authorized": false
+                }
+            }),
+            review_policy: "before_external_use".to_string(),
+        };
+        let evidence = EvidenceContext {
+            work_item_id: Uuid::new_v4(),
+            artifact_id: Uuid::new_v4(),
+            content_hash: "sha256:evidence".to_string(),
+        };
+        let ineligible_gates = [
+            json!({
+                "status": "needs_clarification",
+                "source": "originating_request",
+                "missing_fields": ["活动地点"],
+                "conflict_fields": []
+            }),
+            json!({
+                "status": "complete",
+                "source": "trusted_activity_record",
+                "missing_fields": [],
+                "conflict_fields": ["活动时间"]
+            }),
+            json!({
+                "status": "complete",
+                "source": "unavailable",
+                "missing_fields": [],
+                "conflict_fields": []
+            }),
+        ];
+
+        for fact_gate in ineligible_gates {
+            let error = build_artifact_drafts(&build_work_item(fact_gate), Some(&evidence))
+                .expect_err("incomplete fact gate must not authorize a poster brief");
+            assert!(error
+                .to_string()
+                .contains("generation authorization provenance is invalid"));
+        }
+    }
+
+    #[test]
+    fn direct_generation_worker_sql_fails_closed_on_fact_gate_shape() {
+        for required_fragment in [
+            "poster_fact_gate'->>'status' = 'complete'",
+            "'originating_request'",
+            "'trusted_activity_record'",
+            "jsonb_array_length",
+            "missing_fields",
+            "conflict_fields",
+        ] {
+            assert!(DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL.contains(required_fragment));
+        }
+    }
+
+    #[test]
+    fn automatic_workflow_cannot_forge_direct_generation_authorization() {
+        let opaque = format!("sha256:{}", "a".repeat(64));
+        let work_item = WorkItem {
+            id: Uuid::new_v4(),
+            parent_work_item_id: Some(Uuid::new_v4()),
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "自动活动海报".to_string(),
+            source_type: "event_signal".to_string(),
+            source_refs: json!({"source_message_ref": opaque}),
+            payload: json!({
+                "workflow_type": "activity_promotion",
+                "origin_conversation_ref": format!("sha256:{}", "c".repeat(64)),
+                "generation_authorization": {
+                    "mode": "originating_generation_request",
+                    "actor_ref": format!("sha256:{}", "b".repeat(64)),
+                    "source_message_ref": opaque,
+                    "group_send_authorized": false
+                }
+            }),
+            review_policy: "before_external_use".to_string(),
+        };
+        let evidence = EvidenceContext {
+            work_item_id: Uuid::new_v4(),
+            artifact_id: Uuid::new_v4(),
+            content_hash: "sha256:evidence".to_string(),
+        };
+
+        let error = build_artifact_drafts(&work_item, Some(&evidence))
+            .expect_err("automatic workflow authorization must be rejected");
+        assert!(error.to_string().contains("trusted Feishu direct intake"));
+    }
+
+    #[test]
     fn non_activity_visual_brief_does_not_require_evidence() {
         let work_item = WorkItem {
             id: Uuid::new_v4(),
@@ -1056,6 +1399,7 @@ mod tests {
             target_agent: "huabaosi".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "社区手作课报名海报".to_string(),
+            source_type: "manual_request".to_string(),
             source_refs: json!({"source_record_ref": "manual:test"}),
             payload: json!({"workflow_type": "ad_hoc_visual"}),
             review_policy: "before_external_use".to_string(),
@@ -1097,6 +1441,7 @@ mod tests {
             target_agent: "huabaosi".to_string(),
             capability_key: SUPPORTED_CAPABILITY.to_string(),
             brief_summary: "社区活动海报".to_string(),
+            source_type: "manual_request".to_string(),
             source_refs: json!({}),
             payload: json!({}),
             review_policy: "before_external_use".to_string(),

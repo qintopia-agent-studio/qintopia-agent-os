@@ -282,7 +282,7 @@ if (exists("deploy/sidecar/scripts/fetch-ci-artifact.sh")) {
   }
   if (
     artifactFetchScript.includes(
-      '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
+      '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","xiaoman-feishu-poster-adapter","qiwe-production-adapter"]'
     )
   ) {
     addError(
@@ -476,7 +476,7 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
   }
   if (
     cosFetchScript.includes(
-      '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
+      '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","xiaoman-feishu-poster-adapter","qiwe-production-adapter"]'
     )
   ) {
     addError(
@@ -516,6 +516,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
   const approvedCargoFeatures = [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "xiaoman-feishu-poster-adapter",
   ];
   const cargoFeaturesMatch = buildArtifactScript.match(
     /const cargoFeatures = \[([\s\S]*?)\];/

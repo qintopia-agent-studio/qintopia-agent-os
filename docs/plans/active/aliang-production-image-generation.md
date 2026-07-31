@@ -348,9 +348,10 @@ data but are not eligible for the future QiWe JPG send contract.
   `huabaosi-staging-adapter` feature. A staging-feature apply must enforce the exact
   owner phrase, repository-reviewed database URL hash allowlist, staging database name,
   and adapter policy in Rust before Postgres or network access. Huabaosi production
-  image-generation apply remains behind the reviewed `huabaosi-production-adapter` and
-  guarded `huabaosi-feishu-mirror-adapter` features; the Huabaosi production sidecar
-  artifact must not include `qiwe-production-adapter` or other QiWe live features.
+  image-generation apply remains behind the reviewed `huabaosi-production-adapter`,
+  guarded `huabaosi-feishu-mirror-adapter`, and default-disabled
+  `xiaoman-feishu-poster-adapter` features; the Huabaosi production sidecar artifact
+  must not include `qiwe-production-adapter` or other QiWe live features.
 
 运行无网络预检：
 

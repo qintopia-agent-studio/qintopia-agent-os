@@ -404,11 +404,12 @@ Use `rg` and `rg --files` for search.
   `generated_image_artifact_id`. It may mirror only a fully revalidated immutable final
   JPEG and sanitized review metadata. It must not update the legacy poster task summary
   without a stable AgentOS workflow id, treat Feishu state as approval, call QiWe, or
-  publish. Production artifacts compile exactly `huabaosi-production-adapter` plus the
-  guarded `huabaosi-feishu-mirror-adapter`; staging, QiWe, and all-features production
-  artifacts remain forbidden. The ordinary release installer may install the dedicated
-  mirror preflight, worker, and timer units, but must not enable the external write
-  timer automatically.
+  publish. Production artifacts compile exactly `huabaosi-production-adapter`, the
+  guarded `huabaosi-feishu-mirror-adapter`, and the default-disabled
+  `xiaoman-feishu-poster-adapter`; staging, QiWe, and all-features production artifacts
+  remain forbidden. The ordinary release installer may install the dedicated mirror
+  preflight, worker, and timer units, but must not enable the external write timer
+  automatically.
 - Huabaosi Feishu mirror apply must validate the exact owner phrase, production release
   SHA binding, database URL hash, Base and table exact allowlists, fixed schema version,
   Huabaosi profile path, and media host allowlist before Postgres or external I/O. The
@@ -632,7 +633,7 @@ Use `rg` and `rg --files` for search.
   Postgres claim/mutation, or network access even if runtime enable flags are
   misconfigured; callback apply must also fail before reading stdin. Production artifact
   manifests must record exactly
-  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`;
+  `cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter, xiaoman-feishu-poster-adapter]`;
   artifact and server-source build checks must reject `qiwe-staging-adapter`,
   `huabaosi-staging-adapter`, and all-features builds. The Huabaosi production feature
   alone must not make QiWe live helpers available.
@@ -947,13 +948,14 @@ Use `rg` and `rg --files` for search.
   read-only queue preview. It must discover the immutable
   `/home/ubuntu/qintopia-agent-os-releases/current/sidecar/qintopia-message-sidecar`
   binary, or accept an explicit `QINTOPIA_SIDECAR_BIN` only when it resolves to that
-  same release-local binary with exactly `huabaosi-production-adapter` and
-  `huabaosi-feishu-mirror-adapter`, not QiWe production features. It must parse only
-  allowlisted production env keys, launch child sidecar commands with a minimal explicit
-  environment, and fail closed instead of accepting test-mode/path override env vars,
-  `source`-ing env files, using `cargo run`, or falling back to a mutable source tree.
-  It must not use `--apply`, contact provider/media endpoints, write Postgres or Feishu,
-  call QiWe, create a generated image, or publish.
+  same release-local binary with exactly `huabaosi-production-adapter`,
+  `huabaosi-feishu-mirror-adapter`, and `xiaoman-feishu-poster-adapter`, not QiWe
+  production features. It must parse only allowlisted production env keys, launch child
+  sidecar commands with a minimal explicit environment, and fail closed instead of
+  accepting test-mode/path override env vars, `source`-ing env files, using `cargo run`,
+  or falling back to a mutable source tree. It must not use `--apply`, contact
+  provider/media endpoints, write Postgres or Feishu, call QiWe, create a generated
+  image, or publish.
 - `huabaosi-image-generation-production-canary-smoke.sh` is the release-local one-shot
   entrypoint for the first post-deploy image. It must run from the exact immutable
   release with the provider timer disabled and inactive, use a fixed minimal `PATH` and
