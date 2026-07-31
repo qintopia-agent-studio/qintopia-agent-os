@@ -1506,9 +1506,9 @@ async fn load_xiaoman_activity_send_request_candidates(
                   <> 'xiaoman_feishu_direct'
               OR EXISTS (
                   SELECT 1
-                  FROM qintopia_agent_os.work_item_events authorization
-                  WHERE authorization.work_item_id = parent.id
-                    AND authorization.event_type = 'group_send_authorized'
+                  FROM qintopia_agent_os.work_item_events authorization_event
+                  WHERE authorization_event.work_item_id = parent.id
+                    AND authorization_event.event_type = 'group_send_authorized'
               )
           )
           AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1 OR image_request.id = $1)

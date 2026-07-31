@@ -23,11 +23,17 @@ Independent review also identified two delivery-claim defects:
   transaction back, leaving the oldest notification pending and repeatedly blocking
   later eligible work.
 
+Replacement CI then executed the new poster-delivery regression successfully, but its
+downstream apply smoke exposed a separate query syntax error: the group-send
+authorization guard used PostgreSQL keyword `authorization` as a table alias.
+
 ## Root Cause
 
 The implementation mixed attempt-table completion fields into the work-item fixture and
 treated permanent pre-I/O policy rejection as an exceptional rollback. The claim query
-also requested a row lock that is not legal for an outer-join nullable relation.
+also requested a row lock that is not legal for an outer-join nullable relation. The
+downstream group-send guard had been covered by repository-local tests without executing
+its SQL against PostgreSQL, so the reserved alias reached the disposable database smoke.
 
 ## Resolution
 
@@ -39,6 +45,8 @@ also requested a row lock that is not legal for an outer-join nullable relation.
 - Return a reportable rejected outcome so the next worker run can select the next
   eligible notification.
 - Remove `work_items.completed_at` from production and integration completion updates.
+- Rename the downstream authorization-event alias so the existing apply smoke can
+  execute the direct-message group-send guard against PostgreSQL.
 
 ## Validation
 
@@ -55,7 +63,9 @@ Local validation passed:
 The guarded PostgreSQL regression proves that a rejected oldest notification is
 terminal, creates no attempt, and does not block the next valid claim. It compiled
 locally but could not execute because no disposable `qintopia_test` database was
-available on loopback. Replacement PR CI owns that execution before merge.
+available on loopback. Replacement PR CI executed that regression successfully and then
+found the downstream reserved-alias failure. A further replacement CI must prove both
+the regression and the full downstream apply smoke before merge.
 
 ## Remaining Boundary
 
