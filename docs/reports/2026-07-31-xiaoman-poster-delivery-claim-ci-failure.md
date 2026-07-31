@@ -54,6 +54,8 @@ its SQL against PostgreSQL, so the reserved alias reached the disposable databas
   execute the direct-message group-send guard against PostgreSQL.
 - Require direct-request and direct-revision `source_message_ref` values to use the
   canonical lowercase `sha256:` plus 64 hexadecimal characters form before persistence.
+- Apply the same lowercase canonical hash rule when collaboration authorization and
+  poster-notification workers revalidate opaque references downstream.
 - Add negative coverage for raw, short, uppercase, and whitespace-padded references.
 
 ## Validation

@@ -745,7 +745,9 @@ fn direct_generation_fact_gate_complete(payload: &Value) -> bool {
 fn valid_opaque_ref(value: &str) -> bool {
     value.len() == 71
         && value.starts_with("sha256:")
-        && value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        && value[7..]
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn safe_source_refs(value: &Value) -> String {
@@ -1482,6 +1484,8 @@ mod tests {
     #[test]
     fn direct_generation_authorization_requires_a_complete_source_grounded_fact_gate() {
         let opaque = format!("sha256:{}", "a".repeat(64));
+        assert!(valid_opaque_ref(&opaque));
+        assert!(!valid_opaque_ref(&format!("sha256:{}", "A".repeat(64))));
         let build_work_item = |poster_fact_gate: Value| WorkItem {
             id: Uuid::new_v4(),
             parent_work_item_id: Some(Uuid::new_v4()),

@@ -903,7 +903,9 @@ fn valid_content_hash(value: &str) -> bool {
 fn valid_prefixed_hash(value: &str) -> bool {
     value.len() == 71
         && value.starts_with("sha256:")
-        && value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        && value[7..]
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn actor_ref(actor_user_id: &str) -> String {
@@ -955,6 +957,10 @@ mod tests {
             )
         );
         assert!(request.payload.get("conversation_id").is_none());
+
+        let mut noncanonical_candidate = candidate;
+        noncanonical_candidate.origin_ref = format!("sha256:{}", "A".repeat(64));
+        assert!(notification_request(&noncanonical_candidate).is_err());
     }
 
     #[test]
