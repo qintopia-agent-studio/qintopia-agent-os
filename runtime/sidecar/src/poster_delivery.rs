@@ -112,6 +112,10 @@ struct WorkerReport {
 enum DeliveryFailure {
     Failed(&'static str),
     Ambiguous(&'static str),
+    UploadedAmbiguous {
+        code: &'static str,
+        image_key_hash: String,
+    },
 }
 
 impl AdapterConfig {
@@ -286,7 +290,7 @@ async fn run_apply(cli: &Cli, notification_id: Option<Uuid>) -> Result<()> {
                 }
             }
             Err(DeliveryFailure::Failed(code)) => {
-                fail_delivery(&pool, &claim, code, false).await?;
+                fail_delivery(&pool, &claim, code, false, None).await?;
                 WorkerReport {
                     success: false,
                     action_status: "conversation_notification_failed",
@@ -298,7 +302,22 @@ async fn run_apply(cli: &Cli, notification_id: Option<Uuid>) -> Result<()> {
                 }
             }
             Err(DeliveryFailure::Ambiguous(code)) => {
-                fail_delivery(&pool, &claim, code, true).await?;
+                fail_delivery(&pool, &claim, code, true, None).await?;
+                WorkerReport {
+                    success: false,
+                    action_status: "conversation_notification_ambiguous",
+                    notification_id: Some(claim.candidate.notification_id),
+                    artifact_id: claim.candidate.artifact_id,
+                    external_send_executed: None,
+                    automatic_retry_allowed: false,
+                    sensitive_fields_redacted: true,
+                }
+            }
+            Err(DeliveryFailure::UploadedAmbiguous {
+                code,
+                image_key_hash,
+            }) => {
+                fail_delivery(&pool, &claim, code, true, Some(&image_key_hash)).await?;
                 WorkerReport {
                     success: false,
                     action_status: "conversation_notification_ambiguous",
@@ -625,7 +644,7 @@ async fn deliver_claim(
 ) -> std::result::Result<String, DeliveryFailure> {
     if claim.candidate.notification_kind != "image_ready" {
         let token = tenant_token(config, client)?;
-        mark_sending(pool, claim, None)
+        mark_sending(pool, claim, false)
             .await
             .map_err(|_| DeliveryFailure::Ambiguous("send_gate_persistence_failed"))?;
         return send_status_message(config, client, &token, claim);
@@ -637,9 +656,19 @@ async fn deliver_claim(
         .artifact_id
         .ok_or(DeliveryFailure::Failed("artifact_identity_mismatch"))?;
     let image_key = upload_image(config, client, &token, artifact_id, &bytes)?;
-    mark_sending(pool, claim, Some(&image_key))
+    let image_key_hash = sha256_marker(image_key.as_bytes());
+    record_upload_accepted(pool, claim, &image_key_hash)
         .await
-        .map_err(|_| DeliveryFailure::Ambiguous("send_gate_persistence_failed"))?;
+        .map_err(|_| DeliveryFailure::UploadedAmbiguous {
+            code: "upload_audit_persistence_failed",
+            image_key_hash: image_key_hash.clone(),
+        })?;
+    mark_sending(pool, claim, true)
+        .await
+        .map_err(|_| DeliveryFailure::UploadedAmbiguous {
+            code: "send_gate_persistence_failed",
+            image_key_hash,
+        })?;
     send_review_card(config, client, &token, &image_key, claim)
 }
 
@@ -916,18 +945,78 @@ fn multipart_image(boundary: &str, artifact_id: Uuid, bytes: &[u8]) -> Zeroizing
     body
 }
 
-#[cfg(feature = "xiaoman-feishu-poster-adapter")]
-async fn mark_sending(pool: &PgPool, claim: &DeliveryClaim, image_key: Option<&str>) -> Result<()> {
+#[cfg(any(
+    feature = "xiaoman-feishu-poster-adapter",
+    feature = "postgres-integration-tests"
+))]
+async fn record_upload_accepted(
+    pool: &PgPool,
+    claim: &DeliveryClaim,
+    image_key_hash: &str,
+) -> Result<()> {
+    if !canonical_sha256(image_key_hash) {
+        bail!("poster image key hash is invalid");
+    }
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin poster upload acceptance")?;
     let updated = sqlx::query(
         r#"
         UPDATE qintopia_agent_os.poster_notification_attempts
-        SET status = 'sending', image_key_hash = $2, send_started_at = now(), updated_at = now(),
+        SET image_key_hash = $2, updated_at = now(),
             audit_metadata = audit_metadata || '{"external_upload_outcome":"accepted","external_send_outcome":"not_started"}'::jsonb
         WHERE id = $1 AND status = 'uploading' AND claim_token = $3
+          AND image_key_hash IS NULL
         "#,
     )
     .bind(claim.attempt_id)
-    .bind(image_key.map(|value| sha256_marker(value.as_bytes())))
+    .bind(image_key_hash)
+    .bind(&claim.claim_token)
+    .execute(&mut *tx)
+    .await
+    .context("record poster upload acceptance")?;
+    if updated.rows_affected() != 1 {
+        bail!("poster delivery attempt changed before upload acceptance");
+    }
+    append_event(
+        &mut tx,
+        claim.candidate.work_item_id,
+        claim.candidate.artifact_id,
+        "conversation_notification_image_upload_accepted",
+        json!({
+            "attempt_id": claim.attempt_id,
+            "image_key_hash": image_key_hash,
+            "external_send_executed": false,
+            "group_send_authorized": false
+        }),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .context("commit poster upload acceptance")?;
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "xiaoman-feishu-poster-adapter",
+    feature = "postgres-integration-tests"
+))]
+async fn mark_sending(pool: &PgPool, claim: &DeliveryClaim, upload_required: bool) -> Result<()> {
+    let updated = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.poster_notification_attempts
+        SET status = 'sending', send_started_at = now(), updated_at = now(),
+            audit_metadata = audit_metadata || jsonb_build_object(
+                'external_upload_outcome', CASE WHEN $2 THEN 'accepted' ELSE 'not_required' END,
+                'external_send_outcome', 'not_started'
+            )
+        WHERE id = $1 AND status = 'uploading' AND claim_token = $3
+          AND (NOT $2 OR image_key_hash IS NOT NULL)
+        "#,
+    )
+    .bind(claim.attempt_id)
+    .bind(upload_required)
     .bind(&claim.claim_token)
     .execute(pool)
     .await
@@ -978,12 +1067,16 @@ async fn complete_delivery(pool: &PgPool, claim: &DeliveryClaim, message_ref: &s
     Ok(())
 }
 
-#[cfg(feature = "xiaoman-feishu-poster-adapter")]
+#[cfg(any(
+    feature = "xiaoman-feishu-poster-adapter",
+    feature = "postgres-integration-tests"
+))]
 async fn fail_delivery(
     pool: &PgPool,
     claim: &DeliveryClaim,
     code: &str,
     ambiguous: bool,
+    image_key_hash: Option<&str>,
 ) -> Result<()> {
     let mut tx = pool
         .begin()
@@ -994,9 +1087,25 @@ async fn fail_delivery(
     let attempt = sqlx::query(
         r#"UPDATE qintopia_agent_os.poster_notification_attempts
            SET status=$2, failure_code=$3, completed_at=now(), updated_at=now(),
-               audit_metadata=audit_metadata || jsonb_build_object('external_send_outcome', $4::text, 'automatic_retry_allowed', false)
+               image_key_hash=COALESCE(image_key_hash, $6),
+               audit_metadata=audit_metadata || jsonb_build_object(
+                   'external_send_outcome', $4::text,
+                   'automatic_retry_allowed', false,
+                   'external_upload_outcome', CASE WHEN $6::text IS NULL THEN
+                       COALESCE(audit_metadata->>'external_upload_outcome', 'not_started')
+                       ELSE 'accepted'
+                   END
+               )
            WHERE id=$1 AND status IN ('uploading','sending') AND claim_token=$5"#,
-    ).bind(claim.attempt_id).bind(status).bind(code).bind(if ambiguous {"unknown"} else {"not_sent"}).bind(&claim.claim_token).execute(&mut *tx).await?;
+    )
+    .bind(claim.attempt_id)
+    .bind(status)
+    .bind(code)
+    .bind(if ambiguous { "unknown" } else { "not_sent" })
+    .bind(&claim.claim_token)
+    .bind(image_key_hash)
+    .execute(&mut *tx)
+    .await?;
     if attempt.rows_affected() != 1 {
         bail!("poster delivery attempt changed before failure");
     }
@@ -1018,7 +1127,7 @@ async fn fail_delivery(
     release_work_item(&mut tx, claim, "failed", Some(code)).await?;
     append_event(&mut tx, claim.candidate.work_item_id, claim.candidate.artifact_id,
         if ambiguous {"conversation_notification_ambiguous"} else {"conversation_notification_failed"},
-        json!({"attempt_id":claim.attempt_id,"failure_code":code,"external_send_executed":external,"automatic_retry_allowed":false,"group_send_authorized":false})).await?;
+        json!({"attempt_id":claim.attempt_id,"failure_code":code,"image_key_hash":image_key_hash,"external_send_executed":external,"automatic_retry_allowed":false,"group_send_authorized":false})).await?;
     tx.commit()
         .await
         .context("commit poster delivery failure")?;
@@ -1454,6 +1563,103 @@ mod tests {
             eligible_state,
             ("claimed".to_string(), "processing".to_string(), 1)
         );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_upload_acceptance_precedes_send_gate() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect guarded poster upload integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded poster upload integration database");
+        let suffix = Uuid::new_v4().simple().to_string();
+        let (notification_id, _) =
+            seed_claim_candidate(&pool, &suffix, "upload", "oc_fixture", "ou_fixture", 2).await;
+        let config = test_config(Url::parse(OFFICIAL_API_ROOT).unwrap());
+        let claimed = claim_notification(&pool, Some(notification_id), &config)
+            .await
+            .expect("claim poster upload candidate");
+        let claim = match claimed {
+            ClaimNotificationOutcome::Claimed(claim) => claim,
+            other => panic!("expected upload candidate to be claimed, got {other:?}"),
+        };
+        let image_key_hash = format!("sha256:{}", "b".repeat(64));
+
+        record_upload_accepted(&pool, &claim, &image_key_hash)
+            .await
+            .expect("persist upload acceptance before send gate");
+        let upload_state: (String, Option<String>, Value, i64) = sqlx::query_as(
+            r#"
+            SELECT attempt.status, attempt.image_key_hash, attempt.audit_metadata,
+                   count(event.id)
+            FROM qintopia_agent_os.poster_notification_attempts attempt
+            JOIN qintopia_agent_os.poster_notifications notification
+              ON notification.id=attempt.notification_id
+            LEFT JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id=notification.work_item_id
+             AND event.event_type='conversation_notification_image_upload_accepted'
+            WHERE attempt.id=$1
+            GROUP BY attempt.status, attempt.image_key_hash, attempt.audit_metadata
+            "#,
+        )
+        .bind(claim.attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load persisted poster upload acceptance");
+        assert_eq!(upload_state.0, "uploading");
+        assert_eq!(upload_state.1.as_deref(), Some(image_key_hash.as_str()));
+        assert_eq!(upload_state.2["external_upload_outcome"], "accepted");
+        assert_eq!(upload_state.2["external_send_outcome"], "not_started");
+        assert_eq!(upload_state.3, 1);
+
+        mark_sending(&pool, &claim, true)
+            .await
+            .expect("open send gate after persisted upload acceptance");
+        let sending_state: (String, Option<String>) = sqlx::query_as(
+            "SELECT status, image_key_hash FROM qintopia_agent_os.poster_notification_attempts WHERE id=$1",
+        )
+        .bind(claim.attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load poster send gate state");
+        assert_eq!(
+            sending_state,
+            ("sending".to_string(), Some(image_key_hash.clone()))
+        );
+
+        fail_delivery(
+            &pool,
+            &claim,
+            "send_gate_persistence_failed",
+            true,
+            Some(&image_key_hash),
+        )
+        .await
+        .expect("terminalize ambiguous delivery without losing upload identity");
+        let terminal_state: (String, Option<String>, Value) = sqlx::query_as(
+            r#"
+            SELECT attempt.status, attempt.image_key_hash, event.data
+            FROM qintopia_agent_os.poster_notification_attempts attempt
+            JOIN qintopia_agent_os.poster_notifications notification
+              ON notification.id=attempt.notification_id
+            JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id=notification.work_item_id
+             AND event.event_type='conversation_notification_ambiguous'
+            WHERE attempt.id=$1
+            "#,
+        )
+        .bind(claim.attempt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load terminal poster upload audit state");
+        assert_eq!(terminal_state.0, "ambiguous");
+        assert_eq!(terminal_state.1.as_deref(), Some(image_key_hash.as_str()));
+        assert_eq!(terminal_state.2["image_key_hash"], image_key_hash);
+        assert_eq!(terminal_state.2["external_send_executed"], Value::Null);
     }
 
     #[test]

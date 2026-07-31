@@ -42,6 +42,12 @@ environment variables cannot select staging code or bypass these bindings. The b
 also refuses a dirty or unreadable git worktree so `commit_sha` cannot describe
 different uncommitted source bytes.
 
+`huabaosi-production` remains the backward-compatible name of the primary production
+runtime artifact. Compiling the default-disabled Xiaoman adapter into that reviewed
+binary does not activate its services or external I/O; the Xiaoman preflight, persistent
+enablement, owner approval, timers, and rollback remain independent from the Huabaosi
+mirror path.
+
 The staging-only sidecar artifact name is:
 
 ```text

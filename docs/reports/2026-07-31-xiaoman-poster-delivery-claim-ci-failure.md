@@ -54,7 +54,7 @@ Local validation passed:
 
 - six focused poster-delivery unit tests;
 - the default sidecar suite with 452 passing tests;
-- the all-feature sidecar suite with 458 passing and 14 intentionally ignored tests;
+- the all-feature sidecar suite with 458 passing and 15 intentionally ignored tests;
 - compilation of the PostgreSQL integration target;
 - warning-denied Clippy with no default features, the Xiaoman Feishu adapter feature,
   and all features;

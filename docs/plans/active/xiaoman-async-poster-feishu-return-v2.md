@@ -116,7 +116,7 @@ event while the activity group receives no message.
 ## Implementation Status
 
 Local implementation and repository validation completed on 2026-07-31. The default
-sidecar suite passed 451 tests, the all-features suite passed 457 tests with 13 guarded
+sidecar suite passed 452 tests, the all-features suite passed 458 tests with 15 guarded
 PostgreSQL tests ignored, both sidecar smokes passed, and `pnpm check:pr:auto` completed
 its quick and heavy Rust tiers. The PostgreSQL integration target compiles with
 `postgres-integration-tests`, including fact-gate claim prevention, notification-bound
@@ -128,6 +128,13 @@ the integration fixture referenced a non-existent `work_items.completed_at` colu
 follow-up keeps only notification and work-item rows in the claim lock, records a
 sanitized terminal failure for pre-I/O policy or identity rejection, and aligns
 completion updates with the actual work-item schema.
+
+The follow-up also persists a hashed Feishu image-upload identity and an explicit
+upload-accepted event before opening the card-send gate. Any later ambiguous failure
+retains that non-sensitive identity without retaining the raw image key. The primary
+`huabaosi-production` artifact name remains backward compatible; the compiled Xiaoman
+adapter stays disabled until its independent owner approval, preflight, persistent
+enablement, and timer activation gates pass.
 
 The disposable PostgreSQL test was not executed locally because
 `127.0.0.1:5432/qintopia_test` is unavailable. Production activation and real Feishu
