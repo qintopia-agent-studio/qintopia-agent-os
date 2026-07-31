@@ -67,6 +67,9 @@ bypass review, and no notification or image approval creates group-send work.
 ### Increment 3: Feishu Delivery And Review
 
 - The adapter persists a delivery attempt before opening an external connection.
+- A permanently invalid target or artifact is terminalized as a sanitized failed
+  notification before any attempt or external connection is created, so it cannot block
+  later eligible notifications.
 - Expired in-flight attempts become `ambiguous` and are never automatically replayed.
 - The adapter revalidates and uploads the exact reviewed JPEG, then sends one card to
   the mapped originating direct conversation.
@@ -118,6 +121,13 @@ PostgreSQL tests ignored, both sidecar smokes passed, and `pnpm check:pr:auto` c
 its quick and heavy Rust tiers. The PostgreSQL integration target compiles with
 `postgres-integration-tests`, including fact-gate claim prevention, notification-bound
 review idempotency, revision handling, and zero group-send assertions.
+
+PR #334 follow-up review found that the delivery claim query attempted to lock the
+nullable side of a left join, permanent policy rejection rolled back to `pending`, and
+the integration fixture referenced a non-existent `work_items.completed_at` column. The
+follow-up keeps only notification and work-item rows in the claim lock, records a
+sanitized terminal failure for pre-I/O policy or identity rejection, and aligns
+completion updates with the actual work-item schema.
 
 The disposable PostgreSQL test was not executed locally because
 `127.0.0.1:5432/qintopia_test` is unavailable. Production activation and real Feishu

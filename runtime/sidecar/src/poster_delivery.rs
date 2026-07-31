@@ -59,6 +59,20 @@ struct DeliveryClaim {
     claim_token: String,
 }
 
+#[cfg(any(
+    feature = "xiaoman-feishu-poster-adapter",
+    feature = "postgres-integration-tests"
+))]
+#[derive(Debug)]
+enum ClaimNotificationOutcome {
+    Claimed(Box<DeliveryClaim>),
+    Rejected {
+        notification_id: Uuid,
+        artifact_id: Option<Uuid>,
+    },
+    Empty,
+}
+
 #[derive(Debug)]
 struct AdapterConfig {
     api_root: Url,
@@ -214,20 +228,41 @@ async fn run_apply(cli: &Cli, notification_id: Option<Uuid>) -> Result<()> {
         let database_url = cli.database_url_required()?;
         let config = AdapterConfig::from_env(database_url)?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
-        let Some(claim) = claim_notification(&pool, notification_id, &config).await? else {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&WorkerReport {
-                    success: true,
-                    action_status: "no_pending_notification",
-                    notification_id: None,
-                    artifact_id: None,
-                    external_send_executed: Some(false),
-                    automatic_retry_allowed: false,
-                    sensitive_fields_redacted: true,
-                })?
-            );
-            return Ok(());
+        let claim = match claim_notification(&pool, notification_id, &config).await? {
+            ClaimNotificationOutcome::Claimed(claim) => claim,
+            ClaimNotificationOutcome::Rejected {
+                notification_id,
+                artifact_id,
+            } => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&WorkerReport {
+                        success: false,
+                        action_status: "conversation_notification_failed",
+                        notification_id: Some(notification_id),
+                        artifact_id,
+                        external_send_executed: Some(false),
+                        automatic_retry_allowed: false,
+                        sensitive_fields_redacted: true,
+                    })?
+                );
+                return Ok(());
+            }
+            ClaimNotificationOutcome::Empty => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&WorkerReport {
+                        success: true,
+                        action_status: "no_pending_notification",
+                        notification_id: None,
+                        artifact_id: None,
+                        external_send_executed: Some(false),
+                        automatic_retry_allowed: false,
+                        sensitive_fields_redacted: true,
+                    })?
+                );
+                return Ok(());
+            }
         };
         let result = deliver_claim(
             &pool,
@@ -292,12 +327,15 @@ async fn preview_candidate(
     row.map(candidate_from_row).transpose()
 }
 
-#[cfg(feature = "xiaoman-feishu-poster-adapter")]
+#[cfg(any(
+    feature = "xiaoman-feishu-poster-adapter",
+    feature = "postgres-integration-tests"
+))]
 async fn claim_notification(
     pool: &PgPool,
     notification_id: Option<Uuid>,
     config: &AdapterConfig,
-) -> Result<Option<DeliveryClaim>> {
+) -> Result<ClaimNotificationOutcome> {
     let mut tx = pool.begin().await.context("begin poster delivery claim")?;
     reconcile_one_stale_claim(&mut tx, notification_id).await?;
     let row = sqlx::query(&candidate_select(true))
@@ -309,17 +347,30 @@ async fn claim_notification(
         tx.commit()
             .await
             .context("commit empty poster delivery claim")?;
-        return Ok(None);
+        return Ok(ClaimNotificationOutcome::Empty);
     };
     let candidate = candidate_from_row(row)?;
-    if !config.allowed_chat_ids.contains(&candidate.conversation_id)
+    let rejection_code = if !config.allowed_chat_ids.contains(&candidate.conversation_id)
         || !config
             .allowed_user_ids
             .contains(&candidate.requester_user_id)
     {
-        bail!("poster return target is not allowlisted");
+        Some("return_target_not_allowlisted")
+    } else if validate_candidate(&candidate, config).is_err() {
+        Some("notification_identity_invalid")
+    } else {
+        None
+    };
+    if let Some(failure_code) = rejection_code {
+        terminalize_rejected_candidate(&mut tx, &candidate, failure_code).await?;
+        tx.commit()
+            .await
+            .context("commit rejected poster delivery candidate")?;
+        return Ok(ClaimNotificationOutcome::Rejected {
+            notification_id: candidate.notification_id,
+            artifact_id: candidate.artifact_id,
+        });
     }
-    validate_candidate(&candidate, config)?;
     let claim_token = format!("{WORKER_ID}:{}", Uuid::new_v4());
     let attempt_number: i32 = sqlx::query_scalar(
         r#"
@@ -377,11 +428,73 @@ async fn claim_notification(
     )
     .await?;
     tx.commit().await.context("commit poster delivery claim")?;
-    Ok(Some(DeliveryClaim {
+    Ok(ClaimNotificationOutcome::Claimed(Box::new(DeliveryClaim {
         candidate,
         attempt_id,
         claim_token,
-    }))
+    })))
+}
+
+#[cfg(any(
+    feature = "xiaoman-feishu-poster-adapter",
+    feature = "postgres-integration-tests"
+))]
+async fn terminalize_rejected_candidate(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    candidate: &DeliveryCandidate,
+    failure_code: &'static str,
+) -> Result<()> {
+    let notification = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.poster_notifications
+        SET status = 'failed', last_error_code = $2,
+            claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL,
+            updated_at = now()
+        WHERE id = $1 AND status = 'pending'
+        "#,
+    )
+    .bind(candidate.notification_id)
+    .bind(failure_code)
+    .execute(&mut **tx)
+    .await
+    .context("terminalize rejected poster notification")?;
+    if notification.rows_affected() != 1 {
+        bail!("rejected poster notification changed before terminalization");
+    }
+
+    let work_item = sqlx::query(
+        r#"
+        UPDATE qintopia_agent_os.work_items
+        SET status = 'failed', last_error = $2,
+            claimed_by = NULL, locked_at = NULL, claim_expires_at = NULL,
+            updated_at = now()
+        WHERE id = $1 AND status = 'queued'
+        "#,
+    )
+    .bind(candidate.work_item_id)
+    .bind(failure_code)
+    .execute(&mut **tx)
+    .await
+    .context("terminalize rejected poster notification work item")?;
+    if work_item.rows_affected() != 1 {
+        bail!("rejected poster notification work item changed before terminalization");
+    }
+
+    append_event(
+        tx,
+        candidate.work_item_id,
+        candidate.artifact_id,
+        "conversation_notification_failed",
+        json!({
+            "failure_code": failure_code,
+            "external_send_executed": false,
+            "automatic_retry_allowed": false,
+            "rejected_before_external_io": true,
+            "group_send_authorized": false
+        }),
+    )
+    .await?;
+    Ok(())
 }
 
 fn candidate_select(for_update: bool) -> String {
@@ -418,7 +531,7 @@ fn candidate_select(for_update: bool) -> String {
         {}
         "#,
         if for_update {
-            "FOR UPDATE OF notification, item, artifact SKIP LOCKED"
+            "FOR UPDATE OF notification, item SKIP LOCKED"
         } else {
             ""
         }
@@ -428,12 +541,7 @@ fn candidate_select(for_update: bool) -> String {
 fn candidate_from_row(row: sqlx::postgres::PgRow) -> Result<DeliveryCandidate> {
     let byte_size = row
         .try_get::<Option<String>, _>("byte_size")?
-        .map(|value| {
-            value
-                .parse::<usize>()
-                .context("poster byte size is invalid")
-        })
-        .transpose()?;
+        .and_then(|value| value.parse::<usize>().ok());
     Ok(DeliveryCandidate {
         notification_id: row.try_get("notification_id")?,
         work_item_id: row.try_get("work_item_id")?,
@@ -917,7 +1025,10 @@ async fn fail_delivery(
     Ok(())
 }
 
-#[cfg(feature = "xiaoman-feishu-poster-adapter")]
+#[cfg(any(
+    feature = "xiaoman-feishu-poster-adapter",
+    feature = "postgres-integration-tests"
+))]
 async fn reconcile_one_stale_claim(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     notification_id: Option<Uuid>,
@@ -958,7 +1069,7 @@ async fn release_work_item(
     status: &str,
     error: Option<&str>,
 ) -> Result<()> {
-    let updated = sqlx::query("UPDATE qintopia_agent_os.work_items SET status=$2, last_error=$3, claimed_by=NULL, locked_at=NULL, claim_expires_at=NULL, completed_at=CASE WHEN $2='completed' THEN now() ELSE completed_at END, updated_at=now() WHERE id=$1 AND status='processing' AND claimed_by=$4")
+    let updated = sqlx::query("UPDATE qintopia_agent_os.work_items SET status=$2, last_error=$3, claimed_by=NULL, locked_at=NULL, claim_expires_at=NULL, updated_at=now() WHERE id=$1 AND status='processing' AND claimed_by=$4")
         .bind(claim.candidate.work_item_id).bind(status).bind(error).bind(&claim.claim_token).execute(&mut **tx).await?;
     if updated.rows_affected() != 1 {
         bail!("poster notification work item claim changed");
@@ -1071,6 +1182,13 @@ mod tests {
     }
 
     #[test]
+    fn claim_query_does_not_lock_nullable_artifact_join() {
+        let query = candidate_select(true);
+        assert!(query.contains("FOR UPDATE OF notification, item SKIP LOCKED"));
+        assert!(!query.contains("FOR UPDATE OF notification, item, artifact"));
+    }
+
+    #[test]
     fn card_contains_bound_actions_and_no_group_target() {
         let claim = claim();
         let card = review_card("img_fixture", &claim);
@@ -1105,6 +1223,237 @@ mod tests {
         let mut bad = claim.candidate;
         bad.artifact_uri = Some("https://other.example.test/poster.jpg".into());
         assert!(validate_candidate(&bad, &config).is_err());
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = Url::parse(&database_url).expect("integration database URL must parse");
+        assert!(
+            matches!(parsed.scheme(), "postgres" | "postgresql"),
+            "PostgreSQL integration test requires a postgres URL"
+        );
+        assert!(
+            matches!(parsed.host_str(), Some("127.0.0.1" | "::1")),
+            "PostgreSQL integration test may only use a literal loopback database"
+        );
+        assert_eq!(
+            parsed.path().trim_start_matches('/'),
+            "qintopia_test",
+            "PostgreSQL integration test may only use qintopia_test"
+        );
+        database_url
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn seed_claim_candidate(
+        pool: &PgPool,
+        suffix: &str,
+        label: &str,
+        conversation_id: &str,
+        requester_user_id: &str,
+        created_second: i32,
+    ) -> (Uuid, Uuid) {
+        let root_id = Uuid::new_v4();
+        let image_work_item_id = Uuid::new_v4();
+        let notification_work_item_id = Uuid::new_v4();
+        let artifact_id = Uuid::new_v4();
+        let notification_id = Uuid::new_v4();
+        let origin_ref = format!("poster-claim-{label}-{suffix}");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, parent_work_item_id, work_item_type, status, requester_agent,
+                 target_agent, capability_key, brief_summary, dedupe_key, idempotency_key)
+            VALUES
+                ($1, NULL, 'poster_production_request', 'completed', 'xiaoman', 'xiaoman',
+                 'xiaoman.notify_direct_conversation', 'claim root fixture', $4, $5),
+                ($2, $1, 'image_generation_request', 'completed', 'xiaoman', 'huabaosi',
+                 'xiaoman.notify_direct_conversation', 'claim image fixture', $6, $7),
+                ($3, $1, 'conversation_notification_request', 'queued', 'xiaoman', 'xiaoman',
+                 'xiaoman.notify_direct_conversation', 'claim notification fixture', $8, $9)
+            "#,
+        )
+        .bind(root_id)
+        .bind(image_work_item_id)
+        .bind(notification_work_item_id)
+        .bind(format!("claim-root-dedupe-{label}-{suffix}"))
+        .bind(format!("claim-root-idempotency-{label}-{suffix}"))
+        .bind(format!("claim-image-dedupe-{label}-{suffix}"))
+        .bind(format!("claim-image-idempotency-{label}-{suffix}"))
+        .bind(format!("claim-notification-dedupe-{label}-{suffix}"))
+        .bind(format!("claim-notification-idempotency-{label}-{suffix}"))
+        .execute(pool)
+        .await
+        .expect("seed poster claim work items");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.poster_return_targets
+                (origin_ref, platform, conversation_type, conversation_id,
+                 requester_user_id, source_message_id)
+            VALUES ($1, 'feishu', 'direct', $2, $3, $4)
+            "#,
+        )
+        .bind(&origin_ref)
+        .bind(conversation_id)
+        .bind(requester_user_id)
+        .bind(format!("om-{label}-{suffix}"))
+        .execute(pool)
+        .await
+        .expect("seed poster return target");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, metadata)
+            VALUES ($1, $2, 'generated_image', 'pending', 'huabaosi',
+                    'claim image fixture', 'sanitized fixture', $3, $4,
+                    '{"mime_type":"image/jpeg","byte_size":3}'::jsonb)
+            "#,
+        )
+        .bind(artifact_id)
+        .bind(image_work_item_id)
+        .bind(format!("https://media.example.test/{label}-{suffix}.jpg"))
+        .bind(format!("sha256:{}", "a".repeat(64)))
+        .execute(pool)
+        .await
+        .expect("seed poster claim artifact");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.poster_notifications
+                (id, work_item_id, source_work_item_id, workflow_root_id,
+                 generated_image_artifact_id, notification_kind, origin_ref, status,
+                 created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, 'image_ready', $6, 'pending',
+                    TIMESTAMPTZ '1900-01-01 00:00:00+00' + ($7 * interval '1 second'),
+                    now())
+            "#,
+        )
+        .bind(notification_id)
+        .bind(notification_work_item_id)
+        .bind(image_work_item_id)
+        .bind(root_id)
+        .bind(artifact_id)
+        .bind(&origin_ref)
+        .bind(created_second)
+        .execute(pool)
+        .await
+        .expect("seed poster notification claim candidate");
+
+        (notification_id, notification_work_item_id)
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_rejected_candidate_does_not_block_next_notification() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect guarded poster claim integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded poster claim integration database");
+        let suffix = Uuid::new_v4().simple().to_string();
+        let (rejected_notification_id, rejected_work_item_id) = seed_claim_candidate(
+            &pool,
+            &suffix,
+            "rejected",
+            "oc_not_allowlisted",
+            "ou_fixture",
+            0,
+        )
+        .await;
+        let (eligible_notification_id, _) =
+            seed_claim_candidate(&pool, &suffix, "eligible", "oc_fixture", "ou_fixture", 1).await;
+        let config = test_config(Url::parse(OFFICIAL_API_ROOT).unwrap());
+
+        let rejected = claim_notification(&pool, None, &config)
+            .await
+            .expect("terminalize oldest rejected candidate");
+        assert!(matches!(
+            rejected,
+            ClaimNotificationOutcome::Rejected { notification_id, .. }
+                if notification_id == rejected_notification_id
+        ));
+        let rejected_state: (String, Option<String>, String, Option<String>, i64, Value) =
+            sqlx::query_as(
+                r#"
+                SELECT notification.status, notification.last_error_code,
+                       item.status, item.last_error,
+                       count(attempt.id), event.data
+                FROM qintopia_agent_os.poster_notifications notification
+                JOIN qintopia_agent_os.work_items item ON item.id=notification.work_item_id
+                LEFT JOIN qintopia_agent_os.poster_notification_attempts attempt
+                  ON attempt.notification_id=notification.id
+                JOIN qintopia_agent_os.work_item_events event
+                  ON event.work_item_id=item.id
+                 AND event.event_type='conversation_notification_failed'
+                WHERE notification.id=$1 AND item.id=$2
+                GROUP BY notification.status, notification.last_error_code,
+                         item.status, item.last_error, event.data
+                "#,
+            )
+            .bind(rejected_notification_id)
+            .bind(rejected_work_item_id)
+            .fetch_one(&pool)
+            .await
+            .expect("load rejected notification terminal state");
+        assert_eq!(rejected_state.0, "failed");
+        assert_eq!(
+            rejected_state.1.as_deref(),
+            Some("return_target_not_allowlisted")
+        );
+        assert_eq!(rejected_state.2, "failed");
+        assert_eq!(
+            rejected_state.3.as_deref(),
+            Some("return_target_not_allowlisted")
+        );
+        assert_eq!(
+            rejected_state.4, 0,
+            "policy rejection must not create an attempt"
+        );
+        assert_eq!(rejected_state.5["external_send_executed"], false);
+        assert_eq!(rejected_state.5["group_send_authorized"], false);
+        assert_eq!(rejected_state.5["rejected_before_external_io"], true);
+
+        let claimed = claim_notification(&pool, None, &config)
+            .await
+            .expect("claim next eligible candidate");
+        let claim = match claimed {
+            ClaimNotificationOutcome::Claimed(claim) => claim,
+            other => panic!("expected next candidate to be claimed, got {other:?}"),
+        };
+        assert_eq!(claim.candidate.notification_id, eligible_notification_id);
+        let eligible_state: (String, String, i64) = sqlx::query_as(
+            r#"
+            SELECT notification.status, item.status, count(attempt.id)
+            FROM qintopia_agent_os.poster_notifications notification
+            JOIN qintopia_agent_os.work_items item ON item.id=notification.work_item_id
+            LEFT JOIN qintopia_agent_os.poster_notification_attempts attempt
+              ON attempt.notification_id=notification.id
+            WHERE notification.id=$1
+            GROUP BY notification.status, item.status
+            "#,
+        )
+        .bind(eligible_notification_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load eligible notification claim state");
+        assert_eq!(
+            eligible_state,
+            ("claimed".to_string(), "processing".to_string(), 1)
+        );
     }
 
     #[test]

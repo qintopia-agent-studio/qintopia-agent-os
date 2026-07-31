@@ -1132,7 +1132,7 @@ mod tests {
         .await
         .expect("mark review fixture notification delivered");
         sqlx::query(
-            "UPDATE qintopia_agent_os.work_items SET status='completed', completed_at=now(), updated_at=now() WHERE id=$1",
+            "UPDATE qintopia_agent_os.work_items SET status='completed', updated_at=now() WHERE id=$1",
         )
         .bind(notification_work_item_id)
         .execute(pool)
@@ -1395,7 +1395,7 @@ mod tests {
         .await
         .expect("load evidence child");
         sqlx::query(
-            "UPDATE qintopia_agent_os.work_items SET status='completed', completed_at=now(), updated_at=now() WHERE id=$1",
+            "UPDATE qintopia_agent_os.work_items SET status='completed', updated_at=now() WHERE id=$1",
         )
         .bind(evidence_id)
         .execute(&pool)
@@ -1604,7 +1604,7 @@ mod tests {
         .await
         .expect("record fake-server notification delivery");
         sqlx::query(
-            "UPDATE qintopia_agent_os.work_items SET status='completed', completed_at=now(), updated_at=now() WHERE id=$1",
+            "UPDATE qintopia_agent_os.work_items SET status='completed', updated_at=now() WHERE id=$1",
         )
         .bind(notification_work_item_id)
         .execute(&pool)
