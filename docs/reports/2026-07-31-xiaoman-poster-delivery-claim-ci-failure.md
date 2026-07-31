@@ -27,6 +27,11 @@ Replacement CI then executed the new poster-delivery regression successfully, bu
 downstream apply smoke exposed a separate query syntax error: the group-send
 authorization guard used PostgreSQL keyword `authorization` as a table alias.
 
+Follow-up PR review also found that the shared operations source policy accepted any
+non-empty `source_message_ref` for trusted Feishu direct requests. That was weaker than
+the intake contract and could persist an unredacted platform identifier in work-item
+source references.
+
 ## Root Cause
 
 The implementation mixed attempt-table completion fields into the work-item fixture and
@@ -47,6 +52,9 @@ its SQL against PostgreSQL, so the reserved alias reached the disposable databas
 - Remove `work_items.completed_at` from production and integration completion updates.
 - Rename the downstream authorization-event alias so the existing apply smoke can
   execute the direct-message group-send guard against PostgreSQL.
+- Require direct-request and direct-revision `source_message_ref` values to use the
+  canonical lowercase `sha256:` plus 64 hexadecimal characters form before persistence.
+- Add negative coverage for raw, short, uppercase, and whitespace-padded references.
 
 ## Validation
 

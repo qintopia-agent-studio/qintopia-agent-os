@@ -4414,9 +4414,16 @@ fn validate_source_policy(
             }
         }
         "feishu_direct_request" | "feishu_direct_revision_request" => {
-            if non_empty_object_text(source_refs, "source_message_ref").is_none() {
-                bail!("trusted Feishu direct source requires source_message_ref");
-            }
+            let source_message_ref = source_refs
+                .get("source_message_ref")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("trusted Feishu direct source requires source_message_ref")
+                })?;
+            validate_canonical_sha256(
+                source_message_ref,
+                "trusted Feishu direct source_message_ref",
+            )?;
         }
         _ => bail!("source_type is not allowed for operations work items"),
     }
@@ -6607,7 +6614,19 @@ mod tests {
             None,
         )
         .expect("trusted direct revision source should pass");
-        assert!(validate_source_policy("feishu_direct_request", &json!({}), None).is_err());
+        for invalid_source_refs in [
+            json!({}),
+            json!({"source_message_ref": "om_raw_message_id"}),
+            json!({"source_message_ref": "sha256:abc"}),
+            json!({"source_message_ref": format!("sha256:{}", "A".repeat(64))}),
+            json!({"source_message_ref": format!(" sha256:{} ", "a".repeat(64))}),
+        ] {
+            assert!(
+                validate_source_policy("feishu_direct_request", &invalid_source_refs, None)
+                    .is_err(),
+                "trusted direct sources must reject non-canonical source message refs"
+            );
+        }
     }
 
     fn xiaoman_promotion_candidate(
