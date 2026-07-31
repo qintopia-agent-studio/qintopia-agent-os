@@ -12,12 +12,23 @@ const SUPPORTED_WORK_ITEM_TYPE: &str = "visual_asset_request";
 const SUPPORTED_CAPABILITY: &str = "huabaosi.create_visual_asset";
 const DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL: &str = r#"
 AND (
-    COALESCE(
-        visual.payload->'generation_authorization'->>'mode',
-        ''
-    ) <> 'originating_generation_request'
+    visual.payload->'generation_authorization' IS NULL
+    OR visual.payload->'generation_authorization' = 'null'::jsonb
     OR (
-        visual.payload->'poster_fact_gate'->>'status' = 'complete'
+        visual.source_type = 'feishu_direct_request'
+        AND visual.payload->'generation_authorization'->>'mode'
+            = 'originating_generation_request'
+        AND visual.payload->'generation_authorization'->>'actor_ref'
+            ~ '^sha256:[0-9a-f]{64}$'
+        AND visual.payload->'generation_authorization'->>'source_message_ref'
+            ~ '^sha256:[0-9a-f]{64}$'
+        AND visual.source_refs->>'source_message_ref'
+            = visual.payload->'generation_authorization'->>'source_message_ref'
+        AND visual.payload->>'origin_conversation_ref'
+            ~ '^sha256:[0-9a-f]{64}$'
+        AND visual.payload->'generation_authorization'->'group_send_authorized'
+            = 'false'::jsonb
+        AND visual.payload->'poster_fact_gate'->>'status' = 'complete'
         AND visual.payload->'poster_fact_gate'->>'source' IN (
             'originating_request',
             'trusted_activity_record'
@@ -1398,6 +1409,79 @@ mod tests {
             .await
             .expect("commit malformed fact-gate no-op transaction");
 
+        let forged_work_item_id = Uuid::new_v4();
+        let eligible_work_item_id = Uuid::new_v4();
+        let forged_source_ref = format!("sha256:{}", "e".repeat(64));
+        let eligible_source_ref = format!("sha256:{}", "d".repeat(64));
+        for (id, source_type, source_ref, priority, label) in [
+            (
+                forged_work_item_id,
+                "event_signal",
+                forged_source_ref,
+                i32::MAX,
+                "forged",
+            ),
+            (
+                eligible_work_item_id,
+                "feishu_direct_request",
+                eligible_source_ref,
+                i32::MAX - 1,
+                "eligible",
+            ),
+        ] {
+            sqlx::query(
+                r#"
+                INSERT INTO qintopia_agent_os.work_items
+                    (id, work_item_type, status, requester_agent, target_agent,
+                     capability_key, brief_summary, source_type, source_refs,
+                     dedupe_key, idempotency_key, payload, review_policy, priority)
+                VALUES
+                    ($1, $2, 'queued', 'xiaoman', 'huabaosi', $3,
+                     $4, $5, $6, $7, $8, $9, 'before_external_use', $10)
+                "#,
+            )
+            .bind(id)
+            .bind(SUPPORTED_WORK_ITEM_TYPE)
+            .bind(SUPPORTED_CAPABILITY)
+            .bind(format!("{label} authorization queue eligibility"))
+            .bind(source_type)
+            .bind(json!({"source_message_ref": source_ref}))
+            .bind(format!("{label}-authorization-dedupe-{suffix}"))
+            .bind(format!("{label}-authorization-idempotency-{suffix}"))
+            .bind(json!({
+                "origin_conversation_ref": format!("sha256:{}", "c".repeat(64)),
+                "generation_authorization": {
+                    "mode": "originating_generation_request",
+                    "actor_ref": format!("sha256:{}", "b".repeat(64)),
+                    "source_message_ref": source_ref,
+                    "group_send_authorized": false
+                },
+                "poster_fact_gate": {
+                    "status": "complete",
+                    "source": "originating_request",
+                    "missing_fields": [],
+                    "conflict_fields": []
+                }
+            }))
+            .bind(priority)
+            .execute(&pool)
+            .await
+            .expect("seed authorization queue eligibility work item");
+        }
+        let mut queue_tx = pool
+            .begin()
+            .await
+            .expect("begin authorization queue claim transaction");
+        let queue_claim = claim_next_work_item(&mut queue_tx)
+            .await
+            .expect("forged authorization must not starve the eligible work item")
+            .expect("eligible authorization should remain claimable");
+        assert_eq!(queue_claim.id, eligible_work_item_id);
+        queue_tx
+            .rollback()
+            .await
+            .expect("rollback authorization queue claim transaction");
+
         let work_item_id = Uuid::new_v4();
         let existing_artifact_id = Uuid::new_v4();
         let content_hash = format!("sha256:{}", "c".repeat(64));
@@ -1581,6 +1665,14 @@ mod tests {
     #[test]
     fn direct_generation_worker_sql_fails_closed_on_fact_gate_shape() {
         for required_fragment in [
+            "generation_authorization' IS NULL",
+            "generation_authorization' = 'null'::jsonb",
+            "visual.source_type = 'feishu_direct_request'",
+            "actor_ref'\n            ~ '^sha256:[0-9a-f]{64}$'",
+            "source_message_ref'\n            ~ '^sha256:[0-9a-f]{64}$'",
+            "visual.source_refs->>'source_message_ref'",
+            "origin_conversation_ref'\n            ~ '^sha256:[0-9a-f]{64}$'",
+            "group_send_authorized'\n            = 'false'::jsonb",
             "poster_fact_gate'->>'status' = 'complete'",
             "'originating_request'",
             "'trusted_activity_record'",

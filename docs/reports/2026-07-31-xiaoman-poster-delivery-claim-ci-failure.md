@@ -37,6 +37,11 @@ The same review cycle found two fail-closed gaps: fact-gate eligibility used
 to evaluate first, and group-send eligibility recognized direct intake only through a
 metadata marker rather than also binding the trusted direct source type.
 
+The next review found that the claim-side fact gate still did not bind all of the Rust
+authorization provenance checks. A high-priority non-direct work item could therefore
+pass SQL selection, fail the Rust authorization check, roll back, and repeatedly block
+later valid work.
+
 ## Root Cause
 
 The implementation mixed attempt-table completion fields into the work-item fixture and
@@ -66,6 +71,11 @@ its SQL against PostgreSQL, so the reserved alias reached the disposable databas
   avoiding type-dependent function evaluation on malformed payloads.
 - Require a `group_send_authorized` event whenever either the source type or the intake
   metadata identifies a trusted Feishu direct conversation.
+- Let the collaboration worker claim only work with no generation authorization or a
+  complete trusted-direct authorization whose source, actor, conversation, fact gate,
+  and no-group-send provenance match the Rust validation exactly.
+- Add a PostgreSQL queue-order regression proving that a higher-priority forged
+  authorization cannot starve a lower-priority valid direct request.
 
 ## Validation
 
