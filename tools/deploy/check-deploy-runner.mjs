@@ -71,10 +71,12 @@ const requiredFiles = [
   "tools/deploy/create-deploy-request.mjs",
   "tools/deploy/collect-release-deploy-results.mjs",
   "tools/deploy/resolve-release-deploy-base.mjs",
+  "tools/deploy/validate-legacy-runner-bootstrap.mjs",
   "tools/deploy/resolve-release-restart-targets.mjs",
   "tools/deploy/resolve-restart-targets.mjs",
   "tools/deploy/test-collect-release-deploy-results.mjs",
   "tools/deploy/test-resolve-release-deploy-base.mjs",
+  "tools/deploy/test-validate-legacy-runner-bootstrap.mjs",
   "tools/deploy/test-resolve-release-restart-targets.mjs",
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
@@ -362,6 +364,8 @@ if (exists(".github/workflows/deploy-production.yml")) {
   }
   const runtimeProfileInput =
     workflow?.on?.workflow_dispatch?.inputs?.runtime_artifact_profile;
+  const legacyBootstrapInput =
+    workflow?.on?.workflow_dispatch?.inputs?.legacy_runner_bootstrap;
   if (
     runtimeProfileInput?.type !== "choice" ||
     runtimeProfileInput?.default !== "huabaosi-production" ||
@@ -370,6 +374,15 @@ if (exists(".github/workflows/deploy-production.yml")) {
   ) {
     addError(
       ".github/workflows/deploy-production.yml: primary runtime profile must be fixed to huabaosi-production; QiWe is a companion"
+    );
+  }
+  if (
+    legacyBootstrapInput?.type !== "boolean" ||
+    legacyBootstrapInput?.default !== false ||
+    legacyBootstrapInput?.required !== true
+  ) {
+    addError(
+      ".github/workflows/deploy-production.yml: legacy_runner_bootstrap must be an explicit default-false boolean"
     );
   }
   const job = workflow?.jobs?.["request-deploy"];
@@ -513,6 +526,12 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "gh api --paginate --slurp",
     "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100",
     "collect-release-deploy-results.mjs",
+    "validate-legacy-runner-bootstrap.mjs",
+    "legacy_runner_bootstrap",
+    'huabaosi_feature_contract="current"',
+    'huabaosi_feature_contract="legacy-runner-bootstrap"',
+    "QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT",
+    "QINTOPIA_LEGACY_RUNNER_BOOTSTRAP_RUNTIME_SHA",
     "deploy-results.json",
     "resolve-release-restart-targets.mjs",
     "--deploy-results-file",
@@ -848,6 +867,10 @@ for (const fragment of [
   "chmod 0444 qintopia-message-sidecar.tar.gz",
   "chmod 0444 qintopia-agent-os-deploy-bundle.tar.gz",
   "chmod 0755 qintopia-message-sidecar",
+  "QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT",
+  "QINTOPIA_LEGACY_RUNNER_BOOTSTRAP_RUNTIME_SHA",
+  "legacy-runner-bootstrap",
+  "legacy runner bootstrap requires an exact deployed runtime SHA binding",
 ]) {
   if (!fetchCosArtifactText.includes(fragment)) {
     addError(`deploy/sidecar/scripts/fetch-cos-artifact.sh: missing ${fragment}`);
@@ -1207,6 +1230,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-resolve-release-deploy-base.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-validate-legacy-runner-bootstrap.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-poller.mjs"], {

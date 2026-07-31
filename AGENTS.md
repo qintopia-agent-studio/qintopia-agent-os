@@ -1104,6 +1104,13 @@ Use `rg` and `rg --files` for search.
   previous runner. Use a reviewed follow-up `workflow_dispatch` request for the same
   published SHA to activate the new runner behavior; do not bootstrap it with server
   edits.
+- If the previous runner rejects the new Huabaosi artifact feature contract before
+  promotion, the default-disabled `legacy_runner_bootstrap` workflow mode is the only
+  allowed bridge. It must bind the legacy runtime to the latest trusted successful
+  deploy result, accept only the exact legacy two-feature Huabaosi artifact, use a
+  distinct transition release SHA, and restrict scope/restarts to `deploy-bundle` and
+  `qintopia-system-services`. Normal fetches must continue to require the current
+  three-feature artifact. Run a dry-run before any live bootstrap.
 - As of `v0.2.30`, an existing release first assembled by `v0.2.29` may have a
   `manifest.json` that omits `runtime_artifact_profile` even though the immutable
   sidecar artifact manifest already records the reviewed profile. The same-SHA repair

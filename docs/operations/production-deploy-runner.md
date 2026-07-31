@@ -226,6 +226,15 @@ The first release that introduces this runner behavior needs one follow-up appro
 request is processed by the new runner and installs the units. Do not bootstrap this by
 editing `/etc/systemd/system` or release files on the server.
 
+If the prior runner rejects the new primary artifact contract before the Release can
+become `current`, use the explicit default-disabled `legacy_runner_bootstrap` workflow
+mode. It must bind the legacy runtime and commit to the latest trusted successful deploy
+result, use the target Release's reviewed deploy bundle, select a distinct ancestor
+commit as the transition release SHA, and allow only `deploy-bundle` plus
+`qintopia-system-services`. Validate with `dry_run=true` before the separately approved
+live bootstrap. Then deploy the target Release normally; do not reuse the transition
+release for the new runtime or broaden its restart set.
+
 Unknown production-adjacent paths fail closed. If a PR adds a new Agent, skill,
 workflow, runtime, MCP adapter, or deploy path without a restart rule, CI must fail
 until the package contract and restart target rule are added.

@@ -29,6 +29,10 @@ Optional environment:
   QINTOPIA_SIDECAR_ARTIFACT_PROFILE
                             huabaosi-production, qiwe-production, or combined-staging.
                             Defaults to huabaosi-production.
+  QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT
+                            current or legacy-runner-bootstrap. Defaults to current.
+  QINTOPIA_LEGACY_RUNNER_BOOTSTRAP_RUNTIME_SHA
+                            Exact deployed runtime SHA required by legacy bootstrap.
   ARTIFACT_NAME              Defaults to the reviewed artifact name for the chosen profile.
   ARTIFACT_TARGET            Defaults to linux-x86_64-gnu.
   QINTOPIA_COS_ARTIFACT_TYPE Artifact type: sidecar or deploy-bundle. Defaults to sidecar.
@@ -43,6 +47,7 @@ sha=""
 output_dir=""
 artifact_type="${QINTOPIA_COS_ARTIFACT_TYPE:-sidecar}"
 artifact_profile="${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-huabaosi-production}"
+huabaosi_feature_contract="${QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT:-current}"
 expected_cargo_features=""
 
 while [[ $# -gt 0 ]]; do
@@ -188,7 +193,23 @@ case "$artifact_type" in
     case "$artifact_profile" in
       huabaosi-production)
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
-        expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","xiaoman-feishu-poster-adapter"]'
+        case "$huabaosi_feature_contract" in
+          current)
+            expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","xiaoman-feishu-poster-adapter"]'
+            ;;
+          legacy-runner-bootstrap)
+            legacy_runtime_sha="${QINTOPIA_LEGACY_RUNNER_BOOTSTRAP_RUNTIME_SHA:-}"
+            if [[ ! "$legacy_runtime_sha" =~ ^[0-9a-f]{40}$ || "$sha" != "$legacy_runtime_sha" ]]; then
+              echo "legacy runner bootstrap requires an exact deployed runtime SHA binding" >&2
+              exit 2
+            fi
+            expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter"]'
+            ;;
+          *)
+            echo "QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT must be current or legacy-runner-bootstrap" >&2
+            exit 2
+            ;;
+        esac
         ;;
       qiwe-production)
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu}"
