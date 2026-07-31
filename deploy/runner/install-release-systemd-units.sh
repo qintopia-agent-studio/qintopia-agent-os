@@ -115,6 +115,13 @@ unit_files=(
   qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer
   qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service
   qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer
+  qintopia-agentos-operations-intake.service
+  qintopia-agentos-xiaoman-poster-notification-starter.service
+  qintopia-agentos-xiaoman-poster-notification-starter.timer
+  qintopia-agentos-xiaoman-feishu-poster-preflight.service
+  qintopia-agentos-xiaoman-feishu-poster-delivery.service
+  qintopia-agentos-xiaoman-feishu-poster-delivery.timer
+  qintopia-agentos-xiaoman-poster-review-callback.service
   qintopia-agentos-huabaosi-image-generation-preflight.service
   qintopia-agentos-huabaosi-image-generation-worker.service
   qintopia-agentos-huabaosi-image-generation-worker.timer

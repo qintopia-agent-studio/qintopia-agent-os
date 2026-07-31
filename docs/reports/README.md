@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-31 Xiaoman poster systemd install gap](2026-07-31-xiaoman-poster-systemd-install-gap.md)
 - [2026-07-31 v0.2.59 legacy deploy-runner bootstrap](2026-07-31-v0259-legacy-runner-bootstrap.md)
 - [2026-07-31 Xiaoman poster delivery claim CI failure](2026-07-31-xiaoman-poster-delivery-claim-ci-failure.md)
 - [2026-07-30 Xiaoman preflight QiWe companion routing](2026-07-30-xiaoman-preflight-qiwe-companion-routing.md)
