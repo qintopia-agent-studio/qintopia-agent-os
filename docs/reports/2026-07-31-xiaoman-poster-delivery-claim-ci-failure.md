@@ -46,6 +46,11 @@ The first replacement run for that regression failed before exercising the claim
 the new fixture used integer priorities even though `work_items.priority` accepts only
 the reviewed `low`, `normal`, `high`, and `urgent` values.
 
+The following review found that the direct-conversation group-send guard still treated
+an unbound `group_send_authorized` event on the poster workflow root as sufficient. No
+reviewed writer exists for that event, and reusing a poster-generation root would blur
+the required boundary between generation authorization and a later publish instruction.
+
 ## Root Cause
 
 The implementation mixed attempt-table completion fields into the work-item fixture and
@@ -82,6 +87,11 @@ its SQL against PostgreSQL, so the reserved alias reached the disposable databas
   authorization cannot starve a lower-priority valid direct request.
 - Keep that fixture inside the production schema contract by ordering the forged and
   valid rows with `urgent` and `high`, respectively.
+- Exclude direct and direct-revision poster roots unconditionally from the automatic
+  group-message starter. A later explicit publish instruction must create a separate,
+  target-bound group-message request through the existing operations path.
+- Exercise the PostgreSQL smoke with a forged `group_send_authorized` event and prove it
+  still creates no group-message child.
 
 ## Validation
 

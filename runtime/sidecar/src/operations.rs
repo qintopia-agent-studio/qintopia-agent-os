@@ -60,25 +60,15 @@ const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const GENERATED_IMAGE_WORK_ITEM_TYPE: &str = "image_generation_request";
 const GENERATED_IMAGE_WORKER_ID: &str = "huabaosi-image-generation-worker";
 const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
-const DIRECT_CONVERSATION_GROUP_SEND_AUTHORIZATION_SQL: &str = r#"
-AND (
-    (
-        parent.source_type NOT IN (
-            'feishu_direct_request',
-            'feishu_direct_revision_request'
-        )
-        AND COALESCE(
-            parent.metadata #>> '{workflow_metadata,intake_channel}',
-            ''
-        ) <> 'xiaoman_feishu_direct'
-    )
-    OR EXISTS (
-        SELECT 1
-        FROM qintopia_agent_os.work_item_events authorization_event
-        WHERE authorization_event.work_item_id = parent.id
-          AND authorization_event.event_type = 'group_send_authorized'
-    )
+const DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL: &str = r#"
+AND parent.source_type NOT IN (
+    'feishu_direct_request',
+    'feishu_direct_revision_request'
 )
+AND COALESCE(
+    parent.metadata #>> '{workflow_metadata,intake_channel}',
+    ''
+) <> 'xiaoman_feishu_direct'
 "#;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1521,7 +1511,7 @@ async fn load_xiaoman_activity_send_request_candidates(
               'activity_recap_request'
           )
           AND parent.target_agent = 'xiaoman'
-          {DIRECT_CONVERSATION_GROUP_SEND_AUTHORIZATION_SQL}
+          {DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL}
           AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1 OR image_request.id = $1)
           AND NOT EXISTS (
               SELECT 1
@@ -7163,10 +7153,10 @@ mod tests {
             "'feishu_direct_request'",
             "'feishu_direct_revision_request'",
             "'xiaoman_feishu_direct'",
-            "authorization_event.event_type = 'group_send_authorized'",
         ] {
-            assert!(DIRECT_CONVERSATION_GROUP_SEND_AUTHORIZATION_SQL.contains(required_fragment));
+            assert!(DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL.contains(required_fragment));
         }
+        assert!(!DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL.contains("group_send_authorized"));
         let candidate = xiaoman_send_candidate();
         let request = xiaoman_activity_send_request(
             &candidate,

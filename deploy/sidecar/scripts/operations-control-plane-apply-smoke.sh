@@ -989,6 +989,26 @@ SET
   updated_at = now()
 WHERE id = '${xiaoman_worker_parent_id}'::uuid;" >/dev/null
 
+xiaoman_forged_group_authorization_event_id="$(
+  psql_value "
+INSERT INTO qintopia_agent_os.work_item_events
+  (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+VALUES
+  (
+    '${xiaoman_worker_parent_id}'::uuid,
+    '${xiaoman_generated_image_id}'::uuid,
+    'group_send_authorized',
+    'human',
+    'sha256:' || repeat('a', 64),
+    'test-only event must not bypass direct-conversation exclusion',
+    jsonb_build_object(
+      'approved_artifact_id', '${xiaoman_generated_image_id}',
+      'target_group_id', 'test-only-group'
+    )
+  )
+RETURNING id;"
+)"
+
 xiaoman_direct_send_without_authorization="$(run_json xiaoman_direct_send_without_authorization run-xiaoman-activity-send-request-starter-worker --check-only --work-item-id "$xiaoman_worker_parent_id")"
 assert_json "$xiaoman_direct_send_without_authorization" "data['success'] is True"
 assert_json "$xiaoman_direct_send_without_authorization" "data['action_status'] == 'no_eligible_approved_generated_images'"
@@ -1005,6 +1025,8 @@ SET
   source_refs = jsonb_build_object('event_signal_id', '${xiaoman_worker_signal_id}'),
   updated_at = now()
 WHERE id = '${xiaoman_worker_parent_id}'::uuid;" >/dev/null
+
+psql_value "DELETE FROM qintopia_agent_os.work_item_events WHERE id = '${xiaoman_forged_group_authorization_event_id}'::uuid;" >/dev/null
 
 xiaoman_send_preview="$(run_json xiaoman_send_preview run-xiaoman-activity-send-request-starter-worker --check-only --work-item-id "$xiaoman_worker_parent_id")"
 assert_json "$xiaoman_send_preview" "data['success'] is True"
