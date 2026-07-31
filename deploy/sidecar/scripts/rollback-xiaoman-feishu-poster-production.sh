@@ -9,6 +9,11 @@ fi
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 SYSTEMCTL="/usr/bin/systemctl"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
+HERMES_ENV_FILE="/home/ubuntu/.hermes/profiles/xiaoman/.env"
+RUNUSER_BIN="/usr/sbin/runuser"
+PYTHON_BIN="/usr/bin/python3"
+HERMES_SYSTEMD_USER="ubuntu"
+HERMES_SERVICE="hermes-gateway-xiaoman.service"
 DELIVERY_SERVICE="qintopia-agentos-xiaoman-feishu-poster-delivery.service"
 DELIVERY_TIMER="qintopia-agentos-xiaoman-feishu-poster-delivery.timer"
 STARTER_TIMER="qintopia-agentos-xiaoman-poster-notification-starter.timer"
@@ -27,33 +32,68 @@ fi
 "$SYSTEMCTL" disable --now "$CALLBACK_SERVICE"
 "$SYSTEMCTL" disable --now "$INTAKE_SERVICE"
 
-if [[ ! -f "$ENV_FILE" ]]; then
+if [[ ! -x "$RUNUSER_BIN" || ! -x "$PYTHON_BIN" || ! -f "$ENV_FILE" || ! -f "$HERMES_ENV_FILE" ]]; then
   echo "Xiaoman poster services stopped, but persistent disablement cannot be confirmed" >&2
   exit 1
 fi
 
-values=()
-assignment_count=0
-invalid_assignment=0
-while IFS= read -r line; do
-  if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED[[:space:]]*= ]]; then
-    assignment_count=$((assignment_count + 1))
-    if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED[[:space:]]*=[[:space:]]*([^#[:space:]]+)[[:space:]]*(#.*)?$ ]]; then
-      value="${BASH_REMATCH[2]}"
-      value="${value%\"}"
-      value="${value#\"}"
-      value="${value%\'}"
-      value="${value#\'}"
-      values+=("$value")
-    else
-      invalid_assignment=1
-    fi
-  fi
-done <"$ENV_FILE"
+if ! "$PYTHON_BIN" - "$ENV_FILE" "$HERMES_ENV_FILE" <<'PY'
+import os
+import re
+import shlex
+import stat
+import sys
 
-if [[ "$invalid_assignment" == "1" || "$assignment_count" -ne 1 || "${#values[@]}" -ne 1 || "${values[0]}" != "0" ]]; then
+
+def disabled(path, name):
+    metadata = os.lstat(path)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise SystemExit(1)
+    assignment = re.compile(r"^(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.*)$")
+    values = []
+    with open(path, encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.rstrip("\r\n")
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            match = assignment.fullmatch(line)
+            if not match:
+                if stripped.startswith(name):
+                    raise SystemExit(1)
+                continue
+            key, raw_value = match.groups()
+            if key != name:
+                continue
+            parts = shlex.split(raw_value, comments=True, posix=True)
+            if len(parts) != 1:
+                raise SystemExit(1)
+            values.append(parts[0])
+    if values != ["0"]:
+        raise SystemExit(1)
+
+
+disabled(sys.argv[1], "QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED")
+disabled(sys.argv[2], "QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE")
+PY
+then
   echo "Xiaoman poster services stopped; persistent enablement must be exactly 0" >&2
   exit 1
 fi
+
+env -i \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  HOME="/home/${HERMES_SYSTEMD_USER}" \
+  USER="$HERMES_SYSTEMD_USER" \
+  LOGNAME="$HERMES_SYSTEMD_USER" \
+  "$RUNUSER_BIN" -l "$HERMES_SYSTEMD_USER" -c \
+  "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart ${HERMES_SERVICE}"
+env -i \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  HOME="/home/${HERMES_SYSTEMD_USER}" \
+  USER="$HERMES_SYSTEMD_USER" \
+  LOGNAME="$HERMES_SYSTEMD_USER" \
+  "$RUNUSER_BIN" -l "$HERMES_SYSTEMD_USER" -c \
+  "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active --quiet ${HERMES_SERVICE}"
 
 echo "Xiaoman Feishu poster production services disabled; durable workflow state retained"

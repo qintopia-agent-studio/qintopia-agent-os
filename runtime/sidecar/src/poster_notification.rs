@@ -33,12 +33,14 @@ use crate::{
 
 const MAX_CALLBACK_BYTES: u64 = 64 * 1024;
 const CALLBACK_KEY_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY";
+const POSTER_REVIEW_CALLBACK_KIND: &str = "xiaoman_poster_review";
 const MAX_CALLBACK_CLOCK_SKEW_SECONDS: i64 = 300;
 #[cfg(feature = "xiaoman-feishu-poster-adapter")]
 const CALLBACK_IO_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(2);
 const REVIEW_CALLBACK_TARGET_QUERY: &str = r#"
     SELECT notification.generated_image_artifact_id,
            notification.status,
+           target.conversation_id,
            target.requester_user_id,
            artifact.review_status
     FROM qintopia_agent_os.poster_notifications notification
@@ -82,6 +84,7 @@ struct ReviewCallback {
     callback_event_id: String,
     notification_id: Uuid,
     artifact_id: Uuid,
+    conversation_id: String,
     actor_user_id: String,
     action: String,
 }
@@ -99,6 +102,7 @@ struct ReviewCallbackReport {
     success: bool,
     action_status: String,
     decision: String,
+    notification_id: Uuid,
     artifact_id: Uuid,
     deduped: bool,
     group_send_authorized: bool,
@@ -588,6 +592,15 @@ fn validate_callback(callback: &ReviewCallback) -> Result<()> {
     {
         bail!("callback actor is invalid");
     }
+    if callback.conversation_id.is_empty()
+        || callback.conversation_id.len() > 200
+        || !callback
+            .conversation_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b':' | b'.'))
+    {
+        bail!("callback conversation is invalid");
+    }
     if !matches!(callback.action.as_str(), "approve" | "modify" | "abandon") {
         bail!("callback action is invalid");
     }
@@ -652,6 +665,13 @@ fn parse_feishu_card_callback(body: &[u8]) -> Result<ReviewCallback> {
     {
         bail!("Feishu card callback schema is invalid");
     }
+    if action_value
+        .get("callback_kind")
+        .and_then(serde_json::Value::as_str)
+        != Some(POSTER_REVIEW_CALLBACK_KIND)
+    {
+        bail!("Feishu card callback kind is invalid");
+    }
     let callback_event_id = value
         .pointer("/header/event_id")
         .or_else(|| event.get("event_id"))
@@ -661,6 +681,10 @@ fn parse_feishu_card_callback(body: &[u8]) -> Result<ReviewCallback> {
         .pointer("/operator/open_id")
         .and_then(serde_json::Value::as_str)
         .context("Feishu card callback actor is missing")?;
+    let conversation_id = event
+        .pointer("/context/open_chat_id")
+        .and_then(serde_json::Value::as_str)
+        .context("Feishu card callback conversation is missing")?;
     let notification_id = action_value
         .get("notification_id")
         .and_then(serde_json::Value::as_str)
@@ -679,6 +703,7 @@ fn parse_feishu_card_callback(body: &[u8]) -> Result<ReviewCallback> {
         callback_event_id: callback_event_id.to_string(),
         notification_id,
         artifact_id,
+        conversation_id: conversation_id.to_string(),
         actor_user_id: actor_user_id.to_string(),
         action: action.to_string(),
     })
@@ -719,6 +744,24 @@ async fn process_review_callback(
     callback: ReviewCallback,
     apply: bool,
 ) -> Result<ReviewCallbackReport> {
+    let row = sqlx::query(REVIEW_CALLBACK_TARGET_QUERY)
+        .bind(callback.notification_id)
+        .fetch_optional(pool)
+        .await
+        .context("load poster review callback target")?
+        .context("poster notification is not found")?;
+    let artifact_id: Uuid = row.try_get("generated_image_artifact_id")?;
+    let notification_status: String = row.try_get("status")?;
+    let conversation_id: String = row.try_get("conversation_id")?;
+    let requester_user_id: String = row.try_get("requester_user_id")?;
+    let review_status: String = row.try_get("review_status")?;
+    if artifact_id != callback.artifact_id
+        || conversation_id != callback.conversation_id
+        || requester_user_id != callback.actor_user_id
+        || notification_status != "delivered"
+    {
+        bail!("poster review callback does not match the delivered origin notification");
+    }
     let existing = sqlx::query(
         r#"
         SELECT decision, notification_id, artifact_id, actor_ref
@@ -751,22 +794,6 @@ async fn process_review_callback(
             true,
             "idempotent_existing",
         ));
-    }
-    let row = sqlx::query(REVIEW_CALLBACK_TARGET_QUERY)
-        .bind(callback.notification_id)
-        .fetch_optional(pool)
-        .await
-        .context("load poster review callback target")?
-        .context("poster notification is not found")?;
-    let artifact_id: Uuid = row.try_get("generated_image_artifact_id")?;
-    let notification_status: String = row.try_get("status")?;
-    let requester_user_id: String = row.try_get("requester_user_id")?;
-    let review_status: String = row.try_get("review_status")?;
-    if artifact_id != callback.artifact_id
-        || requester_user_id != callback.actor_user_id
-        || notification_status != "delivered"
-    {
-        bail!("poster review callback does not match the delivered origin notification");
     }
     let desired_status = decision;
     if !apply {
@@ -821,14 +848,20 @@ async fn process_review_callback(
 }
 
 #[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) struct ReviewCallbackIntegrationInput<'a> {
+    pub(crate) callback_event_id: &'a str,
+    pub(crate) notification_id: Uuid,
+    pub(crate) artifact_id: Uuid,
+    pub(crate) conversation_id: &'a str,
+    pub(crate) actor_user_id: &'a str,
+    pub(crate) action: &'a str,
+}
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
 pub(crate) async fn process_review_callback_for_postgres_integration(
     pool: &PgPool,
     database_url: &str,
-    callback_event_id: &str,
-    notification_id: Uuid,
-    artifact_id: Uuid,
-    actor_user_id: &str,
-    action: &str,
+    input: ReviewCallbackIntegrationInput<'_>,
 ) -> Result<bool> {
     use clap::Parser;
 
@@ -837,7 +870,7 @@ pub(crate) async fn process_review_callback_for_postgres_integration(
         "--database-url",
         database_url,
         "--operations-allowed-reviewer-ids",
-        actor_user_id,
+        input.actor_user_id,
         "check",
     ])
     .context("build poster integration callback policy")?;
@@ -845,11 +878,12 @@ pub(crate) async fn process_review_callback_for_postgres_integration(
         pool,
         &cli,
         ReviewCallback {
-            callback_event_id: callback_event_id.to_string(),
-            notification_id,
-            artifact_id,
-            actor_user_id: actor_user_id.to_string(),
-            action: action.to_string(),
+            callback_event_id: input.callback_event_id.to_string(),
+            notification_id: input.notification_id,
+            artifact_id: input.artifact_id,
+            conversation_id: input.conversation_id.to_string(),
+            actor_user_id: input.actor_user_id.to_string(),
+            action: input.action.to_string(),
         },
         true,
     )
@@ -867,6 +901,7 @@ fn callback_report(
         success: true,
         action_status: action_status.to_string(),
         decision: decision.to_string(),
+        notification_id: callback.notification_id,
         artifact_id: callback.artifact_id,
         deduped,
         group_send_authorized: false,
@@ -997,8 +1032,10 @@ mod tests {
             "header": {"event_id": "evt_fixture"},
             "event": {
                 "operator": {"open_id": "ou_fixture"},
+                "context": {"open_chat_id": "oc_fixture"},
                 "action": {"value": {
                     "schema_version": 1,
+                    "callback_kind": POSTER_REVIEW_CALLBACK_KIND,
                     "notification_id": notification_id,
                     "artifact_id": artifact_id,
                     "action": "approve"
@@ -1022,6 +1059,43 @@ mod tests {
         };
         let callback = verify_and_parse_callback(&envelope, key, 1_785_456_000).unwrap();
         assert_eq!(callback.notification_id, notification_id);
+        assert_eq!(callback.conversation_id, "oc_fixture");
         assert!(verify_and_parse_callback(&envelope, "wrong-key", 1_785_456_000).is_err());
+    }
+
+    #[test]
+    fn callback_envelope_matches_xiaoman_plugin_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../skills/qintopia-tools/variants/xiaoman/tests/fixtures/poster-review-callback-envelope.json"
+        ))
+        .unwrap();
+        let envelope: SignedCallbackEnvelope =
+            serde_json::from_value(fixture["envelope"].clone()).unwrap();
+        let key = fixture["callback_key"].as_str().unwrap();
+        let now = fixture["now"].as_i64().unwrap();
+        let expected = &fixture["expected"];
+        let callback = verify_and_parse_callback(&envelope, key, now).unwrap();
+
+        assert_eq!(
+            callback.callback_event_id,
+            expected["callback_event_id"].as_str().unwrap()
+        );
+        assert_eq!(
+            callback.conversation_id,
+            expected["conversation_id"].as_str().unwrap()
+        );
+        assert_eq!(
+            callback.actor_user_id,
+            expected["actor_user_id"].as_str().unwrap()
+        );
+        assert_eq!(
+            callback.notification_id,
+            Uuid::parse_str(expected["notification_id"].as_str().unwrap()).unwrap()
+        );
+        assert_eq!(
+            callback.artifact_id,
+            Uuid::parse_str(expected["artifact_id"].as_str().unwrap()).unwrap()
+        );
+        assert_eq!(callback.action, expected["action"].as_str().unwrap());
     }
 }

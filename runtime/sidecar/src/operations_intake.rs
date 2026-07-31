@@ -993,6 +993,8 @@ fn path_is_socket(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "postgres-integration-tests")]
+    use crate::poster_notification::ReviewCallbackIntegrationInput;
 
     #[cfg(feature = "postgres-integration-tests")]
     fn postgres_integration_database_url() -> String {
@@ -1615,11 +1617,14 @@ mod tests {
         let forged = crate::poster_notification::process_review_callback_for_postgres_integration(
             &pool,
             &database_url,
-            &format!("evt_wrong_{suffix}"),
-            notification_id,
-            artifact_id,
-            &wrong_actor,
-            "approve",
+            ReviewCallbackIntegrationInput {
+                callback_event_id: &format!("evt_wrong_{suffix}"),
+                notification_id,
+                artifact_id,
+                conversation_id: &session.conversation_id,
+                actor_user_id: &wrong_actor,
+                action: "approve",
+            },
         )
         .await;
         assert!(forged.is_err(), "wrong user callback must be rejected");
@@ -1629,24 +1634,48 @@ mod tests {
             crate::poster_notification::process_review_callback_for_postgres_integration(
                 &pool,
                 &database_url,
-                &callback_event_id,
-                notification_id,
-                artifact_id,
-                &session.requester_user_id,
-                "approve",
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &callback_event_id,
+                    notification_id,
+                    artifact_id,
+                    conversation_id: &session.conversation_id,
+                    actor_user_id: &session.requester_user_id,
+                    action: "approve",
+                },
             )
             .await
             .expect("approve delivered poster from originating user");
         assert!(!first_review);
+        let wrong_chat_after_review =
+            crate::poster_notification::process_review_callback_for_postgres_integration(
+                &pool,
+                &database_url,
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &callback_event_id,
+                    notification_id,
+                    artifact_id,
+                    conversation_id: &format!("oc_wrong_{suffix}"),
+                    actor_user_id: &session.requester_user_id,
+                    action: "approve",
+                },
+            )
+            .await;
+        assert!(
+            wrong_chat_after_review.is_err(),
+            "an idempotent callback must still match the originating conversation"
+        );
         let duplicate_review =
             crate::poster_notification::process_review_callback_for_postgres_integration(
                 &pool,
                 &database_url,
-                &callback_event_id,
-                notification_id,
-                artifact_id,
-                &session.requester_user_id,
-                "approve",
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &callback_event_id,
+                    notification_id,
+                    artifact_id,
+                    conversation_id: &session.conversation_id,
+                    actor_user_id: &session.requester_user_id,
+                    action: "approve",
+                },
             )
             .await
             .expect("dedupe repeated poster review callback");
@@ -1655,11 +1684,14 @@ mod tests {
             crate::poster_notification::process_review_callback_for_postgres_integration(
                 &pool,
                 &database_url,
-                &format!("evt_review_retry_{suffix}"),
-                notification_id,
-                artifact_id,
-                &session.requester_user_id,
-                "approve",
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &format!("evt_review_retry_{suffix}"),
+                    notification_id,
+                    artifact_id,
+                    conversation_id: &session.conversation_id,
+                    actor_user_id: &session.requester_user_id,
+                    action: "approve",
+                },
             )
             .await
             .expect("dedupe a new Feishu event id for the same review card decision");
@@ -1668,11 +1700,14 @@ mod tests {
             crate::poster_notification::process_review_callback_for_postgres_integration(
                 &pool,
                 &database_url,
-                &format!("evt_review_changed_{suffix}"),
-                notification_id,
-                artifact_id,
-                &session.requester_user_id,
-                "modify",
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &format!("evt_review_changed_{suffix}"),
+                    notification_id,
+                    artifact_id,
+                    conversation_id: &session.conversation_id,
+                    actor_user_id: &session.requester_user_id,
+                    action: "modify",
+                },
             )
             .await;
         assert!(
@@ -1682,11 +1717,14 @@ mod tests {
         let rebound = crate::poster_notification::process_review_callback_for_postgres_integration(
             &pool,
             &database_url,
-            &callback_event_id,
-            notification_id,
-            artifact_id,
-            &wrong_actor,
-            "approve",
+            ReviewCallbackIntegrationInput {
+                callback_event_id: &callback_event_id,
+                notification_id,
+                artifact_id,
+                conversation_id: &session.conversation_id,
+                actor_user_id: &wrong_actor,
+                action: "approve",
+            },
         )
         .await;
         assert!(
@@ -1722,11 +1760,14 @@ mod tests {
             crate::poster_notification::process_review_callback_for_postgres_integration(
                 &pool,
                 &database_url,
-                &modify_event_id,
-                modify_notification_id,
-                modify_artifact_id,
-                &session.requester_user_id,
-                "modify",
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &modify_event_id,
+                    notification_id: modify_notification_id,
+                    artifact_id: modify_artifact_id,
+                    conversation_id: &session.conversation_id,
+                    actor_user_id: &session.requester_user_id,
+                    action: "modify",
+                },
             )
             .await
             .expect("request poster changes from originating user");
@@ -1828,11 +1869,14 @@ mod tests {
             crate::poster_notification::process_review_callback_for_postgres_integration(
                 &pool,
                 &database_url,
-                &abandon_event_id,
-                abandon_notification_id,
-                abandon_artifact_id,
-                &session.requester_user_id,
-                "abandon",
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &abandon_event_id,
+                    notification_id: abandon_notification_id,
+                    artifact_id: abandon_artifact_id,
+                    conversation_id: &session.conversation_id,
+                    actor_user_id: &session.requester_user_id,
+                    action: "abandon",
+                },
             )
             .await
             .expect("abandon poster from originating user");

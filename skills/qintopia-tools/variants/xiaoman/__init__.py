@@ -8,6 +8,7 @@ or update only complaint_intake cards and leave dispatch with 大总管/default.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import importlib
 import importlib.util
@@ -16,6 +17,7 @@ import logging
 import os
 import re
 import selectors
+import secrets
 import shlex
 import socket
 import stat
@@ -23,6 +25,7 @@ import sys
 import subprocess
 import textwrap
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
 from threading import Lock
@@ -62,6 +65,20 @@ XIAOMAN_POSTER_STATUS_TOOL = "qintopia_xiaoman_poster_workflow_status"
 DEFAULT_OPERATIONS_INTAKE_SOCKET = "/run/qintopia-agentos/operations-intake.sock"
 OPERATIONS_INTAKE_TIMEOUT_SECONDS = 4.0
 OPERATIONS_INTAKE_MAX_BYTES = 64 * 1024
+XIAOMAN_POSTER_REVIEW_CALLBACK_KIND = "xiaoman_poster_review"
+XIAOMAN_POSTER_REVIEW_HOOK_ENABLE_ENV = "QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"
+XIAOMAN_POSTER_REVIEW_CALLBACK_KEY_ENV = "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY"
+XIAOMAN_POSTER_REVIEW_CALLBACK_SOCKET = (
+    "/run/qintopia-agentos/poster-review-callback.sock"
+)
+XIAOMAN_POSTER_REVIEW_CALLBACK_TIMEOUT_SECONDS = 2.0
+XIAOMAN_POSTER_REVIEW_CALLBACK_MAX_BYTES = 64 * 1024
+XIAOMAN_POSTER_REVIEW_ACTIONS = {"approve", "modify", "abandon"}
+XIAOMAN_POSTER_REVIEW_DECISIONS = {
+    "approve": "approved",
+    "modify": "changes_requested",
+    "abandon": "rejected",
+}
 QINTOPIA_TENANT = "qintopia"
 COMPLAINT_TASK_TYPE = "complaint_intake"
 COMPLAINT_OWNER_PROFILE = "default"
@@ -166,6 +183,53 @@ QWEATHER_FORBIDDEN_TOOL_PATTERNS = {
     "监测站",
 }
 QWEATHER_IMPORT_LOCK = Lock()
+LOGGER = logging.getLogger(__name__)
+_FEISHU_RUNTIME_ID_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])o[a-z]_[A-Za-z0-9_-]{6,}")
+
+
+class _PosterReviewLogPrivacyFilter(logging.Filter):
+    _marker = "qintopia_xiaoman_poster_review_privacy_v1"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = str(record.msg)
+        args = record.args if isinstance(record.args, tuple) else ()
+        if (
+            message
+            == "[Feishu] Routing card action %r from %s in %s as synthetic command"
+            and len(args) == 3
+        ):
+            record.args = (args[0], "[feishu-actor-redacted]", "[feishu-chat-redacted]")
+            return True
+        if message == "[Feishu] Dropping duplicate card action token: %s":
+            record.args = ("[feishu-card-token-redacted]",)
+            return True
+        if (
+            message == "pre_gateway_dispatch skip: reason=%s platform=%s chat=%s"
+            and len(args) == 3
+        ):
+            record.args = (args[0], args[1], "[feishu-chat-redacted]")
+            return True
+        try:
+            rendered = record.getMessage()
+        except (TypeError, ValueError):
+            return True
+        redacted = _FEISHU_RUNTIME_ID_PATTERN.sub("[feishu-id-redacted]", rendered)
+        if redacted != rendered:
+            record.msg = redacted
+            record.args = ()
+        return True
+
+
+def _install_poster_review_log_privacy_filter() -> None:
+    for logger_name in ("gateway.platforms.feishu", "gateway.run"):
+        target = logging.getLogger(logger_name)
+        if any(
+            getattr(existing, "_marker", "")
+            == _PosterReviewLogPrivacyFilter._marker
+            for existing in target.filters
+        ):
+            continue
+        target.addFilter(_PosterReviewLogPrivacyFilter())
 
 
 _OPERATIONS_INTAKE_PLUGIN = None
@@ -5009,6 +5073,207 @@ def _poster_intake_call(payload: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
+def _poster_review_attr(value: Any, name: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(name)
+    return getattr(value, name, None)
+
+
+def _poster_review_identifier(value: Any, *, max_len: int) -> str:
+    normalized = str(value or "").strip()
+    if (
+        not normalized
+        or len(normalized) > max_len
+        or not all(character.isalnum() or character in "_-." for character in normalized)
+    ):
+        return ""
+    return normalized
+
+
+def _poster_review_uuid(value: Any) -> str:
+    try:
+        parsed = uuid.UUID(str(value or ""))
+    except (ValueError, AttributeError):
+        return ""
+    return str(parsed)
+
+
+def _poster_review_callback_payload(event: Any) -> tuple[bool, dict[str, Any] | None]:
+    raw_message = _poster_review_attr(event, "raw_message")
+    raw_event = _poster_review_attr(raw_message, "event")
+    action = _poster_review_attr(raw_event, "action")
+    action_value = _poster_review_attr(action, "value")
+    if not isinstance(action_value, dict):
+        return False, None
+    if action_value.get("callback_kind") != XIAOMAN_POSTER_REVIEW_CALLBACK_KIND:
+        return False, None
+
+    message_type = _poster_review_attr(event, "message_type")
+    message_type = _poster_review_attr(message_type, "value") or message_type
+    source = _poster_review_attr(event, "source")
+    platform = _poster_review_attr(source, "platform")
+    platform = _poster_review_attr(platform, "value") or platform
+    action_tag = str(_poster_review_attr(action, "tag") or "").strip().lower()
+    context = _poster_review_attr(raw_event, "context")
+    operator = _poster_review_attr(raw_event, "operator")
+    chat_id = _poster_review_identifier(
+        _poster_review_attr(context, "open_chat_id"), max_len=200
+    )
+    actor_user_id = _poster_review_identifier(
+        _poster_review_attr(operator, "open_id"), max_len=200
+    )
+    source_chat_id = str(_poster_review_attr(source, "chat_id") or "").strip()
+    source_user_id = str(_poster_review_attr(source, "user_id") or "").strip()
+    header = _poster_review_attr(raw_message, "header")
+    callback_event_id = _poster_review_identifier(
+        _poster_review_attr(header, "event_id")
+        or _poster_review_attr(raw_event, "event_id"),
+        max_len=240,
+    )
+    callback_token = _poster_review_identifier(
+        _poster_review_attr(raw_event, "token"), max_len=240
+    )
+    message_id = str(_poster_review_attr(event, "message_id") or "").strip()
+    notification_id = _poster_review_uuid(action_value.get("notification_id"))
+    artifact_id = _poster_review_uuid(action_value.get("artifact_id"))
+    review_action = str(action_value.get("action") or "").strip().lower()
+
+    # Hermes currently derives generic card actions as group events even for P2P.
+    # The sidecar rechecks this SDK chat id against the restricted direct target row.
+    valid = all(
+        (
+            str(platform or "").strip().lower() in {"feishu", "lark"},
+            str(message_type or "").strip().lower() == "command",
+            action_tag == "button",
+            bool(chat_id and actor_user_id and callback_event_id and callback_token),
+            source_chat_id == chat_id,
+            source_user_id == actor_user_id,
+            message_id == callback_token,
+            type(action_value.get("schema_version")) is int,
+            action_value.get("schema_version") == 1,
+            bool(notification_id and artifact_id),
+            review_action in XIAOMAN_POSTER_REVIEW_ACTIONS,
+        )
+    )
+    if not valid:
+        return True, None
+
+    return True, {
+        "header": {"event_id": callback_event_id},
+        "event": {
+            "operator": {"open_id": actor_user_id},
+            "context": {"open_chat_id": chat_id},
+            "action": {
+                "tag": "button",
+                "value": {
+                    "schema_version": 1,
+                    "callback_kind": XIAOMAN_POSTER_REVIEW_CALLBACK_KIND,
+                    "notification_id": notification_id,
+                    "artifact_id": artifact_id,
+                    "action": review_action,
+                },
+            },
+        },
+    }
+
+
+def _poster_review_callback_envelope(
+    payload: dict[str, Any], callback_key: str
+) -> dict[str, str]:
+    if not callback_key or len(callback_key) > 512:
+        raise ValueError("poster review callback key is invalid")
+    body = json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    if not body or len(body) > XIAOMAN_POSTER_REVIEW_CALLBACK_MAX_BYTES:
+        raise ValueError("poster review callback body is invalid")
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_hex(16)
+    digest = hashlib.sha256()
+    digest.update(timestamp.encode("ascii"))
+    digest.update(nonce.encode("ascii"))
+    digest.update(callback_key.encode("utf-8"))
+    digest.update(body)
+    return {
+        "timestamp": timestamp,
+        "nonce": nonce,
+        "signature": digest.hexdigest(),
+        "body_base64": base64.b64encode(body).decode("ascii"),
+    }
+
+
+def _poster_review_callback_call(envelope: dict[str, str]) -> dict[str, Any]:
+    encoded = (
+        json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    if len(encoded) > XIAOMAN_POSTER_REVIEW_CALLBACK_MAX_BYTES:
+        raise ValueError("poster review callback envelope is too large")
+    chunks: list[bytes] = []
+    received = 0
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(XIAOMAN_POSTER_REVIEW_CALLBACK_TIMEOUT_SECONDS)
+        client.connect(XIAOMAN_POSTER_REVIEW_CALLBACK_SOCKET)
+        client.sendall(encoded)
+        client.shutdown(socket.SHUT_WR)
+        while True:
+            chunk = client.recv(8192)
+            if not chunk:
+                break
+            received += len(chunk)
+            if received > XIAOMAN_POSTER_REVIEW_CALLBACK_MAX_BYTES:
+                raise ValueError("poster review callback response is too large")
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+    if not chunks:
+        raise ValueError("poster review callback returned no response")
+    response = json.loads(b"".join(chunks).split(b"\n", 1)[0].decode("utf-8"))
+    if not isinstance(response, dict):
+        raise ValueError("poster review callback returned invalid JSON")
+    return response
+
+
+def _poster_review_response_valid(
+    response: dict[str, Any], payload: dict[str, Any]
+) -> bool:
+    action_value = payload["event"]["action"]["value"]
+    return all(
+        (
+            response.get("success") is True,
+            response.get("notification_id") == action_value["notification_id"],
+            response.get("artifact_id") == action_value["artifact_id"],
+            response.get("decision")
+            == XIAOMAN_POSTER_REVIEW_DECISIONS[action_value["action"]],
+            response.get("action_status")
+            in {"review_recorded", "idempotent_existing"},
+            response.get("group_send_authorized") is False,
+            response.get("external_send_executed") is False,
+        )
+    )
+
+
+def handle_xiaoman_poster_review_card(event: Any, **_: Any) -> dict[str, str] | None:
+    matched, payload = _poster_review_callback_payload(event)
+    if not matched:
+        return None
+    if payload is None:
+        LOGGER.warning("Xiaoman poster review card rejected: invalid trusted event binding")
+        return {"action": "skip", "reason": "xiaoman_poster_review_rejected"}
+    if os.getenv(XIAOMAN_POSTER_REVIEW_HOOK_ENABLE_ENV) != "1":
+        LOGGER.warning("Xiaoman poster review card rejected: hook is disabled")
+        return {"action": "skip", "reason": "xiaoman_poster_review_disabled"}
+    try:
+        callback_key = os.environ[XIAOMAN_POSTER_REVIEW_CALLBACK_KEY_ENV]
+        envelope = _poster_review_callback_envelope(payload, callback_key)
+        response = _poster_review_callback_call(envelope)
+        if not _poster_review_response_valid(response, payload):
+            raise ValueError("poster review callback response contract failed")
+    except (KeyError, OSError, TimeoutError, ValueError, json.JSONDecodeError):
+        LOGGER.warning("Xiaoman poster review card rejected: callback ingress unavailable")
+        return {"action": "skip", "reason": "xiaoman_poster_review_unavailable"}
+    return {"action": "skip", "reason": "xiaoman_poster_review_forwarded"}
+
+
 def _poster_safe_failure(error: str = "agentos_intake_unavailable") -> str:
     return _json(
         {
@@ -5434,6 +5699,8 @@ def check_xiaoman_activity_requirements() -> bool:
 
 
 def register(ctx) -> None:
+    _install_poster_review_log_privacy_filter()
+    ctx.register_hook("pre_gateway_dispatch", handle_xiaoman_poster_review_card)
     ctx.register_tool(
         name="qintopia_kb_search",
         toolset="qintopia",

@@ -74,6 +74,9 @@ for (const variant of variants) {
       errors.push(`${variant}: plugin.yaml must list ${toolName}`);
     }
   }
+  if (variant === "xiaoman" && !pluginYaml.includes("- pre_gateway_dispatch")) {
+    errors.push("xiaoman: plugin.yaml must declare pre_gateway_dispatch");
+  }
   if (variantSource.includes("_operations_intake_plugin().QINTOPIA")) {
     errors.push(
       `${variant}: operations-intake schemas must not load the delegated package at module import time`
@@ -126,6 +129,7 @@ spec.loader.exec_module(module)
 class Ctx:
     def __init__(self):
         self.names = []
+        self.hooks = {}
 
     def register_tool(self, **kwargs):
         assert kwargs.get("name")
@@ -134,11 +138,18 @@ class Ctx:
         assert kwargs.get("description")
         self.names.append(kwargs["name"])
 
+    def register_hook(self, name, callback):
+        assert name
+        assert callable(callback)
+        self.hooks[name] = callback
+
 ctx = Ctx()
 module.register(ctx)
 required = set(${JSON.stringify(requiredRegisteredTools[variant])})
 missing = sorted(required - set(ctx.names))
 assert not missing, missing
+if "${variant}" == "xiaoman":
+    assert "pre_gateway_dispatch" in ctx.hooks
 `,
       ],
       {
@@ -197,12 +208,18 @@ spec.loader.exec_module(module)
 class Ctx:
     def __init__(self):
         self.tools = {}
+        self.hooks = {}
 
     def register_tool(self, **kwargs):
         assert kwargs.get("name")
         assert kwargs.get("schema") is not None
         assert callable(kwargs.get("handler"))
         self.tools[kwargs["name"]] = kwargs
+
+    def register_hook(self, name, callback):
+        assert name
+        assert callable(callback)
+        self.hooks[name] = callback
 
 ctx = Ctx()
 module.register(ctx)
