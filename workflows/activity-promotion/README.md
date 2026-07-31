@@ -56,6 +56,13 @@ AgentOS workflow id and reviewed historical mapping.
 
 ## Required Human Gates
 
+For an explicit trusted Xiaoman Feishu direct-message poster request, that originating
+message is the generation authorization. A second poster-brief approval is not required
+when title, schedule, and location are source-validated and non-conflicting. Missing or
+conflicting activity facts stop the evidence and visual children in `awaiting_review`
+and create no image-generation request. Automatic/event-signal workflows retain the
+existing poster-brief approval gate.
+
 - Visual artifacts need review before use.
 - An approved `poster_brief` may create an `image_generation_request`. The guarded
   adapter accepts only OpenAI-compatible `gpt-image-2` `b64_json` PNG output, fully
@@ -76,6 +83,8 @@ AgentOS workflow id and reviewed historical mapping.
   `generated_image` whose image-generation request is completed. An approved
   `poster_brief` alone is insufficient.
 - Group message requests need final human confirmation before send readiness.
+- Approving a direct-message poster review never creates a group-message request. A
+  separate publication instruction naming a target group is required.
 - Allowlists control group targets, reviewers, confirmers, owners, and attachment hosts
   when configured.
 

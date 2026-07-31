@@ -182,7 +182,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "qintopia_collab_call_agent",
-            "description": "Synchronously call a whitelisted Qintopia capability agent through Hermes oneshot mode and return its result. Prefer this for capability calls that do not need Kanban tracking.",
+            "description": "Synchronously call a short-running whitelisted Qintopia capability. Poster production has moved to Xiaoman's durable AgentOS intake tool and never starts a Hermes oneshot here.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -367,6 +367,17 @@ def call_agent(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]
     timeout = max(10, min(timeout, 900))
     idem = clean_text(args.get("idempotency_key"), 240)
 
+    if capability == "poster_production_request":
+        return {
+            "success": False,
+            "error": "poster_production_moved_to_agentos_intake",
+            "message": "Use qintopia_xiaoman_poster_production_request from a trusted Xiaoman direct session.",
+            "target_agent": target_agent,
+            "capability": capability,
+            "retryable": False,
+            "external_send_executed": False,
+        }
+
     if idem:
         existing = conn.execute("SELECT * FROM collab_events WHERE idempotency_key = ?", (idem,)).fetchone()
         if existing:
@@ -374,20 +385,6 @@ def call_agent(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]
             return {"success": True, "deduped": True, "event": event, "response": event.get("payload", {}).get("response", "")}
 
     production_note = ""
-    if capability == "poster_production_request":
-        production_note = """
-本次是受控的正式生产请求，不是缺口检查。
-你必须加载并遵守 `visual-poster-production` 与 `poster-production-handoff`：
-- 如果结构化上下文里有 `activity_record_id` 或 `record_id`，必须先调用 `qintopia_xiaoman_activity_record_get` 读取小满活动日记本真实记录，再判断活动事实、素材附件、授权缺口；不能只依赖小满转述。
-- 如果结构化上下文里有 `poster_record_id`、`design_record_id` 或已有画报司 record_id，必须调用 `qintopia_huabaosi_design_record_get` 回读生产台账，再判断任务状态、源素材、成品图和阻塞原因。
-- 先读清楚真实素材/附件和 brief；不能伪造素材、事实、授权或已生成图片。
-- 硬约束：正式/待审核海报必须真实使用 `gpt-image-2` / Image2 生成或编辑；纯本地 PIL/Canvas/SVG/HTML 截图/确定性排版不能算成品图。
-- 能真实调用 Image2 生成/编辑图片时，产出朋友圈版和/或小红书版，并校验文件存在；回复里必须说明 Image2 调用方式、模式和输出路径。
-- 本地中文排版只能作为 Image2 后处理；如果没有 Image2 参与，只能返回“低保真草稿/blocked”，不得上传 `成品图`，不得标记 `待审核` 或 `已完成`。
-- 生成或编辑图片后，必须写入「画报司 | 设计产出库」/海报生产任务表；只有真实 Image2 产物才能上传到 `成品图` 附件字段。
-- 如果暂时不能真实使用 Image2 生成图片或不能写入生产台账，要明确返回 blocked 原因、缺什么、下一步最小修复动作；不要声称已完成。
-- 不要对外发布；只把产物/记录/阻塞原因返回给小满。
-"""
 
     prompt = f"""你是被小满直接调用的能力 Agent：阿靓 · 画报司。
 

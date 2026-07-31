@@ -111,6 +111,7 @@ esac
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
+            "xiaoman-feishu-poster-adapter",
           ],
         },
       },

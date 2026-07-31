@@ -9,7 +9,7 @@
     "format:check": "prettier --check .",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\"",
     "registry:check": "node tools/registry/check-registry.mjs",
-    "mcp:collab:check": "python3 -m py_compile mcp/qintopia-collab/bin/qintopia-collab-mcp",
+    "mcp:collab:check": "python3 -m py_compile mcp/qintopia-collab/bin/qintopia-collab-mcp && python3 -m unittest discover -s mcp/qintopia-collab/tests -p 'test_*.py'",
     "skills:qintopia-tools:check": "node tools/skills/check-qintopia-tools.mjs",
     "skills:feishu-base:check": "node tools/skills/check-feishu-base.mjs",
     "skills:packages:check": "node tools/skills/check-package-boundaries.mjs",

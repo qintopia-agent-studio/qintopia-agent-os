@@ -188,7 +188,7 @@ case "$artifact_type" in
     case "$artifact_profile" in
       huabaosi-production)
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-linux-x86_64-gnu}"
-        expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter"]'
+        expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","xiaoman-feishu-poster-adapter"]'
         ;;
       qiwe-production)
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu}"

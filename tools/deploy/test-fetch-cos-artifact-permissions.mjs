@@ -82,6 +82,7 @@ try {
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
+            "xiaoman-feishu-poster-adapter",
           ],
         },
       },
@@ -229,6 +230,7 @@ exec ${JSON.stringify(systemTar)} "$@"
           cargo_features: [
             "huabaosi-production-adapter",
             "huabaosi-feishu-mirror-adapter",
+            "xiaoman-feishu-poster-adapter",
             "qiwe-production-adapter",
           ],
         },

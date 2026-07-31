@@ -5,7 +5,8 @@ mod activity_lifecycle;
     feature = "huabaosi-staging-adapter",
     feature = "huabaosi-feishu-mirror-adapter",
     feature = "qiwe-production-adapter",
-    feature = "qiwe-staging-adapter"
+    feature = "qiwe-staging-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 mod bounded_http;
 mod collaboration;
@@ -23,7 +24,18 @@ mod graph_projection;
 mod group_message_send;
 mod health;
 #[cfg_attr(
-    not(any(test, feature = "huabaosi-feishu-mirror-adapter")),
+    any(
+        not(any(test, feature = "huabaosi-feishu-mirror-adapter")),
+        all(
+            feature = "xiaoman-feishu-poster-adapter",
+            not(any(
+                feature = "huabaosi-production-adapter",
+                feature = "huabaosi-staging-adapter",
+                feature = "qiwe-production-adapter",
+                feature = "qiwe-staging-adapter"
+            ))
+        )
+    ),
     allow(dead_code, unused_imports, unused_variables)
 )]
 mod huabaosi_feishu_artifact_mirror;
@@ -45,6 +57,14 @@ mod mcp_server;
 mod member_profile;
 mod message_search;
 mod operations;
+mod operations_intake;
+#[cfg_attr(not(feature = "xiaoman-feishu-poster-adapter"), allow(dead_code))]
+mod poster_delivery;
+#[cfg_attr(
+    not(feature = "xiaoman-feishu-poster-adapter"),
+    allow(dead_code, unused_imports)
+)]
+mod poster_notification;
 mod qiwe_image_send;
 pub mod qiwe_image_send_state;
 mod raw_archive;
@@ -447,6 +467,50 @@ async fn main() -> Result<()> {
                 work_item_id,
             )
             .await
+        }
+        Command::RunOperationsIntake { socket_path } => {
+            operations_intake::run(&cli, socket_path).await
+        }
+        Command::RunXiaomanPosterNotificationStarter {
+            check_only,
+            once,
+            apply,
+            batch_size,
+            work_item_id,
+        } => {
+            poster_notification::run_starter(
+                &cli,
+                check_only,
+                once,
+                apply,
+                batch_size,
+                work_item_id,
+            )
+            .await
+        }
+        Command::XiaomanFeishuPosterPreflight => poster_delivery::run_preflight(&cli),
+        Command::RunXiaomanFeishuPosterDelivery {
+            once,
+            apply,
+            dry_run,
+            notification_id,
+        } => {
+            poster_delivery::run_worker(
+                &cli,
+                poster_delivery::WorkerOptions {
+                    once,
+                    apply,
+                    dry_run,
+                    notification_id,
+                },
+            )
+            .await
+        }
+        Command::XiaomanPosterReviewCallback { apply, dry_run } => {
+            poster_notification::run_review_callback(&cli, apply, dry_run).await
+        }
+        Command::RunXiaomanPosterReviewCallbackIngress { socket_path } => {
+            poster_notification::run_callback_ingress(&cli, socket_path).await
         }
         Command::OperationsWorkItemCreate {
             payload_json,

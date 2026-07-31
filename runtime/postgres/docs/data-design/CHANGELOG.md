@@ -1,5 +1,11 @@
 # Data Design Changelog
 
+## 2026-07-31
+
+- Added trusted Xiaoman Feishu poster intake correlation, durable direct-conversation
+  notification state, and idempotent review callback records. Explicit direct-chat
+  generation authorizes the source-grounded brief but never authorizes group send.
+
 This file is the repository-side history for database design changes. The database-side
 history is `qintopia_agent_os.schema_change_log`.
 

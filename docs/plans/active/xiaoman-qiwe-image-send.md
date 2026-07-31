@@ -134,10 +134,11 @@ target, or missing final confirmation must stop before sending.
   client as Huabaosi, zeroize sensitive buffers, and have local fake-server coverage.
   The live helpers compile only with `qiwe-staging-adapter` or
   `qiwe-production-adapter`. Huabaosi production release artifacts record exactly
-  `huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`, and must reject
-  QiWe live features, staging approval, staging databases, or missing Feishu delivery
-  configuration before apply. The guarded staging smoke remains an owner-approved
-  one-shot operator entrypoint.
+  `huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and the
+  default-disabled `xiaoman-feishu-poster-adapter`. They must reject missing Feishu
+  delivery configuration before apply. The guarded staging smoke remains an
+  owner-approved one-shot operator entrypoint.
+- QiWe live features, staging approval, staging databases remain forbidden.
 - A combined staging build containing both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter` may claim an exact Feishu primary-storage URI. It commits the
   existing `uploading` attempt before Feishu or QiWe I/O, revalidates the approved JPEG,
@@ -247,16 +248,17 @@ evidence template lives in
 ## Production Boundary
 
 Default execution still cannot contact QiWe or send messages. Huabaosi production
-artifacts may contain only the reviewed `huabaosi-production-adapter` and
-`huabaosi-feishu-mirror-adapter` feature set; QiWe live features, staging adapters, and
-all-features builds remain forbidden. The production observation smoke accepts only the
-immutable `release/current` binary and fixed production env file, and it must not run
-`--apply` or process callbacks. Because that binary is the Huabaosi production artifact,
-the observation may prove only the disabled QiWe worker and callback-bridge state. It
-must fail closed if either QiWe production enable flag is `1`; an enabled state requires
-a separate reviewed QiWe production artifact whose manifest carries exactly
-`qiwe-production-adapter` plus `huabaosi-feishu-mirror-adapter`, and it must never be
-made possible by adding either feature to the Huabaosi artifact.
+artifacts may contain only the reviewed `huabaosi-production-adapter`,
+`huabaosi-feishu-mirror-adapter`, and default-disabled `xiaoman-feishu-poster-adapter`
+feature set; QiWe live features, staging adapters, and all-features builds remain
+forbidden. The production observation smoke accepts only the immutable `release/current`
+binary and fixed production env file, and it must not run `--apply` or process
+callbacks. Because that binary is the Huabaosi production artifact, the observation may
+prove only the disabled QiWe worker and callback-bridge state. It must fail closed if
+either QiWe production enable flag is `1`; an enabled state requires a separate reviewed
+QiWe production artifact whose manifest carries exactly `qiwe-production-adapter` plus
+`huabaosi-feishu-mirror-adapter`, and it must never be made possible by adding either
+feature to the Huabaosi artifact.
 
 Production activation is guarded rather than automatic. It requires the persistent
 enablement flag, exact production owner phrase, canonical production database URL hash,

@@ -232,6 +232,12 @@ pub(crate) struct FeishuPrimaryStorageDeliveryArtifact {
     pub(crate) bytes: Zeroizing<Vec<u8>>,
 }
 
+#[cfg(feature = "xiaoman-feishu-poster-adapter")]
+pub(crate) struct FeishuPrimaryStorageReviewArtifact {
+    pub(crate) content_hash: String,
+    pub(crate) bytes: Zeroizing<Vec<u8>>,
+}
+
 #[cfg(test)]
 impl FeishuPrimaryStorageApprovalEvidence {
     pub(crate) fn test_only(
@@ -339,7 +345,8 @@ struct FeishuCredentials {
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 #[derive(Debug)]
 struct FeishuClient {
@@ -614,6 +621,30 @@ pub(crate) async fn revalidate_primary_storage_for_delivery(
         file_md5: validated.file_md5,
         byte_size: u64::try_from(validated.byte_size)
             .context("Huabaosi Feishu-backed delivery byte size is invalid")?,
+        bytes,
+    })
+}
+
+#[cfg(feature = "xiaoman-feishu-poster-adapter")]
+pub(crate) async fn revalidate_primary_storage_for_review_notification(
+    pool: &PgPool,
+    artifact_id: Uuid,
+    database_url: &str,
+) -> Result<FeishuPrimaryStorageReviewArtifact> {
+    let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
+    let artifact = peek_primary_storage_artifact(pool, artifact_id)
+        .await?
+        .context("Huabaosi generated image artifact was not found")?;
+    if artifact.review_status != "pending" {
+        bail!("Huabaosi Feishu-backed review artifact is not pending");
+    }
+    let workflow_root_id = resolve_workflow_root_pool(pool, artifact.work_item_id).await?;
+    let validated = validate_primary_storage_artifact(&artifact)?;
+    let bytes =
+        read_revalidated_primary_storage_bytes(&artifact, &validated, workflow_root_id, &config)
+            .map_err(primary_storage_error)?;
+    Ok(FeishuPrimaryStorageReviewArtifact {
+        content_hash: artifact.content_hash,
         bytes,
     })
 }
@@ -1568,7 +1599,8 @@ const CANDIDATE_SELECT: &str = r#"
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 const PRIMARY_STORAGE_ARTIFACT_SELECT: &str = r#"
     SELECT
@@ -1619,7 +1651,8 @@ const PRIMARY_STORAGE_ARTIFACT_SELECT: &str = r#"
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 fn primary_storage_artifact_uri(artifact_id: Uuid) -> String {
     format!("feishu-base://huabaosi-generated-image/{artifact_id}")
@@ -1629,6 +1662,7 @@ fn primary_storage_artifact_uri(artifact_id: Uuid) -> String {
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
     feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter",
     all(test, feature = "postgres-integration-tests")
 ))]
 async fn peek_primary_storage_artifact(
@@ -2108,7 +2142,8 @@ pub(crate) fn primary_storage_error(failure: MirrorFailure) -> anyhow::Error {
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 fn validate_primary_storage_artifact(
     artifact: &MirrorArtifact,
@@ -2212,7 +2247,8 @@ fn revalidate_primary_storage_artifact(
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 fn read_revalidated_primary_storage_bytes(
     artifact: &MirrorArtifact,
@@ -2240,7 +2276,8 @@ fn read_revalidated_primary_storage_bytes(
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 fn validate_primary_storage_record_fields(
     artifact: &MirrorArtifact,
@@ -2337,7 +2374,8 @@ fn primary_storage_attachment_token(
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 fn validate_primary_storage_readback(
     artifact: &MirrorArtifact,
@@ -2425,7 +2463,8 @@ fn primary_storage_revalidation_guardrails() -> Vec<String> {
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 impl FeishuClient {
     fn authenticate(
@@ -2779,7 +2818,8 @@ fn http_client_for(_api_root: &Url) -> HttpClient {
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 fn api_endpoint(api_root: &Url, path: &str) -> std::result::Result<Url, MirrorFailure> {
     api_root.join(path).map_err(|_| {
@@ -2910,7 +2950,8 @@ fn parse_feishu_response(
     test,
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
+    feature = "huabaosi-feishu-mirror-adapter",
+    feature = "xiaoman-feishu-poster-adapter"
 ))]
 fn read_feishu_credentials(path: &str) -> std::result::Result<FeishuCredentials, MirrorFailure> {
     validate_profile_env_path(path).map_err(|_| {

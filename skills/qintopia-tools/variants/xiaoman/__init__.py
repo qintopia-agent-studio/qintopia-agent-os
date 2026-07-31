@@ -17,6 +17,7 @@ import os
 import re
 import selectors
 import shlex
+import socket
 import stat
 import sys
 import subprocess
@@ -56,6 +57,11 @@ DEFAULT_QINTOPIA_WEATHER_QWEATHER_CITY = "鄠邑区"
 DEFAULT_QINTOPIA_WEATHER_MCP_TIMEOUT_SECONDS = 12
 DEFAULT_OPEN_METEO_TIMEOUT_SECONDS = 8
 QINTOPIA_WEATHER_TOOL = "qintopia_weather_lookup"
+XIAOMAN_POSTER_PRODUCTION_TOOL = "qintopia_xiaoman_poster_production_request"
+XIAOMAN_POSTER_STATUS_TOOL = "qintopia_xiaoman_poster_workflow_status"
+DEFAULT_OPERATIONS_INTAKE_SOCKET = "/run/qintopia-agentos/operations-intake.sock"
+OPERATIONS_INTAKE_TIMEOUT_SECONDS = 4.0
+OPERATIONS_INTAKE_MAX_BYTES = 64 * 1024
 QINTOPIA_TENANT = "qintopia"
 COMPLAINT_TASK_TYPE = "complaint_intake"
 COMPLAINT_OWNER_PROFILE = "default"
@@ -410,6 +416,86 @@ QINTOPIA_WEATHER_LOOKUP_SCHEMA = {
                 "description": "Forecast horizon in hours. Defaults to 24 and is capped at 24.",
             },
         },
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_POSTER_PRODUCTION_REQUEST_SCHEMA = {
+    "description": (
+        "Submit an explicitly requested poster generation job to AgentOS and return "
+        "an accepted workflow id without waiting for image generation. Use only when "
+        "the current user explicitly asks Xiaoman to generate a poster."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "request": {
+                "type": "string",
+                "description": "The poster request and confirmed activity facts.",
+                "minLength": 1,
+                "maxLength": 2000,
+            },
+            "activity_record_ref": {
+                "type": "string",
+                "description": "Optional sanitized Xiaoman activity record reference.",
+                "maxLength": 240,
+            },
+            "activity_facts": {
+                "type": "object",
+                "description": (
+                    "Structured activity facts copied exactly from the current user message or "
+                    "a previously read trusted Xiaoman activity record. Missing facts cause "
+                    "needs_clarification and never start image generation."
+                ),
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["originating_request", "trusted_activity_record"],
+                    },
+                    "title": {"type": "string", "maxLength": 200},
+                    "schedule": {"type": "string", "maxLength": 200},
+                    "location": {"type": "string", "maxLength": 240},
+                    "conflict_fields": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["title", "schedule", "location"]},
+                        "uniqueItems": True,
+                    },
+                },
+                "required": ["source", "title", "schedule", "location"],
+                "additionalProperties": False,
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["low", "normal", "high", "urgent"],
+                "description": "Workflow priority. Defaults to normal.",
+            },
+            "workflow_root_id": {
+                "type": "string",
+                "description": "Existing workflow UUID when this request is a follow-up modification.",
+            },
+            "revision_of_artifact_id": {
+                "type": "string",
+                "description": "Generated-image UUID marked for modification in the same workflow.",
+            },
+        },
+        "required": ["request"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_POSTER_WORKFLOW_STATUS_SCHEMA = {
+    "description": "Read the durable AgentOS status for an accepted Xiaoman poster workflow.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "workflow_root_id": {
+                "type": "string",
+                "description": "Workflow root UUID returned by the poster production request.",
+            }
+        },
+        "required": ["workflow_root_id"],
         "additionalProperties": False,
     },
 }
@@ -4858,6 +4944,188 @@ def handle_qintopia_xiaoman_activity_material_summary(args: dict[str, Any], **_:
     )
 
 
+def _poster_session_context() -> tuple[dict[str, str] | None, str | None]:
+    platform = _clean_text(_session_env("HERMES_SESSION_PLATFORM"), max_len=32).lower()
+    if platform == "lark":
+        platform = "feishu"
+    conversation_type = _clean_text(
+        _session_env("HERMES_SESSION_CONVERSATION_TYPE"), max_len=32
+    ).lower()
+    chat_id = _clean_text(_session_env("HERMES_SESSION_CHAT_ID"), max_len=200)
+    user_id = _clean_text(_session_env("HERMES_SESSION_USER_ID"), max_len=200)
+    message_id = _clean_text(_session_env("HERMES_SESSION_MESSAGE_ID"), max_len=240)
+    if platform != "feishu":
+        return None, "trusted Feishu session context is required"
+    if conversation_type != "direct":
+        return None, "poster production is available only in a direct conversation"
+    if not chat_id or not user_id or not message_id:
+        return None, "trusted direct-conversation identity is incomplete"
+    if any("\n" in value or "\r" in value for value in (chat_id, user_id, message_id)):
+        return None, "trusted direct-conversation identity is invalid"
+    return {
+        "platform": platform,
+        "conversation_type": conversation_type,
+        "conversation_id": chat_id,
+        "requester_user_id": user_id,
+        "source_message_id": message_id,
+    }, None
+
+
+def _poster_intake_socket_path() -> str:
+    path = _session_env("QINTOPIA_OPERATIONS_INTAKE_SOCKET") or DEFAULT_OPERATIONS_INTAKE_SOCKET
+    if not os.path.isabs(path):
+        raise ValueError("operations intake socket path must be absolute")
+    return path
+
+
+def _poster_intake_call(payload: dict[str, Any]) -> dict[str, Any]:
+    encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+    if len(encoded) > OPERATIONS_INTAKE_MAX_BYTES:
+        raise ValueError("operations intake request is too large")
+    chunks: list[bytes] = []
+    received = 0
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(OPERATIONS_INTAKE_TIMEOUT_SECONDS)
+        client.connect(_poster_intake_socket_path())
+        client.sendall(encoded)
+        client.shutdown(socket.SHUT_WR)
+        while True:
+            chunk = client.recv(8192)
+            if not chunk:
+                break
+            received += len(chunk)
+            if received > OPERATIONS_INTAKE_MAX_BYTES:
+                raise ValueError("operations intake response is too large")
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+    if not chunks:
+        raise ValueError("operations intake returned no response")
+    response = json.loads(b"".join(chunks).split(b"\n", 1)[0].decode("utf-8"))
+    if not isinstance(response, dict):
+        raise ValueError("operations intake returned invalid JSON")
+    return response
+
+
+def _poster_safe_failure(error: str = "agentos_intake_unavailable") -> str:
+    return _json(
+        {
+            "success": False,
+            "accepted": False,
+            "skill": XIAOMAN_POSTER_PRODUCTION_TOOL,
+            "error": error,
+            "user_status": "暂时无法受理",
+            "message": "海报生成服务暂时不可用，请稍后重试。",
+            "retryable": True,
+            "external_send_executed": False,
+        }
+    )
+
+
+def handle_qintopia_xiaoman_poster_production_request(args: dict[str, Any], **_: Any) -> str:
+    request_text = _body_text(args.get("request"), max_len=2001)
+    if not request_text or len(request_text) > 2000:
+        return _poster_safe_failure("poster_request_invalid")
+    session, error = _poster_session_context()
+    if error or session is None:
+        return _poster_safe_failure("trusted_direct_session_required")
+    priority = _clean_text(args.get("priority") or "normal", max_len=16)
+    if priority not in {"low", "normal", "high", "urgent"}:
+        return _poster_safe_failure("poster_priority_invalid")
+    activity_record_ref = _clean_text(args.get("activity_record_ref"), max_len=240)
+    activity_facts = args.get("activity_facts")
+    if activity_facts is None:
+        activity_facts = {}
+    if not isinstance(activity_facts, dict):
+        return _poster_safe_failure("poster_activity_facts_invalid")
+    workflow_root_id = _clean_text(args.get("workflow_root_id"), max_len=80).lower()
+    revision_of_artifact_id = _clean_text(args.get("revision_of_artifact_id"), max_len=80).lower()
+    uuid_pattern = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    is_revision = bool(workflow_root_id or revision_of_artifact_id)
+    if is_revision and (
+        not re.fullmatch(uuid_pattern, workflow_root_id)
+        or not re.fullmatch(uuid_pattern, revision_of_artifact_id)
+    ):
+        return _poster_safe_failure("poster_revision_reference_invalid")
+    source_message_ref = "sha256:" + hashlib.sha256(
+        f"{session['platform']}|{session['source_message_id']}".encode("utf-8")
+    ).hexdigest()
+    idempotency_digest = hashlib.sha256()
+    for part in (session["platform"], session["source_message_id"]):
+        idempotency_digest.update(part.encode("utf-8"))
+        idempotency_digest.update(b"\0")
+    request_payload = {
+        "operation": "poster_revision_request" if is_revision else "poster_production_request",
+        "schema_version": 2,
+        "request": request_text,
+        "priority": priority,
+        "activity_record_ref": activity_record_ref,
+        "activity_facts": activity_facts,
+        "session": session,
+        "idempotency_key": f"poster_production_request:sha256:{idempotency_digest.hexdigest()}",
+    }
+    if is_revision:
+        request_payload["workflow_root_id"] = workflow_root_id
+        request_payload["revision_of_artifact_id"] = revision_of_artifact_id
+    try:
+        response = _poster_intake_call(request_payload)
+    except (OSError, TimeoutError, ValueError, json.JSONDecodeError):
+        return _poster_safe_failure()
+    sanitized = {
+        key: response.get(key)
+        for key in (
+            "success",
+            "accepted",
+            "deduped",
+            "workflow_root_id",
+            "visual_work_item_id",
+            "workflow_status",
+            "current_blocking_point",
+            "error",
+            "message",
+            "user_status",
+        )
+        if key in response
+    }
+    sanitized.update(
+        {
+            "skill": XIAOMAN_POSTER_PRODUCTION_TOOL,
+            "user_status": response.get("user_status")
+            or ("已接单" if response.get("accepted") is True else "暂时无法受理"),
+            "external_send_executed": False,
+        }
+    )
+    return _json(sanitized)
+
+
+def handle_qintopia_xiaoman_poster_workflow_status(args: dict[str, Any], **_: Any) -> str:
+    workflow_root_id = _clean_text(args.get("workflow_root_id"), max_len=80).lower()
+    if not re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        workflow_root_id,
+    ):
+        return _poster_safe_failure("workflow_root_id_invalid")
+    session, error = _poster_session_context()
+    if error or session is None:
+        return _poster_safe_failure("trusted_direct_session_required")
+    try:
+        response = _poster_intake_call(
+            {
+                "operation": "workflow_status",
+                "schema_version": 2,
+                "workflow_root_id": workflow_root_id,
+                "session": session,
+            }
+        )
+    except (OSError, TimeoutError, ValueError, json.JSONDecodeError):
+        return _poster_safe_failure()
+    response["skill"] = XIAOMAN_POSTER_STATUS_TOOL
+    response["external_send_executed"] = False
+    return _json(response)
+
+
 def handle_qintopia_weather_lookup(args: dict[str, Any], **_: Any) -> str:
     location = _qintopia_weather_location()
     if "," not in location:
@@ -5491,4 +5759,20 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_SUMMARY_SCHEMA["description"],
         emoji="🧾",
+    )
+    ctx.register_tool(
+        name=XIAOMAN_POSTER_PRODUCTION_TOOL,
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_POSTER_PRODUCTION_REQUEST_SCHEMA,
+        handler=handle_qintopia_xiaoman_poster_production_request,
+        description=QINTOPIA_XIAOMAN_POSTER_PRODUCTION_REQUEST_SCHEMA["description"],
+        emoji="🖼️",
+    )
+    ctx.register_tool(
+        name=XIAOMAN_POSTER_STATUS_TOOL,
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_POSTER_WORKFLOW_STATUS_SCHEMA,
+        handler=handle_qintopia_xiaoman_poster_workflow_status,
+        description=QINTOPIA_XIAOMAN_POSTER_WORKFLOW_STATUS_SCHEMA["description"],
+        emoji="🧭",
     )

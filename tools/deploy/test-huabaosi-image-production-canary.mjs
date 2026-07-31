@@ -86,7 +86,11 @@ const fakeSidecar = (
     leak = false,
     starterParentMismatch = false,
     artifactProfile = "huabaosi-production",
-    cargoFeatures = ["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"],
+    cargoFeatures = [
+      "huabaosi-production-adapter",
+      "huabaosi-feishu-mirror-adapter",
+      "xiaoman-feishu-poster-adapter",
+    ],
     writeManifest = true,
   } = {}
 ) => {
