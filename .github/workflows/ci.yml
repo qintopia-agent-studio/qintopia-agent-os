@@ -412,6 +412,13 @@ jobs:
           operations_intake::tests::postgres_poster_intake_is_idempotent_authorized_and_never_group_sends
           -- --ignored --exact
 
+      - name: Xiaoman poster brief authorization upsert PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          collaboration::tests::postgres_authorized_upsert_promotes_pending_artifact --
+          --ignored --exact
+
       - name: Xiaoman poster delivery claim PostgreSQL integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

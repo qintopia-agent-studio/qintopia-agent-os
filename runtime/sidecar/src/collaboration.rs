@@ -799,8 +799,35 @@ async fn upsert_artifact(
         DO UPDATE SET
             summary = EXCLUDED.summary,
             metadata = qintopia_agent_os.artifacts.metadata || EXCLUDED.metadata,
+            review_status = CASE
+                WHEN qintopia_agent_os.artifacts.review_status = 'pending'
+                 AND EXCLUDED.review_status = 'approved'
+                    THEN 'approved'
+                ELSE qintopia_agent_os.artifacts.review_status
+            END,
+            reviewed_at = CASE
+                WHEN qintopia_agent_os.artifacts.review_status = 'pending'
+                 AND EXCLUDED.review_status = 'approved'
+                    THEN EXCLUDED.reviewed_at
+                ELSE qintopia_agent_os.artifacts.reviewed_at
+            END,
+            reviewed_by = CASE
+                WHEN qintopia_agent_os.artifacts.review_status = 'pending'
+                 AND EXCLUDED.review_status = 'approved'
+                    THEN EXCLUDED.reviewed_by
+                ELSE qintopia_agent_os.artifacts.reviewed_by
+            END,
+            review_decision_reason = CASE
+                WHEN qintopia_agent_os.artifacts.review_status = 'pending'
+                 AND EXCLUDED.review_status = 'approved'
+                    THEN EXCLUDED.review_decision_reason
+                ELSE qintopia_agent_os.artifacts.review_decision_reason
+            END,
             updated_at = now()
-        RETURNING id
+        RETURNING id, review_status,
+                  reviewed_at IS NOT NULL AS reviewed_at_present,
+                  reviewed_by,
+                  review_decision_reason
         "#,
     )
     .bind(work_item.id)
@@ -832,6 +859,25 @@ async fn upsert_artifact(
     .fetch_one(&mut **tx)
     .await
     .context("upsert collaboration artifact")?;
+    let persisted_review_status: String = row.try_get("review_status")?;
+    if persisted_review_status != draft.review_status {
+        bail!("collaboration artifact review state conflicts with the generated draft");
+    }
+    if draft.review_status == "approved" {
+        let authorization = draft
+            .authorization
+            .as_ref()
+            .context("approved collaboration artifact is missing authorization provenance")?;
+        let reviewed_by: Option<String> = row.try_get("reviewed_by")?;
+        let review_reason: Option<String> = row.try_get("review_decision_reason")?;
+        if !row.try_get::<bool, _>("reviewed_at_present")?
+            || reviewed_by.as_deref() != Some(authorization.actor_ref.as_str())
+            || review_reason.as_deref()
+                != Some("authorized by originating poster generation request")
+        {
+            bail!("approved collaboration artifact review provenance is inconsistent");
+        }
+    }
     Ok(row.get("id"))
 }
 
@@ -1097,6 +1143,32 @@ fn contains_sensitive_key(key: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = url::Url::parse(&database_url).expect("integration database URL must parse");
+        assert!(
+            matches!(parsed.scheme(), "postgres" | "postgresql"),
+            "PostgreSQL integration test requires a postgres URL"
+        );
+        assert!(
+            matches!(parsed.host_str(), Some("127.0.0.1" | "::1")),
+            "PostgreSQL integration test may only use a literal loopback database"
+        );
+        assert_eq!(
+            parsed.path().trim_start_matches('/'),
+            "qintopia_test",
+            "PostgreSQL integration test may only use qintopia_test"
+        );
+        database_url
+    }
+
     #[test]
     fn fixture_mode_generates_pending_poster_brief() {
         let report = run_fixture(false).expect("fixture should validate");
@@ -1276,6 +1348,135 @@ mod tests {
             drafts[0].authorization.as_ref().unwrap().actor_ref,
             format!("sha256:{}", "b".repeat(64))
         );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_authorized_upsert_promotes_pending_artifact() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect guarded collaboration integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded collaboration integration database");
+        let suffix = Uuid::new_v4().simple().to_string();
+        let work_item_id = Uuid::new_v4();
+        let existing_artifact_id = Uuid::new_v4();
+        let content_hash = format!("sha256:{}", "c".repeat(64));
+        let actor_ref = format!("sha256:{}", "b".repeat(64));
+        let source_message_ref = format!("sha256:{}", "a".repeat(64));
+        let work_item = WorkItem {
+            id: work_item_id,
+            parent_work_item_id: None,
+            work_item_type: SUPPORTED_WORK_ITEM_TYPE.to_string(),
+            requester_agent: "xiaoman".to_string(),
+            target_agent: "huabaosi".to_string(),
+            capability_key: SUPPORTED_CAPABILITY.to_string(),
+            brief_summary: "已授权海报 brief 幂等提升".to_string(),
+            source_type: "feishu_direct_request".to_string(),
+            source_refs: json!({"source_message_ref": source_message_ref}),
+            payload: json!({"origin_conversation_ref": format!("sha256:{}", "d".repeat(64))}),
+            review_policy: "before_external_use".to_string(),
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, source_refs,
+                 dedupe_key, idempotency_key, payload, review_policy)
+            VALUES
+                ($1, $2, 'processing', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            "#,
+        )
+        .bind(work_item.id)
+        .bind(&work_item.work_item_type)
+        .bind(&work_item.requester_agent)
+        .bind(&work_item.target_agent)
+        .bind(&work_item.capability_key)
+        .bind(&work_item.brief_summary)
+        .bind(&work_item.source_type)
+        .bind(&work_item.source_refs)
+        .bind(format!("authorized-upsert-dedupe-{suffix}"))
+        .bind(format!("authorized-upsert-idempotency-{suffix}"))
+        .bind(&work_item.payload)
+        .bind(&work_item.review_policy)
+        .execute(&pool)
+        .await
+        .expect("seed collaboration work item");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, content_text, content_hash, review_requested_at,
+                 reviewed_at, reviewed_by, review_decision_reason)
+            VALUES
+                ($1, $2, 'poster_brief', 'pending', 'huabaosi',
+                 'pending poster brief', 'legacy pending artifact', 'same brief', $3, now(),
+                 TIMESTAMPTZ '2000-01-01 00:00:00+00', $4, 'stale review reason')
+            "#,
+        )
+        .bind(existing_artifact_id)
+        .bind(work_item.id)
+        .bind(&content_hash)
+        .bind(format!("sha256:{}", "e".repeat(64)))
+        .execute(&pool)
+        .await
+        .expect("seed pending collaboration artifact");
+        let draft = ArtifactDraft {
+            artifact_type: "poster_brief".to_string(),
+            title: "authorized poster brief".to_string(),
+            summary: "source-grounded authorized brief".to_string(),
+            content_text: "same brief".to_string(),
+            content_hash: content_hash.clone(),
+            review_status: "approved".to_string(),
+            authorization: Some(GenerationAuthorization {
+                actor_ref: actor_ref.clone(),
+                source_message_ref,
+            }),
+            evidence_context: None,
+        };
+        let mut tx = pool
+            .begin()
+            .await
+            .expect("begin authorized artifact upsert transaction");
+        let artifact_id = upsert_artifact(&mut tx, &work_item, &draft)
+            .await
+            .expect("promote pending artifact with authorization provenance");
+        tx.commit()
+            .await
+            .expect("commit authorized artifact upsert transaction");
+        assert_eq!(artifact_id, existing_artifact_id);
+
+        let persisted: (String, bool, Option<String>, Option<String>, Value, i64) = sqlx::query_as(
+            r#"
+                SELECT artifact.review_status,
+                       artifact.reviewed_at > TIMESTAMPTZ '2020-01-01 00:00:00+00',
+                       artifact.reviewed_by, artifact.review_decision_reason,
+                       artifact.metadata,
+                       count(*) OVER ()
+                FROM qintopia_agent_os.artifacts artifact
+                WHERE artifact.work_item_id=$1 AND artifact.content_hash=$2
+                "#,
+        )
+        .bind(work_item.id)
+        .bind(&content_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("load promoted collaboration artifact");
+        assert_eq!(persisted.0, "approved");
+        assert!(persisted.1);
+        assert_eq!(persisted.2.as_deref(), Some(actor_ref.as_str()));
+        assert_eq!(
+            persisted.3.as_deref(),
+            Some("authorized by originating poster generation request")
+        );
+        assert_eq!(
+            persisted.4["authorization_mode"],
+            "originating_generation_request"
+        );
+        assert_eq!(persisted.5, 1);
     }
 
     #[test]

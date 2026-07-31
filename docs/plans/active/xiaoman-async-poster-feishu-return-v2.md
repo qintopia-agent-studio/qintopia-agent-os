@@ -116,7 +116,7 @@ event while the activity group receives no message.
 ## Implementation Status
 
 Local implementation and repository validation completed on 2026-07-31. The default
-sidecar suite passed 452 tests, the all-features suite passed 458 tests with 15 guarded
+sidecar suite passed 452 tests, the all-features suite passed 458 tests with 16 guarded
 PostgreSQL tests ignored, both sidecar smokes passed, and `pnpm check:pr:auto` completed
 its quick and heavy Rust tiers. The PostgreSQL integration target compiles with
 `postgres-integration-tests`, including fact-gate claim prevention, notification-bound
@@ -135,6 +135,11 @@ retains that non-sensitive identity without retaining the raw image key. The pri
 `huabaosi-production` artifact name remains backward compatible; the compiled Xiaoman
 adapter stays disabled until its independent owner approval, preflight, persistent
 enablement, and timer activation gates pass.
+
+Authorized poster-brief upserts are monotonic and fail closed: an existing pending
+artifact with the same work item and content hash is promoted in place with complete
+review provenance, while any incompatible persisted review state aborts the transaction
+before authorization events or work-item completion.
 
 The disposable PostgreSQL test was not executed locally because
 `127.0.0.1:5432/qintopia_test` is unavailable. Production activation and real Feishu
