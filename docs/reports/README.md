@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-07-31 v0.2.59 legacy deploy-runner bootstrap](2026-07-31-v0259-legacy-runner-bootstrap.md)
 - [2026-07-31 Xiaoman poster delivery claim CI failure](2026-07-31-xiaoman-poster-delivery-claim-ci-failure.md)
 - [2026-07-30 Xiaoman preflight QiWe companion routing](2026-07-30-xiaoman-preflight-qiwe-companion-routing.md)
 - [2026-07-29 QiWe callback report and Xiaoman evidence contract drift](2026-07-29-qiwe-callback-report-and-xiaoman-evidence-contract-drift.md)
@@ -39,6 +40,7 @@ steps still block any `production-complete` claim.
 
 | Source                                                                             | Disposition | Notes                                                                  |
 | ---------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `2026-07-31-v0259-legacy-runner-bootstrap.md`                                      | adopt-input | v0.2.59 runner contract deadlock and guarded bootstrap remediation     |
 | `../qintopia-agent-os/docs/reports/agent-os-internal-sync-2026-07-03.html`         | report-ref  | Internal sync HTML for architecture, current state, risks, and roadmap |
 | `../qintopia-agent-os/docs/reports/server-agent-runtime-inventory-2026-06-29.md`   | adopt-input | Runtime inventory used by migration planning                           |
 | `../qintopia-agent-os/docs/reports/qintopia-agent-os-kb-synthesis-2026-06-28.html` | report-ref  | Knowledge-base synthesis report                                        |

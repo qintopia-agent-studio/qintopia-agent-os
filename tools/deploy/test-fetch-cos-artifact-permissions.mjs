@@ -103,6 +103,42 @@ try {
     "utf8"
   );
 
+  const writeHuabaosiManifest = (cargoFeatures) => {
+    fs.writeFileSync(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          commit_sha: sha,
+          artifact_name: artifactName,
+          target: "linux-x86_64-gnu",
+          files: [
+            {
+              path: "qintopia-message-sidecar",
+              sha256: sha256File(binaryPath),
+            },
+          ],
+          validation: {
+            artifact_profile: "huabaosi-production",
+            cargo_features: cargoFeatures,
+          },
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(fixtureRoot, "SHA256SUMS"),
+      [
+        `${sha256File(binaryPath)}  qintopia-message-sidecar`,
+        `${sha256File(archivePath)}  qintopia-message-sidecar.tar.gz`,
+        `${sha256File(manifestPath)}  artifact-manifest.json`,
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+  };
+
   const fakeCoscli = path.join(tmpRoot, "coscli");
   fs.writeFileSync(
     fakeCoscli,
@@ -210,6 +246,90 @@ exec ${JSON.stringify(systemTar)} "$@"
   requireMode(path.join(outputRoot, "artifact-manifest.json"), 0o444);
   requireMode(path.join(outputRoot, "SHA256SUMS"), 0o444);
   requireMode(path.join(outputRoot, "qintopia-message-sidecar.tar.gz"), 0o444);
+
+  const legacyFeatures = [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ];
+  writeHuabaosiManifest(legacyFeatures);
+  const legacyDefaultResult = spawnSync(
+    "bash",
+    [
+      "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+      "--artifact-type",
+      "sidecar",
+      "--sha",
+      sha,
+      "--output-dir",
+      path.join(tmpRoot, "legacy-default-output"),
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...fetchEnv,
+        QINTOPIA_SIDECAR_ARTIFACT_PROFILE: "huabaosi-production",
+        ARTIFACT_NAME: artifactName,
+        ARTIFACT_TARGET: "linux-x86_64-gnu",
+      },
+      encoding: "utf8",
+    }
+  );
+  if (
+    legacyDefaultResult.status === 0 ||
+    !`${legacyDefaultResult.stdout}\n${legacyDefaultResult.stderr}`.includes(
+      "artifact manifest Cargo features are not approved for production"
+    )
+  ) {
+    throw new Error("COS fetch default contract accepted a legacy Huabaosi artifact");
+  }
+
+  const runLegacyFetch = (runtimeSha) =>
+    spawnSync(
+      "bash",
+      [
+        "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+        "--artifact-type",
+        "sidecar",
+        "--sha",
+        sha,
+        "--output-dir",
+        path.join(tmpRoot, `legacy-${runtimeSha || "missing"}-output`),
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...fetchEnv,
+          QINTOPIA_SIDECAR_ARTIFACT_PROFILE: "huabaosi-production",
+          QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT: "legacy-runner-bootstrap",
+          QINTOPIA_LEGACY_RUNNER_BOOTSTRAP_RUNTIME_SHA: runtimeSha,
+          ARTIFACT_NAME: artifactName,
+          ARTIFACT_TARGET: "linux-x86_64-gnu",
+        },
+        encoding: "utf8",
+      }
+    );
+
+  for (const [name, runtimeSha] of [
+    ["missing", ""],
+    ["mismatched", "3333333333333333333333333333333333333333"],
+  ]) {
+    const rejected = runLegacyFetch(runtimeSha);
+    if (
+      rejected.status === 0 ||
+      !`${rejected.stdout}\n${rejected.stderr}`.includes(
+        "legacy runner bootstrap requires an exact deployed runtime SHA binding"
+      )
+    ) {
+      throw new Error(`COS fetch accepted ${name} legacy runtime binding`);
+    }
+  }
+
+  const legacyBoundResult = runLegacyFetch(sha);
+  if (legacyBoundResult.status !== 0) {
+    throw new Error(
+      `COS fetch rejected an exactly bound legacy artifact\n${legacyBoundResult.stdout}\n${legacyBoundResult.stderr}`
+    );
+  }
 
   const qiweFeatureOutputRoot = path.join(tmpRoot, "qiwe-feature-output");
   fs.writeFileSync(
@@ -531,7 +651,7 @@ exec ${JSON.stringify(systemTar)} "$@"
 
   const tarInvocations = fs.readFileSync(tarArgsPath, "utf8").trim().split("\n");
   if (
-    tarInvocations.length !== 6 ||
+    tarInvocations.length !== 8 ||
     tarInvocations.some((args) => !args.includes("--no-same-owner"))
   ) {
     throw new Error(
