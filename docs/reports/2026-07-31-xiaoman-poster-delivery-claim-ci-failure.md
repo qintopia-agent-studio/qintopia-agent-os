@@ -32,6 +32,11 @@ non-empty `source_message_ref` for trusted Feishu direct requests. That was weak
 the intake contract and could persist an unredacted platform identifier in work-item
 source references.
 
+The same review cycle found two fail-closed gaps: fact-gate eligibility used
+`jsonb_array_length` after a separate type predicate, which PostgreSQL is not required
+to evaluate first, and group-send eligibility recognized direct intake only through a
+metadata marker rather than also binding the trusted direct source type.
+
 ## Root Cause
 
 The implementation mixed attempt-table completion fields into the work-item fixture and
@@ -57,6 +62,10 @@ its SQL against PostgreSQL, so the reserved alias reached the disposable databas
 - Apply the same lowercase canonical hash rule when collaboration authorization and
   poster-notification workers revalidate opaque references downstream.
 - Add negative coverage for raw, short, uppercase, and whitespace-padded references.
+- Compare fact-gate missing/conflict fields directly with the exact empty JSON array,
+  avoiding type-dependent function evaluation on malformed payloads.
+- Require a `group_send_authorized` event whenever either the source type or the intake
+  metadata identifies a trusted Feishu direct conversation.
 
 ## Validation
 

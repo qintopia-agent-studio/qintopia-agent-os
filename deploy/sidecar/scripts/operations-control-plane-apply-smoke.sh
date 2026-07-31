@@ -980,6 +980,32 @@ assert_sql_equals \
   1 \
   "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_promotion_visual_child_id}'::uuid AND capability_key = 'huabaosi.generate_image_asset' AND work_item_type = 'image_generation_request';"
 
+psql_value "
+UPDATE qintopia_agent_os.work_items
+SET
+  source_type = 'feishu_direct_request',
+  source_refs = jsonb_build_object('source_message_ref', 'sha256:' || repeat('f', 64)),
+  metadata = metadata #- '{workflow_metadata,intake_channel}',
+  updated_at = now()
+WHERE id = '${xiaoman_worker_parent_id}'::uuid;" >/dev/null
+
+xiaoman_direct_send_without_authorization="$(run_json xiaoman_direct_send_without_authorization run-xiaoman-activity-send-request-starter-worker --check-only --work-item-id "$xiaoman_worker_parent_id")"
+assert_json "$xiaoman_direct_send_without_authorization" "data['success'] is True"
+assert_json "$xiaoman_direct_send_without_authorization" "data['action_status'] == 'no_eligible_approved_generated_images'"
+assert_json "$xiaoman_direct_send_without_authorization" "data['scanned_count'] == 0"
+assert_sql_equals \
+  xiaoman_direct_send_without_authorization_creates_no_group_child \
+  0 \
+  "SELECT count(*) FROM qintopia_agent_os.work_items WHERE parent_work_item_id = '${xiaoman_worker_parent_id}'::uuid AND capability_key = 'erhua.send_group_message' AND work_item_type = 'group_message_request';"
+
+psql_value "
+UPDATE qintopia_agent_os.work_items
+SET
+  source_type = 'event_signal',
+  source_refs = jsonb_build_object('event_signal_id', '${xiaoman_worker_signal_id}'),
+  updated_at = now()
+WHERE id = '${xiaoman_worker_parent_id}'::uuid;" >/dev/null
+
 xiaoman_send_preview="$(run_json xiaoman_send_preview run-xiaoman-activity-send-request-starter-worker --check-only --work-item-id "$xiaoman_worker_parent_id")"
 assert_json "$xiaoman_send_preview" "data['success'] is True"
 assert_json "$xiaoman_send_preview" "data['worker'] == 'xiaoman-activity-send-request-starter-worker'"

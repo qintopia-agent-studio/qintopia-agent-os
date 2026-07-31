@@ -22,18 +22,8 @@ AND (
             'originating_request',
             'trusted_activity_record'
         )
-        AND jsonb_typeof(
-            visual.payload->'poster_fact_gate'->'missing_fields'
-        ) = 'array'
-        AND jsonb_array_length(
-            visual.payload->'poster_fact_gate'->'missing_fields'
-        ) = 0
-        AND jsonb_typeof(
-            visual.payload->'poster_fact_gate'->'conflict_fields'
-        ) = 'array'
-        AND jsonb_array_length(
-            visual.payload->'poster_fact_gate'->'conflict_fields'
-        ) = 0
+        AND visual.payload->'poster_fact_gate'->'missing_fields' = '[]'::jsonb
+        AND visual.payload->'poster_fact_gate'->'conflict_fields' = '[]'::jsonb
     )
 )
 "#;
@@ -1364,6 +1354,50 @@ mod tests {
             .await
             .expect("migrate guarded collaboration integration database");
         let suffix = Uuid::new_v4().simple().to_string();
+        let malformed_work_item_id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, source_refs,
+                 dedupe_key, idempotency_key, payload, review_policy)
+            VALUES
+                ($1, $2, 'queued', 'xiaoman', 'huabaosi', $3,
+                 'malformed fact gate must stay unclaimed', 'feishu_direct_request',
+                 $4, $5, $6, $7, 'before_external_use')
+            "#,
+        )
+        .bind(malformed_work_item_id)
+        .bind(SUPPORTED_WORK_ITEM_TYPE)
+        .bind(SUPPORTED_CAPABILITY)
+        .bind(json!({"source_message_ref": format!("sha256:{}", "f".repeat(64))}))
+        .bind(format!("malformed-fact-gate-dedupe-{suffix}"))
+        .bind(format!("malformed-fact-gate-idempotency-{suffix}"))
+        .bind(json!({
+            "generation_authorization": {"mode": "originating_generation_request"},
+            "poster_fact_gate": {
+                "status": "complete",
+                "source": "originating_request",
+                "missing_fields": {},
+                "conflict_fields": []
+            }
+        }))
+        .execute(&pool)
+        .await
+        .expect("seed malformed fact-gate work item");
+        let mut malformed_tx = pool
+            .begin()
+            .await
+            .expect("begin malformed fact-gate claim transaction");
+        let malformed_claim = claim_work_item_by_id(&mut malformed_tx, malformed_work_item_id)
+            .await
+            .expect("malformed fact gate must fail closed without a PostgreSQL error");
+        assert!(malformed_claim.is_none());
+        malformed_tx
+            .commit()
+            .await
+            .expect("commit malformed fact-gate no-op transaction");
+
         let work_item_id = Uuid::new_v4();
         let existing_artifact_id = Uuid::new_v4();
         let content_hash = format!("sha256:{}", "c".repeat(64));
@@ -1550,12 +1584,12 @@ mod tests {
             "poster_fact_gate'->>'status' = 'complete'",
             "'originating_request'",
             "'trusted_activity_record'",
-            "jsonb_array_length",
-            "missing_fields",
-            "conflict_fields",
+            "poster_fact_gate'->'missing_fields' = '[]'::jsonb",
+            "poster_fact_gate'->'conflict_fields' = '[]'::jsonb",
         ] {
             assert!(DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL.contains(required_fragment));
         }
+        assert!(!DIRECT_GENERATION_FACT_GATE_ELIGIBILITY_SQL.contains("jsonb_array_length"));
     }
 
     #[test]

@@ -60,6 +60,26 @@ const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const GENERATED_IMAGE_WORK_ITEM_TYPE: &str = "image_generation_request";
 const GENERATED_IMAGE_WORKER_ID: &str = "huabaosi-image-generation-worker";
 const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
+const DIRECT_CONVERSATION_GROUP_SEND_AUTHORIZATION_SQL: &str = r#"
+AND (
+    (
+        parent.source_type NOT IN (
+            'feishu_direct_request',
+            'feishu_direct_revision_request'
+        )
+        AND COALESCE(
+            parent.metadata #>> '{workflow_metadata,intake_channel}',
+            ''
+        ) <> 'xiaoman_feishu_direct'
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM qintopia_agent_os.work_item_events authorization_event
+        WHERE authorization_event.work_item_id = parent.id
+          AND authorization_event.event_type = 'group_send_authorized'
+    )
+)
+"#;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkItemCreateRequest {
@@ -1457,7 +1477,7 @@ async fn load_xiaoman_activity_send_request_candidates(
     work_item_id: Option<Uuid>,
     batch_size: i64,
 ) -> Result<Vec<XiaomanActivitySendRequestCandidate>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(&format!(
         r#"
         SELECT
             parent.id AS parent_id,
@@ -1501,16 +1521,7 @@ async fn load_xiaoman_activity_send_request_candidates(
               'activity_recap_request'
           )
           AND parent.target_agent = 'xiaoman'
-          AND (
-              COALESCE(parent.metadata #>> '{workflow_metadata,intake_channel}', '')
-                  <> 'xiaoman_feishu_direct'
-              OR EXISTS (
-                  SELECT 1
-                  FROM qintopia_agent_os.work_item_events authorization_event
-                  WHERE authorization_event.work_item_id = parent.id
-                    AND authorization_event.event_type = 'group_send_authorized'
-              )
-          )
+          {DIRECT_CONVERSATION_GROUP_SEND_AUTHORIZATION_SQL}
           AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1 OR image_request.id = $1)
           AND NOT EXISTS (
               SELECT 1
@@ -1522,7 +1533,7 @@ async fn load_xiaoman_activity_send_request_candidates(
         ORDER BY parent.created_at ASC
         LIMIT $2
         "#,
-    )
+    ))
     .bind(work_item_id)
     .bind(batch_size.max(1))
     .fetch_all(pool)
@@ -7147,6 +7158,15 @@ mod tests {
 
     #[test]
     fn xiaoman_send_request_starter_builds_awaiting_publish_group_message() {
+        for required_fragment in [
+            "parent.source_type NOT IN",
+            "'feishu_direct_request'",
+            "'feishu_direct_revision_request'",
+            "'xiaoman_feishu_direct'",
+            "authorization_event.event_type = 'group_send_authorized'",
+        ] {
+            assert!(DIRECT_CONVERSATION_GROUP_SEND_AUTHORIZATION_SQL.contains(required_fragment));
+        }
         let candidate = xiaoman_send_candidate();
         let request = xiaoman_activity_send_request(
             &candidate,
