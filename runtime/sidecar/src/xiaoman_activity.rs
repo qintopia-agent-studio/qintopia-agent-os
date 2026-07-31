@@ -40,6 +40,7 @@ const WRITE_OPERATIONS: &[&str] = &[
     "handoff-create",
     "signal-ingest",
 ];
+const MATERIAL_FOLLOWUP_OPERATION: &str = "material-followup-scan";
 const TABLE_ROLES: &[&str] = &["activity_plan", "activity_occurrence"];
 const FEISHU_BASE_API: &str = "https://open.feishu.cn/open-apis/bitable/v1/apps";
 const FEISHU_AUTH_API: &str =
@@ -307,6 +308,92 @@ pub async fn run(
     Ok(())
 }
 
+pub async fn run_material_followup_worker(
+    cli: &Cli,
+    check_only: bool,
+    once: bool,
+    apply: bool,
+    poll_seconds: u64,
+) -> Result<()> {
+    if check_only || once {
+        let report = run_material_followup_worker_batch(cli, apply).await?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+
+    let poll_seconds = poll_seconds.max(60);
+    loop {
+        match run_material_followup_worker_batch(cli, apply).await {
+            Ok(report) => tracing::info!(
+                scanned = report.record_count,
+                created = report
+                    .operations_work_item
+                    .map(|item| !item.existing)
+                    .unwrap_or(false),
+                "xiaoman material followup worker batch complete"
+            ),
+            Err(error) => tracing::warn!(
+                error = %error,
+                "xiaoman material followup worker batch failed"
+            ),
+        }
+        sleep(StdDuration::from_secs(poll_seconds)).await;
+    }
+}
+
+async fn run_material_followup_worker_batch(
+    cli: &Cli,
+    apply: bool,
+) -> Result<ActivityWorkerReport> {
+    let payload = ActivityPayload {
+        actor_agent: ACTOR_AGENT.to_string(),
+        operation: MATERIAL_FOLLOWUP_OPERATION.to_string(),
+        record_id: String::new(),
+        source_record_id: String::new(),
+        date: String::new(),
+        table_role: String::new(),
+        status: String::new(),
+        gap_summary: String::new(),
+        activity_phase: String::new(),
+        handoff_type: String::new(),
+        target_agent: String::new(),
+        brief_summary: String::new(),
+        event_signal_id: String::new(),
+        source_event_signal_id: String::new(),
+        mutation_id: String::new(),
+        signal_type: String::new(),
+        activity_title: String::new(),
+        signal_date: String::new(),
+        chat_id: String::new(),
+        source_message_ids: Vec::new(),
+        owner_name: String::new(),
+        priority: String::new(),
+        location: String::new(),
+        related_member_names: Vec::new(),
+        activity_owner_name: String::new(),
+        preannounce_decision: String::new(),
+        preannounce_channels: Vec::new(),
+        human_reviewer: String::new(),
+    };
+    let config = ActivityRuntimeConfig {
+        fixture_path: None,
+        feishu_base: if apply {
+            Some(activity_feishu_base_config(cli)?)
+        } else {
+            None
+        },
+    };
+    execute_with_config(
+        cli,
+        MATERIAL_FOLLOWUP_OPERATION.to_string(),
+        payload,
+        apply,
+        false,
+        &config,
+    )
+    .await
+}
+
 pub async fn run_signal_worker(cli: &Cli, options: SignalWorkerOptions) -> Result<()> {
     if options.check_only || options.once {
         let report = run_signal_worker_batch(cli, &options).await?;
@@ -346,6 +433,8 @@ async fn execute_with_config(
 
     if operation == "shadow-validate" {
         execute_shadow_validate(cli, &mut report, &payload, apply_requested, config).await?;
+    } else if operation == MATERIAL_FOLLOWUP_OPERATION {
+        execute_material_followup_scan(cli, &mut report, &payload, apply_requested, config).await?;
     } else if operation_is_read && apply_requested {
         execute_read_operation(&mut report, &operation, &payload, config)?;
     } else if operation_is_read {
@@ -1052,6 +1141,147 @@ async fn load_signal_ingest_candidates(
     rows.into_iter()
         .map(EventSignalIngestCandidate::from_row)
         .collect()
+}
+
+async fn execute_material_followup_scan(
+    cli: &Cli,
+    report: &mut ActivityWorkerReport,
+    payload: &ActivityPayload,
+    apply_requested: bool,
+    config: &ActivityRuntimeConfig,
+) -> Result<()> {
+    report.source = "material_followup_scan".to_string();
+    report.safe_for_chat = false;
+    report.guardrails.push(
+        "material followup scan only reads activity_occurrence and generates reminder drafts"
+            .to_string(),
+    );
+    report.guardrails.push(
+        "reminder drafts are not sent automatically; they require human confirmation before handoff".to_string(),
+    );
+
+    if !apply_requested {
+        report.action_status = "dry_run_ok".to_string();
+        report
+            .limitations
+            .push("material followup scan validated without reading activity records".to_string());
+        return Ok(());
+    }
+
+    let scan_date = if payload.date.trim().is_empty() {
+        (chrono::Utc::now() - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string()
+    } else {
+        payload.date.trim().to_string()
+    };
+
+    let records = if let Some(path) = config.fixture_path.as_deref() {
+        load_fixture_records(path)?
+    } else if let Some(base_config) = config.feishu_base.as_ref() {
+        load_feishu_records(base_config, "activity_occurrence")?
+    } else {
+        report.action_status = "followup_source_not_configured".to_string();
+        report.limitations.push(
+            "set --fixture-path for replay or enable --use-feishu-base with an allowlisted Base config".to_string(),
+        );
+        return Ok(());
+    };
+    let mut pending_followup = Vec::new();
+    let mut work_items = Vec::new();
+
+    for record in records {
+        if record.table_role != "activity_occurrence" {
+            continue;
+        }
+        if !record.matches_date(&scan_date) {
+            continue;
+        }
+        if record.material_summary.is_some()
+            && !record.material_summary.as_ref().unwrap().trim().is_empty()
+        {
+            continue;
+        }
+        let title = record.title.clone();
+        let owner = record
+            .owner_name
+            .clone()
+            .unwrap_or_else(|| "负责人".to_string());
+        let reminder_text = format!(
+            "{}，您好！{}（{}）活动已结束，但素材回填尚未完成。请尽快补交活动照片和总结。",
+            owner, title, scan_date
+        );
+        pending_followup.push((title.clone(), owner.clone(), reminder_text.clone()));
+    }
+
+    report.record_count = pending_followup.len();
+    if pending_followup.is_empty() {
+        report.action_status = "no_pending_followup".to_string();
+        report.summaries.push(format!(
+            "No activities from {} require material followup",
+            scan_date
+        ));
+        return Ok(());
+    }
+
+    let database_url = match cli.database_url.as_ref() {
+        Some(url) if !url.trim().is_empty() => url,
+        _ => {
+            report.action_status = "followup_source_not_configured".to_string();
+            report.limitations.push(
+                "QINTOPIA_SIDECAR_DATABASE_URL is required for work item creation".to_string(),
+            );
+            return Ok(());
+        }
+    };
+
+    let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+
+    for (title, owner, reminder_text) in pending_followup {
+        let idempotency_key = format!("xiaoman_activity_material_followup:{}:{}", scan_date, title);
+        let request = WorkItemCreateRequest {
+            requester_agent: ACTOR_AGENT.to_string(),
+            target_agent: "erhua".to_string(),
+            capability_key: "erhua.send_group_message".to_string(),
+            work_item_type: "group_message_request".to_string(),
+            brief_summary: format!("催办：{} 活动素材回填", title),
+            purpose: String::new(),
+            human_owner: String::new(),
+            priority: "medium".to_string(),
+            source_type: "scheduled_scan".to_string(),
+            source_refs: json!({
+                "scan_date": scan_date,
+                "scan_type": "material_followup",
+            }),
+            source_event_signal_id: None,
+            payload: json!({
+                "activity_title": title,
+                "activity_date": scan_date,
+                "owner_name": owner,
+                "reminder_text": reminder_text,
+                "target_group_alias": "community_activity_group",
+                "priority": "medium",
+            }),
+            payload_redaction_policy: "default".to_string(),
+            idempotency_key,
+            dedupe_key: String::new(),
+            metadata: serde_json::json!({}),
+            parent_work_item_id: None,
+            approved_artifact_id: None,
+        };
+        let policy = operations::OperationsPolicy::from_cli(cli, true);
+        let item = operations::create_work_item(&pool, request, true, &policy).await?;
+        work_items.push(item);
+    }
+
+    report.action_status = "followup_reminders_created".to_string();
+    report.operations_work_item = work_items.first().cloned();
+    report.summaries.push(format!(
+        "Created {} material followup reminders",
+        work_items.len()
+    ));
+
+    Ok(())
 }
 
 async fn execute_shadow_validate(
@@ -2250,7 +2480,10 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
     if operation != payload.operation {
         bail!("operation mismatch between CLI and payload");
     }
-    if !READ_ONLY_OPERATIONS.contains(&operation) && !WRITE_OPERATIONS.contains(&operation) {
+    if !READ_ONLY_OPERATIONS.contains(&operation)
+        && !WRITE_OPERATIONS.contains(&operation)
+        && operation != MATERIAL_FOLLOWUP_OPERATION
+    {
         bail!("operation is not allowed");
     }
     if payload.actor_agent != ACTOR_AGENT {
@@ -2329,6 +2562,9 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
             ("table_role", &payload.table_role),
         ])?,
         "shadow-validate" => require_fields(&[("date", &payload.date)])?,
+        MATERIAL_FOLLOWUP_OPERATION => {
+            // No required fields for material followup scan; it auto-detects yesterday's date
+        }
         _ => unreachable!("operation allowlist checked above"),
     }
     Ok(())
@@ -3483,5 +3719,113 @@ mod tests {
                 "forbidden term leaked in Feishu read limitation: {forbidden}"
             );
         }
+    }
+
+    fn write_temp_fixture(records: serde_json::Value) -> tempfile::NamedTempFile {
+        let file = tempfile::NamedTempFile::new().expect("temp fixture should be created");
+        std::fs::write(
+            file.path(),
+            serde_json::to_vec(&records).expect("fixture should serialize"),
+        )
+        .expect("temp fixture should be written");
+        file
+    }
+
+    #[tokio::test]
+    async fn material_followup_scan_flags_occurrence_without_material() {
+        let fixture = write_temp_fixture(json!({
+            "records": [
+                {
+                    "record_id": "rec_occurrence_pending",
+                    "table_role": "activity_occurrence",
+                    "fields": {
+                        "活动名称": "瑜伽体验活动",
+                        "发生日期": "2026-07-30",
+                        "负责人": "刘珊",
+                        "素材照片": ""
+                    }
+                },
+                {
+                    "record_id": "rec_plan_same_date",
+                    "table_role": "activity_plan",
+                    "fields": {
+                        "活动名称": "同日计划活动",
+                        "活动日期": "2026-07-30",
+                        "负责人": "大羽"
+                    }
+                }
+            ]
+        }));
+        let config = ActivityRuntimeConfig {
+            fixture_path: Some(fixture.path().to_path_buf()),
+            feishu_base: None,
+        };
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "material-followup-scan",
+            "date": "2026-07-30"
+        }));
+
+        validate("material-followup-scan", &payload).expect("scan payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "material-followup-scan".to_string(),
+            payload,
+            true,
+            false,
+            &config,
+        )
+        .await
+        .expect("scan should succeed");
+
+        assert_eq!(report.record_count, 1);
+        assert_eq!(report.action_status, "followup_source_not_configured");
+    }
+
+    #[tokio::test]
+    async fn material_followup_scan_skips_records_with_material() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "material-followup-scan",
+            "date": "2026-06-28"
+        }));
+
+        validate("material-followup-scan", &payload).expect("scan payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "material-followup-scan".to_string(),
+            payload,
+            true,
+            false,
+            &runtime_with_fixture(),
+        )
+        .await
+        .expect("scan should succeed");
+
+        assert_eq!(report.action_status, "no_pending_followup");
+        assert_eq!(report.record_count, 0);
+    }
+
+    #[tokio::test]
+    async fn material_followup_scan_dry_run_does_not_read_source() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "material-followup-scan"
+        }));
+
+        validate("material-followup-scan", &payload).expect("scan payload should be valid");
+        let report = execute_with_config(
+            &Cli::parse_from(["qintopia-message-sidecar", "check"]),
+            "material-followup-scan".to_string(),
+            payload,
+            false,
+            true,
+            &runtime_without_source(),
+        )
+        .await
+        .expect("dry-run should succeed");
+
+        assert_eq!(report.action_status, "dry_run_ok");
+        assert_eq!(report.record_count, 0);
     }
 }

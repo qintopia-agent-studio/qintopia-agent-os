@@ -573,6 +573,17 @@ render_all() {
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
     "10min" \
     "${QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_TIMER_INTERVAL:-2min}"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-activity-material-followup-worker.service" \
+    "Qintopia AgentOS Xiaoman Activity Material Followup Worker" \
+    "run-xiaoman-activity-material-followup-worker --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-activity-material-followup-worker.timer" \
+    "Run Qintopia AgentOS Xiaoman activity material followup scanner" \
+    "qintopia-agentos-xiaoman-activity-material-followup-worker.service" \
+    "1h" \
+    "${QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_FOLLOWUP_TIMER_INTERVAL:-1h}"
 }
 
 validate_output() {
@@ -614,6 +625,8 @@ validate_output() {
     "qintopia-agentos-qiwe-image-send-worker.timer"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
+    "qintopia-agentos-xiaoman-activity-material-followup-worker.service"
+    "qintopia-agentos-xiaoman-activity-material-followup-worker.timer"
   )
 
   local file

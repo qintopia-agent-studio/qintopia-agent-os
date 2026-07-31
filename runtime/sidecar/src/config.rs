@@ -744,6 +744,24 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Scan Xiaoman activity occurrence records and create material followup reminders.
+    RunXiaomanActivityMaterialFollowupWorker {
+        /// Scan without writing AgentOS work items.
+        #[arg(long)]
+        check_only: bool,
+
+        /// Process one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply AgentOS work item writes. Without this flag the worker previews only.
+        #[arg(long)]
+        apply: bool,
+
+        /// Poll interval for long-running mode.
+        #[arg(long, default_value_t = 3600)]
+        poll_seconds: u64,
+    },
     /// Scan Xiaoman activity event_signals and submit signal-ingest work items.
     RunXiaomanActivitySignalWorker {
         /// Scan without writing AgentOS work items.

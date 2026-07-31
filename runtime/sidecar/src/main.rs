@@ -448,6 +448,21 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::RunXiaomanActivityMaterialFollowupWorker {
+            check_only,
+            once,
+            apply,
+            poll_seconds,
+        } => {
+            xiaoman_activity::run_material_followup_worker(
+                &cli,
+                check_only,
+                once,
+                apply,
+                poll_seconds,
+            )
+            .await
+        }
         Command::OperationsWorkItemCreate {
             payload_json,
             apply,
