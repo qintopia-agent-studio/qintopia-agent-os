@@ -1418,14 +1418,14 @@ mod tests {
                 forged_work_item_id,
                 "event_signal",
                 forged_source_ref,
-                i32::MAX,
+                "urgent",
                 "forged",
             ),
             (
                 eligible_work_item_id,
                 "feishu_direct_request",
                 eligible_source_ref,
-                i32::MAX - 1,
+                "high",
                 "eligible",
             ),
         ] {

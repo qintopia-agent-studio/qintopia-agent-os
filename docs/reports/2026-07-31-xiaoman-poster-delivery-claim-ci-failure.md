@@ -42,6 +42,10 @@ authorization provenance checks. A high-priority non-direct work item could ther
 pass SQL selection, fail the Rust authorization check, roll back, and repeatedly block
 later valid work.
 
+The first replacement run for that regression failed before exercising the claim query:
+the new fixture used integer priorities even though `work_items.priority` accepts only
+the reviewed `low`, `normal`, `high`, and `urgent` values.
+
 ## Root Cause
 
 The implementation mixed attempt-table completion fields into the work-item fixture and
@@ -76,6 +80,8 @@ its SQL against PostgreSQL, so the reserved alias reached the disposable databas
   and no-group-send provenance match the Rust validation exactly.
 - Add a PostgreSQL queue-order regression proving that a higher-priority forged
   authorization cannot starve a lower-priority valid direct request.
+- Keep that fixture inside the production schema contract by ordering the forged and
+  valid rows with `urgent` and `high`, respectively.
 
 ## Validation
 
