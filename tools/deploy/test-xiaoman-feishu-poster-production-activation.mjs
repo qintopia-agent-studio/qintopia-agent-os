@@ -55,6 +55,7 @@ try {
   const systemctl = path.join(tmpRoot, "systemctl");
   const runuser = path.join(tmpRoot, "runuser");
   const logPath = path.join(tmpRoot, "commands.log");
+  const restartFailureMarker = path.join(tmpRoot, "fail-xiaoman-restart");
   const sidecarEnv = path.join(tmpRoot, "message-sidecar.env");
   const hermesEnv = path.join(tmpRoot, "xiaoman.env");
   const releasePlugin = path.join(tmpRoot, "release", "skills", "qintopia-tools");
@@ -87,7 +88,13 @@ if [[ -n "\${QINTOPIA_UNRELATED_RUNTIME_SECRET:-}" ]]; then
 fi
 printf 'runuser %s\n' "$*" >>${shellDoubleQuoted(logPath)}
 case "$*" in
-  *"systemctl --user restart hermes-gateway-xiaoman.service"*|*"systemctl --user is-active --quiet hermes-gateway-xiaoman.service"*) exit 0 ;;
+  *"systemctl --user restart hermes-gateway-xiaoman.service"*)
+    if [[ -f ${shellDoubleQuoted(restartFailureMarker)} ]]; then
+      exit 65
+    fi
+    exit 0
+    ;;
+  *"systemctl --user is-active --quiet hermes-gateway-xiaoman.service"*) exit 0 ;;
   *) exit 64 ;;
 esac
 `
@@ -207,6 +214,32 @@ esac
 
   writeEnv(hermesEnv, enabledHermes);
   resetLog();
+  fs.writeFileSync(restartFailureMarker, "fail\n", "utf8");
+  result = run(activation, {
+    QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION:
+      "approved-production-xiaoman-feishu-poster-return",
+  });
+  const restartFailureLog = commandLog();
+  if (
+    result.status === 0 ||
+    !restartFailureLog.includes(
+      "systemctl start qintopia-agentos-xiaoman-feishu-poster-preflight.service"
+    ) ||
+    !restartFailureLog.includes(
+      "systemctl --user restart hermes-gateway-xiaoman.service"
+    ) ||
+    restartFailureLog.includes("systemctl enable") ||
+    restartFailureLog.includes(
+      "systemctl restart qintopia-agentos-xiaoman-feishu-poster-delivery.timer"
+    )
+  ) {
+    throw new Error(
+      "failed Xiaoman restart must not enable or restart poster workflow units"
+    );
+  }
+  fs.unlinkSync(restartFailureMarker);
+
+  resetLog();
   result = run(activation, {
     QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION:
       "approved-production-xiaoman-feishu-poster-return",
@@ -217,10 +250,11 @@ esac
   const activationLog = commandLog();
   const expectedOrder = [
     "systemctl start qintopia-agentos-xiaoman-feishu-poster-preflight.service",
-    "systemctl enable --now qintopia-agentos-xiaoman-poster-review-callback.service",
-    "systemctl enable --now qintopia-agentos-xiaoman-poster-notification-starter.timer",
     "systemctl --user restart hermes-gateway-xiaoman.service",
     "systemctl --user is-active --quiet hermes-gateway-xiaoman.service",
+    "systemctl enable --now qintopia-agentos-operations-intake.service",
+    "systemctl enable --now qintopia-agentos-xiaoman-poster-review-callback.service",
+    "systemctl enable --now qintopia-agentos-xiaoman-poster-notification-starter.timer",
     "systemctl enable qintopia-agentos-xiaoman-feishu-poster-delivery.timer",
   ];
   let priorIndex = -1;

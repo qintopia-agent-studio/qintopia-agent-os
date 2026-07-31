@@ -115,10 +115,10 @@ restart_xiaoman() {
 }
 
 "$SYSTEMCTL" start "$PREFLIGHT_SERVICE"
+restart_xiaoman
 "$SYSTEMCTL" enable --now "$INTAKE_SERVICE"
 "$SYSTEMCTL" enable --now "$CALLBACK_SERVICE"
 "$SYSTEMCTL" enable --now "$STARTER_TIMER"
-restart_xiaoman
 "$SYSTEMCTL" enable "$DELIVERY_TIMER"
 "$SYSTEMCTL" restart "$DELIVERY_TIMER"
 

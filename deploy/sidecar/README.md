@@ -29,9 +29,10 @@ Activation requires persistent `QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED=1` in the
 sidecar env and `QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE=1` in the fixed Xiaoman
 Hermes env. Both env files must contain the same callback key, and the live plugin must
 resolve to the immutable `release/current` Xiaoman variant. The script runs the
-release-local preflight, starts intake/callback/starter, restarts and verifies
-`hermes-gateway-xiaoman.service` through the fixed `ubuntu` user boundary, then enables
-delivery last. It does not source either env file or print the callback key. Rollback
+release-local preflight, restarts and verifies `hermes-gateway-xiaoman.service` through
+the fixed `ubuntu` user boundary, then starts intake/callback/starter and enables
+delivery last. A failed gateway restart occurs before any workflow unit or timer is
+enabled. The script does not source either env file or print the callback key. Rollback
 stops delivery first, requires both persistent switches to be `0`, restarts Xiaoman to
 unload the hook, and retains all workflow, attempt, notification, and review audit data:
 

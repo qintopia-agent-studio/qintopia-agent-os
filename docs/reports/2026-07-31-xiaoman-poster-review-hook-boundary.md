@@ -18,6 +18,8 @@ Production-adjacent inspection found four boundary gaps:
   identifiers before the plugin handles the event.
 - The initial activation sequence enabled the callback path without restarting the
   Xiaoman gateway, so the newly installed hook was not guaranteed to be loaded.
+- The first hook remediation enabled intake, callback, and starter units before the
+  gateway restart completed, so a restart failure could leave a partial activation.
 - A card callback could reach idempotency handling before all notification, artifact,
   conversation, actor, delivered-state, and decision bindings were revalidated.
 
@@ -37,8 +39,8 @@ report.
 - Install a narrow logging filter for matching card events so raw actor, chat, token,
   and dispatch identifiers are not emitted by the Hermes log path.
 - Require both persistent enable flags, one matching callback key, and an immutable
-  `release/current` plugin link before any activation side effect. Restart and verify
-  the Xiaoman gateway before enabling external delivery.
+  `release/current` plugin link before any activation side effect. After the preflight,
+  restart and verify the Xiaoman gateway before enabling any workflow unit or timer.
 - Stop delivery first during rollback, require both persistent flags to be exactly
   disabled, and restart Xiaoman so the hook is unloaded.
 
@@ -55,6 +57,10 @@ and the all-features suite passed 459 tests with 16 guarded PostgreSQL tests ign
 The PostgreSQL integration target compiled, and the deploy-contract checks passed. The
 disposable PostgreSQL smoke and real Feishu direct-message exercise remain separate
 evidence gates.
+
+The activation fixture also forces the Xiaoman gateway restart to fail after preflight
+and verifies that no intake, callback, starter, or delivery unit is enabled or
+restarted.
 
 ## Remaining Boundary
 
