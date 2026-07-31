@@ -25,6 +25,8 @@ const APP_SECRET_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_APP_SECRET";
 const ALLOWED_CHAT_IDS_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_ALLOWED_CHAT_IDS";
 const ALLOWED_USER_IDS_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_ALLOWED_USER_IDS";
 const MEDIA_HOSTS_ENV: &str = "QINTOPIA_XIAOMAN_POSTER_MEDIA_ALLOWED_HOSTS";
+const CALLBACK_KEY_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY";
+const POSTER_REVIEW_CALLBACK_KIND: &str = "xiaoman_poster_review";
 const OFFICIAL_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
 const MAX_JSON_BYTES: usize = 1024 * 1024;
 const DEFAULT_MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
@@ -93,6 +95,7 @@ struct PreflightReport {
     chat_allowlist_count: usize,
     user_allowlist_count: usize,
     media_host_allowlist_count: usize,
+    callback_key_configured: bool,
     external_calls_executed: bool,
     database_writes_executed: bool,
 }
@@ -139,6 +142,7 @@ impl AdapterConfig {
             bail!("Xiaoman Feishu poster delivery database binding is invalid");
         }
         let api_root = Url::parse(OFFICIAL_API_ROOT).expect("official Feishu API root is valid");
+        required_env(CALLBACK_KEY_ENV)?;
         Ok(Self {
             api_root,
             app_id: Zeroizing::new(required_env(APP_ID_ENV)?),
@@ -165,6 +169,7 @@ pub fn run_preflight(cli: &Cli) -> Result<()> {
                 chat_allowlist_count: 0,
                 user_allowlist_count: 0,
                 media_host_allowlist_count: 0,
+                callback_key_configured: false,
                 external_calls_executed: false,
                 database_writes_executed: false,
             })?
@@ -185,6 +190,7 @@ pub fn run_preflight(cli: &Cli) -> Result<()> {
                 chat_allowlist_count: config.allowed_chat_ids.len(),
                 user_allowlist_count: config.allowed_user_ids.len(),
                 media_host_allowlist_count: config.media_allowed_hosts.len(),
+                callback_key_configured: true,
                 external_calls_executed: false,
                 database_writes_executed: false,
             })?
@@ -915,6 +921,7 @@ fn review_card(image_key: &str, claim: &DeliveryClaim) -> Value {
             "type": button_type,
             "value": {
                 "schema_version": 1,
+                "callback_kind": POSTER_REVIEW_CALLBACK_KIND,
                 "notification_id": claim.candidate.notification_id,
                 "artifact_id": claim.candidate.artifact_id,
                 "action": action
@@ -1303,6 +1310,7 @@ mod tests {
         let card = review_card("img_fixture", &claim);
         let raw = serde_json::to_string(&card).unwrap();
         assert!(raw.contains("approve") && raw.contains("modify") && raw.contains("abandon"));
+        assert!(raw.contains(POSTER_REVIEW_CALLBACK_KIND));
         assert!(raw.contains(&claim.candidate.notification_id.to_string()));
         assert!(!raw.contains("group_message_request"));
         assert!(!raw.contains(&claim.candidate.conversation_id));

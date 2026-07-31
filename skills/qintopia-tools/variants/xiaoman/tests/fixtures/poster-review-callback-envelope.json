@@ -1,0 +1,18 @@
+{
+  "callback_key": "fixture-callback-key",
+  "now": 1785456000,
+  "envelope": {
+    "timestamp": "1785456000",
+    "nonce": "0123456789abcdef0123456789abcdef",
+    "signature": "724ae089823b0fe64e57672a70714965dfc36c04f958c6ce837ebe978f6343ce",
+    "body_base64": "eyJldmVudCI6eyJhY3Rpb24iOnsidGFnIjoiYnV0dG9uIiwidmFsdWUiOnsiYWN0aW9uIjoiYXBwcm92ZSIsImFydGlmYWN0X2lkIjoiMjIyMjIyMjItMjIyMi00MjIyLTgyMjItMjIyMjIyMjIyMjIyIiwiY2FsbGJhY2tfa2luZCI6InhpYW9tYW5fcG9zdGVyX3JldmlldyIsIm5vdGlmaWNhdGlvbl9pZCI6IjExMTExMTExLTExMTEtNDExMS04MTExLTExMTExMTExMTExMSIsInNjaGVtYV92ZXJzaW9uIjoxfX0sImNvbnRleHQiOnsib3Blbl9jaGF0X2lkIjoib2NfY2hhdF9maXh0dXJlIn0sIm9wZXJhdG9yIjp7Im9wZW5faWQiOiJvdV91c2VyX2ZpeHR1cmUifX0sImhlYWRlciI6eyJldmVudF9pZCI6ImV2dF9maXh0dXJlXzEifX0="
+  },
+  "expected": {
+    "callback_event_id": "evt_fixture_1",
+    "conversation_id": "oc_chat_fixture",
+    "actor_user_id": "ou_user_fixture",
+    "notification_id": "11111111-1111-4111-8111-111111111111",
+    "artifact_id": "22222222-2222-4222-8222-222222222222",
+    "action": "approve"
+  }
+}

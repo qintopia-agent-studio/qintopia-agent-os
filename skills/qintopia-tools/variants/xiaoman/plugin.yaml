@@ -7,6 +7,8 @@ description: >
   sales/customer workflow tools backed by WenYuanGe knowledge snapshot indexes and
   Qintopia Agent OS guardrails.
 author: Qintopia
+hooks:
+  - pre_gateway_dispatch
 provides_tools:
   - qintopia_kb_search
   - qintopia_gis_location_lookup
@@ -72,3 +74,11 @@ optional_env:
     description: "Set to 1 only for wenyuange to expose raw qintopia_dify_* read tools"
     prompt: "Enable raw Dify read tools"
     password: false
+  - name: QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE
+    description: "Enable deterministic Xiaoman Feishu poster review card forwarding"
+    prompt: "Enable Xiaoman poster review hook"
+    password: false
+  - name: QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY
+    description: "Shared key for the local authenticated poster review callback ingress"
+    prompt: "Xiaoman poster review callback key"
+    password: true
