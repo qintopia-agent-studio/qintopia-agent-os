@@ -1326,6 +1326,11 @@ fn material_followup_work_item_request(
     } else {
         "activity_owner"
     };
+    let target_group_alias = if followup.escalation_required {
+        Value::Null
+    } else {
+        json!("community_activity_group")
+    };
     WorkItemCreateRequest {
         requester_agent: ACTOR_AGENT.to_string(),
         target_agent: "erhua".to_string(),
@@ -1354,7 +1359,7 @@ fn material_followup_work_item_request(
             "activity_date": scan_date,
             "owner_name": followup.owner,
             "reminder_text": followup.reminder_text,
-            "target_group_alias": "community_activity_group",
+            "target_group_alias": target_group_alias,
             "priority": priority,
             "material_followup_attempt": followup.attempt,
             "escalation_required": followup.escalation_required,
@@ -4056,6 +4061,7 @@ mod tests {
         assert_eq!(request.payload["material_followup_attempt"], 3);
         assert_eq!(request.payload["escalation_required"], true);
         assert_eq!(request.payload["recipient_scope"], "operations_lead");
+        assert!(request.payload["target_group_alias"].is_null());
         assert_eq!(request.payload["external_send_executed"], false);
     }
 
