@@ -46,9 +46,12 @@ All participant and return-target tables remain revoked from `PUBLIC`.
 - Historical unguarded revision rows stay in place. New writes are always guarded, and
   an existing historical winner prevents a new automatic revision for that image.
 - Work-item creation handles an idempotency conflict inside its transaction, reloads the
-  committed winner, and verifies its immutable capability, parent, source, payload, and
-  policy bindings before returning it. A reused key with different bindings fails closed
-  instead of routing work to an unrelated item.
+  committed winner, and verifies its immutable capability, work-item type, parent,
+  requester/provider, source, payload, and policy bindings before returning it. A reused
+  key with different bindings fails closed instead of routing work to an unrelated item.
+  Presentation-only `brief_summary` and the summary-derived `dedupe_key` are not
+  identity fields once an explicit stable idempotency key exists; a replay may render
+  them differently without creating or selecting another work item.
 - Each image notification already has one final review-action boundary. Duplicate or
   conflicting callbacks are audited as no-op rejections; they do not change the first
   decision.

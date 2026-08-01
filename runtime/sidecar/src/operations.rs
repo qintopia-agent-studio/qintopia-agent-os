@@ -680,12 +680,10 @@ struct IdempotentWorkItemBinding {
     target_agent: String,
     capability_key: String,
     priority: String,
-    brief_summary: String,
     purpose: String,
     source_event_signal_id: Option<Uuid>,
     source_type: String,
     source_refs: Value,
-    dedupe_key: String,
     risk_level: String,
     information_class: String,
     payload: Value,
@@ -3728,12 +3726,10 @@ async fn load_idempotent_work_item_binding(
             target_agent,
             capability_key,
             priority,
-            brief_summary,
             purpose,
             source_event_signal_id,
             source_type,
             source_refs,
-            dedupe_key,
             risk_level,
             information_class,
             payload,
@@ -3756,12 +3752,10 @@ async fn load_idempotent_work_item_binding(
         target_agent: row.get("target_agent"),
         capability_key: row.get("capability_key"),
         priority: row.get("priority"),
-        brief_summary: row.get("brief_summary"),
         purpose: row.get("purpose"),
         source_event_signal_id: row.get("source_event_signal_id"),
         source_type: row.get("source_type"),
         source_refs: row.get("source_refs"),
-        dedupe_key: row.get("dedupe_key"),
         risk_level: row.get("risk_level"),
         information_class: row.get("information_class"),
         payload: row.get("payload"),
@@ -3775,7 +3769,8 @@ fn validate_idempotent_work_item_binding(
     request: &WorkItemCreateRequest,
     capability: &Capability,
 ) -> Result<()> {
-    // Status, claims, human_owner, and metadata are mutable lifecycle fields.
+    // Lifecycle fields, presentation text, and its derived dedupe key are not request
+    // identity once the caller supplies a stable idempotency key.
     let mismatched_field = [
         (
             "parent_work_item_id",
@@ -3798,10 +3793,6 @@ fn validate_idempotent_work_item_binding(
             existing.capability_key != request.capability_key,
         ),
         ("priority", existing.priority != request.priority),
-        (
-            "brief_summary",
-            existing.brief_summary != request.brief_summary,
-        ),
         ("purpose", existing.purpose != request.purpose),
         (
             "source_event_signal_id",
@@ -3809,7 +3800,6 @@ fn validate_idempotent_work_item_binding(
         ),
         ("source_type", existing.source_type != request.source_type),
         ("source_refs", existing.source_refs != request.source_refs),
-        ("dedupe_key", existing.dedupe_key != request.dedupe_key),
         ("payload", existing.payload != request.payload),
         (
             "payload_redaction_policy",
@@ -6784,12 +6774,10 @@ mod tests {
             target_agent: request.target_agent.clone(),
             capability_key: request.capability_key.clone(),
             priority: request.priority.clone(),
-            brief_summary: request.brief_summary.clone(),
             purpose: request.purpose.clone(),
             source_event_signal_id: request.source_event_signal_id,
             source_type: request.source_type.clone(),
             source_refs: request.source_refs.clone(),
-            dedupe_key: request.dedupe_key.clone(),
             risk_level: capability.risk_level.clone(),
             information_class: "internal_ops".to_string(),
             payload: request.payload.clone(),
@@ -6808,6 +6796,18 @@ mod tests {
     }
 
     #[test]
+    fn idempotent_work_item_binding_accepts_refreshed_presentation_fields() {
+        let (mut request, capability, existing) = idempotent_binding_fixture();
+        let original_dedupe_key = request.dedupe_key.clone();
+        request.brief_summary = "刷新后的活动展示摘要".to_string();
+        request.dedupe_key = dedupe_key(&request);
+
+        assert_ne!(request.dedupe_key, original_dedupe_key);
+        validate_idempotent_work_item_binding(&existing, &request, &capability)
+            .expect("presentation changes must reuse the stable idempotency binding");
+    }
+
+    #[test]
     fn idempotent_work_item_binding_rejects_immutable_request_drift() {
         let (request, capability, existing) = idempotent_binding_fixture();
         let mut cases = Vec::new();
@@ -6823,6 +6823,22 @@ mod tests {
         let mut drifted = existing.clone();
         drifted.parent_work_item_id = Some(Uuid::new_v4());
         cases.push(("parent_work_item_id", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.requester_agent = "default".to_string();
+        cases.push(("requester_agent", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.target_agent = "xiaoman".to_string();
+        cases.push(("target_agent", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.source_event_signal_id = Some(Uuid::new_v4());
+        cases.push(("source_event_signal_id", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.source_type = "event_signal".to_string();
+        cases.push(("source_type", drifted));
 
         let mut drifted = existing.clone();
         drifted.source_refs = json!({"request_ref": format!("sha256:{}", "b".repeat(64))});

@@ -37,12 +37,18 @@ durable group notification work. Its boundary remains persistence and authorizat
 only: it makes no Feishu call, activates no service, deploys nothing, and writes no
 production database. PR 3 has not started.
 
-The PR 2 local suite passes 473 default Rust tests, 479 all-features Rust tests, both
+The PR 2 local suite passes 476 default Rust tests, 482 all-features Rust tests, both
 warning-denied Clippy configurations, plugin/MCP checks, runtime and deploy contracts,
 and `pnpm check:pr:auto`. A fresh disposable PostgreSQL 18.4 database with pgvector
 0.8.1 passed all three poster intake integration tests. PR CI must independently pass
 the repository-supported `pgvector/pgvector:pg16` service job; the PG18 result is an
 additional migration-compatibility check, not a substitute for CI.
+
+The latest PostgreSQL 16 run passed every focused integration test but found that the
+new work-item winner validator incorrectly treated a starter-rendered `brief_summary`
+and its derived `dedupe_key` as stable identity. The validator now keeps capability,
+type, parent, requester/provider, source, payload, and policy bindings strict while
+allowing presentation-only replay drift. Replacement PostgreSQL 16 CI remains required.
 
 PR 2 locks these implementation rules:
 
