@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import importlib
 import importlib.util
 import json
@@ -79,6 +80,23 @@ XIAOMAN_POSTER_REVIEW_DECISIONS = {
     "modify": "changes_requested",
     "abandon": "rejected",
 }
+XIAOMAN_FEISHU_MESSAGE_INGRESS_OPERATION = "feishu_message_ingest"
+XIAOMAN_FEISHU_MESSAGE_INGRESS_SCHEMA_VERSION = 3
+XIAOMAN_FEISHU_MESSAGE_INGRESS_HOOK_ENABLE_ENV = (
+    "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"
+)
+XIAOMAN_FEISHU_MESSAGE_INGRESS_HMAC_KEY_ENV = (
+    "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"
+)
+XIAOMAN_FEISHU_BOT_OPEN_ID_ENV = "QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID"
+XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED_ENV = (
+    "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"
+)
+XIAOMAN_FEISHU_MESSAGE_INGRESS_TIMEOUT_SECONDS = 2.0
+XIAOMAN_FEISHU_MESSAGE_INGRESS_MAX_BYTES = 64 * 1024
+XIAOMAN_FEISHU_MESSAGE_INGRESS_SIGNATURE_DOMAIN = (
+    b"qintopia-feishu-message-ingress-v3\n"
+)
 QINTOPIA_TENANT = "qintopia"
 COMPLAINT_TASK_TYPE = "complaint_intake"
 COMPLAINT_OWNER_PROFILE = "default"
@@ -1289,6 +1307,17 @@ def _session_env(name: str) -> str:
         return _clean_text(get_session_env(name, ""), max_len=4000)
     except Exception:
         return _clean_text(os.getenv(name, ""), max_len=4000)
+
+
+def _strict_poster_session_value(name: str) -> str:
+    try:
+        from gateway.session_context import get_session_env
+    except Exception:
+        return ""
+    try:
+        return _clean_text(get_session_env(name, ""), max_len=4000)
+    except Exception:
+        return ""
 
 
 def _dify_base_url() -> str:
@@ -5009,34 +5038,56 @@ def handle_qintopia_xiaoman_activity_material_summary(args: dict[str, Any], **_:
 
 
 def _poster_session_context() -> tuple[dict[str, str] | None, str | None]:
-    platform = _clean_text(_session_env("HERMES_SESSION_PLATFORM"), max_len=32).lower()
+    platform = _clean_text(
+        _strict_poster_session_value("HERMES_SESSION_PLATFORM"), max_len=32
+    ).lower()
     if platform == "lark":
         platform = "feishu"
-    conversation_type = _clean_text(
-        _session_env("HERMES_SESSION_CONVERSATION_TYPE"), max_len=32
-    ).lower()
-    chat_id = _clean_text(_session_env("HERMES_SESSION_CHAT_ID"), max_len=200)
-    user_id = _clean_text(_session_env("HERMES_SESSION_USER_ID"), max_len=200)
-    message_id = _clean_text(_session_env("HERMES_SESSION_MESSAGE_ID"), max_len=240)
+    chat_id = _clean_text(
+        _strict_poster_session_value("HERMES_SESSION_CHAT_ID"), max_len=200
+    )
+    user_id = _clean_text(
+        _strict_poster_session_value("HERMES_SESSION_USER_ID"), max_len=200
+    )
+    message_id = _clean_text(
+        _strict_poster_session_value("HERMES_SESSION_MESSAGE_ID"), max_len=240
+    )
     if platform != "feishu":
         return None, "trusted Feishu session context is required"
-    if conversation_type != "direct":
-        return None, "poster production is available only in a direct conversation"
     if not chat_id or not user_id or not message_id:
-        return None, "trusted direct-conversation identity is incomplete"
+        return None, "trusted Feishu session identity is incomplete"
     if any("\n" in value or "\r" in value for value in (chat_id, user_id, message_id)):
-        return None, "trusted direct-conversation identity is invalid"
+        return None, "trusted Feishu session identity is invalid"
     return {
         "platform": platform,
-        "conversation_type": conversation_type,
         "conversation_id": chat_id,
         "requester_user_id": user_id,
         "source_message_id": message_id,
     }, None
 
 
+def _poster_intake_session_context() -> tuple[dict[str, str] | None, int, str | None]:
+    session, error = _poster_session_context()
+    if error or session is None:
+        return None, 0, error
+    ingress_mode = os.getenv(XIAOMAN_FEISHU_MESSAGE_INGRESS_HOOK_ENABLE_ENV, "0").strip()
+    if ingress_mode == "1":
+        return session, XIAOMAN_FEISHU_MESSAGE_INGRESS_SCHEMA_VERSION, None
+    if ingress_mode not in {"", "0"}:
+        return None, 0, "Feishu message ingress mode is invalid"
+    conversation_type = _clean_text(
+        _strict_poster_session_value("HERMES_SESSION_CONVERSATION_TYPE"), max_len=32
+    ).lower()
+    if conversation_type in {"dm", "p2p", "private"}:
+        conversation_type = "direct"
+    if conversation_type != "direct":
+        return None, 0, "legacy poster intake requires a trusted direct conversation"
+    session["conversation_type"] = conversation_type
+    return session, 2, None
+
+
 def _poster_intake_socket_path() -> str:
-    path = _session_env("QINTOPIA_OPERATIONS_INTAKE_SOCKET") or DEFAULT_OPERATIONS_INTAKE_SOCKET
+    path = os.getenv("QINTOPIA_OPERATIONS_INTAKE_SOCKET") or DEFAULT_OPERATIONS_INTAKE_SOCKET
     if not os.path.isabs(path):
         raise ValueError("operations intake socket path must be absolute")
     return path
@@ -5071,6 +5122,246 @@ def _poster_intake_call(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(response, dict):
         raise ValueError("operations intake returned invalid JSON")
     return response
+
+
+def _feishu_ingress_identifier(value: Any, *, max_len: int = 240) -> str:
+    normalized = str(value or "").strip()
+    if (
+        not normalized
+        or len(normalized) > max_len
+        or not normalized.isascii()
+        or not all(
+            character.isalnum() or character in "_-.:" for character in normalized
+        )
+    ):
+        return ""
+    return normalized
+
+
+def _feishu_ingress_bot_ref(bot_open_id: str) -> str:
+    digest = hashlib.sha256()
+    for part in ("xiaoman-feishu-bot-v3", bot_open_id):
+        digest.update(part.encode("utf-8"))
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+
+def _feishu_ingress_sent_at(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    if not normalized or not normalized.isdigit():
+        return None
+    try:
+        milliseconds = int(normalized)
+        sent_at = datetime.fromtimestamp(milliseconds / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+    return sent_at.isoformat().replace("+00:00", "Z")
+
+
+def _feishu_ingress_message_payload(event: Any) -> dict[str, Any] | None:
+    source = _poster_review_attr(event, "source")
+    platform = _poster_review_attr(source, "platform")
+    platform = str(_poster_review_attr(platform, "value") or platform or "").lower()
+    if platform not in {"feishu", "lark"}:
+        return None
+    raw_message = _poster_review_attr(event, "raw_message")
+    raw_event = _poster_review_attr(raw_message, "event")
+    sdk_message = _poster_review_attr(raw_event, "message")
+    sdk_sender = _poster_review_attr(raw_event, "sender")
+    sender_id = _poster_review_attr(sdk_sender, "sender_id")
+    sender_open_id = _feishu_ingress_identifier(
+        _poster_review_attr(sender_id, "open_id"), max_len=200
+    )
+    sender_type = str(_poster_review_attr(sdk_sender, "sender_type") or "").lower()
+    event_id = _feishu_ingress_identifier(
+        _poster_review_attr(_poster_review_attr(raw_message, "header"), "event_id"),
+        max_len=240,
+    )
+    message_id = _feishu_ingress_identifier(
+        _poster_review_attr(sdk_message, "message_id"), max_len=240
+    )
+    chat_id = _feishu_ingress_identifier(
+        _poster_review_attr(sdk_message, "chat_id"), max_len=200
+    )
+    raw_chat_type = str(_poster_review_attr(sdk_message, "chat_type") or "").lower()
+    chat_type = "direct" if raw_chat_type in {"p2p", "direct", "private"} else raw_chat_type
+    message_kind = str(_poster_review_attr(sdk_message, "message_type") or "").lower()
+    source_chat_id = str(_poster_review_attr(source, "chat_id") or "").strip()
+    source_user_id = str(_poster_review_attr(source, "user_id") or "").strip()
+    source_chat_type = str(_poster_review_attr(source, "chat_type") or "").lower()
+    if source_chat_type in {"dm", "p2p", "direct", "private"}:
+        source_chat_type = "direct"
+    gateway_message_id = str(_poster_review_attr(event, "message_id") or "").strip()
+    if not all(
+        (
+            event_id,
+            message_id,
+            chat_id,
+            sender_open_id,
+            sender_type == "user",
+            message_kind == "text",
+            chat_type in {"direct", "group"},
+            source_chat_id == chat_id,
+            source_user_id == sender_open_id,
+            source_chat_type == chat_type,
+            gateway_message_id == message_id,
+        )
+    ):
+        return None
+    raw_content = _poster_review_attr(sdk_message, "content")
+    try:
+        content = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(content, dict):
+        return None
+    text = _body_text(content.get("text"), max_len=4001)
+    if not text or len(text) > 4000:
+        return None
+
+    mentions = _poster_review_attr(sdk_message, "mentions") or []
+    bot_open_id = _feishu_ingress_identifier(
+        os.getenv(XIAOMAN_FEISHU_BOT_OPEN_ID_ENV), max_len=200
+    )
+    mentioned_bot = False
+    if chat_type == "group":
+        if (
+            os.getenv(XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED_ENV, "0") != "1"
+            or not bot_open_id
+        ):
+            return None
+        for mention in mentions if isinstance(mentions, (list, tuple)) else []:
+            mention_id = _poster_review_attr(mention, "id")
+            if _poster_review_attr(mention_id, "open_id") == bot_open_id:
+                mentioned_bot = True
+                break
+        if not mentioned_bot:
+            return None
+
+    root_id = _feishu_ingress_identifier(
+        _poster_review_attr(sdk_message, "root_id"), max_len=240
+    )
+    parent_id = _feishu_ingress_identifier(
+        _poster_review_attr(sdk_message, "parent_id"), max_len=240
+    )
+    thread_root_message_id = root_id or (message_id if chat_type == "group" else "")
+    return {
+        "operation": XIAOMAN_FEISHU_MESSAGE_INGRESS_OPERATION,
+        "schema_version": XIAOMAN_FEISHU_MESSAGE_INGRESS_SCHEMA_VERSION,
+        "message": {
+            "platform": "feishu",
+            "event_id": event_id,
+            "message_id": message_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
+            "sender_id": sender_open_id,
+            "sender_type": "user",
+            "message_kind": "text",
+            "text": text,
+            "is_mention_bot": mentioned_bot,
+            "should_trigger": chat_type == "direct" or mentioned_bot,
+            "mentioned_bot_ref": (
+                _feishu_ingress_bot_ref(bot_open_id) if mentioned_bot else ""
+            ),
+            "thread_root_message_id": thread_root_message_id,
+            "parent_message_id": parent_id,
+            "sent_at": _feishu_ingress_sent_at(
+                _poster_review_attr(sdk_message, "create_time")
+            ),
+        },
+    }
+
+
+def _feishu_message_ingress_envelope(
+    payload: dict[str, Any], hmac_key: str
+) -> dict[str, str]:
+    if not 32 <= len(hmac_key) <= 512:
+        raise ValueError("Feishu message ingress HMAC key is invalid")
+    body = json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    if not body or len(body) > XIAOMAN_FEISHU_MESSAGE_INGRESS_MAX_BYTES:
+        raise ValueError("Feishu message ingress body is invalid")
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_hex(16)
+    signed = (
+        XIAOMAN_FEISHU_MESSAGE_INGRESS_SIGNATURE_DOMAIN
+        + timestamp.encode("ascii")
+        + b"\n"
+        + nonce.encode("ascii")
+        + b"\n"
+        + body
+    )
+    return {
+        "timestamp": timestamp,
+        "nonce": nonce,
+        "signature": hmac.new(
+            hmac_key.encode("utf-8"), signed, hashlib.sha256
+        ).hexdigest(),
+        "body_base64": base64.b64encode(body).decode("ascii"),
+    }
+
+
+def _feishu_message_ingress_call(envelope: dict[str, str]) -> dict[str, Any]:
+    encoded = (
+        json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    if len(encoded) > XIAOMAN_FEISHU_MESSAGE_INGRESS_MAX_BYTES:
+        raise ValueError("Feishu message ingress envelope is too large")
+    chunks: list[bytes] = []
+    received = 0
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(XIAOMAN_FEISHU_MESSAGE_INGRESS_TIMEOUT_SECONDS)
+        client.connect(_poster_intake_socket_path())
+        client.sendall(encoded)
+        client.shutdown(socket.SHUT_WR)
+        while True:
+            chunk = client.recv(8192)
+            if not chunk:
+                break
+            received += len(chunk)
+            if received > XIAOMAN_FEISHU_MESSAGE_INGRESS_MAX_BYTES:
+                raise ValueError("Feishu message ingress response is too large")
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+    if not chunks:
+        raise ValueError("Feishu message ingress returned no response")
+    response = json.loads(b"".join(chunks).split(b"\n", 1)[0].decode("utf-8"))
+    if not isinstance(response, dict):
+        raise ValueError("Feishu message ingress returned invalid JSON")
+    return response
+
+
+def handle_xiaoman_gateway_dispatch(event: Any, **_: Any) -> dict[str, str] | None:
+    review_result = handle_xiaoman_poster_review_card(event)
+    if review_result is not None:
+        return review_result
+    if os.getenv(XIAOMAN_FEISHU_MESSAGE_INGRESS_HOOK_ENABLE_ENV) != "1":
+        return None
+    try:
+        payload = _feishu_ingress_message_payload(event)
+        if payload is None:
+            return None
+        hmac_key = os.environ[XIAOMAN_FEISHU_MESSAGE_INGRESS_HMAC_KEY_ENV]
+        callback_key = os.getenv(XIAOMAN_POSTER_REVIEW_CALLBACK_KEY_ENV, "")
+        if callback_key and hmac.compare_digest(hmac_key, callback_key):
+            raise ValueError("Feishu ingress and callback keys must be distinct")
+        response = _feishu_message_ingress_call(
+            _feishu_message_ingress_envelope(payload, hmac_key)
+        )
+        if not all(
+            (
+                response.get("success") is True,
+                response.get("accepted") is True,
+                response.get("external_send_executed") is False,
+                response.get("group_send_authorized") is False,
+            )
+        ):
+            raise ValueError("Feishu message ingress response contract failed")
+    except Exception:
+        LOGGER.warning("Xiaoman Feishu message ingress unavailable")
+    return None
 
 
 def _poster_review_attr(value: Any, name: str) -> Any:
@@ -5293,7 +5584,7 @@ def handle_qintopia_xiaoman_poster_production_request(args: dict[str, Any], **_:
     request_text = _body_text(args.get("request"), max_len=2001)
     if not request_text or len(request_text) > 2000:
         return _poster_safe_failure("poster_request_invalid")
-    session, error = _poster_session_context()
+    session, schema_version, error = _poster_intake_session_context()
     if error or session is None:
         return _poster_safe_failure("trusted_direct_session_required")
     priority = _clean_text(args.get("priority") or "normal", max_len=16)
@@ -5314,16 +5605,13 @@ def handle_qintopia_xiaoman_poster_production_request(args: dict[str, Any], **_:
         or not re.fullmatch(uuid_pattern, revision_of_artifact_id)
     ):
         return _poster_safe_failure("poster_revision_reference_invalid")
-    source_message_ref = "sha256:" + hashlib.sha256(
-        f"{session['platform']}|{session['source_message_id']}".encode("utf-8")
-    ).hexdigest()
     idempotency_digest = hashlib.sha256()
     for part in (session["platform"], session["source_message_id"]):
         idempotency_digest.update(part.encode("utf-8"))
         idempotency_digest.update(b"\0")
     request_payload = {
         "operation": "poster_revision_request" if is_revision else "poster_production_request",
-        "schema_version": 2,
+        "schema_version": schema_version,
         "request": request_text,
         "priority": priority,
         "activity_record_ref": activity_record_ref,
@@ -5372,14 +5660,14 @@ def handle_qintopia_xiaoman_poster_workflow_status(args: dict[str, Any], **_: An
         workflow_root_id,
     ):
         return _poster_safe_failure("workflow_root_id_invalid")
-    session, error = _poster_session_context()
+    session, schema_version, error = _poster_intake_session_context()
     if error or session is None:
         return _poster_safe_failure("trusted_direct_session_required")
     try:
         response = _poster_intake_call(
             {
                 "operation": "workflow_status",
-                "schema_version": 2,
+                "schema_version": schema_version,
                 "workflow_root_id": workflow_root_id,
                 "session": session,
             }
@@ -5700,7 +5988,7 @@ def check_xiaoman_activity_requirements() -> bool:
 
 def register(ctx) -> None:
     _install_poster_review_log_privacy_filter()
-    ctx.register_hook("pre_gateway_dispatch", handle_xiaoman_poster_review_card)
+    ctx.register_hook("pre_gateway_dispatch", handle_xiaoman_gateway_dispatch)
     ctx.register_tool(
         name="qintopia_kb_search",
         toolset="qintopia",

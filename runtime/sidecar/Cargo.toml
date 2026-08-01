@@ -39,6 +39,7 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt"] }
 uuid = { version = "=1.8.0", features = ["serde", "v4"] }
 webpki-roots = "=1.0.8"
 home = "=0.5.9"
+hmac = "=0.12.1"
 idna = "=1.0.3"
 idna_adapter = "=1.1.0"
 indexmap = "=2.2.6"

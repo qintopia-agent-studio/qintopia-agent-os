@@ -873,6 +873,12 @@ pub enum Command {
         )]
         socket_path: std::path::PathBuf,
     },
+    /// Idempotently apply versioned Xiaoman Feishu conversation policies from bounded stdin.
+    ConversationPolicyApply {
+        /// Require policy JSON on bounded stdin. Raw identifiers are never accepted as CLI arguments.
+        #[arg(long)]
+        stdin: bool,
+    },
     /// Create durable direct-conversation notification work for pending generated posters.
     RunXiaomanPosterNotificationStarter {
         #[arg(long)]

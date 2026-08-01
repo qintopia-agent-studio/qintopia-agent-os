@@ -19,13 +19,14 @@ use uuid::Uuid;
 
 use crate::{
     config::Cli,
+    conversation_ingress::{self, SignedIngressEnvelope},
+    conversation_policy::{POSTER_PRODUCTION_CAPABILITY, POSTER_STATUS_CAPABILITY},
     db,
     operations::{self, OperationsPolicy, WorkItemCreateRequest, WorkflowStartRequest},
 };
 
-const PROTOCOL_VERSION: u8 = 2;
-const XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE";
-const XIAOMAN_FEISHU_INGRESS_HMAC_KEY_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY";
+const LEGACY_PROTOCOL_VERSION: u8 = 2;
+const PROTOCOL_VERSION: u8 = 3;
 const MAX_MESSAGE_BYTES: u64 = 64 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_millis(750);
 const HANDLE_TIMEOUT: Duration = Duration::from_millis(3_500);
@@ -34,10 +35,13 @@ const WRITE_TIMEOUT: Duration = Duration::from_millis(500);
 #[derive(Debug, Clone, Deserialize)]
 struct TrustedSession {
     platform: String,
+    #[serde(default)]
     conversation_type: String,
     conversation_id: String,
     requester_user_id: String,
     source_message_id: String,
+    #[serde(skip)]
+    policy_version: i64,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -97,6 +101,12 @@ enum IntakeRequest {
     },
 }
 
+#[derive(Debug)]
+enum WireRequest {
+    Legacy(Box<IntakeRequest>),
+    FeishuMessage(SignedIngressEnvelope),
+}
+
 #[derive(Debug, Serialize)]
 struct ErrorResponse<'a> {
     success: bool,
@@ -118,6 +128,8 @@ impl Drop for SocketGuard {
 
 pub async fn run(cli: &Cli, socket_path: PathBuf) -> Result<()> {
     prepare_socket(&socket_path)?;
+    let ingress_config =
+        conversation_ingress::IngressConfig::from_env_optional()?.map(std::sync::Arc::new);
     let pool = db::connect(cli.database_url_required()?, cli.db_max_connections).await?;
     let policy = OperationsPolicy::from_cli(cli, true);
     let listener = UnixListener::bind(&socket_path)
@@ -134,8 +146,12 @@ pub async fn run(cli: &Cli, socket_path: PathBuf) -> Result<()> {
             .context("accept operations intake")?;
         let pool = pool.clone();
         let policy = policy.clone();
+        let ingress_config = ingress_config.clone();
         tokio::spawn(async move {
-            if handle_connection(stream, &pool, &policy).await.is_err() {
+            if handle_connection(stream, &pool, &policy, ingress_config.as_deref())
+                .await
+                .is_err()
+            {
                 tracing::warn!(
                     error_code = "intake_connection_failed",
                     "operations intake request failed"
@@ -149,6 +165,7 @@ async fn handle_connection(
     mut stream: UnixStream,
     pool: &PgPool,
     policy: &OperationsPolicy,
+    ingress_config: Option<&conversation_ingress::IngressConfig>,
 ) -> Result<()> {
     let request = match read_request(&mut stream).await {
         Ok(request) => request,
@@ -166,7 +183,18 @@ async fn handle_connection(
             .await;
         }
     };
-    let response = match timeout(HANDLE_TIMEOUT, handle_request(pool, policy, request)).await {
+    let authenticated_ingress_enabled = ingress_config.is_some();
+    let future = async {
+        match request {
+            WireRequest::Legacy(request) => {
+                handle_request(pool, policy, *request, authenticated_ingress_enabled).await
+            }
+            WireRequest::FeishuMessage(envelope) => {
+                conversation_ingress::handle(pool, ingress_config, envelope).await
+            }
+        }
+    };
+    let response = match timeout(HANDLE_TIMEOUT, future).await {
         Ok(Ok(value)) => value,
         Ok(Err(_)) => json!({
             "success": false,
@@ -186,7 +214,7 @@ async fn handle_connection(
     write_response(&mut stream, &response).await
 }
 
-async fn read_request(stream: &mut UnixStream) -> Result<IntakeRequest> {
+async fn read_request(stream: &mut UnixStream) -> Result<WireRequest> {
     let mut bytes = Vec::new();
     let mut reader = BufReader::new(stream.take(MAX_MESSAGE_BYTES + 1));
     let count = timeout(READ_TIMEOUT, reader.read_until(b'\n', &mut bytes))
@@ -198,7 +226,16 @@ async fn read_request(stream: &mut UnixStream) -> Result<IntakeRequest> {
     while matches!(bytes.last(), Some(b'\n' | b'\r')) {
         bytes.pop();
     }
-    serde_json::from_slice(&bytes).context("parse intake request")
+    let value: Value = serde_json::from_slice(&bytes).context("parse intake request")?;
+    if value.get("body_base64").is_some() {
+        return serde_json::from_value(value)
+            .map(WireRequest::FeishuMessage)
+            .context("parse signed Feishu message ingress envelope");
+    }
+    serde_json::from_value(value)
+        .map(Box::new)
+        .map(WireRequest::Legacy)
+        .context("parse legacy operations intake request")
 }
 
 async fn write_response(stream: &mut UnixStream, response: &impl Serialize) -> Result<()> {
@@ -214,6 +251,7 @@ async fn handle_request(
     pool: &PgPool,
     policy: &OperationsPolicy,
     request: IntakeRequest,
+    authenticated_ingress_enabled: bool,
 ) -> Result<Value> {
     match request {
         IntakeRequest::PosterProductionRequest {
@@ -225,8 +263,10 @@ async fn handle_request(
             session,
             idempotency_key,
         } => {
-            validate_protocol(schema_version)?;
-            validate_session(&session)?;
+            validate_protocol(schema_version, authenticated_ingress_enabled)?;
+            let session =
+                resolve_session(pool, schema_version, session, POSTER_PRODUCTION_CAPABILITY)
+                    .await?;
             let request = validate_text("request", request, 2_000)?;
             let priority = normalize_priority(priority)?;
             let activity_record_ref = validate_optional_ref(activity_record_ref)?;
@@ -315,9 +355,10 @@ async fn handle_request(
             workflow_root_id,
             session,
         } => {
-            validate_protocol(schema_version)?;
-            validate_session(&session)?;
-            authorize_status_read(pool, workflow_root_id, &origin_ref(&session)).await?;
+            validate_protocol(schema_version, authenticated_ingress_enabled)?;
+            let session =
+                resolve_session(pool, schema_version, session, POSTER_STATUS_CAPABILITY).await?;
+            authorize_status_read(pool, workflow_root_id, &session).await?;
             let mut value = serde_json::to_value(
                 operations::work_item_status_tree(pool, workflow_root_id).await?,
             )
@@ -333,8 +374,10 @@ async fn handle_request(
             session,
             idempotency_key,
         } => {
-            validate_protocol(schema_version)?;
-            validate_session(&session)?;
+            validate_protocol(schema_version, authenticated_ingress_enabled)?;
+            let session =
+                resolve_session(pool, schema_version, session, POSTER_PRODUCTION_CAPABILITY)
+                    .await?;
             let instruction = validate_text("request", request, 2_000)?;
             let expected_key = source_idempotency_key(&session);
             if !idempotency_key.is_empty() && idempotency_key != expected_key {
@@ -627,7 +670,7 @@ async fn create_revision_request(
     instruction: String,
     idempotency_key: String,
 ) -> Result<Value> {
-    authorize_status_read(pool, workflow_root_id, &origin_ref(session)).await?;
+    authorize_status_read(pool, workflow_root_id, session).await?;
     let row = sqlx::query(
         r#"
         SELECT visual.id AS visual_work_item_id,
@@ -776,11 +819,18 @@ async fn upsert_return_target(
     origin_ref: &str,
     session: &TrustedSession,
 ) -> Result<()> {
-    sqlx::query(
+    let conversation_ref = if session.policy_version == 0 {
+        origin_ref.to_string()
+    } else {
+        crate::conversation_policy::conversation_ref(&session.platform, &session.conversation_id)
+    };
+    let result = sqlx::query(
         r#"
         INSERT INTO qintopia_agent_os.poster_return_targets
-            (origin_ref, platform, conversation_type, conversation_id, requester_user_id, source_message_id)
-        VALUES ($1, $2, $3, $4, $5, $6)
+            (origin_ref, platform, conversation_type, conversation_id,
+             requester_user_id, source_message_id, audience_class,
+             conversation_ref, policy_version, delivery_mode, thread_root_message_id)
+        VALUES ($1, $2, $3, $4, $5, $6, 'private', $7, $8, 'direct_chat', NULL)
         ON CONFLICT (origin_ref) DO UPDATE SET
             source_message_id = EXCLUDED.source_message_id,
             updated_at = now()
@@ -788,6 +838,10 @@ async fn upsert_return_target(
           AND qintopia_agent_os.poster_return_targets.conversation_type = EXCLUDED.conversation_type
           AND qintopia_agent_os.poster_return_targets.conversation_id = EXCLUDED.conversation_id
           AND qintopia_agent_os.poster_return_targets.requester_user_id = EXCLUDED.requester_user_id
+          AND qintopia_agent_os.poster_return_targets.audience_class = EXCLUDED.audience_class
+          AND qintopia_agent_os.poster_return_targets.conversation_ref = EXCLUDED.conversation_ref
+          AND qintopia_agent_os.poster_return_targets.policy_version = EXCLUDED.policy_version
+          AND qintopia_agent_os.poster_return_targets.delivery_mode = EXCLUDED.delivery_mode
         "#,
     )
     .bind(origin_ref)
@@ -796,9 +850,14 @@ async fn upsert_return_target(
     .bind(&session.conversation_id)
     .bind(&session.requester_user_id)
     .bind(&session.source_message_id)
+    .bind(conversation_ref)
+    .bind(session.policy_version)
     .execute(pool)
     .await
     .context("store trusted poster return target")?;
+    if result.rows_affected() != 1 {
+        bail!("trusted poster return target conflicts with its existing binding");
+    }
     Ok(())
 }
 
@@ -840,21 +899,28 @@ async fn record_generation_authorization(
 async fn authorize_status_read(
     pool: &PgPool,
     workflow_root_id: Uuid,
-    origin_ref: &str,
+    session: &TrustedSession,
 ) -> Result<()> {
     let allowed: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS (
             SELECT 1
             FROM qintopia_agent_os.work_items root
+            JOIN qintopia_agent_os.poster_return_targets target
+              ON target.origin_ref = root.metadata #>> '{workflow_metadata,origin_conversation_ref}'
             WHERE root.id = $1
               AND root.parent_work_item_id IS NULL
-              AND root.metadata #>> '{workflow_metadata,origin_conversation_ref}' = $2
+              AND target.platform = $2
+              AND target.conversation_type = 'direct'
+              AND target.conversation_id = $3
+              AND target.requester_user_id = $4
         )
         "#,
     )
     .bind(workflow_root_id)
-    .bind(origin_ref)
+    .bind(&session.platform)
+    .bind(&session.conversation_id)
+    .bind(&session.requester_user_id)
     .fetch_one(pool)
     .await
     .context("authorize poster workflow status read")?;
@@ -864,52 +930,95 @@ async fn authorize_status_read(
     Ok(())
 }
 
-fn validate_protocol(version: u8) -> Result<()> {
-    validate_protocol_for_ingress_state(version, authenticated_feishu_ingress_enabled()?)
-}
-
-fn validate_protocol_for_ingress_state(
-    version: u8,
-    authenticated_feishu_ingress_enabled: bool,
-) -> Result<()> {
-    if authenticated_feishu_ingress_enabled && version == PROTOCOL_VERSION {
-        bail!("legacy intake protocol is disabled while authenticated Feishu ingress is enabled");
-    }
-    if version != PROTOCOL_VERSION {
-        bail!("unsupported intake protocol version");
-    }
-    Ok(())
-}
-
-fn authenticated_feishu_ingress_enabled() -> Result<bool> {
-    let hook_enable = std::env::var(XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE_ENV).ok();
-    let hmac_key = std::env::var(XIAOMAN_FEISHU_INGRESS_HMAC_KEY_ENV).ok();
-    authenticated_feishu_ingress_enabled_from_values(hook_enable.as_deref(), hmac_key.as_deref())
-}
-
-fn authenticated_feishu_ingress_enabled_from_values(
-    hook_enable: Option<&str>,
-    hmac_key: Option<&str>,
-) -> Result<bool> {
-    match hook_enable.map(str::trim) {
-        None | Some("0") => Ok(false),
-        Some("1") => {
-            if hmac_key
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .is_none()
-            {
-                bail!("authenticated Feishu ingress requires an HMAC key");
-            }
-            Ok(true)
+fn validate_protocol(version: u8, authenticated_ingress_enabled: bool) -> Result<()> {
+    match (authenticated_ingress_enabled, version) {
+        (false, LEGACY_PROTOCOL_VERSION) | (true, PROTOCOL_VERSION) => Ok(()),
+        (true, LEGACY_PROTOCOL_VERSION) => {
+            bail!("legacy poster intake is disabled after authenticated ingress cutover")
         }
-        Some(_) => bail!("authenticated Feishu ingress hook enablement is invalid"),
+        (false, PROTOCOL_VERSION) => {
+            bail!("authenticated poster intake is disabled before ingress cutover")
+        }
+        _ => bail!("unsupported intake protocol version"),
     }
 }
 
-fn validate_session(session: &TrustedSession) -> Result<()> {
-    if session.platform != "feishu" || session.conversation_type != "direct" {
-        bail!("trusted Feishu direct session is required");
+async fn resolve_session(
+    pool: &PgPool,
+    schema_version: u8,
+    mut session: TrustedSession,
+    required_capability: &str,
+) -> Result<TrustedSession> {
+    if !matches!(
+        required_capability,
+        POSTER_PRODUCTION_CAPABILITY | POSTER_STATUS_CAPABILITY
+    ) {
+        bail!("V3 poster intake capability is invalid");
+    }
+    validate_session_identity(&session)?;
+    if schema_version == LEGACY_PROTOCOL_VERSION {
+        validate_session(&session)?;
+        session.policy_version = 0;
+        return Ok(session);
+    }
+    if !session.conversation_type.is_empty() {
+        bail!("V3 poster intake does not accept caller-provided conversation type");
+    }
+    let expected_message_ref = crate::conversation_policy::source_message_ref(
+        &session.platform,
+        &session.source_message_id,
+    );
+    let expected_conversation_ref =
+        crate::conversation_policy::conversation_ref(&session.platform, &session.conversation_id);
+    let row = sqlx::query(
+        r#"
+        SELECT message.chat_type, receipt.policy_version
+        FROM qintopia_agent_os.feishu_message_ingress_receipts receipt
+        JOIN qintopia_messages.messages message
+          ON message.id = receipt.message_row_id
+        JOIN qintopia_agent_os.conversation_policies policy
+          ON policy.id = receipt.policy_id
+         AND policy.policy_version = receipt.policy_version
+         AND policy.enabled
+        WHERE receipt.source_message_ref = $1
+          AND receipt.conversation_ref = $2
+          AND message.platform = 'feishu'
+          AND message.message_id = $3
+          AND message.chat_id = $4
+          AND message.sender_id = $5
+          AND message.sender_type = 'user'
+          AND message.chat_type = 'direct'
+          AND message.should_trigger
+          AND policy.platform = 'feishu'
+          AND policy.conversation_ref = receipt.conversation_ref
+          AND policy.conversation_type = 'direct'
+          AND policy.audience_class = 'private'
+          AND policy.return_mode = 'direct_chat'
+          AND policy.initiation_rule = 'direct_message'
+          AND policy.status_visibility = 'requester'
+          AND $6 = ANY(policy.allowed_capabilities)
+        LIMIT 1
+        "#,
+    )
+    .bind(expected_message_ref)
+    .bind(expected_conversation_ref)
+    .bind(&session.source_message_id)
+    .bind(&session.conversation_id)
+    .bind(&session.requester_user_id)
+    .bind(required_capability)
+    .fetch_optional(pool)
+    .await
+    .context("resolve authenticated V3 poster session")?
+    .context("authenticated V3 direct-message policy binding is unavailable")?;
+    session.conversation_type = row.try_get("chat_type")?;
+    session.policy_version = row.try_get("policy_version")?;
+    validate_session(&session)?;
+    Ok(session)
+}
+
+fn validate_session_identity(session: &TrustedSession) -> Result<()> {
+    if session.platform != "feishu" {
+        bail!("trusted Feishu session is required");
     }
     for (name, value, max) in [
         ("conversation_id", &session.conversation_id, 200usize),
@@ -926,6 +1035,13 @@ fn validate_session(session: &TrustedSession) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validate_session(session: &TrustedSession) -> Result<()> {
+    if session.platform != "feishu" || session.conversation_type != "direct" {
+        bail!("trusted Feishu direct session is required");
+    }
+    validate_session_identity(session)
 }
 
 fn validate_text(name: &str, value: String, max_chars: usize) -> Result<String> {
@@ -970,6 +1086,14 @@ fn digest(parts: &[&str]) -> String {
 }
 
 fn origin_ref(session: &TrustedSession) -> String {
+    if session.policy_version > 0 {
+        return digest(&[
+            "poster-origin-v3",
+            &session.platform,
+            &session.source_message_id,
+            crate::conversation_policy::POSTER_PRODUCTION_CAPABILITY,
+        ]);
+    }
     digest(&[
         "poster-origin-v1",
         &session.platform,
@@ -1026,6 +1150,53 @@ fn path_is_socket(path: &Path) -> bool {
     fs::symlink_metadata(path)
         .map(|metadata| metadata.file_type().is_socket())
         .unwrap_or(false)
+}
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) struct V3PosterIntegrationInput<'a> {
+    pub conversation_id: &'a str,
+    pub requester_user_id: &'a str,
+    pub source_message_id: &'a str,
+    pub request: &'a str,
+    pub title: &'a str,
+    pub schedule: &'a str,
+    pub location: &'a str,
+}
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) async fn submit_v3_poster_for_postgres_integration(
+    pool: &PgPool,
+    input: V3PosterIntegrationInput<'_>,
+) -> Result<Value> {
+    let session = TrustedSession {
+        platform: "feishu".to_string(),
+        conversation_type: String::new(),
+        conversation_id: input.conversation_id.to_string(),
+        requester_user_id: input.requester_user_id.to_string(),
+        source_message_id: input.source_message_id.to_string(),
+        policy_version: 0,
+    };
+    handle_request(
+        pool,
+        &OperationsPolicy::dry_run(),
+        IntakeRequest::PosterProductionRequest {
+            schema_version: PROTOCOL_VERSION,
+            request: input.request.to_string(),
+            priority: "normal".to_string(),
+            activity_record_ref: String::new(),
+            activity_facts: ActivityFacts {
+                source: "originating_request".to_string(),
+                title: input.title.to_string(),
+                schedule: input.schedule.to_string(),
+                location: input.location.to_string(),
+                conflict_fields: Vec::new(),
+            },
+            session,
+            idempotency_key: String::new(),
+        },
+        true,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -1188,6 +1359,7 @@ mod tests {
             conversation_id: "oc_chat_fixture".to_string(),
             requester_user_id: "ou_user_fixture".to_string(),
             source_message_id: "om_message_fixture".to_string(),
+            policy_version: 0,
         }
     }
 
@@ -1201,6 +1373,25 @@ mod tests {
     }
 
     #[test]
+    fn v3_origin_is_message_scoped_while_v2_remains_conversation_scoped() {
+        let first_v2 = session();
+        let mut second_v2 = first_v2.clone();
+        second_v2.source_message_id = "om_second_fixture".to_string();
+        assert_eq!(origin_ref(&first_v2), origin_ref(&second_v2));
+
+        let mut first_v3 = first_v2;
+        first_v3.policy_version = 1;
+        let mut second_v3 = second_v2;
+        second_v3.policy_version = 1;
+        assert_ne!(origin_ref(&first_v3), origin_ref(&second_v3));
+
+        second_v3.conversation_id = "oc_other_fixture".to_string();
+        second_v3.requester_user_id = "ou_other_fixture".to_string();
+        second_v3.source_message_id = first_v3.source_message_id.clone();
+        assert_eq!(origin_ref(&first_v3), origin_ref(&second_v3));
+    }
+
+    #[test]
     fn group_and_non_feishu_sessions_are_rejected() {
         let mut grouped = session();
         grouped.conversation_type = "group".to_string();
@@ -1211,53 +1402,13 @@ mod tests {
     }
 
     #[test]
-    fn legacy_protocol_is_rejected_when_authenticated_ingress_is_enabled() {
-        let error = validate_protocol_for_ingress_state(PROTOCOL_VERSION, true)
-            .expect_err("legacy V2 must not downgrade authenticated V3 ingress");
-
-        assert!(error
-            .to_string()
-            .contains("legacy intake protocol is disabled"));
-    }
-
-    #[test]
-    fn legacy_protocol_remains_available_without_authenticated_ingress() {
-        validate_protocol_for_ingress_state(PROTOCOL_VERSION, false)
-            .expect("legacy V2 remains available until authenticated ingress is enabled");
-    }
-
-    #[test]
-    fn authenticated_ingress_requires_explicit_hook_enablement() {
-        assert!(
-            !authenticated_feishu_ingress_enabled_from_values(None, Some("configured-key"))
-                .expect("unset hook enable keeps ingress disabled")
-        );
-        assert!(!authenticated_feishu_ingress_enabled_from_values(
-            Some("0"),
-            Some("configured-key")
-        )
-        .expect("explicit disabled hook keeps ingress disabled"));
-        assert!(authenticated_feishu_ingress_enabled_from_values(
-            Some("1"),
-            Some("configured-key")
-        )
-        .expect("explicit enabled hook enables authenticated ingress"));
-    }
-
-    #[test]
-    fn authenticated_ingress_enablement_fails_closed_for_invalid_values() {
-        let invalid_enable =
-            authenticated_feishu_ingress_enabled_from_values(Some("true"), Some("configured-key"))
-                .expect_err("non-literal hook enablement should fail closed");
-        assert!(invalid_enable
-            .to_string()
-            .contains("authenticated Feishu ingress hook enablement is invalid"));
-
-        let missing_key = authenticated_feishu_ingress_enabled_from_values(Some("1"), None)
-            .expect_err("enabled ingress without HMAC key should fail closed");
-        assert!(missing_key
-            .to_string()
-            .contains("authenticated Feishu ingress requires an HMAC key"));
+    fn protocol_cutover_never_downgrades_between_v2_and_v3() {
+        assert!(validate_protocol(LEGACY_PROTOCOL_VERSION, false).is_ok());
+        assert!(validate_protocol(PROTOCOL_VERSION, true).is_ok());
+        assert!(validate_protocol(LEGACY_PROTOCOL_VERSION, true).is_err());
+        assert!(validate_protocol(PROTOCOL_VERSION, false).is_err());
+        assert!(validate_protocol(1, false).is_err());
+        assert!(validate_protocol(4, true).is_err());
     }
 
     #[test]
@@ -1323,6 +1474,7 @@ mod tests {
             conversation_id: format!("oc_{suffix}"),
             requester_user_id: format!("ou_{suffix}"),
             source_message_id: format!("om_{suffix}"),
+            policy_version: 0,
         };
         let source_text = "请为周末晚餐生成海报，时间周六18:00，地点秦托邦会客厅";
         sqlx::query(
@@ -1343,7 +1495,7 @@ mod tests {
         .expect("insert trusted originating Feishu message");
 
         let request = || IntakeRequest::PosterProductionRequest {
-            schema_version: PROTOCOL_VERSION,
+            schema_version: LEGACY_PROTOCOL_VERSION,
             request: source_text.to_string(),
             priority: "normal".to_string(),
             activity_record_ref: String::new(),
@@ -1380,7 +1532,7 @@ mod tests {
             &pool,
             &policy,
             IntakeRequest::PosterProductionRequest {
-                schema_version: PROTOCOL_VERSION,
+                schema_version: LEGACY_PROTOCOL_VERSION,
                 request: "请生成活动海报".to_string(),
                 priority: "normal".to_string(),
                 activity_record_ref: String::new(),
@@ -1391,6 +1543,7 @@ mod tests {
                 session: clarification_session.clone(),
                 idempotency_key: source_idempotency_key(&clarification_session),
             },
+            false,
         )
         .await
         .expect("accept poster request that needs clarification");
@@ -1460,10 +1613,10 @@ mod tests {
         .expect("verify clarification visual remains unclaimed");
         assert_eq!(blocked_visual_state, ("queued".to_string(), 0, 0));
 
-        let first = handle_request(&pool, &policy, request())
+        let first = handle_request(&pool, &policy, request(), false)
             .await
             .expect("accept first poster request");
-        let duplicate = handle_request(&pool, &policy, request())
+        let duplicate = handle_request(&pool, &policy, request(), false)
             .await
             .expect("dedupe repeated poster request");
         assert_eq!(first["accepted"], true);
@@ -1900,17 +2053,17 @@ mod tests {
         .await
         .expect("insert trusted poster revision message");
         let revision_request = || IntakeRequest::PosterRevisionRequest {
-            schema_version: PROTOCOL_VERSION,
+            schema_version: LEGACY_PROTOCOL_VERSION,
             request: revision_instruction.to_string(),
             workflow_root_id: root_id,
             revision_of_artifact_id: modify_artifact_id,
             session: revision_session.clone(),
             idempotency_key: source_idempotency_key(&revision_session),
         };
-        let first_revision = handle_request(&pool, &policy, revision_request())
+        let first_revision = handle_request(&pool, &policy, revision_request(), false)
             .await
             .expect("accept explicit poster revision instruction");
-        let duplicate_revision = handle_request(&pool, &policy, revision_request())
+        let duplicate_revision = handle_request(&pool, &policy, revision_request(), false)
             .await
             .expect("dedupe explicit poster revision instruction");
         assert_eq!(first_revision["accepted"], true);

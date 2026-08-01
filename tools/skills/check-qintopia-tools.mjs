@@ -28,6 +28,8 @@ const requiredRegisteredTools = {
     "qintopia_xiaoman_activity_handoff_create",
     "qintopia_xiaoman_activity_promotion_review_draft",
     "qintopia_xiaoman_activity_material_summary",
+    "qintopia_xiaoman_poster_production_request",
+    "qintopia_xiaoman_poster_workflow_status",
   ],
   wenyuange: ["qintopia_wenyuange_lookup"],
 };
@@ -76,6 +78,18 @@ for (const variant of variants) {
   }
   if (variant === "xiaoman" && !pluginYaml.includes("- pre_gateway_dispatch")) {
     errors.push("xiaoman: plugin.yaml must declare pre_gateway_dispatch");
+  }
+  if (variant === "xiaoman") {
+    for (const envName of [
+      "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE",
+      "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY",
+      "QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID",
+      "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED",
+    ]) {
+      if (!pluginYaml.includes(`- name: ${envName}`)) {
+        errors.push(`xiaoman: plugin.yaml must declare ${envName}`);
+      }
+    }
   }
   if (variantSource.includes("_operations_intake_plugin().QINTOPIA")) {
     errors.push(
