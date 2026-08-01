@@ -260,6 +260,14 @@ struct EventSignalIngestCandidate {
     related_member_names: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct PendingMaterialFollowup {
+    source_record_ref: String,
+    title: String,
+    owner: String,
+    reminder_text: String,
+}
+
 #[derive(Debug, Serialize)]
 struct SignalWorkerReport {
     success: bool,
@@ -315,6 +323,7 @@ pub async fn run_material_followup_worker(
     apply: bool,
     poll_seconds: u64,
 ) -> Result<()> {
+    let apply = material_followup_apply_requested(check_only, apply);
     if check_only || once {
         let report = run_material_followup_worker_batch(cli, apply).await?;
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -339,6 +348,10 @@ pub async fn run_material_followup_worker(
         }
         sleep(StdDuration::from_secs(poll_seconds)).await;
     }
+}
+
+fn material_followup_apply_requested(check_only: bool, apply: bool) -> bool {
+    apply && !check_only
 }
 
 async fn run_material_followup_worker_batch(
@@ -1207,11 +1220,17 @@ async fn execute_material_followup_scan(
             .owner_name
             .clone()
             .unwrap_or_else(|| "负责人".to_string());
+        let source_record_ref = record.record_ref();
         let reminder_text = format!(
             "{}，您好！{}（{}）活动已结束，但素材回填尚未完成。请尽快补交活动照片和总结。",
             owner, title, scan_date
         );
-        pending_followup.push((title.clone(), owner.clone(), reminder_text.clone()));
+        pending_followup.push(PendingMaterialFollowup {
+            source_record_ref,
+            title,
+            owner,
+            reminder_text,
+        });
     }
 
     report.record_count = pending_followup.len();
@@ -1236,40 +1255,10 @@ async fn execute_material_followup_scan(
     };
 
     let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+    let policy = operations::OperationsPolicy::from_cli(cli, true);
 
-    for (title, owner, reminder_text) in pending_followup {
-        let idempotency_key = format!("xiaoman_activity_material_followup:{}:{}", scan_date, title);
-        let request = WorkItemCreateRequest {
-            requester_agent: ACTOR_AGENT.to_string(),
-            target_agent: "erhua".to_string(),
-            capability_key: "erhua.send_group_message".to_string(),
-            work_item_type: "group_message_request".to_string(),
-            brief_summary: format!("催办：{} 活动素材回填", title),
-            purpose: String::new(),
-            human_owner: String::new(),
-            priority: "medium".to_string(),
-            source_type: "scheduled_scan".to_string(),
-            source_refs: json!({
-                "scan_date": scan_date,
-                "scan_type": "material_followup",
-            }),
-            source_event_signal_id: None,
-            payload: json!({
-                "activity_title": title,
-                "activity_date": scan_date,
-                "owner_name": owner,
-                "reminder_text": reminder_text,
-                "target_group_alias": "community_activity_group",
-                "priority": "medium",
-            }),
-            payload_redaction_policy: "default".to_string(),
-            idempotency_key,
-            dedupe_key: String::new(),
-            metadata: serde_json::json!({}),
-            parent_work_item_id: None,
-            approved_artifact_id: None,
-        };
-        let policy = operations::OperationsPolicy::from_cli(cli, true);
+    for followup in pending_followup {
+        let request = material_followup_work_item_request(&scan_date, followup);
         let item = operations::create_work_item(&pool, request, true, &policy).await?;
         work_items.push(item);
     }
@@ -1282,6 +1271,48 @@ async fn execute_material_followup_scan(
     ));
 
     Ok(())
+}
+
+fn material_followup_work_item_request(
+    scan_date: &str,
+    followup: PendingMaterialFollowup,
+) -> WorkItemCreateRequest {
+    let idempotency_key = format!(
+        "xiaoman_activity_material_followup:{}:{}",
+        scan_date, followup.source_record_ref
+    );
+    WorkItemCreateRequest {
+        requester_agent: ACTOR_AGENT.to_string(),
+        target_agent: "erhua".to_string(),
+        capability_key: "erhua.send_group_message".to_string(),
+        work_item_type: "group_message_request".to_string(),
+        brief_summary: format!("催办：{} 活动素材回填", followup.title),
+        purpose: String::new(),
+        human_owner: String::new(),
+        priority: "medium".to_string(),
+        source_type: "scheduled_scan".to_string(),
+        source_refs: json!({
+            "scan_date": scan_date,
+            "scan_type": "material_followup",
+            "source_record_ref": followup.source_record_ref,
+            "table_role": "activity_occurrence",
+        }),
+        source_event_signal_id: None,
+        payload: json!({
+            "activity_title": followup.title,
+            "activity_date": scan_date,
+            "owner_name": followup.owner,
+            "reminder_text": followup.reminder_text,
+            "target_group_alias": "community_activity_group",
+            "priority": "medium",
+        }),
+        payload_redaction_policy: "default".to_string(),
+        idempotency_key,
+        dedupe_key: String::new(),
+        metadata: serde_json::json!({}),
+        parent_work_item_id: None,
+        approved_artifact_id: None,
+    }
 }
 
 async fn execute_shadow_validate(
@@ -3827,5 +3858,57 @@ mod tests {
 
         assert_eq!(report.action_status, "dry_run_ok");
         assert_eq!(report.record_count, 0);
+    }
+
+    #[test]
+    fn material_followup_check_only_overrides_apply() {
+        assert!(!material_followup_apply_requested(true, true));
+        assert!(!material_followup_apply_requested(true, false));
+        assert!(material_followup_apply_requested(false, true));
+        assert!(!material_followup_apply_requested(false, false));
+    }
+
+    #[test]
+    fn material_followup_idempotency_uses_source_record_ref() {
+        let first = material_followup_work_item_request(
+            "2026-07-30",
+            PendingMaterialFollowup {
+                source_record_ref: activity_record_ref(
+                    "activity_occurrence",
+                    "rec_same_title_first",
+                ),
+                title: "瑜伽体验活动".to_string(),
+                owner: "刘珊".to_string(),
+                reminder_text: "first reminder".to_string(),
+            },
+        );
+        let second = material_followup_work_item_request(
+            "2026-07-30",
+            PendingMaterialFollowup {
+                source_record_ref: activity_record_ref(
+                    "activity_occurrence",
+                    "rec_same_title_second",
+                ),
+                title: "瑜伽体验活动".to_string(),
+                owner: "大羽".to_string(),
+                reminder_text: "second reminder".to_string(),
+            },
+        );
+
+        assert_ne!(first.idempotency_key, second.idempotency_key);
+        assert_ne!(
+            first.source_refs["source_record_ref"],
+            second.source_refs["source_record_ref"]
+        );
+        assert_eq!(
+            first.source_refs["source_record_ref"]
+                .as_str()
+                .expect("source ref should be a string")
+                .split(':')
+                .next(),
+            Some("activity_occurrence")
+        );
+        assert!(!first.idempotency_key.contains("rec_same_title_first"));
+        assert!(!second.idempotency_key.contains("rec_same_title_second"));
     }
 }
