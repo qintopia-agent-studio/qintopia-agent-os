@@ -1321,6 +1321,7 @@ dependencies = [
  "dotenvy",
  "ed25519-dalek",
  "futures",
+ "hmac",
  "home",
  "idna",
  "idna_adapter",

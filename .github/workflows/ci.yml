@@ -412,6 +412,20 @@ jobs:
           operations_intake::tests::postgres_poster_intake_is_idempotent_authorized_and_never_group_sends
           -- --ignored --exact
 
+      - name: Xiaoman conversation policy PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent
+          -- --ignored --exact
+
+      - name: Xiaoman authenticated message ingress PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow
+          -- --ignored --exact
+
       - name: Xiaoman poster brief authorization upsert PostgreSQL integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

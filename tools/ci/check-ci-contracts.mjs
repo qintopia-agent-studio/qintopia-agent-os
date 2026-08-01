@@ -13,6 +13,18 @@ const errors = [];
 const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
+const localPrChecks = readText("tools/ci/run-local-pr-checks.mjs");
+for (const requiredTest of [
+  "conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent",
+  "conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow",
+]) {
+  if (!localPrChecks.includes(requiredTest)) {
+    errors.push(
+      `tools/ci/run-local-pr-checks.mjs: PostgreSQL tier must include ${requiredTest}`
+    );
+  }
+}
+
 if (!fs.existsSync(path.join(repoRoot, readmePath))) {
   errors.push(`${readmePath}: missing CI tool contract`);
 } else {
@@ -675,6 +687,33 @@ if (ciWorkflow) {
           errors.push(
             `.github/workflows/ci.yml: Xiaoman integration Rust send-ready test must include ${requiredFragment}`
           );
+        }
+      }
+      for (const [stepName, testName] of [
+        [
+          "Xiaoman conversation policy PostgreSQL integration",
+          "conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent",
+        ],
+        [
+          "Xiaoman authenticated message ingress PostgreSQL integration",
+          "conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow",
+        ],
+      ]) {
+        const step = postgresJob.steps?.find(
+          (candidate) => candidate?.name === stepName
+        );
+        const command = String(step?.run ?? "");
+        for (const requiredFragment of [
+          "cargo test --manifest-path runtime/sidecar/Cargo.toml",
+          "--features postgres-integration-tests",
+          testName,
+          "-- --ignored --exact",
+        ]) {
+          if (!command.includes(requiredFragment)) {
+            errors.push(
+              `.github/workflows/ci.yml: ${stepName} must include ${requiredFragment}`
+            );
+          }
         }
       }
     }

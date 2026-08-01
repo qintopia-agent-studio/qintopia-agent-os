@@ -182,6 +182,22 @@ function runPostgresChecks() {
     [
       "--features",
       "postgres-integration-tests",
+      "conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
       "event::tests::postgres_callback_storage_redacts_credentials",
       "--",
       "--ignored",

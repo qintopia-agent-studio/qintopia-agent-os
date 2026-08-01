@@ -26,6 +26,8 @@ provides_tools:
   - qintopia_xiaoman_activity_handoff_create
   - qintopia_xiaoman_activity_promotion_review_draft
   - qintopia_xiaoman_activity_material_summary
+  - qintopia_xiaoman_poster_production_request
+  - qintopia_xiaoman_poster_workflow_status
   - qintopia_dify_dataset_list
   - qintopia_dify_dataset_get
   - qintopia_dify_knowledge_retrieve
@@ -82,3 +84,20 @@ optional_env:
     description: "Shared key for the local authenticated poster review callback ingress"
     prompt: "Xiaoman poster review callback key"
     password: true
+  - name: QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE
+    description:
+      "Enable authenticated Xiaoman Feishu message ingress before model dispatch"
+    prompt: "Enable Xiaoman Feishu message ingress"
+    password: false
+  - name: QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY
+    description: "Dedicated HMAC key for local authenticated Feishu message ingress"
+    prompt: "Xiaoman Feishu message ingress key"
+    password: true
+  - name: QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID
+    description: "Exact Xiaoman Feishu Bot open id used to verify group mentions"
+    prompt: "Xiaoman Feishu Bot open id"
+    password: false
+  - name: QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED
+    description: "Keep at 0 until the separately approved internal-group activation"
+    prompt: "Enable Xiaoman internal-group ingress"
+    password: false

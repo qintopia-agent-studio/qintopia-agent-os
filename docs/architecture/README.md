@@ -10,6 +10,9 @@ review and source classification.
 
 - [agent-os-overview.md](agent-os-overview.md): current Agent OS architecture baseline,
   control plane boundaries, and monorepo mapping.
+- [xiaoman-conversation-ingress-v3.md](xiaoman-conversation-ingress-v3.md):
+  authenticated message-first policy boundary for Xiaoman direct and internal-group
+  workflows.
 - [../agent-os/domain-model.md](../agent-os/domain-model.md): shared business object
   language used by architecture and packages.
 - [../operations/runtime-baseline.md](../operations/runtime-baseline.md): production

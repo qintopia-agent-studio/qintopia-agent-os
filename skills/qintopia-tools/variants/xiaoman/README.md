@@ -13,10 +13,24 @@ shared `qintopia` toolset.
 ## Asynchronous Poster Intake
 
 `qintopia_xiaoman_poster_production_request` accepts an explicit poster-generation
-instruction only from a Hermes session carrying trusted Feishu direct-chat, user, and
-message ids. It submits to `/run/qintopia-agentos/operations-intake.sock` and returns a
-durable workflow id without waiting for image generation. It has no synchronous Huabaosi
-fallback.
+instruction only from Hermes `gateway.session_context` carrying the current Feishu
+platform, chat, user, and message ids. These identity fields never fall back to process
+environment variables. The V3 sidecar resolves conversation type and authorization from
+the previously authenticated message and Postgres policy. It submits to
+`/run/qintopia-agentos/operations-intake.sock` and returns a durable workflow id without
+waiting for image generation. It has no synchronous Huabaosi fallback.
+
+For the one-release compatibility window, a plugin with authenticated ingress disabled
+continues to submit only trusted direct conversations through the V2 contract. Enabling
+authenticated ingress switches that request to V3; an invalid or unavailable V3 path
+never downgrades to V2.
+
+The same plugin's `pre_gateway_dispatch` hook preserves the existing review-card path
+and can persist authentic Feishu message events before model dispatch. The message
+envelope uses a dedicated HMAC key, timestamp, and nonce; it contains only normalized
+message fields rather than the full SDK payload. Direct messages and explicit Xiaoman
+mentions in internal groups are candidates, but PR 1 keeps internal-group ingress
+disabled. Persistence failure is bounded and does not skip normal Hermes dispatch.
 
 Activity facts are structured as title, schedule, and location. AgentOS verifies each
 fact against the persisted originating Feishu message, or against an existing governed
@@ -24,9 +38,11 @@ Xiaoman activity-record work item. Missing or conflicting facts return `需补�
 all evidence/visual workers unclaimable. Design defaults do not count as missing facts.
 The model cannot provide a target chat, reviewer, or generation authorization.
 
-`qintopia_xiaoman_poster_workflow_status` reads only workflows belonging to the current
-trusted direct conversation. A later modification uses the same production tool with the
-workflow and generated-image ids after the image has been marked for changes.
+`qintopia_xiaoman_poster_workflow_status` currently reads only workflows belonging to
+the current trusted direct conversation. A later modification uses the same production
+tool with the workflow and generated-image ids after the image has been marked for
+changes. Group status, participant snapshots, thread delivery, and group review are
+separate V3 increments and are not enabled by the authenticated-ingress foundation.
 
 ## Tools
 

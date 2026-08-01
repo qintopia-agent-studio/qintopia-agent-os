@@ -1,5 +1,10 @@
 # Xiaoman Async Poster And Feishu Return V2
 
+> Superseded for new implementation by
+> [Xiaoman Conversation-Aware Poster V3](xiaoman-conversation-aware-poster-v3.md). V2
+> remains a direct-conversation compatibility contract for one release cycle and must
+> not be extended to group intake or delivery.
+
 ## Outcome
 
 One explicit poster-generation request in a trusted Xiaoman Feishu direct conversation

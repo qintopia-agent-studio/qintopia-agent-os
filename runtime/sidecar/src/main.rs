@@ -14,6 +14,8 @@ mod config;
 mod consumer;
 mod context_mcp_server;
 mod context_tools;
+mod conversation_ingress;
+mod conversation_policy;
 mod daily_digest_publisher;
 mod db;
 mod embedding_worker;
@@ -485,6 +487,9 @@ async fn main() -> Result<()> {
         }
         Command::RunOperationsIntake { socket_path } => {
             operations_intake::run(&cli, socket_path).await
+        }
+        Command::ConversationPolicyApply { stdin } => {
+            conversation_policy::run_apply(&cli, stdin).await
         }
         Command::RunXiaomanPosterNotificationStarter {
             check_only,

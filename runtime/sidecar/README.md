@@ -41,6 +41,26 @@ Delivery attempts are persisted before upload. Expired `uploading` or `sending` 
 become terminal `ambiguous` and are not automatically replayed. The path never creates
 group-send authorization.
 
+### Conversation Ingress V3
+
+The existing operations-intake socket also accepts a signed `feishu_message_ingest` V3
+envelope. This operation is available only when the dedicated ingress HMAC key, Bot
+identity, and exact chat/user deployment allowlists are configured. The sidecar verifies
+the timestamp, nonce, HMAC, minimal message schema, deployment ceilings, and active
+Postgres conversation policy before persisting the message. The complete Feishu SDK
+payload is never stored by this path.
+
+Apply versioned policies only through bounded stdin:
+
+```bash
+qintopia-message-sidecar conversation-policy-apply --stdin < policies.json
+```
+
+The command fails before reading stdin or connecting to Postgres unless the exact owner
+approval and database URL hash are present. It emits only policy counts, versions, and
+opaque hashes. PR 1 keeps `QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED=0`, creates no
+thread reply, and calls no Feishu endpoint.
+
 ## Responsibility
 
 The sidecar receives QiWe/Hermes message events from NATS JetStream, persists raw and
