@@ -183,9 +183,12 @@ async fn handle_connection(
             .await;
         }
     };
+    let authenticated_ingress_enabled = ingress_config.is_some();
     let future = async {
         match request {
-            WireRequest::Legacy(request) => handle_request(pool, policy, *request).await,
+            WireRequest::Legacy(request) => {
+                handle_request(pool, policy, *request, authenticated_ingress_enabled).await
+            }
             WireRequest::FeishuMessage(envelope) => {
                 conversation_ingress::handle(pool, ingress_config, envelope).await
             }
@@ -248,6 +251,7 @@ async fn handle_request(
     pool: &PgPool,
     policy: &OperationsPolicy,
     request: IntakeRequest,
+    authenticated_ingress_enabled: bool,
 ) -> Result<Value> {
     match request {
         IntakeRequest::PosterProductionRequest {
@@ -259,7 +263,7 @@ async fn handle_request(
             session,
             idempotency_key,
         } => {
-            validate_protocol(schema_version)?;
+            validate_protocol(schema_version, authenticated_ingress_enabled)?;
             let session =
                 resolve_session(pool, schema_version, session, POSTER_PRODUCTION_CAPABILITY)
                     .await?;
@@ -351,7 +355,7 @@ async fn handle_request(
             workflow_root_id,
             session,
         } => {
-            validate_protocol(schema_version)?;
+            validate_protocol(schema_version, authenticated_ingress_enabled)?;
             let session =
                 resolve_session(pool, schema_version, session, POSTER_STATUS_CAPABILITY).await?;
             authorize_status_read(pool, workflow_root_id, &session).await?;
@@ -370,7 +374,7 @@ async fn handle_request(
             session,
             idempotency_key,
         } => {
-            validate_protocol(schema_version)?;
+            validate_protocol(schema_version, authenticated_ingress_enabled)?;
             let session =
                 resolve_session(pool, schema_version, session, POSTER_PRODUCTION_CAPABILITY)
                     .await?;
@@ -926,11 +930,17 @@ async fn authorize_status_read(
     Ok(())
 }
 
-fn validate_protocol(version: u8) -> Result<()> {
-    if !matches!(version, LEGACY_PROTOCOL_VERSION | PROTOCOL_VERSION) {
-        bail!("unsupported intake protocol version");
+fn validate_protocol(version: u8, authenticated_ingress_enabled: bool) -> Result<()> {
+    match (authenticated_ingress_enabled, version) {
+        (false, LEGACY_PROTOCOL_VERSION) | (true, PROTOCOL_VERSION) => Ok(()),
+        (true, LEGACY_PROTOCOL_VERSION) => {
+            bail!("legacy poster intake is disabled after authenticated ingress cutover")
+        }
+        (false, PROTOCOL_VERSION) => {
+            bail!("authenticated poster intake is disabled before ingress cutover")
+        }
+        _ => bail!("unsupported intake protocol version"),
     }
-    Ok(())
 }
 
 async fn resolve_session(
@@ -1184,6 +1194,7 @@ pub(crate) async fn submit_v3_poster_for_postgres_integration(
             session,
             idempotency_key: String::new(),
         },
+        true,
     )
     .await
 }
@@ -1391,6 +1402,16 @@ mod tests {
     }
 
     #[test]
+    fn protocol_cutover_never_downgrades_between_v2_and_v3() {
+        assert!(validate_protocol(LEGACY_PROTOCOL_VERSION, false).is_ok());
+        assert!(validate_protocol(PROTOCOL_VERSION, true).is_ok());
+        assert!(validate_protocol(LEGACY_PROTOCOL_VERSION, true).is_err());
+        assert!(validate_protocol(PROTOCOL_VERSION, false).is_err());
+        assert!(validate_protocol(1, false).is_err());
+        assert!(validate_protocol(4, true).is_err());
+    }
+
+    #[test]
     fn idempotency_comes_only_from_source_message() {
         let mut other_chat = session();
         other_chat.conversation_id = "oc_other".to_string();
@@ -1522,6 +1543,7 @@ mod tests {
                 session: clarification_session.clone(),
                 idempotency_key: source_idempotency_key(&clarification_session),
             },
+            false,
         )
         .await
         .expect("accept poster request that needs clarification");
@@ -1591,10 +1613,10 @@ mod tests {
         .expect("verify clarification visual remains unclaimed");
         assert_eq!(blocked_visual_state, ("queued".to_string(), 0, 0));
 
-        let first = handle_request(&pool, &policy, request())
+        let first = handle_request(&pool, &policy, request(), false)
             .await
             .expect("accept first poster request");
-        let duplicate = handle_request(&pool, &policy, request())
+        let duplicate = handle_request(&pool, &policy, request(), false)
             .await
             .expect("dedupe repeated poster request");
         assert_eq!(first["accepted"], true);
@@ -2038,10 +2060,10 @@ mod tests {
             session: revision_session.clone(),
             idempotency_key: source_idempotency_key(&revision_session),
         };
-        let first_revision = handle_request(&pool, &policy, revision_request())
+        let first_revision = handle_request(&pool, &policy, revision_request(), false)
             .await
             .expect("accept explicit poster revision instruction");
-        let duplicate_revision = handle_request(&pool, &policy, revision_request())
+        let duplicate_revision = handle_request(&pool, &policy, revision_request(), false)
             .await
             .expect("dedupe explicit poster revision instruction");
         assert_eq!(first_revision["accepted"], true);
