@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::{FixedOffset, TimeZone};
+use chrono::{DateTime, Duration, FixedOffset, TimeZone, Utc};
 use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1182,9 +1182,7 @@ async fn execute_material_followup_scan(
     }
 
     let scan_date = if payload.date.trim().is_empty() {
-        (chrono::Utc::now() - chrono::Duration::days(1))
-            .format("%Y-%m-%d")
-            .to_string()
+        default_material_followup_scan_date(&cli.daily_digest_timezone)?
     } else {
         payload.date.trim().to_string()
     };
@@ -1313,6 +1311,27 @@ fn material_followup_work_item_request(
         parent_work_item_id: None,
         approved_artifact_id: None,
     }
+}
+
+fn default_material_followup_scan_date(timezone: &str) -> Result<String> {
+    default_material_followup_scan_date_at(timezone, Utc::now())
+}
+
+fn default_material_followup_scan_date_at(
+    timezone: &str,
+    now_utc: DateTime<Utc>,
+) -> Result<String> {
+    let offset_seconds = match timezone.trim() {
+        "Asia/Shanghai" | "UTC+8" | "+08:00" => 8 * 3600,
+        other => bail!("unsupported Xiaoman material followup timezone for V1: {other}"),
+    };
+    let offset = FixedOffset::east_opt(offset_seconds)
+        .context("invalid Xiaoman material followup timezone offset")?;
+    Ok(
+        (now_utc.with_timezone(&offset).date_naive() - Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string(),
+    )
 }
 
 async fn execute_shadow_validate(
@@ -2594,7 +2613,7 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
         ])?,
         "shadow-validate" => require_fields(&[("date", &payload.date)])?,
         MATERIAL_FOLLOWUP_OPERATION => {
-            // No required fields for material followup scan; it auto-detects yesterday's date
+            // Empty date defaults to yesterday in the configured business timezone.
         }
         _ => unreachable!("operation allowlist checked above"),
     }
@@ -3910,5 +3929,27 @@ mod tests {
         );
         assert!(!first.idempotency_key.contains("rec_same_title_first"));
         assert!(!second.idempotency_key.contains("rec_same_title_second"));
+    }
+
+    #[test]
+    fn material_followup_default_date_uses_shanghai_business_day() {
+        let now_utc = Utc.with_ymd_and_hms(2026, 7, 30, 16, 30, 0).unwrap();
+
+        let scan_date = default_material_followup_scan_date_at("Asia/Shanghai", now_utc)
+            .expect("Shanghai business date should be supported");
+
+        assert_eq!(scan_date, "2026-07-30");
+    }
+
+    #[test]
+    fn material_followup_default_date_rejects_unknown_timezone() {
+        let now_utc = Utc.with_ymd_and_hms(2026, 7, 30, 16, 30, 0).unwrap();
+
+        let error = default_material_followup_scan_date_at("UTC", now_utc)
+            .expect_err("unsupported timezone should fail closed");
+
+        assert!(error
+            .to_string()
+            .contains("unsupported Xiaoman material followup timezone"));
     }
 }

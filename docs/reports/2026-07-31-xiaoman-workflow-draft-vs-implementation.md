@@ -1,7 +1,6 @@
 # 小满工作流草案与现有实现对照（修订版）
 
-日期：2026-07-31对照文档：xiaoman-minimal-activity-reminder-workflow.md（2026-07-30）代码版本：v0.2.58
-(`045bd211`)
+日期：2026-07-31对照文档：xiaoman-minimal-activity-reminder-workflow.md（2026-07-30）代码基线：PR前实现快照
 
 ## 1. 两个群 vs 当前实现
 
@@ -22,8 +21,7 @@
 - 生成 `operator_review_message`（给刘珊确认）和 `erhua_handoff_draft`（给二花执行）
 - 二花通过 `qintopia_xiaoman_activity_text_group_message_request_prepare` 接收请求
 - 最终由 `erhua.send_group_message` 发送到企微群
-- 状态：存在，但 QiWe
-  image-send 未激活（`qiwe_image_send_production_observation_state=disabled`）
+- 状态：存在，但 QiWe image-send 生产激活仍需外部 evidence 证明
 
 **工作群**：
 
@@ -161,7 +159,7 @@
 | 草案时间点                | 当前实现                                                                                     | 状态                      |
 | ------------------------- | -------------------------------------------------------------------------------------------- | ------------------------- |
 | 每周六、周日发表单 A      | 无专门 timer                                                                                 | ❌ 缺失                   |
-| 前一天晚上发次日预告      | `announcement_prepare` 支持 `next_day_preview` mode，已验证 2026-08-01 yoga 活动可生成       | ⚠️ 工具存在，触发机制不明 |
+| 前一天晚上发次日预告      | `announcement_prepare` 支持 `next_day_preview` mode，已用脱敏样例验证可生成                  | ⚠️ 工具存在，触发机制不明 |
 | 每天早上发今日安排        | `announcement_prepare` 支持 `same_day_preview` mode                                          | ⚠️ 工具存在，触发机制不明 |
 | 活动前约 1 小时参与提醒   | 无专门 timer                                                                                 | ❌ 缺失                   |
 | 活动后约 2 小时发表单 B/C | 无反馈表，无法发表单 B/C                                                                     | ❌ 缺失                   |
@@ -185,18 +183,18 @@
 
 来源：`skills/qintopia-tools/variants/xiaoman/__init__.py:80-89`
 
-| 工具                                                           | 功能                                                                | 状态                                     |
-| -------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------- |
-| `qintopia_xiaoman_activity_record_get`                         | 按 record_ref 读单条记录                                            | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_list_by_date`                       | 按日期读计划/发生表                                                 | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_announcement_prepare`               | 生成文字预告/提醒文案                                               | ✅ 已实现（已验证 2026-08-01 yoga 活动） |
-| `qintopia_xiaoman_activity_text_group_message_request_prepare` | 准备二花发群请求                                                    | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_status_update`                      | 更新 AgentOS event_signal 状态                                      | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_gap_update`                         | 更新缺口摘要                                                        | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_phase_update`                       | 更新活动阶段（pre_event / in_event / post_event）                   | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_handoff_create`                     | 创建 handoff work item（只支持 `visual_asset_request -> huabaosi`） | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_promotion_review_draft`             | 生成宣发评审文案                                                    | ✅ 已实现                                |
-| `qintopia_xiaoman_activity_material_summary`                   | 读取/汇总素材字段                                                   | ✅ 已实现                                |
+| 工具                                                           | 功能                                                                | 状态                          |
+| -------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------- |
+| `qintopia_xiaoman_activity_record_get`                         | 按 record_ref 读单条记录                                            | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_list_by_date`                       | 按日期读计划/发生表                                                 | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_announcement_prepare`               | 生成文字预告/提醒文案                                               | ✅ 已实现（已用脱敏样例验证） |
+| `qintopia_xiaoman_activity_text_group_message_request_prepare` | 准备二花发群请求                                                    | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_status_update`                      | 更新 AgentOS event_signal 状态                                      | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_gap_update`                         | 更新缺口摘要                                                        | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_phase_update`                       | 更新活动阶段（pre_event / in_event / post_event）                   | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_handoff_create`                     | 创建 handoff work item（只支持 `visual_asset_request -> huabaosi`） | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_promotion_review_draft`             | 生成宣发评审文案                                                    | ✅ 已实现                     |
+| `qintopia_xiaoman_activity_material_summary`                   | 读取/汇总素材字段                                                   | ✅ 已实现                     |
 
 ### 二花（erhua）
 
@@ -275,8 +273,8 @@
 - 新增 `material-followup-scan` 操作（`runtime/sidecar/src/xiaoman_activity.rs`）：扫描
   `activity_occurrence` 中指定日期（默认昨天）已结束且 `material_summary`
   为空的记录，为每个待催办活动创建 `erhua.send_group_message`
-  工作项（草稿，不自动发送），幂等键为
-  `xiaoman_activity_material_followup:<date>:<title>`。
+  工作项（草稿，不自动发送），幂等键绑定业务日期和脱敏
+  `source_record_ref`，避免同日同名活动互相去重。
 - 新增 CLI 命令 `run-xiaoman-activity-material-followup-worker`（`--check-only` /
   `--once` / `--apply` / `--poll-seconds`）。
 - 新增 systemd 单元
