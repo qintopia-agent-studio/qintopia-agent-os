@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, env};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+};
 
 use anyhow::{bail, Context, Result};
 use base64ct::{Base64, Encoding};
@@ -12,12 +15,13 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::conversation_policy::{
-    conversation_ref, required_identifier_set, source_message_ref, valid_external_id,
+    conversation_ref, parse_identifier_set, source_message_ref, valid_external_id,
     INGRESS_ALLOWED_CHAT_IDS_ENV, INGRESS_ALLOWED_USER_IDS_ENV, POSTER_PRODUCTION_CAPABILITY,
 };
 
 const INGRESS_SCHEMA_VERSION: u8 = 3;
 const INGRESS_OPERATION: &str = "feishu_message_ingest";
+const INGRESS_ENABLED_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE";
 const INGRESS_HMAC_KEY_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY";
 const CALLBACK_KEY_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY";
 const BOT_OPEN_ID_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID";
@@ -116,47 +120,57 @@ pub struct IngressConfig {
 
 impl IngressConfig {
     pub fn from_env_optional() -> Result<Option<Self>> {
-        let required_ingress_envs = [
+        let mut values = BTreeMap::new();
+        insert_env_value(&mut values, INGRESS_ENABLED_ENV)?;
+        insert_env_value(&mut values, INTERNAL_GROUP_ENABLED_ENV)?;
+        if !parse_binary_flag(&values, INGRESS_ENABLED_ENV, false)? {
+            return Self::from_values(values);
+        }
+        for name in [
             INGRESS_HMAC_KEY_ENV,
+            CALLBACK_KEY_ENV,
             INGRESS_ALLOWED_CHAT_IDS_ENV,
             INGRESS_ALLOWED_USER_IDS_ENV,
             BOT_OPEN_ID_ENV,
-        ];
-        if !required_ingress_envs
-            .iter()
-            .any(|name| env::var_os(name).is_some())
-        {
-            if !matches!(
-                env::var(INTERNAL_GROUP_ENABLED_ENV).ok().as_deref(),
-                None | Some("0")
-            ) {
-                bail!("Xiaoman Feishu ingress configuration is incomplete");
+        ] {
+            insert_env_value(&mut values, name)?;
+        }
+        Self::from_values(values)
+    }
+
+    fn from_values(mut values: BTreeMap<&str, String>) -> Result<Option<Self>> {
+        let enabled = parse_binary_flag(&values, INGRESS_ENABLED_ENV, false)?;
+        let internal_group_enabled = parse_binary_flag(&values, INTERNAL_GROUP_ENABLED_ENV, false)?;
+        if !enabled {
+            if internal_group_enabled {
+                bail!("Xiaoman Feishu internal-group ingress requires authenticated ingress");
             }
             return Ok(None);
         }
-        let hmac_key = required_env(INGRESS_HMAC_KEY_ENV)?;
+        let callback_key = values.remove(CALLBACK_KEY_ENV).map(Zeroizing::new);
+        let hmac_key = Zeroizing::new(required_config_value(&mut values, INGRESS_HMAC_KEY_ENV)?);
         if !(32..=512).contains(&hmac_key.len()) {
             bail!("Xiaoman Feishu ingress HMAC key is invalid");
         }
-        if env::var(CALLBACK_KEY_ENV).ok().as_deref() == Some(hmac_key.as_str()) {
+        if callback_key.as_deref().map(|value| value.trim()) == Some(hmac_key.as_str()) {
             bail!("Xiaoman Feishu ingress and callback keys must be distinct");
         }
-        let bot_open_id = required_env(BOT_OPEN_ID_ENV)?;
+        let bot_open_id = required_config_value(&mut values, BOT_OPEN_ID_ENV)?;
         if !valid_external_id(&bot_open_id) {
             bail!("Xiaoman Feishu Bot identity is invalid");
         }
-        let internal_group_enabled = match env::var(INTERNAL_GROUP_ENABLED_ENV)
-            .unwrap_or_else(|_| "0".to_string())
-            .as_str()
-        {
-            "0" => false,
-            "1" => true,
-            _ => bail!("Xiaoman Feishu internal-group flag must be 0 or 1"),
-        };
+        let allowed_chat_ids = parse_identifier_set(
+            INGRESS_ALLOWED_CHAT_IDS_ENV,
+            &required_config_value(&mut values, INGRESS_ALLOWED_CHAT_IDS_ENV)?,
+        )?;
+        let allowed_user_ids = parse_identifier_set(
+            INGRESS_ALLOWED_USER_IDS_ENV,
+            &required_config_value(&mut values, INGRESS_ALLOWED_USER_IDS_ENV)?,
+        )?;
         Ok(Some(Self {
-            hmac_key: Zeroizing::new(hmac_key.into_bytes()),
-            allowed_chat_ids: required_identifier_set(INGRESS_ALLOWED_CHAT_IDS_ENV)?,
-            allowed_user_ids: required_identifier_set(INGRESS_ALLOWED_USER_IDS_ENV)?,
+            hmac_key: Zeroizing::new(hmac_key.as_bytes().to_vec()),
+            allowed_chat_ids,
+            allowed_user_ids,
             bot_open_id_ref: bot_open_id_ref(&bot_open_id),
             internal_group_enabled,
         }))
@@ -521,12 +535,32 @@ pub(crate) fn bot_open_id_ref(bot_open_id: &str) -> String {
     digest(&["xiaoman-feishu-bot-v3", bot_open_id])
 }
 
-fn required_env(name: &str) -> Result<String> {
-    env::var(name)
-        .ok()
+fn required_config_value(values: &mut BTreeMap<&str, String>, name: &str) -> Result<String> {
+    values
+        .remove(name)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .with_context(|| format!("{name} is required"))
+}
+
+fn insert_env_value(values: &mut BTreeMap<&'static str, String>, name: &'static str) -> Result<()> {
+    match env::var(name) {
+        Ok(value) => {
+            values.insert(name, value);
+            Ok(())
+        }
+        Err(env::VarError::NotPresent) => Ok(()),
+        Err(env::VarError::NotUnicode(_)) => bail!("{name} must be valid UTF-8"),
+    }
+}
+
+fn parse_binary_flag(values: &BTreeMap<&str, String>, name: &str, default: bool) -> Result<bool> {
+    match values.get(name).map(|value| value.trim()) {
+        None => Ok(default),
+        Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(_) => bail!("{name} must be 0 or 1"),
+    }
 }
 
 fn digest(parts: &[&str]) -> String {
@@ -566,6 +600,27 @@ fn decode_lower_hex(value: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ingress_values(enabled: &str) -> BTreeMap<&'static str, String> {
+        BTreeMap::from([
+            (INGRESS_ENABLED_ENV, enabled.to_string()),
+            (
+                INGRESS_HMAC_KEY_ENV,
+                "fixture-ingress-key-with-32-bytes-minimum".to_string(),
+            ),
+            (
+                CALLBACK_KEY_ENV,
+                "distinct-fixture-callback-key".to_string(),
+            ),
+            (BOT_OPEN_ID_ENV, "ou_xiaoman_bot_fixture".to_string()),
+            (
+                INGRESS_ALLOWED_CHAT_IDS_ENV,
+                "oc_direct_fixture,oc_group_fixture".to_string(),
+            ),
+            (INGRESS_ALLOWED_USER_IDS_ENV, "ou_user_fixture".to_string()),
+            (INTERNAL_GROUP_ENABLED_ENV, "0".to_string()),
+        ])
+    }
 
     #[cfg(feature = "postgres-integration-tests")]
     fn postgres_integration_database_url() -> String {
@@ -643,6 +698,33 @@ mod tests {
         let verified = verify_envelope(&config, envelope, now).expect("envelope verifies");
         assert_eq!(verified.message.chat_type, "direct");
         assert!(verified.payload_hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn explicit_enable_gate_controls_ingress_configuration() {
+        let disabled = ingress_values("0");
+        assert!(IngressConfig::from_values(disabled).unwrap().is_none());
+        let mut disabled_without_flag = ingress_values("0");
+        disabled_without_flag.remove(INGRESS_ENABLED_ENV);
+        assert!(IngressConfig::from_values(disabled_without_flag)
+            .unwrap()
+            .is_none());
+
+        let enabled = ingress_values("1");
+        assert!(IngressConfig::from_values(enabled).unwrap().is_some());
+
+        for invalid in ["", "true", "2"] {
+            let values = ingress_values(invalid);
+            assert!(IngressConfig::from_values(values).is_err());
+        }
+
+        let mut partial = ingress_values("1");
+        partial.remove(INGRESS_HMAC_KEY_ENV);
+        assert!(IngressConfig::from_values(partial).is_err());
+
+        let mut disabled_group = ingress_values("0");
+        disabled_group.insert(INTERNAL_GROUP_ENABLED_ENV, "1".to_string());
+        assert!(IngressConfig::from_values(disabled_group).is_err());
     }
 
     #[test]

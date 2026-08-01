@@ -430,7 +430,11 @@ fn required_env(name: &str) -> Result<String> {
 }
 
 pub(crate) fn required_identifier_set(name: &str) -> Result<BTreeSet<String>> {
-    let values = required_env(name)?
+    parse_identifier_set(name, &required_env(name)?)
+}
+
+pub(crate) fn parse_identifier_set(name: &str, value: &str) -> Result<BTreeSet<String>> {
+    let values = value
         .split(',')
         .map(str::trim)
         .filter(|value| !value.is_empty())

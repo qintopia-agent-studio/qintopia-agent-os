@@ -50,10 +50,13 @@ the timestamp, nonce, HMAC, minimal message schema, deployment ceilings, and act
 Postgres conversation policy before persisting the message. The complete Feishu SDK
 payload is never stored by this path.
 
-A complete authenticated-ingress configuration is also the protocol cutover boundary:
-the socket then accepts only V3 poster and status requests. Without that configuration,
-it accepts only the one-release V2 direct compatibility request. A mismatched plugin and
-sidecar cutover therefore fails closed instead of downgrading around the signed receipt.
+The explicit `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE=1` flag plus a complete
+authenticated-ingress configuration is also the protocol cutover boundary: the socket
+then accepts only V3 poster and status requests. With the flag absent or set to `0`,
+preprovisioned keys and allowlists remain inactive and the socket accepts only the
+one-release V2 direct compatibility request. Invalid flags, partial enabled
+configuration, and mismatched plugin/sidecar cutovers fail closed instead of downgrading
+around the signed receipt.
 
 Apply versioned policies only through bounded stdin:
 

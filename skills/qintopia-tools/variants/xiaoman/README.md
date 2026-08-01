@@ -23,7 +23,8 @@ waiting for image generation. It has no synchronous Huabaosi fallback.
 For the one-release compatibility window, a plugin with authenticated ingress disabled
 continues to submit only trusted direct conversations through the V2 contract. Enabling
 authenticated ingress switches that request to V3; an invalid or unavailable V3 path
-never downgrades to V2.
+never downgrades to V2. Cutover requires the same explicit enable flag in both the
+Xiaoman profile and the sidecar service; a one-sided or partial cutover fails closed.
 
 The same plugin's `pre_gateway_dispatch` hook preserves the existing review-card path
 and can persist authentic Feishu message events before model dispatch. The message
