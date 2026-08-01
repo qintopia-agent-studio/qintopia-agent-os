@@ -111,6 +111,14 @@ configuration was not changed.
 The first `pnpm check:pr:auto` run stopped at Prettier for the two newly edited Markdown
 files. Formatting those exact files resolved the failure; the replacement run passed.
 
+The latest PR Reviewer Guide separately found that poster callback `--dry-run` could
+write a rejection or duplicate audit before reaching its apply gate. The review finding
+was accepted. Target mismatch, participant authorization, runtime allowlist, duplicate,
+and conflict audits are now conditional on apply mode, while validation still fails
+closed. The protected PostgreSQL callback scenario now proves that valid and rejected
+dry-runs leave review state, review actions, and mutation-audit counts unchanged. Real
+callback apply continues to retain the rejection and duplicate audit trail.
+
 The local PostgreSQL 16 mirror could not start because two attempts to pull
 `pgvector/pgvector:pg16` failed during the Docker Hub TLS handshake and a third stalled
 before Docker assembled a usable image. No pgvector container was created. Replacement

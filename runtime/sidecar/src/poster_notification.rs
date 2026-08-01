@@ -811,15 +811,17 @@ async fn process_review_callback(
         || conversation_id != callback.conversation_id
         || notification_status != "delivered"
     {
-        operations_intake::record_poster_mutation_noop(
-            pool,
-            workflow_root_id,
-            "poster_mutation_rejected",
-            &callback_ref,
-            &canonical_actor_ref,
-            "callback_target_or_delivery_state_mismatch",
-        )
-        .await?;
+        if apply {
+            operations_intake::record_poster_mutation_noop(
+                pool,
+                workflow_root_id,
+                "poster_mutation_rejected",
+                &callback_ref,
+                &canonical_actor_ref,
+                "callback_target_or_delivery_state_mismatch",
+            )
+            .await?;
+        }
         bail!("poster review callback does not match the delivered origin notification");
     }
     let authorized_actor = operations_intake::authorize_poster_review_actor(
@@ -828,6 +830,7 @@ async fn process_review_callback(
         &callback.conversation_id,
         &callback.actor_user_id,
         &callback_ref,
+        apply,
     )
     .await?;
     let stored_actor_ref = if authorized_actor.policy_version > 0 {
@@ -837,15 +840,17 @@ async fn process_review_callback(
     };
     let runtime_policy = OperationsPolicy::from_cli(cli, true);
     if !runtime_policy.poster_reviewer_allowed(&callback.actor_user_id) {
-        operations_intake::record_poster_mutation_noop(
-            pool,
-            workflow_root_id,
-            "poster_mutation_rejected",
-            &callback_ref,
-            &authorized_actor.actor_ref,
-            "review_actor_exceeds_runtime_allowlist",
-        )
-        .await?;
+        if apply {
+            operations_intake::record_poster_mutation_noop(
+                pool,
+                workflow_root_id,
+                "poster_mutation_rejected",
+                &callback_ref,
+                &authorized_actor.actor_ref,
+                "review_actor_exceeds_runtime_allowlist",
+            )
+            .await?;
+        }
         bail!("poster review actor exceeds the runtime reviewer allowlist");
     }
     let existing = sqlx::query(
@@ -872,26 +877,30 @@ async fn process_review_callback(
             || existing_artifact_id != callback.artifact_id
             || existing_actor_ref != stored_actor_ref
         {
+            if apply {
+                operations_intake::record_poster_mutation_noop(
+                    pool,
+                    workflow_root_id,
+                    "poster_review_callback_conflict_rejected",
+                    &callback_ref,
+                    &authorized_actor.actor_ref,
+                    "final_review_decision_already_bound",
+                )
+                .await?;
+            }
+            bail!("poster review callback was reused with different bound data");
+        }
+        if apply {
             operations_intake::record_poster_mutation_noop(
                 pool,
                 workflow_root_id,
-                "poster_review_callback_conflict_rejected",
+                "poster_review_callback_duplicate_rejected",
                 &callback_ref,
                 &authorized_actor.actor_ref,
-                "final_review_decision_already_bound",
+                "duplicate_review_callback",
             )
             .await?;
-            bail!("poster review callback was reused with different bound data");
         }
-        operations_intake::record_poster_mutation_noop(
-            pool,
-            workflow_root_id,
-            "poster_review_callback_duplicate_rejected",
-            &callback_ref,
-            &authorized_actor.actor_ref,
-            "duplicate_review_callback",
-        )
-        .await?;
         return Ok(callback_report(
             &callback,
             decision,
@@ -992,10 +1001,11 @@ pub(crate) struct ReviewCallbackIntegrationInput<'a> {
 }
 
 #[cfg(all(test, feature = "postgres-integration-tests"))]
-pub(crate) async fn process_review_callback_for_postgres_integration(
+async fn process_review_callback_for_postgres_integration_mode(
     pool: &PgPool,
     database_url: &str,
     input: ReviewCallbackIntegrationInput<'_>,
+    apply: bool,
 ) -> Result<bool> {
     use clap::Parser;
 
@@ -1019,10 +1029,28 @@ pub(crate) async fn process_review_callback_for_postgres_integration(
             actor_user_id: input.actor_user_id.to_string(),
             action: input.action.to_string(),
         },
-        true,
+        apply,
     )
     .await?;
     Ok(report.deduped)
+}
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) async fn process_review_callback_for_postgres_integration(
+    pool: &PgPool,
+    database_url: &str,
+    input: ReviewCallbackIntegrationInput<'_>,
+) -> Result<bool> {
+    process_review_callback_for_postgres_integration_mode(pool, database_url, input, true).await
+}
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) async fn preview_review_callback_for_postgres_integration(
+    pool: &PgPool,
+    database_url: &str,
+    input: ReviewCallbackIntegrationInput<'_>,
+) -> Result<bool> {
+    process_review_callback_for_postgres_integration_mode(pool, database_url, input, false).await
 }
 
 fn callback_report(

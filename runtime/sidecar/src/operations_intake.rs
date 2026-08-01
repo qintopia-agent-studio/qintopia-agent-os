@@ -1287,6 +1287,7 @@ pub(crate) async fn authorize_poster_review_actor(
     conversation_id: &str,
     actor_user_id: &str,
     callback_event_ref: &str,
+    audit_rejection: bool,
 ) -> Result<PosterReviewActor> {
     let access = load_workflow_access(pool, workflow_root_id).await?;
     let actor_ref = crate::conversation_policy::actor_ref("feishu", actor_user_id);
@@ -1331,15 +1332,17 @@ pub(crate) async fn authorize_poster_review_actor(
         .context("authorize poster review callback participant")?
     };
     if !allowed {
-        record_poster_mutation_noop(
-            pool,
-            workflow_root_id,
-            "poster_mutation_rejected",
-            callback_event_ref,
-            &actor_ref,
-            "review_actor_or_conversation_not_authorized",
-        )
-        .await?;
+        if audit_rejection {
+            record_poster_mutation_noop(
+                pool,
+                workflow_root_id,
+                "poster_mutation_rejected",
+                callback_event_ref,
+                &actor_ref,
+                "review_actor_or_conversation_not_authorized",
+            )
+            .await?;
+        }
         bail!("poster review actor is not authorized for this workflow");
     }
     Ok(PosterReviewActor {
@@ -2507,6 +2510,102 @@ mod tests {
         .expect("complete notification work item");
 
         let wrong_actor = format!("ou_wrong_{suffix}");
+        let dry_run_events_before: i64 = sqlx::query_scalar(
+            r#"
+            SELECT count(*)
+            FROM qintopia_agent_os.work_item_events
+            WHERE work_item_id=$1
+              AND event_type IN (
+                  'poster_mutation_rejected',
+                  'poster_review_callback_duplicate_rejected',
+                  'poster_review_callback_conflict_rejected'
+              )
+            "#,
+        )
+        .bind(root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count poster mutation audits before callback dry-run");
+        let dry_run_callback_event_id = format!("evt_dry_run_{suffix}");
+        let dry_run = crate::poster_notification::preview_review_callback_for_postgres_integration(
+            &pool,
+            &database_url,
+            ReviewCallbackIntegrationInput {
+                callback_event_id: &dry_run_callback_event_id,
+                notification_id,
+                artifact_id,
+                conversation_id: &session.conversation_id,
+                actor_user_id: &session.requester_user_id,
+                action: "approve",
+            },
+        )
+        .await
+        .expect("preview valid poster review callback without mutation");
+        assert!(!dry_run);
+        let dry_run_wrong_actor =
+            crate::poster_notification::preview_review_callback_for_postgres_integration(
+                &pool,
+                &database_url,
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &format!("evt_dry_run_wrong_actor_{suffix}"),
+                    notification_id,
+                    artifact_id,
+                    conversation_id: &session.conversation_id,
+                    actor_user_id: &wrong_actor,
+                    action: "approve",
+                },
+            )
+            .await;
+        assert!(
+            dry_run_wrong_actor.is_err(),
+            "dry-run must reject an unauthorized reviewer"
+        );
+        let dry_run_wrong_chat =
+            crate::poster_notification::preview_review_callback_for_postgres_integration(
+                &pool,
+                &database_url,
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &format!("evt_dry_run_wrong_chat_{suffix}"),
+                    notification_id,
+                    artifact_id,
+                    conversation_id: &format!("oc_dry_run_wrong_{suffix}"),
+                    actor_user_id: &session.requester_user_id,
+                    action: "approve",
+                },
+            )
+            .await;
+        assert!(
+            dry_run_wrong_chat.is_err(),
+            "dry-run must reject a mismatched conversation"
+        );
+        let dry_run_state: (String, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT artifact.review_status,
+                   count(DISTINCT action.callback_event_id),
+                   count(DISTINCT event.id) FILTER (
+                       WHERE event.event_type IN (
+                           'poster_mutation_rejected',
+                           'poster_review_callback_duplicate_rejected',
+                           'poster_review_callback_conflict_rejected'
+                       )
+                   )
+            FROM qintopia_agent_os.artifacts artifact
+            LEFT JOIN qintopia_agent_os.poster_review_actions action
+              ON action.artifact_id=artifact.id
+            LEFT JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id=$2
+            WHERE artifact.id=$1
+            GROUP BY artifact.review_status
+            "#,
+        )
+        .bind(artifact_id)
+        .bind(root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("verify poster callback dry-run remains read-only");
+        assert_eq!(dry_run_state.0, "pending");
+        assert_eq!(dry_run_state.1, 0);
+        assert_eq!(dry_run_state.2, dry_run_events_before);
         let forged = crate::poster_notification::process_review_callback_for_postgres_integration(
             &pool,
             &database_url,

@@ -30,25 +30,32 @@ PR 1's merge checks passed the plugin, default and all-features Rust, both
 warning-denied Clippy, Markdown, CI-contract, MCP, secret-scan, package, and disposable
 PostgreSQL 16 tiers.
 
-PR 2 is implementation-complete on an independent branch and awaiting review. It adds
-the unified direct/internal-group intake, participant snapshots, conversation-scoped
-status, first-valid revision and review-decision rules, capability-registry routing, and
-durable group notification work. Its boundary remains persistence and authorization
-only: it makes no Feishu call, activates no service, deploys nothing, and writes no
-production database. PR 3 has not started.
+PR 2 is implementation-complete on an independent branch and awaiting replacement CI and
+review. It adds the unified direct/internal-group intake, participant snapshots,
+conversation-scoped status, first-valid revision and review-decision rules,
+capability-registry routing, and durable group notification work. Its boundary remains
+persistence and authorization only: it makes no Feishu call, activates no service,
+deploys nothing, and writes no production database. PR 3 has not started.
 
-The PR 2 local suite passes 476 default Rust tests, 482 all-features Rust tests, both
-warning-denied Clippy configurations, plugin/MCP checks, runtime and deploy contracts,
-and `pnpm check:pr:auto`. A fresh disposable PostgreSQL 18.4 database with pgvector
-0.8.1 passed all three poster intake integration tests. PR CI must independently pass
-the repository-supported `pgvector/pgvector:pg16` service job; the PG18 result is an
-additional migration-compatibility check, not a substitute for CI.
+The PR 2 local suite passes 479 default Rust tests, 485 all-features Rust tests with 20
+protected PostgreSQL tests ignored by design, both warning-denied Clippy configurations,
+plugin/MCP checks, runtime and deploy contracts, and `pnpm check:pr:auto`. Before the
+later idempotency hardening, a fresh disposable PostgreSQL 18.4 database with pgvector
+0.8.1 passed all three poster intake integration tests. The current head must still pass
+the repository-supported `pgvector/pgvector:pg16` service job; the earlier PG18 result
+is additional migration evidence, not a substitute for current CI.
 
-The latest PostgreSQL 16 run passed every focused integration test but found that the
-new work-item winner validator incorrectly treated a starter-rendered `brief_summary`
-and its derived `dedupe_key` as stable identity. The validator now keeps capability,
-type, parent, requester/provider, source, payload, and policy bindings strict while
-allowing presentation-only replay drift. Replacement PostgreSQL 16 CI remains required.
+Successive PostgreSQL 16 runs exposed three distinct stable-identity boundaries:
+presentation-only brief fields, canonical activity-signal source provenance, and the
+artifact-scoped first-valid poster revision race. The validator now keeps capability,
+type, parent, requester/provider, source, payload, and policy bindings strict, while
+allowing only presentation replay drift and the narrowly validated first-writer revision
+contenders documented below. Replacement PostgreSQL 16 CI remains required.
+
+The PR Reviewer Guide also identified that rejected or duplicate card-callback dry-runs
+could write mutation audit rows before the apply gate. Callback preview now performs the
+same validation without any audit, review-action, artifact, or workflow mutation; the
+real callback ingress continues to audit rejected and duplicate apply requests.
 
 PR 2 locks these implementation rules:
 
@@ -65,6 +72,8 @@ PR 2 locks these implementation rules:
   delivered until PR 3 adds the separately gated thread adapter.
 - Capability-provider bindings are resolved from the AgentOS capability registry on
   apply. Neither the model nor the poster intake payload supplies a provider.
+- Poster callback `--dry-run` is read-only even for target mismatch, unauthorized actor,
+  runtime-allowlist denial, duplicate callback, or conflicting decision outcomes.
 
 ## Delivery Plan
 
