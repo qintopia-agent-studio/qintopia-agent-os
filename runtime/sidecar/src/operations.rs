@@ -671,6 +671,29 @@ struct Capability {
 }
 
 #[derive(Debug, Clone)]
+struct IdempotentWorkItemBinding {
+    id: Uuid,
+    status: String,
+    parent_work_item_id: Option<Uuid>,
+    work_item_type: String,
+    requester_agent: String,
+    target_agent: String,
+    capability_key: String,
+    priority: String,
+    brief_summary: String,
+    purpose: String,
+    source_event_signal_id: Option<Uuid>,
+    source_type: String,
+    source_refs: Value,
+    dedupe_key: String,
+    risk_level: String,
+    information_class: String,
+    payload: Value,
+    payload_redaction_policy: String,
+    review_policy: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct OperationsPolicy {
     allowed_group_aliases: Vec<String>,
     allowed_group_ids: Vec<String>,
@@ -3690,6 +3713,127 @@ pub(crate) async fn create_work_item_routed(
     create_work_item(pool, request, apply_requested, policy).await
 }
 
+async fn load_idempotent_work_item_binding(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    idempotency_key: &str,
+) -> Result<Option<IdempotentWorkItemBinding>> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            id,
+            status,
+            parent_work_item_id,
+            work_item_type,
+            requester_agent,
+            target_agent,
+            capability_key,
+            priority,
+            brief_summary,
+            purpose,
+            source_event_signal_id,
+            source_type,
+            source_refs,
+            dedupe_key,
+            risk_level,
+            information_class,
+            payload,
+            payload_redaction_policy,
+            review_policy
+        FROM qintopia_agent_os.work_items
+        WHERE idempotency_key = $1
+        "#,
+    )
+    .bind(idempotency_key)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row.map(|row| IdempotentWorkItemBinding {
+        id: row.get("id"),
+        status: row.get("status"),
+        parent_work_item_id: row.get("parent_work_item_id"),
+        work_item_type: row.get("work_item_type"),
+        requester_agent: row.get("requester_agent"),
+        target_agent: row.get("target_agent"),
+        capability_key: row.get("capability_key"),
+        priority: row.get("priority"),
+        brief_summary: row.get("brief_summary"),
+        purpose: row.get("purpose"),
+        source_event_signal_id: row.get("source_event_signal_id"),
+        source_type: row.get("source_type"),
+        source_refs: row.get("source_refs"),
+        dedupe_key: row.get("dedupe_key"),
+        risk_level: row.get("risk_level"),
+        information_class: row.get("information_class"),
+        payload: row.get("payload"),
+        payload_redaction_policy: row.get("payload_redaction_policy"),
+        review_policy: row.get("review_policy"),
+    }))
+}
+
+fn validate_idempotent_work_item_binding(
+    existing: &IdempotentWorkItemBinding,
+    request: &WorkItemCreateRequest,
+    capability: &Capability,
+) -> Result<()> {
+    // Status, claims, human_owner, and metadata are mutable lifecycle fields.
+    let mismatched_field = [
+        (
+            "parent_work_item_id",
+            existing.parent_work_item_id != request.parent_work_item_id,
+        ),
+        (
+            "work_item_type",
+            existing.work_item_type != request.work_item_type,
+        ),
+        (
+            "requester_agent",
+            existing.requester_agent != request.requester_agent,
+        ),
+        (
+            "target_agent",
+            existing.target_agent != request.target_agent,
+        ),
+        (
+            "capability_key",
+            existing.capability_key != request.capability_key,
+        ),
+        ("priority", existing.priority != request.priority),
+        (
+            "brief_summary",
+            existing.brief_summary != request.brief_summary,
+        ),
+        ("purpose", existing.purpose != request.purpose),
+        (
+            "source_event_signal_id",
+            existing.source_event_signal_id != request.source_event_signal_id,
+        ),
+        ("source_type", existing.source_type != request.source_type),
+        ("source_refs", existing.source_refs != request.source_refs),
+        ("dedupe_key", existing.dedupe_key != request.dedupe_key),
+        ("payload", existing.payload != request.payload),
+        (
+            "payload_redaction_policy",
+            existing.payload_redaction_policy != request.payload_redaction_policy,
+        ),
+        ("risk_level", existing.risk_level != capability.risk_level),
+        (
+            "information_class",
+            existing.information_class != "internal_ops",
+        ),
+        (
+            "review_policy",
+            existing.review_policy != capability.review_policy,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(field, mismatched)| mismatched.then_some(field));
+
+    if let Some(field) = mismatched_field {
+        bail!("idempotency key is already bound to a different work item request ({field})");
+    }
+    Ok(())
+}
+
 pub async fn create_work_item(
     pool: &PgPool,
     mut request: WorkItemCreateRequest,
@@ -3757,24 +3901,13 @@ pub async fn create_work_item(
     let mut tx = pool.begin().await.context("begin work item transaction")?;
     validate_activity_lifecycle_phase_fact(&mut tx, &request).await?;
     let initial_status = initial_status_for(&request, &capability);
-    let existing = sqlx::query(
-        r#"
-        SELECT id, status
-        FROM qintopia_agent_os.work_items
-        WHERE idempotency_key = $1
-        "#,
-    )
-    .bind(&request.idempotency_key)
-    .fetch_optional(&mut *tx)
-    .await
-    .context("lookup work item idempotency key")?;
+    let existing = load_idempotent_work_item_binding(&mut tx, &request.idempotency_key)
+        .await
+        .context("lookup work item idempotency key")?;
 
-    let (work_item_id, current_status, existing) = if let Some(row) = existing {
-        (
-            row.get::<Uuid, _>("id"),
-            row.get::<String, _>("status"),
-            true,
-        )
+    let (work_item_id, current_status, existing) = if let Some(existing) = existing {
+        validate_idempotent_work_item_binding(&existing, &request, &capability)?;
+        (existing.id, existing.status, true)
     } else {
         let inserted = sqlx::query(
             r#"
@@ -3856,22 +3989,12 @@ pub async fn create_work_item(
             .await?;
             (work_item_id, initial_status, false)
         } else {
-            let row = sqlx::query(
-                r#"
-                SELECT id, status
-                FROM qintopia_agent_os.work_items
-                WHERE idempotency_key = $1
-                "#,
-            )
-            .bind(&request.idempotency_key)
-            .fetch_one(&mut *tx)
-            .await
-            .context("load concurrent idempotent work item winner")?;
-            (
-                row.get::<Uuid, _>("id"),
-                row.get::<String, _>("status"),
-                true,
-            )
+            let existing = load_idempotent_work_item_binding(&mut tx, &request.idempotency_key)
+                .await
+                .context("load concurrent idempotent work item winner")?
+                .context("concurrent idempotent work item winner disappeared")?;
+            validate_idempotent_work_item_binding(&existing, &request, &capability)?;
+            (existing.id, existing.status, true)
         }
     };
 
@@ -6627,6 +6750,96 @@ mod tests {
 
     fn request(value: Value) -> WorkItemCreateRequest {
         serde_json::from_value(value).expect("request should deserialize")
+    }
+
+    fn idempotent_binding_fixture() -> (WorkItemCreateRequest, Capability, IdempotentWorkItemBinding)
+    {
+        let mut request = request(json!({
+            "requester_agent": "xiaoman",
+            "target_agent": "huabaosi",
+            "capability_key": "huabaosi.create_visual_asset",
+            "work_item_type": "visual_asset_request",
+            "brief_summary": "生成已脱敏活动海报 brief",
+            "purpose": "测试幂等绑定",
+            "human_owner": "human-owner-1",
+            "priority": "normal",
+            "source_type": "manual_request",
+            "source_refs": {"request_ref": format!("sha256:{}", "a".repeat(64))},
+            "payload": {"format": "community_poster"},
+            "payload_redaction_policy": "summary_only",
+            "idempotency_key": "idempotent-binding-fixture",
+            "dedupe_key": "idempotent-binding-fixture",
+            "metadata": {"intake": "fixture"},
+            "parent_work_item_id": "11111111-1111-4111-8111-111111111111"
+        }));
+        normalize_request(&mut request);
+        let capability = builtin_capability(&request.capability_key)
+            .expect("fixture capability should be registered");
+        let existing = IdempotentWorkItemBinding {
+            id: Uuid::new_v4(),
+            status: "processing".to_string(),
+            parent_work_item_id: request.parent_work_item_id,
+            work_item_type: request.work_item_type.clone(),
+            requester_agent: request.requester_agent.clone(),
+            target_agent: request.target_agent.clone(),
+            capability_key: request.capability_key.clone(),
+            priority: request.priority.clone(),
+            brief_summary: request.brief_summary.clone(),
+            purpose: request.purpose.clone(),
+            source_event_signal_id: request.source_event_signal_id,
+            source_type: request.source_type.clone(),
+            source_refs: request.source_refs.clone(),
+            dedupe_key: request.dedupe_key.clone(),
+            risk_level: capability.risk_level.clone(),
+            information_class: "internal_ops".to_string(),
+            payload: request.payload.clone(),
+            payload_redaction_policy: request.payload_redaction_policy.clone(),
+            review_policy: capability.review_policy.clone(),
+        };
+        (request, capability, existing)
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_accepts_an_exact_replay_after_status_changes() {
+        let (request, capability, existing) = idempotent_binding_fixture();
+
+        validate_idempotent_work_item_binding(&existing, &request, &capability)
+            .expect("mutable lifecycle state must not invalidate an exact replay");
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_rejects_immutable_request_drift() {
+        let (request, capability, existing) = idempotent_binding_fixture();
+        let mut cases = Vec::new();
+
+        let mut drifted = existing.clone();
+        drifted.capability_key = "wenyuange.retrieve_evidence".to_string();
+        cases.push(("capability_key", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.work_item_type = "evidence_request".to_string();
+        cases.push(("work_item_type", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.parent_work_item_id = Some(Uuid::new_v4());
+        cases.push(("parent_work_item_id", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.source_refs = json!({"request_ref": format!("sha256:{}", "b".repeat(64))});
+        cases.push(("source_refs", drifted));
+
+        let mut drifted = existing;
+        drifted.payload = json!({"format": "different_poster"});
+        cases.push(("payload", drifted));
+
+        for (field, drifted) in cases {
+            let error = validate_idempotent_work_item_binding(&drifted, &request, &capability)
+                .expect_err("a reused key with different immutable bindings must fail closed");
+            assert!(
+                error.to_string().contains(field),
+                "unexpected error for {field}: {error}"
+            );
+        }
     }
 
     #[test]
