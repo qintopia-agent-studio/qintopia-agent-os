@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import hashlib
 import json
+import logging
 import os
+import socket
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def load_plugin():
@@ -77,6 +82,14 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
                 "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
                 "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS",
+                "QINTOPIA_OPERATIONS_INTAKE_SOCKET",
+                "QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE",
+                "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY",
+                "HERMES_SESSION_PLATFORM",
+                "HERMES_SESSION_CONVERSATION_TYPE",
+                "HERMES_SESSION_CHAT_ID",
+                "HERMES_SESSION_USER_ID",
+                "HERMES_SESSION_MESSAGE_ID",
             ]
         }
         os.environ["QINTOPIA_DIFY_KB_BASE_URL"] = "http://dify.example.test/v1"
@@ -91,6 +104,14 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS", None)
+        os.environ.pop("QINTOPIA_OPERATIONS_INTAKE_SOCKET", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY", None)
+        os.environ.pop("HERMES_SESSION_PLATFORM", None)
+        os.environ.pop("HERMES_SESSION_CONVERSATION_TYPE", None)
+        os.environ.pop("HERMES_SESSION_CHAT_ID", None)
+        os.environ.pop("HERMES_SESSION_USER_ID", None)
+        os.environ.pop("HERMES_SESSION_MESSAGE_ID", None)
         self.module = load_plugin()
 
     def tearDown(self) -> None:
@@ -110,6 +131,47 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ["QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"] = "1"
         os.environ["QINTOPIA_SIDECAR_BIN"] = "/tmp/qintopia-message-sidecar"
         self.module._xiaoman_activity_validate_read_through_worker = lambda worker_bin: Path(worker_bin)
+
+    def poster_review_event(
+        self,
+        *,
+        source_chat_id: str = "oc_chat_fixture",
+        callback_chat_id: str = "oc_chat_fixture",
+        source_user_id: str = "ou_user_fixture",
+        operator_open_id: str = "ou_user_fixture",
+        chat_type: str = "group",
+        callback_kind: str = "xiaoman_poster_review",
+    ):
+        token = "card_token_fixture"
+        return SimpleNamespace(
+            text="/card button",
+            message_type=SimpleNamespace(value="command"),
+            source=SimpleNamespace(
+                platform=SimpleNamespace(value="feishu"),
+                chat_id=source_chat_id,
+                user_id=source_user_id,
+                chat_type=chat_type,
+            ),
+            raw_message=SimpleNamespace(
+                header=SimpleNamespace(event_id="evt_fixture_1"),
+                event=SimpleNamespace(
+                    token=token,
+                    context=SimpleNamespace(open_chat_id=callback_chat_id),
+                    operator=SimpleNamespace(open_id=operator_open_id),
+                    action=SimpleNamespace(
+                        tag="button",
+                        value={
+                            "schema_version": 1,
+                            "callback_kind": callback_kind,
+                            "notification_id": "11111111-1111-4111-8111-111111111111",
+                            "artifact_id": "22222222-2222-4222-8222-222222222222",
+                            "action": "approve",
+                        },
+                    ),
+                ),
+            ),
+            message_id=token,
+        )
 
     def write_fake_xiaoman_sidecar(self, report: dict) -> Path:
         path = self.index_dir / "fake-xiaoman-sidecar.py"
@@ -1677,9 +1739,13 @@ class QintopiaToolsTest(unittest.TestCase):
         class FakeCtx:
             def __init__(self) -> None:
                 self.names = []
+                self.hooks = {}
 
             def register_tool(self, **kwargs) -> None:
                 self.names.append(kwargs["name"])
+
+            def register_hook(self, name, callback) -> None:
+                self.hooks[name] = callback
 
         os.environ["QINTOPIA_PROFILE_ID"] = "xiaoqin"
         os.environ.pop("QINTOPIA_DIFY_RAW_TOOLS_ENABLE", None)
@@ -1699,6 +1765,12 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_external_disclosure_filter", ctx.names)
         self.assertIn("qintopia_conversation_summary", ctx.names)
         self.assertIn("qintopia_xiaoman_activity_promotion_details_update", ctx.names)
+        self.assertIn("qintopia_xiaoman_poster_production_request", ctx.names)
+        self.assertIn("qintopia_xiaoman_poster_workflow_status", ctx.names)
+        self.assertIs(
+            ctx.hooks["pre_gateway_dispatch"],
+            self.module.handle_xiaoman_poster_review_card,
+        )
         self.assertNotIn("qintopia_dify_dataset_list", ctx.names)
         self.assertNotIn("qintopia_dify_knowledge_retrieve", ctx.names)
 
@@ -1706,9 +1778,13 @@ class QintopiaToolsTest(unittest.TestCase):
         class FakeCtx:
             def __init__(self) -> None:
                 self.names = []
+                self.hooks = {}
 
             def register_tool(self, **kwargs) -> None:
                 self.names.append(kwargs["name"])
+
+            def register_hook(self, name, callback) -> None:
+                self.hooks[name] = callback
 
         os.environ["QINTOPIA_PROFILE_ID"] = "wenyuange"
         os.environ["QINTOPIA_DIFY_RAW_TOOLS_ENABLE"] = "1"
@@ -1724,6 +1800,402 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_dify_indexing_status_get", ctx.names)
         self.assertIn("qintopia_dify_segment_list", ctx.names)
         self.assertIn("qintopia_dify_segment_get", ctx.names)
+
+    def test_poster_request_uses_trusted_session_and_returns_accepted_status(self):
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {
+                "success": True,
+                "accepted": True,
+                "deduped": False,
+                "workflow_root_id": "11111111-1111-4111-8111-111111111111",
+                "visual_work_item_id": "22222222-2222-4222-8222-222222222222",
+                "workflow_status": "queued",
+            }
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {
+                    "request": "请为周末晚餐生成海报，时间周六18:00，地点秦托邦会客厅",
+                    "activity_facts": {
+                        "source": "originating_request",
+                        "title": "周末晚餐",
+                        "schedule": "周六18:00",
+                        "location": "秦托邦会客厅",
+                    },
+                }
+            )
+        )
+
+        self.assertTrue(response["accepted"])
+        self.assertEqual(response["user_status"], "已接单")
+        self.assertEqual(captured["session"]["conversation_id"], "oc_chat_fixture")
+        self.assertEqual(captured["session"]["requester_user_id"], "ou_user_fixture")
+        self.assertTrue(captured["idempotency_key"].startswith("poster_production_request:sha256:"))
+        self.assertEqual(captured["activity_facts"]["title"], "周末晚餐")
+
+    def test_poster_review_hook_forwards_verified_card_without_model_dispatch(self):
+        os.environ["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY"] = "fixture-callback-key"
+        captured = {}
+
+        def fake_callback(envelope):
+            captured.update(envelope)
+            return {
+                "success": True,
+                "action_status": "review_recorded",
+                "decision": "approved",
+                "notification_id": "11111111-1111-4111-8111-111111111111",
+                "artifact_id": "22222222-2222-4222-8222-222222222222",
+                "deduped": False,
+                "group_send_authorized": False,
+                "external_send_executed": False,
+            }
+
+        self.module._poster_review_callback_call = fake_callback
+        result = self.module.handle_xiaoman_poster_review_card(self.poster_review_event())
+
+        self.assertEqual(
+            result,
+            {"action": "skip", "reason": "xiaoman_poster_review_forwarded"},
+        )
+        body = base64.b64decode(captured["body_base64"])
+        payload = json.loads(body)
+        self.assertEqual(payload["header"]["event_id"], "evt_fixture_1")
+        self.assertEqual(payload["event"]["operator"]["open_id"], "ou_user_fixture")
+        self.assertEqual(
+            payload["event"]["action"]["value"]["callback_kind"],
+            "xiaoman_poster_review",
+        )
+        digest = hashlib.sha256()
+        digest.update(captured["timestamp"].encode("ascii"))
+        digest.update(captured["nonce"].encode("ascii"))
+        digest.update(b"fixture-callback-key")
+        digest.update(body)
+        self.assertEqual(captured["signature"], digest.hexdigest())
+
+    def test_poster_review_hook_uses_framed_unix_socket_contract(self):
+        os.environ["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY"] = (
+            "fixture-callback-key"
+        )
+        socket_root = tempfile.TemporaryDirectory(prefix="poster-review-", dir="/tmp")
+        socket_path = str(Path(socket_root.name) / "callback.sock")
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(listener.close)
+        self.addCleanup(socket_root.cleanup)
+        listener.bind(socket_path)
+        listener.listen(1)
+        captured = {}
+
+        def serve_callback() -> None:
+            connection, _ = listener.accept()
+            with connection:
+                chunks = []
+                while True:
+                    chunk = connection.recv(8192)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                raw = b"".join(chunks)
+                captured.update(json.loads(raw.split(b"\n", 1)[0]))
+                connection.sendall(
+                    (
+                        json.dumps(
+                            {
+                                "success": True,
+                                "action_status": "review_recorded",
+                                "decision": "approved",
+                                "notification_id": "11111111-1111-4111-8111-111111111111",
+                                "artifact_id": "22222222-2222-4222-8222-222222222222",
+                                "deduped": False,
+                                "group_send_authorized": False,
+                                "external_send_executed": False,
+                            },
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    ).encode("utf-8")
+                )
+
+        server = threading.Thread(target=serve_callback, daemon=True)
+        server.start()
+        original_socket = self.module.XIAOMAN_POSTER_REVIEW_CALLBACK_SOCKET
+        self.module.XIAOMAN_POSTER_REVIEW_CALLBACK_SOCKET = socket_path
+        try:
+            result = self.module.handle_xiaoman_poster_review_card(
+                self.poster_review_event()
+            )
+            server.join(timeout=2)
+        finally:
+            self.module.XIAOMAN_POSTER_REVIEW_CALLBACK_SOCKET = original_socket
+            listener.close()
+            socket_root.cleanup()
+
+        self.assertFalse(server.is_alive(), "callback socket server did not complete")
+        self.assertEqual(
+            result,
+            {"action": "skip", "reason": "xiaoman_poster_review_forwarded"},
+        )
+        self.assertEqual(
+            set(captured), {"timestamp", "nonce", "signature", "body_base64"}
+        )
+        body = json.loads(base64.b64decode(captured["body_base64"]))
+        self.assertEqual(body["event"]["context"]["open_chat_id"], "oc_chat_fixture")
+        self.assertEqual(body["event"]["operator"]["open_id"], "ou_user_fixture")
+
+    def test_poster_review_envelope_matches_rust_contract_fixture(self):
+        fixture_path = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "poster-review-callback-envelope.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        payload = json.loads(base64.b64decode(fixture["envelope"]["body_base64"]))
+        original_time = self.module.time.time
+        original_token_hex = self.module.secrets.token_hex
+        self.module.time.time = lambda: fixture["now"]
+        self.module.secrets.token_hex = lambda _length: fixture["envelope"]["nonce"]
+        try:
+            envelope = self.module._poster_review_callback_envelope(
+                payload, fixture["callback_key"]
+            )
+        finally:
+            self.module.time.time = original_time
+            self.module.secrets.token_hex = original_token_hex
+
+        self.assertEqual(envelope, fixture["envelope"])
+
+    def test_poster_review_log_filter_redacts_hermes_card_identifiers(self):
+        privacy_filter = self.module._PosterReviewLogPrivacyFilter()
+        records = [
+            logging.LogRecord(
+                "gateway.platforms.feishu",
+                logging.INFO,
+                __file__,
+                1,
+                "[Feishu] Routing card action %r from %s in %s as synthetic command",
+                ("button", "ou_sensitive_user", "oc_sensitive_chat"),
+                None,
+            ),
+            logging.LogRecord(
+                "gateway.run",
+                logging.INFO,
+                __file__,
+                1,
+                "pre_gateway_dispatch skip: reason=%s platform=%s chat=%s",
+                ("xiaoman_poster_review_forwarded", "feishu", "oc_sensitive_chat"),
+                None,
+            ),
+            logging.LogRecord(
+                "gateway.platforms.feishu",
+                logging.DEBUG,
+                __file__,
+                1,
+                "[Feishu] Dropping duplicate card action token: %s",
+                ("sensitive-card-token",),
+                None,
+            ),
+        ]
+
+        for record in records:
+            self.assertTrue(privacy_filter.filter(record))
+            rendered = record.getMessage()
+            self.assertNotIn("ou_sensitive_user", rendered)
+            self.assertNotIn("oc_sensitive_chat", rendered)
+            self.assertNotIn("sensitive-card-token", rendered)
+
+    def test_poster_review_log_filter_installation_is_idempotent(self):
+        targets = [
+            logging.getLogger("gateway.platforms.feishu"),
+            logging.getLogger("gateway.run"),
+        ]
+        self.module._install_poster_review_log_privacy_filter()
+        self.module._install_poster_review_log_privacy_filter()
+        for target in targets:
+            matching = [
+                item
+                for item in target.filters
+                if getattr(item, "_marker", "")
+                == self.module._PosterReviewLogPrivacyFilter._marker
+            ]
+            self.assertEqual(len(matching), 1)
+
+    def test_poster_review_hook_does_not_capture_plain_card_command(self):
+        event = SimpleNamespace(
+            text=(
+                '/card button {"callback_kind":"xiaoman_poster_review",'
+                '"action":"approve"}'
+            ),
+            message_type=SimpleNamespace(value="command"),
+            source=SimpleNamespace(
+                platform=SimpleNamespace(value="feishu"),
+                chat_id="oc_chat_fixture",
+                user_id="ou_user_fixture",
+                chat_type="dm",
+            ),
+            raw_message=SimpleNamespace(event=SimpleNamespace(action=None)),
+            message_id="om_message_fixture",
+        )
+
+        self.assertIsNone(self.module.handle_xiaoman_poster_review_card(event))
+
+    def test_poster_review_hook_rejects_forged_card_binding_before_socket(self):
+        self.module._poster_review_callback_call = lambda _envelope: self.fail(
+            "forged callback must not reach socket"
+        )
+
+        wrong_user = self.module.handle_xiaoman_poster_review_card(
+            self.poster_review_event(source_user_id="ou_attacker")
+        )
+        wrong_chat = self.module.handle_xiaoman_poster_review_card(
+            self.poster_review_event(callback_chat_id="oc_other")
+        )
+        expected = {"action": "skip", "reason": "xiaoman_poster_review_rejected"}
+        self.assertEqual(wrong_user, expected)
+        self.assertEqual(wrong_chat, expected)
+
+    def test_poster_review_hook_disabled_fails_closed_without_socket(self):
+        self.module._poster_review_callback_call = lambda _envelope: self.fail(
+            "disabled callback must not reach socket"
+        )
+
+        result = self.module.handle_xiaoman_poster_review_card(self.poster_review_event())
+
+        self.assertEqual(
+            result,
+            {"action": "skip", "reason": "xiaoman_poster_review_disabled"},
+        )
+
+    def test_poster_review_hook_rejects_unbound_sidecar_response(self):
+        os.environ["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY"] = "fixture-callback-key"
+        self.module._poster_review_callback_call = lambda _envelope: {
+            "success": True,
+            "action_status": "review_recorded",
+            "decision": "approved",
+            "notification_id": "11111111-1111-4111-8111-111111111111",
+            "artifact_id": "33333333-3333-4333-8333-333333333333",
+            "group_send_authorized": False,
+            "external_send_executed": False,
+        }
+
+        result = self.module.handle_xiaoman_poster_review_card(self.poster_review_event())
+
+        self.assertEqual(
+            result,
+            {"action": "skip", "reason": "xiaoman_poster_review_unavailable"},
+        )
+
+    def test_poster_review_hook_rejects_wrong_sidecar_decision(self):
+        os.environ["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY"] = (
+            "fixture-callback-key"
+        )
+        self.module._poster_review_callback_call = lambda _envelope: {
+            "success": True,
+            "action_status": "review_recorded",
+            "decision": "rejected",
+            "notification_id": "11111111-1111-4111-8111-111111111111",
+            "artifact_id": "22222222-2222-4222-8222-222222222222",
+            "deduped": False,
+            "group_send_authorized": False,
+            "external_send_executed": False,
+        }
+
+        result = self.module.handle_xiaoman_poster_review_card(
+            self.poster_review_event()
+        )
+
+        self.assertEqual(
+            result,
+            {"action": "skip", "reason": "xiaoman_poster_review_unavailable"},
+        )
+
+    def test_poster_request_without_activity_facts_still_uses_async_intake(self):
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {"success": True, "accepted": True, "user_status": "需补充"}
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "生成海报"}
+            )
+        )
+        self.assertEqual(response["user_status"], "需补充")
+        self.assertEqual(captured["activity_facts"], {})
+
+    def test_poster_request_rejects_missing_or_group_session_without_intake(self):
+        called = False
+
+        def fake_intake(_payload):
+            nonlocal called
+            called = True
+            return {}
+
+        self.module._poster_intake_call = fake_intake
+        missing = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "生成海报"}
+            )
+        )
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "group"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_group_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        grouped = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "生成海报"}
+            )
+        )
+
+        self.assertEqual(missing["error"], "trusted_direct_session_required")
+        self.assertEqual(grouped["error"], "trusted_direct_session_required")
+        self.assertFalse(called)
+
+    def test_poster_revision_uses_same_trusted_intake_without_target_arguments(self):
+        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
+        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
+        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_revision_fixture"
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {"success": True, "accepted": True, "workflow_status": "生成中"}
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {
+                    "request": "标题再大一点，其他活动事实保持不变",
+                    "workflow_root_id": "11111111-1111-4111-8111-111111111111",
+                    "revision_of_artifact_id": "22222222-2222-4222-8222-222222222222",
+                }
+            )
+        )
+        self.assertTrue(response["accepted"])
+        self.assertEqual(captured["operation"], "poster_revision_request")
+        self.assertNotIn("conversation_id", captured)
+        self.assertNotIn("reviewer_id", captured)
 
 
 if __name__ == "__main__":

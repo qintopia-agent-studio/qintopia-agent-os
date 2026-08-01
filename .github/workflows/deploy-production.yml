@@ -56,6 +56,12 @@ on:
         required: true
         default: true
         type: boolean
+      legacy_runner_bootstrap:
+        description:
+          Use the latest deployed legacy runtime only to install a newer runner.
+        required: true
+        default: false
+        type: boolean
       notes:
         description: Operator notes for the deploy request.
         required: false
@@ -218,6 +224,8 @@ jobs:
             ${{ github.event.inputs.profile_dry_run_request_id || '' }}
           INPUT_ROLLBACK_ON_SMOKE_FAILURE:
             ${{ github.event.inputs.rollback_on_smoke_failure || '' }}
+          INPUT_LEGACY_RUNNER_BOOTSTRAP:
+            ${{ github.event.inputs.legacy_runner_bootstrap || 'false' }}
           INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name || '' }}
@@ -422,6 +430,7 @@ jobs:
             profile_dry_run_request_id=""
             notes="GitHub Release ${RELEASE_TAG_NAME}: ${RELEASE_HTML_URL}"
             runtime_artifact_profile="huabaosi-production"
+            legacy_runner_bootstrap="false"
             echo "release-tag=${RELEASE_TAG_NAME}" >> "$GITHUB_OUTPUT"
             echo "build-artifacts=true" >> "$GITHUB_OUTPUT"
           else
@@ -437,6 +446,7 @@ jobs:
             profile_dry_run_request_id="$INPUT_PROFILE_DRY_RUN_REQUEST_ID"
             notes="$INPUT_NOTES"
             runtime_artifact_profile="${INPUT_RUNTIME_ARTIFACT_PROFILE:-huabaosi-production}"
+            legacy_runner_bootstrap="${INPUT_LEGACY_RUNNER_BOOTSTRAP:-false}"
             echo "release-tag=" >> "$GITHUB_OUTPUT"
             echo "build-artifacts=false" >> "$GITHUB_OUTPUT"
           fi
@@ -474,6 +484,9 @@ jobs:
           rollback_on_smoke_failure="$(normalize_boolean \
             "rollback_on_smoke_failure" \
             "$rollback_on_smoke_failure")"
+          legacy_runner_bootstrap="$(normalize_boolean \
+            "legacy_runner_bootstrap" \
+            "$legacy_runner_bootstrap")"
           if [[ "$release_scope" == *"hermes-profile-erhua"* ]]; then
             if [[ "$release_scope" != "hermes-profile-erhua" || "$restart_targets" != "hermes-erhua" || "$rollback_on_smoke_failure" != "true" ]]; then
               echo "hermes-profile-erhua requires exclusive scope, exactly hermes-erhua, and rollback_on_smoke_failure=true." >&2
@@ -489,6 +502,35 @@ jobs:
           git cat-file -e "${commit_sha}^{commit}"
           git merge-base --is-ancestor "$commit_sha" origin/master
 
+          huabaosi_feature_contract="current"
+          if [[ "$legacy_runner_bootstrap" == "true" ]]; then
+            git cat-file -e "${deploy_bundle_sha}^{commit}"
+            git merge-base --is-ancestor "$deploy_bundle_sha" origin/master
+            git cat-file -e "${release_sha}^{commit}"
+            git merge-base --is-ancestor "$release_sha" origin/master
+            mkdir -p dist/deploy-resolution
+            workflow_runs_file="dist/deploy-resolution/bootstrap-deploy-runs.json"
+            deploy_results_file="dist/deploy-resolution/bootstrap-deploy-results.json"
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100" \
+              > "$workflow_runs_file"
+            node tools/deploy/collect-release-deploy-results.mjs \
+              --workflow-runs-file "$workflow_runs_file" \
+              --output "$deploy_results_file"
+            node tools/deploy/validate-legacy-runner-bootstrap.mjs \
+              --deploy-results-file "$deploy_results_file" \
+              --commit-sha "$commit_sha" \
+              --runtime-sha "$runtime_sha" \
+              --deploy-bundle-sha "$deploy_bundle_sha" \
+              --release-sha "$release_sha" \
+              --runtime-artifact-profile "$runtime_artifact_profile" \
+              --release-scope "$release_scope" \
+              --restart-targets "$restart_targets" \
+              --rollback-on-smoke-failure "$rollback_on_smoke_failure" \
+              >> "$GITHUB_STEP_SUMMARY"
+            huabaosi_feature_contract="legacy-runner-bootstrap"
+          fi
+
           notes_delimiter="deploy_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {
             echo "commit-sha=${commit_sha}"
@@ -501,6 +543,7 @@ jobs:
             echo "dry-run=${dry_run}"
             echo "rollback-on-smoke-failure=${rollback_on_smoke_failure}"
             echo "profile-dry-run-request-id=${profile_dry_run_request_id}"
+            echo "huabaosi-feature-contract=${huabaosi_feature_contract}"
             echo "notes<<${notes_delimiter}"
             echo "$notes"
             echo "${notes_delimiter}"
@@ -596,6 +639,8 @@ jobs:
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
           QINTOPIA_SIDECAR_ARTIFACT_PROFILE=huabaosi-production \
+            QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT="$HUABAOSI_FEATURE_CONTRACT" \
+            QINTOPIA_LEGACY_RUNNER_BOOTSTRAP_RUNTIME_SHA="$RUNTIME_SHA" \
             deploy/sidecar/scripts/fetch-cos-artifact.sh \
             --artifact-type sidecar \
             --sha "${RUNTIME_SHA}" \
@@ -612,6 +657,8 @@ jobs:
         env:
           RUNTIME_SHA: ${{ steps.resolve.outputs.runtime-sha }}
           DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.deploy-bundle-sha }}
+          HUABAOSI_FEATURE_CONTRACT:
+            ${{ steps.resolve.outputs.huabaosi-feature-contract }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}

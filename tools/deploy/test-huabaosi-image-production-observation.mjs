@@ -141,7 +141,11 @@ esac
       "utf8"
     );
   };
-  writeManifest(["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"]);
+  writeManifest([
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "xiaoman-feishu-poster-adapter",
+  ]);
   fs.writeFileSync(sidecarLog, "", "utf8");
 
   let fixtureSource = productionSource;
@@ -204,7 +208,11 @@ esac
   if (qiweFeature.status === 0 || fs.readFileSync(sidecarLog, "utf8") !== "") {
     throw new Error("image observation accepted a QiWe-enabled production artifact");
   }
-  writeManifest(["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"]);
+  writeManifest([
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "xiaoman-feishu-poster-adapter",
+  ]);
 
   const mutableSidecar = path.join(tmpRoot, "bin", "mutable-sidecar");
   writeExecutable(

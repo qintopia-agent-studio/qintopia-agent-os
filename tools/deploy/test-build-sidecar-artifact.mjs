@@ -36,6 +36,7 @@ try {
   assert.deepEqual(manifest.validation.cargo_features, [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
+    "xiaoman-feishu-poster-adapter",
   ]);
   assert.equal(
     manifest.files.find((entry) => entry.path === "qintopia-message-sidecar")?.mode,
@@ -147,7 +148,7 @@ function createFixtureRepo() {
       "  process.exit(1);",
       "}",
       "const featureIndex = args.indexOf('--features');",
-      "if (featureIndex === -1 || args[featureIndex + 1] !== 'huabaosi-production-adapter,huabaosi-feishu-mirror-adapter') {",
+      "if (featureIndex === -1 || args[featureIndex + 1] !== 'huabaosi-production-adapter,huabaosi-feishu-mirror-adapter,xiaoman-feishu-poster-adapter') {",
       '  process.stderr.write("builder must compile exactly the Huabaosi production features\\n");',
       "  process.exit(1);",
       "}",

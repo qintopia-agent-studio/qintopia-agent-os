@@ -19,7 +19,11 @@ const targetTriple = resolveApprovedTarget();
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactName = `${binaryName}-${targetTriple}`;
 const artifactProfile = "huabaosi-production";
-const cargoFeatures = ["huabaosi-production-adapter", "huabaosi-feishu-mirror-adapter"];
+const cargoFeatures = [
+  "huabaosi-production-adapter",
+  "huabaosi-feishu-mirror-adapter",
+  "xiaoman-feishu-poster-adapter",
+];
 const artifactDir = resolveContainedArtifactDir(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,

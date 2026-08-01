@@ -78,9 +78,10 @@ run_expect_failure() {
 
 capabilities="$(run_json capabilities operations-capability-list)"
 assert_json "$capabilities" "data['success'] is True"
-assert_json "$capabilities" "data['capability_count'] == 5"
+assert_json "$capabilities" "data['capability_count'] == 6"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.create_visual_asset' for item in data['capabilities'])"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.generate_image_asset' and item['risk_level'] == 'high' for item in data['capabilities'])"
+assert_json "$capabilities" "any(item['capability_key'] == 'xiaoman.notify_direct_conversation' and item['review_policy'] == 'origin_conversation_only' for item in data['capabilities'])"
 assert_json "$capabilities" "any(item['capability_key'] == 'erhua.send_group_message' and item['risk_level'] == 'high' for item in data['capabilities'])"
 
 readiness_missing="$(run_json readiness_missing operations-readiness-check --profile production)"

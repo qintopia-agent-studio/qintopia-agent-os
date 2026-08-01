@@ -15,6 +15,32 @@ The local `main` branch is the source for this package contract. The server Huab
 shadow branch is a review-pool input until the owner explicitly approves those files as
 roadmap.
 
+## Xiaoman Feishu Poster Return
+
+The poster path is split into durable commands:
+
+```text
+run-operations-intake
+run-xiaoman-poster-notification-starter --once --apply
+xiaoman-feishu-poster-preflight
+run-xiaoman-feishu-poster-delivery --once --apply
+run-xiaoman-poster-review-callback-ingress
+```
+
+The intake and callback sockets default to
+`/run/qintopia-agentos/operations-intake.sock` and
+`/run/qintopia-agentos/poster-review-callback.sock`; both are mode `0600` under a `0700`
+runtime directory. Delivery is compiled behind `xiaoman-feishu-poster-adapter`, disabled
+by default, and requires the exact owner phrase, release/database bindings, official
+Feishu API root, app credentials, and chat/user/media allowlists. Card callbacks use a
+bounded signed envelope containing `timestamp`, `nonce`, `signature`, and `body_base64`;
+the sidecar verifies the Feishu signature and five-minute clock window before any review
+mutation.
+
+Delivery attempts are persisted before upload. Expired `uploading` or `sending` attempts
+become terminal `ambiguous` and are not automatically replayed. The path never creates
+group-send authorization.
+
 ## Responsibility
 
 The sidecar receives QiWe/Hermes message events from NATS JetStream, persists raw and

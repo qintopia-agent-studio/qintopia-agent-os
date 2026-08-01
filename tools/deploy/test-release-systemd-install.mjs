@@ -221,6 +221,20 @@ esac
   if (!fs.existsSync(path.join(unitDir, "qintopia-agent-os-deploy-runner.timer"))) {
     throw new Error("deploy runner timer was not installed from the release");
   }
+  const xiaomanPosterUnits = [
+    "qintopia-agentos-operations-intake.service",
+    "qintopia-agentos-xiaoman-poster-notification-starter.service",
+    "qintopia-agentos-xiaoman-poster-notification-starter.timer",
+    "qintopia-agentos-xiaoman-feishu-poster-preflight.service",
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.service",
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.timer",
+    "qintopia-agentos-xiaoman-poster-review-callback.service",
+  ];
+  for (const unitName of xiaomanPosterUnits) {
+    if (!fs.existsSync(path.join(unitDir, unitName))) {
+      throw new Error(`expected installed Xiaoman poster unit ${unitName}`);
+    }
+  }
   for (const timer of [
     "qintopia-agentos-xiaoman-activity-signal-worker.timer",
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
@@ -276,6 +290,16 @@ esac
   }
   if (log.includes("enable --now qintopia-agentos-qiwe-image-send-worker.timer")) {
     throw new Error("release installer must not automatically enable QiWe image send");
+  }
+  for (const unitName of xiaomanPosterUnits) {
+    const enabled = log
+      .split("\n")
+      .some((line) => line.startsWith("enable ") && line.endsWith(unitName));
+    if (enabled) {
+      throw new Error(
+        `release installer must not automatically enable Xiaoman poster unit ${unitName}`
+      );
+    }
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

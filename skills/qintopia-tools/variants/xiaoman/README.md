@@ -10,6 +10,24 @@ filtering, and conversation handoff. Dify Knowledge tools are read-only wrappers
 Dify's Knowledge Service API and can be enabled for any profile that should use the
 shared `qintopia` toolset.
 
+## Asynchronous Poster Intake
+
+`qintopia_xiaoman_poster_production_request` accepts an explicit poster-generation
+instruction only from a Hermes session carrying trusted Feishu direct-chat, user, and
+message ids. It submits to `/run/qintopia-agentos/operations-intake.sock` and returns a
+durable workflow id without waiting for image generation. It has no synchronous Huabaosi
+fallback.
+
+Activity facts are structured as title, schedule, and location. AgentOS verifies each
+fact against the persisted originating Feishu message, or against an existing governed
+Xiaoman activity-record work item. Missing or conflicting facts return `需补充` and keep
+all evidence/visual workers unclaimable. Design defaults do not count as missing facts.
+The model cannot provide a target chat, reviewer, or generation authorization.
+
+`qintopia_xiaoman_poster_workflow_status` reads only workflows belonging to the current
+trusted direct conversation. A later modification uses the same production tool with the
+workflow and generated-image ids after the image has been marked for changes.
+
 ## Tools
 
 - `qintopia_kb_search`: searches approved Qintopia knowledge snapshot indexes. Defaults

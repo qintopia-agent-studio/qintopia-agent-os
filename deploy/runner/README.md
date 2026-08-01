@@ -61,9 +61,18 @@ bundle paths themselves are no-restart paths for the Xiaoman gateway.
 
 `workflow_dispatch` remains available as an emergency or diagnostic path, but normal
 operators should publish a GitHub Release instead of manually running deploy Actions.
-Publishing a non-prerelease GitHub Release is the production release entrypoint; the
-workflow still uses the GitHub `production` environment approval gate before it can
-write the signed deploy request.
+
+The explicit `legacy_runner_bootstrap` mode exists only when the currently deployed
+runner rejects a newly reviewed Huabaosi feature contract before it can install the new
+deploy bundle. It binds the runtime and commit to the latest trusted successful deploy
+result, requires a distinct immutable release SHA, accepts only
+`release_scope=deploy-bundle` and `restart_targets=qintopia-system-services`, and keeps
+rollback enabled. The normal artifact path continues to reject the legacy Huabaosi
+feature set. Run bootstrap as a dry-run first; a successful live bootstrap installs the
+reviewed runner while retaining the currently deployed runtime, after which the target
+Release must pass its own dry-run and full deployment. Publishing a non-prerelease
+GitHub Release is the production release entrypoint; the workflow still uses the GitHub
+`production` environment approval gate before it can write the signed deploy request.
 
 For `workflow_dispatch`, both reviewed production sidecar artifacts must already exist
 in COS before request upload. The primary profile remains `huabaosi-production`; the

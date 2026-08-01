@@ -157,6 +157,13 @@ render_long_running_service() {
   local command="$4"
   local restart_sec="$5"
   local extra_env_file="${6:-}"
+  local runtime_directory="${7:-}"
+  local runtime_directory_lines=""
+  if [[ -n "$runtime_directory" ]]; then
+    runtime_directory_lines="RuntimeDirectory=${runtime_directory}
+RuntimeDirectoryMode=0700
+UMask=0077"
+  fi
 
   write_file "$service_name" <<EOF
 [Unit]
@@ -171,6 +178,7 @@ Group=ubuntu
 WorkingDirectory=${MONOREPO_DIR}
 EnvironmentFile=${ENV_FILE}
 ${extra_env_file}
+${runtime_directory_lines}
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
 # EnvironmentFile values override Environment values. Bind immutable release identity
 # at the final exec boundary so stale persistent values cannot shadow this release.
@@ -251,6 +259,7 @@ render_timer() {
   local service_name="$3"
   local boot_sec="$4"
   local active_sec="$5"
+  local accuracy_sec="${6:-30s}"
 
   write_file "$timer_name" <<EOF
 [Unit]
@@ -259,7 +268,7 @@ Description=${description}
 [Timer]
 OnBootSec=${boot_sec}
 OnUnitActiveSec=${active_sec}
-AccuracySec=30s
+AccuracySec=${accuracy_sec}
 Persistent=true
 Unit=${service_name}
 
@@ -274,6 +283,7 @@ render_activation_timer() {
   local service_name="$3"
   local activation_sec="$4"
   local active_sec="$5"
+  local accuracy_sec="${6:-30s}"
 
   write_file "$timer_name" <<EOF
 [Unit]
@@ -282,7 +292,7 @@ Description=${description}
 [Timer]
 OnActiveSec=${activation_sec}
 OnUnitActiveSec=${active_sec}
-AccuracySec=30s
+AccuracySec=${accuracy_sec}
 Persistent=true
 Unit=${service_name}
 
@@ -361,6 +371,15 @@ render_all() {
     "nats-server.service network-online.target" \
     "run" \
     "5"
+
+  render_long_running_service \
+    "qintopia-agentos-operations-intake.service" \
+    "Qintopia AgentOS trusted local operations intake" \
+    "postgresql.service" \
+    "run-operations-intake" \
+    "5" \
+    "" \
+    "qintopia-agentos"
 
   render_long_running_service \
     "qintopia-message-embedding-worker.service" \
@@ -508,6 +527,44 @@ render_all() {
     "${QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_TIMER_INTERVAL:-2min}"
 
   render_oneshot_service \
+    "qintopia-agentos-xiaoman-poster-notification-starter.service" \
+    "Qintopia AgentOS Xiaoman poster notification starter" \
+    "run-xiaoman-poster-notification-starter --once --apply"
+  render_timer \
+    "qintopia-agentos-xiaoman-poster-notification-starter.timer" \
+    "Run Qintopia AgentOS Xiaoman poster notification starter" \
+    "qintopia-agentos-xiaoman-poster-notification-starter.service" \
+    "5s" \
+    "${QINTOPIA_XIAOMAN_POSTER_NOTIFICATION_TIMER_INTERVAL:-15s}" \
+    "2s"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-feishu-poster-preflight.service" \
+    "Qintopia AgentOS Xiaoman Feishu poster return preflight" \
+    "xiaoman-feishu-poster-preflight"
+  render_guarded_oneshot_service \
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.service" \
+    "Qintopia AgentOS Xiaoman Feishu poster delivery" \
+    "xiaoman-feishu-poster-preflight" \
+    "run-xiaoman-feishu-poster-delivery --once --apply"
+  render_activation_timer \
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.timer" \
+    "Run Qintopia AgentOS Xiaoman Feishu poster delivery" \
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.service" \
+    "5s" \
+    "${QINTOPIA_XIAOMAN_FEISHU_POSTER_TIMER_INTERVAL:-15s}" \
+    "2s"
+
+  render_long_running_service \
+    "qintopia-agentos-xiaoman-poster-review-callback.service" \
+    "Qintopia AgentOS Xiaoman authenticated poster review callback ingress" \
+    "postgresql.service" \
+    "run-xiaoman-poster-review-callback-ingress" \
+    "5" \
+    "" \
+    "qintopia-agentos"
+
+  render_oneshot_service \
     "qintopia-agentos-huabaosi-image-generation-preflight.service" \
     "Qintopia AgentOS Huabaosi Image Generation Production Preflight" \
     "huabaosi-image-generation-preflight" \
@@ -590,6 +647,7 @@ validate_output() {
   local required_files=(
     "_M9_SYSTEMD_PLAN.txt"
     "qintopia-message-sidecar.service"
+    "qintopia-agentos-operations-intake.service"
     "qintopia-message-embedding-worker.service"
     "qintopia-message-identity-worker.service"
     "qintopia-agentos-member-profile-worker.service"
@@ -614,6 +672,12 @@ validate_output() {
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer"
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer"
+    "qintopia-agentos-xiaoman-poster-notification-starter.service"
+    "qintopia-agentos-xiaoman-poster-notification-starter.timer"
+    "qintopia-agentos-xiaoman-feishu-poster-preflight.service"
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.service"
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.timer"
+    "qintopia-agentos-xiaoman-poster-review-callback.service"
     "qintopia-agentos-huabaosi-image-generation-preflight.service"
     "qintopia-agentos-huabaosi-image-generation-worker.service"
     "qintopia-agentos-huabaosi-image-generation-worker.timer"

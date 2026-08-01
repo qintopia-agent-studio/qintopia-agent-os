@@ -36,8 +36,9 @@ if (!exists(sidecarAgentsPath)) {
 } else {
   const sidecarAgents = readText(sidecarAgentsPath);
   for (const fragment of [
-    "Production sidecar artifacts compile exactly `huabaosi-production-adapter` and the",
+    "Production sidecar artifacts compile exactly `huabaosi-production-adapter`, the",
     "guarded `huabaosi-feishu-mirror-adapter`",
+    "`xiaoman-feishu-poster-adapter`",
     "QiWe live features, staging adapters,",
     "staging/production builds, and all-features production artifacts remain forbidden",
     "QiWe",
@@ -86,7 +87,8 @@ if (!exists(qiweImageSendPlanPath)) {
   const plan = readText(qiweImageSendPlanPath);
   for (const fragment of [
     "Huabaosi production release artifacts record exactly",
-    "`huabaosi-production-adapter` and `huabaosi-feishu-mirror-adapter`",
+    "`huabaosi-production-adapter`, `huabaosi-feishu-mirror-adapter`, and the",
+    "default-disabled `xiaoman-feishu-poster-adapter`",
     "must reject",
     "QiWe live features, staging approval, staging databases",
     "the production gate and never falls back to staging approval",
@@ -109,7 +111,7 @@ if (!exists(qiweImageSendAdapterWorkerPlanPath)) {
 } else {
   const plan = readText(qiweImageSendAdapterWorkerPlanPath);
   for (const fragment of [
-    "`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter]`",
+    "`cargo_features: [huabaosi-production-adapter, huabaosi-feishu-mirror-adapter, xiaoman-feishu-poster-adapter]`",
     "exclude QiWe live",
     "Production apply must use the production owner phrase",
     "back to staging gates",
@@ -157,7 +159,8 @@ if (!exists(currentRoadmapPath)) {
   const roadmap = readText(currentRoadmapPath);
   for (const fragment of [
     "Only the matched Huabaosi/QiWe staging live feature pair may claim this storage",
-    "Huabaosi production artifacts must contain only `huabaosi-production-adapter` plus",
+    "Huabaosi production artifacts must contain only `huabaosi-production-adapter`, the",
+    "`xiaoman-feishu-poster-adapter`",
     "must not bundle",
     "`qiwe-production-adapter`",
     "Single-feature builds still",
@@ -203,9 +206,10 @@ for (const artifactFetchPath of [
     const fetcher = readText(artifactFetchPath);
     requireFragment(artifactFetchPath, fetcher, "huabaosi-production-adapter");
     requireFragment(artifactFetchPath, fetcher, "huabaosi-feishu-mirror-adapter");
+    requireFragment(artifactFetchPath, fetcher, "xiaoman-feishu-poster-adapter");
     if (
       fetcher.includes(
-        '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","qiwe-production-adapter"]'
+        '["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","xiaoman-feishu-poster-adapter","qiwe-production-adapter"]'
       )
     ) {
       addError(

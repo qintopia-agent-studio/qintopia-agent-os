@@ -405,6 +405,34 @@ jobs:
           operations::tests::postgres_feishu_backed_approval_requires_matching_revalidation_evidence
           -- --ignored --exact
 
+      - name: Xiaoman async poster intake PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          operations_intake::tests::postgres_poster_intake_is_idempotent_authorized_and_never_group_sends
+          -- --ignored --exact
+
+      - name: Xiaoman poster brief authorization upsert PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          collaboration::tests::postgres_authorized_upsert_promotes_pending_artifact --
+          --ignored --exact
+
+      - name: Xiaoman poster delivery claim PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          poster_delivery::tests::postgres_rejected_candidate_does_not_block_next_notification
+          -- --ignored --exact
+
+      - name: Xiaoman poster upload audit PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          poster_delivery::tests::postgres_upload_acceptance_precedes_send_gate --
+          --ignored --exact
+
       - name: QiWe callback capture-storage redaction integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

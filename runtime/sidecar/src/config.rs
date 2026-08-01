@@ -863,6 +863,58 @@ pub enum Command {
         #[arg(long)]
         work_item_id: Option<uuid::Uuid>,
     },
+    /// Serve bounded Xiaoman poster intake and status requests over a local Unix socket.
+    RunOperationsIntake {
+        /// Fixed local Unix socket owned by the sidecar runtime user.
+        #[arg(
+            long,
+            env = "QINTOPIA_OPERATIONS_INTAKE_SOCKET",
+            default_value = "/run/qintopia-agentos/operations-intake.sock"
+        )]
+        socket_path: std::path::PathBuf,
+    },
+    /// Create durable direct-conversation notification work for pending generated posters.
+    RunXiaomanPosterNotificationStarter {
+        #[arg(long)]
+        check_only: bool,
+        #[arg(long)]
+        once: bool,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long, default_value_t = 25)]
+        batch_size: i64,
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+    },
+    /// Validate Xiaoman Feishu poster-return configuration without database or network access.
+    XiaomanFeishuPosterPreflight,
+    /// Deliver one pending generated poster to its originating Feishu direct conversation.
+    RunXiaomanFeishuPosterDelivery {
+        #[arg(long)]
+        once: bool,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        notification_id: Option<uuid::Uuid>,
+    },
+    /// Process one verified Feishu poster-review callback from bounded stdin.
+    XiaomanPosterReviewCallback {
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Serve authenticated Feishu poster-review callbacks over a restricted local socket.
+    RunXiaomanPosterReviewCallbackIngress {
+        #[arg(
+            long,
+            env = "QINTOPIA_XIAOMAN_POSTER_CALLBACK_SOCKET",
+            default_value = "/run/qintopia-agentos/poster-review-callback.sock"
+        )]
+        socket_path: std::path::PathBuf,
+    },
     /// Create a capability-governed AgentOS operations work item.
     OperationsWorkItemCreate {
         /// JSON payload for the generic capability/work item request.

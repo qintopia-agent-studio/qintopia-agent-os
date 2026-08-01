@@ -21,6 +21,7 @@ const ALLOWED_WORK_ITEM_TYPES: &[&str] = &[
     "activity_live_support_request",
     "activity_recap_request",
     "evidence_request",
+    "conversation_notification_request",
 ];
 
 const ALLOWED_STATUSES: &[&str] = &[
@@ -41,6 +42,8 @@ const ALLOWED_SOURCE_TYPES: &[&str] = &[
     "xiaoman_activity",
     "event_signal",
     "operations_workflow",
+    "feishu_direct_request",
+    "feishu_direct_revision_request",
 ];
 const DRY_RUN_ALLOWED_GROUP_ALIASES: &[&str] = &["community_activity_group"];
 const DRY_RUN_ALLOWED_GROUP_IDS: &[&str] = &[];
@@ -50,12 +53,23 @@ const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "erhua.send_group_message",
     "wenyuange.retrieve_evidence",
     "xiaoman.create_activity_request",
+    "xiaoman.notify_direct_conversation",
 ];
 const GENERATED_IMAGE_ARTIFACT_TYPE: &str = "generated_image";
 const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const GENERATED_IMAGE_WORK_ITEM_TYPE: &str = "image_generation_request";
 const GENERATED_IMAGE_WORKER_ID: &str = "huabaosi-image-generation-worker";
 const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
+const DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL: &str = r#"
+AND parent.source_type NOT IN (
+    'feishu_direct_request',
+    'feishu_direct_revision_request'
+)
+AND COALESCE(
+    parent.metadata #>> '{workflow_metadata,intake_channel}',
+    ''
+) <> 'xiaoman_feishu_direct'
+"#;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkItemCreateRequest {
@@ -994,7 +1008,7 @@ pub fn run_readiness_check(cli: &Cli, profile: String, strict: bool) -> Result<(
     Ok(())
 }
 
-async fn work_item_status_tree(
+pub(crate) async fn work_item_status_tree(
     pool: &PgPool,
     work_item_id: Uuid,
 ) -> Result<WorkItemStatusTreeReport> {
@@ -1325,6 +1339,26 @@ async fn run_xiaoman_activity_image_generation_starter_batch(
     ))
 }
 
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) async fn run_xiaoman_poster_image_starter_for_postgres_integration(
+    pool: &PgPool,
+    visual_work_item_id: Uuid,
+) -> Result<()> {
+    let report = run_xiaoman_activity_image_generation_starter_batch(
+        pool,
+        false,
+        true,
+        1,
+        Some(visual_work_item_id),
+        &OperationsPolicy::dry_run(),
+    )
+    .await?;
+    if report.work_items.len() > 1 {
+        bail!("poster integration image starter resolved duplicate requests");
+    }
+    Ok(())
+}
+
 async fn load_xiaoman_activity_promotion_candidates(
     pool: &PgPool,
     work_item_id: Option<Uuid>,
@@ -1433,7 +1467,7 @@ async fn load_xiaoman_activity_send_request_candidates(
     work_item_id: Option<Uuid>,
     batch_size: i64,
 ) -> Result<Vec<XiaomanActivitySendRequestCandidate>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query(&format!(
         r#"
         SELECT
             parent.id AS parent_id,
@@ -1477,6 +1511,7 @@ async fn load_xiaoman_activity_send_request_candidates(
               'activity_recap_request'
           )
           AND parent.target_agent = 'xiaoman'
+          {DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL}
           AND ($1::uuid IS NULL OR parent.id = $1 OR visual.id = $1 OR image_request.id = $1)
           AND NOT EXISTS (
               SELECT 1
@@ -1488,7 +1523,7 @@ async fn load_xiaoman_activity_send_request_candidates(
         ORDER BY parent.created_at ASC
         LIMIT $2
         "#,
-    )
+    ))
     .bind(work_item_id)
     .bind(batch_size.max(1))
     .fetch_all(pool)
@@ -4083,7 +4118,15 @@ fn normalize_request(request: &mut WorkItemCreateRequest) {
 }
 
 fn initial_status_for(request: &WorkItemCreateRequest, capability: &Capability) -> String {
-    if capability.capability_key == "erhua.send_group_message"
+    if request.source_type == "feishu_direct_request"
+        && request
+            .payload
+            .pointer("/poster_fact_gate/status")
+            .and_then(Value::as_str)
+            == Some("needs_clarification")
+    {
+        "awaiting_review".to_string()
+    } else if capability.capability_key == "erhua.send_group_message"
         && request.work_item_type == "group_message_request"
     {
         "awaiting_publish".to_string()
@@ -4371,6 +4414,18 @@ fn validate_source_policy(
                 bail!("source_refs.source_record_ref is required for this source_type");
             }
         }
+        "feishu_direct_request" | "feishu_direct_revision_request" => {
+            let source_message_ref = source_refs
+                .get("source_message_ref")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("trusted Feishu direct source requires source_message_ref")
+                })?;
+            validate_canonical_sha256(
+                source_message_ref,
+                "trusted Feishu direct source_message_ref",
+            )?;
+        }
         _ => bail!("source_type is not allowed for operations work items"),
     }
     Ok(())
@@ -4495,6 +4550,7 @@ fn workflow_work_item_requests(
             "workflow_type": request.workflow_type,
             "requested_by": request.actor_agent,
             "request_text": request.request_text,
+            "poster_fact_gate": request.metadata.get("poster_fact_gate"),
         }),
         payload_redaction_policy: "summary_only".to_string(),
         idempotency_key: format!("{}:parent", request.idempotency_key),
@@ -4524,6 +4580,7 @@ fn workflow_work_item_requests(
             "planner_intent": "retrieve_evidence",
             "question": format!("请整理活动宣发前需要引用的背景资料和证据：{}", request.request_text),
             "request_text": request.request_text,
+            "poster_fact_gate": request.metadata.get("poster_fact_gate"),
         }),
         payload_redaction_policy: "summary_only".to_string(),
         idempotency_key: format!("{}:evidence-child", request.idempotency_key),
@@ -4554,6 +4611,9 @@ fn workflow_work_item_requests(
             "planner_intent": "create_visual_asset",
             "requested_output": "poster_or_visual_draft",
             "request_text": request.request_text,
+            "generation_authorization": request.metadata.get("generation_authorization"),
+            "origin_conversation_ref": request.metadata.get("origin_conversation_ref"),
+            "poster_fact_gate": request.metadata.get("poster_fact_gate"),
         }),
         payload_redaction_policy: "summary_only".to_string(),
         idempotency_key: format!("{}:visual-child", request.idempotency_key),
@@ -6336,6 +6396,17 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
             review_policy: "before_external_use".to_string(),
             enabled: true,
         }),
+        "xiaoman.notify_direct_conversation" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "xiaoman".to_string(),
+            display_name: "小满原会话成图回传".to_string(),
+            description: "把待审核成图返回可信来源飞书私聊，不授权群发".to_string(),
+            allowed_callers: vec!["xiaoman".to_string()],
+            allowed_work_item_types: vec!["conversation_notification_request".to_string()],
+            risk_level: "high".to_string(),
+            review_policy: "origin_conversation_only".to_string(),
+            enabled: true,
+        }),
         _ => None,
     }
 }
@@ -6493,6 +6564,70 @@ mod tests {
 
     fn request(value: Value) -> WorkItemCreateRequest {
         serde_json::from_value(value).expect("request should deserialize")
+    }
+
+    #[test]
+    fn direct_poster_fact_gate_blocks_workers_until_clarified() {
+        let input = WorkflowStartRequest {
+            actor_agent: "xiaoman".to_string(),
+            workflow_type: "activity_promotion".to_string(),
+            request_text: "海报生成请求待补充活动事实".to_string(),
+            source_type: "feishu_direct_request".to_string(),
+            source_refs: json!({"source_message_ref": format!("sha256:{}", "a".repeat(64))}),
+            human_owner: format!("sha256:{}", "b".repeat(64)),
+            priority: "normal".to_string(),
+            idempotency_key: "poster-fixture".to_string(),
+            metadata: json!({
+                "poster_fact_gate": {
+                    "status": "needs_clarification",
+                    "missing_fields": ["活动时间"]
+                }
+            }),
+        };
+        let (parent, children) = workflow_work_item_requests(&input, Some(Uuid::new_v4()));
+        let parent_capability = builtin_capability(&parent.capability_key).unwrap();
+        assert_eq!(
+            initial_status_for(&parent, &parent_capability),
+            "awaiting_review"
+        );
+        for child in children {
+            let capability = builtin_capability(&child.capability_key).unwrap();
+            assert_eq!(
+                child.payload["poster_fact_gate"]["status"],
+                "needs_clarification"
+            );
+            assert_eq!(initial_status_for(&child, &capability), "awaiting_review");
+        }
+    }
+
+    #[test]
+    fn trusted_feishu_sources_require_opaque_source_message_ref() {
+        let source_ref = format!("sha256:{}", "a".repeat(64));
+        validate_source_policy(
+            "feishu_direct_request",
+            &json!({"source_message_ref": source_ref}),
+            None,
+        )
+        .expect("trusted direct request source should pass");
+        validate_source_policy(
+            "feishu_direct_revision_request",
+            &json!({"source_message_ref": source_ref}),
+            None,
+        )
+        .expect("trusted direct revision source should pass");
+        for invalid_source_refs in [
+            json!({}),
+            json!({"source_message_ref": "om_raw_message_id"}),
+            json!({"source_message_ref": "sha256:abc"}),
+            json!({"source_message_ref": format!("sha256:{}", "A".repeat(64))}),
+            json!({"source_message_ref": format!(" sha256:{} ", "a".repeat(64))}),
+        ] {
+            assert!(
+                validate_source_policy("feishu_direct_request", &invalid_source_refs, None)
+                    .is_err(),
+                "trusted direct sources must reject non-canonical source message refs"
+            );
+        }
     }
 
     fn xiaoman_promotion_candidate(
@@ -6887,7 +7022,7 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 5);
+        assert_eq!(report.capability_count, 6);
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.create_visual_asset"
                 && item.provider_agent == "huabaosi"
@@ -6903,6 +7038,11 @@ mod tests {
                 && item
                     .allowed_work_item_types
                     .contains(&"image_generation_request".to_string())
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "xiaoman.notify_direct_conversation"
+                && item.provider_agent == "xiaoman"
+                && item.review_policy == "origin_conversation_only"
         }));
     }
 
@@ -7008,6 +7148,15 @@ mod tests {
 
     #[test]
     fn xiaoman_send_request_starter_builds_awaiting_publish_group_message() {
+        for required_fragment in [
+            "parent.source_type NOT IN",
+            "'feishu_direct_request'",
+            "'feishu_direct_revision_request'",
+            "'xiaoman_feishu_direct'",
+        ] {
+            assert!(DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL.contains(required_fragment));
+        }
+        assert!(!DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL.contains("group_send_authorized"));
         let candidate = xiaoman_send_candidate();
         let request = xiaoman_activity_send_request(
             &candidate,

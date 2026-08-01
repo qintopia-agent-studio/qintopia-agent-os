@@ -35,8 +35,9 @@ call Feishu or QiWe, install a listener or timer, or send externally.
   URL back, and then invoking the existing async URL upload path. Default, Huabaosi-only
   production artifacts, and QiWe-only builds continue to reject this route. Staging
   requires `huabaosi-staging-adapter` plus `qiwe-staging-adapter`; Huabaosi production
-  artifacts must contain only `huabaosi-production-adapter` plus the guarded
-  `huabaosi-feishu-mirror-adapter` and must not bundle `qiwe-production-adapter`.
+  artifacts must contain only `huabaosi-production-adapter`, the guarded
+  `huabaosi-feishu-mirror-adapter`, and the default-disabled
+  `xiaoman-feishu-poster-adapter`; they must not bundle `qiwe-production-adapter`.
 - The reviewed QiWe protocol plan says the synchronous local and URL upload APIs are
   marked for deprecation and must not become the production foundation.
 

@@ -15,6 +15,32 @@ and Hermes `mcp-context` command references to immutable release directories und
 `/home/ubuntu/qintopia-agent-os-releases/<sha>` with stable `current` and `previous`
 symlinks.
 
+## Xiaoman Feishu Poster Return
+
+The release bundle installs disabled intake, notification starter, delivery, and
+callback units. Production activation is explicit:
+
+```bash
+QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION=approved-production-xiaoman-feishu-poster-return \
+  deploy/sidecar/scripts/activate-xiaoman-feishu-poster-production.sh
+```
+
+Activation requires persistent `QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED=1` in the fixed
+sidecar env and `QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE=1` in the fixed Xiaoman
+Hermes env. Both env files must contain the same callback key, and the live plugin must
+resolve to the immutable `release/current` Xiaoman variant. The script runs the
+release-local preflight, restarts and verifies `hermes-gateway-xiaoman.service` through
+the fixed `ubuntu` user boundary, then starts intake/callback/starter and enables
+delivery last. A failed gateway restart occurs before any workflow unit or timer is
+enabled. The script does not source either env file or print the callback key. Rollback
+stops delivery first, requires both persistent switches to be `0`, restarts Xiaoman to
+unload the hook, and retains all workflow, attempt, notification, and review audit data:
+
+```bash
+QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ROLLBACK=approved-production-xiaoman-feishu-poster-return-rollback \
+  deploy/sidecar/scripts/rollback-xiaoman-feishu-poster-production.sh
+```
+
 ## Current Source
 
 - Local source: `../qintopia-message-sidecar/scripts/server-deploy.sh`
