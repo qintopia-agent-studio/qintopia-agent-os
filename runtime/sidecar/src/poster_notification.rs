@@ -29,6 +29,7 @@ use crate::{
         self, ArtifactReviewDecisionRequest, OperationsPolicy, WorkItemCreateReport,
         WorkItemCreateRequest,
     },
+    operations_intake,
 };
 
 const MAX_CALLBACK_BYTES: u64 = 64 * 1024;
@@ -39,6 +40,7 @@ const MAX_CALLBACK_CLOCK_SKEW_SECONDS: i64 = 300;
 const CALLBACK_IO_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(2);
 const REVIEW_CALLBACK_TARGET_QUERY: &str = r#"
     SELECT notification.generated_image_artifact_id,
+           notification.workflow_root_id,
            notification.status,
            target.conversation_id,
            target.requester_user_id,
@@ -61,6 +63,8 @@ struct Candidate {
     notification_kind: String,
     failure_code: Option<String>,
     origin_ref: String,
+    conversation_type: String,
+    policy_version: i64,
     human_owner: String,
     priority: String,
 }
@@ -170,7 +174,7 @@ async fn run_starter_batch(
     for candidate in candidates {
         let request = notification_request(&candidate)?;
         let report = if apply_requested {
-            operations::create_work_item(pool, request, true, policy).await?
+            operations::create_work_item_routed(pool, request, true, policy).await?
         } else {
             operations::create_work_item_dry_run(request)?
         };
@@ -249,6 +253,8 @@ async fn load_candidates(
                'image_ready'::text AS notification_kind,
                NULL::text AS failure_code,
                root.metadata #>> '{workflow_metadata,origin_conversation_ref}' AS origin_ref,
+               target.conversation_type,
+               target.policy_version,
                root.human_owner,
                root.priority
         FROM qintopia_agent_os.artifacts artifact
@@ -263,14 +269,31 @@ async fn load_candidates(
           ON root.id = visual.parent_work_item_id
          AND root.work_item_type = 'activity_promotion_request'
         JOIN qintopia_agent_os.poster_return_targets target
-          ON target.origin_ref = root.metadata #>> '{workflow_metadata,origin_conversation_ref}'
+         ON target.origin_ref = root.metadata #>> '{workflow_metadata,origin_conversation_ref}'
          AND target.platform = 'feishu'
-         AND target.conversation_type = 'direct'
         WHERE artifact.artifact_type = 'generated_image'
           AND artifact.review_status = 'pending'
           AND artifact.content_hash IS NOT NULL
           AND artifact.content_hash <> ''
-          AND root.metadata #>> '{workflow_metadata,intake_channel}' = 'xiaoman_feishu_direct'
+          AND (
+              (
+                  target.conversation_type = 'direct'
+                  AND target.audience_class = 'private'
+                  AND target.delivery_mode = 'direct_chat'
+                  AND root.metadata #>> '{workflow_metadata,intake_channel}'
+                      = 'xiaoman_feishu_direct'
+              )
+              OR
+              (
+                  target.conversation_type = 'group'
+                  AND target.audience_class = 'internal_collaboration'
+                  AND target.delivery_mode = 'thread_reply'
+                  AND target.policy_version > 0
+                  AND NULLIF(btrim(target.thread_root_message_id), '') IS NOT NULL
+                  AND root.metadata #>> '{workflow_metadata,intake_channel}'
+                      = 'xiaoman_feishu_internal_group'
+              )
+          )
           AND EXISTS (
               SELECT 1 FROM qintopia_agent_os.work_item_events event
               WHERE event.work_item_id = image_request.id
@@ -298,6 +321,8 @@ async fn load_candidates(
                      AND event.event_type = 'image_generation_outcome_ambiguous'
                ) THEN 'generation_outcome_ambiguous' ELSE 'generation_failed' END AS failure_code,
                root.metadata #>> '{workflow_metadata,origin_conversation_ref}' AS origin_ref,
+               target.conversation_type,
+               target.policy_version,
                root.human_owner,
                root.priority
         FROM qintopia_agent_os.work_items image_request
@@ -308,12 +333,29 @@ async fn load_candidates(
           ON root.id = visual.parent_work_item_id
          AND root.work_item_type = 'activity_promotion_request'
         JOIN qintopia_agent_os.poster_return_targets target
-          ON target.origin_ref = root.metadata #>> '{workflow_metadata,origin_conversation_ref}'
+         ON target.origin_ref = root.metadata #>> '{workflow_metadata,origin_conversation_ref}'
          AND target.platform = 'feishu'
-         AND target.conversation_type = 'direct'
         WHERE image_request.work_item_type = 'image_generation_request'
           AND image_request.status = 'failed'
-          AND root.metadata #>> '{workflow_metadata,intake_channel}' = 'xiaoman_feishu_direct'
+          AND (
+              (
+                  target.conversation_type = 'direct'
+                  AND target.audience_class = 'private'
+                  AND target.delivery_mode = 'direct_chat'
+                  AND root.metadata #>> '{workflow_metadata,intake_channel}'
+                      = 'xiaoman_feishu_direct'
+              )
+              OR
+              (
+                  target.conversation_type = 'group'
+                  AND target.audience_class = 'internal_collaboration'
+                  AND target.delivery_mode = 'thread_reply'
+                  AND target.policy_version > 0
+                  AND NULLIF(btrim(target.thread_root_message_id), '') IS NOT NULL
+                  AND root.metadata #>> '{workflow_metadata,intake_channel}'
+                      = 'xiaoman_feishu_internal_group'
+              )
+          )
           AND NOT EXISTS (
               SELECT 1 FROM qintopia_agent_os.artifacts artifact
               WHERE artifact.work_item_id = image_request.id
@@ -345,6 +387,8 @@ async fn load_candidates(
                 notification_kind: row.try_get("notification_kind")?,
                 failure_code: row.try_get("failure_code")?,
                 origin_ref: row.try_get("origin_ref")?,
+                conversation_type: row.try_get("conversation_type")?,
+                policy_version: row.try_get("policy_version")?,
                 human_owner: row.try_get("human_owner")?,
                 priority: row.try_get("priority")?,
             })
@@ -379,7 +423,11 @@ fn notification_request(candidate: &Candidate) -> Result<WorkItemCreateRequest> 
     Ok(WorkItemCreateRequest {
         requester_agent: "xiaoman".to_string(),
         target_agent: "xiaoman".to_string(),
-        capability_key: "xiaoman.notify_direct_conversation".to_string(),
+        capability_key: if candidate.policy_version > 0 {
+            "xiaoman.notify_conversation".to_string()
+        } else {
+            "xiaoman.notify_direct_conversation".to_string()
+        },
         work_item_type: "conversation_notification_request".to_string(),
         brief_summary: brief_summary.to_string(),
         purpose: purpose.to_string(),
@@ -395,6 +443,7 @@ fn notification_request(candidate: &Candidate) -> Result<WorkItemCreateRequest> 
             "artifact_content_hash": candidate.artifact_hash,
             "failure_code": candidate.failure_code,
             "origin_conversation_ref": candidate.origin_ref,
+            "conversation_type": candidate.conversation_type,
             "review_status": if image_ready { "pending" } else { "not_applicable" },
             "group_send_authorized": false,
             "external_send_executed": false
@@ -751,16 +800,53 @@ async fn process_review_callback(
         .context("load poster review callback target")?
         .context("poster notification is not found")?;
     let artifact_id: Uuid = row.try_get("generated_image_artifact_id")?;
+    let workflow_root_id: Uuid = row.try_get("workflow_root_id")?;
     let notification_status: String = row.try_get("status")?;
     let conversation_id: String = row.try_get("conversation_id")?;
-    let requester_user_id: String = row.try_get("requester_user_id")?;
     let review_status: String = row.try_get("review_status")?;
+    let callback_ref = callback_event_ref(&callback.callback_event_id);
+    let canonical_actor_ref =
+        crate::conversation_policy::actor_ref("feishu", &callback.actor_user_id);
     if artifact_id != callback.artifact_id
         || conversation_id != callback.conversation_id
-        || requester_user_id != callback.actor_user_id
         || notification_status != "delivered"
     {
+        operations_intake::record_poster_mutation_noop(
+            pool,
+            workflow_root_id,
+            "poster_mutation_rejected",
+            &callback_ref,
+            &canonical_actor_ref,
+            "callback_target_or_delivery_state_mismatch",
+        )
+        .await?;
         bail!("poster review callback does not match the delivered origin notification");
+    }
+    let authorized_actor = operations_intake::authorize_poster_review_actor(
+        pool,
+        workflow_root_id,
+        &callback.conversation_id,
+        &callback.actor_user_id,
+        &callback_ref,
+    )
+    .await?;
+    let stored_actor_ref = if authorized_actor.policy_version > 0 {
+        authorized_actor.actor_ref.clone()
+    } else {
+        actor_ref(&callback.actor_user_id)
+    };
+    let runtime_policy = OperationsPolicy::from_cli(cli, true);
+    if !runtime_policy.poster_reviewer_allowed(&callback.actor_user_id) {
+        operations_intake::record_poster_mutation_noop(
+            pool,
+            workflow_root_id,
+            "poster_mutation_rejected",
+            &callback_ref,
+            &authorized_actor.actor_ref,
+            "review_actor_exceeds_runtime_allowlist",
+        )
+        .await?;
+        bail!("poster review actor exceeds the runtime reviewer allowlist");
     }
     let existing = sqlx::query(
         r#"
@@ -784,10 +870,28 @@ async fn process_review_callback(
         if existing_decision != decision
             || existing_notification_id != callback.notification_id
             || existing_artifact_id != callback.artifact_id
-            || existing_actor_ref != actor_ref(&callback.actor_user_id)
+            || existing_actor_ref != stored_actor_ref
         {
+            operations_intake::record_poster_mutation_noop(
+                pool,
+                workflow_root_id,
+                "poster_review_callback_conflict_rejected",
+                &callback_ref,
+                &authorized_actor.actor_ref,
+                "final_review_decision_already_bound",
+            )
+            .await?;
             bail!("poster review callback was reused with different bound data");
         }
+        operations_intake::record_poster_mutation_noop(
+            pool,
+            workflow_root_id,
+            "poster_review_callback_duplicate_rejected",
+            &callback_ref,
+            &authorized_actor.actor_ref,
+            "duplicate_review_callback",
+        )
+        .await?;
         return Ok(callback_report(
             &callback,
             decision,
@@ -800,12 +904,17 @@ async fn process_review_callback(
         return Ok(callback_report(&callback, decision, false, "dry_run_ok"));
     }
     if review_status != desired_status {
-        let policy = OperationsPolicy::from_cli(cli, true);
-        operations::record_artifact_review_decision(
+        let reviewer_id = if authorized_actor.policy_version > 0 {
+            authorized_actor.actor_ref.clone()
+        } else {
+            callback.actor_user_id.clone()
+        };
+        let scoped_policy = runtime_policy.scoped_to_poster_reviewer(&reviewer_id);
+        let review_result = operations::record_artifact_review_decision(
             pool,
             ArtifactReviewDecisionRequest {
                 artifact_id: callback.artifact_id,
-                reviewer_id: callback.actor_user_id.clone(),
+                reviewer_id,
                 decision: decision.to_string(),
                 expected_artifact_type: Some("generated_image".to_string()),
                 expected_review_status: Some("pending".to_string()),
@@ -813,15 +922,40 @@ async fn process_review_callback(
                 source: "feishu_poster_review_card".to_string(),
                 metadata: json!({
                     "notification_id": callback.notification_id,
-                    "callback_event_ref": callback_event_ref(&callback.callback_event_id),
+                    "callback_event_ref": &callback_ref,
                     "group_send_authorized": false,
                     "external_send_executed": false
                 }),
             },
             true,
-            &policy,
+            &scoped_policy,
         )
-        .await?;
+        .await;
+        if let Err(error) = review_result {
+            let current_status: Option<String> = sqlx::query_scalar(
+                "SELECT review_status FROM qintopia_agent_os.artifacts WHERE id=$1",
+            )
+            .bind(callback.artifact_id)
+            .fetch_optional(pool)
+            .await
+            .context("reload poster review state after decision conflict")?;
+            if current_status
+                .as_deref()
+                .is_some_and(|status| status != "pending")
+            {
+                operations_intake::record_poster_mutation_noop(
+                    pool,
+                    workflow_root_id,
+                    "poster_review_callback_conflict_rejected",
+                    &callback_ref,
+                    &authorized_actor.actor_ref,
+                    "first_final_review_decision_won",
+                )
+                .await?;
+                bail!("poster image already has a final review decision");
+            }
+            return Err(error);
+        }
     }
     sqlx::query(
         r#"
@@ -834,7 +968,7 @@ async fn process_review_callback(
     .bind(&callback.callback_event_id)
     .bind(callback.notification_id)
     .bind(callback.artifact_id)
-    .bind(actor_ref(&callback.actor_user_id))
+    .bind(stored_actor_ref)
     .bind(decision)
     .execute(pool)
     .await
@@ -970,6 +1104,8 @@ mod tests {
             notification_kind: "image_ready".to_string(),
             failure_code: None,
             origin_ref: format!("sha256:{}", "b".repeat(64)),
+            conversation_type: "direct".to_string(),
+            policy_version: 1,
             human_owner: format!("sha256:{}", "c".repeat(64)),
             priority: "normal".to_string(),
         }
@@ -984,6 +1120,8 @@ mod tests {
             Some(candidate.image_work_item_id)
         );
         assert_eq!(request.payload["group_send_authorized"], false);
+        assert_eq!(request.payload["external_send_executed"], false);
+        assert_eq!(request.capability_key, "xiaoman.notify_conversation");
         assert_eq!(
             request.idempotency_key,
             format!(
@@ -992,6 +1130,8 @@ mod tests {
             )
         );
         assert!(request.payload.get("conversation_id").is_none());
+        assert!(request.payload.get("group_message_request").is_none());
+        assert!(request.payload.get("external_published").is_none());
 
         let mut noncanonical_candidate = candidate;
         noncanonical_candidate.origin_ref = format!("sha256:{}", "A".repeat(64));

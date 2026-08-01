@@ -44,6 +44,8 @@ const ALLOWED_SOURCE_TYPES: &[&str] = &[
     "operations_workflow",
     "feishu_direct_request",
     "feishu_direct_revision_request",
+    "feishu_internal_group_request",
+    "feishu_internal_group_revision_request",
 ];
 const DRY_RUN_ALLOWED_GROUP_ALIASES: &[&str] = &["community_activity_group"];
 const DRY_RUN_ALLOWED_GROUP_IDS: &[&str] = &[];
@@ -54,6 +56,7 @@ const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "wenyuange.retrieve_evidence",
     "xiaoman.create_activity_request",
     "xiaoman.notify_direct_conversation",
+    "xiaoman.notify_conversation",
 ];
 const GENERATED_IMAGE_ARTIFACT_TYPE: &str = "generated_image";
 const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
@@ -63,12 +66,14 @@ const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
 const DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL: &str = r#"
 AND parent.source_type NOT IN (
     'feishu_direct_request',
-    'feishu_direct_revision_request'
+    'feishu_direct_revision_request',
+    'feishu_internal_group_request',
+    'feishu_internal_group_revision_request'
 )
 AND COALESCE(
     parent.metadata #>> '{workflow_metadata,intake_channel}',
     ''
-) <> 'xiaoman_feishu_direct'
+) NOT IN ('xiaoman_feishu_direct', 'xiaoman_feishu_internal_group')
 "#;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1309,7 +1314,7 @@ async fn run_xiaoman_activity_image_generation_starter_batch(
     for candidate in &candidates {
         let request = xiaoman_activity_image_generation_request(candidate);
         let report = if apply_requested {
-            create_work_item(pool, request, true, policy).await?
+            create_work_item_routed(pool, request, true, policy).await?
         } else {
             create_work_item_dry_run(request)?
         };
@@ -3232,6 +3237,16 @@ impl OperationsPolicy {
         actor_allowed(&self.allowed_reviewer_ids, reviewer_id)
     }
 
+    pub(crate) fn poster_reviewer_allowed(&self, reviewer_id: &str) -> bool {
+        self.reviewer_allowed(reviewer_id)
+    }
+
+    pub(crate) fn scoped_to_poster_reviewer(&self, reviewer_id: &str) -> Self {
+        let mut scoped = self.clone();
+        scoped.allowed_reviewer_ids = vec![reviewer_id.to_string()];
+        scoped
+    }
+
     fn confirmer_allowed(&self, confirmer_id: &str) -> bool {
         actor_allowed(&self.allowed_confirmer_ids, confirmer_id)
     }
@@ -3636,14 +3651,14 @@ pub async fn start_workflow(
     }
 
     let (parent_request, _) = workflow_work_item_requests(&request, None);
-    let parent_report = create_work_item(pool, parent_request, true, policy).await?;
+    let parent_report = create_work_item_routed(pool, parent_request, true, policy).await?;
     let parent_work_item_id = parent_report
         .work_item_id
         .ok_or_else(|| anyhow::anyhow!("parent work item id missing after create"))?;
     let (_, child_requests) = workflow_work_item_requests(&request, Some(parent_work_item_id));
     let mut child_reports = Vec::new();
     for child_request in child_requests {
-        child_reports.push(create_work_item(pool, child_request, true, policy).await?);
+        child_reports.push(create_work_item_routed(pool, child_request, true, policy).await?);
     }
     let all_children_existing = child_reports.iter().all(|report| report.existing);
     let action_status = if parent_report.existing && all_children_existing {
@@ -3658,6 +3673,21 @@ pub async fn start_workflow(
         parent_report,
         child_reports,
     ))
+}
+
+pub(crate) async fn create_work_item_routed(
+    pool: &PgPool,
+    mut request: WorkItemCreateRequest,
+    apply_requested: bool,
+    policy: &OperationsPolicy,
+) -> Result<WorkItemCreateReport> {
+    if apply_requested {
+        let capability = load_capability(pool, request.capability_key.trim())
+            .await?
+            .context("capability is not registered for routed work")?;
+        request.target_agent = capability.provider_agent;
+    }
+    create_work_item(pool, request, apply_requested, policy).await
 }
 
 pub async fn create_work_item(
@@ -3746,7 +3776,7 @@ pub async fn create_work_item(
             true,
         )
     } else {
-        let row = sqlx::query(
+        let inserted = sqlx::query(
             r#"
             INSERT INTO qintopia_agent_os.work_items
                 (
@@ -3775,6 +3805,7 @@ pub async fn create_work_item(
             VALUES
                 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
                  $15, $16, $17, $18, $19, $20, $21)
+            ON CONFLICT (idempotency_key) DO NOTHING
             RETURNING id
             "#,
         )
@@ -3799,30 +3830,49 @@ pub async fn create_work_item(
         .bind(&request.payload_redaction_policy)
         .bind(&capability.review_policy)
         .bind(&request.metadata)
-        .fetch_one(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await
         .context("insert work item")?;
-        let work_item_id = row.get::<Uuid, _>("id");
-        append_event_in_tx(
-            &mut tx,
-            Some(work_item_id),
-            None,
-            "created",
-            "agent",
-            &request.requester_agent,
-            "work item created through capability request",
-            json!({
-                "capability_key": request.capability_key,
-                "work_item_type": request.work_item_type,
-                "status": initial_status,
-                "target_agent": request.target_agent,
-                "parent_work_item_id": request.parent_work_item_id,
-                "human_workbench_provider": "feishu_task",
-                "requires_human_final_confirmation": initial_status == "awaiting_publish"
-            }),
-        )
-        .await?;
-        (work_item_id, initial_status, false)
+        if let Some(row) = inserted {
+            let work_item_id = row.get::<Uuid, _>("id");
+            append_event_in_tx(
+                &mut tx,
+                Some(work_item_id),
+                None,
+                "created",
+                "agent",
+                &request.requester_agent,
+                "work item created through capability request",
+                json!({
+                    "capability_key": request.capability_key,
+                    "work_item_type": request.work_item_type,
+                    "status": initial_status,
+                    "target_agent": request.target_agent,
+                    "parent_work_item_id": request.parent_work_item_id,
+                    "human_workbench_provider": "feishu_task",
+                    "requires_human_final_confirmation": initial_status == "awaiting_publish"
+                }),
+            )
+            .await?;
+            (work_item_id, initial_status, false)
+        } else {
+            let row = sqlx::query(
+                r#"
+                SELECT id, status
+                FROM qintopia_agent_os.work_items
+                WHERE idempotency_key = $1
+                "#,
+            )
+            .bind(&request.idempotency_key)
+            .fetch_one(&mut *tx)
+            .await
+            .context("load concurrent idempotent work item winner")?;
+            (
+                row.get::<Uuid, _>("id"),
+                row.get::<String, _>("status"),
+                true,
+            )
+        }
     };
 
     tx.commit().await.context("commit work item transaction")?;
@@ -4118,12 +4168,14 @@ fn normalize_request(request: &mut WorkItemCreateRequest) {
 }
 
 fn initial_status_for(request: &WorkItemCreateRequest, capability: &Capability) -> String {
-    if request.source_type == "feishu_direct_request"
-        && request
-            .payload
-            .pointer("/poster_fact_gate/status")
-            .and_then(Value::as_str)
-            == Some("needs_clarification")
+    if matches!(
+        request.source_type.as_str(),
+        "feishu_direct_request" | "feishu_internal_group_request"
+    ) && request
+        .payload
+        .pointer("/poster_fact_gate/status")
+        .and_then(Value::as_str)
+        == Some("needs_clarification")
     {
         "awaiting_review".to_string()
     } else if capability.capability_key == "erhua.send_group_message"
@@ -4414,17 +4466,17 @@ fn validate_source_policy(
                 bail!("source_refs.source_record_ref is required for this source_type");
             }
         }
-        "feishu_direct_request" | "feishu_direct_revision_request" => {
+        "feishu_direct_request"
+        | "feishu_direct_revision_request"
+        | "feishu_internal_group_request"
+        | "feishu_internal_group_revision_request" => {
             let source_message_ref = source_refs
                 .get("source_message_ref")
                 .and_then(Value::as_str)
                 .ok_or_else(|| {
-                    anyhow::anyhow!("trusted Feishu direct source requires source_message_ref")
+                    anyhow::anyhow!("trusted Feishu source requires source_message_ref")
                 })?;
-            validate_canonical_sha256(
-                source_message_ref,
-                "trusted Feishu direct source_message_ref",
-            )?;
+            validate_canonical_sha256(source_message_ref, "trusted Feishu source_message_ref")?;
         }
         _ => bail!("source_type is not allowed for operations work items"),
     }
@@ -6407,6 +6459,17 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
             review_policy: "origin_conversation_only".to_string(),
             enabled: true,
         }),
+        "xiaoman.notify_conversation" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "xiaoman".to_string(),
+            display_name: "小满原会话任务通知".to_string(),
+            description: "把海报结果返回可信来源私聊或内部协作群线程，不授权公开发布".to_string(),
+            allowed_callers: vec!["xiaoman".to_string()],
+            allowed_work_item_types: vec!["conversation_notification_request".to_string()],
+            risk_level: "high".to_string(),
+            review_policy: "origin_conversation_only".to_string(),
+            enabled: true,
+        }),
         _ => None,
     }
 }
@@ -6615,6 +6678,18 @@ mod tests {
             None,
         )
         .expect("trusted direct revision source should pass");
+        validate_source_policy(
+            "feishu_internal_group_request",
+            &json!({"source_message_ref": source_ref}),
+            None,
+        )
+        .expect("trusted internal-group request source should pass");
+        validate_source_policy(
+            "feishu_internal_group_revision_request",
+            &json!({"source_message_ref": source_ref}),
+            None,
+        )
+        .expect("trusted internal-group revision source should pass");
         for invalid_source_refs in [
             json!({}),
             json!({"source_message_ref": "om_raw_message_id"}),
@@ -7022,7 +7097,7 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 6);
+        assert_eq!(report.capability_count, 7);
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.create_visual_asset"
                 && item.provider_agent == "huabaosi"
@@ -7041,6 +7116,11 @@ mod tests {
         }));
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "xiaoman.notify_direct_conversation"
+                && item.provider_agent == "xiaoman"
+                && item.review_policy == "origin_conversation_only"
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "xiaoman.notify_conversation"
                 && item.provider_agent == "xiaoman"
                 && item.review_policy == "origin_conversation_only"
         }));
@@ -7152,7 +7232,10 @@ mod tests {
             "parent.source_type NOT IN",
             "'feishu_direct_request'",
             "'feishu_direct_revision_request'",
+            "'feishu_internal_group_request'",
+            "'feishu_internal_group_revision_request'",
             "'xiaoman_feishu_direct'",
+            "'xiaoman_feishu_internal_group'",
         ] {
             assert!(DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL.contains(required_fragment));
         }

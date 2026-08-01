@@ -42,6 +42,18 @@ struct TrustedSession {
     source_message_id: String,
     #[serde(skip)]
     policy_version: i64,
+    #[serde(skip)]
+    binding: Option<ConversationBinding>,
+}
+
+#[derive(Debug, Clone)]
+struct ConversationBinding {
+    policy_id: Uuid,
+    conversation_ref: String,
+    audience_class: String,
+    delivery_mode: String,
+    status_visibility: String,
+    thread_root_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -67,6 +79,29 @@ struct FactAssessment {
     location: String,
     missing_fields: Vec<&'static str>,
     conflict_fields: Vec<String>,
+}
+
+#[derive(Debug)]
+struct RevisionWinner {
+    source_message_ref: String,
+    actor_ref: String,
+    image_generation_work_item_id: Uuid,
+}
+
+#[derive(Debug)]
+struct WorkflowAccess {
+    conversation_type: String,
+    conversation_id: String,
+    requester_user_id: String,
+    conversation_ref: String,
+    policy_version: i64,
+    delivery_mode: String,
+    thread_root_message_id: Option<String>,
+}
+
+pub(crate) struct PosterReviewActor {
+    pub(crate) actor_ref: String,
+    pub(crate) policy_version: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,10 +219,19 @@ async fn handle_connection(
         }
     };
     let authenticated_ingress_enabled = ingress_config.is_some();
+    let internal_group_enabled =
+        ingress_config.is_some_and(conversation_ingress::IngressConfig::internal_group_enabled);
     let future = async {
         match request {
             WireRequest::Legacy(request) => {
-                handle_request(pool, policy, *request, authenticated_ingress_enabled).await
+                handle_request(
+                    pool,
+                    policy,
+                    *request,
+                    authenticated_ingress_enabled,
+                    internal_group_enabled,
+                )
+                .await
             }
             WireRequest::FeishuMessage(envelope) => {
                 conversation_ingress::handle(pool, ingress_config, envelope).await
@@ -252,6 +296,7 @@ async fn handle_request(
     policy: &OperationsPolicy,
     request: IntakeRequest,
     authenticated_ingress_enabled: bool,
+    internal_group_enabled: bool,
 ) -> Result<Value> {
     match request {
         IntakeRequest::PosterProductionRequest {
@@ -264,9 +309,14 @@ async fn handle_request(
             idempotency_key,
         } => {
             validate_protocol(schema_version, authenticated_ingress_enabled)?;
-            let session =
-                resolve_session(pool, schema_version, session, POSTER_PRODUCTION_CAPABILITY)
-                    .await?;
+            let session = resolve_session(
+                pool,
+                schema_version,
+                session,
+                POSTER_PRODUCTION_CAPABILITY,
+                internal_group_enabled,
+            )
+            .await?;
             let request = validate_text("request", request, 2_000)?;
             let priority = normalize_priority(priority)?;
             let activity_record_ref = validate_optional_ref(activity_record_ref)?;
@@ -277,6 +327,8 @@ async fn handle_request(
             let origin_ref = origin_ref(&session);
             let actor_ref = actor_ref(&session);
             let source_message_ref = source_message_ref(&session);
+            let source_type = session_source_type(&session, false);
+            let intake_channel = session_intake_channel(&session);
             let fact_assessment =
                 assess_activity_facts(pool, &session, &activity_record_ref, activity_facts).await?;
             let workflow_summary = fact_assessment.workflow_summary(&request);
@@ -295,19 +347,20 @@ async fn handle_request(
                     actor_agent: "xiaoman".to_string(),
                     workflow_type: "activity_promotion".to_string(),
                     request_text: workflow_summary,
-                    source_type: "feishu_direct_request".to_string(),
+                    source_type: source_type.to_string(),
                     source_refs,
                     human_owner: actor_ref.clone(),
                     priority,
                     idempotency_key: expected_key,
                     metadata: json!({
-                        "intake_channel": "xiaoman_feishu_direct",
+                        "intake_channel": intake_channel,
                         "origin_conversation_ref": origin_ref,
                         "poster_fact_gate": fact_assessment.metadata(),
                         "generation_authorization": {
                             "mode": "originating_generation_request",
                             "actor_ref": actor_ref,
                             "source_message_ref": source_message_ref,
+                            "conversation_type": session.conversation_type,
                             "group_send_authorized": false
                         }
                     }),
@@ -326,6 +379,7 @@ async fn handle_request(
                 .find(|item| item.work_item_type == "visual_asset_request")
                 .and_then(|item| item.work_item_id)
                 .context("visual work item id is missing")?;
+            snapshot_workflow_participants(pool, workflow_root_id, &session).await?;
             record_generation_authorization(
                 pool,
                 workflow_root_id,
@@ -345,6 +399,7 @@ async fn handle_request(
                 "workflow_status": status.root.status,
                 "current_blocking_point": status.current_blocking_point,
                 "user_status": if needs_clarification { "需补充" } else { "已接单" },
+                "conversation_type": session.conversation_type,
                 "missing_fields": fact_assessment.missing_fields,
                 "conflict_fields": fact_assessment.conflict_fields,
                 "external_send_executed": false
@@ -356,8 +411,14 @@ async fn handle_request(
             session,
         } => {
             validate_protocol(schema_version, authenticated_ingress_enabled)?;
-            let session =
-                resolve_session(pool, schema_version, session, POSTER_STATUS_CAPABILITY).await?;
+            let session = resolve_session(
+                pool,
+                schema_version,
+                session,
+                POSTER_STATUS_CAPABILITY,
+                internal_group_enabled,
+            )
+            .await?;
             authorize_status_read(pool, workflow_root_id, &session).await?;
             let mut value = serde_json::to_value(
                 operations::work_item_status_tree(pool, workflow_root_id).await?,
@@ -375,9 +436,14 @@ async fn handle_request(
             idempotency_key,
         } => {
             validate_protocol(schema_version, authenticated_ingress_enabled)?;
-            let session =
-                resolve_session(pool, schema_version, session, POSTER_PRODUCTION_CAPABILITY)
-                    .await?;
+            let session = resolve_session(
+                pool,
+                schema_version,
+                session,
+                POSTER_PRODUCTION_CAPABILITY,
+                internal_group_enabled,
+            )
+            .await?;
             let instruction = validate_text("request", request, 2_000)?;
             let expected_key = source_idempotency_key(&session);
             if !idempotency_key.is_empty() && idempotency_key != expected_key {
@@ -390,7 +456,6 @@ async fn handle_request(
                 workflow_root_id,
                 revision_of_artifact_id,
                 instruction,
-                expected_key,
             )
             .await
         }
@@ -425,10 +490,21 @@ async fn poster_user_status(pool: &PgPool, workflow_root_id: Uuid) -> Result<&'s
                 WHERE visual.parent_work_item_id = $1
                   AND artifact.artifact_type = 'generated_image'
                   AND artifact.review_status = 'changes_requested'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.poster_revision_requests revision
+                      WHERE revision.source_artifact_id = artifact.id
+                        AND revision.status IN ('accepted', 'queued', 'completed')
+                  )
             ) AS needs_clarification,
             EXISTS (
                 SELECT 1 FROM qintopia_agent_os.poster_notifications notification
-                WHERE notification.workflow_root_id = $1 AND notification.status = 'delivered'
+                JOIN qintopia_agent_os.artifacts artifact
+                  ON artifact.id = notification.generated_image_artifact_id
+                WHERE notification.workflow_root_id = $1
+                  AND notification.notification_kind = 'image_ready'
+                  AND notification.status = 'delivered'
+                  AND artifact.review_status = 'pending'
             ) AS awaiting_review,
             EXISTS (
                 WITH RECURSIVE descendants AS (
@@ -560,8 +636,16 @@ async fn load_originating_message(
         WHERE platform = 'feishu'
           AND message_id = $1
           AND chat_id = $2
-          AND chat_type IN ('direct', 'p2p', 'private')
           AND sender_id = $3
+          AND chat_type = $4
+          AND (
+              $5::bigint = 0
+              OR (
+                  sender_type = 'user'
+                  AND should_trigger
+                  AND (chat_type = 'direct' OR is_mention_bot)
+              )
+          )
           AND NULLIF(btrim(text), '') IS NOT NULL
         LIMIT 1
         "#,
@@ -569,6 +653,8 @@ async fn load_originating_message(
     .bind(&session.source_message_id)
     .bind(&session.conversation_id)
     .bind(&session.requester_user_id)
+    .bind(&session.conversation_type)
+    .bind(session.policy_version)
     .fetch_optional(pool)
     .await
     .context("load trusted originating Feishu message")
@@ -668,9 +754,8 @@ async fn create_revision_request(
     workflow_root_id: Uuid,
     revision_of_artifact_id: Uuid,
     instruction: String,
-    idempotency_key: String,
 ) -> Result<Value> {
-    authorize_status_read(pool, workflow_root_id, session).await?;
+    authorize_workflow_mutation(pool, workflow_root_id, session, "poster_revision_request").await?;
     let row = sqlx::query(
         r#"
         SELECT visual.id AS visual_work_item_id,
@@ -700,7 +785,10 @@ async fn create_revision_request(
          AND notification.workflow_root_id = root.id
          AND notification.status = 'delivered'
         WHERE root.id = $1
-          AND root.metadata #>> '{workflow_metadata,intake_channel}' = 'xiaoman_feishu_direct'
+          AND root.metadata #>> '{workflow_metadata,intake_channel}' IN (
+              'xiaoman_feishu_direct',
+              'xiaoman_feishu_internal_group'
+          )
         ORDER BY brief.updated_at DESC
         LIMIT 1
         "#,
@@ -716,8 +804,20 @@ async fn create_revision_request(
     let brief_hash: String = row.try_get("approved_brief_content_hash")?;
     let human_owner: String = row.try_get("human_owner")?;
     let actor_ref = actor_ref(session);
-    if human_owner != actor_ref {
-        bail!("poster revision actor does not match the originating requester");
+    if let Some(existing) =
+        load_existing_revision(pool, workflow_root_id, revision_of_artifact_id).await?
+    {
+        record_poster_mutation_noop(
+            pool,
+            workflow_root_id,
+            "poster_revision_duplicate_rejected",
+            &source_message_ref(session),
+            &actor_ref,
+            "first_revision_instruction_already_accepted",
+        )
+        .await?;
+        return revision_response(pool, workflow_root_id, visual_work_item_id, existing, true)
+            .await;
     }
     let message_ref = source_message_ref(session);
     let revision_hash = digest(&[
@@ -727,18 +827,18 @@ async fn create_revision_request(
         &message_ref,
     ]);
     let prompt_hash = digest(&[&brief_hash, &revision_hash]);
-    let report = operations::create_work_item(
+    let report = operations::create_work_item_routed(
         pool,
         WorkItemCreateRequest {
             requester_agent: "xiaoman".to_string(),
-            target_agent: "huabaosi".to_string(),
+            target_agent: String::new(),
             capability_key: "huabaosi.generate_image_asset".to_string(),
             work_item_type: "image_generation_request".to_string(),
             brief_summary: "根据原发起人的明确修改意见生成下一版活动海报".to_string(),
             purpose: "activity_image_revision_request".to_string(),
             human_owner: human_owner.clone(),
             priority: row.try_get("priority")?,
-            source_type: "feishu_direct_revision_request".to_string(),
+            source_type: session_source_type(session, true).to_string(),
             source_refs: json!({
                 "source_message_ref": message_ref,
                 "revision_of_artifact_id": revision_of_artifact_id
@@ -756,11 +856,19 @@ async fn create_revision_request(
                 "revision_of_artifact_id": revision_of_artifact_id,
                 "revision_instruction": instruction,
                 "revision_instruction_hash": revision_hash,
+                "revision_actor_ref": actor_ref,
+                "revision_source_message_ref": message_ref,
                 "external_publish_executed": false,
                 "group_send_authorized": false
             }),
             payload_redaction_policy: "summary_only".to_string(),
-            idempotency_key,
+            idempotency_key: format!(
+                "poster_revision_request:{}",
+                digest(&[
+                    "poster-revision-source-artifact-v3",
+                    &revision_of_artifact_id.to_string()
+                ])
+            ),
             dedupe_key: String::new(),
             metadata: json!({
                 "workflow_type": "activity_promotion",
@@ -786,32 +894,199 @@ async fn create_revision_request(
         r#"
         INSERT INTO qintopia_agent_os.poster_revision_requests
             (workflow_root_id, source_artifact_id, source_message_ref, actor_ref,
-             instruction_text, image_generation_work_item_id, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'queued')
-        ON CONFLICT (source_message_ref) DO NOTHING
+             instruction_text, image_generation_work_item_id, status,
+             first_revision_guarded)
+        SELECT $1, $2,
+               image.source_refs->>'source_message_ref',
+               image.payload->>'revision_actor_ref',
+               image.payload->>'revision_instruction',
+               image.id,
+               'queued',
+               true
+        FROM qintopia_agent_os.work_items image
+        WHERE image.id = $3
+          AND image.parent_work_item_id = $4
+          AND image.work_item_type = 'image_generation_request'
+          AND image.capability_key = 'huabaosi.generate_image_asset'
+          AND image.payload->>'revision_of_artifact_id' = $2::text
+          AND image.source_refs->>'source_message_ref'
+              = image.payload->>'revision_source_message_ref'
+          AND image.payload->>'revision_actor_ref' ~ '^sha256:[0-9a-f]{64}$'
+          AND NULLIF(btrim(image.payload->>'revision_instruction'), '') IS NOT NULL
+        ON CONFLICT DO NOTHING
         "#,
     )
     .bind(workflow_root_id)
     .bind(revision_of_artifact_id)
-    .bind(&message_ref)
-    .bind(&actor_ref)
-    .bind(&instruction)
     .bind(image_generation_work_item_id)
+    .bind(visual_work_item_id)
     .execute(pool)
     .await
     .context("record poster revision request")?;
-    record_generation_authorization(pool, workflow_root_id, &actor_ref, &message_ref).await?;
+    let winner = load_existing_revision(pool, workflow_root_id, revision_of_artifact_id)
+        .await?
+        .context("poster revision winner is missing after routed work creation")?;
+    record_generation_authorization(
+        pool,
+        workflow_root_id,
+        &winner.actor_ref,
+        &winner.source_message_ref,
+    )
+    .await?;
+    let deduped =
+        report.existing || image_generation_work_item_id != winner.image_generation_work_item_id;
+    revision_response(pool, workflow_root_id, visual_work_item_id, winner, deduped).await
+}
+
+async fn load_existing_revision(
+    pool: &PgPool,
+    workflow_root_id: Uuid,
+    source_artifact_id: Uuid,
+) -> Result<Option<RevisionWinner>> {
+    let row = sqlx::query(
+        r#"
+        SELECT source_message_ref, actor_ref, image_generation_work_item_id
+        FROM qintopia_agent_os.poster_revision_requests
+        WHERE workflow_root_id = $1 AND source_artifact_id = $2
+        ORDER BY created_at, id
+        LIMIT 1
+        "#,
+    )
+    .bind(workflow_root_id)
+    .bind(source_artifact_id)
+    .fetch_optional(pool)
+    .await
+    .context("load first accepted poster revision")?;
+    row.map(|row| {
+        Ok(RevisionWinner {
+            source_message_ref: row.try_get("source_message_ref")?,
+            actor_ref: row.try_get("actor_ref")?,
+            image_generation_work_item_id: row.try_get("image_generation_work_item_id")?,
+        })
+    })
+    .transpose()
+}
+
+async fn revision_response(
+    pool: &PgPool,
+    workflow_root_id: Uuid,
+    visual_work_item_id: Uuid,
+    winner: RevisionWinner,
+    deduped: bool,
+) -> Result<Value> {
     Ok(json!({
         "success": true,
         "accepted": true,
-        "deduped": report.existing,
+        "deduped": deduped,
         "workflow_root_id": workflow_root_id,
         "visual_work_item_id": visual_work_item_id,
-        "image_generation_work_item_id": image_generation_work_item_id,
-        "workflow_status": "生成中",
+        "image_generation_work_item_id": winner.image_generation_work_item_id,
+        "workflow_status": poster_user_status(pool, workflow_root_id).await?,
         "external_send_executed": false,
         "group_send_authorized": false
     }))
+}
+
+async fn snapshot_workflow_participants(
+    pool: &PgPool,
+    workflow_root_id: Uuid,
+    session: &TrustedSession,
+) -> Result<()> {
+    let Some(binding) = session.binding.as_ref() else {
+        return Ok(());
+    };
+    let requester_ref = actor_ref(session);
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin poster participant snapshot")?;
+    sqlx::query(
+        r#"
+        INSERT INTO qintopia_agent_os.poster_workflow_participants
+            (workflow_root_id, actor_ref, participant_role, conversation_ref,
+             policy_id, policy_version)
+        VALUES ($1, $2, 'requester', $3, $4, $5)
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(workflow_root_id)
+    .bind(&requester_ref)
+    .bind(&binding.conversation_ref)
+    .bind(binding.policy_id)
+    .bind(session.policy_version)
+    .execute(&mut *tx)
+    .await
+    .context("snapshot poster requester")?;
+    sqlx::query(
+        r#"
+        INSERT INTO qintopia_agent_os.poster_workflow_participants
+            (workflow_root_id, actor_ref, participant_role, conversation_ref,
+             policy_id, policy_version)
+        SELECT $1, policy_actor.actor_ref, 'reviewer', $2, $3, $4
+        FROM qintopia_agent_os.conversation_policy_actors policy_actor
+        WHERE policy_actor.policy_id = $3
+          AND policy_actor.actor_role = 'reviewer'
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(workflow_root_id)
+    .bind(&binding.conversation_ref)
+    .bind(binding.policy_id)
+    .bind(session.policy_version)
+    .execute(&mut *tx)
+    .await
+    .context("snapshot poster reviewers")?;
+    let counts: (i64, i64, i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+            count(*) FILTER (WHERE participant.participant_role = 'requester'),
+            count(*) FILTER (WHERE participant.participant_role = 'reviewer'),
+            (
+                SELECT count(*)
+                FROM qintopia_agent_os.conversation_policy_actors policy_actor
+                WHERE policy_actor.policy_id = $2
+                  AND policy_actor.actor_role = 'reviewer'
+            ),
+            count(*) FILTER (
+                WHERE participant.conversation_ref <> $3
+                   OR participant.policy_id <> $2
+                   OR participant.policy_version <> $4
+            )
+        FROM qintopia_agent_os.poster_workflow_participants participant
+        WHERE participant.workflow_root_id = $1
+        "#,
+    )
+    .bind(workflow_root_id)
+    .bind(binding.policy_id)
+    .bind(&binding.conversation_ref)
+    .bind(session.policy_version)
+    .fetch_one(&mut *tx)
+    .await
+    .context("verify poster participant snapshot")?;
+    if counts.0 != 1 || counts.1 != counts.2 || counts.3 != 0 {
+        bail!("poster workflow participant snapshot conflicts with its policy version");
+    }
+    tx.commit()
+        .await
+        .context("commit poster participant snapshot")?;
+    Ok(())
+}
+
+fn session_source_type(session: &TrustedSession, revision: bool) -> &'static str {
+    match (session.conversation_type.as_str(), revision) {
+        ("group", false) => "feishu_internal_group_request",
+        ("group", true) => "feishu_internal_group_revision_request",
+        ("direct", true) => "feishu_direct_revision_request",
+        _ => "feishu_direct_request",
+    }
+}
+
+fn session_intake_channel(session: &TrustedSession) -> &'static str {
+    if session.conversation_type == "group" {
+        "xiaoman_feishu_internal_group"
+    } else {
+        "xiaoman_feishu_direct"
+    }
 }
 
 async fn upsert_return_target(
@@ -819,29 +1094,43 @@ async fn upsert_return_target(
     origin_ref: &str,
     session: &TrustedSession,
 ) -> Result<()> {
-    let conversation_ref = if session.policy_version == 0 {
-        origin_ref.to_string()
-    } else {
-        crate::conversation_policy::conversation_ref(&session.platform, &session.conversation_id)
-    };
+    let (conversation_ref, audience_class, delivery_mode, thread_root_message_id) =
+        match session.binding.as_ref() {
+            Some(binding) => (
+                binding.conversation_ref.clone(),
+                binding.audience_class.as_str(),
+                binding.delivery_mode.as_str(),
+                binding.thread_root_message_id.as_deref(),
+            ),
+            None => (origin_ref.to_string(), "private", "direct_chat", None),
+        };
     let result = sqlx::query(
         r#"
         INSERT INTO qintopia_agent_os.poster_return_targets
             (origin_ref, platform, conversation_type, conversation_id,
              requester_user_id, source_message_id, audience_class,
              conversation_ref, policy_version, delivery_mode, thread_root_message_id)
-        VALUES ($1, $2, $3, $4, $5, $6, 'private', $7, $8, 'direct_chat', NULL)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (origin_ref) DO UPDATE SET
-            source_message_id = EXCLUDED.source_message_id,
+            source_message_id = CASE
+                WHEN EXCLUDED.policy_version = 0 THEN EXCLUDED.source_message_id
+                ELSE qintopia_agent_os.poster_return_targets.source_message_id
+            END,
             updated_at = now()
         WHERE qintopia_agent_os.poster_return_targets.platform = EXCLUDED.platform
           AND qintopia_agent_os.poster_return_targets.conversation_type = EXCLUDED.conversation_type
           AND qintopia_agent_os.poster_return_targets.conversation_id = EXCLUDED.conversation_id
           AND qintopia_agent_os.poster_return_targets.requester_user_id = EXCLUDED.requester_user_id
+          AND (
+              EXCLUDED.policy_version = 0
+              OR qintopia_agent_os.poster_return_targets.source_message_id = EXCLUDED.source_message_id
+          )
           AND qintopia_agent_os.poster_return_targets.audience_class = EXCLUDED.audience_class
           AND qintopia_agent_os.poster_return_targets.conversation_ref = EXCLUDED.conversation_ref
           AND qintopia_agent_os.poster_return_targets.policy_version = EXCLUDED.policy_version
           AND qintopia_agent_os.poster_return_targets.delivery_mode = EXCLUDED.delivery_mode
+          AND qintopia_agent_os.poster_return_targets.thread_root_message_id
+              IS NOT DISTINCT FROM EXCLUDED.thread_root_message_id
         "#,
     )
     .bind(origin_ref)
@@ -850,8 +1139,11 @@ async fn upsert_return_target(
     .bind(&session.conversation_id)
     .bind(&session.requester_user_id)
     .bind(&session.source_message_id)
+    .bind(audience_class)
     .bind(conversation_ref)
     .bind(session.policy_version)
+    .bind(delivery_mode)
+    .bind(thread_root_message_id)
     .execute(pool)
     .await
     .context("store trusted poster return target")?;
@@ -872,7 +1164,7 @@ async fn record_generation_authorization(
         INSERT INTO qintopia_agent_os.work_item_events
             (work_item_id, event_type, actor_type, actor_id, message, data)
         SELECT $1, 'poster_generation_authorized', 'human', $2,
-               'originating direct-chat request authorized poster generation',
+               'originating trusted conversation request authorized poster generation',
                jsonb_build_object(
                    'authorization_mode', 'originating_generation_request',
                    'source_message_ref', $3,
@@ -901,32 +1193,277 @@ async fn authorize_status_read(
     workflow_root_id: Uuid,
     session: &TrustedSession,
 ) -> Result<()> {
-    let allowed: bool = sqlx::query_scalar(
+    let access = load_workflow_access(pool, workflow_root_id).await?;
+    let allowed = workflow_conversation_matches(&access, session)
+        && match session.binding.as_ref() {
+            None => {
+                access.policy_version == 0
+                    && access.conversation_type == "direct"
+                    && access.requester_user_id == session.requester_user_id
+            }
+            Some(binding) if access.conversation_type == "direct" => {
+                binding.status_visibility == "requester"
+                    && access.requester_user_id == session.requester_user_id
+            }
+            Some(binding) if access.conversation_type == "group" => {
+                binding.status_visibility == "conversation_members"
+            }
+            Some(_) => false,
+        };
+    if !allowed {
+        bail!("workflow is not visible to the current trusted conversation");
+    }
+    Ok(())
+}
+
+async fn authorize_workflow_mutation(
+    pool: &PgPool,
+    workflow_root_id: Uuid,
+    session: &TrustedSession,
+    mutation_type: &str,
+) -> Result<()> {
+    let access = load_workflow_access(pool, workflow_root_id).await?;
+    let conversation_matches = workflow_conversation_matches(&access, session);
+    let actor_ref = actor_ref(session);
+    let allowed = if !conversation_matches {
+        false
+    } else if session.binding.is_none() {
+        access.policy_version == 0
+            && access.conversation_type == "direct"
+            && access.requester_user_id == session.requester_user_id
+    } else {
+        let roles: &[&str] = if access.conversation_type == "group" {
+            &["requester", "reviewer"]
+        } else {
+            &["requester"]
+        };
+        let participant: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.poster_workflow_participants participant
+                WHERE participant.workflow_root_id = $1
+                  AND participant.actor_ref = $2
+                  AND participant.conversation_ref = $3
+                  AND participant.policy_version = $4
+                  AND participant.participant_role = ANY($5::text[])
+            )
+            "#,
+        )
+        .bind(workflow_root_id)
+        .bind(&actor_ref)
+        .bind(&access.conversation_ref)
+        .bind(access.policy_version)
+        .bind(roles)
+        .fetch_one(pool)
+        .await
+        .context("authorize poster workflow participant mutation")?;
+        participant
+            && (access.conversation_type != "group"
+                || access.thread_root_message_id
+                    == session
+                        .binding
+                        .as_ref()
+                        .and_then(|binding| binding.thread_root_message_id.clone()))
+    };
+    if !allowed {
+        record_poster_mutation_noop(
+            pool,
+            workflow_root_id,
+            "poster_mutation_rejected",
+            &source_message_ref(session),
+            &actor_ref,
+            "actor_or_conversation_not_authorized",
+        )
+        .await?;
+        bail!("poster workflow mutation is not authorized");
+    }
+    if !matches!(
+        mutation_type,
+        "poster_revision_request" | "poster_review_decision"
+    ) {
+        bail!("poster mutation type is invalid");
+    }
+    Ok(())
+}
+
+pub(crate) async fn authorize_poster_review_actor(
+    pool: &PgPool,
+    workflow_root_id: Uuid,
+    conversation_id: &str,
+    actor_user_id: &str,
+    callback_event_ref: &str,
+) -> Result<PosterReviewActor> {
+    let access = load_workflow_access(pool, workflow_root_id).await?;
+    let actor_ref = crate::conversation_policy::actor_ref("feishu", actor_user_id);
+    let conversation_matches = access.conversation_id == conversation_id
+        && matches!(
+            (
+                access.conversation_type.as_str(),
+                access.delivery_mode.as_str()
+            ),
+            ("direct", "direct_chat") | ("group", "thread_reply")
+        );
+    let allowed = if !conversation_matches {
+        false
+    } else if access.policy_version == 0 {
+        access.conversation_type == "direct" && access.requester_user_id == actor_user_id
+    } else {
+        let roles: &[&str] = if access.conversation_type == "group" {
+            &["requester", "reviewer"]
+        } else {
+            &["requester"]
+        };
+        sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.poster_workflow_participants participant
+                WHERE participant.workflow_root_id = $1
+                  AND participant.actor_ref = $2
+                  AND participant.conversation_ref = $3
+                  AND participant.policy_version = $4
+                  AND participant.participant_role = ANY($5::text[])
+            )
+            "#,
+        )
+        .bind(workflow_root_id)
+        .bind(&actor_ref)
+        .bind(&access.conversation_ref)
+        .bind(access.policy_version)
+        .bind(roles)
+        .fetch_one(pool)
+        .await
+        .context("authorize poster review callback participant")?
+    };
+    if !allowed {
+        record_poster_mutation_noop(
+            pool,
+            workflow_root_id,
+            "poster_mutation_rejected",
+            callback_event_ref,
+            &actor_ref,
+            "review_actor_or_conversation_not_authorized",
+        )
+        .await?;
+        bail!("poster review actor is not authorized for this workflow");
+    }
+    Ok(PosterReviewActor {
+        actor_ref,
+        policy_version: access.policy_version,
+    })
+}
+
+async fn load_workflow_access(pool: &PgPool, workflow_root_id: Uuid) -> Result<WorkflowAccess> {
+    let row = sqlx::query(
         r#"
-        SELECT EXISTS (
+        SELECT target.conversation_type, target.conversation_id,
+               target.requester_user_id, target.conversation_ref,
+               target.policy_version, target.delivery_mode,
+               target.thread_root_message_id
+        FROM qintopia_agent_os.work_items root
+        JOIN qintopia_agent_os.poster_return_targets target
+          ON target.origin_ref = root.metadata #>> '{workflow_metadata,origin_conversation_ref}'
+        WHERE root.id = $1
+          AND root.parent_work_item_id IS NULL
+          AND target.platform = 'feishu'
+        "#,
+    )
+    .bind(workflow_root_id)
+    .fetch_optional(pool)
+    .await
+    .context("load poster workflow conversation access")?
+    .context("poster workflow return target is unavailable")?;
+    Ok(WorkflowAccess {
+        conversation_type: row.try_get("conversation_type")?,
+        conversation_id: row.try_get("conversation_id")?,
+        requester_user_id: row.try_get("requester_user_id")?,
+        conversation_ref: row.try_get("conversation_ref")?,
+        policy_version: row.try_get("policy_version")?,
+        delivery_mode: row.try_get("delivery_mode")?,
+        thread_root_message_id: row.try_get("thread_root_message_id")?,
+    })
+}
+
+fn workflow_conversation_matches(access: &WorkflowAccess, session: &TrustedSession) -> bool {
+    if access.conversation_type != session.conversation_type
+        || access.conversation_id != session.conversation_id
+    {
+        return false;
+    }
+    match session.binding.as_ref() {
+        None => {
+            access.policy_version == 0
+                && access.conversation_type == "direct"
+                && access.delivery_mode == "direct_chat"
+        }
+        Some(binding) => {
+            access.policy_version > 0
+                && access.conversation_ref == binding.conversation_ref
+                && access.delivery_mode == binding.delivery_mode
+        }
+    }
+}
+
+pub(crate) async fn record_poster_mutation_noop(
+    pool: &PgPool,
+    workflow_root_id: Uuid,
+    event_type: &str,
+    source_ref: &str,
+    actor_ref: &str,
+    reason_code: &str,
+) -> Result<()> {
+    if !valid_opaque_ref(source_ref)
+        || !valid_opaque_ref(actor_ref)
+        || !matches!(
+            event_type,
+            "poster_mutation_rejected"
+                | "poster_revision_duplicate_rejected"
+                | "poster_review_callback_duplicate_rejected"
+                | "poster_review_callback_conflict_rejected"
+        )
+    {
+        bail!("poster mutation audit identity is invalid");
+    }
+    let mutation_ref = digest(&[
+        "poster-mutation-noop-v3",
+        event_type,
+        source_ref,
+        actor_ref,
+        reason_code,
+    ]);
+    sqlx::query(
+        r#"
+        INSERT INTO qintopia_agent_os.work_item_events
+            (work_item_id, event_type, actor_type, actor_id, message, data)
+        SELECT $1, $2, 'human', $3,
+               'poster mutation was rejected without changing workflow state',
+               jsonb_build_object(
+                   'mutation_ref', $4::text,
+                   'source_ref', $5::text,
+                   'reason_code', $6::text,
+                   'mutation_applied', false,
+                   'group_send_authorized', false,
+                   'external_send_executed', false
+               )
+        WHERE NOT EXISTS (
             SELECT 1
-            FROM qintopia_agent_os.work_items root
-            JOIN qintopia_agent_os.poster_return_targets target
-              ON target.origin_ref = root.metadata #>> '{workflow_metadata,origin_conversation_ref}'
-            WHERE root.id = $1
-              AND root.parent_work_item_id IS NULL
-              AND target.platform = $2
-              AND target.conversation_type = 'direct'
-              AND target.conversation_id = $3
-              AND target.requester_user_id = $4
+            FROM qintopia_agent_os.work_item_events event
+            WHERE event.work_item_id = $1
+              AND event.event_type = $2
+              AND event.data->>'mutation_ref' = $4
         )
         "#,
     )
     .bind(workflow_root_id)
-    .bind(&session.platform)
-    .bind(&session.conversation_id)
-    .bind(&session.requester_user_id)
-    .fetch_one(pool)
+    .bind(event_type)
+    .bind(actor_ref)
+    .bind(mutation_ref)
+    .bind(source_ref)
+    .bind(reason_code)
+    .execute(pool)
     .await
-    .context("authorize poster workflow status read")?;
-    if !allowed {
-        bail!("workflow does not belong to the current direct conversation");
-    }
+    .context("record rejected poster mutation audit")?;
     Ok(())
 }
 
@@ -948,6 +1485,7 @@ async fn resolve_session(
     schema_version: u8,
     mut session: TrustedSession,
     required_capability: &str,
+    internal_group_enabled: bool,
 ) -> Result<TrustedSession> {
     if !matches!(
         required_capability,
@@ -959,6 +1497,7 @@ async fn resolve_session(
     if schema_version == LEGACY_PROTOCOL_VERSION {
         validate_session(&session)?;
         session.policy_version = 0;
+        session.binding = None;
         return Ok(session);
     }
     if !session.conversation_type.is_empty() {
@@ -972,7 +1511,10 @@ async fn resolve_session(
         crate::conversation_policy::conversation_ref(&session.platform, &session.conversation_id);
     let row = sqlx::query(
         r#"
-        SELECT message.chat_type, receipt.policy_version
+        SELECT message.chat_type, message.thread_root_message_id,
+               policy.id AS policy_id, receipt.conversation_ref,
+               receipt.policy_version, policy.audience_class,
+               policy.return_mode, policy.status_visibility
         FROM qintopia_agent_os.feishu_message_ingress_receipts receipt
         JOIN qintopia_messages.messages message
           ON message.id = receipt.message_row_id
@@ -987,16 +1529,32 @@ async fn resolve_session(
           AND message.chat_id = $4
           AND message.sender_id = $5
           AND message.sender_type = 'user'
-          AND message.chat_type = 'direct'
           AND message.should_trigger
           AND policy.platform = 'feishu'
           AND policy.conversation_ref = receipt.conversation_ref
-          AND policy.conversation_type = 'direct'
-          AND policy.audience_class = 'private'
-          AND policy.return_mode = 'direct_chat'
-          AND policy.initiation_rule = 'direct_message'
-          AND policy.status_visibility = 'requester'
+          AND policy.conversation_type = message.chat_type
           AND $6 = ANY(policy.allowed_capabilities)
+          AND (
+              (
+                  message.chat_type = 'direct'
+                  AND NOT message.is_mention_bot
+                  AND policy.audience_class = 'private'
+                  AND policy.return_mode = 'direct_chat'
+                  AND policy.initiation_rule = 'direct_message'
+                  AND policy.status_visibility = 'requester'
+              )
+              OR
+              (
+                  $7::boolean
+                  AND message.chat_type = 'group'
+                  AND message.is_mention_bot
+                  AND NULLIF(btrim(message.thread_root_message_id), '') IS NOT NULL
+                  AND policy.audience_class = 'internal_collaboration'
+                  AND policy.return_mode = 'thread_reply'
+                  AND policy.initiation_rule = 'explicit_bot_mention'
+                  AND policy.status_visibility = 'conversation_members'
+              )
+          )
         LIMIT 1
         "#,
     )
@@ -1006,12 +1564,26 @@ async fn resolve_session(
     .bind(&session.conversation_id)
     .bind(&session.requester_user_id)
     .bind(required_capability)
+    .bind(internal_group_enabled)
     .fetch_optional(pool)
     .await
     .context("resolve authenticated V3 poster session")?
     .context("authenticated V3 direct-message policy binding is unavailable")?;
     session.conversation_type = row.try_get("chat_type")?;
     session.policy_version = row.try_get("policy_version")?;
+    let thread_root_message_id = if session.conversation_type == "group" {
+        row.try_get("thread_root_message_id")?
+    } else {
+        None
+    };
+    session.binding = Some(ConversationBinding {
+        policy_id: row.try_get("policy_id")?,
+        conversation_ref: row.try_get("conversation_ref")?,
+        audience_class: row.try_get("audience_class")?,
+        delivery_mode: row.try_get("return_mode")?,
+        status_visibility: row.try_get("status_visibility")?,
+        thread_root_message_id,
+    });
     validate_session(&session)?;
     Ok(session)
 }
@@ -1038,8 +1610,11 @@ fn validate_session_identity(session: &TrustedSession) -> Result<()> {
 }
 
 fn validate_session(session: &TrustedSession) -> Result<()> {
-    if session.platform != "feishu" || session.conversation_type != "direct" {
-        bail!("trusted Feishu direct session is required");
+    if session.platform != "feishu"
+        || !matches!(session.conversation_type.as_str(), "direct" | "group")
+        || (session.conversation_type == "group" && session.binding.is_none())
+    {
+        bail!("trusted Feishu conversation session is required");
     }
     validate_session_identity(session)
 }
@@ -1103,26 +1678,37 @@ fn origin_ref(session: &TrustedSession) -> String {
 }
 
 fn actor_ref(session: &TrustedSession) -> String {
-    digest(&[
-        "poster-actor-v1",
-        &session.platform,
-        &session.requester_user_id,
-    ])
+    crate::conversation_policy::actor_ref(&session.platform, &session.requester_user_id)
 }
 
 fn source_message_ref(session: &TrustedSession) -> String {
-    digest(&[
-        "poster-message-v1",
-        &session.platform,
-        &session.source_message_id,
-    ])
+    crate::conversation_policy::source_message_ref(&session.platform, &session.source_message_id)
 }
 
 fn source_idempotency_key(session: &TrustedSession) -> String {
+    if session.policy_version > 0 {
+        return format!(
+            "poster_production_request:{}",
+            digest(&[
+                "poster-intake-v3",
+                &session.platform,
+                &session.source_message_id,
+                POSTER_PRODUCTION_CAPABILITY,
+            ])
+        );
+    }
     format!(
         "poster_production_request:{}",
         digest(&[&session.platform, &session.source_message_id])
     )
+}
+
+fn valid_opaque_ref(value: &str) -> bool {
+    value.len() == 71
+        && value.starts_with("sha256:")
+        && value[7..]
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn prepare_socket(path: &Path) -> Result<()> {
@@ -1175,6 +1761,7 @@ pub(crate) async fn submit_v3_poster_for_postgres_integration(
         requester_user_id: input.requester_user_id.to_string(),
         source_message_id: input.source_message_id.to_string(),
         policy_version: 0,
+        binding: None,
     };
     handle_request(
         pool,
@@ -1194,6 +1781,7 @@ pub(crate) async fn submit_v3_poster_for_postgres_integration(
             session,
             idempotency_key: String::new(),
         },
+        true,
         true,
     )
     .await
@@ -1360,6 +1948,26 @@ mod tests {
             requester_user_id: "ou_user_fixture".to_string(),
             source_message_id: "om_message_fixture".to_string(),
             policy_version: 0,
+            binding: None,
+        }
+    }
+
+    fn v3_group_session() -> TrustedSession {
+        TrustedSession {
+            platform: "feishu".to_string(),
+            conversation_type: "group".to_string(),
+            conversation_id: "oc_group_fixture".to_string(),
+            requester_user_id: "ou_group_requester_fixture".to_string(),
+            source_message_id: "om_group_message_fixture".to_string(),
+            policy_version: 3,
+            binding: Some(ConversationBinding {
+                policy_id: Uuid::new_v4(),
+                conversation_ref: format!("sha256:{}", "a".repeat(64)),
+                audience_class: "internal_collaboration".to_string(),
+                delivery_mode: "thread_reply".to_string(),
+                status_visibility: "conversation_members".to_string(),
+                thread_root_message_id: Some("om_group_root_fixture".to_string()),
+            }),
         }
     }
 
@@ -1392,13 +2000,46 @@ mod tests {
     }
 
     #[test]
-    fn group_and_non_feishu_sessions_are_rejected() {
+    fn only_policy_resolved_group_and_feishu_sessions_are_accepted() {
         let mut grouped = session();
         grouped.conversation_type = "group".to_string();
         assert!(validate_session(&grouped).is_err());
+        assert!(validate_session(&v3_group_session()).is_ok());
         let mut wecom = session();
         wecom.platform = "wecom".to_string();
         assert!(validate_session(&wecom).is_err());
+    }
+
+    #[test]
+    fn v3_workflow_access_is_scoped_to_the_originating_conversation() {
+        let session = v3_group_session();
+        let binding = session.binding.as_ref().unwrap();
+        let access = WorkflowAccess {
+            conversation_type: session.conversation_type.clone(),
+            conversation_id: session.conversation_id.clone(),
+            requester_user_id: session.requester_user_id.clone(),
+            conversation_ref: binding.conversation_ref.clone(),
+            policy_version: session.policy_version,
+            delivery_mode: binding.delivery_mode.clone(),
+            thread_root_message_id: binding.thread_root_message_id.clone(),
+        };
+        assert!(workflow_conversation_matches(&access, &session));
+
+        let mut other_conversation = session.clone();
+        other_conversation.conversation_id = "oc_other_group_fixture".to_string();
+        other_conversation
+            .binding
+            .as_mut()
+            .unwrap()
+            .conversation_ref = format!("sha256:{}", "b".repeat(64));
+        assert!(!workflow_conversation_matches(&access, &other_conversation));
+
+        let mut other_delivery_mode = session;
+        other_delivery_mode.binding.as_mut().unwrap().delivery_mode = "direct_chat".to_string();
+        assert!(!workflow_conversation_matches(
+            &access,
+            &other_delivery_mode
+        ));
     }
 
     #[test]
@@ -1423,6 +2064,21 @@ mod tests {
         assert_ne!(
             source_idempotency_key(&session()),
             source_idempotency_key(&other_chat)
+        );
+
+        let mut v3 = session();
+        v3.policy_version = 1;
+        assert_ne!(
+            source_idempotency_key(&session()),
+            source_idempotency_key(&v3)
+        );
+        assert_eq!(
+            session_source_type(&v3_group_session(), false),
+            "feishu_internal_group_request"
+        );
+        assert_eq!(
+            session_source_type(&v3_group_session(), true),
+            "feishu_internal_group_revision_request"
         );
     }
 
@@ -1475,6 +2131,7 @@ mod tests {
             requester_user_id: format!("ou_{suffix}"),
             source_message_id: format!("om_{suffix}"),
             policy_version: 0,
+            binding: None,
         };
         let source_text = "请为周末晚餐生成海报，时间周六18:00，地点秦托邦会客厅";
         sqlx::query(
@@ -1543,6 +2200,7 @@ mod tests {
                 session: clarification_session.clone(),
                 idempotency_key: source_idempotency_key(&clarification_session),
             },
+            false,
             false,
         )
         .await
@@ -1613,10 +2271,10 @@ mod tests {
         .expect("verify clarification visual remains unclaimed");
         assert_eq!(blocked_visual_state, ("queued".to_string(), 0, 0));
 
-        let first = handle_request(&pool, &policy, request(), false)
+        let first = handle_request(&pool, &policy, request(), false, false)
             .await
             .expect("accept first poster request");
-        let duplicate = handle_request(&pool, &policy, request(), false)
+        let duplicate = handle_request(&pool, &policy, request(), false, false)
             .await
             .expect("dedupe repeated poster request");
         assert_eq!(first["accepted"], true);
@@ -2060,10 +2718,10 @@ mod tests {
             session: revision_session.clone(),
             idempotency_key: source_idempotency_key(&revision_session),
         };
-        let first_revision = handle_request(&pool, &policy, revision_request(), false)
+        let first_revision = handle_request(&pool, &policy, revision_request(), false, false)
             .await
             .expect("accept explicit poster revision instruction");
-        let duplicate_revision = handle_request(&pool, &policy, revision_request(), false)
+        let duplicate_revision = handle_request(&pool, &policy, revision_request(), false, false)
             .await
             .expect("dedupe explicit poster revision instruction");
         assert_eq!(first_revision["accepted"], true);
@@ -2188,5 +2846,932 @@ mod tests {
         .await
         .expect("verify poster review and revision created no group-send work");
         assert_eq!(group_work_items, 0);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_v3_direct_snapshots_participants_and_isolates_status() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect guarded V3 direct integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded V3 direct integration database");
+
+        let suffix = Uuid::new_v4().simple().to_string();
+        let chat_id = format!("oc_direct_v3_{suffix}");
+        let requester_id = format!("ou_direct_requester_{suffix}");
+        let reviewer_id = format!("ou_direct_reviewer_{suffix}");
+        let message_id = format!("om_direct_v3_{suffix}");
+        let policy_id = Uuid::new_v4();
+        let conversation_ref = crate::conversation_policy::conversation_ref("feishu", &chat_id);
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.conversation_policies
+                (id, platform, conversation_ref, conversation_type, audience_class,
+                 allowed_capabilities, return_mode, initiation_rule, status_visibility,
+                 policy_version, policy_digest, enabled)
+            VALUES ($1, 'feishu', $2, 'direct', 'private',
+                    ARRAY['poster_production_request','poster_workflow_status']::text[],
+                    'direct_chat', 'direct_message', 'requester', 1, $3, true)
+            "#,
+        )
+        .bind(policy_id)
+        .bind(&conversation_ref)
+        .bind(digest(&["direct-policy-v3", &suffix]))
+        .execute(&pool)
+        .await
+        .expect("insert V3 direct conversation policy");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.conversation_policy_actors
+                (policy_id, actor_ref, actor_role)
+            VALUES ($1, $2, 'reviewer')
+            "#,
+        )
+        .bind(policy_id)
+        .bind(crate::conversation_policy::actor_ref(
+            "feishu",
+            &reviewer_id,
+        ))
+        .execute(&pool)
+        .await
+        .expect("insert V3 direct policy reviewer");
+        let request_text = "请为 AgentOS 私聊验收生成海报，时间 2026-08-01 16:00，地点线上";
+        let message_row_id: Uuid = sqlx::query_scalar(
+            r#"
+            INSERT INTO qintopia_messages.messages
+                (platform, message_id, event_id, chat_id, chat_type, sender_id,
+                 sender_type, message_kind, text, is_mention_bot, should_trigger,
+                 trigger_reason, received_at, raw)
+            VALUES ('feishu', $1, $2, $3, 'direct', $4, 'user', 'text', $5,
+                    false, true, 'xiaoman_authenticated_feishu_message_v3', now(),
+                    '{"authenticated":true,"schema_version":3}'::jsonb)
+            RETURNING id
+            "#,
+        )
+        .bind(&message_id)
+        .bind(format!("evt_direct_v3_{suffix}"))
+        .bind(&chat_id)
+        .bind(&requester_id)
+        .bind(request_text)
+        .fetch_one(&pool)
+        .await
+        .expect("insert authenticated V3 direct message");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.feishu_message_ingress_receipts
+                (source_message_ref, message_row_id, conversation_ref, policy_id,
+                 policy_version, payload_hash)
+            VALUES ($1, $2, $3, $4, 1, $5)
+            "#,
+        )
+        .bind(crate::conversation_policy::source_message_ref(
+            "feishu",
+            &message_id,
+        ))
+        .bind(message_row_id)
+        .bind(&conversation_ref)
+        .bind(policy_id)
+        .bind(digest(&["direct-message-payload-v3", &message_id]))
+        .execute(&pool)
+        .await
+        .expect("insert authenticated V3 direct receipt");
+
+        let session = TrustedSession {
+            platform: "feishu".to_string(),
+            conversation_type: String::new(),
+            conversation_id: chat_id.clone(),
+            requester_user_id: requester_id.clone(),
+            source_message_id: message_id.clone(),
+            policy_version: 0,
+            binding: None,
+        };
+        let request = || IntakeRequest::PosterProductionRequest {
+            schema_version: PROTOCOL_VERSION,
+            request: request_text.to_string(),
+            priority: "normal".to_string(),
+            activity_record_ref: String::new(),
+            activity_facts: ActivityFacts {
+                source: "originating_request".to_string(),
+                title: "AgentOS 私聊验收".to_string(),
+                schedule: "2026-08-01 16:00".to_string(),
+                location: "线上".to_string(),
+                conflict_fields: Vec::new(),
+            },
+            session: session.clone(),
+            idempotency_key: String::new(),
+        };
+        let policy = OperationsPolicy::dry_run();
+        let first = handle_request(&pool, &policy, request(), true, false)
+            .await
+            .expect("accept authenticated V3 direct poster request");
+        let duplicate = handle_request(&pool, &policy, request(), true, false)
+            .await
+            .expect("dedupe authenticated V3 direct poster request");
+        assert_eq!(first["conversation_type"], "direct");
+        assert_eq!(duplicate["deduped"], true);
+        assert_eq!(first["workflow_root_id"], duplicate["workflow_root_id"]);
+        let root_id = Uuid::parse_str(first["workflow_root_id"].as_str().unwrap()).unwrap();
+
+        let participant_state: (i64, i64, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT count(*),
+                   count(*) FILTER (WHERE participant_role='requester'),
+                   count(*) FILTER (WHERE participant_role='reviewer'),
+                   count(*) FILTER (
+                       WHERE participant_role='requester' AND actor_ref=$2
+                   )
+            FROM qintopia_agent_os.poster_workflow_participants
+            WHERE workflow_root_id=$1
+            "#,
+        )
+        .bind(root_id)
+        .bind(crate::conversation_policy::actor_ref(
+            "feishu",
+            &requester_id,
+        ))
+        .fetch_one(&pool)
+        .await
+        .expect("read immutable V3 direct participant snapshot");
+        assert_eq!(participant_state, (2, 1, 1, 1));
+
+        let routed_targets: Vec<String> = sqlx::query_scalar(
+            r#"
+            SELECT work_item_type || ':' || target_agent
+            FROM qintopia_agent_os.work_items
+            WHERE id=$1 OR parent_work_item_id=$1
+            ORDER BY work_item_type
+            "#,
+        )
+        .bind(root_id)
+        .fetch_all(&pool)
+        .await
+        .expect("read capability-routed V3 direct work items");
+        assert_eq!(
+            routed_targets,
+            vec![
+                "activity_promotion_request:xiaoman".to_string(),
+                "evidence_request:wenyuange".to_string(),
+                "visual_asset_request:huabaosi".to_string(),
+            ]
+        );
+
+        let same_conversation_status = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::WorkflowStatus {
+                schema_version: PROTOCOL_VERSION,
+                workflow_root_id: root_id,
+                session: session.clone(),
+            },
+            true,
+            false,
+        )
+        .await
+        .expect("originating direct requester reads V3 workflow status");
+        assert_eq!(same_conversation_status["user_status"], "已接单");
+
+        let other_chat_id = format!("oc_other_direct_v3_{suffix}");
+        let other_message_id = format!("om_other_direct_v3_{suffix}");
+        let other_policy_id = Uuid::new_v4();
+        let other_conversation_ref =
+            crate::conversation_policy::conversation_ref("feishu", &other_chat_id);
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.conversation_policies
+                (id, platform, conversation_ref, conversation_type, audience_class,
+                 allowed_capabilities, return_mode, initiation_rule, status_visibility,
+                 policy_version, policy_digest, enabled)
+            VALUES ($1, 'feishu', $2, 'direct', 'private',
+                    ARRAY['poster_workflow_status']::text[], 'direct_chat',
+                    'direct_message', 'requester', 1, $3, true)
+            "#,
+        )
+        .bind(other_policy_id)
+        .bind(&other_conversation_ref)
+        .bind(digest(&["other-direct-policy-v3", &suffix]))
+        .execute(&pool)
+        .await
+        .expect("insert other V3 direct policy");
+        let other_message_row_id: Uuid = sqlx::query_scalar(
+            r#"
+            INSERT INTO qintopia_messages.messages
+                (platform, message_id, event_id, chat_id, chat_type, sender_id,
+                 sender_type, message_kind, text, is_mention_bot, should_trigger,
+                 trigger_reason, received_at, raw)
+            VALUES ('feishu', $1, $2, $3, 'direct', $4, 'user', 'text',
+                    '查询海报状态', false, true,
+                    'xiaoman_authenticated_feishu_message_v3', now(),
+                    '{"authenticated":true,"schema_version":3}'::jsonb)
+            RETURNING id
+            "#,
+        )
+        .bind(&other_message_id)
+        .bind(format!("evt_other_direct_v3_{suffix}"))
+        .bind(&other_chat_id)
+        .bind(&requester_id)
+        .fetch_one(&pool)
+        .await
+        .expect("insert other authenticated V3 direct message");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.feishu_message_ingress_receipts
+                (source_message_ref, message_row_id, conversation_ref, policy_id,
+                 policy_version, payload_hash)
+            VALUES ($1, $2, $3, $4, 1, $5)
+            "#,
+        )
+        .bind(crate::conversation_policy::source_message_ref(
+            "feishu",
+            &other_message_id,
+        ))
+        .bind(other_message_row_id)
+        .bind(&other_conversation_ref)
+        .bind(other_policy_id)
+        .bind(digest(&[
+            "other-direct-message-payload-v3",
+            &other_message_id,
+        ]))
+        .execute(&pool)
+        .await
+        .expect("insert other authenticated V3 direct receipt");
+        let wrong_conversation_status = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::WorkflowStatus {
+                schema_version: PROTOCOL_VERSION,
+                workflow_root_id: root_id,
+                session: TrustedSession {
+                    platform: "feishu".to_string(),
+                    conversation_type: String::new(),
+                    conversation_id: other_chat_id,
+                    requester_user_id: requester_id,
+                    source_message_id: other_message_id,
+                    policy_version: 0,
+                    binding: None,
+                },
+            },
+            true,
+            false,
+        )
+        .await;
+        assert!(
+            wrong_conversation_status.is_err(),
+            "another authorized direct conversation must not read this workflow"
+        );
+
+        let publication_counts: (i64, i64, i64) = sqlx::query_as(
+            r#"
+            WITH RECURSIVE descendants AS (
+                SELECT id FROM qintopia_agent_os.work_items WHERE id=$1
+                UNION ALL
+                SELECT child.id
+                FROM qintopia_agent_os.work_items child
+                JOIN descendants parent ON child.parent_work_item_id=parent.id
+            )
+            SELECT
+                (SELECT count(*) FROM qintopia_agent_os.work_items item
+                  WHERE item.id IN (SELECT id FROM descendants)
+                    AND item.work_item_type='group_message_request'),
+                (SELECT count(*) FROM qintopia_agent_os.work_item_events event
+                  WHERE event.work_item_id IN (SELECT id FROM descendants)
+                    AND event.event_type='send_executed'),
+                (SELECT count(*) FROM qintopia_agent_os.work_item_events event
+                  WHERE event.work_item_id IN (SELECT id FROM descendants)
+                    AND event.event_type='external_published')
+            "#,
+        )
+        .bind(root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("verify V3 direct workflow has no publication facts");
+        assert_eq!(publication_counts, (0, 0, 0));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_internal_group_snapshots_authority_and_accepts_only_first_revision() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 4)
+            .await
+            .expect("connect guarded internal-group integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded internal-group integration database");
+
+        let suffix = Uuid::new_v4().simple().to_string();
+        let chat_id = format!("oc_group_{suffix}");
+        let requester_id = format!("ou_requester_{suffix}");
+        let reviewer_id = format!("ou_reviewer_{suffix}");
+        let member_id = format!("ou_member_{suffix}");
+        let root_message_id = format!("om_group_root_{suffix}");
+        let policy_id = Uuid::new_v4();
+        let policy_ref = crate::conversation_policy::conversation_ref("feishu", &chat_id);
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.conversation_policies
+                (id, platform, conversation_ref, conversation_type, audience_class,
+                 allowed_capabilities, return_mode, initiation_rule, status_visibility,
+                 policy_version, policy_digest, enabled)
+            VALUES ($1, 'feishu', $2, 'group', 'internal_collaboration',
+                    ARRAY['poster_production_request','poster_workflow_status']::text[],
+                    'thread_reply', 'explicit_bot_mention', 'conversation_members',
+                    1, $3, true)
+            "#,
+        )
+        .bind(policy_id)
+        .bind(&policy_ref)
+        .bind(digest(&["group-policy-v3", &suffix]))
+        .execute(&pool)
+        .await
+        .expect("insert internal-group conversation policy");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.conversation_policy_actors
+                (policy_id, actor_ref, actor_role)
+            VALUES ($1, $2, 'reviewer')
+            "#,
+        )
+        .bind(policy_id)
+        .bind(crate::conversation_policy::actor_ref(
+            "feishu",
+            &reviewer_id,
+        ))
+        .execute(&pool)
+        .await
+        .expect("insert configured group reviewer");
+
+        struct GroupMessageSeed<'a> {
+            policy_id: Uuid,
+            policy_version: i64,
+            policy_ref: &'a str,
+            chat_id: &'a str,
+            actor_id: &'a str,
+            message_id: &'a str,
+            thread_root_message_id: &'a str,
+            text: &'a str,
+        }
+
+        async fn seed_group_message(pool: &PgPool, seed: GroupMessageSeed<'_>) {
+            let row_id: Uuid = sqlx::query_scalar(
+                r#"
+                INSERT INTO qintopia_messages.messages
+                    (platform, message_id, event_id, chat_id, chat_type, sender_id,
+                     sender_type, message_kind, text, is_mention_bot, should_trigger,
+                     trigger_reason, received_at, thread_root_message_id, raw)
+                VALUES ('feishu', $1, $2, $3, 'group', $4, 'user', 'text', $5,
+                        true, true, 'xiaoman_authenticated_feishu_message_v3', now(),
+                        $6, '{"authenticated":true,"schema_version":3}'::jsonb)
+                RETURNING id
+                "#,
+            )
+            .bind(seed.message_id)
+            .bind(format!("evt_{}", seed.message_id))
+            .bind(seed.chat_id)
+            .bind(seed.actor_id)
+            .bind(seed.text)
+            .bind(seed.thread_root_message_id)
+            .fetch_one(pool)
+            .await
+            .expect("insert authenticated internal-group message");
+            sqlx::query(
+                r#"
+                INSERT INTO qintopia_agent_os.feishu_message_ingress_receipts
+                    (source_message_ref, message_row_id, conversation_ref, policy_id,
+                     policy_version, payload_hash)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                "#,
+            )
+            .bind(crate::conversation_policy::source_message_ref(
+                "feishu",
+                seed.message_id,
+            ))
+            .bind(row_id)
+            .bind(seed.policy_ref)
+            .bind(seed.policy_id)
+            .bind(seed.policy_version)
+            .bind(digest(&["group-message-payload-v3", seed.message_id]))
+            .execute(pool)
+            .await
+            .expect("insert authenticated internal-group receipt");
+        }
+
+        let request_text = "@小满 请为 AgentOS 群协作验收生成海报，时间 2026-08-01 16:00，地点线上";
+        seed_group_message(
+            &pool,
+            GroupMessageSeed {
+                policy_id,
+                policy_version: 1,
+                policy_ref: &policy_ref,
+                chat_id: &chat_id,
+                actor_id: &requester_id,
+                message_id: &root_message_id,
+                thread_root_message_id: &root_message_id,
+                text: request_text,
+            },
+        )
+        .await;
+        let group_session = |actor_id: &str, message_id: &str| TrustedSession {
+            platform: "feishu".to_string(),
+            conversation_type: String::new(),
+            conversation_id: chat_id.clone(),
+            requester_user_id: actor_id.to_string(),
+            source_message_id: message_id.to_string(),
+            policy_version: 0,
+            binding: None,
+        };
+        let policy = OperationsPolicy::dry_run();
+        let first = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::PosterProductionRequest {
+                schema_version: PROTOCOL_VERSION,
+                request: request_text.to_string(),
+                priority: "normal".to_string(),
+                activity_record_ref: String::new(),
+                activity_facts: ActivityFacts {
+                    source: "originating_request".to_string(),
+                    title: "AgentOS 群协作验收".to_string(),
+                    schedule: "2026-08-01 16:00".to_string(),
+                    location: "线上".to_string(),
+                    conflict_fields: Vec::new(),
+                },
+                session: group_session(&requester_id, &root_message_id),
+                idempotency_key: String::new(),
+            },
+            true,
+            true,
+        )
+        .await
+        .expect("accept internal-group poster request");
+        let duplicate = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::PosterProductionRequest {
+                schema_version: PROTOCOL_VERSION,
+                request: request_text.to_string(),
+                priority: "normal".to_string(),
+                activity_record_ref: String::new(),
+                activity_facts: ActivityFacts {
+                    source: "originating_request".to_string(),
+                    title: "AgentOS 群协作验收".to_string(),
+                    schedule: "2026-08-01 16:00".to_string(),
+                    location: "线上".to_string(),
+                    conflict_fields: Vec::new(),
+                },
+                session: group_session(&requester_id, &root_message_id),
+                idempotency_key: String::new(),
+            },
+            true,
+            true,
+        )
+        .await
+        .expect("dedupe internal-group poster request");
+        assert_eq!(first["conversation_type"], "group");
+        assert_eq!(duplicate["deduped"], true);
+        assert_eq!(first["workflow_root_id"], duplicate["workflow_root_id"]);
+        let root_id = Uuid::parse_str(first["workflow_root_id"].as_str().unwrap()).unwrap();
+        let visual_id = Uuid::parse_str(first["visual_work_item_id"].as_str().unwrap()).unwrap();
+
+        let participant_state: (i64, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT count(*),
+                   count(*) FILTER (WHERE participant_role='requester'),
+                   count(*) FILTER (WHERE participant_role='reviewer')
+            FROM qintopia_agent_os.poster_workflow_participants
+            WHERE workflow_root_id=$1
+            "#,
+        )
+        .bind(root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read immutable group participant snapshot");
+        assert_eq!(participant_state, (2, 1, 1));
+        let target: (String, String, String, Option<String>) = sqlx::query_as(
+            r#"
+            SELECT conversation_type, audience_class, delivery_mode, thread_root_message_id
+            FROM qintopia_agent_os.poster_return_targets
+            WHERE origin_ref = (
+                SELECT metadata #>> '{workflow_metadata,origin_conversation_ref}'
+                FROM qintopia_agent_os.work_items WHERE id=$1
+            )
+            "#,
+        )
+        .bind(root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read message-scoped group return target");
+        assert_eq!(
+            target,
+            (
+                "group".to_string(),
+                "internal_collaboration".to_string(),
+                "thread_reply".to_string(),
+                Some(root_message_id.clone())
+            )
+        );
+
+        let evidence_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM qintopia_agent_os.work_items WHERE parent_work_item_id=$1 AND work_item_type='evidence_request'",
+        )
+        .bind(root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load internal-group evidence child");
+        sqlx::query(
+            "UPDATE qintopia_agent_os.work_items SET status='completed', updated_at=now() WHERE id=$1",
+        )
+        .bind(evidence_id)
+        .execute(&pool)
+        .await
+        .expect("complete internal-group evidence child");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (work_item_id, artifact_type, review_status, created_by_agent, title,
+                 summary, content_text, content_hash, information_class, metadata)
+            VALUES ($1, 'evidence_summary', 'not_required', 'wenyuange',
+                    'group integration evidence', 'source-grounded fixture', 'fixture',
+                    $2, 'internal_ops', '{}'::jsonb)
+            "#,
+        )
+        .bind(evidence_id)
+        .bind(digest(&["group-evidence-v3", &suffix]))
+        .execute(&pool)
+        .await
+        .expect("insert internal-group evidence artifact");
+        crate::collaboration::run_once_for_postgres_integration(&pool, visual_id)
+            .await
+            .expect("create authorized internal-group poster brief");
+        crate::operations::run_xiaoman_poster_image_starter_for_postgres_integration(
+            &pool, visual_id,
+        )
+        .await
+        .expect("create routed internal-group image request");
+        let source_image_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM qintopia_agent_os.work_items WHERE parent_work_item_id=$1 AND work_item_type='image_generation_request'",
+        )
+        .bind(visual_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load routed internal-group image request");
+        let (_review_image_id, review_artifact_id, notification_id) =
+            seed_delivered_review_image(&pool, source_image_id, &format!("group-{suffix}")).await;
+        let notification_route: (String, String) = sqlx::query_as(
+            r#"
+            SELECT item.capability_key, item.target_agent
+            FROM qintopia_agent_os.poster_notifications notification
+            JOIN qintopia_agent_os.work_items item ON item.id=notification.work_item_id
+            WHERE notification.id=$1
+            "#,
+        )
+        .bind(notification_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read group conversation notification capability");
+        assert_eq!(
+            notification_route,
+            (
+                "xiaoman.notify_conversation".to_string(),
+                "xiaoman".to_string()
+            )
+        );
+
+        let modify_event_id = format!("evt_group_modify_{suffix}");
+        let modified =
+            crate::poster_notification::process_review_callback_for_postgres_integration(
+                &pool,
+                &database_url,
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &modify_event_id,
+                    notification_id,
+                    artifact_id: review_artifact_id,
+                    conversation_id: &chat_id,
+                    actor_user_id: &reviewer_id,
+                    action: "modify",
+                },
+            )
+            .await
+            .expect("configured group reviewer requests changes");
+        assert!(!modified);
+        let repeated =
+            crate::poster_notification::process_review_callback_for_postgres_integration(
+                &pool,
+                &database_url,
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &modify_event_id,
+                    notification_id,
+                    artifact_id: review_artifact_id,
+                    conversation_id: &chat_id,
+                    actor_user_id: &reviewer_id,
+                    action: "modify",
+                },
+            )
+            .await
+            .expect("duplicate group callback is an audited no-op");
+        assert!(repeated);
+        let conflicting =
+            crate::poster_notification::process_review_callback_for_postgres_integration(
+                &pool,
+                &database_url,
+                ReviewCallbackIntegrationInput {
+                    callback_event_id: &format!("evt_group_conflict_{suffix}"),
+                    notification_id,
+                    artifact_id: review_artifact_id,
+                    conversation_id: &chat_id,
+                    actor_user_id: &requester_id,
+                    action: "abandon",
+                },
+            )
+            .await;
+        assert!(
+            conflicting.is_err(),
+            "the first group review decision must win"
+        );
+
+        let requester_revision_message = format!("om_requester_revision_{suffix}");
+        let reviewer_revision_message = format!("om_reviewer_revision_{suffix}");
+        let requester_instruction = "标题缩短，活动时间放到主视觉下方";
+        let reviewer_instruction = "标题保留，活动时间改到右下角";
+        seed_group_message(
+            &pool,
+            GroupMessageSeed {
+                policy_id,
+                policy_version: 1,
+                policy_ref: &policy_ref,
+                chat_id: &chat_id,
+                actor_id: &requester_id,
+                message_id: &requester_revision_message,
+                thread_root_message_id: &root_message_id,
+                text: requester_instruction,
+            },
+        )
+        .await;
+        seed_group_message(
+            &pool,
+            GroupMessageSeed {
+                policy_id,
+                policy_version: 1,
+                policy_ref: &policy_ref,
+                chat_id: &chat_id,
+                actor_id: &reviewer_id,
+                message_id: &reviewer_revision_message,
+                thread_root_message_id: &root_message_id,
+                text: reviewer_instruction,
+            },
+        )
+        .await;
+        let requester_revision = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::PosterRevisionRequest {
+                schema_version: PROTOCOL_VERSION,
+                request: requester_instruction.to_string(),
+                workflow_root_id: root_id,
+                revision_of_artifact_id: review_artifact_id,
+                session: group_session(&requester_id, &requester_revision_message),
+                idempotency_key: String::new(),
+            },
+            true,
+            true,
+        );
+        let reviewer_revision = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::PosterRevisionRequest {
+                schema_version: PROTOCOL_VERSION,
+                request: reviewer_instruction.to_string(),
+                workflow_root_id: root_id,
+                revision_of_artifact_id: review_artifact_id,
+                session: group_session(&reviewer_id, &reviewer_revision_message),
+                idempotency_key: String::new(),
+            },
+            true,
+            true,
+        );
+        let (requester_result, reviewer_result) =
+            tokio::join!(requester_revision, reviewer_revision);
+        let requester_result = requester_result.expect("requester revision resolves");
+        let reviewer_result = reviewer_result.expect("reviewer revision resolves");
+        assert_eq!(
+            requester_result["image_generation_work_item_id"],
+            reviewer_result["image_generation_work_item_id"]
+        );
+        assert!(requester_result["deduped"] == true || reviewer_result["deduped"] == true);
+        let revision_state: (i64, i64, String, String, bool) = sqlx::query_as(
+            r#"
+            SELECT count(DISTINCT revision.id), count(DISTINCT image.id),
+                   min(revision.instruction_text),
+                   min(image.payload->>'revision_instruction'),
+                   bool_and(revision.first_revision_guarded)
+            FROM qintopia_agent_os.poster_revision_requests revision
+            JOIN qintopia_agent_os.work_items image
+              ON image.id=revision.image_generation_work_item_id
+            WHERE revision.source_artifact_id=$1
+            "#,
+        )
+        .bind(review_artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read first-valid group revision state");
+        assert_eq!(revision_state.0, 1);
+        assert_eq!(revision_state.1, 1);
+        assert_eq!(revision_state.2, revision_state.3);
+        assert!(revision_state.4);
+        assert!(matches!(
+            revision_state.2.as_str(),
+            "标题缩短，活动时间放到主视觉下方" | "标题保留，活动时间改到右下角"
+        ));
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.poster_revision_requests
+                (workflow_root_id, source_artifact_id, source_message_ref, actor_ref,
+                 instruction_text, status, first_revision_guarded)
+            VALUES
+                ($1, $2, $3, $5, 'legacy revision fixture one', 'accepted', false),
+                ($1, $2, $4, $5, 'legacy revision fixture two', 'accepted', false)
+            "#,
+        )
+        .bind(root_id)
+        .bind(review_artifact_id)
+        .bind(digest(&["legacy-revision-one", &suffix]))
+        .bind(digest(&["legacy-revision-two", &suffix]))
+        .bind(crate::conversation_policy::actor_ref(
+            "feishu",
+            &requester_id,
+        ))
+        .execute(&pool)
+        .await
+        .expect("preserve historical unguarded revisions beside the guarded winner");
+        let revision_guard_counts: (i64, i64) = sqlx::query_as(
+            r#"
+            SELECT count(*) FILTER (WHERE first_revision_guarded),
+                   count(*) FILTER (WHERE NOT first_revision_guarded)
+            FROM qintopia_agent_os.poster_revision_requests
+            WHERE source_artifact_id=$1
+            "#,
+        )
+        .bind(review_artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("verify guarded revision migration compatibility");
+        assert_eq!(revision_guard_counts, (1, 2));
+
+        let revised_policy_id = Uuid::new_v4();
+        sqlx::query(
+            "UPDATE qintopia_agent_os.conversation_policies SET enabled=false, updated_at=now() WHERE id=$1",
+        )
+        .bind(policy_id)
+        .execute(&pool)
+        .await
+        .expect("disable original policy after participant snapshot");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.conversation_policies
+                (id, platform, conversation_ref, conversation_type, audience_class,
+                 allowed_capabilities, return_mode, initiation_rule, status_visibility,
+                 policy_version, policy_digest, enabled)
+            VALUES ($1, 'feishu', $2, 'group', 'internal_collaboration',
+                    ARRAY['poster_production_request','poster_workflow_status']::text[],
+                    'thread_reply', 'explicit_bot_mention', 'conversation_members',
+                    2, $3, true)
+            "#,
+        )
+        .bind(revised_policy_id)
+        .bind(&policy_ref)
+        .bind(digest(&["group-policy-v3-revised", &suffix]))
+        .execute(&pool)
+        .await
+        .expect("insert revised internal-group policy version");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.conversation_policy_actors
+                (policy_id, actor_ref, actor_role)
+            VALUES ($1, $2, 'reviewer'), ($1, $3, 'reviewer')
+            "#,
+        )
+        .bind(revised_policy_id)
+        .bind(crate::conversation_policy::actor_ref(
+            "feishu",
+            &reviewer_id,
+        ))
+        .bind(crate::conversation_policy::actor_ref("feishu", &member_id))
+        .execute(&pool)
+        .await
+        .expect("change policy after workflow participant snapshot");
+        let member_status_message = format!("om_member_status_{suffix}");
+        seed_group_message(
+            &pool,
+            GroupMessageSeed {
+                policy_id: revised_policy_id,
+                policy_version: 2,
+                policy_ref: &policy_ref,
+                chat_id: &chat_id,
+                actor_id: &member_id,
+                message_id: &member_status_message,
+                thread_root_message_id: &format!("om_other_thread_{suffix}"),
+                text: "@小满 查询海报状态",
+            },
+        )
+        .await;
+        let status = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::WorkflowStatus {
+                schema_version: PROTOCOL_VERSION,
+                workflow_root_id: root_id,
+                session: group_session(&member_id, &member_status_message),
+            },
+            true,
+            true,
+        )
+        .await
+        .expect("same-group human member reads workflow status");
+        assert_eq!(status["user_status"], "生成中");
+
+        let member_revision_message = format!("om_member_revision_{suffix}");
+        seed_group_message(
+            &pool,
+            GroupMessageSeed {
+                policy_id: revised_policy_id,
+                policy_version: 2,
+                policy_ref: &policy_ref,
+                chat_id: &chat_id,
+                actor_id: &member_id,
+                message_id: &member_revision_message,
+                thread_root_message_id: &root_message_id,
+                text: "@小满 再换一种配色",
+            },
+        )
+        .await;
+        let unauthorized_revision = handle_request(
+            &pool,
+            &policy,
+            IntakeRequest::PosterRevisionRequest {
+                schema_version: PROTOCOL_VERSION,
+                request: "再换一种配色".to_string(),
+                workflow_root_id: root_id,
+                revision_of_artifact_id: review_artifact_id,
+                session: group_session(&member_id, &member_revision_message),
+                idempotency_key: String::new(),
+            },
+            true,
+            true,
+        )
+        .await;
+        assert!(
+            unauthorized_revision.is_err(),
+            "post-snapshot policy actor must not gain mutation authority"
+        );
+
+        let final_counts: (i64, i64, i64, i64, i64) = sqlx::query_as(
+            r#"
+            WITH RECURSIVE descendants AS (
+                SELECT id FROM qintopia_agent_os.work_items WHERE id=$1
+                UNION ALL
+                SELECT child.id
+                FROM qintopia_agent_os.work_items child
+                JOIN descendants parent ON child.parent_work_item_id=parent.id
+            )
+            SELECT
+                (SELECT count(*)
+                   FROM qintopia_agent_os.work_items item
+                  WHERE item.work_item_type='group_message_request'
+                    AND item.id IN (SELECT id FROM descendants)),
+                (SELECT count(*)
+                   FROM qintopia_agent_os.work_item_events event
+                  WHERE event.work_item_id IN (SELECT id FROM descendants)
+                    AND event.event_type='send_executed'),
+                (SELECT count(*)
+                   FROM qintopia_agent_os.work_item_events event
+                  WHERE event.work_item_id IN (SELECT id FROM descendants)
+                    AND event.event_type='external_published'),
+                (SELECT count(*)
+                   FROM qintopia_agent_os.work_item_events event
+                  WHERE event.work_item_id IN (SELECT id FROM descendants)
+                    AND event.event_type='poster_review_callback_duplicate_rejected'),
+                (SELECT count(*)
+                   FROM qintopia_agent_os.work_item_events event
+                  WHERE event.work_item_id IN (SELECT id FROM descendants)
+                    AND event.event_type IN (
+                        'poster_review_callback_conflict_rejected',
+                        'poster_mutation_rejected'
+                    ))
+            "#,
+        )
+        .bind(root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("verify group workflow mutation audit and zero publication facts");
+        assert_eq!(final_counts.0, 0);
+        assert_eq!(final_counts.1, 0);
+        assert_eq!(final_counts.2, 0);
+        assert!(final_counts.3 >= 1);
+        assert!(final_counts.4 >= 2);
     }
 }

@@ -198,6 +198,22 @@ function runPostgresChecks() {
     [
       "--features",
       "postgres-integration-tests",
+      "operations_intake::tests::postgres_v3_direct_snapshots_participants_and_isolates_status",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "operations_intake::tests::postgres_internal_group_snapshots_authority_and_accepts_only_first_revision",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
       "event::tests::postgres_callback_storage_redacts_credentials",
       "--",
       "--ignored",

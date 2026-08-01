@@ -147,11 +147,12 @@ class QintopiaToolsTest(unittest.TestCase):
         chat_id: str = "oc_chat_fixture",
         user_id: str = "ou_user_fixture",
         message_id: str = "om_message_fixture",
+        conversation_type: str = "direct",
         ingress_enabled: bool = True,
     ) -> None:
         values = {
             "HERMES_SESSION_PLATFORM": "feishu",
-            "HERMES_SESSION_CONVERSATION_TYPE": "direct",
+            "HERMES_SESSION_CONVERSATION_TYPE": conversation_type,
             "HERMES_SESSION_CHAT_ID": chat_id,
             "HERMES_SESSION_USER_ID": user_id,
             "HERMES_SESSION_MESSAGE_ID": message_id,
@@ -1919,7 +1920,64 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("conversation_type", captured["session"])
         self.assertEqual(captured["schema_version"], 3)
         self.assertTrue(captured["idempotency_key"].startswith("poster_production_request:sha256:"))
+        expected_digest = hashlib.sha256()
+        for part in (
+            "poster-intake-v3",
+            "feishu",
+            "om_message_fixture",
+            "poster_production_request",
+        ):
+            expected_digest.update(part.encode("utf-8"))
+            expected_digest.update(b"\0")
+        self.assertEqual(
+            captured["idempotency_key"],
+            "poster_production_request:sha256:" + expected_digest.hexdigest(),
+        )
         self.assertEqual(captured["activity_facts"]["title"], "周末晚餐")
+
+    def test_poster_request_v3_group_never_supplies_policy_target_or_reviewer(self):
+        self.trust_poster_session(
+            chat_id="oc_internal_fixture",
+            user_id="ou_group_member_fixture",
+            message_id="om_group_request_fixture",
+            conversation_type="group",
+        )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"] = "1"
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {
+                "success": True,
+                "accepted": True,
+                "deduped": False,
+                "conversation_type": "group",
+                "workflow_root_id": "11111111-1111-4111-8111-111111111111",
+                "visual_work_item_id": "22222222-2222-4222-8222-222222222222",
+                "user_status": "已接单",
+            }
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {
+                    "request": "@小满 请生成内部活动海报，时间 8 月 1 日 16:00，地点线上",
+                    "activity_facts": {
+                        "source": "originating_request",
+                        "title": "内部活动",
+                        "schedule": "8 月 1 日 16:00",
+                        "location": "线上",
+                    },
+                }
+            )
+        )
+
+        self.assertTrue(response["accepted"])
+        self.assertEqual(captured["schema_version"], 3)
+        self.assertNotIn("conversation_type", captured["session"])
+        self.assertNotIn("target_chat_id", captured)
+        self.assertNotIn("reviewer_id", captured)
+        self.assertNotIn("provider", captured)
 
     def test_poster_request_keeps_v2_direct_compatibility_until_ingress_cutover(self):
         self.trust_poster_session(ingress_enabled=False)
@@ -1954,7 +2012,7 @@ class QintopiaToolsTest(unittest.TestCase):
         )
 
         self.assertFalse(response["accepted"])
-        self.assertEqual(response["error"], "trusted_direct_session_required")
+        self.assertEqual(response["error"], "trusted_feishu_session_required")
 
     def test_poster_review_hook_forwards_verified_card_without_model_dispatch(self):
         os.environ["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] = "1"
@@ -2271,7 +2329,7 @@ class QintopiaToolsTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(rejected["error"], "trusted_direct_session_required")
+        self.assertEqual(rejected["error"], "trusted_feishu_session_required")
         self.assertFalse(called)
 
     def test_poster_revision_uses_same_trusted_intake_without_target_arguments(self):

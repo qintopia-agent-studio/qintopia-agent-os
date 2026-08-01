@@ -1302,6 +1302,8 @@ mod tests {
         let query = candidate_select(true);
         assert!(query.contains("FOR UPDATE OF notification, item SKIP LOCKED"));
         assert!(!query.contains("FOR UPDATE OF notification, item, artifact"));
+        assert!(query.contains("AND target.conversation_type = 'direct'"));
+        assert!(!query.contains("target.conversation_type = 'group'"));
     }
 
     #[test]
