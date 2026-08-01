@@ -24,6 +24,8 @@ use crate::{
 };
 
 const PROTOCOL_VERSION: u8 = 2;
+const XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE";
+const XIAOMAN_FEISHU_INGRESS_HMAC_KEY_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY";
 const MAX_MESSAGE_BYTES: u64 = 64 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_millis(750);
 const HANDLE_TIMEOUT: Duration = Duration::from_millis(3_500);
@@ -863,10 +865,46 @@ async fn authorize_status_read(
 }
 
 fn validate_protocol(version: u8) -> Result<()> {
+    validate_protocol_for_ingress_state(version, authenticated_feishu_ingress_enabled()?)
+}
+
+fn validate_protocol_for_ingress_state(
+    version: u8,
+    authenticated_feishu_ingress_enabled: bool,
+) -> Result<()> {
+    if authenticated_feishu_ingress_enabled && version == PROTOCOL_VERSION {
+        bail!("legacy intake protocol is disabled while authenticated Feishu ingress is enabled");
+    }
     if version != PROTOCOL_VERSION {
         bail!("unsupported intake protocol version");
     }
     Ok(())
+}
+
+fn authenticated_feishu_ingress_enabled() -> Result<bool> {
+    let hook_enable = std::env::var(XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE_ENV).ok();
+    let hmac_key = std::env::var(XIAOMAN_FEISHU_INGRESS_HMAC_KEY_ENV).ok();
+    authenticated_feishu_ingress_enabled_from_values(hook_enable.as_deref(), hmac_key.as_deref())
+}
+
+fn authenticated_feishu_ingress_enabled_from_values(
+    hook_enable: Option<&str>,
+    hmac_key: Option<&str>,
+) -> Result<bool> {
+    match hook_enable.map(str::trim) {
+        None | Some("0") => Ok(false),
+        Some("1") => {
+            if hmac_key
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_none()
+            {
+                bail!("authenticated Feishu ingress requires an HMAC key");
+            }
+            Ok(true)
+        }
+        Some(_) => bail!("authenticated Feishu ingress hook enablement is invalid"),
+    }
 }
 
 fn validate_session(session: &TrustedSession) -> Result<()> {
@@ -1170,6 +1208,56 @@ mod tests {
         let mut wecom = session();
         wecom.platform = "wecom".to_string();
         assert!(validate_session(&wecom).is_err());
+    }
+
+    #[test]
+    fn legacy_protocol_is_rejected_when_authenticated_ingress_is_enabled() {
+        let error = validate_protocol_for_ingress_state(PROTOCOL_VERSION, true)
+            .expect_err("legacy V2 must not downgrade authenticated V3 ingress");
+
+        assert!(error
+            .to_string()
+            .contains("legacy intake protocol is disabled"));
+    }
+
+    #[test]
+    fn legacy_protocol_remains_available_without_authenticated_ingress() {
+        validate_protocol_for_ingress_state(PROTOCOL_VERSION, false)
+            .expect("legacy V2 remains available until authenticated ingress is enabled");
+    }
+
+    #[test]
+    fn authenticated_ingress_requires_explicit_hook_enablement() {
+        assert!(
+            !authenticated_feishu_ingress_enabled_from_values(None, Some("configured-key"))
+                .expect("unset hook enable keeps ingress disabled")
+        );
+        assert!(!authenticated_feishu_ingress_enabled_from_values(
+            Some("0"),
+            Some("configured-key")
+        )
+        .expect("explicit disabled hook keeps ingress disabled"));
+        assert!(authenticated_feishu_ingress_enabled_from_values(
+            Some("1"),
+            Some("configured-key")
+        )
+        .expect("explicit enabled hook enables authenticated ingress"));
+    }
+
+    #[test]
+    fn authenticated_ingress_enablement_fails_closed_for_invalid_values() {
+        let invalid_enable =
+            authenticated_feishu_ingress_enabled_from_values(Some("true"), Some("configured-key"))
+                .expect_err("non-literal hook enablement should fail closed");
+        assert!(invalid_enable
+            .to_string()
+            .contains("authenticated Feishu ingress hook enablement is invalid"));
+
+        let missing_key = authenticated_feishu_ingress_enabled_from_values(Some("1"), None)
+            .expect_err("enabled ingress without HMAC key should fail closed");
+        assert!(missing_key
+            .to_string()
+            .contains("authenticated Feishu ingress requires an HMAC key"));
     }
 
     #[test]
