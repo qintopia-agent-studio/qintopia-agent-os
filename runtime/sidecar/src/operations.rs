@@ -62,6 +62,15 @@ const GENERATED_IMAGE_ARTIFACT_TYPE: &str = "generated_image";
 const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const GENERATED_IMAGE_WORK_ITEM_TYPE: &str = "image_generation_request";
 const GENERATED_IMAGE_WORKER_ID: &str = "huabaosi-image-generation-worker";
+const POSTER_REVISION_PURPOSE: &str = "activity_image_revision_request";
+const POSTER_REVISION_KEY_NAMESPACE: &str = "poster-revision-source-artifact-v3";
+const POSTER_REVISION_VOLATILE_PAYLOAD_FIELDS: &[&str] = &[
+    "prompt_hash",
+    "revision_instruction",
+    "revision_instruction_hash",
+    "revision_actor_ref",
+    "revision_source_message_ref",
+];
 const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
 const DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL: &str = r#"
 AND parent.source_type NOT IN (
@@ -3764,6 +3773,162 @@ async fn load_idempotent_work_item_binding(
     }))
 }
 
+pub(crate) fn poster_revision_idempotency_key(source_artifact_id: Uuid) -> String {
+    format!(
+        "poster_revision_request:{}",
+        null_separated_digest(&[
+            POSTER_REVISION_KEY_NAMESPACE,
+            &source_artifact_id.to_string(),
+        ])
+    )
+}
+
+fn null_separated_digest(parts: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part.as_bytes());
+        hasher.update([0]);
+    }
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+fn is_canonical_sha256(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    })
+}
+
+fn valid_revision_source_refs<'a>(value: &'a Value, source_artifact_id: &str) -> Option<&'a str> {
+    let object = value.as_object()?;
+    if object.len() != 2
+        || object
+            .get("revision_of_artifact_id")
+            .and_then(Value::as_str)
+            != Some(source_artifact_id)
+    {
+        return None;
+    }
+    object
+        .get("source_message_ref")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+}
+
+fn valid_revision_payload_variant(
+    value: &Value,
+    source_artifact_id: &str,
+    source_message_ref: &str,
+) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    if object
+        .get("revision_of_artifact_id")
+        .and_then(Value::as_str)
+        != Some(source_artifact_id)
+        || object
+            .get("revision_source_message_ref")
+            .and_then(Value::as_str)
+            != Some(source_message_ref)
+    {
+        return false;
+    }
+    let Some(instruction) = object
+        .get("revision_instruction")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.chars().count() <= 2_000)
+    else {
+        return false;
+    };
+    let Some(revision_hash) = object
+        .get("revision_instruction_hash")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let Some(actor_ref) = object
+        .get("revision_actor_ref")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let Some(prompt_hash) = object
+        .get("prompt_hash")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let Some(brief_hash) = object
+        .get("approved_brief_content_hash")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let expected_revision_hash = null_separated_digest(&[
+        "poster-revision-v1",
+        source_artifact_id,
+        instruction,
+        source_message_ref,
+    ]);
+    revision_hash == expected_revision_hash
+        && prompt_hash == null_separated_digest(&[brief_hash, revision_hash])
+        && !actor_ref.is_empty()
+}
+
+fn stable_revision_payload(value: &Value) -> Option<Value> {
+    let mut object = value.as_object()?.clone();
+    for field in POSTER_REVISION_VOLATILE_PAYLOAD_FIELDS {
+        object.remove(*field);
+    }
+    Some(Value::Object(object))
+}
+
+fn revision_contenders_share_first_writer_scope(
+    existing: &IdempotentWorkItemBinding,
+    request: &WorkItemCreateRequest,
+) -> bool {
+    if existing.purpose != POSTER_REVISION_PURPOSE || request.purpose != POSTER_REVISION_PURPOSE {
+        return false;
+    }
+    let Some(existing_artifact_id) = existing
+        .payload
+        .get("revision_of_artifact_id")
+        .and_then(Value::as_str)
+    else {
+        return false;
+    };
+    let Ok(source_artifact_id) = Uuid::parse_str(existing_artifact_id) else {
+        return false;
+    };
+    if request.idempotency_key != poster_revision_idempotency_key(source_artifact_id) {
+        return false;
+    }
+    let Some(existing_message_ref) =
+        valid_revision_source_refs(&existing.source_refs, existing_artifact_id)
+    else {
+        return false;
+    };
+    let Some(request_message_ref) =
+        valid_revision_source_refs(&request.source_refs, existing_artifact_id)
+    else {
+        return false;
+    };
+    valid_revision_payload_variant(
+        &existing.payload,
+        existing_artifact_id,
+        existing_message_ref,
+    ) && valid_revision_payload_variant(&request.payload, existing_artifact_id, request_message_ref)
+        && stable_revision_payload(&existing.payload) == stable_revision_payload(&request.payload)
+}
+
 fn validate_idempotent_work_item_binding(
     existing: &IdempotentWorkItemBinding,
     request: &WorkItemCreateRequest,
@@ -3771,6 +3936,8 @@ fn validate_idempotent_work_item_binding(
 ) -> Result<()> {
     // Lifecycle fields, presentation text, and its derived dedupe key are not request
     // identity once the caller supplies a stable idempotency key.
+    let same_first_writer_revision_scope =
+        revision_contenders_share_first_writer_scope(existing, request);
     let mismatched_field = [
         (
             "parent_work_item_id",
@@ -3799,8 +3966,14 @@ fn validate_idempotent_work_item_binding(
             existing.source_event_signal_id != request.source_event_signal_id,
         ),
         ("source_type", existing.source_type != request.source_type),
-        ("source_refs", existing.source_refs != request.source_refs),
-        ("payload", existing.payload != request.payload),
+        (
+            "source_refs",
+            existing.source_refs != request.source_refs && !same_first_writer_revision_scope,
+        ),
+        (
+            "payload",
+            existing.payload != request.payload && !same_first_writer_revision_scope,
+        ),
         (
             "payload_redaction_policy",
             existing.payload_redaction_policy != request.payload_redaction_policy,
@@ -6742,6 +6915,31 @@ mod tests {
         serde_json::from_value(value).expect("request should deserialize")
     }
 
+    fn binding_from_request(
+        request: &WorkItemCreateRequest,
+        capability: &Capability,
+    ) -> IdempotentWorkItemBinding {
+        IdempotentWorkItemBinding {
+            id: Uuid::new_v4(),
+            status: "processing".to_string(),
+            parent_work_item_id: request.parent_work_item_id,
+            work_item_type: request.work_item_type.clone(),
+            requester_agent: request.requester_agent.clone(),
+            target_agent: request.target_agent.clone(),
+            capability_key: request.capability_key.clone(),
+            priority: request.priority.clone(),
+            purpose: request.purpose.clone(),
+            source_event_signal_id: request.source_event_signal_id,
+            source_type: request.source_type.clone(),
+            source_refs: request.source_refs.clone(),
+            risk_level: capability.risk_level.clone(),
+            information_class: "internal_ops".to_string(),
+            payload: request.payload.clone(),
+            payload_redaction_policy: request.payload_redaction_policy.clone(),
+            review_policy: capability.review_policy.clone(),
+        }
+    }
+
     fn idempotent_binding_fixture() -> (WorkItemCreateRequest, Capability, IdempotentWorkItemBinding)
     {
         let mut request = request(json!({
@@ -6765,26 +6963,72 @@ mod tests {
         normalize_request(&mut request);
         let capability = builtin_capability(&request.capability_key)
             .expect("fixture capability should be registered");
-        let existing = IdempotentWorkItemBinding {
-            id: Uuid::new_v4(),
-            status: "processing".to_string(),
-            parent_work_item_id: request.parent_work_item_id,
-            work_item_type: request.work_item_type.clone(),
-            requester_agent: request.requester_agent.clone(),
-            target_agent: request.target_agent.clone(),
-            capability_key: request.capability_key.clone(),
-            priority: request.priority.clone(),
-            purpose: request.purpose.clone(),
-            source_event_signal_id: request.source_event_signal_id,
-            source_type: request.source_type.clone(),
-            source_refs: request.source_refs.clone(),
-            risk_level: capability.risk_level.clone(),
-            information_class: "internal_ops".to_string(),
-            payload: request.payload.clone(),
-            payload_redaction_policy: request.payload_redaction_policy.clone(),
-            review_policy: capability.review_policy.clone(),
-        };
+        let existing = binding_from_request(&request, &capability);
         (request, capability, existing)
+    }
+
+    fn revision_binding_request(
+        source_artifact_id: Uuid,
+        source_message_ref: &str,
+        actor_ref: &str,
+        instruction: &str,
+    ) -> WorkItemCreateRequest {
+        let approved_brief_id = Uuid::parse_str("22222222-2222-4222-8222-222222222222")
+            .expect("fixture approved brief id should be valid");
+        let approved_brief_hash = format!("sha256:{}", "b".repeat(64));
+        let revision_hash = null_separated_digest(&[
+            "poster-revision-v1",
+            &source_artifact_id.to_string(),
+            instruction,
+            source_message_ref,
+        ]);
+        let prompt_hash = null_separated_digest(&[&approved_brief_hash, &revision_hash]);
+        let mut request = request(json!({
+            "requester_agent": "xiaoman",
+            "target_agent": "huabaosi",
+            "capability_key": "huabaosi.generate_image_asset",
+            "work_item_type": "image_generation_request",
+            "brief_summary": "根据第一条有效修改意见生成下一版活动海报",
+            "purpose": POSTER_REVISION_PURPOSE,
+            "human_owner": format!("sha256:{}", "c".repeat(64)),
+            "priority": "normal",
+            "source_type": "feishu_internal_group_revision_request",
+            "source_refs": {
+                "source_message_ref": source_message_ref,
+                "revision_of_artifact_id": source_artifact_id
+            },
+            "payload": {
+                "workflow_type": "activity_promotion",
+                "activity_phase": "pre_event",
+                "activity_route": "promotion",
+                "planner_intent": "revise_image_from_originating_user_instruction",
+                "approved_brief_artifact_id": approved_brief_id,
+                "approved_brief_content_hash": approved_brief_hash,
+                "image_specification": "community_poster_1024x1024",
+                "prompt_hash": prompt_hash,
+                "revision_of_artifact_id": source_artifact_id,
+                "revision_instruction": instruction,
+                "revision_instruction_hash": revision_hash,
+                "revision_actor_ref": actor_ref,
+                "revision_source_message_ref": source_message_ref,
+                "external_publish_executed": false,
+                "group_send_authorized": false
+            },
+            "payload_redaction_policy": "summary_only",
+            "idempotency_key": poster_revision_idempotency_key(source_artifact_id),
+            "metadata": {
+                "workflow_type": "activity_promotion",
+                "workflow_step": "image_revision",
+                "revision_of_artifact_id": source_artifact_id,
+                "revision_instruction_hash": revision_hash,
+                "group_send_authorized": false,
+                "external_publish_executed": false
+            },
+            "parent_work_item_id": "11111111-1111-4111-8111-111111111111",
+            "approved_artifact_id": approved_brief_id
+        }));
+        normalize_request(&mut request);
+        request
     }
 
     #[test]
@@ -6805,6 +7049,62 @@ mod tests {
         assert_ne!(request.dedupe_key, original_dedupe_key);
         validate_idempotent_work_item_binding(&existing, &request, &capability)
             .expect("presentation changes must reuse the stable idempotency binding");
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_accepts_first_valid_revision_contender() {
+        let source_artifact_id = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        let first = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "d".repeat(64)),
+            &format!("sha256:{}", "e".repeat(64)),
+            "标题缩短，时间放到主视觉下方",
+        );
+        let contender = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "f".repeat(64)),
+            &format!("sha256:{}", "1".repeat(64)),
+            "标题保留，时间改到右下角",
+        );
+        let capability = builtin_capability(&first.capability_key).unwrap();
+        let existing = binding_from_request(&first, &capability);
+
+        assert_ne!(existing.source_refs, contender.source_refs);
+        assert_ne!(existing.payload, contender.payload);
+        validate_idempotent_work_item_binding(&existing, &contender, &capability)
+            .expect("same-artifact revision contenders must reuse the first valid winner");
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_rejects_revision_scope_or_safety_drift() {
+        let source_artifact_id = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        let first = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "d".repeat(64)),
+            &format!("sha256:{}", "e".repeat(64)),
+            "标题缩短，时间放到主视觉下方",
+        );
+        let contender = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "f".repeat(64)),
+            &format!("sha256:{}", "1".repeat(64)),
+            "标题保留，时间改到右下角",
+        );
+        let capability = builtin_capability(&first.capability_key).unwrap();
+        let existing = binding_from_request(&first, &capability);
+
+        let mut drifted_source = contender.clone();
+        drifted_source.source_refs["revision_of_artifact_id"] = json!(Uuid::new_v4());
+        let error = validate_idempotent_work_item_binding(&existing, &drifted_source, &capability)
+            .expect_err("a revision contender cannot cross source artifacts");
+        assert!(error.to_string().contains("source_refs"));
+
+        let mut drifted_safety = contender;
+        drifted_safety.source_refs = existing.source_refs.clone();
+        drifted_safety.payload["group_send_authorized"] = json!(true);
+        let error = validate_idempotent_work_item_binding(&existing, &drifted_safety, &capability)
+            .expect_err("a revision contender cannot change publication safety bindings");
+        assert!(error.to_string().contains("payload"));
     }
 
     #[test]

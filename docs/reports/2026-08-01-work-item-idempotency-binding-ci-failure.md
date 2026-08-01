@@ -33,6 +33,18 @@ created the same `in_event` root. The worker used the persisted event signal's h
 chat and source-message references. The direct apply payload carried only the event
 signal ID, so its locally rendered source references omitted that persisted provenance.
 
+After source provenance was canonicalized, replacement run `30705025875`, job
+`91382559912`, passed the first eight focused PostgreSQL tests and then exposed the
+first-valid group revision race:
+
+```text
+reviewer revision resolves: idempotency key is already bound to a different work item request (source_refs)
+```
+
+Two authorized reviewers intentionally compete on one source image. The artifact-scoped
+key selects the first valid instruction, while each contender necessarily has a
+different authenticated message, actor, instruction, and derived prompt hash.
+
 The smoke intentionally replays one activity request through a second supported starter.
 Both paths use the same stable business idempotency key and identity bindings, but may
 render a different human-facing summary. The default `dedupe_key` also changes because
@@ -52,6 +64,12 @@ payload. That made two supported starters disagree about the same persisted even
 even though `source_event_signal_id` and the business payload were identical. Unlike the
 presentation fields, `source_refs` are provenance and must remain strictly bound.
 
+The third failure was a different idempotency contract, not another missing canonical
+field. Poster revision uses an artifact-scoped first-writer key as its concurrency
+boundary. Treating every contender as an exact replay rejected the loser instead of
+returning the already committed winner, even though the persisted winner remained the
+only instruction eligible to create the next image.
+
 ## Resolution
 
 - Exclude `brief_summary` and its derived `dedupe_key` from idempotent winner
@@ -67,14 +85,21 @@ presentation fields, `source_refs` are provenance and must remain strictly bound
   `source_refs` used by the background worker.
 - Keep exact `source_refs` validation in place so a reused key cannot cross source
   provenance.
+- Recognize first-valid poster revision contenders only when both stored and incoming
+  requests are self-consistent and bind the same source image, approved brief, route,
+  capability, safety flags, and artifact-derived idempotency key. Only the authenticated
+  message, actor, instruction, and their derived hashes may differ; the stored winner
+  remains authoritative.
+- Keep every other work-item idempotency path on exact source-reference and payload
+  matching, and add negative regressions for source-image and publication-safety drift.
 
 ## Validation
 
 Local validation passed:
 
-- three focused idempotent-binding unit tests;
-- 477 default Rust tests;
-- 483 all-feature Rust tests with 20 guarded PostgreSQL tests ignored by design;
+- five focused idempotent-binding unit tests;
+- 479 default Rust tests;
+- 485 all-feature Rust tests with 20 guarded PostgreSQL tests ignored by design;
 - warning-denied Clippy in no-default-feature and all-feature configurations;
 - `pnpm check:pr:auto`, including quick, runtime, smoke, and heavy Rust tiers.
 
@@ -87,9 +112,10 @@ The first `pnpm check:pr:auto` run stopped at Prettier for the two newly edited 
 files. Formatting those exact files resolved the failure; the replacement run passed.
 
 The local PostgreSQL 16 mirror could not start because two attempts to pull
-`pgvector/pgvector:pg16` failed during the Docker Hub TLS handshake. No container was
-created. Replacement PR CI must execute the complete disposable PostgreSQL downstream
-apply smoke and all focused PostgreSQL integration tests before merge.
+`pgvector/pgvector:pg16` failed during the Docker Hub TLS handshake and a third stalled
+before Docker assembled a usable image. No pgvector container was created. Replacement
+PR CI must execute the complete disposable PostgreSQL downstream apply smoke and all
+focused PostgreSQL integration tests before merge.
 
 For localization only, a cached plain PostgreSQL 16 image ran all repository migrations
 in a disposable database with the unrelated vector columns replaced by text. The traced

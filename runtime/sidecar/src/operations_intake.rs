@@ -862,13 +862,7 @@ async fn create_revision_request(
                 "group_send_authorized": false
             }),
             payload_redaction_policy: "summary_only".to_string(),
-            idempotency_key: format!(
-                "poster_revision_request:{}",
-                digest(&[
-                    "poster-revision-source-artifact-v3",
-                    &revision_of_artifact_id.to_string()
-                ])
-            ),
+            idempotency_key: operations::poster_revision_idempotency_key(revision_of_artifact_id),
             dedupe_key: String::new(),
             metadata: json!({
                 "workflow_type": "activity_promotion",

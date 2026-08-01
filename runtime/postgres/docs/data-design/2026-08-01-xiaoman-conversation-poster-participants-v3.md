@@ -42,7 +42,10 @@ All participant and return-target tables remain revoked from `PUBLIC`.
   requester-only.
 - Revision work uses an artifact-scoped idempotency key and persists the winner from the
   actual created work item. Concurrent or restarted requests cannot create a second
-  image request for the same source image.
+  image request for the same source image. Competing authorized messages may differ only
+  in their authenticated message, actor, instruction, and derived hashes; both requests
+  must still bind the same source image, approved brief, route, capability, and
+  zero-publication safety fields. The stored first writer remains authoritative.
 - Historical unguarded revision rows stay in place. New writes are always guarded, and
   an existing historical winner prevents a new automatic revision for that image.
 - Work-item creation handles an idempotency conflict inside its transaction, reloads the
@@ -51,7 +54,9 @@ All participant and return-target tables remain revoked from `PUBLIC`.
   key with different bindings fails closed instead of routing work to an unrelated item.
   Presentation-only `brief_summary` and the summary-derived `dedupe_key` are not
   identity fields once an explicit stable idempotency key exists; a replay may render
-  them differently without creating or selecting another work item.
+  them differently without creating or selecting another work item. The narrowly
+  validated first-revision arbitration above is the only request-payload exception;
+  arbitrary `source_refs` or payload drift still fails closed.
 - Each image notification already has one final review-action boundary. Duplicate or
   conflicting callbacks are audited as no-op rejections; they do not change the first
   decision.
