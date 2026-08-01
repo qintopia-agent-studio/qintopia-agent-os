@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -85,6 +86,10 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_OPERATIONS_INTAKE_SOCKET",
                 "QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE",
                 "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY",
+                "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE",
+                "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY",
+                "QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID",
+                "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED",
                 "HERMES_SESSION_PLATFORM",
                 "HERMES_SESSION_CONVERSATION_TYPE",
                 "HERMES_SESSION_CHAT_ID",
@@ -107,6 +112,10 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_OPERATIONS_INTAKE_SOCKET", None)
         os.environ.pop("QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED", None)
         os.environ.pop("HERMES_SESSION_PLATFORM", None)
         os.environ.pop("HERMES_SESSION_CONVERSATION_TYPE", None)
         os.environ.pop("HERMES_SESSION_CHAT_ID", None)
@@ -131,6 +140,78 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ["QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"] = "1"
         os.environ["QINTOPIA_SIDECAR_BIN"] = "/tmp/qintopia-message-sidecar"
         self.module._xiaoman_activity_validate_read_through_worker = lambda worker_bin: Path(worker_bin)
+
+    def trust_poster_session(
+        self,
+        *,
+        chat_id: str = "oc_chat_fixture",
+        user_id: str = "ou_user_fixture",
+        message_id: str = "om_message_fixture",
+        ingress_enabled: bool = True,
+    ) -> None:
+        values = {
+            "HERMES_SESSION_PLATFORM": "feishu",
+            "HERMES_SESSION_CONVERSATION_TYPE": "direct",
+            "HERMES_SESSION_CHAT_ID": chat_id,
+            "HERMES_SESSION_USER_ID": user_id,
+            "HERMES_SESSION_MESSAGE_ID": message_id,
+        }
+        self.module._strict_poster_session_value = lambda name: values.get(name, "")
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = (
+            "1" if ingress_enabled else "0"
+        )
+
+    def feishu_message_event(
+        self,
+        *,
+        chat_id: str = "oc_chat_fixture",
+        chat_type: str = "p2p",
+        sender_id: str = "ou_user_fixture",
+        sender_type: str = "user",
+        message_id: str = "om_message_fixture",
+        text: str = "请生成海报，活动时间 8 月 1 日 16:00，地点线上",
+        mention_bot: bool = False,
+        source_chat_id: str | None = None,
+        source_chat_type: str | None = None,
+    ):
+        bot_open_id = "ou_xiaoman_bot_fixture"
+        mentions = (
+            [SimpleNamespace(id=SimpleNamespace(open_id=bot_open_id))]
+            if mention_bot
+            else []
+        )
+        return SimpleNamespace(
+            text=text,
+            message_type=SimpleNamespace(value="text"),
+            source=SimpleNamespace(
+                platform=SimpleNamespace(value="feishu"),
+                chat_id=source_chat_id or chat_id,
+                user_id=sender_id,
+                chat_type=source_chat_type
+                or ("group" if chat_type == "group" else "dm"),
+            ),
+            raw_message=SimpleNamespace(
+                header=SimpleNamespace(event_id=f"evt_{message_id}"),
+                event=SimpleNamespace(
+                    sender=SimpleNamespace(
+                        sender_id=SimpleNamespace(open_id=sender_id),
+                        sender_type=sender_type,
+                    ),
+                    message=SimpleNamespace(
+                        message_id=message_id,
+                        chat_id=chat_id,
+                        chat_type=chat_type,
+                        message_type="text",
+                        content=json.dumps({"text": text}, ensure_ascii=False),
+                        mentions=mentions,
+                        root_id="",
+                        parent_id="",
+                        create_time="1785571200000",
+                    ),
+                ),
+            ),
+            message_id=message_id,
+        )
 
     def poster_review_event(
         self,
@@ -1769,7 +1850,7 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_xiaoman_poster_workflow_status", ctx.names)
         self.assertIs(
             ctx.hooks["pre_gateway_dispatch"],
-            self.module.handle_xiaoman_poster_review_card,
+            self.module.handle_xiaoman_gateway_dispatch,
         )
         self.assertNotIn("qintopia_dify_dataset_list", ctx.names)
         self.assertNotIn("qintopia_dify_knowledge_retrieve", ctx.names)
@@ -1802,11 +1883,7 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_dify_segment_get", ctx.names)
 
     def test_poster_request_uses_trusted_session_and_returns_accepted_status(self):
-        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
-        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
-        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
-        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
-        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        self.trust_poster_session()
         captured = {}
 
         def fake_intake(payload):
@@ -1839,8 +1916,45 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(response["user_status"], "已接单")
         self.assertEqual(captured["session"]["conversation_id"], "oc_chat_fixture")
         self.assertEqual(captured["session"]["requester_user_id"], "ou_user_fixture")
+        self.assertNotIn("conversation_type", captured["session"])
+        self.assertEqual(captured["schema_version"], 3)
         self.assertTrue(captured["idempotency_key"].startswith("poster_production_request:sha256:"))
         self.assertEqual(captured["activity_facts"]["title"], "周末晚餐")
+
+    def test_poster_request_keeps_v2_direct_compatibility_until_ingress_cutover(self):
+        self.trust_poster_session(ingress_enabled=False)
+        captured = {}
+
+        def fake_intake(payload):
+            captured.update(payload)
+            return {"success": True, "accepted": True, "user_status": "已接单"}
+
+        self.module._poster_intake_call = fake_intake
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "请生成一张活动海报"}
+            )
+        )
+
+        self.assertTrue(response["accepted"])
+        self.assertEqual(captured["schema_version"], 2)
+        self.assertEqual(captured["session"]["conversation_type"], "direct")
+
+    def test_invalid_ingress_mode_does_not_downgrade_to_v2(self):
+        self.trust_poster_session()
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "invalid"
+        self.module._poster_intake_call = lambda _payload: self.fail(
+            "invalid ingress mode must fail before intake"
+        )
+
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "请生成一张活动海报"}
+            )
+        )
+
+        self.assertFalse(response["accepted"])
+        self.assertEqual(response["error"], "trusted_direct_session_required")
 
     def test_poster_review_hook_forwards_verified_card_without_model_dispatch(self):
         os.environ["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] = "1"
@@ -2121,11 +2235,7 @@ class QintopiaToolsTest(unittest.TestCase):
         )
 
     def test_poster_request_without_activity_facts_still_uses_async_intake(self):
-        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
-        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
-        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
-        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
-        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
+        self.trust_poster_session()
         captured = {}
 
         def fake_intake(payload):
@@ -2141,7 +2251,7 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(response["user_status"], "需补充")
         self.assertEqual(captured["activity_facts"], {})
 
-    def test_poster_request_rejects_missing_or_group_session_without_intake(self):
+    def test_poster_request_rejects_forged_process_environment_without_intake(self):
         called = False
 
         def fake_intake(_payload):
@@ -2150,32 +2260,22 @@ class QintopiaToolsTest(unittest.TestCase):
             return {}
 
         self.module._poster_intake_call = fake_intake
-        missing = json.loads(
-            self.module.handle_qintopia_xiaoman_poster_production_request(
-                {"request": "生成海报"}
-            )
-        )
         os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
-        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "group"
-        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_group_fixture"
+        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
+        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_forged_fixture"
         os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
         os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_message_fixture"
-        grouped = json.loads(
+        rejected = json.loads(
             self.module.handle_qintopia_xiaoman_poster_production_request(
                 {"request": "生成海报"}
             )
         )
 
-        self.assertEqual(missing["error"], "trusted_direct_session_required")
-        self.assertEqual(grouped["error"], "trusted_direct_session_required")
+        self.assertEqual(rejected["error"], "trusted_direct_session_required")
         self.assertFalse(called)
 
     def test_poster_revision_uses_same_trusted_intake_without_target_arguments(self):
-        os.environ["HERMES_SESSION_PLATFORM"] = "feishu"
-        os.environ["HERMES_SESSION_CONVERSATION_TYPE"] = "direct"
-        os.environ["HERMES_SESSION_CHAT_ID"] = "oc_chat_fixture"
-        os.environ["HERMES_SESSION_USER_ID"] = "ou_user_fixture"
-        os.environ["HERMES_SESSION_MESSAGE_ID"] = "om_revision_fixture"
+        self.trust_poster_session(message_id="om_revision_fixture")
         captured = {}
 
         def fake_intake(payload):
@@ -2196,6 +2296,188 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(captured["operation"], "poster_revision_request")
         self.assertNotIn("conversation_id", captured)
         self.assertNotIn("reviewer_id", captured)
+
+    def test_feishu_direct_sdk_message_is_signed_before_model_dispatch(self):
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"] = (
+            "fixture-ingress-key-with-at-least-32-bytes"
+        )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID"] = (
+            "ou_xiaoman_bot_fixture"
+        )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"] = "0"
+        captured = {}
+
+        def fake_ingress(envelope):
+            captured.update(envelope)
+            return {
+                "success": True,
+                "accepted": True,
+                "deduped": False,
+                "external_send_executed": False,
+                "group_send_authorized": False,
+            }
+
+        self.module._feishu_message_ingress_call = fake_ingress
+        result = self.module.handle_xiaoman_gateway_dispatch(
+            self.feishu_message_event()
+        )
+
+        self.assertIsNone(result)
+        body = base64.b64decode(captured["body_base64"])
+        payload = json.loads(body)
+        self.assertEqual(payload["operation"], "feishu_message_ingest")
+        self.assertEqual(payload["schema_version"], 3)
+        self.assertEqual(payload["message"]["chat_type"], "direct")
+        self.assertEqual(payload["message"]["sender_type"], "user")
+        self.assertNotIn("raw_message", payload)
+        signed = (
+            self.module.XIAOMAN_FEISHU_MESSAGE_INGRESS_SIGNATURE_DOMAIN
+            + captured["timestamp"].encode("ascii")
+            + b"\n"
+            + captured["nonce"].encode("ascii")
+            + b"\n"
+            + body
+        )
+        expected = hmac.new(
+            os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"].encode(),
+            signed,
+            hashlib.sha256,
+        ).hexdigest()
+        self.assertEqual(captured["signature"], expected)
+
+    def test_feishu_ingress_envelope_matches_shared_rust_fixture(self):
+        fixture_path = (
+            Path(__file__).resolve().parents[5]
+            / "fixtures"
+            / "feishu"
+            / "xiaoman-message-ingress-envelope-v3.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        payload = json.loads(base64.b64decode(fixture["envelope"]["body_base64"]))
+        original_time = self.module.time.time
+        original_token_hex = self.module.secrets.token_hex
+        self.module.time.time = lambda: fixture["now"]
+        self.module.secrets.token_hex = lambda _length: fixture["envelope"]["nonce"]
+        try:
+            envelope = self.module._feishu_message_ingress_envelope(
+                payload, fixture["hmac_key"]
+            )
+        finally:
+            self.module.time.time = original_time
+            self.module.secrets.token_hex = original_token_hex
+
+        self.assertEqual(envelope, fixture["envelope"])
+
+    def test_feishu_group_ingress_requires_exact_mention_human_and_feature(self):
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"] = (
+            "fixture-ingress-key-with-at-least-32-bytes"
+        )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID"] = (
+            "ou_xiaoman_bot_fixture"
+        )
+        calls = []
+        self.module._feishu_message_ingress_call = lambda envelope: (
+            calls.append(envelope)
+            or {
+                "success": True,
+                "accepted": True,
+                "external_send_executed": False,
+                "group_send_authorized": False,
+            }
+        )
+
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"] = "0"
+        self.module.handle_xiaoman_gateway_dispatch(
+            self.feishu_message_event(
+                chat_id="oc_group_fixture", chat_type="group", mention_bot=True
+            )
+        )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"] = "1"
+        self.module.handle_xiaoman_gateway_dispatch(
+            self.feishu_message_event(
+                chat_id="oc_group_fixture", chat_type="group", mention_bot=False
+            )
+        )
+        self.module.handle_xiaoman_gateway_dispatch(
+            self.feishu_message_event(
+                chat_id="oc_group_fixture",
+                chat_type="group",
+                mention_bot=True,
+                sender_type="bot",
+            )
+        )
+        self.module.handle_xiaoman_gateway_dispatch(
+            self.feishu_message_event(
+                chat_id="oc_group_fixture", chat_type="group", mention_bot=True
+            )
+        )
+
+        self.assertEqual(len(calls), 1)
+        payload = json.loads(base64.b64decode(calls[0]["body_base64"]))
+        self.assertEqual(payload["message"]["chat_type"], "group")
+        self.assertTrue(payload["message"]["is_mention_bot"])
+        self.assertEqual(
+            payload["message"]["thread_root_message_id"], "om_message_fixture"
+        )
+        self.assertTrue(
+            payload["message"]["mentioned_bot_ref"].startswith("sha256:")
+        )
+
+    def test_feishu_ingress_rejects_malformed_sdk_binding_without_socket(self):
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"] = (
+            "fixture-ingress-key-with-at-least-32-bytes"
+        )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID"] = (
+            "ou_xiaoman_bot_fixture"
+        )
+        self.module._feishu_message_ingress_call = lambda _envelope: self.fail(
+            "malformed SDK binding must not reach the socket"
+        )
+
+        result = self.module.handle_xiaoman_gateway_dispatch(
+            self.feishu_message_event(source_chat_id="oc_other_fixture")
+        )
+        self.assertIsNone(result)
+        result = self.module.handle_xiaoman_gateway_dispatch(
+            self.feishu_message_event(source_chat_type="group")
+        )
+        self.assertIsNone(result)
+
+    def test_feishu_ingress_identifier_matches_sidecar_ascii_contract(self):
+        self.assertEqual(
+            self.module._feishu_ingress_identifier("om_ascii-1:fixture.test"),
+            "om_ascii-1:fixture.test",
+        )
+        self.assertEqual(self.module._feishu_ingress_identifier("消息一"), "")
+
+    def test_feishu_ingress_unavailable_does_not_skip_model_dispatch(self):
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"] = (
+            "fixture-ingress-key-with-at-least-32-bytes"
+        )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID"] = (
+            "ou_xiaoman_bot_fixture"
+        )
+        self.module._feishu_message_ingress_call = lambda _envelope: (_ for _ in ()).throw(
+            OSError("fixture socket unavailable")
+        )
+
+        self.assertIsNone(
+            self.module.handle_xiaoman_gateway_dispatch(self.feishu_message_event())
+        )
+
+    def test_feishu_ingress_parser_failure_does_not_skip_model_dispatch(self):
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "1"
+        self.module._feishu_ingress_message_payload = lambda _event: (_ for _ in ()).throw(
+            RuntimeError("fixture parser failure")
+        )
+
+        self.assertIsNone(
+            self.module.handle_xiaoman_gateway_dispatch(self.feishu_message_event())
+        )
 
 
 if __name__ == "__main__":

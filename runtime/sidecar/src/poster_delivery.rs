@@ -1415,8 +1415,9 @@ mod tests {
             r#"
             INSERT INTO qintopia_agent_os.poster_return_targets
                 (origin_ref, platform, conversation_type, conversation_id,
-                 requester_user_id, source_message_id)
-            VALUES ($1, 'feishu', 'direct', $2, $3, $4)
+                 requester_user_id, source_message_id, audience_class,
+                 conversation_ref, policy_version, delivery_mode)
+            VALUES ($1, 'feishu', 'direct', $2, $3, $4, 'private', $1, 0, 'direct_chat')
             "#,
         )
         .bind(&origin_ref)

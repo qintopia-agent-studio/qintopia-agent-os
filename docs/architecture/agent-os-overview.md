@@ -83,3 +83,8 @@ Production runtime changes should move through reviewed artifacts, deploy reques
 smoke checks, rollback notes, and the stable
 `/home/ubuntu/qintopia-agent-os-releases/current` symlink instead of server-local source
 edits or standalone checkouts.
+
+Conversation-aware asynchronous work follows the authenticated message-first boundary
+defined in [Xiaoman Conversation Ingress V3](xiaoman-conversation-ingress-v3.md): Hermes
+supplies the channel runtime, while Postgres policy and AgentOS work items own
+authorization, routing, recovery, and audit.

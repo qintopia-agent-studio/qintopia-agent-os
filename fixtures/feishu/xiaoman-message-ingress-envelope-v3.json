@@ -1,0 +1,10 @@
+{
+  "hmac_key": "fixture-ingress-key-with-32-bytes-minimum",
+  "now": 1785571200,
+  "envelope": {
+    "timestamp": "1785571200",
+    "nonce": "0123456789abcdef0123456789abcdef",
+    "signature": "b6fdad312a10513877919d80393f47cbbe2cd93518ef7742d1eb483b82e3ccdc",
+    "body_base64": "eyJtZXNzYWdlIjp7ImNoYXRfaWQiOiJvY19kaXJlY3RfZml4dHVyZSIsImNoYXRfdHlwZSI6ImRpcmVjdCIsImV2ZW50X2lkIjoiZXZ0X2RpcmVjdF9maXh0dXJlIiwiaXNfbWVudGlvbl9ib3QiOmZhbHNlLCJtZW50aW9uZWRfYm90X3JlZiI6IiIsIm1lc3NhZ2VfaWQiOiJvbV9kaXJlY3RfZml4dHVyZSIsIm1lc3NhZ2Vfa2luZCI6InRleHQiLCJwYXJlbnRfbWVzc2FnZV9pZCI6IiIsInBsYXRmb3JtIjoiZmVpc2h1Iiwic2VuZGVyX2lkIjoib3VfdXNlcl9maXh0dXJlIiwic2VuZGVyX3R5cGUiOiJ1c2VyIiwic2VudF9hdCI6IjIwMjYtMDgtMDFUMDg6MDA6MDBaIiwic2hvdWxkX3RyaWdnZXIiOnRydWUsInRleHQiOiJwbGVhc2UgY3JlYXRlIGEgcG9zdGVyIiwidGhyZWFkX3Jvb3RfbWVzc2FnZV9pZCI6IiJ9LCJvcGVyYXRpb24iOiJmZWlzaHVfbWVzc2FnZV9pbmdlc3QiLCJzY2hlbWFfdmVyc2lvbiI6M30="
+  }
+}
