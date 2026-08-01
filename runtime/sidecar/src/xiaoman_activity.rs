@@ -1312,10 +1312,17 @@ fn material_followup_work_item_request(
     scan_date: &str,
     followup: PendingMaterialFollowup,
 ) -> WorkItemCreateRequest {
-    let idempotency_key = format!(
-        "xiaoman_activity_material_followup:{}:{}:{}",
-        scan_date, followup.source_record_ref, followup.attempt
-    );
+    let idempotency_key = if followup.attempt == 1 {
+        format!(
+            "xiaoman_activity_material_followup:{}:{}",
+            scan_date, followup.source_record_ref
+        )
+    } else {
+        format!(
+            "xiaoman_activity_material_followup:{}:{}:{}",
+            scan_date, followup.source_record_ref, followup.attempt
+        )
+    };
     let priority = if followup.escalation_required {
         "high"
     } else {
@@ -4017,6 +4024,11 @@ mod tests {
         );
         assert!(!first.idempotency_key.contains("rec_same_title_first"));
         assert!(!second.idempotency_key.contains("rec_same_title_second"));
+        assert_eq!(
+            first.idempotency_key.matches(':').count(),
+            3,
+            "first followup attempt keeps the legacy idempotency key shape"
+        );
     }
 
     #[test]
