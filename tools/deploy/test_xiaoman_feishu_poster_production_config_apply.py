@@ -229,6 +229,12 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         self.assertEqual(sidecar["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"], direct_hmac)
         self.assertEqual(report["chat_allowlist_count"], 2)
 
+        self.apply_direct()
+        sidecar = self.values(self.sidecar)
+        hermes = self.values(self.hermes)
+        self.assertNotIn("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID", sidecar)
+        self.assertNotIn("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID", hermes)
+
         disabled = {
             "schema_version": 1,
             "desired_state": "disabled",
@@ -250,6 +256,7 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
             {**self.direct_request(), "release_sha": "b" * 40},
             {**self.direct_request(), "database_url_sha256": "b" * 64},
             {**self.direct_request(), "unsupported": True},
+            {**self.direct_request(), "bot_open_id": "ou_stale_bot"},
             {
                 "schema_version": 1,
                 "desired_state": "group",

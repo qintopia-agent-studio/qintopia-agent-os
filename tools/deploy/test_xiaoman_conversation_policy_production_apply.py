@@ -52,6 +52,7 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
         self.write_env(self.database_hash)
         self.write_fake_binary()
         self.release_root.chmod(0o555)
+        self.sidecar_dir.chmod(0o555)
         self.body = json.dumps(
             {
                 "schema_version": 3,
@@ -97,6 +98,7 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
 
     def write_fake_binary(self, *, disclose=False, fail=False) -> None:
         self.release_root.chmod(0o755)
+        self.sidecar_dir.chmod(0o755)
         policy = {
             "conversation_ref": "sha256:" + "c" * 64,
             "policy_digest": "sha256:" + "d" * 64,
@@ -134,6 +136,7 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
             encoding="utf-8",
         )
         self.binary.chmod(0o755)
+        self.sidecar_dir.chmod(0o555)
         self.release_root.chmod(0o555)
 
     def run_apply(self) -> str:
@@ -207,6 +210,25 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
             self.assertIn(required, script)
         for forbidden in ["--test-mode", "--output", "systemctl", "curl ", "psql "]:
             self.assertNotIn(forbidden, script)
+
+    def test_intermediate_sidecar_symlink_cannot_escape_release(self) -> None:
+        escaped_sha = "e" * 40
+        escaped_release = self.root / escaped_sha
+        escaped_release.mkdir()
+        external_sidecar = self.root / "mutable-sidecar"
+        external_sidecar.mkdir()
+        external_binary = external_sidecar / "qintopia-message-sidecar"
+        external_binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        external_binary.chmod(0o755)
+        (escaped_release / "sidecar").symlink_to(
+            external_sidecar, target_is_directory=True
+        )
+        escaped_release.chmod(0o555)
+        escaped_current = self.root / "escaped-current"
+        escaped_current.symlink_to(escaped_release)
+
+        with self.assertRaises(MODULE.PolicyApplyError):
+            MODULE.resolve_sidecar_binary(escaped_current, escaped_sha)
 
 
 if __name__ == "__main__":

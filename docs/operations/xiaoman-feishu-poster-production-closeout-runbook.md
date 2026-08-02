@@ -64,8 +64,9 @@ world-readable JSON file or paste real values into a terminal command:
 
 `direct` reuses the existing direct delivery chat/user ceiling. The entrypoint creates a
 new dedicated ingress HMAC in memory, keeps it distinct from the callback key, writes it
-to both fixed environments, keeps the group switch at `0`, updates the Release binding,
-and updates every present production database hash binding.
+to both fixed environments, removes any stale group-only Bot identity, keeps the group
+switch at `0`, updates the Release binding, and updates every present production
+database hash binding.
 
 Run the no-write preview first:
 
