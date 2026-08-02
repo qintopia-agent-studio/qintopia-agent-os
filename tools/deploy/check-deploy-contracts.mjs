@@ -3713,6 +3713,7 @@ if (!exists(xiaomanPolicyApplyPath)) {
     "sensitive_values",
     "validate_policy_report",
     "OPAQUE_REF_RE",
+    "release sidecar directory boundary is invalid",
   ]) {
     requireFragment(xiaomanPolicyApplyPath, script, fragment);
   }
