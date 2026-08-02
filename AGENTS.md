@@ -1201,10 +1201,11 @@ Allowed server activity:
 - deploying an approved commit SHA through a runbook
 - emergency rollback with a follow-up patch and owner record
 
-On an approved operator workstation, use its configured SSH host alias for these
-activities. Connecting to the inventory address directly may bypass the approved
-identity selection. An authentication failure is not authorization to inspect, copy, or
-change private keys.
+Resolve the production endpoint and identity from the versioned
+`docs/operations/inventory/server-sources.yaml` record and the owner-approved key path.
+Do not use undocumented SSH aliases, including `paxon-server`, as deployment or
+diagnostic authority. An authentication failure is not authorization to inspect, copy,
+or change private keys.
 
 Disallowed server activity:
 

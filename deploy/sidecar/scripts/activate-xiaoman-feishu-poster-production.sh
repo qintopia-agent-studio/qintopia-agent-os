@@ -42,6 +42,8 @@ import sys
 
 sidecar_path, hermes_path = sys.argv[1:3]
 callback_key = "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY"
+ingress_key = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"
+ingress_enabled = "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"
 group_key = "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"
 
 
@@ -78,26 +80,44 @@ def parse(path, wanted):
 
 sidecar = parse(
     sidecar_path,
-    {"QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED", callback_key, group_key},
+    {
+        "QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED",
+        callback_key,
+        ingress_enabled,
+        ingress_key,
+        group_key,
+    },
 )
 hermes = parse(
     hermes_path,
-    {"QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE", callback_key, group_key},
+    {
+        "QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE",
+        callback_key,
+        ingress_enabled,
+        ingress_key,
+        group_key,
+    },
 )
-key = sidecar[callback_key]
+callback = sidecar[callback_key]
+ingress = sidecar[ingress_key]
 if (
     sidecar["QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED"] != "1"
     or hermes["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] != "1"
+    or sidecar[ingress_enabled] != "1"
+    or hermes[ingress_enabled] != "1"
     or sidecar[group_key] != "0"
     or hermes[group_key] != "0"
-    or not key
-    or len(key) > 512
-    or key != hermes[callback_key]
+    or not callback
+    or len(callback) > 512
+    or callback != hermes[callback_key]
+    or not 32 <= len(ingress) <= 512
+    or ingress != hermes[ingress_key]
+    or ingress == callback
 ):
     raise SystemExit(1)
 PY
 then
-  echo "Xiaoman Feishu poster production activation env binding is invalid" >&2
+  echo "Xiaoman Feishu poster production V3 env binding is invalid" >&2
   exit 1
 fi
 

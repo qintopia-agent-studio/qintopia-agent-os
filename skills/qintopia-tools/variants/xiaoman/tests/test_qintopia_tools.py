@@ -2377,11 +2377,12 @@ class QintopiaToolsTest(unittest.TestCase):
             }
 
         self.module._feishu_message_ingress_call = fake_ingress
-        result = self.module.handle_xiaoman_gateway_dispatch(
-            self.feishu_message_event()
-        )
+        event = self.feishu_message_event()
+        self.assertIsNone(getattr(event.source, "message_id", None))
+        result = self.module.handle_xiaoman_gateway_dispatch(event)
 
         self.assertIsNone(result)
+        self.assertEqual(event.source.message_id, event.message_id)
         body = base64.b64decode(captured["body_base64"])
         payload = json.loads(body)
         self.assertEqual(payload["operation"], "feishu_message_ingest")
@@ -2523,9 +2524,48 @@ class QintopiaToolsTest(unittest.TestCase):
             OSError("fixture socket unavailable")
         )
 
-        self.assertIsNone(
-            self.module.handle_xiaoman_gateway_dispatch(self.feishu_message_event())
+        event = self.feishu_message_event()
+        self.assertIsNone(self.module.handle_xiaoman_gateway_dispatch(event))
+        self.assertIsNone(getattr(event.source, "message_id", None))
+
+    def test_feishu_ingress_success_supplies_real_hermes_poster_session(self):
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"] = (
+            "fixture-ingress-key-with-at-least-32-bytes"
         )
+        os.environ["QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"] = "0"
+        event = self.feishu_message_event()
+        self.module._feishu_message_ingress_call = lambda _envelope: {
+            "success": True,
+            "accepted": True,
+            "external_send_executed": False,
+            "group_send_authorized": False,
+        }
+        self.module._poster_intake_call = lambda payload: {
+            "success": True,
+            "accepted": payload["session"]["source_message_id"]
+            == event.message_id,
+            "user_status": "已接单",
+        }
+
+        self.module.handle_xiaoman_gateway_dispatch(event)
+        session_values = {
+            "HERMES_SESSION_PLATFORM": "feishu",
+            "HERMES_SESSION_CHAT_ID": event.source.chat_id,
+            "HERMES_SESSION_USER_ID": event.source.user_id,
+            "HERMES_SESSION_MESSAGE_ID": event.source.message_id,
+        }
+        self.module._strict_poster_session_value = lambda name: session_values.get(
+            name, ""
+        )
+        response = json.loads(
+            self.module.handle_qintopia_xiaoman_poster_production_request(
+                {"request": "请生成海报，活动时间 8 月 1 日 16:00，地点线上"}
+            )
+        )
+
+        self.assertTrue(response["accepted"])
+        self.assertEqual(response["user_status"], "已接单")
 
     def test_feishu_ingress_parser_failure_does_not_skip_model_dispatch(self):
         os.environ["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"] = "1"

@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-08-02 Xiaoman V3 trusted session binding gap](2026-08-02-xiaoman-v3-trusted-session-binding-gap.md)
 - [2026-08-02 v0.2.63 Erhua profile overlay model drift](2026-08-02-v0263-erhua-profile-overlay-model-drift.md)
 - [2026-08-01 Work-item idempotency binding CI failure](2026-08-01-work-item-idempotency-binding-ci-failure.md)
 - [2026-07-31 Xiaoman poster review hook boundary](2026-07-31-xiaoman-poster-review-hook-boundary.md)
@@ -44,6 +45,7 @@ steps still block any `production-complete` claim.
 
 | Source                                                                             | Disposition | Notes                                                                  |
 | ---------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `2026-08-02-xiaoman-v3-trusted-session-binding-gap.md`                             | adopt-input | Real SDK message-to-session binding and V3 direct activation gate      |
 | `2026-08-02-v0263-erhua-profile-overlay-model-drift.md`                            | adopt-input | Provider governance must preserve the runtime default model            |
 | `2026-08-01-work-item-idempotency-binding-ci-failure.md`                           | adopt-input | Stable identity versus presentation-field replay boundary              |
 | `2026-07-31-xiaoman-poster-review-hook-boundary.md`                                | adopt-input | P2P card trust, log redaction, callback binding, and activation gates  |
