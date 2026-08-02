@@ -426,6 +426,13 @@ jobs:
           xiaoman_activity::tests::postgres_material_followup_apply_is_idempotent_and_audits_escalation
           -- --ignored --exact
 
+      - name: Xiaoman material followup downstream PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          operations::tests::postgres_material_followup_root_starts_recap_children --
+          --ignored --exact
+
       - name: Xiaoman authenticated message ingress PostgreSQL integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

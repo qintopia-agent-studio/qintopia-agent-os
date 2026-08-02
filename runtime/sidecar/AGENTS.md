@@ -47,6 +47,10 @@ From the monorepo root, prefer:
 - Every database schema migration must have a matching versioned design note under
   `../postgres/docs/data-design/` and must record itself in
   `qintopia_agent_os.schema_change_log` when that table exists.
+- New built-in capabilities must be registered in both `builtin_capability()` and
+  `BUILTIN_CAPABILITY_KEYS`, with matching capability-list smoke expectations. If a new
+  root capability should participate in Xiaoman downstream starters, update every
+  candidate selector for child creation, image generation, and send-request staging.
 - Group-message send-readiness and policy-denial transitions must release the complete
   claim tuple (`claimed_by`, `locked_at`, and `claim_expires_at`) and require exactly
   one work-item update before appending the corresponding audit event.

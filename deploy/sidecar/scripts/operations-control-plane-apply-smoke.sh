@@ -137,13 +137,13 @@ run_expect_failure \
 
 capabilities="$(run_json capabilities operations-capability-list --use-db)"
 assert_json "$capabilities" "data['success'] is True"
-assert_json "$capabilities" "data['capability_count'] >= 5"
+assert_json "$capabilities" "data['capability_count'] >= 6"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.create_visual_asset' for item in data['capabilities'])"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.generate_image_asset' for item in data['capabilities'])"
 assert_sql_equals \
   capability_seed_count \
-  5 \
-  "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','huabaosi.generate_image_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request');"
+  6 \
+  "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','huabaosi.generate_image_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request','xiaoman.material_followup_request');"
 
 xiaoman_signal_id="$(psql_value "SELECT gen_random_uuid();")"
 xiaoman_signal_chat_id="operations-apply-smoke-chat-${smoke_suffix}"

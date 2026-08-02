@@ -276,6 +276,9 @@
   `activity_recap_request` 工作项，不直接创建
   `erhua.send_group_message`；幂等键绑定业务日期、脱敏 `source_record_ref`
   和催办轮次，避免同日同名活动或不同轮次互相去重。
+- 该内部 recap 根现在能被现有 downstream starter 接上：补出复盘 evidence +
+  visual 子任务；后续只有在普通 artifact 审核通过后，才会继续创建 image-generation 和 awaiting-publish
+  group-message request 工作项。
 - 本分支补齐 T+24/48/72h 三轮扫描目标：未显式传 `date`
   时按小满业务时区扫描昨天、前天、大前天；第三轮只生成 `operations_lead`
   升级草稿，并在 payload/source refs 标记
