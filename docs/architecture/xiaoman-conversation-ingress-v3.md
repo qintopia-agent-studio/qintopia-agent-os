@@ -48,6 +48,10 @@ normal Hermes response path.
   the complete Feishu SDK payload.
 - `conversation_policies` is the auditable business gate. Exact server chat and user
   allowlists are a deployment ceiling that a database policy cannot broaden.
+- While internal-group behavior is enabled, ingress and delivery use the same exact
+  chat/user ceiling, and the operations reviewer ceiling covers every allowed user. A
+  configuration that could accept a request but not return or review it fails before
+  Postgres or external I/O.
 - Raw chat and user identifiers remain only in restricted target mappings, message
   storage, and server configuration. Normal workflow metadata uses opaque hashes.
 - Policy participants are snapshotted when a workflow is accepted. Later policy edits do
@@ -59,6 +63,31 @@ Direct results return to the originating direct chat. Internal-group results ret
 the originating thread root. A thread reply is an internal task notification, not a
 publication. It must never create `group_message_request`, `send_executed`, or
 `external_published` facts.
+
+The delivery adapter selects the exact persisted return-target mode. Direct targets use
+the Feishu chat-send endpoint. Internal-group targets use only
+`POST /open-apis/im/v1/messages/:message_id/reply` with the persisted thread root,
+`reply_in_thread=true`, and a notification-derived stable `uuid`. The image upload is
+bounded by the already-persisted delivery attempt before any external I/O; an uncertain
+upload or reply becomes terminal `ambiguous` and is never retried automatically. A
+failed group-thread delivery must not fall back to the main group timeline or a direct
+conversation.
+
+The internal-group switch is also a delivery and callback gate. While it is disabled,
+group notifications remain durable and pending for later reviewed activation; the direct
+adapter continues independently. Review callbacks must match the delivered notification,
+artifact, raw chat, immutable workflow participant snapshot, policy version, and current
+server chat/user allowlists before they can mutate review state.
+
+Direct and internal-group delivery deliberately share the Postgres notification queue
+and worker implementation, but production scheduling is split. The direct service pins
+`--conversation-scope direct`; a separately installed, default-disabled group service
+pins `--conversation-scope group`. The claim SQL applies the same scope again, so
+changing the group environment switch cannot let the direct timer claim a group row.
+Group activation and rollback mutate only the group timer and continuously verify that
+direct delivery remains active. Each service also runs its scope-specific no-network
+preflight, so a failed group-only ingress or reviewer ceiling does not block the direct
+service.
 
 The original explicit generation instruction authorizes image generation only. The
 requester and the workflow's snapshotted reviewers may review internal-group work;
@@ -83,6 +112,10 @@ and remain disabled through the first release. The rollout is split into:
    rules;
 3. thread delivery, group review callbacks, deployment contracts, activation,
    observation, and rollback.
+
+The third stage reuses the additive V3 target, participant, notification, attempt, and
+review tables. It does not introduce a second delivery queue or make Feishu a workflow
+fact source.
 
 No stage may silently fall back to a synchronous Huabaosi Hermes one-shot, a main-chat
 message, a direct-message resend, or a public send.

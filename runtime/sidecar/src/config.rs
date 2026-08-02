@@ -1,4 +1,10 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum PosterDeliveryConversationScope {
+    Direct,
+    Group,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "qintopia-message-sidecar")]
@@ -879,7 +885,7 @@ pub enum Command {
         #[arg(long)]
         stdin: bool,
     },
-    /// Create durable direct-conversation notification work for pending generated posters.
+    /// Create durable conversation notification work for pending generated posters.
     RunXiaomanPosterNotificationStarter {
         #[arg(long)]
         check_only: bool,
@@ -893,8 +899,12 @@ pub enum Command {
         work_item_id: Option<uuid::Uuid>,
     },
     /// Validate Xiaoman Feishu poster-return configuration without database or network access.
-    XiaomanFeishuPosterPreflight,
-    /// Deliver one pending generated poster to its originating Feishu direct conversation.
+    XiaomanFeishuPosterPreflight {
+        /// Restrict validation to one production delivery boundary.
+        #[arg(long, value_enum, default_value_t = PosterDeliveryConversationScope::Direct)]
+        conversation_scope: PosterDeliveryConversationScope,
+    },
+    /// Deliver one pending generated poster to its originating Feishu direct chat or internal-group thread.
     RunXiaomanFeishuPosterDelivery {
         #[arg(long)]
         once: bool,
@@ -902,6 +912,9 @@ pub enum Command {
         apply: bool,
         #[arg(long)]
         dry_run: bool,
+        /// Restrict this worker invocation to one production delivery boundary.
+        #[arg(long, value_enum, default_value_t = PosterDeliveryConversationScope::Direct)]
+        conversation_scope: PosterDeliveryConversationScope,
         #[arg(long)]
         notification_id: Option<uuid::Uuid>,
     },

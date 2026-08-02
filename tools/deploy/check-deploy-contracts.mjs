@@ -2341,6 +2341,10 @@ if (!exists(renderSystemdUnitsPath)) {
     "qintopia-agentos-qiwe-image-send-worker.service",
     "run-qiwe-image-send-worker --once --apply",
     "qintopia-agentos-qiwe-image-send-worker.timer",
+    "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope direct",
+    "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope group",
+    "xiaoman-feishu-poster-preflight --conversation-scope direct",
+    "xiaoman-feishu-poster-preflight --conversation-scope group",
     "render_activation_timer",
     "OnActiveSec=${activation_sec}",
   ]) {
@@ -3624,6 +3628,156 @@ for (const relativePath of [
     requireFragment(relativePath, text, fragment);
   }
 }
+
+const xiaomanInternalGroupObservationPath =
+  "deploy/sidecar/scripts/xiaoman-feishu-internal-group-production-observation-smoke.sh";
+const xiaomanInternalGroupActivationPath =
+  "deploy/sidecar/scripts/activate-xiaoman-feishu-internal-group-production.sh";
+const xiaomanInternalGroupRollbackPath =
+  "deploy/sidecar/scripts/rollback-xiaoman-feishu-internal-group-production.sh";
+for (const relativePath of [
+  xiaomanInternalGroupObservationPath,
+  xiaomanInternalGroupActivationPath,
+  xiaomanInternalGroupRollbackPath,
+]) {
+  if (!exists(relativePath)) {
+    addError(`${relativePath}: missing Xiaoman internal-group production control`);
+    continue;
+  }
+  const script = readText(relativePath);
+  for (const forbidden of [
+    "TEST_MODE",
+    "_TEST_MODE",
+    "SYSTEMCTL:-",
+    "RUNUSER_BIN:-",
+    "source ",
+    "eval ",
+    "curl ",
+    "psql ",
+  ]) {
+    forbidFragment(relativePath, script, forbidden);
+  }
+}
+if (exists(xiaomanInternalGroupObservationPath)) {
+  const observation = readText(xiaomanInternalGroupObservationPath);
+  for (const fragment of [
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    'RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    "huabaosi-production-adapter",
+    "xiaoman-feishu-poster-adapter",
+    "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_EXPECTED_STATE",
+    "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_DELIVERY_EXPECTED_STATE",
+    "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE",
+    "QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY",
+    "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY",
+    "delivery_chats != ingress_chats",
+    "delivery_users != ingress_users",
+    "delivery_users.issubset(reviewer_users)",
+    "qintopia-agentos-xiaoman-feishu-poster-delivery.timer",
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer",
+    "is-enabled --quiet",
+    "is-active --quiet",
+  ]) {
+    requireFragment(xiaomanInternalGroupObservationPath, observation, fragment);
+  }
+}
+if (exists(xiaomanInternalGroupActivationPath)) {
+  const activation = readText(xiaomanInternalGroupActivationPath);
+  for (const fragment of [
+    "approved-production-xiaoman-feishu-internal-group",
+    '"$SYSTEMCTL" start "$GROUP_PREFLIGHT_SERVICE"',
+    '"$SYSTEMCTL" enable "$GROUP_DELIVERY_TIMER"',
+    '"$SYSTEMCTL" restart "$GROUP_DELIVERY_TIMER"',
+    "cleanup_failed_activation",
+    '"$SYSTEMCTL" disable --now "$GROUP_DELIVERY_TIMER"',
+    '"$SYSTEMCTL" stop "$GROUP_DELIVERY_SERVICE"',
+    "restart_xiaoman",
+    '"$SYSTEMCTL" restart "$INTAKE_SERVICE"',
+    '"$SYSTEMCTL" restart "$CALLBACK_SERVICE"',
+    "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_EXPECTED_STATE=enabled",
+  ]) {
+    requireFragment(xiaomanInternalGroupActivationPath, activation, fragment);
+  }
+  forbidFragment(
+    xiaomanInternalGroupActivationPath,
+    activation,
+    'DELIVERY_TIMER="qintopia-agentos-xiaoman-feishu-poster-delivery.timer"'
+  );
+}
+if (exists(xiaomanInternalGroupRollbackPath)) {
+  const rollback = readText(xiaomanInternalGroupRollbackPath);
+  for (const fragment of [
+    "approved-production-xiaoman-feishu-internal-group-rollback",
+    '"$SYSTEMCTL" disable --now "$GROUP_DELIVERY_TIMER"',
+    '"$SYSTEMCTL" start "$DIRECT_PREFLIGHT_SERVICE"',
+    "restart_xiaoman",
+    "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_EXPECTED_STATE=disabled",
+    "direct poster services remain active",
+  ]) {
+    requireFragment(xiaomanInternalGroupRollbackPath, rollback, fragment);
+  }
+  forbidFragment(
+    xiaomanInternalGroupRollbackPath,
+    rollback,
+    'DELIVERY_TIMER="qintopia-agentos-xiaoman-feishu-poster-delivery.timer"'
+  );
+}
+
+const xiaomanInternalGroupBundleBuilderPath = "tools/deploy/build-deploy-bundle.mjs";
+if (exists(xiaomanInternalGroupBundleBuilderPath)) {
+  const bundleBuilder = readText(xiaomanInternalGroupBundleBuilderPath);
+  for (const relativePath of [
+    xiaomanInternalGroupObservationPath,
+    xiaomanInternalGroupActivationPath,
+    xiaomanInternalGroupRollbackPath,
+  ]) {
+    requireFragment(xiaomanInternalGroupBundleBuilderPath, bundleBuilder, relativePath);
+  }
+}
+const xiaomanInternalGroupTestPath =
+  "tools/deploy/test-xiaoman-feishu-internal-group-production.mjs";
+if (!exists(xiaomanInternalGroupTestPath)) {
+  addError(
+    `${xiaomanInternalGroupTestPath}: missing fake systemd production control test`
+  );
+} else {
+  const test = readText(xiaomanInternalGroupTestPath);
+  for (const fragment of [
+    "activation must fail before side effects without owner approval",
+    "failed gateway reload must leave delivery stopped",
+    "rollback must stop delivery then reject persistent enabled state before reload",
+    "observation disclosed sensitive fixture value",
+    "Xiaoman Feishu internal-group production control test passed.",
+  ]) {
+    requireFragment(xiaomanInternalGroupTestPath, test, fragment);
+  }
+}
+for (const relativePath of [
+  "deploy/sidecar/scripts/activate-xiaoman-feishu-poster-production.sh",
+  "deploy/sidecar/scripts/rollback-xiaoman-feishu-poster-production.sh",
+]) {
+  const script = readText(relativePath);
+  requireFragment(
+    relativePath,
+    script,
+    "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"
+  );
+  requireFragment(
+    relativePath,
+    script,
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer"
+  );
+}
+requireFragment(
+  "tools/deploy/test-xiaoman-feishu-poster-production-activation.mjs",
+  readText("tools/deploy/test-xiaoman-feishu-poster-production-activation.mjs"),
+  "direct activation must reject internal-group enablement before side effects"
+);
+requireFragment(
+  "package.json",
+  readText("package.json"),
+  "node tools/deploy/test-xiaoman-feishu-internal-group-production.mjs"
+);
 
 const xiaomanProductionCompletionEvidenceTemplatePath =
   "docs/reports/templates/xiaoman-production-completion-evidence.json";

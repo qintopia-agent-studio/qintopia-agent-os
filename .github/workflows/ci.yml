@@ -454,6 +454,13 @@ jobs:
           poster_delivery::tests::postgres_rejected_candidate_does_not_block_next_notification
           -- --ignored --exact
 
+      - name: Xiaoman poster internal-group delivery claim PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          poster_delivery::tests::postgres_delivery_scopes_are_isolated_and_group_claims_once
+          -- --ignored --exact
+
       - name: Xiaoman poster upload audit PostgreSQL integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

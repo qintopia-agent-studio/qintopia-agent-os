@@ -228,11 +228,31 @@ esac
     "qintopia-agentos-xiaoman-feishu-poster-preflight.service",
     "qintopia-agentos-xiaoman-feishu-poster-delivery.service",
     "qintopia-agentos-xiaoman-feishu-poster-delivery.timer",
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-preflight.service",
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.service",
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer",
     "qintopia-agentos-xiaoman-poster-review-callback.service",
   ];
   for (const unitName of xiaomanPosterUnits) {
     if (!fs.existsSync(path.join(unitDir, unitName))) {
       throw new Error(`expected installed Xiaoman poster unit ${unitName}`);
+    }
+  }
+  for (const [unitName, scope] of [
+    ["qintopia-agentos-xiaoman-feishu-poster-preflight.service", "direct"],
+    ["qintopia-agentos-xiaoman-feishu-poster-delivery.service", "direct"],
+    [
+      "qintopia-agentos-xiaoman-feishu-internal-group-poster-preflight.service",
+      "group",
+    ],
+    ["qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.service", "group"],
+  ]) {
+    const unit = fs.readFileSync(path.join(unitDir, unitName), "utf8");
+    const expectedCommand = unitName.includes("preflight")
+      ? `xiaoman-feishu-poster-preflight --conversation-scope ${scope}`
+      : `run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope ${scope}`;
+    if (!unit.includes(expectedCommand)) {
+      throw new Error(`${unitName} must pin the ${scope} delivery scope`);
     }
   }
   for (const timer of [

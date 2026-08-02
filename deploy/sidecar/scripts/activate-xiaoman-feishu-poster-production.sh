@@ -21,6 +21,7 @@ INTAKE_SERVICE="qintopia-agentos-operations-intake.service"
 CALLBACK_SERVICE="qintopia-agentos-xiaoman-poster-review-callback.service"
 STARTER_TIMER="qintopia-agentos-xiaoman-poster-notification-starter.timer"
 DELIVERY_TIMER="qintopia-agentos-xiaoman-feishu-poster-delivery.timer"
+GROUP_DELIVERY_TIMER="qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer"
 
 if [[ ! -x "$SYSTEMCTL" || ! -x "$RUNUSER_BIN" || ! -x "$PYTHON_BIN" || ! -f "$ENV_FILE" || ! -f "$HERMES_ENV_FILE" ]]; then
   echo "Xiaoman Feishu poster production activation prerequisites are missing" >&2
@@ -41,6 +42,7 @@ import sys
 
 sidecar_path, hermes_path = sys.argv[1:3]
 callback_key = "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY"
+group_key = "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED"
 
 
 def parse(path, wanted):
@@ -76,16 +78,18 @@ def parse(path, wanted):
 
 sidecar = parse(
     sidecar_path,
-    {"QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED", callback_key},
+    {"QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED", callback_key, group_key},
 )
 hermes = parse(
     hermes_path,
-    {"QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE", callback_key},
+    {"QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE", callback_key, group_key},
 )
 key = sidecar[callback_key]
 if (
     sidecar["QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED"] != "1"
     or hermes["QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE"] != "1"
+    or sidecar[group_key] != "0"
+    or hermes[group_key] != "0"
     or not key
     or len(key) > 512
     or key != hermes[callback_key]
@@ -114,6 +118,7 @@ restart_xiaoman() {
     "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active --quiet ${HERMES_SERVICE}"
 }
 
+"$SYSTEMCTL" disable --now "$GROUP_DELIVERY_TIMER"
 "$SYSTEMCTL" start "$PREFLIGHT_SERVICE"
 restart_xiaoman
 "$SYSTEMCTL" enable --now "$INTAKE_SERVICE"

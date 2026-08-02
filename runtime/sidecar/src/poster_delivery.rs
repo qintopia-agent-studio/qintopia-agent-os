@@ -11,7 +11,10 @@ use zeroize::Zeroizing;
 
 #[cfg(any(test, feature = "xiaoman-feishu-poster-adapter"))]
 use crate::bounded_http::{HttpClient, HttpResponse};
-use crate::{config::Cli, db};
+use crate::{
+    config::{Cli, PosterDeliveryConversationScope},
+    db,
+};
 
 const WORKER_ID: &str = "xiaoman-feishu-poster-delivery";
 const ENABLE_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED";
@@ -24,18 +27,21 @@ const APP_ID_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_APP_ID";
 const APP_SECRET_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_APP_SECRET";
 const ALLOWED_CHAT_IDS_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_ALLOWED_CHAT_IDS";
 const ALLOWED_USER_IDS_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_ALLOWED_USER_IDS";
+const REVIEWER_IDS_ENV: &str = "QINTOPIA_OPERATIONS_ALLOWED_REVIEWER_IDS";
 const MEDIA_HOSTS_ENV: &str = "QINTOPIA_XIAOMAN_POSTER_MEDIA_ALLOWED_HOSTS";
 const CALLBACK_KEY_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY";
+const INTERNAL_GROUP_ENABLED_ENV: &str = "QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED";
 const POSTER_REVIEW_CALLBACK_KIND: &str = "xiaoman_poster_review";
 const OFFICIAL_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
 const MAX_JSON_BYTES: usize = 1024 * 1024;
-const DEFAULT_MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
+const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WorkerOptions {
     pub once: bool,
     pub apply: bool,
     pub dry_run: bool,
+    pub conversation_scope: PosterDeliveryConversationScope,
     pub notification_id: Option<Uuid>,
 }
 
@@ -50,8 +56,14 @@ struct DeliveryCandidate {
     byte_size: Option<usize>,
     notification_kind: String,
     failure_code: Option<String>,
+    conversation_type: String,
     conversation_id: String,
     requester_user_id: String,
+    audience_class: String,
+    conversation_ref: String,
+    policy_version: i64,
+    delivery_mode: String,
+    thread_root_message_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -80,10 +92,42 @@ struct AdapterConfig {
     api_root: Url,
     app_id: Zeroizing<String>,
     app_secret: Zeroizing<String>,
-    allowed_chat_ids: BTreeSet<String>,
-    allowed_user_ids: BTreeSet<String>,
+    review_boundary: PosterReviewRuntimeBoundary,
     media_allowed_hosts: BTreeSet<String>,
     max_media_bytes: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct PosterReviewRuntimeBoundary {
+    internal_group_enabled: bool,
+    allowed_chat_ids: BTreeSet<String>,
+    allowed_user_ids: BTreeSet<String>,
+}
+
+impl PosterReviewRuntimeBoundary {
+    pub(crate) fn callback_allowed(
+        &self,
+        conversation_type: &str,
+        conversation_id: &str,
+        actor_user_id: &str,
+    ) -> bool {
+        self.allowed_chat_ids.contains(conversation_id)
+            && self.allowed_user_ids.contains(actor_user_id)
+            && match conversation_type {
+                "direct" => true,
+                "group" => self.internal_group_enabled,
+                _ => false,
+            }
+    }
+
+    #[cfg(all(test, feature = "postgres-integration-tests"))]
+    pub(crate) fn integration_fixture(conversation_id: &str, actor_user_id: &str) -> Self {
+        Self {
+            internal_group_enabled: true,
+            allowed_chat_ids: BTreeSet::from([conversation_id.to_string()]),
+            allowed_user_ids: BTreeSet::from([actor_user_id.to_string()]),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -91,7 +135,9 @@ struct PreflightReport {
     success: bool,
     adapter_compiled: bool,
     action_status: &'static str,
+    conversation_scope: &'static str,
     enabled: bool,
+    internal_group_enabled: bool,
     chat_allowlist_count: usize,
     user_allowlist_count: usize,
     media_host_allowlist_count: usize,
@@ -122,8 +168,31 @@ enum DeliveryFailure {
 }
 
 impl AdapterConfig {
-    #[cfg(feature = "xiaoman-feishu-poster-adapter")]
     fn from_env(database_url: &str) -> Result<Self> {
+        let internal_group_enabled = optional_binary_env(INTERNAL_GROUP_ENABLED_ENV, false)?;
+        Self::from_env_with_group_boundary(database_url, internal_group_enabled)
+    }
+
+    fn from_env_for_scope(
+        database_url: &str,
+        conversation_scope: PosterDeliveryConversationScope,
+    ) -> Result<Self> {
+        let internal_group_enabled = match conversation_scope {
+            PosterDeliveryConversationScope::Direct => false,
+            PosterDeliveryConversationScope::Group => {
+                if !optional_binary_env(INTERNAL_GROUP_ENABLED_ENV, false)? {
+                    bail!("Xiaoman Feishu internal-group poster delivery is disabled");
+                }
+                true
+            }
+        };
+        Self::from_env_with_group_boundary(database_url, internal_group_enabled)
+    }
+
+    fn from_env_with_group_boundary(
+        database_url: &str,
+        internal_group_enabled: bool,
+    ) -> Result<Self> {
         if std::env::var(ENABLE_ENV).ok().as_deref() != Some("1") {
             bail!("Xiaoman Feishu poster delivery is disabled");
         }
@@ -143,19 +212,35 @@ impl AdapterConfig {
         }
         let api_root = Url::parse(OFFICIAL_API_ROOT).expect("official Feishu API root is valid");
         required_env(CALLBACK_KEY_ENV)?;
+        let allowed_chat_ids = required_identifier_set(ALLOWED_CHAT_IDS_ENV)?;
+        let allowed_user_ids = required_identifier_set(ALLOWED_USER_IDS_ENV)?;
+        validate_internal_group_runtime_boundary(
+            internal_group_enabled,
+            &allowed_chat_ids,
+            &allowed_user_ids,
+        )?;
         Ok(Self {
             api_root,
             app_id: Zeroizing::new(required_env(APP_ID_ENV)?),
             app_secret: Zeroizing::new(required_env(APP_SECRET_ENV)?),
-            allowed_chat_ids: required_identifier_set(ALLOWED_CHAT_IDS_ENV)?,
-            allowed_user_ids: required_identifier_set(ALLOWED_USER_IDS_ENV)?,
+            review_boundary: PosterReviewRuntimeBoundary {
+                internal_group_enabled,
+                allowed_chat_ids,
+                allowed_user_ids,
+            },
             media_allowed_hosts: required_host_set(MEDIA_HOSTS_ENV)?,
             max_media_bytes: DEFAULT_MAX_MEDIA_BYTES,
         })
     }
 }
 
-pub fn run_preflight(cli: &Cli) -> Result<()> {
+pub(crate) fn review_runtime_boundary_from_env(
+    database_url: &str,
+) -> Result<PosterReviewRuntimeBoundary> {
+    Ok(AdapterConfig::from_env(database_url)?.review_boundary)
+}
+
+pub fn run_preflight(cli: &Cli, conversation_scope: PosterDeliveryConversationScope) -> Result<()> {
     #[cfg(not(feature = "xiaoman-feishu-poster-adapter"))]
     {
         let _ = cli;
@@ -165,7 +250,9 @@ pub fn run_preflight(cli: &Cli) -> Result<()> {
                 success: false,
                 adapter_compiled: false,
                 action_status: "adapter_not_compiled",
+                conversation_scope: conversation_scope_label(conversation_scope),
                 enabled: false,
+                internal_group_enabled: false,
                 chat_allowlist_count: 0,
                 user_allowlist_count: 0,
                 media_host_allowlist_count: 0,
@@ -179,16 +266,18 @@ pub fn run_preflight(cli: &Cli) -> Result<()> {
     #[cfg(feature = "xiaoman-feishu-poster-adapter")]
     {
         let database_url = cli.database_url_required()?;
-        let config = AdapterConfig::from_env(database_url)?;
+        let config = AdapterConfig::from_env_for_scope(database_url, conversation_scope)?;
         println!(
             "{}",
             serde_json::to_string_pretty(&PreflightReport {
                 success: true,
                 adapter_compiled: true,
                 action_status: "adapter_config_ready",
+                conversation_scope: conversation_scope_label(conversation_scope),
                 enabled: true,
-                chat_allowlist_count: config.allowed_chat_ids.len(),
-                user_allowlist_count: config.allowed_user_ids.len(),
+                internal_group_enabled: config.review_boundary.internal_group_enabled,
+                chat_allowlist_count: config.review_boundary.allowed_chat_ids.len(),
+                user_allowlist_count: config.review_boundary.allowed_user_ids.len(),
                 media_host_allowlist_count: config.media_allowed_hosts.len(),
                 callback_key_configured: true,
                 external_calls_executed: false,
@@ -199,15 +288,26 @@ pub fn run_preflight(cli: &Cli) -> Result<()> {
     }
 }
 
+fn conversation_scope_label(scope: PosterDeliveryConversationScope) -> &'static str {
+    match scope {
+        PosterDeliveryConversationScope::Direct => "direct",
+        PosterDeliveryConversationScope::Group => "group",
+    }
+}
+
 pub async fn run_worker(cli: &Cli, options: WorkerOptions) -> Result<()> {
     if !options.once || options.apply == options.dry_run {
         bail!("poster delivery worker requires --once and exactly one of --apply or --dry-run");
     }
     if options.apply {
-        return run_apply(cli, options.notification_id).await;
+        return run_apply(cli, options.notification_id, options.conversation_scope).await;
+    }
+    if options.conversation_scope == PosterDeliveryConversationScope::Group {
+        require_internal_group_preview_boundary()?;
     }
     let pool = db::connect(cli.database_url_required()?, cli.db_max_connections).await?;
-    let candidate = preview_candidate(&pool, options.notification_id).await?;
+    let candidate =
+        preview_candidate(&pool, options.notification_id, options.conversation_scope).await?;
     println!(
         "{}",
         serde_json::to_string_pretty(&WorkerReport {
@@ -227,53 +327,58 @@ pub async fn run_worker(cli: &Cli, options: WorkerOptions) -> Result<()> {
     Ok(())
 }
 
-async fn run_apply(cli: &Cli, notification_id: Option<Uuid>) -> Result<()> {
+async fn run_apply(
+    cli: &Cli,
+    notification_id: Option<Uuid>,
+    conversation_scope: PosterDeliveryConversationScope,
+) -> Result<()> {
     #[cfg(not(feature = "xiaoman-feishu-poster-adapter"))]
     {
-        let _ = (cli, notification_id);
+        let _ = (cli, notification_id, conversation_scope);
         bail!("Xiaoman Feishu poster delivery adapter is not compiled");
     }
     #[cfg(feature = "xiaoman-feishu-poster-adapter")]
     {
         let database_url = cli.database_url_required()?;
-        let config = AdapterConfig::from_env(database_url)?;
+        let config = AdapterConfig::from_env_for_scope(database_url, conversation_scope)?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
-        let claim = match claim_notification(&pool, notification_id, &config).await? {
-            ClaimNotificationOutcome::Claimed(claim) => claim,
-            ClaimNotificationOutcome::Rejected {
-                notification_id,
-                artifact_id,
-            } => {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&WorkerReport {
-                        success: false,
-                        action_status: "conversation_notification_failed",
-                        notification_id: Some(notification_id),
-                        artifact_id,
-                        external_send_executed: Some(false),
-                        automatic_retry_allowed: false,
-                        sensitive_fields_redacted: true,
-                    })?
-                );
-                return Ok(());
-            }
-            ClaimNotificationOutcome::Empty => {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&WorkerReport {
-                        success: true,
-                        action_status: "no_pending_notification",
-                        notification_id: None,
-                        artifact_id: None,
-                        external_send_executed: Some(false),
-                        automatic_retry_allowed: false,
-                        sensitive_fields_redacted: true,
-                    })?
-                );
-                return Ok(());
-            }
-        };
+        let claim =
+            match claim_notification(&pool, notification_id, &config, conversation_scope).await? {
+                ClaimNotificationOutcome::Claimed(claim) => claim,
+                ClaimNotificationOutcome::Rejected {
+                    notification_id,
+                    artifact_id,
+                } => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&WorkerReport {
+                            success: false,
+                            action_status: "conversation_notification_failed",
+                            notification_id: Some(notification_id),
+                            artifact_id,
+                            external_send_executed: Some(false),
+                            automatic_retry_allowed: false,
+                            sensitive_fields_redacted: true,
+                        })?
+                    );
+                    return Ok(());
+                }
+                ClaimNotificationOutcome::Empty => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&WorkerReport {
+                            success: true,
+                            action_status: "no_pending_notification",
+                            notification_id: None,
+                            artifact_id: None,
+                            external_send_executed: Some(false),
+                            automatic_retry_allowed: false,
+                            sensitive_fields_redacted: true,
+                        })?
+                    );
+                    return Ok(());
+                }
+            };
         let result = deliver_claim(
             &pool,
             database_url,
@@ -343,9 +448,12 @@ async fn run_apply(cli: &Cli, notification_id: Option<Uuid>) -> Result<()> {
 async fn preview_candidate(
     pool: &PgPool,
     notification_id: Option<Uuid>,
+    conversation_scope: PosterDeliveryConversationScope,
 ) -> Result<Option<DeliveryCandidate>> {
     let row = sqlx::query(&candidate_select(false))
         .bind(notification_id)
+        .bind(conversation_scope == PosterDeliveryConversationScope::Direct)
+        .bind(conversation_scope == PosterDeliveryConversationScope::Group)
         .fetch_optional(pool)
         .await
         .context("preview poster notification")?;
@@ -360,11 +468,14 @@ async fn claim_notification(
     pool: &PgPool,
     notification_id: Option<Uuid>,
     config: &AdapterConfig,
+    conversation_scope: PosterDeliveryConversationScope,
 ) -> Result<ClaimNotificationOutcome> {
     let mut tx = pool.begin().await.context("begin poster delivery claim")?;
-    reconcile_one_stale_claim(&mut tx, notification_id).await?;
+    reconcile_one_stale_claim(&mut tx, notification_id, conversation_scope).await?;
     let row = sqlx::query(&candidate_select(true))
         .bind(notification_id)
+        .bind(conversation_scope == PosterDeliveryConversationScope::Direct)
+        .bind(conversation_scope == PosterDeliveryConversationScope::Group)
         .fetch_optional(&mut *tx)
         .await
         .context("lock poster notification")?;
@@ -375,11 +486,11 @@ async fn claim_notification(
         return Ok(ClaimNotificationOutcome::Empty);
     };
     let candidate = candidate_from_row(row)?;
-    let rejection_code = if !config.allowed_chat_ids.contains(&candidate.conversation_id)
-        || !config
-            .allowed_user_ids
-            .contains(&candidate.requester_user_id)
-    {
+    let rejection_code = if !config.review_boundary.callback_allowed(
+        &candidate.conversation_type,
+        &candidate.conversation_id,
+        &candidate.requester_user_id,
+    ) {
         Some("return_target_not_allowlisted")
     } else if validate_candidate(&candidate, config).is_err() {
         Some("notification_identity_invalid")
@@ -531,7 +642,10 @@ fn candidate_select(for_update: bool) -> String {
                artifact.artifact_uri, artifact.content_hash,
                artifact.metadata->>'mime_type' AS mime_type,
                artifact.metadata->>'byte_size' AS byte_size,
-               target.conversation_id, target.requester_user_id
+               target.conversation_type, target.conversation_id,
+               target.requester_user_id, target.audience_class,
+               target.conversation_ref, target.policy_version,
+               target.delivery_mode, target.thread_root_message_id
         FROM qintopia_agent_os.poster_notifications notification
         JOIN qintopia_agent_os.work_items item ON item.id = notification.work_item_id
         LEFT JOIN qintopia_agent_os.artifacts artifact
@@ -549,7 +663,24 @@ fn candidate_select(for_update: bool) -> String {
                AND notification.generated_image_artifact_id IS NULL)
           )
           AND target.platform = 'feishu'
-          AND target.conversation_type = 'direct'
+          AND (
+              (
+                  $2::boolean
+                  AND target.conversation_type = 'direct'
+                  AND target.audience_class = 'private'
+                  AND target.delivery_mode = 'direct_chat'
+                  AND target.thread_root_message_id IS NULL
+              )
+              OR
+              (
+                  $3::boolean
+                  AND target.conversation_type = 'group'
+                  AND target.audience_class = 'internal_collaboration'
+                  AND target.delivery_mode = 'thread_reply'
+                  AND target.policy_version > 0
+                  AND NULLIF(btrim(target.thread_root_message_id), '') IS NOT NULL
+              )
+          )
           AND ($1::uuid IS NULL OR notification.id = $1)
         ORDER BY notification.created_at ASC
         LIMIT 1
@@ -577,12 +708,35 @@ fn candidate_from_row(row: sqlx::postgres::PgRow) -> Result<DeliveryCandidate> {
         byte_size,
         notification_kind: row.try_get("notification_kind")?,
         failure_code: row.try_get("failure_code")?,
+        conversation_type: row.try_get("conversation_type")?,
         conversation_id: row.try_get("conversation_id")?,
         requester_user_id: row.try_get("requester_user_id")?,
+        audience_class: row.try_get("audience_class")?,
+        conversation_ref: row.try_get("conversation_ref")?,
+        policy_version: row.try_get("policy_version")?,
+        delivery_mode: row.try_get("delivery_mode")?,
+        thread_root_message_id: row.try_get("thread_root_message_id")?,
     })
 }
 
 fn validate_candidate(candidate: &DeliveryCandidate, config: &AdapterConfig) -> Result<()> {
+    match candidate.conversation_type.as_str() {
+        "direct"
+            if candidate.audience_class == "private"
+                && candidate.delivery_mode == "direct_chat"
+                && candidate.thread_root_message_id.is_none() => {}
+        "group"
+            if config.review_boundary.internal_group_enabled
+                && candidate.audience_class == "internal_collaboration"
+                && candidate.delivery_mode == "thread_reply"
+                && candidate.policy_version > 0
+                && valid_prefixed_hash(&candidate.conversation_ref)
+                && candidate
+                    .thread_root_message_id
+                    .as_deref()
+                    .is_some_and(valid_external_id) => {}
+        _ => bail!("poster return-target identity is invalid"),
+    }
     if !matches!(
         candidate.notification_kind.as_str(),
         "image_ready" | "generation_failed" | "generation_ambiguous"
@@ -817,31 +971,17 @@ fn send_review_card(
     image_key: &str,
     claim: &DeliveryClaim,
 ) -> std::result::Result<String, DeliveryFailure> {
-    let endpoint = config
-        .api_root
-        .join("im/v1/messages?receive_id_type=chat_id")
-        .map_err(|_| DeliveryFailure::Ambiguous("card_endpoint_invalid"))?;
     let content = serde_json::to_string(&review_card(image_key, claim))
-        .map_err(|_| DeliveryFailure::Ambiguous("card_request_invalid"))?;
-    let body = serde_json::to_vec(&json!({
-        "receive_id": claim.candidate.conversation_id,
-        "msg_type": "interactive",
-        "content": content,
-        "uuid": format!("poster-notification-{}", claim.candidate.notification_id)
-    }))
-    .map_err(|_| DeliveryFailure::Ambiguous("card_request_invalid"))?;
-    let response = client
-        .request(
-            "POST",
-            &endpoint,
-            &[
-                ("Authorization", format!("Bearer {token}")),
-                ("Content-Type", "application/json".to_string()),
-            ],
-            &body,
-            MAX_JSON_BYTES,
-        )
-        .map_err(|_| DeliveryFailure::Ambiguous("card_send_outcome_ambiguous"))?;
+        .map_err(|_| DeliveryFailure::Failed("card_request_invalid"))?;
+    let response = send_conversation_message(
+        config,
+        client,
+        token,
+        claim,
+        "interactive",
+        &content,
+        "card",
+    )?;
     let parsed = parse_success_json(&response, "card_send_outcome_ambiguous")?;
     parsed
         .pointer("/data/message_id")
@@ -858,25 +998,73 @@ fn send_status_message(
     token: &str,
     claim: &DeliveryClaim,
 ) -> std::result::Result<String, DeliveryFailure> {
-    let endpoint = config
-        .api_root
-        .join("im/v1/messages?receive_id_type=chat_id")
-        .map_err(|_| DeliveryFailure::Ambiguous("status_endpoint_invalid"))?;
     let message = if claim.candidate.notification_kind == "generation_ambiguous" {
         "海报生成结果暂不确定，系统已停止自动重试，请稍后向小满确认。"
     } else {
         "海报生成失败，本次任务未产生可审稿图片，请稍后重新发起。"
     };
     let content = serde_json::to_string(&json!({"text": message}))
-        .map_err(|_| DeliveryFailure::Ambiguous("status_request_invalid"))?;
-    let body = serde_json::to_vec(&json!({
-        "receive_id": claim.candidate.conversation_id,
-        "msg_type": "text",
-        "content": content,
-        "uuid": format!("poster-notification-{}", claim.candidate.notification_id)
-    }))
-    .map_err(|_| DeliveryFailure::Ambiguous("status_request_invalid"))?;
-    let response = client
+        .map_err(|_| DeliveryFailure::Failed("status_request_invalid"))?;
+    let response =
+        send_conversation_message(config, client, token, claim, "text", &content, "status")?;
+    let parsed = parse_success_json(&response, "status_send_outcome_ambiguous")?;
+    parsed
+        .pointer("/data/message_id")
+        .and_then(Value::as_str)
+        .filter(|value| valid_external_id(value))
+        .map(str::to_string)
+        .ok_or(DeliveryFailure::Ambiguous("status_send_outcome_ambiguous"))
+}
+
+#[cfg(any(test, feature = "xiaoman-feishu-poster-adapter"))]
+fn send_conversation_message(
+    config: &AdapterConfig,
+    client: &HttpClient,
+    token: &str,
+    claim: &DeliveryClaim,
+    msg_type: &str,
+    content: &str,
+    kind: &'static str,
+) -> std::result::Result<HttpResponse, DeliveryFailure> {
+    let uuid = format!("poster-notification-{}", claim.candidate.notification_id);
+    let (endpoint, body) = match claim.candidate.conversation_type.as_str() {
+        "direct" => {
+            let endpoint = config
+                .api_root
+                .join("im/v1/messages?receive_id_type=chat_id")
+                .map_err(|_| DeliveryFailure::Failed("message_endpoint_invalid"))?;
+            let body = serde_json::to_vec(&json!({
+                "receive_id": claim.candidate.conversation_id,
+                "msg_type": msg_type,
+                "content": content,
+                "uuid": uuid
+            }))
+            .map_err(|_| DeliveryFailure::Failed("message_request_invalid"))?;
+            (endpoint, body)
+        }
+        "group" => {
+            let thread_root = claim
+                .candidate
+                .thread_root_message_id
+                .as_deref()
+                .filter(|value| valid_external_id(value))
+                .ok_or(DeliveryFailure::Failed("thread_reply_target_invalid"))?;
+            let endpoint = config
+                .api_root
+                .join(&format!("im/v1/messages/{thread_root}/reply"))
+                .map_err(|_| DeliveryFailure::Failed("thread_reply_endpoint_invalid"))?;
+            let body = serde_json::to_vec(&json!({
+                "msg_type": msg_type,
+                "content": content,
+                "reply_in_thread": true,
+                "uuid": uuid
+            }))
+            .map_err(|_| DeliveryFailure::Failed("thread_reply_request_invalid"))?;
+            (endpoint, body)
+        }
+        _ => return Err(DeliveryFailure::Failed("return_target_invalid")),
+    };
+    client
         .request(
             "POST",
             &endpoint,
@@ -887,14 +1075,19 @@ fn send_status_message(
             &body,
             MAX_JSON_BYTES,
         )
-        .map_err(|_| DeliveryFailure::Ambiguous("status_send_outcome_ambiguous"))?;
-    let parsed = parse_success_json(&response, "status_send_outcome_ambiguous")?;
-    parsed
-        .pointer("/data/message_id")
-        .and_then(Value::as_str)
-        .filter(|value| valid_external_id(value))
-        .map(str::to_string)
-        .ok_or(DeliveryFailure::Ambiguous("status_send_outcome_ambiguous"))
+        .map_err(|error| {
+            if error.request_may_have_been_sent() {
+                DeliveryFailure::Ambiguous(match kind {
+                    "card" => "card_send_outcome_ambiguous",
+                    _ => "status_send_outcome_ambiguous",
+                })
+            } else {
+                DeliveryFailure::Failed(match kind {
+                    "card" => "card_send_failed_before_request",
+                    _ => "status_send_failed_before_request",
+                })
+            }
+        })
 }
 
 #[cfg(any(test, feature = "xiaoman-feishu-poster-adapter"))]
@@ -1148,18 +1341,28 @@ async fn fail_delivery(
 async fn reconcile_one_stale_claim(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     notification_id: Option<Uuid>,
+    conversation_scope: PosterDeliveryConversationScope,
 ) -> Result<()> {
     let row = sqlx::query(
         r#"SELECT attempt.id AS attempt_id, attempt.notification_id, attempt.claim_token,
                   notification.work_item_id, notification.generated_image_artifact_id AS artifact_id
            FROM qintopia_agent_os.poster_notification_attempts attempt
            JOIN qintopia_agent_os.poster_notifications notification ON notification.id=attempt.notification_id
+           JOIN qintopia_agent_os.poster_return_targets target ON target.origin_ref=notification.origin_ref
            WHERE attempt.status IN ('uploading','sending') AND notification.status='claimed'
              AND notification.claimed_by=attempt.claim_token AND notification.claim_expires_at<=now()
              AND ($1::uuid IS NULL OR notification.id=$1)
+             AND (($2::boolean AND target.conversation_type='direct')
+                  OR ($3::boolean AND target.conversation_type='group'))
            ORDER BY attempt.created_at ASC LIMIT 1
            FOR UPDATE OF attempt, notification SKIP LOCKED"#,
-    ).bind(notification_id).fetch_optional(&mut **tx).await.context("lock stale poster delivery")?;
+    )
+    .bind(notification_id)
+    .bind(conversation_scope == PosterDeliveryConversationScope::Direct)
+    .bind(conversation_scope == PosterDeliveryConversationScope::Group)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("lock stale poster delivery")?;
     let Some(row) = row else {
         return Ok(());
     };
@@ -1213,6 +1416,47 @@ fn required_env(name: &str) -> Result<String> {
         .with_context(|| format!("{name} is required"))
 }
 
+fn optional_binary_env(name: &str, default: bool) -> Result<bool> {
+    match std::env::var(name).ok().as_deref().map(str::trim) {
+        None => Ok(default),
+        Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(_) => bail!("{name} must be exactly 0 or 1"),
+    }
+}
+
+fn require_internal_group_preview_boundary() -> Result<()> {
+    if !optional_binary_env(INTERNAL_GROUP_ENABLED_ENV, false)? {
+        bail!("Xiaoman Feishu internal-group poster delivery is disabled");
+    }
+    let allowed_chat_ids = required_identifier_set(ALLOWED_CHAT_IDS_ENV)?;
+    let allowed_user_ids = required_identifier_set(ALLOWED_USER_IDS_ENV)?;
+    validate_internal_group_runtime_boundary(true, &allowed_chat_ids, &allowed_user_ids)
+}
+
+fn validate_internal_group_runtime_boundary(
+    internal_group_enabled: bool,
+    allowed_chat_ids: &BTreeSet<String>,
+    allowed_user_ids: &BTreeSet<String>,
+) -> Result<()> {
+    if !internal_group_enabled {
+        return Ok(());
+    }
+    let ingress = crate::conversation_ingress::IngressConfig::from_env_optional()?
+        .context("Xiaoman Feishu internal-group delivery requires authenticated ingress")?;
+    if !ingress.internal_group_enabled() {
+        bail!("Xiaoman Feishu internal-group delivery requires group ingress");
+    }
+    if !ingress.deployment_ceiling_matches(allowed_chat_ids, allowed_user_ids) {
+        bail!("Xiaoman Feishu internal-group deployment ceilings do not match");
+    }
+    let reviewer_ids = required_identifier_set(REVIEWER_IDS_ENV)?;
+    if !allowed_user_ids.is_subset(&reviewer_ids) {
+        bail!("Xiaoman Feishu internal-group reviewers exceed the operations ceiling");
+    }
+    Ok(())
+}
+
 fn required_identifier_set(name: &str) -> Result<BTreeSet<String>> {
     let values = required_env(name)?
         .split(',')
@@ -1253,6 +1497,9 @@ fn valid_external_id(value: &str) -> bool {
 fn canonical_sha256(value: &str) -> bool {
     value.len() == 71 && value.starts_with("sha256:") && is_lower_hex(&value[7..], 64)
 }
+fn valid_prefixed_hash(value: &str) -> bool {
+    canonical_sha256(value)
+}
 fn is_lower_hex(value: &str, length: usize) -> bool {
     value.len() == length
         && value
@@ -1289,12 +1536,27 @@ mod tests {
                 byte_size: Some(3),
                 notification_kind: "image_ready".to_string(),
                 failure_code: None,
+                conversation_type: "direct".to_string(),
                 conversation_id: "oc_fixture".to_string(),
                 requester_user_id: "ou_fixture".to_string(),
+                audience_class: "private".to_string(),
+                conversation_ref: format!("sha256:{}", "c".repeat(64)),
+                policy_version: 1,
+                delivery_mode: "direct_chat".to_string(),
+                thread_root_message_id: None,
             },
             attempt_id: Uuid::new_v4(),
             claim_token: "claim-fixture".to_string(),
         }
+    }
+
+    fn group_claim() -> DeliveryClaim {
+        let mut claim = claim();
+        claim.candidate.conversation_type = "group".to_string();
+        claim.candidate.audience_class = "internal_collaboration".to_string();
+        claim.candidate.delivery_mode = "thread_reply".to_string();
+        claim.candidate.thread_root_message_id = Some("om_thread_fixture".to_string());
+        claim
     }
 
     #[test]
@@ -1302,8 +1564,9 @@ mod tests {
         let query = candidate_select(true);
         assert!(query.contains("FOR UPDATE OF notification, item SKIP LOCKED"));
         assert!(!query.contains("FOR UPDATE OF notification, item, artifact"));
-        assert!(query.contains("AND target.conversation_type = 'direct'"));
-        assert!(!query.contains("target.conversation_type = 'group'"));
+        assert!(query.contains("target.conversation_type = 'direct'"));
+        assert!(query.contains("target.conversation_type = 'group'"));
+        assert!(query.contains("$2::boolean"));
     }
 
     #[test]
@@ -1327,21 +1590,42 @@ mod tests {
     }
 
     #[test]
-    fn candidate_rejects_non_allowlisted_media_and_target() {
+    fn candidate_rejects_non_allowlisted_media_and_invalid_group_target() {
         let claim = claim();
-        let config = AdapterConfig {
-            api_root: Url::parse(OFFICIAL_API_ROOT).unwrap(),
-            app_id: Zeroizing::new("app".into()),
-            app_secret: Zeroizing::new("secret".into()),
-            allowed_chat_ids: BTreeSet::from(["oc_fixture".into()]),
-            allowed_user_ids: BTreeSet::from(["ou_fixture".into()]),
-            media_allowed_hosts: BTreeSet::from(["media.example.test".into()]),
-            max_media_bytes: 1024,
-        };
+        let mut config = test_config(Url::parse(OFFICIAL_API_ROOT).unwrap());
         assert!(validate_candidate(&claim.candidate, &config).is_ok());
         let mut bad = claim.candidate;
         bad.artifact_uri = Some("https://other.example.test/poster.jpg".into());
         assert!(validate_candidate(&bad, &config).is_err());
+
+        let group = group_claim();
+        assert!(validate_candidate(&group.candidate, &config).is_ok());
+        config.review_boundary.internal_group_enabled = false;
+        assert!(validate_candidate(&group.candidate, &config).is_err());
+    }
+
+    #[test]
+    fn callback_boundary_requires_allowlisted_actor_chat_and_group_switch() {
+        let mut config = test_config(Url::parse(OFFICIAL_API_ROOT).unwrap());
+        assert!(config
+            .review_boundary
+            .callback_allowed("direct", "oc_fixture", "ou_fixture"));
+        assert!(config
+            .review_boundary
+            .callback_allowed("group", "oc_fixture", "ou_fixture"));
+        assert!(!config
+            .review_boundary
+            .callback_allowed("group", "oc_wrong", "ou_fixture"));
+        assert!(!config
+            .review_boundary
+            .callback_allowed("group", "oc_fixture", "ou_wrong"));
+        config.review_boundary.internal_group_enabled = false;
+        assert!(!config
+            .review_boundary
+            .callback_allowed("group", "oc_fixture", "ou_fixture"));
+        assert!(config
+            .review_boundary
+            .callback_allowed("direct", "oc_fixture", "ou_fixture"));
     }
 
     #[cfg(feature = "postgres-integration-tests")]
@@ -1375,16 +1659,54 @@ mod tests {
         pool: &PgPool,
         suffix: &str,
         label: &str,
+        conversation_type: &str,
         conversation_id: &str,
         requester_user_id: &str,
         created_second: i32,
-    ) -> (Uuid, Uuid) {
+    ) -> (Uuid, Uuid, Uuid) {
         let root_id = Uuid::new_v4();
         let image_work_item_id = Uuid::new_v4();
         let notification_work_item_id = Uuid::new_v4();
         let artifact_id = Uuid::new_v4();
         let notification_id = Uuid::new_v4();
-        let origin_ref = format!("poster-claim-{label}-{suffix}");
+        let (
+            origin_ref,
+            audience_class,
+            conversation_ref,
+            policy_version,
+            delivery_mode,
+            thread_root_message_id,
+            capability_key,
+        ) = match conversation_type {
+            "direct" => {
+                let origin_ref = format!("poster-claim-{label}-{suffix}");
+                (
+                    origin_ref.clone(),
+                    "private",
+                    origin_ref,
+                    0_i64,
+                    "direct_chat",
+                    None,
+                    "xiaoman.notify_direct_conversation",
+                )
+            }
+            "group" => {
+                let origin_ref = format!(
+                    "sha256:{}",
+                    sha256_hex(format!("poster-claim-{label}-{suffix}").as_bytes())
+                );
+                (
+                    origin_ref.clone(),
+                    "internal_collaboration",
+                    origin_ref,
+                    1_i64,
+                    "thread_reply",
+                    Some(format!("om-thread-{label}-{suffix}")),
+                    "xiaoman.notify_conversation",
+                )
+            }
+            other => panic!("unsupported poster claim conversation fixture: {other}"),
+        };
 
         sqlx::query(
             r#"
@@ -1393,11 +1715,11 @@ mod tests {
                  target_agent, capability_key, brief_summary, dedupe_key, idempotency_key)
             VALUES
                 ($1, NULL, 'poster_production_request', 'completed', 'xiaoman', 'xiaoman',
-                 'xiaoman.notify_direct_conversation', 'claim root fixture', $4, $5),
+                 $10, 'claim root fixture', $4, $5),
                 ($2, $1, 'image_generation_request', 'completed', 'xiaoman', 'huabaosi',
-                 'xiaoman.notify_direct_conversation', 'claim image fixture', $6, $7),
+                 $10, 'claim image fixture', $6, $7),
                 ($3, $1, 'conversation_notification_request', 'queued', 'xiaoman', 'xiaoman',
-                 'xiaoman.notify_direct_conversation', 'claim notification fixture', $8, $9)
+                 $10, 'claim notification fixture', $8, $9)
             "#,
         )
         .bind(root_id)
@@ -1409,6 +1731,7 @@ mod tests {
         .bind(format!("claim-image-idempotency-{label}-{suffix}"))
         .bind(format!("claim-notification-dedupe-{label}-{suffix}"))
         .bind(format!("claim-notification-idempotency-{label}-{suffix}"))
+        .bind(capability_key)
         .execute(pool)
         .await
         .expect("seed poster claim work items");
@@ -1418,14 +1741,21 @@ mod tests {
             INSERT INTO qintopia_agent_os.poster_return_targets
                 (origin_ref, platform, conversation_type, conversation_id,
                  requester_user_id, source_message_id, audience_class,
-                 conversation_ref, policy_version, delivery_mode)
-            VALUES ($1, 'feishu', 'direct', $2, $3, $4, 'private', $1, 0, 'direct_chat')
+                 conversation_ref, policy_version, delivery_mode,
+                 thread_root_message_id)
+            VALUES ($1, 'feishu', $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
         )
         .bind(&origin_ref)
+        .bind(conversation_type)
         .bind(conversation_id)
         .bind(requester_user_id)
         .bind(format!("om-{label}-{suffix}"))
+        .bind(audience_class)
+        .bind(&conversation_ref)
+        .bind(policy_version)
+        .bind(delivery_mode)
+        .bind(thread_root_message_id)
         .execute(pool)
         .await
         .expect("seed poster return target");
@@ -1470,7 +1800,7 @@ mod tests {
         .await
         .expect("seed poster notification claim candidate");
 
-        (notification_id, notification_work_item_id)
+        (notification_id, notification_work_item_id, root_id)
     }
 
     #[tokio::test]
@@ -1485,22 +1815,36 @@ mod tests {
             .await
             .expect("migrate guarded poster claim integration database");
         let suffix = Uuid::new_v4().simple().to_string();
-        let (rejected_notification_id, rejected_work_item_id) = seed_claim_candidate(
+        let (rejected_notification_id, rejected_work_item_id, _) = seed_claim_candidate(
             &pool,
             &suffix,
             "rejected",
+            "direct",
             "oc_not_allowlisted",
             "ou_fixture",
             0,
         )
         .await;
-        let (eligible_notification_id, _) =
-            seed_claim_candidate(&pool, &suffix, "eligible", "oc_fixture", "ou_fixture", 1).await;
+        let (eligible_notification_id, _, _) = seed_claim_candidate(
+            &pool,
+            &suffix,
+            "eligible",
+            "direct",
+            "oc_fixture",
+            "ou_fixture",
+            1,
+        )
+        .await;
         let config = test_config(Url::parse(OFFICIAL_API_ROOT).unwrap());
 
-        let rejected = claim_notification(&pool, None, &config)
-            .await
-            .expect("terminalize oldest rejected candidate");
+        let rejected = claim_notification(
+            &pool,
+            None,
+            &config,
+            PosterDeliveryConversationScope::Direct,
+        )
+        .await
+        .expect("terminalize oldest rejected candidate");
         assert!(matches!(
             rejected,
             ClaimNotificationOutcome::Rejected { notification_id, .. }
@@ -1547,9 +1891,14 @@ mod tests {
         assert_eq!(rejected_state.5["group_send_authorized"], false);
         assert_eq!(rejected_state.5["rejected_before_external_io"], true);
 
-        let claimed = claim_notification(&pool, None, &config)
-            .await
-            .expect("claim next eligible candidate");
+        let claimed = claim_notification(
+            &pool,
+            None,
+            &config,
+            PosterDeliveryConversationScope::Direct,
+        )
+        .await
+        .expect("claim next eligible candidate");
         let claim = match claimed {
             ClaimNotificationOutcome::Claimed(claim) => claim,
             other => panic!("expected next candidate to be claimed, got {other:?}"),
@@ -1579,6 +1928,226 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "postgres-integration-tests")]
     #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_delivery_scopes_are_isolated_and_group_claims_once() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect guarded poster group-claim integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded poster group-claim integration database");
+        let suffix = Uuid::new_v4().simple().to_string();
+        let (group_notification_id, _, group_root_id) = seed_claim_candidate(
+            &pool,
+            &suffix,
+            "group",
+            "group",
+            "oc_fixture",
+            "ou_fixture",
+            0,
+        )
+        .await;
+        let (direct_notification_id, _, _) = seed_claim_candidate(
+            &pool,
+            &suffix,
+            "direct",
+            "direct",
+            "oc_fixture",
+            "ou_fixture",
+            1,
+        )
+        .await;
+        let mut config = test_config(Url::parse(OFFICIAL_API_ROOT).unwrap());
+        config.review_boundary.internal_group_enabled = false;
+
+        assert!(matches!(
+            claim_notification(
+                &pool,
+                Some(group_notification_id),
+                &config,
+                PosterDeliveryConversationScope::Direct,
+            )
+            .await
+            .expect("direct scope must ignore an explicitly selected group notification"),
+            ClaimNotificationOutcome::Empty
+        ));
+        assert!(matches!(
+            claim_notification(
+                &pool,
+                Some(direct_notification_id),
+                &config,
+                PosterDeliveryConversationScope::Group,
+            )
+            .await
+            .expect("group scope must ignore an explicitly selected direct notification"),
+            ClaimNotificationOutcome::Empty
+        ));
+
+        let direct = claim_notification(
+            &pool,
+            None,
+            &config,
+            PosterDeliveryConversationScope::Direct,
+        )
+        .await
+        .expect("claim direct notification while older group work is disabled");
+        let direct = match direct {
+            ClaimNotificationOutcome::Claimed(claim) => claim,
+            other => panic!("expected direct notification claim, got {other:?}"),
+        };
+        assert_eq!(direct.candidate.notification_id, direct_notification_id);
+        let disabled_group_state: (String, i64) = sqlx::query_as(
+            r#"
+            SELECT notification.status, count(attempt.id)
+            FROM qintopia_agent_os.poster_notifications notification
+            LEFT JOIN qintopia_agent_os.poster_notification_attempts attempt
+              ON attempt.notification_id=notification.id
+            WHERE notification.id=$1
+            GROUP BY notification.status
+            "#,
+        )
+        .bind(group_notification_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load disabled group notification state");
+        assert_eq!(disabled_group_state, ("pending".to_string(), 0));
+
+        config.review_boundary.internal_group_enabled = true;
+        let group = claim_notification(
+            &pool,
+            Some(group_notification_id),
+            &config,
+            PosterDeliveryConversationScope::Group,
+        )
+        .await
+        .expect("claim group notification after explicit enablement");
+        let group = match group {
+            ClaimNotificationOutcome::Claimed(claim) => claim,
+            other => panic!("expected group notification claim, got {other:?}"),
+        };
+        assert_eq!(group.candidate.notification_id, group_notification_id);
+        assert_eq!(group.candidate.conversation_type, "group");
+        assert_eq!(
+            group.candidate.thread_root_message_id.as_deref(),
+            Some(format!("om-thread-group-{suffix}").as_str())
+        );
+        assert!(matches!(
+            claim_notification(
+                &pool,
+                Some(group_notification_id),
+                &config,
+                PosterDeliveryConversationScope::Group,
+            )
+            .await
+            .expect("recheck uniquely claimed group notification"),
+            ClaimNotificationOutcome::Empty
+        ));
+
+        let group_state: (String, String, i64) = sqlx::query_as(
+            r#"
+            SELECT notification.status, item.status, count(attempt.id)
+            FROM qintopia_agent_os.poster_notifications notification
+            JOIN qintopia_agent_os.work_items item ON item.id=notification.work_item_id
+            LEFT JOIN qintopia_agent_os.poster_notification_attempts attempt
+              ON attempt.notification_id=notification.id
+            WHERE notification.id=$1
+            GROUP BY notification.status, item.status
+            "#,
+        )
+        .bind(group_notification_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load uniquely claimed group notification state");
+        assert_eq!(
+            group_state,
+            ("claimed".to_string(), "processing".to_string(), 1)
+        );
+
+        sqlx::query(
+            "UPDATE qintopia_agent_os.poster_notifications SET claim_expires_at=now() - interval '1 second' WHERE id=$1",
+        )
+        .bind(group_notification_id)
+        .execute(&pool)
+        .await
+        .expect("expire group notification claim");
+        assert!(matches!(
+            claim_notification(
+                &pool,
+                None,
+                &config,
+                PosterDeliveryConversationScope::Direct,
+            )
+            .await
+            .expect("direct recovery scan must ignore stale group claim"),
+            ClaimNotificationOutcome::Empty
+        ));
+        let unreconciled_group_state: String = sqlx::query_scalar(
+            "SELECT status FROM qintopia_agent_os.poster_notifications WHERE id=$1",
+        )
+        .bind(group_notification_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load group notification after direct recovery scan");
+        assert_eq!(unreconciled_group_state, "claimed");
+
+        assert!(matches!(
+            claim_notification(&pool, None, &config, PosterDeliveryConversationScope::Group,)
+                .await
+                .expect("group recovery scan must reconcile its own stale claim"),
+            ClaimNotificationOutcome::Empty
+        ));
+        let reconciled_group_state: (String, String) = sqlx::query_as(
+            r#"
+            SELECT notification.status, attempt.status
+            FROM qintopia_agent_os.poster_notifications notification
+            JOIN qintopia_agent_os.poster_notification_attempts attempt
+              ON attempt.notification_id=notification.id
+            WHERE notification.id=$1
+            "#,
+        )
+        .bind(group_notification_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load group notification after group recovery scan");
+        assert_eq!(
+            reconciled_group_state,
+            ("ambiguous".to_string(), "ambiguous".to_string())
+        );
+
+        let publication_facts: (i64, i64) = sqlx::query_as(
+            r#"
+            WITH RECURSIVE workflow AS (
+                SELECT id
+                FROM qintopia_agent_os.work_items
+                WHERE id=$1
+                UNION ALL
+                SELECT child.id
+                FROM qintopia_agent_os.work_items child
+                JOIN workflow parent ON child.parent_work_item_id=parent.id
+            )
+            SELECT
+                count(DISTINCT item.id) FILTER (
+                    WHERE item.work_item_type='group_message_request'
+                ),
+                count(DISTINCT event.id) FILTER (
+                    WHERE event.event_type IN ('send_executed', 'external_published')
+                )
+            FROM workflow
+            JOIN qintopia_agent_os.work_items item ON item.id=workflow.id
+            LEFT JOIN qintopia_agent_os.work_item_events event
+              ON event.work_item_id=item.id
+            "#,
+        )
+        .bind(group_root_id)
+        .fetch_one(&pool)
+        .await
+        .expect("verify group notification remains outside publication flow");
+        assert_eq!(publication_facts, (0, 0));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
     async fn postgres_upload_acceptance_precedes_send_gate() {
         let database_url = postgres_integration_database_url();
         let pool = db::connect(&database_url, 2)
@@ -1588,12 +2157,25 @@ mod tests {
             .await
             .expect("migrate guarded poster upload integration database");
         let suffix = Uuid::new_v4().simple().to_string();
-        let (notification_id, _) =
-            seed_claim_candidate(&pool, &suffix, "upload", "oc_fixture", "ou_fixture", 2).await;
+        let (notification_id, _, _) = seed_claim_candidate(
+            &pool,
+            &suffix,
+            "upload",
+            "direct",
+            "oc_fixture",
+            "ou_fixture",
+            2,
+        )
+        .await;
         let config = test_config(Url::parse(OFFICIAL_API_ROOT).unwrap());
-        let claimed = claim_notification(&pool, Some(notification_id), &config)
-            .await
-            .expect("claim poster upload candidate");
+        let claimed = claim_notification(
+            &pool,
+            Some(notification_id),
+            &config,
+            PosterDeliveryConversationScope::Direct,
+        )
+        .await
+        .expect("claim poster upload candidate");
         let claim = match claimed {
             ClaimNotificationOutcome::Claimed(claim) => claim,
             other => panic!("expected upload candidate to be claimed, got {other:?}"),
@@ -1718,7 +2300,36 @@ mod tests {
         assert!(request_text.contains("approve"));
         assert!(request_text.contains("modify"));
         assert!(request_text.contains("abandon"));
+        assert!(request_text.contains(&format!(
+            "poster-notification-{}",
+            claim.candidate.notification_id
+        )));
+        assert!(!request_text.contains("reply_in_thread"));
         assert!(!request_text.contains("group_message_request"));
+    }
+
+    #[test]
+    fn fake_feishu_replies_to_exact_group_thread_without_fallback() {
+        let (message_root, message_request) =
+            serve_once(r#"{"code":0,"data":{"message_id":"om_group_reply_fixture"}}"#);
+        let config = test_config(message_root);
+        let client = HttpClient::test_only_with_timeout(Duration::from_secs(2));
+        let claim = group_claim();
+
+        let message_id =
+            send_review_card(&config, &client, "tenant_fixture", "img_fixture", &claim)
+                .expect("group thread review card reply");
+
+        assert_eq!(message_id, "om_group_reply_fixture");
+        let request = String::from_utf8_lossy(&message_request.recv().unwrap()).to_string();
+        assert!(request.starts_with("POST /open-apis/im/v1/messages/om_thread_fixture/reply"));
+        assert!(request.contains("\"reply_in_thread\":true"));
+        assert!(request.contains(&format!(
+            "poster-notification-{}",
+            claim.candidate.notification_id
+        )));
+        assert!(!request.contains("receive_id"));
+        assert!(!request.contains("group_message_request"));
     }
 
     #[test]
@@ -1751,8 +2362,11 @@ mod tests {
             api_root,
             app_id: Zeroizing::new("cli_fixture".into()),
             app_secret: Zeroizing::new("secret_fixture".into()),
-            allowed_chat_ids: BTreeSet::from(["oc_fixture".into()]),
-            allowed_user_ids: BTreeSet::from(["ou_fixture".into()]),
+            review_boundary: PosterReviewRuntimeBoundary {
+                internal_group_enabled: true,
+                allowed_chat_ids: BTreeSet::from(["oc_fixture".into()]),
+                allowed_user_ids: BTreeSet::from(["ou_fixture".into()]),
+            },
             media_allowed_hosts: BTreeSet::from(["media.example.test".into()]),
             max_media_bytes: 1024,
         }

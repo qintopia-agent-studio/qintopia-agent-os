@@ -508,11 +508,14 @@ async fn main() -> Result<()> {
             )
             .await
         }
-        Command::XiaomanFeishuPosterPreflight => poster_delivery::run_preflight(&cli),
+        Command::XiaomanFeishuPosterPreflight { conversation_scope } => {
+            poster_delivery::run_preflight(&cli, conversation_scope)
+        }
         Command::RunXiaomanFeishuPosterDelivery {
             once,
             apply,
             dry_run,
+            conversation_scope,
             notification_id,
         } => {
             poster_delivery::run_worker(
@@ -521,6 +524,7 @@ async fn main() -> Result<()> {
                     once,
                     apply,
                     dry_run,
+                    conversation_scope,
                     notification_id,
                 },
             )

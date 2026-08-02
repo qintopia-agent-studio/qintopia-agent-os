@@ -163,10 +163,12 @@ esac
   const enabledSidecar = {
     QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED: "1",
     QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY: "fixture-callback-key",
+    QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
   };
   const enabledHermes = {
     QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE: "1",
     QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY: "fixture-callback-key",
+    QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
   };
 
   writeEnv(sidecarEnv, enabledSidecar);
@@ -192,6 +194,27 @@ esac
   }
   fs.unlinkSync(profilePlugin);
   fs.symlinkSync(releasePlugin, profilePlugin);
+
+  resetLog();
+  writeEnv(sidecarEnv, {
+    ...enabledSidecar,
+    QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "1",
+  });
+  writeEnv(hermesEnv, {
+    ...enabledHermes,
+    QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "1",
+  });
+  result = run(activation, {
+    QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION:
+      "approved-production-xiaoman-feishu-poster-return",
+  });
+  if (result.status === 0 || commandLog() !== "") {
+    throw new Error(
+      "direct activation must reject internal-group enablement before side effects"
+    );
+  }
+  writeEnv(sidecarEnv, enabledSidecar);
+  writeEnv(hermesEnv, enabledHermes);
 
   resetLog();
   writeEnv(hermesEnv, {
@@ -249,6 +272,7 @@ esac
   }
   const activationLog = commandLog();
   const expectedOrder = [
+    "systemctl disable --now qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer",
     "systemctl start qintopia-agentos-xiaoman-feishu-poster-preflight.service",
     "systemctl --user restart hermes-gateway-xiaoman.service",
     "systemctl --user is-active --quiet hermes-gateway-xiaoman.service",
@@ -268,6 +292,16 @@ esac
   if (activationLog.includes("must-not-reach-runuser")) {
     throw new Error("activation leaked ambient environment to runuser");
   }
+  if (
+    activationLog.includes(
+      "systemctl enable qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer"
+    ) ||
+    activationLog.includes(
+      "systemctl restart qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer"
+    )
+  ) {
+    throw new Error("direct activation must leave group delivery stopped");
+  }
 
   resetLog();
   result = run(rollback);
@@ -275,8 +309,14 @@ esac
     throw new Error("rollback must fail before side effects without owner approval");
   }
 
-  writeEnv(sidecarEnv, { QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED: "0" });
-  writeEnv(hermesEnv, { QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE: "0" });
+  writeEnv(sidecarEnv, {
+    QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED: "0",
+    QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
+  });
+  writeEnv(hermesEnv, {
+    QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE: "0",
+    QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
+  });
   resetLog();
   result = run(rollback, {
     QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ROLLBACK:
@@ -287,6 +327,7 @@ esac
   }
   const rollbackLog = commandLog();
   for (const command of [
+    "systemctl disable --now qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer",
     "systemctl disable --now qintopia-agentos-xiaoman-feishu-poster-delivery.timer",
     "systemctl disable --now qintopia-agentos-xiaoman-poster-review-callback.service",
     "systemctl --user restart hermes-gateway-xiaoman.service",

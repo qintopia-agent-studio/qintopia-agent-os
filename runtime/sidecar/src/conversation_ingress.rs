@@ -180,6 +180,14 @@ impl IngressConfig {
         self.internal_group_enabled
     }
 
+    pub(crate) fn deployment_ceiling_matches(
+        &self,
+        allowed_chat_ids: &BTreeSet<String>,
+        allowed_user_ids: &BTreeSet<String>,
+    ) -> bool {
+        self.allowed_chat_ids == *allowed_chat_ids && self.allowed_user_ids == *allowed_user_ids
+    }
+
     #[cfg(test)]
     fn fixture(group_enabled: bool) -> Self {
         Self {
@@ -729,6 +737,25 @@ mod tests {
         let mut disabled_group = ingress_values("0");
         disabled_group.insert(INTERNAL_GROUP_ENABLED_ENV, "1".to_string());
         assert!(IngressConfig::from_values(disabled_group).is_err());
+    }
+
+    #[test]
+    fn delivery_boundary_must_match_authenticated_ingress_ceiling() {
+        let config = IngressConfig::fixture(true);
+        let chats = BTreeSet::from([
+            "oc_direct_fixture".to_string(),
+            "oc_group_fixture".to_string(),
+        ]);
+        let users = BTreeSet::from(["ou_user_fixture".to_string()]);
+        assert!(config.deployment_ceiling_matches(&chats, &users));
+
+        let narrower_chats = BTreeSet::from(["oc_group_fixture".to_string()]);
+        assert!(!config.deployment_ceiling_matches(&narrower_chats, &users));
+        let broader_users = BTreeSet::from([
+            "ou_user_fixture".to_string(),
+            "ou_unreviewable_fixture".to_string(),
+        ]);
+        assert!(!config.deployment_ceiling_matches(&chats, &broader_users));
     }
 
     #[test]

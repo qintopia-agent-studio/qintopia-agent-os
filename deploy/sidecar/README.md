@@ -17,8 +17,10 @@ symlinks.
 
 ## Xiaoman Feishu Poster Return
 
-The release bundle installs disabled intake, notification starter, delivery, and
-callback units. Production activation is explicit:
+The release bundle installs disabled intake, notification starter, callback, direct
+delivery, and internal-group delivery units. The two delivery services share one durable
+notification queue and worker binary, but each systemd command pins exactly one
+conversation scope. Production direct activation is explicit:
 
 ```bash
 QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION=approved-production-xiaoman-feishu-poster-return \
@@ -27,19 +29,75 @@ QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION=approved-production-xiaoman
 
 Activation requires persistent `QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED=1` in the fixed
 sidecar env and `QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE=1` in the fixed Xiaoman
-Hermes env. Both env files must contain the same callback key, and the live plugin must
-resolve to the immutable `release/current` Xiaoman variant. The script runs the
-release-local preflight, restarts and verifies `hermes-gateway-xiaoman.service` through
-the fixed `ubuntu` user boundary, then starts intake/callback/starter and enables
-delivery last. A failed gateway restart occurs before any workflow unit or timer is
-enabled. The script does not source either env file or print the callback key. Rollback
-stops delivery first, requires both persistent switches to be `0`, restarts Xiaoman to
-unload the hook, and retains all workflow, attempt, notification, and review audit data:
+Hermes env. Both env files must contain the same callback key and must keep the
+internal-group switch at `0`; group enablement is accepted only by the separate script
+below. The live plugin must resolve to the immutable `release/current` Xiaoman variant.
+The script first disables the internal-group delivery timer, runs the release-local
+preflight, restarts and verifies `hermes-gateway-xiaoman.service` through the fixed
+`ubuntu` user boundary, then starts intake/callback/starter and enables direct delivery
+last. A failed gateway restart occurs before any workflow unit or timer is enabled. The
+script does not source either env file or print the callback key. Full poster rollback
+stops both scoped delivery timers first, requires the direct and group persistent
+switches to be `0`, restarts Xiaoman to unload the hook, and retains all workflow,
+attempt, notification, and review audit data:
 
 ```bash
 QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ROLLBACK=approved-production-xiaoman-feishu-poster-return-rollback \
   deploy/sidecar/scripts/rollback-xiaoman-feishu-poster-production.sh
 ```
+
+### Internal-Group Activation
+
+The shared intake, starter, and callback services continue to run the direct path while
+the dedicated internal-group delivery timer remains disabled. After the release is
+installed, the private and internal-group policies are applied, and the exact server
+chat/user ceilings are reviewed, inspect the disabled boundary without calling Feishu or
+Postgres:
+
+```bash
+QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_PRODUCTION_OBSERVATION_ENABLE=1 \
+QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_EXPECTED_STATE=disabled \
+  deploy/sidecar/scripts/xiaoman-feishu-internal-group-production-observation-smoke.sh
+```
+
+The observation requires the immutable `release/current` production sidecar and Xiaoman
+plugin, matching ingress and callback keys across the sidecar and Hermes environments,
+distinct ingress/callback keys, authenticated V3 ingress, and delivery allowlists that
+exactly match the ingress deployment ceiling. All delivery users must also be within the
+operations reviewer ceiling. It also proves that the direct timer is active and the
+group timer has the expected state. It emits only release identity, state, and allowlist
+counts.
+
+Set `QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED=1` exactly once in both fixed env
+files, then use the separate owner approval to activate one reviewed internal group:
+
+```bash
+QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_PRODUCTION_ACTIVATION=approved-production-xiaoman-feishu-internal-group \
+  deploy/sidecar/scripts/activate-xiaoman-feishu-internal-group-production.sh
+```
+
+Activation first requires the group timer to be stopped while the direct timer remains
+active. It runs the group-scoped no-network poster preflight, reloads Xiaoman, intake,
+and callback configuration, then enables only the scope-pinned group timer and requires
+an enabled-state observation. It does not apply a conversation policy or select a chat.
+Pending eligible group notifications may be delivered after that timer starts, so the
+command is an external-delivery activation boundary and requires separate owner
+approval.
+
+For rollback, first set the persistent group switch to `0` exactly once in both fixed
+env files. The guarded rollback stops only the group delivery timer, then proves the
+disabled configuration before any gateway or worker reload. It reloads the shared
+services while continuously requiring direct delivery to remain active; a failed group
+activation cannot disable the direct path:
+
+```bash
+QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_PRODUCTION_ROLLBACK=approved-production-xiaoman-feishu-internal-group-rollback \
+  deploy/sidecar/scripts/rollback-xiaoman-feishu-internal-group-production.sh
+```
+
+Rollback retains policies, participants, workflows, notifications, attempts, and
+ambiguous outcomes. It never reroutes a group result to a direct chat or group main
+timeline.
 
 ## Current Source
 
