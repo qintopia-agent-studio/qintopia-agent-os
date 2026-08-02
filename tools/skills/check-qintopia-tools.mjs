@@ -22,6 +22,7 @@ const requiredRegisteredTools = {
     "qintopia_xiaoman_activity_record_get",
     "qintopia_xiaoman_activity_list_by_date",
     "qintopia_xiaoman_activity_announcement_prepare",
+    "qintopia_xiaoman_public_reply_rewrite",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_phase_update",
