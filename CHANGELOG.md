@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.66](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.65...v0.2.66) (2026-08-02)
+
+
+### Bug Fixes
+
+* **xiaoman:** audit third followup escalations ([#359](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/359)) ([ba6e720](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ba6e720718f2e3347732810c847808cae2d2ec94))
+* **xiaoman:** close trusted poster production config ([#358](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/358)) ([985292f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/985292f4b484682dd88d3fe377b90fb338201cef))
+* **xiaoman:** connect followup recaps downstream ([#356](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/356)) ([d4cb86b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d4cb86b98de246591a594d65f599837884fe0883))
+* **xiaoman:** harden poster production closeout ([#360](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/360)) ([06cd1f0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/06cd1f04813aa75cda392c379f47107b8b1ab357))
+
+
+### Documentation
+
+* **xiaoman:** clarify completion boundary ([#361](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/361)) ([f17710c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f17710c703b5b4db1180af9a2a78b80b8385fec7))
+
 ## [0.2.65](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.64...v0.2.65) (2026-08-02)
 
 
