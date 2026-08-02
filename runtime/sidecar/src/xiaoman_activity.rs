@@ -269,9 +269,18 @@ struct StoredActivitySignalSource {
 #[derive(Debug, Clone)]
 struct PendingMaterialFollowup {
     source_record_ref: String,
+    attempt: u8,
+    escalation_required: bool,
     title: String,
     owner: String,
     reminder_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MaterialFollowupScanTarget {
+    scan_date: String,
+    attempt: u8,
+    escalation_required: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1207,10 +1216,14 @@ async fn execute_material_followup_scan(
         return Ok(());
     }
 
-    let scan_date = if payload.date.trim().is_empty() {
-        default_material_followup_scan_date(&cli.daily_digest_timezone)?
+    let scan_targets = if payload.date.trim().is_empty() {
+        material_followup_scan_targets(&cli.daily_digest_timezone)?
     } else {
-        payload.date.trim().to_string()
+        vec![MaterialFollowupScanTarget {
+            scan_date: payload.date.trim().to_string(),
+            attempt: 1,
+            escalation_required: false,
+        }]
     };
 
     let records = if let Some(path) = config.fixture_path.as_deref() {
@@ -1227,34 +1240,54 @@ async fn execute_material_followup_scan(
     let mut pending_followup = Vec::new();
     let mut work_items = Vec::new();
 
-    for record in records {
-        if record.table_role != "activity_occurrence" {
-            continue;
+    for scan_target in &scan_targets {
+        for record in &records {
+            if record.table_role != "activity_occurrence" {
+                continue;
+            }
+            if !record.matches_date(&scan_target.scan_date) {
+                continue;
+            }
+            if record.material_summary.is_some()
+                && !record.material_summary.as_ref().unwrap().trim().is_empty()
+            {
+                continue;
+            }
+            let title = record.title.clone();
+            let owner = record
+                .owner_name
+                .clone()
+                .unwrap_or_else(|| "负责人".to_string());
+            let source_record_ref = record.record_ref();
+            let attempt_label = match scan_target.attempt {
+                1 => "T+24h",
+                2 => "T+48h",
+                3 => "T+72h",
+                _ => "T+24h",
+            };
+            let reminder_text = if scan_target.escalation_required {
+                format!(
+                    "运营负责人请跟进：{}（{}）活动已超过 {} 未完成素材回填，负责人为 {}。请确认补交进度并安排人工跟进。",
+                    title, scan_target.scan_date, attempt_label, owner
+                )
+            } else {
+                format!(
+                    "{}，您好！{}（{}）活动已结束 {}，但素材回填尚未完成。请尽快补交活动照片和总结。",
+                    owner, title, scan_target.scan_date, attempt_label
+                )
+            };
+            pending_followup.push((
+                scan_target.scan_date.clone(),
+                PendingMaterialFollowup {
+                    source_record_ref,
+                    attempt: scan_target.attempt,
+                    escalation_required: scan_target.escalation_required,
+                    title,
+                    owner,
+                    reminder_text,
+                },
+            ));
         }
-        if !record.matches_date(&scan_date) {
-            continue;
-        }
-        if record.material_summary.is_some()
-            && !record.material_summary.as_ref().unwrap().trim().is_empty()
-        {
-            continue;
-        }
-        let title = record.title.clone();
-        let owner = record
-            .owner_name
-            .clone()
-            .unwrap_or_else(|| "负责人".to_string());
-        let source_record_ref = record.record_ref();
-        let reminder_text = format!(
-            "{}，您好！{}（{}）活动已结束，但素材回填尚未完成。请尽快补交活动照片和总结。",
-            owner, title, scan_date
-        );
-        pending_followup.push(PendingMaterialFollowup {
-            source_record_ref,
-            title,
-            owner,
-            reminder_text,
-        });
     }
 
     report.record_count = pending_followup.len();
@@ -1262,7 +1295,11 @@ async fn execute_material_followup_scan(
         report.action_status = "no_pending_followup".to_string();
         report.summaries.push(format!(
             "No activities from {} require material followup",
-            scan_date
+            scan_targets
+                .iter()
+                .map(|target| target.scan_date.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
         return Ok(());
     }
@@ -1281,7 +1318,7 @@ async fn execute_material_followup_scan(
     let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
     let policy = operations::OperationsPolicy::from_cli(cli, true);
 
-    for followup in pending_followup {
+    for (scan_date, followup) in pending_followup {
         let request = material_followup_work_item_request(&scan_date, followup);
         let item = operations::create_work_item(&pool, request, true, &policy).await?;
         work_items.push(item);
@@ -1301,25 +1338,53 @@ fn material_followup_work_item_request(
     scan_date: &str,
     followup: PendingMaterialFollowup,
 ) -> WorkItemCreateRequest {
-    let idempotency_key = format!(
-        "xiaoman_activity_material_followup:{}:{}",
-        scan_date, followup.source_record_ref
-    );
+    let idempotency_key = if followup.attempt == 1 {
+        format!(
+            "xiaoman_activity_material_followup:{}:{}",
+            scan_date, followup.source_record_ref
+        )
+    } else {
+        format!(
+            "xiaoman_activity_material_followup:{}:{}:{}",
+            scan_date, followup.source_record_ref, followup.attempt
+        )
+    };
+    let priority = if followup.escalation_required {
+        "high"
+    } else {
+        "medium"
+    };
+    let recipient_scope = if followup.escalation_required {
+        "operations_lead"
+    } else {
+        "activity_owner"
+    };
+    let target_group_alias = if followup.escalation_required {
+        Value::Null
+    } else {
+        json!("community_activity_group")
+    };
     WorkItemCreateRequest {
         requester_agent: ACTOR_AGENT.to_string(),
         target_agent: "erhua".to_string(),
         capability_key: "erhua.send_group_message".to_string(),
         work_item_type: "group_message_request".to_string(),
-        brief_summary: format!("催办：{} 活动素材回填", followup.title),
+        brief_summary: if followup.escalation_required {
+            format!("升级：{} 活动素材回填逾期", followup.title)
+        } else {
+            format!("催办：{} 活动素材回填", followup.title)
+        },
         purpose: String::new(),
         human_owner: String::new(),
-        priority: "medium".to_string(),
+        priority: priority.to_string(),
         source_type: "scheduled_scan".to_string(),
         source_refs: json!({
             "scan_date": scan_date,
             "scan_type": "material_followup",
             "source_record_ref": followup.source_record_ref,
             "table_role": "activity_occurrence",
+            "material_followup_attempt": followup.attempt,
+            "escalation_required": followup.escalation_required,
         }),
         source_event_signal_id: None,
         payload: json!({
@@ -1327,8 +1392,12 @@ fn material_followup_work_item_request(
             "activity_date": scan_date,
             "owner_name": followup.owner,
             "reminder_text": followup.reminder_text,
-            "target_group_alias": "community_activity_group",
-            "priority": "medium",
+            "target_group_alias": target_group_alias,
+            "priority": priority,
+            "material_followup_attempt": followup.attempt,
+            "escalation_required": followup.escalation_required,
+            "recipient_scope": recipient_scope,
+            "external_send_executed": false,
         }),
         payload_redaction_policy: "default".to_string(),
         idempotency_key,
@@ -1339,25 +1408,47 @@ fn material_followup_work_item_request(
     }
 }
 
-fn default_material_followup_scan_date(timezone: &str) -> Result<String> {
-    default_material_followup_scan_date_at(timezone, Utc::now())
+fn material_followup_scan_targets(timezone: &str) -> Result<Vec<MaterialFollowupScanTarget>> {
+    material_followup_scan_targets_at(timezone, Utc::now())
 }
 
+fn material_followup_scan_targets_at(
+    timezone: &str,
+    now_utc: DateTime<Utc>,
+) -> Result<Vec<MaterialFollowupScanTarget>> {
+    let first_scan_date = material_followup_default_date_at(timezone, now_utc)?;
+    Ok((0..3)
+        .map(|offset_days| MaterialFollowupScanTarget {
+            scan_date: (first_scan_date - Duration::days(offset_days))
+                .format("%Y-%m-%d")
+                .to_string(),
+            attempt: (offset_days + 1) as u8,
+            escalation_required: offset_days == 2,
+        })
+        .collect())
+}
+
+#[cfg(test)]
 fn default_material_followup_scan_date_at(
     timezone: &str,
     now_utc: DateTime<Utc>,
 ) -> Result<String> {
+    Ok(material_followup_default_date_at(timezone, now_utc)?
+        .format("%Y-%m-%d")
+        .to_string())
+}
+
+fn material_followup_default_date_at(
+    timezone: &str,
+    now_utc: DateTime<Utc>,
+) -> Result<chrono::NaiveDate> {
     let offset_seconds = match timezone.trim() {
         "Asia/Shanghai" | "UTC+8" | "+08:00" => 8 * 3600,
         other => bail!("unsupported Xiaoman material followup timezone for V1: {other}"),
     };
     let offset = FixedOffset::east_opt(offset_seconds)
         .context("invalid Xiaoman material followup timezone offset")?;
-    Ok(
-        (now_utc.with_timezone(&offset).date_naive() - Duration::days(1))
-            .format("%Y-%m-%d")
-            .to_string(),
-    )
+    Ok(now_utc.with_timezone(&offset).date_naive() - Duration::days(1))
 }
 
 async fn execute_shadow_validate(
@@ -4002,6 +4093,8 @@ mod tests {
                     "activity_occurrence",
                     "rec_same_title_first",
                 ),
+                attempt: 1,
+                escalation_required: false,
                 title: "瑜伽体验活动".to_string(),
                 owner: "刘珊".to_string(),
                 reminder_text: "first reminder".to_string(),
@@ -4014,6 +4107,8 @@ mod tests {
                     "activity_occurrence",
                     "rec_same_title_second",
                 ),
+                attempt: 1,
+                escalation_required: false,
                 title: "瑜伽体验活动".to_string(),
                 owner: "大羽".to_string(),
                 reminder_text: "second reminder".to_string(),
@@ -4035,6 +4130,57 @@ mod tests {
         );
         assert!(!first.idempotency_key.contains("rec_same_title_first"));
         assert!(!second.idempotency_key.contains("rec_same_title_second"));
+        assert_eq!(
+            first.idempotency_key.matches(':').count(),
+            3,
+            "first followup attempt keeps the legacy idempotency key shape"
+        );
+    }
+
+    #[test]
+    fn material_followup_scan_targets_cover_three_attempts() {
+        let now_utc = Utc.with_ymd_and_hms(2026, 7, 31, 16, 30, 0).unwrap();
+
+        let targets = material_followup_scan_targets_at("Asia/Shanghai", now_utc)
+            .expect("Shanghai material followup targets should be supported");
+
+        assert_eq!(
+            targets
+                .iter()
+                .map(|target| (target.scan_date.as_str(), target.attempt))
+                .collect::<Vec<_>>(),
+            vec![("2026-07-31", 1), ("2026-07-30", 2), ("2026-07-29", 3)]
+        );
+        assert_eq!(
+            targets
+                .iter()
+                .map(|target| target.escalation_required)
+                .collect::<Vec<_>>(),
+            vec![false, false, true]
+        );
+    }
+
+    #[test]
+    fn material_followup_third_attempt_is_operations_lead_escalation() {
+        let request = material_followup_work_item_request(
+            "2026-07-29",
+            PendingMaterialFollowup {
+                source_record_ref: activity_record_ref("activity_occurrence", "rec_late"),
+                attempt: 3,
+                escalation_required: true,
+                title: "瑜伽体验活动".to_string(),
+                owner: "刘珊".to_string(),
+                reminder_text: "third reminder".to_string(),
+            },
+        );
+
+        assert!(request.idempotency_key.ends_with(":3"));
+        assert_eq!(request.source_refs["material_followup_attempt"], 3);
+        assert_eq!(request.payload["material_followup_attempt"], 3);
+        assert_eq!(request.payload["escalation_required"], true);
+        assert_eq!(request.payload["recipient_scope"], "operations_lead");
+        assert!(request.payload["target_group_alias"].is_null());
+        assert_eq!(request.payload["external_send_executed"], false);
     }
 
     #[test]

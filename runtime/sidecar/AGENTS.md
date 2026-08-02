@@ -85,16 +85,22 @@ From the monorepo root, prefer:
   creates only pending AgentOS artifacts.
 - Xiaoman Feishu poster apply must fail before Postgres or external I/O unless the exact
   owner phrase, release SHA, database hash, official API host, app credentials, and
-  chat/user/media allowlists pass. Internal-group selection and callbacks additionally
-  require authenticated ingress, the separate group switch, the persisted internal
-  policy/thread target, matching ingress/delivery chat and user ceilings, and an
-  operations reviewer ceiling covering every allowed user. Persist an attempt before
+  direct-chat/user/media allowlists pass. Internal-group selection and callbacks
+  additionally require authenticated ingress, the separate group switch, the persisted
+  internal policy/thread target, matching ingress/delivery chat and user ceilings, and
+  an operations reviewer ceiling covering every allowed user. Persist an attempt before
   upload, terminalize expired in-flight attempts as ambiguous, verify card callbacks
   inside the sidecar, never fall back from a group thread to a main timeline or direct
   chat, and never create group-send authorization. Keep direct and group production
   scheduling in separate scope-pinned services and timers even though they share the
   durable queue and worker binary; group activation and rollback must not mutate the
   direct timer.
+- When `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE=1` and
+  `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY` are configured, legacy V2 operations intake
+  must fail closed before session trust, Postgres, or workflow mutation. Unset or `0`
+  hook enablement must keep authenticated ingress disabled even when other ingress env
+  exists; other enablement values must fail closed. Do not allow a caller to downgrade
+  from authenticated Feishu ingress to the local V2 direct workflow path.
 - The dedicated QiWe production sidecar artifact is separate and compile-reviewed. Its
   manifest profile is `qiwe-production`, its artifact name is
   `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and it must compile

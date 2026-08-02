@@ -271,16 +271,21 @@
 第 9 节建议的第 2 步已落地为 sidecar 原生 worker：
 
 - 新增 `material-followup-scan` 操作（`runtime/sidecar/src/xiaoman_activity.rs`）：扫描
-  `activity_occurrence` 中指定日期（默认昨天）已结束且 `material_summary`
+  `activity_occurrence` 中指定日期已结束且 `material_summary`
   为空的记录，为每个待催办活动创建 `erhua.send_group_message`
-  工作项（草稿，不自动发送），幂等键绑定业务日期和脱敏
-  `source_record_ref`，避免同日同名活动互相去重。
+  工作项（草稿，不自动发送），幂等键绑定业务日期、脱敏 `source_record_ref`
+  和催办轮次，避免同日同名活动或不同轮次互相去重。
+- 本分支补齐 T+24/48/72h 三轮扫描目标：未显式传 `date`
+  时按小满业务时区扫描昨天、前天、大前天；第三轮只生成 `operations_lead`
+  升级草稿，并在 payload/source refs 标记
+  `material_followup_attempt=3`、`escalation_required=true` 和
+  `external_send_executed=false`。
 - 新增 CLI 命令 `run-xiaoman-activity-material-followup-worker`（`--check-only` /
   `--once` / `--apply` / `--poll-seconds`）。
 - 新增 systemd 单元
   `qintopia-agentos-xiaoman-activity-material-followup-worker.{service,timer}`，渲染脚本已包含，默认 1 小时轮询，可用
   `QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_FOLLOWUP_TIMER_INTERVAL` 覆盖。
 - 与第 9 节建议的差异：没有复用 `announcement_prepare` 的 `post_event_followup`
-  mode，而是直接在 worker 内生成固定格式催办文案。原因：首版目标是最小闭环，固定文案可以先用起来；后续如需个性化文案或 T+24/48/72h 多轮催办（`material_followup_attempt`），再接入
+  mode，而是直接在 worker 内生成固定格式催办文案。原因：首版目标是最小闭环，固定文案可以先用起来；后续如需个性化文案，再接入
   `announcement_prepare`。
-- 尚未做：T+24/48/72h 多轮催办与逾期升级（标记工作遗漏同步运营负责人）、生产环境 timer 启用（属 owner 决策，需走发布流程）。
+- 尚未做：生产环境 timer 启用和真实活动端到端验收（属 owner 决策，需走发布流程）；第三次逾期当前只生成升级草稿，不自动标记遗漏、不写 Feishu、不触发外部发送。
