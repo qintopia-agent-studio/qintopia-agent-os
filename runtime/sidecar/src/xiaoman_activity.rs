@@ -261,6 +261,12 @@ struct EventSignalIngestCandidate {
 }
 
 #[derive(Debug, Clone)]
+struct StoredActivitySignalSource {
+    phase: ActivityPhase,
+    source_refs: Value,
+}
+
+#[derive(Debug, Clone)]
 struct PendingMaterialFollowup {
     source_record_ref: String,
     attempt: u8,
@@ -979,11 +985,12 @@ async fn execute_signal_ingest(
     let (phase, work_item_report) = if apply_requested {
         let database_url = cli.database_url_required()?;
         let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
-        let phase = load_signal_activity_phase(&pool, payload).await?;
-        let request = signal_work_item_request_for_phase(payload, &missing_fields, phase);
+        let stored_source = load_signal_activity_source(&pool, payload).await?;
+        let request =
+            signal_work_item_request_for_stored_source(payload, &missing_fields, &stored_source);
         let policy = operations::OperationsPolicy::from_cli(cli, true);
         (
-            phase,
+            stored_source.phase,
             operations::create_work_item(&pool, request, true, &policy).await?,
         )
     } else {
@@ -1020,15 +1027,20 @@ async fn execute_signal_ingest(
     Ok(())
 }
 
-async fn load_signal_activity_phase(
+async fn load_signal_activity_source(
     pool: &PgPool,
     payload: &ActivityPayload,
-) -> Result<ActivityPhase> {
+) -> Result<StoredActivitySignalSource> {
     let event_signal_id = Uuid::parse_str(payload.event_signal_id.trim())
         .context("signal-ingest --apply requires an event_signal_id UUID")?;
-    let stored_phase: String = sqlx::query_scalar(
+    let row = sqlx::query(
         r#"
-        SELECT COALESCE(activity_phase, 'pre_event')
+        SELECT
+            COALESCE(activity_phase, 'pre_event') AS activity_phase,
+            signal_type,
+            signal_date::text AS signal_date,
+            chat_id,
+            source_message_ids
         FROM qintopia_agent_os.event_signals
         WHERE id = $1
           AND owner_agent = 'xiaoman'
@@ -1038,11 +1050,25 @@ async fn load_signal_activity_phase(
     .bind(event_signal_id)
     .fetch_optional(pool)
     .await
-    .context("load Xiaoman activity signal phase")?
+    .context("load Xiaoman activity signal source")?
     .context("event_signal_id does not reference a Xiaoman activity signal")?;
-    let stored_phase = activity_phase(&stored_phase)?;
+    let stored_phase = activity_phase(row.try_get("activity_phase")?)?;
     validate_requested_activity_phase(&payload.activity_phase, stored_phase)?;
-    Ok(stored_phase)
+    let source_message_ids = row
+        .try_get::<Vec<Uuid>, _>("source_message_ids")?
+        .into_iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>();
+    Ok(StoredActivitySignalSource {
+        phase: stored_phase,
+        source_refs: signal_source_refs_from_values(
+            &event_signal_id.to_string(),
+            row.try_get("signal_type")?,
+            row.try_get("signal_date")?,
+            row.try_get("chat_id")?,
+            &source_message_ids,
+        ),
+    })
 }
 
 fn validate_requested_activity_phase(requested: &str, stored_phase: ActivityPhase) -> Result<()> {
@@ -1559,20 +1585,46 @@ fn signal_work_item_request_for_phase(
     }
 }
 
+fn signal_work_item_request_for_stored_source(
+    payload: &ActivityPayload,
+    missing_fields: &[String],
+    stored_source: &StoredActivitySignalSource,
+) -> WorkItemCreateRequest {
+    let mut request =
+        signal_work_item_request_for_phase(payload, missing_fields, stored_source.phase);
+    request.source_refs = stored_source.source_refs.clone();
+    request
+}
+
 fn signal_source_refs(payload: &ActivityPayload, source_event_signal_id: Option<Uuid>) -> Value {
     let event_ref = source_event_signal_id
         .map(|id| id.to_string())
         .unwrap_or_else(|| payload.event_signal_id.trim().to_string());
-    let message_refs: Vec<String> = payload
-        .source_message_ids
+    signal_source_refs_from_values(
+        &event_ref,
+        &payload.signal_type,
+        &payload.signal_date,
+        &payload.chat_id,
+        &payload.source_message_ids,
+    )
+}
+
+fn signal_source_refs_from_values(
+    event_ref: &str,
+    signal_type: &str,
+    signal_date: &str,
+    chat_id: &str,
+    source_message_ids: &[String],
+) -> Value {
+    let message_refs: Vec<String> = source_message_ids
         .iter()
         .map(|item| activity_record_ref("event_signal_message", item))
         .collect();
     json!({
         "event_signal_id": event_ref,
-        "signal_type": payload.signal_type,
-        "signal_date": payload.signal_date,
-        "chat_ref": activity_record_ref("event_signal_chat", &payload.chat_id),
+        "signal_type": signal_type,
+        "signal_date": signal_date,
+        "chat_ref": activity_record_ref("event_signal_chat", chat_id),
         "source_message_refs": message_refs,
     })
 }
@@ -3144,6 +3196,60 @@ mod tests {
         );
         assert!(source_refs_json.contains("event_signal_message:"));
         assert!(!source_refs_json.contains("55555555-5555-4555-8555-555555555555"));
+    }
+
+    #[test]
+    fn direct_signal_apply_reuses_persisted_worker_source_refs() {
+        let candidate = EventSignalIngestCandidate {
+            id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
+            signal_type: "活动/聚会".to_string(),
+            title: "周末共创晚餐".to_string(),
+            summary: "后台 worker 生成的展示摘要".to_string(),
+            signal_date: "2026-07-05".to_string(),
+            activity_phase: "in_event".to_string(),
+            chat_id: "fixture-community-group".to_string(),
+            source_message_ids: vec![
+                Uuid::parse_str("55555555-5555-4555-8555-555555555555").unwrap()
+            ],
+            owner_name: "小满".to_string(),
+            priority: "中".to_string(),
+            related_member_names: Vec::new(),
+        };
+        let worker_payload = candidate.to_activity_payload();
+        let worker_request = signal_work_item_request(&worker_payload, &[])
+            .expect("worker request should use persisted signal provenance");
+        let direct_payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "signal-ingest",
+            "event_signal_id": candidate.id,
+            "signal_type": candidate.signal_type,
+            "activity_title": candidate.title,
+            "signal_date": candidate.signal_date,
+            "owner_name": candidate.owner_name,
+            "brief_summary": "直接入口重新渲染的展示摘要"
+        }));
+        let untrusted_direct_request =
+            signal_work_item_request_for_phase(&direct_payload, &[], ActivityPhase::In);
+        let stored_source = StoredActivitySignalSource {
+            phase: ActivityPhase::In,
+            source_refs: worker_request.source_refs.clone(),
+        };
+        let trusted_direct_request =
+            signal_work_item_request_for_stored_source(&direct_payload, &[], &stored_source);
+
+        assert_ne!(
+            untrusted_direct_request.source_refs,
+            worker_request.source_refs
+        );
+        assert_eq!(
+            trusted_direct_request.source_refs,
+            worker_request.source_refs
+        );
+        assert_eq!(trusted_direct_request.payload, worker_request.payload);
+        assert_eq!(
+            trusted_direct_request.idempotency_key,
+            worker_request.idempotency_key
+        );
     }
 
     #[test]

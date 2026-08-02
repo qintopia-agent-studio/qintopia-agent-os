@@ -39,6 +39,7 @@ class CollabMcpPosterMigrationTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "poster_production_moved_to_agentos_intake")
+        self.assertIn("trusted Xiaoman Feishu conversation", result["message"])
         self.assertFalse(result["retryable"])
         self.assertFalse(result["external_send_executed"])
         run.assert_not_called()

@@ -176,6 +176,10 @@ impl IngressConfig {
         }))
     }
 
+    pub(crate) fn internal_group_enabled(&self) -> bool {
+        self.internal_group_enabled
+    }
+
     #[cfg(test)]
     fn fixture(group_enabled: bool) -> Self {
         Self {

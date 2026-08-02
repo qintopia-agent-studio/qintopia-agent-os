@@ -39,11 +39,14 @@ Xiaoman activity-record work item. Missing or conflicting facts return `需补�
 all evidence/visual workers unclaimable. Design defaults do not count as missing facts.
 The model cannot provide a target chat, reviewer, or generation authorization.
 
-`qintopia_xiaoman_poster_workflow_status` currently reads only workflows belonging to
-the current trusted direct conversation. A later modification uses the same production
-tool with the workflow and generated-image ids after the image has been marked for
-changes. Group status, participant snapshots, thread delivery, and group review are
-separate V3 increments and are not enabled by the authenticated-ingress foundation.
+`qintopia_xiaoman_poster_workflow_status` reads V2 workflows only for their originating
+direct requester. For V3, it reads direct workflows for the requester and internal-group
+workflows for authenticated humans in the same authorized conversation. A later
+modification uses the same production tool with the workflow and generated-image ids
+after the image has been marked for changes. Only the requester or the workflow's
+snapshotted reviewers may submit a group revision, and that instruction must come from
+the original thread. PR 2 persists group notification work but does not deliver it;
+thread delivery remains a separately gated PR 3 boundary.
 
 ## Tools
 

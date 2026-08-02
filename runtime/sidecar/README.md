@@ -71,8 +71,12 @@ qintopia-message-sidecar conversation-policy-apply --stdin < policies.json
 
 The command fails before reading stdin or connecting to Postgres unless the exact owner
 approval and database URL hash are present. It emits only policy counts, versions, and
-opaque hashes. PR 1 keeps `QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED=0`, creates no
-thread reply, and calls no Feishu endpoint.
+opaque hashes. Internal-group behavior remains disabled by default through
+`QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED=0`. When separately enabled for
+repository or staging tests, PR 2 resolves group intake from the persisted receipt,
+snapshots requester/reviewer authority, and may persist a generic conversation
+notification. The existing delivery worker still selects direct targets only; this
+increment creates no thread reply and calls no Feishu endpoint.
 
 ## Responsibility
 

@@ -15,7 +15,7 @@ AND (
     visual.payload->'generation_authorization' IS NULL
     OR visual.payload->'generation_authorization' = 'null'::jsonb
     OR (
-        visual.source_type = 'feishu_direct_request'
+        visual.source_type IN ('feishu_direct_request', 'feishu_internal_group_request')
         AND visual.payload->'generation_authorization'->>'mode'
             = 'originating_generation_request'
         AND visual.payload->'generation_authorization'->>'actor_ref'
@@ -682,8 +682,11 @@ fn generation_authorization(work_item: &WorkItem) -> Result<Option<GenerationAut
     if value.is_null() {
         return Ok(None);
     }
-    if work_item.source_type != "feishu_direct_request" {
-        bail!("generation authorization is allowed only for trusted Feishu direct intake");
+    if !matches!(
+        work_item.source_type.as_str(),
+        "feishu_direct_request" | "feishu_internal_group_request"
+    ) {
+        bail!("generation authorization is allowed only for trusted Feishu conversation intake");
     }
     let mode = value
         .get("mode")
@@ -1600,7 +1603,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_generation_authorization_requires_a_complete_source_grounded_fact_gate() {
+    fn conversation_generation_authorization_requires_a_complete_source_grounded_fact_gate() {
         let opaque = format!("sha256:{}", "a".repeat(64));
         assert!(valid_opaque_ref(&opaque));
         assert!(!valid_opaque_ref(&format!("sha256:{}", "A".repeat(64))));
@@ -1660,14 +1663,25 @@ mod tests {
                 .to_string()
                 .contains("generation authorization provenance is invalid"));
         }
+
+        let mut internal_group = build_work_item(json!({
+            "status": "complete",
+            "source": "originating_request",
+            "missing_fields": [],
+            "conflict_fields": []
+        }));
+        internal_group.source_type = "feishu_internal_group_request".to_string();
+        let drafts = build_artifact_drafts(&internal_group, Some(&evidence))
+            .expect("trusted internal-group generation authorization should be accepted");
+        assert_eq!(drafts[0].review_status, "approved");
     }
 
     #[test]
-    fn direct_generation_worker_sql_fails_closed_on_fact_gate_shape() {
+    fn conversation_generation_worker_sql_fails_closed_on_fact_gate_shape() {
         for required_fragment in [
             "generation_authorization' IS NULL",
             "generation_authorization' = 'null'::jsonb",
-            "visual.source_type = 'feishu_direct_request'",
+            "visual.source_type IN ('feishu_direct_request', 'feishu_internal_group_request')",
             "actor_ref'\n            ~ '^sha256:[0-9a-f]{64}$'",
             "source_message_ref'\n            ~ '^sha256:[0-9a-f]{64}$'",
             "visual.source_refs->>'source_message_ref'",
@@ -1717,7 +1731,9 @@ mod tests {
 
         let error = build_artifact_drafts(&work_item, Some(&evidence))
             .expect_err("automatic workflow authorization must be rejected");
-        assert!(error.to_string().contains("trusted Feishu direct intake"));
+        assert!(error
+            .to_string()
+            .contains("trusted Feishu conversation intake"));
     }
 
     #[test]

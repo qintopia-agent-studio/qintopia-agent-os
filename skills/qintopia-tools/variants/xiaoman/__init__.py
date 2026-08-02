@@ -5586,7 +5586,7 @@ def handle_qintopia_xiaoman_poster_production_request(args: dict[str, Any], **_:
         return _poster_safe_failure("poster_request_invalid")
     session, schema_version, error = _poster_intake_session_context()
     if error or session is None:
-        return _poster_safe_failure("trusted_direct_session_required")
+        return _poster_safe_failure("trusted_feishu_session_required")
     priority = _clean_text(args.get("priority") or "normal", max_len=16)
     if priority not in {"low", "normal", "high", "urgent"}:
         return _poster_safe_failure("poster_priority_invalid")
@@ -5606,7 +5606,17 @@ def handle_qintopia_xiaoman_poster_production_request(args: dict[str, Any], **_:
     ):
         return _poster_safe_failure("poster_revision_reference_invalid")
     idempotency_digest = hashlib.sha256()
-    for part in (session["platform"], session["source_message_id"]):
+    idempotency_parts = (
+        (
+            "poster-intake-v3",
+            session["platform"],
+            session["source_message_id"],
+            "poster_production_request",
+        )
+        if schema_version == XIAOMAN_FEISHU_MESSAGE_INGRESS_SCHEMA_VERSION
+        else (session["platform"], session["source_message_id"])
+    )
+    for part in idempotency_parts:
         idempotency_digest.update(part.encode("utf-8"))
         idempotency_digest.update(b"\0")
     request_payload = {
@@ -5662,7 +5672,7 @@ def handle_qintopia_xiaoman_poster_workflow_status(args: dict[str, Any], **_: An
         return _poster_safe_failure("workflow_root_id_invalid")
     session, schema_version, error = _poster_intake_session_context()
     if error or session is None:
-        return _poster_safe_failure("trusted_direct_session_required")
+        return _poster_safe_failure("trusted_feishu_session_required")
     try:
         response = _poster_intake_call(
             {

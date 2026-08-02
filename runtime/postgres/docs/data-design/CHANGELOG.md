@@ -1,5 +1,15 @@
 # Data Design Changelog
 
+## 2026-08-01 - Xiaoman conversation poster participants V3
+
+- Activates persisted conversation policy for unified direct/internal-group poster
+  intake.
+- Snapshots requester and reviewer authority and makes the source image the unique
+  first-revision boundary.
+- Adds a generic trusted-conversation notification capability without adding a public
+  send path.
+- Design: `2026-08-01-xiaoman-conversation-poster-participants-v3.md`
+
 ## 2026-07-31
 
 - Added trusted Xiaoman Feishu poster intake correlation, durable direct-conversation

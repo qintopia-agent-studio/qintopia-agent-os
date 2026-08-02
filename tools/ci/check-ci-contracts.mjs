@@ -698,6 +698,14 @@ if (ciWorkflow) {
           "Xiaoman authenticated message ingress PostgreSQL integration",
           "conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow",
         ],
+        [
+          "Xiaoman V3 direct poster participant PostgreSQL integration",
+          "operations_intake::tests::postgres_v3_direct_snapshots_participants_and_isolates_status",
+        ],
+        [
+          "Xiaoman internal-group poster PostgreSQL integration",
+          "operations_intake::tests::postgres_internal_group_snapshots_authority_and_accepts_only_first_revision",
+        ],
       ]) {
         const step = postgresJob.steps?.find(
           (candidate) => candidate?.name === stepName

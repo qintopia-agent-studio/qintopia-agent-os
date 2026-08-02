@@ -44,6 +44,8 @@ const ALLOWED_SOURCE_TYPES: &[&str] = &[
     "operations_workflow",
     "feishu_direct_request",
     "feishu_direct_revision_request",
+    "feishu_internal_group_request",
+    "feishu_internal_group_revision_request",
 ];
 const DRY_RUN_ALLOWED_GROUP_ALIASES: &[&str] = &["community_activity_group"];
 const DRY_RUN_ALLOWED_GROUP_IDS: &[&str] = &[];
@@ -54,21 +56,33 @@ const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "wenyuange.retrieve_evidence",
     "xiaoman.create_activity_request",
     "xiaoman.notify_direct_conversation",
+    "xiaoman.notify_conversation",
 ];
 const GENERATED_IMAGE_ARTIFACT_TYPE: &str = "generated_image";
 const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
 const GENERATED_IMAGE_WORK_ITEM_TYPE: &str = "image_generation_request";
 const GENERATED_IMAGE_WORKER_ID: &str = "huabaosi-image-generation-worker";
+const POSTER_REVISION_PURPOSE: &str = "activity_image_revision_request";
+const POSTER_REVISION_KEY_NAMESPACE: &str = "poster-revision-source-artifact-v3";
+const POSTER_REVISION_VOLATILE_PAYLOAD_FIELDS: &[&str] = &[
+    "prompt_hash",
+    "revision_instruction",
+    "revision_instruction_hash",
+    "revision_actor_ref",
+    "revision_source_message_ref",
+];
 const MAX_APPROVABLE_GENERATED_IMAGE_BYTES: i64 = 25 * 1024 * 1024;
 const DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL: &str = r#"
 AND parent.source_type NOT IN (
     'feishu_direct_request',
-    'feishu_direct_revision_request'
+    'feishu_direct_revision_request',
+    'feishu_internal_group_request',
+    'feishu_internal_group_revision_request'
 )
 AND COALESCE(
     parent.metadata #>> '{workflow_metadata,intake_channel}',
     ''
-) <> 'xiaoman_feishu_direct'
+) NOT IN ('xiaoman_feishu_direct', 'xiaoman_feishu_internal_group')
 "#;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -663,6 +677,27 @@ struct Capability {
     risk_level: String,
     review_policy: String,
     enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+struct IdempotentWorkItemBinding {
+    id: Uuid,
+    status: String,
+    parent_work_item_id: Option<Uuid>,
+    work_item_type: String,
+    requester_agent: String,
+    target_agent: String,
+    capability_key: String,
+    priority: String,
+    purpose: String,
+    source_event_signal_id: Option<Uuid>,
+    source_type: String,
+    source_refs: Value,
+    risk_level: String,
+    information_class: String,
+    payload: Value,
+    payload_redaction_policy: String,
+    review_policy: String,
 }
 
 #[derive(Debug, Clone)]
@@ -1309,7 +1344,7 @@ async fn run_xiaoman_activity_image_generation_starter_batch(
     for candidate in &candidates {
         let request = xiaoman_activity_image_generation_request(candidate);
         let report = if apply_requested {
-            create_work_item(pool, request, true, policy).await?
+            create_work_item_routed(pool, request, true, policy).await?
         } else {
             create_work_item_dry_run(request)?
         };
@@ -3232,6 +3267,16 @@ impl OperationsPolicy {
         actor_allowed(&self.allowed_reviewer_ids, reviewer_id)
     }
 
+    pub(crate) fn poster_reviewer_allowed(&self, reviewer_id: &str) -> bool {
+        self.reviewer_allowed(reviewer_id)
+    }
+
+    pub(crate) fn scoped_to_poster_reviewer(&self, reviewer_id: &str) -> Self {
+        let mut scoped = self.clone();
+        scoped.allowed_reviewer_ids = vec![reviewer_id.to_string()];
+        scoped
+    }
+
     fn confirmer_allowed(&self, confirmer_id: &str) -> bool {
         actor_allowed(&self.allowed_confirmer_ids, confirmer_id)
     }
@@ -3636,14 +3681,14 @@ pub async fn start_workflow(
     }
 
     let (parent_request, _) = workflow_work_item_requests(&request, None);
-    let parent_report = create_work_item(pool, parent_request, true, policy).await?;
+    let parent_report = create_work_item_routed(pool, parent_request, true, policy).await?;
     let parent_work_item_id = parent_report
         .work_item_id
         .ok_or_else(|| anyhow::anyhow!("parent work item id missing after create"))?;
     let (_, child_requests) = workflow_work_item_requests(&request, Some(parent_work_item_id));
     let mut child_reports = Vec::new();
     for child_request in child_requests {
-        child_reports.push(create_work_item(pool, child_request, true, policy).await?);
+        child_reports.push(create_work_item_routed(pool, child_request, true, policy).await?);
     }
     let all_children_existing = child_reports.iter().all(|report| report.existing);
     let action_status = if parent_report.existing && all_children_existing {
@@ -3658,6 +3703,298 @@ pub async fn start_workflow(
         parent_report,
         child_reports,
     ))
+}
+
+pub(crate) async fn create_work_item_routed(
+    pool: &PgPool,
+    mut request: WorkItemCreateRequest,
+    apply_requested: bool,
+    policy: &OperationsPolicy,
+) -> Result<WorkItemCreateReport> {
+    if apply_requested {
+        let capability = load_capability(pool, request.capability_key.trim())
+            .await?
+            .context("capability is not registered for routed work")?;
+        request.target_agent = capability.provider_agent;
+    }
+    create_work_item(pool, request, apply_requested, policy).await
+}
+
+async fn load_idempotent_work_item_binding(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    idempotency_key: &str,
+) -> Result<Option<IdempotentWorkItemBinding>> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            id,
+            status,
+            parent_work_item_id,
+            work_item_type,
+            requester_agent,
+            target_agent,
+            capability_key,
+            priority,
+            purpose,
+            source_event_signal_id,
+            source_type,
+            source_refs,
+            risk_level,
+            information_class,
+            payload,
+            payload_redaction_policy,
+            review_policy
+        FROM qintopia_agent_os.work_items
+        WHERE idempotency_key = $1
+        "#,
+    )
+    .bind(idempotency_key)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row.map(|row| IdempotentWorkItemBinding {
+        id: row.get("id"),
+        status: row.get("status"),
+        parent_work_item_id: row.get("parent_work_item_id"),
+        work_item_type: row.get("work_item_type"),
+        requester_agent: row.get("requester_agent"),
+        target_agent: row.get("target_agent"),
+        capability_key: row.get("capability_key"),
+        priority: row.get("priority"),
+        purpose: row.get("purpose"),
+        source_event_signal_id: row.get("source_event_signal_id"),
+        source_type: row.get("source_type"),
+        source_refs: row.get("source_refs"),
+        risk_level: row.get("risk_level"),
+        information_class: row.get("information_class"),
+        payload: row.get("payload"),
+        payload_redaction_policy: row.get("payload_redaction_policy"),
+        review_policy: row.get("review_policy"),
+    }))
+}
+
+pub(crate) fn poster_revision_idempotency_key(source_artifact_id: Uuid) -> String {
+    format!(
+        "poster_revision_request:{}",
+        null_separated_digest(&[
+            POSTER_REVISION_KEY_NAMESPACE,
+            &source_artifact_id.to_string(),
+        ])
+    )
+}
+
+fn null_separated_digest(parts: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part.as_bytes());
+        hasher.update([0]);
+    }
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+fn is_canonical_sha256(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    })
+}
+
+fn valid_revision_source_refs<'a>(value: &'a Value, source_artifact_id: &str) -> Option<&'a str> {
+    let object = value.as_object()?;
+    if object.len() != 2
+        || object
+            .get("revision_of_artifact_id")
+            .and_then(Value::as_str)
+            != Some(source_artifact_id)
+    {
+        return None;
+    }
+    object
+        .get("source_message_ref")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+}
+
+fn valid_revision_payload_variant(
+    value: &Value,
+    source_artifact_id: &str,
+    source_message_ref: &str,
+) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    if object
+        .get("revision_of_artifact_id")
+        .and_then(Value::as_str)
+        != Some(source_artifact_id)
+        || object
+            .get("revision_source_message_ref")
+            .and_then(Value::as_str)
+            != Some(source_message_ref)
+    {
+        return false;
+    }
+    let Some(instruction) = object
+        .get("revision_instruction")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.chars().count() <= 2_000)
+    else {
+        return false;
+    };
+    let Some(revision_hash) = object
+        .get("revision_instruction_hash")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let Some(actor_ref) = object
+        .get("revision_actor_ref")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let Some(prompt_hash) = object
+        .get("prompt_hash")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let Some(brief_hash) = object
+        .get("approved_brief_content_hash")
+        .and_then(Value::as_str)
+        .filter(|value| is_canonical_sha256(value))
+    else {
+        return false;
+    };
+    let expected_revision_hash = null_separated_digest(&[
+        "poster-revision-v1",
+        source_artifact_id,
+        instruction,
+        source_message_ref,
+    ]);
+    revision_hash == expected_revision_hash
+        && prompt_hash == null_separated_digest(&[brief_hash, revision_hash])
+        && !actor_ref.is_empty()
+}
+
+fn stable_revision_payload(value: &Value) -> Option<Value> {
+    let mut object = value.as_object()?.clone();
+    for field in POSTER_REVISION_VOLATILE_PAYLOAD_FIELDS {
+        object.remove(*field);
+    }
+    Some(Value::Object(object))
+}
+
+fn revision_contenders_share_first_writer_scope(
+    existing: &IdempotentWorkItemBinding,
+    request: &WorkItemCreateRequest,
+) -> bool {
+    if existing.purpose != POSTER_REVISION_PURPOSE || request.purpose != POSTER_REVISION_PURPOSE {
+        return false;
+    }
+    let Some(existing_artifact_id) = existing
+        .payload
+        .get("revision_of_artifact_id")
+        .and_then(Value::as_str)
+    else {
+        return false;
+    };
+    let Ok(source_artifact_id) = Uuid::parse_str(existing_artifact_id) else {
+        return false;
+    };
+    if request.idempotency_key != poster_revision_idempotency_key(source_artifact_id) {
+        return false;
+    }
+    let Some(existing_message_ref) =
+        valid_revision_source_refs(&existing.source_refs, existing_artifact_id)
+    else {
+        return false;
+    };
+    let Some(request_message_ref) =
+        valid_revision_source_refs(&request.source_refs, existing_artifact_id)
+    else {
+        return false;
+    };
+    valid_revision_payload_variant(
+        &existing.payload,
+        existing_artifact_id,
+        existing_message_ref,
+    ) && valid_revision_payload_variant(&request.payload, existing_artifact_id, request_message_ref)
+        && stable_revision_payload(&existing.payload) == stable_revision_payload(&request.payload)
+}
+
+fn validate_idempotent_work_item_binding(
+    existing: &IdempotentWorkItemBinding,
+    request: &WorkItemCreateRequest,
+    capability: &Capability,
+) -> Result<()> {
+    // Lifecycle fields, presentation text, and its derived dedupe key are not request
+    // identity once the caller supplies a stable idempotency key.
+    let same_first_writer_revision_scope =
+        revision_contenders_share_first_writer_scope(existing, request);
+    let mismatched_field = [
+        (
+            "parent_work_item_id",
+            existing.parent_work_item_id != request.parent_work_item_id,
+        ),
+        (
+            "work_item_type",
+            existing.work_item_type != request.work_item_type,
+        ),
+        (
+            "requester_agent",
+            existing.requester_agent != request.requester_agent,
+        ),
+        (
+            "target_agent",
+            existing.target_agent != request.target_agent,
+        ),
+        (
+            "capability_key",
+            existing.capability_key != request.capability_key,
+        ),
+        ("priority", existing.priority != request.priority),
+        ("purpose", existing.purpose != request.purpose),
+        (
+            "source_event_signal_id",
+            existing.source_event_signal_id != request.source_event_signal_id,
+        ),
+        ("source_type", existing.source_type != request.source_type),
+        (
+            "source_refs",
+            existing.source_refs != request.source_refs && !same_first_writer_revision_scope,
+        ),
+        (
+            "payload",
+            existing.payload != request.payload && !same_first_writer_revision_scope,
+        ),
+        (
+            "payload_redaction_policy",
+            existing.payload_redaction_policy != request.payload_redaction_policy,
+        ),
+        ("risk_level", existing.risk_level != capability.risk_level),
+        (
+            "information_class",
+            existing.information_class != "internal_ops",
+        ),
+        (
+            "review_policy",
+            existing.review_policy != capability.review_policy,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(field, mismatched)| mismatched.then_some(field));
+
+    if let Some(field) = mismatched_field {
+        bail!("idempotency key is already bound to a different work item request ({field})");
+    }
+    Ok(())
 }
 
 pub async fn create_work_item(
@@ -3727,26 +4064,15 @@ pub async fn create_work_item(
     let mut tx = pool.begin().await.context("begin work item transaction")?;
     validate_activity_lifecycle_phase_fact(&mut tx, &request).await?;
     let initial_status = initial_status_for(&request, &capability);
-    let existing = sqlx::query(
-        r#"
-        SELECT id, status
-        FROM qintopia_agent_os.work_items
-        WHERE idempotency_key = $1
-        "#,
-    )
-    .bind(&request.idempotency_key)
-    .fetch_optional(&mut *tx)
-    .await
-    .context("lookup work item idempotency key")?;
+    let existing = load_idempotent_work_item_binding(&mut tx, &request.idempotency_key)
+        .await
+        .context("lookup work item idempotency key")?;
 
-    let (work_item_id, current_status, existing) = if let Some(row) = existing {
-        (
-            row.get::<Uuid, _>("id"),
-            row.get::<String, _>("status"),
-            true,
-        )
+    let (work_item_id, current_status, existing) = if let Some(existing) = existing {
+        validate_idempotent_work_item_binding(&existing, &request, &capability)?;
+        (existing.id, existing.status, true)
     } else {
-        let row = sqlx::query(
+        let inserted = sqlx::query(
             r#"
             INSERT INTO qintopia_agent_os.work_items
                 (
@@ -3775,6 +4101,7 @@ pub async fn create_work_item(
             VALUES
                 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
                  $15, $16, $17, $18, $19, $20, $21)
+            ON CONFLICT (idempotency_key) DO NOTHING
             RETURNING id
             "#,
         )
@@ -3799,30 +4126,39 @@ pub async fn create_work_item(
         .bind(&request.payload_redaction_policy)
         .bind(&capability.review_policy)
         .bind(&request.metadata)
-        .fetch_one(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await
         .context("insert work item")?;
-        let work_item_id = row.get::<Uuid, _>("id");
-        append_event_in_tx(
-            &mut tx,
-            Some(work_item_id),
-            None,
-            "created",
-            "agent",
-            &request.requester_agent,
-            "work item created through capability request",
-            json!({
-                "capability_key": request.capability_key,
-                "work_item_type": request.work_item_type,
-                "status": initial_status,
-                "target_agent": request.target_agent,
-                "parent_work_item_id": request.parent_work_item_id,
-                "human_workbench_provider": "feishu_task",
-                "requires_human_final_confirmation": initial_status == "awaiting_publish"
-            }),
-        )
-        .await?;
-        (work_item_id, initial_status, false)
+        if let Some(row) = inserted {
+            let work_item_id = row.get::<Uuid, _>("id");
+            append_event_in_tx(
+                &mut tx,
+                Some(work_item_id),
+                None,
+                "created",
+                "agent",
+                &request.requester_agent,
+                "work item created through capability request",
+                json!({
+                    "capability_key": request.capability_key,
+                    "work_item_type": request.work_item_type,
+                    "status": initial_status,
+                    "target_agent": request.target_agent,
+                    "parent_work_item_id": request.parent_work_item_id,
+                    "human_workbench_provider": "feishu_task",
+                    "requires_human_final_confirmation": initial_status == "awaiting_publish"
+                }),
+            )
+            .await?;
+            (work_item_id, initial_status, false)
+        } else {
+            let existing = load_idempotent_work_item_binding(&mut tx, &request.idempotency_key)
+                .await
+                .context("load concurrent idempotent work item winner")?
+                .context("concurrent idempotent work item winner disappeared")?;
+            validate_idempotent_work_item_binding(&existing, &request, &capability)?;
+            (existing.id, existing.status, true)
+        }
     };
 
     tx.commit().await.context("commit work item transaction")?;
@@ -4118,12 +4454,14 @@ fn normalize_request(request: &mut WorkItemCreateRequest) {
 }
 
 fn initial_status_for(request: &WorkItemCreateRequest, capability: &Capability) -> String {
-    if request.source_type == "feishu_direct_request"
-        && request
-            .payload
-            .pointer("/poster_fact_gate/status")
-            .and_then(Value::as_str)
-            == Some("needs_clarification")
+    if matches!(
+        request.source_type.as_str(),
+        "feishu_direct_request" | "feishu_internal_group_request"
+    ) && request
+        .payload
+        .pointer("/poster_fact_gate/status")
+        .and_then(Value::as_str)
+        == Some("needs_clarification")
     {
         "awaiting_review".to_string()
     } else if capability.capability_key == "erhua.send_group_message"
@@ -4414,17 +4752,17 @@ fn validate_source_policy(
                 bail!("source_refs.source_record_ref is required for this source_type");
             }
         }
-        "feishu_direct_request" | "feishu_direct_revision_request" => {
+        "feishu_direct_request"
+        | "feishu_direct_revision_request"
+        | "feishu_internal_group_request"
+        | "feishu_internal_group_revision_request" => {
             let source_message_ref = source_refs
                 .get("source_message_ref")
                 .and_then(Value::as_str)
                 .ok_or_else(|| {
-                    anyhow::anyhow!("trusted Feishu direct source requires source_message_ref")
+                    anyhow::anyhow!("trusted Feishu source requires source_message_ref")
                 })?;
-            validate_canonical_sha256(
-                source_message_ref,
-                "trusted Feishu direct source_message_ref",
-            )?;
+            validate_canonical_sha256(source_message_ref, "trusted Feishu source_message_ref")?;
         }
         _ => bail!("source_type is not allowed for operations work items"),
     }
@@ -6407,6 +6745,17 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
             review_policy: "origin_conversation_only".to_string(),
             enabled: true,
         }),
+        "xiaoman.notify_conversation" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "xiaoman".to_string(),
+            display_name: "小满原会话任务通知".to_string(),
+            description: "把海报结果返回可信来源私聊或内部协作群线程，不授权公开发布".to_string(),
+            allowed_callers: vec!["xiaoman".to_string()],
+            allowed_work_item_types: vec!["conversation_notification_request".to_string()],
+            risk_level: "high".to_string(),
+            review_policy: "origin_conversation_only".to_string(),
+            enabled: true,
+        }),
         _ => None,
     }
 }
@@ -6566,6 +6915,249 @@ mod tests {
         serde_json::from_value(value).expect("request should deserialize")
     }
 
+    fn binding_from_request(
+        request: &WorkItemCreateRequest,
+        capability: &Capability,
+    ) -> IdempotentWorkItemBinding {
+        IdempotentWorkItemBinding {
+            id: Uuid::new_v4(),
+            status: "processing".to_string(),
+            parent_work_item_id: request.parent_work_item_id,
+            work_item_type: request.work_item_type.clone(),
+            requester_agent: request.requester_agent.clone(),
+            target_agent: request.target_agent.clone(),
+            capability_key: request.capability_key.clone(),
+            priority: request.priority.clone(),
+            purpose: request.purpose.clone(),
+            source_event_signal_id: request.source_event_signal_id,
+            source_type: request.source_type.clone(),
+            source_refs: request.source_refs.clone(),
+            risk_level: capability.risk_level.clone(),
+            information_class: "internal_ops".to_string(),
+            payload: request.payload.clone(),
+            payload_redaction_policy: request.payload_redaction_policy.clone(),
+            review_policy: capability.review_policy.clone(),
+        }
+    }
+
+    fn idempotent_binding_fixture() -> (WorkItemCreateRequest, Capability, IdempotentWorkItemBinding)
+    {
+        let mut request = request(json!({
+            "requester_agent": "xiaoman",
+            "target_agent": "huabaosi",
+            "capability_key": "huabaosi.create_visual_asset",
+            "work_item_type": "visual_asset_request",
+            "brief_summary": "生成已脱敏活动海报 brief",
+            "purpose": "测试幂等绑定",
+            "human_owner": "human-owner-1",
+            "priority": "normal",
+            "source_type": "manual_request",
+            "source_refs": {"request_ref": format!("sha256:{}", "a".repeat(64))},
+            "payload": {"format": "community_poster"},
+            "payload_redaction_policy": "summary_only",
+            "idempotency_key": "idempotent-binding-fixture",
+            "dedupe_key": "idempotent-binding-fixture",
+            "metadata": {"intake": "fixture"},
+            "parent_work_item_id": "11111111-1111-4111-8111-111111111111"
+        }));
+        normalize_request(&mut request);
+        let capability = builtin_capability(&request.capability_key)
+            .expect("fixture capability should be registered");
+        let existing = binding_from_request(&request, &capability);
+        (request, capability, existing)
+    }
+
+    fn revision_binding_request(
+        source_artifact_id: Uuid,
+        source_message_ref: &str,
+        actor_ref: &str,
+        instruction: &str,
+    ) -> WorkItemCreateRequest {
+        let approved_brief_id = Uuid::parse_str("22222222-2222-4222-8222-222222222222")
+            .expect("fixture approved brief id should be valid");
+        let approved_brief_hash = format!("sha256:{}", "b".repeat(64));
+        let revision_hash = null_separated_digest(&[
+            "poster-revision-v1",
+            &source_artifact_id.to_string(),
+            instruction,
+            source_message_ref,
+        ]);
+        let prompt_hash = null_separated_digest(&[&approved_brief_hash, &revision_hash]);
+        let mut request = request(json!({
+            "requester_agent": "xiaoman",
+            "target_agent": "huabaosi",
+            "capability_key": "huabaosi.generate_image_asset",
+            "work_item_type": "image_generation_request",
+            "brief_summary": "根据第一条有效修改意见生成下一版活动海报",
+            "purpose": POSTER_REVISION_PURPOSE,
+            "human_owner": format!("sha256:{}", "c".repeat(64)),
+            "priority": "normal",
+            "source_type": "feishu_internal_group_revision_request",
+            "source_refs": {
+                "source_message_ref": source_message_ref,
+                "revision_of_artifact_id": source_artifact_id
+            },
+            "payload": {
+                "workflow_type": "activity_promotion",
+                "activity_phase": "pre_event",
+                "activity_route": "promotion",
+                "planner_intent": "revise_image_from_originating_user_instruction",
+                "approved_brief_artifact_id": approved_brief_id,
+                "approved_brief_content_hash": approved_brief_hash,
+                "image_specification": "community_poster_1024x1024",
+                "prompt_hash": prompt_hash,
+                "revision_of_artifact_id": source_artifact_id,
+                "revision_instruction": instruction,
+                "revision_instruction_hash": revision_hash,
+                "revision_actor_ref": actor_ref,
+                "revision_source_message_ref": source_message_ref,
+                "external_publish_executed": false,
+                "group_send_authorized": false
+            },
+            "payload_redaction_policy": "summary_only",
+            "idempotency_key": poster_revision_idempotency_key(source_artifact_id),
+            "metadata": {
+                "workflow_type": "activity_promotion",
+                "workflow_step": "image_revision",
+                "revision_of_artifact_id": source_artifact_id,
+                "revision_instruction_hash": revision_hash,
+                "group_send_authorized": false,
+                "external_publish_executed": false
+            },
+            "parent_work_item_id": "11111111-1111-4111-8111-111111111111",
+            "approved_artifact_id": approved_brief_id
+        }));
+        normalize_request(&mut request);
+        request
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_accepts_an_exact_replay_after_status_changes() {
+        let (request, capability, existing) = idempotent_binding_fixture();
+
+        validate_idempotent_work_item_binding(&existing, &request, &capability)
+            .expect("mutable lifecycle state must not invalidate an exact replay");
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_accepts_refreshed_presentation_fields() {
+        let (mut request, capability, existing) = idempotent_binding_fixture();
+        let original_dedupe_key = request.dedupe_key.clone();
+        request.brief_summary = "刷新后的活动展示摘要".to_string();
+        request.dedupe_key = dedupe_key(&request);
+
+        assert_ne!(request.dedupe_key, original_dedupe_key);
+        validate_idempotent_work_item_binding(&existing, &request, &capability)
+            .expect("presentation changes must reuse the stable idempotency binding");
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_accepts_first_valid_revision_contender() {
+        let source_artifact_id = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        let first = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "d".repeat(64)),
+            &format!("sha256:{}", "e".repeat(64)),
+            "标题缩短，时间放到主视觉下方",
+        );
+        let contender = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "f".repeat(64)),
+            &format!("sha256:{}", "1".repeat(64)),
+            "标题保留，时间改到右下角",
+        );
+        let capability = builtin_capability(&first.capability_key).unwrap();
+        let existing = binding_from_request(&first, &capability);
+
+        assert_ne!(existing.source_refs, contender.source_refs);
+        assert_ne!(existing.payload, contender.payload);
+        validate_idempotent_work_item_binding(&existing, &contender, &capability)
+            .expect("same-artifact revision contenders must reuse the first valid winner");
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_rejects_revision_scope_or_safety_drift() {
+        let source_artifact_id = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        let first = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "d".repeat(64)),
+            &format!("sha256:{}", "e".repeat(64)),
+            "标题缩短，时间放到主视觉下方",
+        );
+        let contender = revision_binding_request(
+            source_artifact_id,
+            &format!("sha256:{}", "f".repeat(64)),
+            &format!("sha256:{}", "1".repeat(64)),
+            "标题保留，时间改到右下角",
+        );
+        let capability = builtin_capability(&first.capability_key).unwrap();
+        let existing = binding_from_request(&first, &capability);
+
+        let mut drifted_source = contender.clone();
+        drifted_source.source_refs["revision_of_artifact_id"] = json!(Uuid::new_v4());
+        let error = validate_idempotent_work_item_binding(&existing, &drifted_source, &capability)
+            .expect_err("a revision contender cannot cross source artifacts");
+        assert!(error.to_string().contains("source_refs"));
+
+        let mut drifted_safety = contender;
+        drifted_safety.source_refs = existing.source_refs.clone();
+        drifted_safety.payload["group_send_authorized"] = json!(true);
+        let error = validate_idempotent_work_item_binding(&existing, &drifted_safety, &capability)
+            .expect_err("a revision contender cannot change publication safety bindings");
+        assert!(error.to_string().contains("payload"));
+    }
+
+    #[test]
+    fn idempotent_work_item_binding_rejects_immutable_request_drift() {
+        let (request, capability, existing) = idempotent_binding_fixture();
+        let mut cases = Vec::new();
+
+        let mut drifted = existing.clone();
+        drifted.capability_key = "wenyuange.retrieve_evidence".to_string();
+        cases.push(("capability_key", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.work_item_type = "evidence_request".to_string();
+        cases.push(("work_item_type", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.parent_work_item_id = Some(Uuid::new_v4());
+        cases.push(("parent_work_item_id", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.requester_agent = "default".to_string();
+        cases.push(("requester_agent", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.target_agent = "xiaoman".to_string();
+        cases.push(("target_agent", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.source_event_signal_id = Some(Uuid::new_v4());
+        cases.push(("source_event_signal_id", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.source_type = "event_signal".to_string();
+        cases.push(("source_type", drifted));
+
+        let mut drifted = existing.clone();
+        drifted.source_refs = json!({"request_ref": format!("sha256:{}", "b".repeat(64))});
+        cases.push(("source_refs", drifted));
+
+        let mut drifted = existing;
+        drifted.payload = json!({"format": "different_poster"});
+        cases.push(("payload", drifted));
+
+        for (field, drifted) in cases {
+            let error = validate_idempotent_work_item_binding(&drifted, &request, &capability)
+                .expect_err("a reused key with different immutable bindings must fail closed");
+            assert!(
+                error.to_string().contains(field),
+                "unexpected error for {field}: {error}"
+            );
+        }
+    }
+
     #[test]
     fn direct_poster_fact_gate_blocks_workers_until_clarified() {
         let input = WorkflowStartRequest {
@@ -6615,6 +7207,18 @@ mod tests {
             None,
         )
         .expect("trusted direct revision source should pass");
+        validate_source_policy(
+            "feishu_internal_group_request",
+            &json!({"source_message_ref": source_ref}),
+            None,
+        )
+        .expect("trusted internal-group request source should pass");
+        validate_source_policy(
+            "feishu_internal_group_revision_request",
+            &json!({"source_message_ref": source_ref}),
+            None,
+        )
+        .expect("trusted internal-group revision source should pass");
         for invalid_source_refs in [
             json!({}),
             json!({"source_message_ref": "om_raw_message_id"}),
@@ -7022,7 +7626,7 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 6);
+        assert_eq!(report.capability_count, 7);
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.create_visual_asset"
                 && item.provider_agent == "huabaosi"
@@ -7041,6 +7645,11 @@ mod tests {
         }));
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "xiaoman.notify_direct_conversation"
+                && item.provider_agent == "xiaoman"
+                && item.review_policy == "origin_conversation_only"
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "xiaoman.notify_conversation"
                 && item.provider_agent == "xiaoman"
                 && item.review_policy == "origin_conversation_only"
         }));
@@ -7152,7 +7761,10 @@ mod tests {
             "parent.source_type NOT IN",
             "'feishu_direct_request'",
             "'feishu_direct_revision_request'",
+            "'feishu_internal_group_request'",
+            "'feishu_internal_group_revision_request'",
             "'xiaoman_feishu_direct'",
+            "'xiaoman_feishu_internal_group'",
         ] {
             assert!(DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL.contains(required_fragment));
         }
