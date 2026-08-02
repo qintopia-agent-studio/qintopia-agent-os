@@ -786,6 +786,16 @@ class QintopiaToolsTest(unittest.TestCase):
             "按 view vew5C6T2FF 发送。",
             "record_id=recABCDEFG123456789 obj_token=secretish",
             "⏳ Working — 3 min — iteration 2/90, execute_code",
+            (
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+                "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+                "sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+            ),
+            (
+                "这是因为定时任务的自动执行回执和正常发消息混在了一起。"
+                "后台智能体会先产生内部协作内容，包括发送工具的调用结果、"
+                "记录 ID、命令或调试信息，以及已生成回复准备发送之类的内部状态。"
+            ),
         ]:
             with self.subTest(message_text=message_text):
                 report = json.loads(
@@ -859,6 +869,25 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("recABCDEFG123456789", serialized)
         self.assertNotIn("/home/ubuntu/qintopia/debug.log", serialized)
         self.assertNotIn("execute_code", serialized)
+
+    def test_xiaoman_public_reply_rewrite_rejects_internal_mechanism_explanations(self):
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_public_reply_rewrite(
+                {
+                    "blocked_reply": "为什么总是回复内部执行信息已自动隐藏？",
+                    "public_conclusion": (
+                        "这是因为定时任务的自动执行回执和正常发消息混在了一起，"
+                        "后台智能体会产生工具调用结果和内部状态。"
+                    ),
+                    "public_next_step": "后续会把任务改成只发送固定正文。",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertTrue(report["hidden_original"])
+        self.assertEqual(report["rewrite_trigger"], "用人话重述")
+        self.assertEqual(report["missing_rewrite_fields"], ["public_conclusion"])
 
     def test_xiaoman_activity_announcement_prepare_rejects_non_integer_material_followup(self):
         self.enable_xiaoman_activity_wrappers()

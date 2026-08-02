@@ -4801,9 +4801,41 @@ def _xiaoman_activity_message_text_is_sensitive(value: str) -> bool:
         return True
     if re.search(r"(?:/home/ubuntu|/Users/[^ \n]+|/tmp|/var/tmp)/\S+", value):
         return True
-    if re.search(r"\b[A-Z0-9]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", value):
+    if re.search(r"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", value):
         return True
     if re.search(r"^\s*⏳?\s*(?:working|retrying)\b", lower, flags=re.MULTILINE):
+        return True
+    if any(
+        marker in value
+        for marker in [
+            "后台智能体",
+            "工具调用",
+            "调用结果",
+            "调试信息",
+            "内部协作",
+            "内部状态",
+            "内部执行信息",
+            "自动执行回执",
+        ]
+    ):
+        return True
+    if "内部" in value and any(
+        marker in value
+        for marker in [
+            "命令",
+            "执行",
+            "机制",
+            "路径",
+            "回执",
+            "记录 ID",
+            "记录ID",
+            "调试",
+        ]
+    ):
+        return True
+    if "定时任务" in value and any(
+        marker in value for marker in ["回执", "自动执行", "工具", "内部", "调试"]
+    ):
         return True
     return any(
         token in lower
