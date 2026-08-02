@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.64](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.63...v0.2.64) (2026-08-02)
+
+
+### Bug Fixes
+
+* **runtime:** preserve Erhua default model in provider overlay ([#348](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/348)) ([459020b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/459020b14a84afd73734fe36e3949dc0392e9162))
+
 ## [0.2.63](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.62...v0.2.63) (2026-08-02)
 
 
