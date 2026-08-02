@@ -283,7 +283,10 @@
   时按小满业务时区扫描昨天、前天、大前天；第三轮只生成 `operations_lead`
   升级草稿，并在 payload/source refs 标记
   `material_followup_attempt=3`、`escalation_required=true` 和
-  `external_send_executed=false`。
+  `external_send_executed=false`；第三轮还会在 source
+  refs、payload、metadata 和创建审计事件中写入
+  `escalation_stage=third_attempt_overdue`、 `escalation_level=operations_lead` 和
+  `material_followup_terminal_attempt=true`。
 - 显式传 `date` 的本地复放和预检可以同时传 `material_followup_attempt=1|2|3`
   选择对应轮次；未传时保持第一轮兼容行为，默认 timer 不依赖该字段而是一次覆盖三轮。
 - 新增 CLI 命令 `run-xiaoman-activity-material-followup-worker`（`--check-only` /

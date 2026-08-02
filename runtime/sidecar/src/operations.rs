@@ -4156,6 +4156,7 @@ pub async fn create_work_item(
         .context("insert work item")?;
         if let Some(row) = inserted {
             let work_item_id = row.get::<Uuid, _>("id");
+            let creation_audit_metadata = creation_event_audit_metadata(&request);
             append_event_in_tx(
                 &mut tx,
                 Some(work_item_id),
@@ -4170,6 +4171,7 @@ pub async fn create_work_item(
                     "status": initial_status,
                     "target_agent": request.target_agent,
                     "parent_work_item_id": request.parent_work_item_id,
+                    "metadata": creation_audit_metadata,
                     "human_workbench_provider": "feishu_task",
                     "requires_human_final_confirmation": initial_status == "awaiting_publish"
                 }),
@@ -4234,6 +4236,40 @@ async fn append_policy_denial(
     .await
     .context("append policy denial event")?;
     Ok(())
+}
+
+fn creation_event_audit_metadata(request: &WorkItemCreateRequest) -> Value {
+    if request.capability_key != "xiaoman.material_followup_request"
+        || request.work_item_type != "activity_recap_request"
+    {
+        return json!({});
+    }
+
+    let escalation_stage = request
+        .metadata
+        .get("escalation_stage")
+        .and_then(Value::as_str);
+    let escalation_level = request
+        .metadata
+        .get("escalation_level")
+        .and_then(Value::as_str);
+    let terminal_attempt = request
+        .metadata
+        .get("material_followup_terminal_attempt")
+        .and_then(Value::as_bool);
+
+    if escalation_stage != Some("third_attempt_overdue")
+        || escalation_level != Some("operations_lead")
+        || terminal_attempt != Some(true)
+    {
+        return json!({});
+    }
+
+    json!({
+        "escalation_stage": "third_attempt_overdue",
+        "escalation_level": "operations_lead",
+        "material_followup_terminal_attempt": true,
+    })
 }
 
 async fn append_review_policy_denial(
@@ -8726,6 +8762,75 @@ mod tests {
             send_report.work_items[0].capability_key,
             "erhua.send_group_message"
         );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_created_event_does_not_mirror_unallowlisted_metadata() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 1)
+            .await
+            .expect("connect guarded integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded integration database");
+
+        let suffix = Uuid::new_v4();
+        let request = request(json!({
+            "requester_agent": "xiaoman",
+            "target_agent": "huabaosi",
+            "capability_key": "huabaosi.create_visual_asset",
+            "work_item_type": "visual_asset_request",
+            "brief_summary": "生成已脱敏活动海报 brief",
+            "purpose": "metadata_audit_boundary",
+            "human_owner": "xiaoman-owner",
+            "priority": "normal",
+            "source_type": "manual_request",
+            "source_refs": {"source_record_ref": format!("manual:metadata-audit:{suffix}")},
+            "payload": {"format": "community_poster"},
+            "payload_redaction_policy": "summary_only",
+            "idempotency_key": format!("metadata-audit-boundary:{suffix}"),
+            "metadata": {
+                "ops_path_ref": "runtime-root-placeholder/current",
+                "runtime_profile_hint": "profile-placeholder"
+            }
+        }));
+
+        let created = create_work_item(&pool, request.clone(), true, &OperationsPolicy::dry_run())
+            .await
+            .expect("create visual work item");
+        let work_item_id = created.work_item_id.expect("created work item id");
+
+        let stored_metadata: Value =
+            sqlx::query_scalar("SELECT metadata FROM qintopia_agent_os.work_items WHERE id = $1")
+                .bind(work_item_id)
+                .fetch_one(&pool)
+                .await
+                .expect("load stored metadata");
+        assert_eq!(
+            stored_metadata["ops_path_ref"],
+            request.metadata["ops_path_ref"]
+        );
+
+        let event_data: Value = sqlx::query_scalar(
+            r#"
+            SELECT data
+            FROM qintopia_agent_os.work_item_events
+            WHERE work_item_id = $1 AND event_type = 'created'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(work_item_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load created event");
+
+        assert_eq!(event_data["metadata"], json!({}));
+        let serialized = serde_json::to_string(&event_data).expect("serialize event data");
+        assert!(!serialized.contains("runtime-root-placeholder"));
+        assert!(!serialized.contains("profile-placeholder"));
     }
 
     #[tokio::test]
