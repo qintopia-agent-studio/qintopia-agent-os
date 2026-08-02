@@ -203,6 +203,14 @@ function runPostgresChecks() {
     [
       "--features",
       "postgres-integration-tests",
+      "operations::tests::postgres_material_followup_root_starts_recap_children",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
       "conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow",
       "--",
       "--ignored",

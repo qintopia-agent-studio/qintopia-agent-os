@@ -55,6 +55,7 @@ const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "erhua.send_group_message",
     "wenyuange.retrieve_evidence",
     "xiaoman.create_activity_request",
+    "xiaoman.material_followup_request",
     "xiaoman.notify_direct_conversation",
     "xiaoman.notify_conversation",
 ];
@@ -1415,11 +1416,19 @@ async fn load_xiaoman_activity_promotion_candidates(
                     ELSE 'pre_event'
                 END AS activity_phase
             FROM qintopia_agent_os.work_items parent
-            WHERE parent.capability_key = 'xiaoman.create_activity_request'
-              AND parent.work_item_type IN (
-                  'activity_promotion_request',
-                  'activity_live_support_request',
-                  'activity_recap_request'
+            WHERE (
+                  (
+                    parent.capability_key = 'xiaoman.create_activity_request'
+                    AND parent.work_item_type IN (
+                        'activity_promotion_request',
+                        'activity_live_support_request',
+                        'activity_recap_request'
+                    )
+                  )
+                  OR (
+                    parent.capability_key = 'xiaoman.material_followup_request'
+                    AND parent.work_item_type = 'activity_recap_request'
+                  )
               )
               AND parent.target_agent = 'xiaoman'
               AND ($1::uuid IS NULL OR parent.id = $1)
@@ -1540,10 +1549,18 @@ async fn load_xiaoman_activity_send_request_candidates(
             ORDER BY generated_image.updated_at DESC, generated_image.created_at DESC
             LIMIT 1
         ) generated_image ON true
-        WHERE parent.capability_key = 'xiaoman.create_activity_request'
-          AND parent.work_item_type IN (
-              'activity_promotion_request',
-              'activity_recap_request'
+        WHERE (
+              (
+                parent.capability_key = 'xiaoman.create_activity_request'
+                AND parent.work_item_type IN (
+                    'activity_promotion_request',
+                    'activity_recap_request'
+                )
+              )
+              OR (
+                parent.capability_key = 'xiaoman.material_followup_request'
+                AND parent.work_item_type = 'activity_recap_request'
+              )
           )
           AND parent.target_agent = 'xiaoman'
           {DIRECT_CONVERSATION_GROUP_SEND_EXCLUSION_SQL}
@@ -1612,11 +1629,19 @@ async fn load_xiaoman_activity_image_generation_candidates(
         FROM qintopia_agent_os.work_items visual
         JOIN qintopia_agent_os.work_items parent
           ON parent.id = visual.parent_work_item_id
-         AND parent.capability_key = 'xiaoman.create_activity_request'
-         AND parent.work_item_type IN (
-             'activity_promotion_request',
-             'activity_recap_request'
-         )
+         AND (
+              (
+                parent.capability_key = 'xiaoman.create_activity_request'
+                AND parent.work_item_type IN (
+                    'activity_promotion_request',
+                    'activity_recap_request'
+                )
+              )
+              OR (
+                parent.capability_key = 'xiaoman.material_followup_request'
+                AND parent.work_item_type = 'activity_recap_request'
+              )
+          )
          AND parent.target_agent = 'xiaoman'
         JOIN LATERAL (
             SELECT id, content_hash, metadata
@@ -7637,7 +7662,7 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 7);
+        assert_eq!(report.capability_count, 8);
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.create_visual_asset"
                 && item.provider_agent == "huabaosi"
@@ -7663,6 +7688,13 @@ mod tests {
             item.capability_key == "xiaoman.notify_conversation"
                 && item.provider_agent == "xiaoman"
                 && item.review_policy == "origin_conversation_only"
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "xiaoman.material_followup_request"
+                && item.provider_agent == "xiaoman"
+                && item
+                    .allowed_work_item_types
+                    .contains(&"activity_recap_request".to_string())
         }));
     }
 
@@ -8494,6 +8526,206 @@ mod tests {
                 .expect_err("HTTPS artifacts must not consume Feishu evidence");
 
         assert!(error.to_string().contains("requires the fixed Feishu URI"));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_material_followup_root_starts_recap_children() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 1)
+            .await
+            .expect("connect guarded integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded integration database");
+
+        let suffix = Uuid::new_v4();
+        let source_record_ref = format!("activity_occurrence:integration:{suffix}");
+        let root_request = request(json!({
+            "requester_agent": "xiaoman",
+            "target_agent": "xiaoman",
+            "capability_key": "xiaoman.material_followup_request",
+            "work_item_type": "activity_recap_request",
+            "brief_summary": "升级：木作体验课 活动素材回填逾期",
+            "purpose": "activity_recap_followup",
+            "human_owner": "xiaoman-owner",
+            "priority": "high",
+            "source_type": "xiaoman_activity",
+            "source_refs": {
+                "scan_date": "2026-07-29",
+                "scan_type": "material_followup",
+                "source_record_ref": source_record_ref,
+                "table_role": "activity_occurrence",
+                "material_followup_attempt": 3,
+                "escalation_required": true
+            },
+            "payload": {
+                "activity_title": "木作体验课",
+                "activity_date": "2026-07-29",
+                "owner_name": "阿成",
+                "reminder_text": "third reminder",
+                "priority": "high",
+                "activity_phase": "post_event",
+                "activity_route": "activity_recap",
+                "material_followup_attempt": 3,
+                "escalation_required": true,
+                "recipient_scope": "operations_lead",
+                "external_send_executed": false
+            },
+            "payload_redaction_policy": "default",
+            "idempotency_key": format!("xiaoman_activity_material_followup:2026-07-29:{source_record_ref}:3")
+        }));
+        let policy = OperationsPolicy::dry_run();
+        let created = create_work_item(&pool, root_request, true, &policy)
+            .await
+            .expect("create material followup root");
+        let root_work_item_id = created.work_item_id.expect("created root id");
+
+        let report = run_xiaoman_activity_promotion_starter_batch(
+            &pool,
+            false,
+            true,
+            10,
+            Some(root_work_item_id),
+            &policy,
+        )
+        .await
+        .expect("material followup root should start recap children");
+
+        assert_eq!(report.action_status, "activity_promotion_children_created");
+        assert_eq!(report.work_items.len(), 2);
+
+        let child_rows: Vec<(Uuid, String, String, String, Value)> = sqlx::query_as(
+            r#"
+            SELECT id, capability_key, work_item_type, purpose, payload
+            FROM qintopia_agent_os.work_items
+            WHERE parent_work_item_id = $1
+            ORDER BY capability_key ASC, id ASC
+            "#,
+        )
+        .bind(root_work_item_id)
+        .fetch_all(&pool)
+        .await
+        .expect("load material followup recap children");
+
+        assert_eq!(child_rows.len(), 2);
+        let evidence = child_rows
+            .iter()
+            .find(|row| row.1 == "wenyuange.retrieve_evidence")
+            .expect("recap evidence child exists");
+        assert_eq!(evidence.2, "evidence_request");
+        assert_eq!(evidence.3, "activity_recap_evidence_request");
+        assert_eq!(evidence.4["activity_phase"], "post_event");
+        assert_eq!(evidence.4["activity_route"], "activity_recap");
+        let visual = child_rows
+            .iter()
+            .find(|row| row.1 == "huabaosi.create_visual_asset")
+            .expect("recap visual child exists");
+        assert_eq!(visual.2, "visual_asset_request");
+        assert_eq!(visual.3, "activity_recap_visual_request");
+        assert_eq!(visual.4["requested_output"], "recap_visual_draft");
+        let visual_work_item_id = visual.0;
+
+        sqlx::query("UPDATE qintopia_agent_os.work_items SET status = 'completed' WHERE id = $1")
+            .bind(visual_work_item_id)
+            .execute(&pool)
+            .await
+            .expect("mark recap visual brief completed");
+        let brief_artifact_id = Uuid::new_v4();
+        let brief_hash = format!("sha256:{}", "a".repeat(64));
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, content_text, content_hash, metadata)
+            VALUES
+                ($1, $2, 'poster_brief', 'approved', 'huabaosi',
+                 'Recap brief', 'approved recap brief', 'approved recap brief',
+                 $3, $4)
+            "#,
+        )
+        .bind(brief_artifact_id)
+        .bind(visual_work_item_id)
+        .bind(&brief_hash)
+        .bind(json!({"evidence_content_hash": format!("sha256:{}", "b".repeat(64))}))
+        .execute(&pool)
+        .await
+        .expect("insert approved recap brief artifact");
+
+        let image_report = run_xiaoman_activity_image_generation_starter_batch(
+            &pool,
+            false,
+            true,
+            10,
+            Some(visual_work_item_id),
+            &policy,
+        )
+        .await
+        .expect("approved recap visual should start image generation request");
+        assert_eq!(
+            image_report.action_status,
+            "image_generation_requests_created"
+        );
+        assert_eq!(image_report.work_items.len(), 1);
+        let image_work_item_id = image_report.work_items[0]
+            .work_item_id
+            .expect("created image request id");
+
+        sqlx::query("UPDATE qintopia_agent_os.work_items SET status = 'completed' WHERE id = $1")
+            .bind(image_work_item_id)
+            .execute(&pool)
+            .await
+            .expect("mark recap image generation completed");
+        let generated_image_artifact_id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, source_ids, risk_labels,
+                 metadata)
+            VALUES
+                ($1, $2, 'generated_image', 'approved', 'huabaosi',
+                 'Recap image', 'approved recap image',
+                 'https://media.example.test/recap.jpg', $3, $4, $5, $6)
+            "#,
+        )
+        .bind(generated_image_artifact_id)
+        .bind(image_work_item_id)
+        .bind(format!("sha256:{}", "c".repeat(64)))
+        .bind(json!([{
+            "approved_brief_artifact_id": brief_artifact_id,
+            "approved_brief_content_hash": brief_hash
+        }]))
+        .bind(vec![
+            "external_use_review_required".to_string(),
+            "generated_media".to_string(),
+        ])
+        .bind(json!({"image_specification": "community_poster_1024x1024"}))
+        .execute(&pool)
+        .await
+        .expect("insert approved recap generated image");
+
+        let send_report = run_xiaoman_activity_send_request_starter_batch(
+            &pool,
+            false,
+            true,
+            10,
+            Some(root_work_item_id),
+            "community_activity_group",
+            None,
+            "活动复盘图片已审核，请确认是否发送。",
+            &policy,
+        )
+        .await
+        .expect("approved recap image should start awaiting-publish send request");
+        assert_eq!(send_report.action_status, "group_message_requests_created");
+        assert_eq!(send_report.work_items.len(), 1);
+        assert_eq!(send_report.work_items[0].current_status, "awaiting_publish");
+        assert_eq!(
+            send_report.work_items[0].capability_key,
+            "erhua.send_group_message"
+        );
     }
 
     #[tokio::test]

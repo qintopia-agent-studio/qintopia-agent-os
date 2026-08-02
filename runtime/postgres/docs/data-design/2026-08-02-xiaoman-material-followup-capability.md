@@ -23,13 +23,21 @@ The worker idempotency key remains bound to the business scan date, sanitized so
 record reference, and follow-up attempt so replay returns the existing work item instead
 of creating another reminder.
 
+Downstream AgentOS starters may treat this root exactly as a post-event
+`activity_recap_request`: they can create missing evidence and recap-visual children,
+then, after the ordinary human artifact approvals, create image-generation and
+awaiting-publish group-message request work items. Those steps remain work-item creation
+only and keep the existing approval/final-confirmation gates.
+
 ## Boundary
 
-- Postgres writes: one internal AgentOS work item and one creation audit event.
+- Postgres writes: one internal AgentOS root work item, creation audit events, and later
+  internal downstream work items when the reviewed starters run.
 - Feishu reads: allowed only through the existing allowlisted read boundary.
 - Feishu writes: none.
 - Erhua/QiWe sends: none.
-- Group-message request creation: none.
+- Group-message request creation: only after the approved generated-image starter path;
+  the created request starts as awaiting final confirmation and does not send.
 - Approved text announcement handoff: remains a separate reviewed step before any
   `erhua.send_group_message` work item can exist.
 
