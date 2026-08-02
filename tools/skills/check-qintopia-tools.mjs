@@ -103,6 +103,19 @@ for (const variant of variants) {
         errors.push(`xiaoman: plugin.yaml must declare ${envName}`);
       }
     }
+    const variantTests = readText(
+      "skills/qintopia-tools/variants/xiaoman/tests/test_qintopia_tools.py"
+    );
+    for (const fragment of [
+      "安全过滤",
+      "发送通道本身是通的",
+      "执行过程被转成给用户看的回复",
+      "保护机制在兜底",
+    ]) {
+      if (!variantSource.includes(fragment) && !variantTests.includes(fragment)) {
+        errors.push(`xiaoman: public reply guard must cover ${fragment}`);
+      }
+    }
   }
   if (variantSource.includes("_operations_intake_plugin().QINTOPIA")) {
     errors.push(
