@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.65](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.64...v0.2.65) (2026-08-02)
+
+
+### Bug Fixes
+
+* **xiaoman:** add public reply rewrite guardrail ([#351](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/351)) ([dd084c2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/dd084c2f929bb33fd0182d1c0f1a8bff3820cc04))
+* **xiaoman:** bind trusted Feishu message sessions ([#350](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/350)) ([3b4545d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3b4545dd642647c6029914a20b0e16d722557d8a))
+* **xiaoman:** route material followups internally ([#355](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/355)) ([28db28b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/28db28b71961065023eb7a4ad1469863203aebd3))
+* **xiaoman:** support explicit material followup attempts ([#354](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/354)) ([fadc0d9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/fadc0d9b7c9888630b60954d2c7a0819c1a23ac8))
+
 ## [0.2.64](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.63...v0.2.64) (2026-08-02)
 
 
