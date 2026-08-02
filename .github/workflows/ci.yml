@@ -419,6 +419,13 @@ jobs:
           conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent
           -- --ignored --exact
 
+      - name: Xiaoman material followup PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          xiaoman_activity::tests::postgres_material_followup_apply_is_idempotent_and_audits_escalation
+          -- --ignored --exact
+
       - name: Xiaoman authenticated message ingress PostgreSQL integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

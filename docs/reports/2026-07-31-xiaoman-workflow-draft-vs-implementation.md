@@ -272,8 +272,9 @@
 
 - 新增 `material-followup-scan` 操作（`runtime/sidecar/src/xiaoman_activity.rs`）：扫描
   `activity_occurrence` 中指定日期已结束且 `material_summary`
-  为空的记录，为每个待催办活动创建 `erhua.send_group_message`
-  工作项（草稿，不自动发送），幂等键绑定业务日期、脱敏 `source_record_ref`
+  为空的记录，为每个待催办活动创建内部 `xiaoman.material_followup_request` /
+  `activity_recap_request` 工作项，不直接创建
+  `erhua.send_group_message`；幂等键绑定业务日期、脱敏 `source_record_ref`
   和催办轮次，避免同日同名活动或不同轮次互相去重。
 - 本分支补齐 T+24/48/72h 三轮扫描目标：未显式传 `date`
   时按小满业务时区扫描昨天、前天、大前天；第三轮只生成 `operations_lead`
@@ -289,5 +290,6 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_FOLLOWUP_TIMER_INTERVAL` 覆盖。
 - 与第 9 节建议的差异：没有复用 `announcement_prepare` 的 `post_event_followup`
   mode，而是直接在 worker 内生成固定格式催办文案。原因：首版目标是最小闭环，固定文案可以先用起来；后续如需个性化文案，再接入
-  `announcement_prepare`。
+  `announcement_prepare`。群发仍必须通过已批准文本 artifact 后的独立 Erhua
+  `group_message_request` 路径。
 - 尚未做：生产环境 timer 启用和真实活动端到端验收（属 owner 决策，需走发布流程）；第三次逾期当前只生成升级草稿，不自动标记遗漏、不写 Feishu、不触发外部发送。

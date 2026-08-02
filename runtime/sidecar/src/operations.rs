@@ -6734,6 +6734,17 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
             review_policy: "before_external_use".to_string(),
             enabled: true,
         }),
+        "xiaoman.material_followup_request" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "xiaoman".to_string(),
+            display_name: "小满活动素材回填催办".to_string(),
+            description: "从活动发生记录创建内部素材回填催办或升级草稿，不授权外部发送".to_string(),
+            allowed_callers: vec!["xiaoman".to_string()],
+            allowed_work_item_types: vec!["activity_recap_request".to_string()],
+            risk_level: "medium".to_string(),
+            review_policy: "before_external_use".to_string(),
+            enabled: true,
+        }),
         "xiaoman.notify_direct_conversation" => Some(Capability {
             capability_key: capability_key.to_string(),
             provider_agent: "xiaoman".to_string(),
