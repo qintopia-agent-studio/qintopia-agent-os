@@ -53,9 +53,9 @@ GitHub writes a schema-validated request to COS, and the server runner promotes 
 artifacts into `release/current`.
 
 The fixed `hermes-profile-erhua` scope renders and activates only the reviewed Erhua
-model overlay and accepts only `hermes-erhua` as its restart target. It never accepts a
-profile path from request data. Use a dry-run request and review its redacted evidence
-before the separately approved activation request.
+Livecool provider overlay and accepts only `hermes-erhua` as its restart target. It
+never accepts a profile path from request data. Use a dry-run request and review its
+redacted evidence before the separately approved activation request.
 
 The check is non-mutating. It verifies the worker units render through
 `qintopia-agent-os-releases/current`, avoid `/home/ubuntu/qintopia-msg-sidecar`, and

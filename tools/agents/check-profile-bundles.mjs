@@ -30,7 +30,6 @@ if (exists("agents/erhua/config.template.yaml")) {
     agent_id: "erhua",
     managed: {
       model: {
-        default: "gpt-5.5",
         provider: "custom:livecool.net",
         base_url: "",
       },

@@ -1,19 +1,22 @@
 # Erhua Livecool Profile Overlay Runbook
 
-This runbook governs the first production Hermes profile overlay. It repairs Erhua's
-missing `Livecool.net` provider registration without replacing the profile directory or
-copying live runtime state into a release.
+This runbook governs Erhua's production Livecool provider overlay. It maintains the
+`Livecool.net` provider registration without replacing the profile directory, copying
+live runtime state into a release, or selecting Erhua's default conversational model.
 
 ## Managed Contract
 
 The release carries only `agents/erhua/config.template.yaml`. The renderer changes these
 fields and no others:
 
-- `model.default: gpt-5.5`
 - `model.provider: custom:livecool.net`
 - `model.base_url: ""`
 - the single custom provider named `Livecool.net`, with `https://livecool.net/v1`,
   `gpt-5.5`, `key_env: LIVECOOL_API_KEY`, and `api_mode: chat_completions`
+
+The renderer preserves `model.default` exactly as found in the runtime-local base
+config. Default-model selection is outside this provider overlay. This runbook does not
+introduce a shared Agent model policy or authorize a default-model change.
 
 The live Erhua `config.yaml` remains runtime-local. Rendering starts from that file,
 preserves unrelated keys and providers, and writes a replacement atomically with mode
