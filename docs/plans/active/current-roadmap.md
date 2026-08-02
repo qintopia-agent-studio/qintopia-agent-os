@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-07-19
+Updated: 2026-08-02
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -37,6 +37,11 @@ unless correcting historical evidence.
   [Xiaoman production completion gate](xiaoman-production-completion-gate.md) before
   describing any Release as fully usable for the real Xiaoman activity-to-group-send
   workflow.
+- As of 2026-08-02, the known Xiaoman repository-local closeouts for V3 direct poster
+  configuration and T+24/T+48/T+72 material follow-up escalation are merged in `#358`
+  and `#359`. They are code readiness only: production still requires owner-controlled
+  Release publication, protected configuration, activation, real direct acceptance,
+  group canary, and retained sanitized evidence before the workflow is complete.
 - WorkTool, OpenClaw, and the current WorkTool-bound Xiaoqin runtime are archived and
   deprecated. Future Xiaoqin work requires a new non-WorkTool Agent design.
 

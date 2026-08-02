@@ -1,6 +1,6 @@
 # Xiaoman V3 Trusted Session Binding Gap
 
-Date: 2026-08-02
+Date: 2026-08-02 Status: code closeout merged in #358
 
 ## Summary
 
@@ -13,25 +13,25 @@ direct-return boundary. In addition, the Xiaoman plugin assumed the Feishu messa
 would already exist in Hermes session context. The real Feishu adapter placed that id on
 `MessageEvent` but not on the `SessionSource` used to build tool session context.
 
-## Evidence
+## Evidence Boundary
 
-A read-only, redacted production probe confirmed:
+The retained production probe output is external evidence and must not be copied into
+git. The repository record keeps only the sanitized conclusion:
 
-- `release/current` resolved to `eb9a0c2850e959361e0e8beb80a8673a937f664e` (`v0.2.64`);
-- the live Xiaoman plugin resolved to the immutable release plugin;
-- the gateway, operations intake, review callback, notification starter, and direct
-  delivery timer were active, while group delivery was inactive;
-- neither fixed environment contained the V3 ingress enable flag or ingress HMAC key;
-- the preceding 45-minute gateway window contained one `trusted_feishu_session_required`
-  result and no ingress-unavailable marker;
-- the operations-intake journal contained no `feishu_message_ingest`; and
-- the production Hermes runtime supported `HERMES_SESSION_MESSAGE_ID`, but its Feishu
-  adapter built `MessageEvent(message_id=...)` without copying that id into
-  `SessionSource.message_id`.
+- the immutable release-local Xiaoman plugin was present;
+- production was configured for the older direct-return boundary rather than the
+  authenticated V3 ingress boundary;
+- the failed real request stopped at `trusted_feishu_session_required`;
+- no poster workflow, image generation, Feishu result delivery, public send, or group
+  delivery was started; and
+- the real Feishu adapter surfaced the trusted message id before the plugin session
+  context consumed it.
 
-The probe emitted only release identity, boolean configuration facts, service states,
-and marker counts. It did not print chat ids, user ids, message text, credentials,
-database addresses, or raw logs.
+The external probe may retain release identity, boolean configuration facts, service
+states, and marker counts under the owner evidence boundary. This git report must not
+store chat ids, user ids, message text, credentials, database addresses, raw logs,
+specific live release SHAs, systemd state snapshots, environment-file permissions, or
+server-only backup paths.
 
 ## Root Cause
 
@@ -61,17 +61,14 @@ without a trusted source message id.
 - Add regression coverage for the real event-to-session transition and for mismatched
   ingress keys failing before systemd or gateway side effects.
 
-The released binding fix exposed one remaining operations gap: production has no
-reviewed entrypoint that owns updates to both fixed environment files. Read-only
-inspection found only runtime services and historical ad hoc backup files; no installed
-configuration, secret, or values service owns this update. Both live environment files
-are regular, non-group-writable files owned by `ubuntu`, while activation and rollback
-scripts only validate them. Direct editing would repeat the configuration drift that the
+The released binding fix exposed one operations gap: production had no reviewed
+entrypoint that owned coordinated updates to the fixed sidecar and Xiaoman environment
+files. Direct editing would have repeated the configuration drift that the
 release/current model is intended to remove.
 
-The final closeout therefore adds one release-local, root-only configuration transaction
-instead of another feature slice. It accepts bounded JSON on stdin, validates the exact
-Release and approved database URL hash, can consume a newly rotated database URL without
+The closeout in #358 adds one release-local, root-only configuration transaction instead
+of another feature slice. It accepts bounded JSON on stdin, validates the exact Release
+and approved database URL hash, can consume a newly rotated database URL without
 printing it, creates or rotates the dedicated ingress HMAC in memory, updates both fixed
 files through one lock with rollback-on-error, and emits only sanitized counts and
 booleans. An abrupt process stop can leave a partial replacement, which the activation
@@ -94,14 +91,14 @@ bash -n deploy/sidecar/scripts/activate-xiaoman-feishu-poster-production.sh
 bash -n deploy/sidecar/scripts/rollback-xiaoman-feishu-poster-production.sh
 ```
 
-Production acceptance still requires a reviewed release, V3 ingress configuration in
-both fixed environments, a successful no-network preflight, and a new real direct
-request that produces one ingress receipt and one accepted workflow. Image generation,
-same-image return, review persistence, and zero-publication evidence remain subsequent
-gates.
+Production acceptance still requires a reviewed release containing #358, V3 ingress
+configuration in both fixed environments through the protected transaction, a successful
+no-network preflight, and a new real direct request that produces one ingress receipt
+and one accepted workflow. Image generation, same-image return, review persistence, and
+zero-publication evidence remain subsequent gates.
 
-The closeout is complete only after one final PR and Release cover all remaining code,
-the rotated database credential and hashes are applied through that Release, direct
-acceptance succeeds, and one group canary succeeds on the same SHA. Configuration,
-preflight, activation, policy application, and canary are separate approval gates but
-must not require another code PR or Release.
+The remaining closeout is operational: publish/deploy the reviewed Release, apply the
+rotated database credential and hashes through the release-local transaction, run direct
+acceptance, and run one group canary on the same SHA. Configuration, preflight,
+activation, policy application, and canary are separate approval gates but should not
+require another code PR or Release unless production evidence exposes a new defect.

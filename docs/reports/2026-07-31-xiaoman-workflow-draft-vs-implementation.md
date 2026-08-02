@@ -1,6 +1,12 @@
 # 小满工作流草案与现有实现对照（修订版）
 
-日期：2026-07-31对照文档：xiaoman-minimal-activity-reminder-workflow.md（2026-07-30）代码基线：PR前实现快照
+日期：2026-07-31
+
+最新状态：2026-08-02，`master` 已合并 #358 / #359
+
+对照文档：xiaoman-minimal-activity-reminder-workflow.md（2026-07-30）
+
+代码基线：当前 `master`
 
 ## 1. 两个群 vs 当前实现
 
@@ -156,14 +162,14 @@
 
 **时间点对照**：
 
-| 草案时间点                | 当前实现                                                                                     | 状态                      |
-| ------------------------- | -------------------------------------------------------------------------------------------- | ------------------------- |
-| 每周六、周日发表单 A      | 无专门 timer                                                                                 | ❌ 缺失                   |
-| 前一天晚上发次日预告      | `announcement_prepare` 支持 `next_day_preview` mode，已用脱敏样例验证可生成                  | ⚠️ 工具存在，触发机制不明 |
-| 每天早上发今日安排        | `announcement_prepare` 支持 `same_day_preview` mode                                          | ⚠️ 工具存在，触发机制不明 |
-| 活动前约 1 小时参与提醒   | 无专门 timer                                                                                 | ❌ 缺失                   |
-| 活动后约 2 小时发表单 B/C | 无反馈表，无法发表单 B/C                                                                     | ❌ 缺失                   |
-| T+24h / T+48h 催办        | `announcement_prepare` 支持 `post_event_followup` mode 和 `material_followup_attempt`（1-3） | ⚠️ 工具存在，触发机制缺失 |
+| 草案时间点                | 当前实现                                                                    | 状态                      |
+| ------------------------- | --------------------------------------------------------------------------- | ------------------------- |
+| 每周六、周日发表单 A      | 无专门 timer                                                                | ❌ 缺失                   |
+| 前一天晚上发次日预告      | `announcement_prepare` 支持 `next_day_preview` mode，已用脱敏样例验证可生成 | ⚠️ 工具存在，触发机制不明 |
+| 每天早上发今日安排        | `announcement_prepare` 支持 `same_day_preview` mode                         | ⚠️ 工具存在，触发机制不明 |
+| 活动前约 1 小时参与提醒   | 无专门 timer                                                                | ❌ 缺失                   |
+| 活动后约 2 小时发表单 B/C | 无反馈表，无法发表单 B/C                                                    | ❌ 缺失                   |
+| T+24/T+48/T+72h 催办      | 内部 followup worker + 第三轮 operations-lead escalation 已合并             | ✅ 代码已合并；生产未启用 |
 
 **二花的提醒功能**：
 
@@ -173,7 +179,7 @@
 
 ### 差距
 
-1. 缺少按时间点触发的 timer（每周六日、前一天晚上、每天早上、活动前 1 小时、活动后 2 小时、T+24/48h）
+1. 除 T+24/T+48/T+72h 素材催办外，仍缺少其它按业务时间点触发的 timer（每周六日、前一天晚上、每天早上、活动前 1 小时、活动后 2 小时）
 2. 缺少反馈表，无法在活动后 2 小时发表单 B/C
 3. 现有的 4 个 timer 都是每分钟触发的 worker，不是按业务时间点触发
 
@@ -248,27 +254,25 @@
 
 1. **新增 `activity_feedback` 表**（或先在 `activity_occurrence.material_summary`
    中凑合）
-2. **新增/调整 timer**：活动前 1 小时提醒、活动后 2 小时回填、T+24/48h 催办
-3. **实现负责人回填与逾期催办闭环**：复用 `announcement_prepare` 的
-   `post_event_followup` mode 和 `material_followup_attempt`
+2. **新增/调整 timer**：T+24/T+48/T+72h 催办已落地；活动前 1 小时提醒、活动后 2 小时回填等其它业务 timer 仍未实现
+3. **实现负责人回填与逾期催办闭环**：内部 AgentOS 催办链路已落地；外部发送、Feishu 写回、遗漏标记仍未授权自动执行
 4. **工作群发送通道**：如果需要小满独立发工作群，需新增 skill/adapter；否则把催办消息也通过二花发送
 5. **对齐海报规则**：要么在首版保留 IMG 2 海报过渡方案，要么与纪要同步更新
 6. **明确临时约饭处理**：在小满过滤规则中明确排除或包含
 
 ## 9. 建议的下一步
 
-不直接按草案全量实现，而是先做最小闭环：
+不直接按草案全量实现，而是先确认已合并的最小闭环边界：
 
-1. 用现有 `activity_occurrence.material_summary` 作为负责人回填字段（不新增表）
-2. 新增一个 daily timer，在每天固定时间扫描昨天已结束且 `material_summary`
-   为空的活动，调用 `announcement_prepare` 生成催办文案
-3. 催办文案走现有 `text_group_message_request_prepare` -> Erhua
-   -> 居民群/工作群（取决于配置）
+1. 已用现有 `activity_occurrence.material_summary` 作为负责人回填判断字段（不新增表）
+2. 已新增素材催办扫描和 worker：默认按小满业务时区覆盖 T+24/T+48/T+72h
+3. 催办先创建内部 `xiaoman.material_followup_request` / `activity_recap_request` work
+   item，不直接创建外部发送
 4. 跑通 1-2 次真实活动后，再决定是否拆分 `activity_feedback` 表和新增工作群独立发送通道
 
 ## 10. 实现进展（2026-07-31 更新）
 
-第 9 节建议的第 2 步已落地为 sidecar 原生 worker：
+第 9 节建议的素材催办最小闭环已合并到 `master`：
 
 - 新增 `material-followup-scan` 操作（`runtime/sidecar/src/xiaoman_activity.rs`）：扫描
   `activity_occurrence` 中指定日期已结束且 `material_summary`
@@ -279,7 +283,7 @@
 - 该内部 recap 根现在能被现有 downstream starter 接上：补出复盘 evidence +
   visual 子任务；后续只有在普通 artifact 审核通过后，才会继续创建 image-generation 和 awaiting-publish
   group-message request 工作项。
-- 本分支补齐 T+24/48/72h 三轮扫描目标：未显式传 `date`
+- #359 补齐 T+24/48/72h 三轮扫描目标：未显式传 `date`
   时按小满业务时区扫描昨天、前天、大前天；第三轮只生成 `operations_lead`
   升级草稿，并在 payload/source refs 标记
   `material_followup_attempt=3`、`escalation_required=true` 和
@@ -299,3 +303,15 @@
   `announcement_prepare`。群发仍必须通过已批准文本 artifact 后的独立 Erhua
   `group_message_request` 路径。
 - 尚未做：生产环境 timer 启用和真实活动端到端验收（属 owner 决策，需走发布流程）；第三次逾期当前只生成升级草稿，不自动标记遗漏、不写 Feishu、不触发外部发送。
+
+## 11. 当前结论（2026-08-02）
+
+- 小满素材催办的仓库内主线已经完成：T+24/T+48/T+72h 扫描、幂等、内部 work
+  item、下游 recap 连接、第三轮 operations-lead escalation 审计都已合并。
+- 小满 V3 direct poster
+  closeout 代码也已完成：#358 增加 release-local 受保护配置事务，#359 之后当前 `master`
+  没有已知同类代码缺口。
+- 仍未完成的是生产闭环，不是继续写催办代码：需要 owner 发布 Release、应用生产配置、启用对应 timer/服务、跑真实活动并保留 sanitized
+  evidence。
+- 如果继续做仓库内功能，下一批才是草案里的新能力：`activity_feedback`
+  表、表单 B/C、活动前 1 小时提醒、活动后 2 小时回填、独立工作群发送/@负责人。
