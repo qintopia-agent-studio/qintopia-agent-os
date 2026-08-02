@@ -64,6 +64,27 @@ All participant and return-target tables remain revoked from `PUBLIC`.
   accepted modification cannot be masked by an older delivered review card.
 - Conversation notification work never creates `group_message_request`, `send_executed`,
   or `external_published` facts.
+- The delivery claim scan includes group rows only while the independent internal-group
+  switch is enabled. Disabled group rows remain pending and cannot starve eligible
+  direct rows.
+- Direct and group notifications remain in one queue, but production workers are invoked
+  by separate scope-pinned timers. The SQL claim predicate independently enforces that a
+  direct invocation cannot claim a group row and a group invocation cannot claim a
+  direct row. The group timer is installed disabled and is the separate owner-approval
+  boundary.
+- Direct targets use `direct_chat`; group targets use only their immutable
+  `thread_reply` anchor. The same notification id derives the stable Feishu reply
+  `uuid`, while the persisted attempt remains the at-most-once image-upload boundary.
+- A group review callback rechecks the delivered notification and artifact, exact raw
+  chat, participant actor reference, snapshotted policy version, current group switch,
+  and current deployment chat/user allowlists. Current policy edits do not rewrite the
+  participant snapshot.
+- With group behavior enabled, runtime ingress and delivery chat/user ceilings must
+  match exactly, and the operations reviewer ceiling must cover every allowed user.
+  Mismatched configuration fails before database or external I/O.
+- An uncertain upload or thread reply remains terminal `ambiguous`. No state transition
+  converts it into a direct notification, main-group message, publication request, or
+  automatic retry.
 
 ## Compatibility And Rollback
 

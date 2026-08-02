@@ -706,6 +706,10 @@ if (ciWorkflow) {
           "Xiaoman internal-group poster PostgreSQL integration",
           "operations_intake::tests::postgres_internal_group_snapshots_authority_and_accepts_only_first_revision",
         ],
+        [
+          "Xiaoman poster internal-group delivery claim PostgreSQL integration",
+          "poster_delivery::tests::postgres_delivery_scopes_are_isolated_and_group_claims_once",
+        ],
       ]) {
         const step = postgresJob.steps?.find(
           (candidate) => candidate?.name === stepName

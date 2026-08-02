@@ -343,6 +343,10 @@ Install scope for the M9 window:
   internal evidence_summary and poster_brief artifacts. They must not write Feishu,
   send QiWe messages, run live Wenyuange search, call Huabaosi production generation,
   or run external adapters.
+- Xiaoman direct and internal-group poster delivery share one durable notification
+  queue and one worker binary, but use separate scope-pinned services and timers.
+  The internal-group timer is installed disabled and requires its dedicated owner-
+  approved activation; enabling direct delivery must never schedule group delivery.
 
 Apply shape during the approved window:
 1. Copy reviewed unit files into /etc/systemd/system.
@@ -540,19 +544,36 @@ render_all() {
 
   render_oneshot_service \
     "qintopia-agentos-xiaoman-feishu-poster-preflight.service" \
-    "Qintopia AgentOS Xiaoman Feishu poster return preflight" \
-    "xiaoman-feishu-poster-preflight"
+    "Qintopia AgentOS Xiaoman Feishu direct poster return preflight" \
+    "xiaoman-feishu-poster-preflight --conversation-scope direct"
   render_guarded_oneshot_service \
     "qintopia-agentos-xiaoman-feishu-poster-delivery.service" \
-    "Qintopia AgentOS Xiaoman Feishu poster delivery" \
-    "xiaoman-feishu-poster-preflight" \
-    "run-xiaoman-feishu-poster-delivery --once --apply"
+    "Qintopia AgentOS Xiaoman Feishu direct poster delivery" \
+    "xiaoman-feishu-poster-preflight --conversation-scope direct" \
+    "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope direct"
   render_activation_timer \
     "qintopia-agentos-xiaoman-feishu-poster-delivery.timer" \
-    "Run Qintopia AgentOS Xiaoman Feishu poster delivery" \
+    "Run Qintopia AgentOS Xiaoman Feishu direct poster delivery" \
     "qintopia-agentos-xiaoman-feishu-poster-delivery.service" \
     "5s" \
     "${QINTOPIA_XIAOMAN_FEISHU_POSTER_TIMER_INTERVAL:-15s}" \
+    "2s"
+
+  render_oneshot_service \
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-preflight.service" \
+    "Qintopia AgentOS Xiaoman Feishu internal-group poster return preflight" \
+    "xiaoman-feishu-poster-preflight --conversation-scope group"
+  render_guarded_oneshot_service \
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.service" \
+    "Qintopia AgentOS Xiaoman Feishu internal-group poster delivery" \
+    "xiaoman-feishu-poster-preflight --conversation-scope group" \
+    "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope group"
+  render_activation_timer \
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer" \
+    "Run Qintopia AgentOS Xiaoman Feishu internal-group poster delivery" \
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.service" \
+    "5s" \
+    "${QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_POSTER_TIMER_INTERVAL:-15s}" \
     "2s"
 
   render_long_running_service \
@@ -677,6 +698,9 @@ validate_output() {
     "qintopia-agentos-xiaoman-feishu-poster-preflight.service"
     "qintopia-agentos-xiaoman-feishu-poster-delivery.service"
     "qintopia-agentos-xiaoman-feishu-poster-delivery.timer"
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-preflight.service"
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.service"
+    "qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer"
     "qintopia-agentos-xiaoman-poster-review-callback.service"
     "qintopia-agentos-huabaosi-image-generation-preflight.service"
     "qintopia-agentos-huabaosi-image-generation-worker.service"

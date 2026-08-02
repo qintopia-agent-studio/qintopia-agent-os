@@ -30,20 +30,32 @@ PR 1's merge checks passed the plugin, default and all-features Rust, both
 warning-denied Clippy, Markdown, CI-contract, MCP, secret-scan, package, and disposable
 PostgreSQL 16 tiers.
 
-PR 2 is implementation-complete on an independent branch and awaiting replacement CI and
-review. It adds the unified direct/internal-group intake, participant snapshots,
+PR 2 was merged to `master` as `05d648ebb328b573ae7ef860c2520bf9c6119f1a` on 2026-08-02.
+It adds the unified direct/internal-group intake, participant snapshots,
 conversation-scoped status, first-valid revision and review-decision rules,
 capability-registry routing, and durable group notification work. Its boundary remains
 persistence and authorization only: it makes no Feishu call, activates no service,
-deploys nothing, and writes no production database. PR 3 has not started.
+deploys nothing, and writes no production database.
 
-The PR 2 local suite passes 479 default Rust tests, 485 all-features Rust tests with 20
+PR 2 passed 479 default Rust tests, 485 all-features Rust tests with 20 protected
+PostgreSQL tests ignored by design, both warning-denied Clippy configurations,
+plugin/MCP checks, runtime and deploy contracts, `pnpm check:pr:auto`, and the
+repository-supported PostgreSQL 16 CI tier. PR 3 now owns only the separately gated
+Feishu delivery, callback runtime ceiling, and deploy/rollback boundary.
+
+PR 3 is implementation-complete on `codex/xiaoman-conversation-ingress-v3-pr3` and
+awaiting PR review. It adds exact direct-chat and internal-group thread delivery,
+callback runtime ceilings, separate scope-pinned preflight/service/timer units, fake
+Feishu and fake systemd acceptance, and guarded production observation, activation, and
+rollback. It does not deploy, mutate a production database, call real Feishu, or enable
+either delivery timer.
+
+The PR 3 local suite passes 482 default Rust tests, 488 all-features Rust tests with 21
 protected PostgreSQL tests ignored by design, both warning-denied Clippy configurations,
-plugin/MCP checks, runtime and deploy contracts, and `pnpm check:pr:auto`. Before the
-later idempotency hardening, a fresh disposable PostgreSQL 18.4 database with pgvector
-0.8.1 passed all three poster intake integration tests. The current head must still pass
-the repository-supported `pgvector/pgvector:pg16` service job; the earlier PG18 result
-is additional migration evidence, not a substitute for current CI.
+deploy and release-installer contracts, and `pnpm check:pr:auto` quick and heavy tiers.
+The protected local PostgreSQL tier was unavailable because `qintopia_test` was not
+running on `127.0.0.1:5432`; the required PostgreSQL 16 CI job includes the new scoped
+claim and stale-recovery integration test.
 
 Successive PostgreSQL 16 runs exposed three distinct stable-identity boundaries:
 presentation-only brief fields, canonical activity-signal source provenance, and the
@@ -74,6 +86,34 @@ PR 2 locks these implementation rules:
   apply. Neither the model nor the poster intake payload supplies a provider.
 - Poster callback `--dry-run` is read-only even for target mismatch, unauthorized actor,
   runtime-allowlist denial, duplicate callback, or conflicting decision outcomes.
+
+PR 3 locks these implementation rules:
+
+- The existing delivery worker selects both direct and internal-group notifications from
+  the persisted target. It never infers a target from a callback or model payload.
+- A disabled internal-group switch leaves group notifications pending and invisible to
+  the delivery claim scan. It does not fail them, reroute them, or block direct work.
+- Direct and internal-group delivery retain one queue and worker implementation but use
+  separate scope-pinned systemd services and timers. The direct timer can claim only
+  direct rows; the default-disabled group timer can claim only group rows after separate
+  owner activation. Each service has a scope-specific preflight, so group-only
+  configuration failure cannot block direct delivery. Group activation and rollback
+  never stop or restart direct delivery.
+- Direct delivery keeps the reviewed chat-send endpoint. Group delivery uses only the
+  persisted thread root with Feishu reply, `reply_in_thread=true`, and a stable
+  notification-derived `uuid`; there is no main-timeline or direct-message fallback.
+- The upload attempt is persisted before image I/O and upload acceptance is persisted
+  before the reply send gate. Any uncertain external outcome is terminal `ambiguous`
+  with automatic retry disabled.
+- Group callbacks must pass the immutable participant and policy-version checks from PR
+  2 plus the current group feature switch and exact deployment chat/user allowlists.
+- Group activation requires ingress and delivery to share the same exact chat/user
+  ceiling, with every allowed user also covered by the operations reviewer ceiling, so
+  no accepted requester can receive an unusable review card.
+- Any group timer enable, restart, or final-observation failure immediately disables the
+  group timer and stops its worker without mutating the direct timer.
+- The existing V3 tables already carry the required target, snapshot, attempt, and
+  idempotency facts. PR 3 adds no schema migration and does not create another queue.
 
 ## Delivery Plan
 
@@ -122,6 +162,14 @@ unauthorized mutation is audited and rejected; zero publication facts exist.
 - Fail or mark ambiguous without falling back to the group main timeline or a direct
   chat.
 
+The release installer continues to install all poster units without enabling them. The
+existing poster activation brings up the direct path and explicitly leaves the group
+timer stopped. A separate internal-group activation requires both the sidecar and
+Xiaoman plugin group switches, authenticated V3 ingress, matching local ingress/callback
+keys, immutable plugin binding, a successful no-network preflight, and proof that direct
+delivery is active while group delivery is stopped. It enables only the group timer. Its
+rollback disables only group intake/delivery while the direct timer remains active.
+
 Acceptance: the exact image reaches the original direct chat or internal-group thread
 within 60 seconds; restart and uncertainty do not duplicate generation or delivery;
 review authority and zero-publication invariants remain enforced.
@@ -143,6 +191,9 @@ review authority and zero-publication invariants remain enforced.
 ```bash
 pnpm skills:qintopia-tools:check
 pnpm mcp:collab:check
+cargo test --manifest-path runtime/sidecar/Cargo.toml poster_delivery::tests
+cargo test --manifest-path runtime/sidecar/Cargo.toml poster_notification::tests
+node tools/deploy/test-xiaoman-feishu-internal-group-production.mjs
 RUST_MIN_STACK=33554432 cargo test --manifest-path runtime/sidecar/Cargo.toml
 cargo test --manifest-path runtime/sidecar/Cargo.toml --all-features
 pnpm check:pr:auto
@@ -170,7 +221,9 @@ review persistence, and zero messages in external activity or member groups.
 
 ## Rollback
 
-Disable group ingress and delivery before workers. Preserve policies, messages,
-participants, workflows, notifications, attempts, and ambiguous outcomes. Never reroute
-group results during rollback. Direct intake and unrelated short-running collaboration
-capabilities remain independent.
+Set the persistent group switches to `0`, run the guarded group rollback, and verify the
+group-disabled observation. The rollback stops only the scope-pinned group timer,
+reloads Xiaoman without group intake, and proves the direct timer remained active.
+Preserve policies, messages, participants, workflows, notifications, attempts, and
+ambiguous outcomes. Never reroute group results during rollback. Direct intake and
+unrelated short-running collaboration capabilities remain independent.

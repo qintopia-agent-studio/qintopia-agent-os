@@ -29,7 +29,7 @@ use crate::{
         self, ArtifactReviewDecisionRequest, OperationsPolicy, WorkItemCreateReport,
         WorkItemCreateRequest,
     },
-    operations_intake,
+    operations_intake, poster_delivery,
 };
 
 const MAX_CALLBACK_BYTES: u64 = 64 * 1024;
@@ -44,6 +44,10 @@ const REVIEW_CALLBACK_TARGET_QUERY: &str = r#"
            notification.status,
            target.conversation_id,
            target.requester_user_id,
+           target.conversation_type,
+           target.audience_class,
+           target.policy_version,
+           target.delivery_mode,
            artifact.review_status
     FROM qintopia_agent_os.poster_notifications notification
     JOIN qintopia_agent_os.poster_return_targets target
@@ -509,8 +513,17 @@ pub async fn run_review_callback(cli: &Cli, apply: bool, dry_run: bool) -> Resul
         .context("Xiaoman Feishu callback verification key is required")?;
     let callback = verify_and_parse_callback(&envelope, &callback_key, unix_timestamp_now()?)?;
     validate_callback(&callback)?;
-    let pool = db::connect(cli.database_url_required()?, cli.db_max_connections).await?;
-    let report = process_review_callback(&pool, cli, callback, apply).await?;
+    let database_url = cli.database_url_required()?;
+    let runtime_boundary = if apply {
+        Some(poster_delivery::review_runtime_boundary_from_env(
+            database_url,
+        )?)
+    } else {
+        None
+    };
+    let pool = db::connect(database_url, cli.db_max_connections).await?;
+    let report =
+        process_review_callback(&pool, cli, callback, apply, runtime_boundary.as_ref()).await?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
@@ -528,7 +541,9 @@ pub async fn run_callback_ingress(cli: &Cli, socket_path: PathBuf) -> Result<()>
             .ok()
             .filter(|value| !value.is_empty())
             .context("Xiaoman Feishu callback verification key is required")?;
-        let pool = db::connect(cli.database_url_required()?, cli.db_max_connections).await?;
+        let database_url = cli.database_url_required()?;
+        let runtime_boundary = poster_delivery::review_runtime_boundary_from_env(database_url)?;
+        let pool = db::connect(database_url, cli.db_max_connections).await?;
         let listener = UnixListener::bind(&socket_path)
             .with_context(|| format!("bind poster callback socket {}", socket_path.display()))?;
         fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
@@ -537,7 +552,7 @@ pub async fn run_callback_ingress(cli: &Cli, socket_path: PathBuf) -> Result<()>
         tracing::info!(socket_path = %socket_path.display(), "poster callback ingress started");
         loop {
             let (stream, _) = listener.accept().await.context("accept poster callback")?;
-            if handle_callback_connection(stream, &pool, cli, &callback_key)
+            if handle_callback_connection(stream, &pool, cli, &callback_key, &runtime_boundary)
                 .await
                 .is_err()
             {
@@ -556,6 +571,7 @@ async fn handle_callback_connection(
     pool: &PgPool,
     cli: &Cli,
     callback_key: &str,
+    runtime_boundary: &poster_delivery::PosterReviewRuntimeBoundary,
 ) -> Result<()> {
     let mut bytes = Vec::new();
     let mut reader = BufReader::new((&mut stream).take(MAX_CALLBACK_BYTES + 1));
@@ -572,7 +588,7 @@ async fn handle_callback_connection(
         serde_json::from_slice(&bytes).context("parse signed poster callback envelope")?;
     let callback = verify_and_parse_callback(&envelope, callback_key, unix_timestamp_now()?)?;
     validate_callback(&callback)?;
-    let report = process_review_callback(pool, cli, callback, true).await?;
+    let report = process_review_callback(pool, cli, callback, true, Some(runtime_boundary)).await?;
     let mut response = serde_json::to_vec(&report).context("serialize poster callback response")?;
     response.push(b'\n');
     timeout(CALLBACK_IO_TIMEOUT, stream.write_all(&response))
@@ -792,6 +808,7 @@ async fn process_review_callback(
     cli: &Cli,
     callback: ReviewCallback,
     apply: bool,
+    runtime_boundary: Option<&poster_delivery::PosterReviewRuntimeBoundary>,
 ) -> Result<ReviewCallbackReport> {
     let row = sqlx::query(REVIEW_CALLBACK_TARGET_QUERY)
         .bind(callback.notification_id)
@@ -803,6 +820,10 @@ async fn process_review_callback(
     let workflow_root_id: Uuid = row.try_get("workflow_root_id")?;
     let notification_status: String = row.try_get("status")?;
     let conversation_id: String = row.try_get("conversation_id")?;
+    let conversation_type: String = row.try_get("conversation_type")?;
+    let audience_class: String = row.try_get("audience_class")?;
+    let policy_version: i64 = row.try_get("policy_version")?;
+    let delivery_mode: String = row.try_get("delivery_mode")?;
     let review_status: String = row.try_get("review_status")?;
     let callback_ref = callback_event_ref(&callback.callback_event_id);
     let canonical_actor_ref =
@@ -823,6 +844,39 @@ async fn process_review_callback(
             .await?;
         }
         bail!("poster review callback does not match the delivered origin notification");
+    }
+    let target_semantics_valid = matches!(
+        (
+            conversation_type.as_str(),
+            audience_class.as_str(),
+            delivery_mode.as_str()
+        ),
+        ("direct", "private", "direct_chat")
+    ) || (conversation_type == "group"
+        && audience_class == "internal_collaboration"
+        && delivery_mode == "thread_reply"
+        && policy_version > 0);
+    if !target_semantics_valid
+        || runtime_boundary.is_some_and(|boundary| {
+            !boundary.callback_allowed(
+                &conversation_type,
+                &callback.conversation_id,
+                &callback.actor_user_id,
+            )
+        })
+    {
+        if apply {
+            operations_intake::record_poster_mutation_noop(
+                pool,
+                workflow_root_id,
+                "poster_mutation_rejected",
+                &callback_ref,
+                &canonical_actor_ref,
+                "review_callback_exceeds_runtime_delivery_boundary",
+            )
+            .await?;
+        }
+        bail!("poster review callback exceeds the runtime delivery boundary");
     }
     let authorized_actor = operations_intake::authorize_poster_review_actor(
         pool,
@@ -1030,6 +1084,12 @@ async fn process_review_callback_for_postgres_integration_mode(
             action: input.action.to_string(),
         },
         apply,
+        Some(
+            &poster_delivery::PosterReviewRuntimeBoundary::integration_fixture(
+                input.conversation_id,
+                input.actor_user_id,
+            ),
+        ),
     )
     .await?;
     Ok(report.deduped)

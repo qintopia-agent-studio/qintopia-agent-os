@@ -22,8 +22,10 @@ The poster path is split into durable commands:
 ```text
 run-operations-intake
 run-xiaoman-poster-notification-starter --once --apply
-xiaoman-feishu-poster-preflight
-run-xiaoman-feishu-poster-delivery --once --apply
+xiaoman-feishu-poster-preflight --conversation-scope direct
+xiaoman-feishu-poster-preflight --conversation-scope group
+run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope direct
+run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope group
 run-xiaoman-poster-review-callback-ingress
 ```
 
@@ -68,10 +70,31 @@ The command fails before reading stdin or connecting to Postgres unless the exac
 approval and database URL hash are present. It emits only policy counts, versions, and
 opaque hashes. Internal-group behavior remains disabled by default through
 `QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED=0`. When separately enabled for
-repository or staging tests, PR 2 resolves group intake from the persisted receipt,
-snapshots requester/reviewer authority, and may persist a generic conversation
-notification. The existing delivery worker still selects direct targets only; this
-increment creates no thread reply and calls no Feishu endpoint.
+repository, staging, or an owner-approved production canary, AgentOS resolves group
+intake from the persisted receipt, snapshots requester/reviewer authority, and persists
+the conversation notification. The same delivery worker selects eligible direct and
+group targets independently. Group delivery uses only the persisted thread root and is
+also gated by authenticated ingress, the deployment chat/user ceilings, and the separate
+production activation contract. A disabled group row remains pending and cannot block
+direct work.
+
+Production scheduling uses separate direct and internal-group systemd services and
+timers. Both invoke this worker and queue, but each command pins one
+`--conversation-scope`; their preflights and the SQL claim predicate enforce the same
+split. Release installation does not enable either external-delivery timer, direct
+activation keeps the group timer stopped, and the separate group activation never
+mutates the direct timer. A broken group-only ceiling therefore fails the group service
+closed without blocking direct delivery.
+
+When group support is enabled, the ingress and delivery chat/user ceilings must match,
+and every permitted requester/reviewer must also be present in the operations reviewer
+ceiling. A mismatched deployment fails before Postgres or Feishu so an accepted group
+request cannot become an undeliverable or unreviewable card.
+
+Production observation, activation, and rollback are separate from the existing direct
+poster activation. Their release-local entrypoints are documented in
+`../../deploy/sidecar/README.md`. They do not create a second queue, publication
+request, main-timeline fallback, or direct-message fallback.
 
 ## Responsibility
 

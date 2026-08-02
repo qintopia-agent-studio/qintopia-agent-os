@@ -121,6 +121,9 @@ unit_files=(
   qintopia-agentos-xiaoman-feishu-poster-preflight.service
   qintopia-agentos-xiaoman-feishu-poster-delivery.service
   qintopia-agentos-xiaoman-feishu-poster-delivery.timer
+  qintopia-agentos-xiaoman-feishu-internal-group-poster-preflight.service
+  qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.service
+  qintopia-agentos-xiaoman-feishu-internal-group-poster-delivery.timer
   qintopia-agentos-xiaoman-poster-review-callback.service
   qintopia-agentos-huabaosi-image-generation-preflight.service
   qintopia-agentos-huabaosi-image-generation-worker.service

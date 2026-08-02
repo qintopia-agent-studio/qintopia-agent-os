@@ -214,6 +214,14 @@ function runPostgresChecks() {
     [
       "--features",
       "postgres-integration-tests",
+      "poster_delivery::tests::postgres_delivery_scopes_are_isolated_and_group_claims_once",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
       "event::tests::postgres_callback_storage_redacts_credentials",
       "--",
       "--ignored",
