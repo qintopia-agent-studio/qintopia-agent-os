@@ -32,6 +32,14 @@ reviewed
 [Xiaoman production evidence runbook](../../operations/xiaoman-production-evidence-runbook.md),
 not a large remaining repository implementation gap.
 
+As of Sunday, August 2, 2026, the repository has also merged the Xiaoman V3 poster
+configuration closeout in `#358` and the T+24/T+48/T+72 material follow-up escalation
+audit in `#359`. Those changes close the known repository-local implementation gaps for
+the direct poster configuration transaction and internal material follow-up escalation.
+They still do not satisfy this production completion gate because no Release
+publication, production configuration transaction, timer activation, real direct
+acceptance, group canary, or end-to-end activity evidence is recorded here.
+
 ## Release Classification
 
 Classify each Xiaoman-adjacent Release before merging its Release Please PR:
