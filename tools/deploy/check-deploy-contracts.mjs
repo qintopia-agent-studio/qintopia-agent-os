@@ -3629,6 +3629,135 @@ for (const relativePath of [
   }
 }
 
+const xiaomanPosterConfigApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py";
+const xiaomanPosterConfigApplyTestPath =
+  "tools/deploy/test_xiaoman_feishu_poster_production_config_apply.py";
+const xiaomanPolicyApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py";
+const xiaomanPolicyApplyTestPath =
+  "tools/deploy/test_xiaoman_conversation_policy_production_apply.py";
+if (!exists(xiaomanPosterConfigApplyPath)) {
+  addError(
+    `${xiaomanPosterConfigApplyPath}: missing protected production config entrypoint`
+  );
+} else {
+  const script = readText(xiaomanPosterConfigApplyPath);
+  for (const fragment of [
+    'SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")',
+    'HERMES_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/xiaoman/.env")',
+    'RELEASE_CURRENT_PATH = Path("/home/ubuntu/qintopia-agent-os-releases/current")',
+    "approved-production-xiaoman-feishu-config-v1",
+    "MAX_INPUT_BYTES = 64 * 1024",
+    'parser.add_argument("--stdin", action="store_true")',
+    'parser.add_argument("--apply", action="store_true")',
+    "if os.geteuid() != 0:",
+    "fcntl.flock(lock_descriptor, fcntl.LOCK_EX)",
+    "secrets.token_urlsafe(48)",
+    "database_url_sha256_matched",
+    '"external_calls_executed": False',
+    '"database_writes_executed": False',
+    '"service_changes_executed": False',
+  ]) {
+    requireFragment(xiaomanPosterConfigApplyPath, script, fragment);
+  }
+  for (const forbidden of [
+    "--test-mode",
+    "--output",
+    "systemctl",
+    "curl ",
+    "psql ",
+    "source ",
+    "eval ",
+  ]) {
+    forbidFragment(xiaomanPosterConfigApplyPath, script, forbidden);
+  }
+}
+if (!exists(xiaomanPosterConfigApplyTestPath)) {
+  addError(
+    `${xiaomanPosterConfigApplyTestPath}: missing production config transaction test`
+  );
+} else {
+  const test = readText(xiaomanPosterConfigApplyTestPath);
+  for (const fragment of [
+    "test_direct_preview_and_apply_generate_one_redacted_hmac",
+    "test_database_rotation_updates_url_and_all_present_production_hashes",
+    "test_group_and_disabled_states_use_the_same_transaction",
+    "test_pair_commit_restores_first_file_when_second_replace_fails",
+  ]) {
+    requireFragment(xiaomanPosterConfigApplyTestPath, test, fragment);
+  }
+}
+requireFragment(
+  "tools/deploy/build-deploy-bundle.mjs",
+  readText("tools/deploy/build-deploy-bundle.mjs"),
+  xiaomanPosterConfigApplyPath
+);
+requireFragment(
+  "package.json",
+  readText("package.json"),
+  "python3 tools/deploy/test_xiaoman_feishu_poster_production_config_apply.py"
+);
+if (!exists(xiaomanPolicyApplyPath)) {
+  addError(
+    `${xiaomanPolicyApplyPath}: missing protected conversation policy entrypoint`
+  );
+} else {
+  const script = readText(xiaomanPolicyApplyPath);
+  for (const fragment of [
+    'SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")',
+    'RELEASE_CURRENT_PATH = Path("/home/ubuntu/qintopia-agent-os-releases/current")',
+    "approved-production-xiaoman-conversation-policy-v3",
+    '[str(binary), "conversation-policy-apply", "--stdin"]',
+    '"PATH": "/usr/bin:/bin"',
+    "sensitive_values",
+    "validate_policy_report",
+    "OPAQUE_REF_RE",
+  ]) {
+    requireFragment(xiaomanPolicyApplyPath, script, fragment);
+  }
+  for (const forbidden of [
+    "--test-mode",
+    "--output",
+    "systemctl",
+    "curl ",
+    "psql ",
+    "source ",
+    "eval ",
+  ]) {
+    forbidFragment(xiaomanPolicyApplyPath, script, forbidden);
+  }
+}
+if (!exists(xiaomanPolicyApplyTestPath)) {
+  addError(`${xiaomanPolicyApplyTestPath}: missing production policy entrypoint test`);
+} else {
+  const test = readText(xiaomanPolicyApplyTestPath);
+  for (const fragment of [
+    "test_fixed_release_policy_apply_uses_minimal_environment_and_redacted_output",
+    "test_approval_database_and_output_boundaries_fail_closed",
+    "test_input_and_cli_surface_are_bounded",
+  ]) {
+    requireFragment(xiaomanPolicyApplyTestPath, test, fragment);
+  }
+}
+for (const relativePath of [xiaomanPosterConfigApplyPath, xiaomanPolicyApplyPath]) {
+  requireFragment(
+    "tools/deploy/build-deploy-bundle.mjs",
+    readText("tools/deploy/build-deploy-bundle.mjs"),
+    relativePath
+  );
+}
+requireFragment(
+  "tools/deploy/build-deploy-bundle.mjs",
+  readText("tools/deploy/build-deploy-bundle.mjs"),
+  "docs/operations/xiaoman-feishu-poster-production-closeout-runbook.md"
+);
+requireFragment(
+  "package.json",
+  readText("package.json"),
+  "python3 tools/deploy/test_xiaoman_conversation_policy_production_apply.py"
+);
+
 const xiaomanInternalGroupObservationPath =
   "deploy/sidecar/scripts/xiaoman-feishu-internal-group-production-observation-smoke.sh";
 const xiaomanInternalGroupActivationPath =

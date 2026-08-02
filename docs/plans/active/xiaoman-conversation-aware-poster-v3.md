@@ -43,14 +43,14 @@ plugin/MCP checks, runtime and deploy contracts, `pnpm check:pr:auto`, and the
 repository-supported PostgreSQL 16 CI tier. PR 3 now owns only the separately gated
 Feishu delivery, callback runtime ceiling, and deploy/rollback boundary.
 
-PR 3 is implementation-complete on `codex/xiaoman-conversation-ingress-v3-pr3` and
-awaiting PR review. It adds exact direct-chat and internal-group thread delivery,
-callback runtime ceilings, separate scope-pinned preflight/service/timer units, fake
-Feishu and fake systemd acceptance, and guarded production observation, activation, and
-rollback. It does not deploy, mutate a production database, call real Feishu, or enable
-either delivery timer.
+PR 3 was merged through the scoped delivery changes completed by `6d4c283` on
+2026-08-02. It adds exact direct-chat and internal-group thread delivery, callback
+runtime ceilings, separate scope-pinned preflight/service/timer units, fake Feishu and
+fake systemd acceptance, and guarded production observation, activation, and rollback.
+It did not mutate a production database, call real Feishu, or enable either delivery
+timer when merged.
 
-The PR 3 local suite passes 482 default Rust tests, 488 all-features Rust tests with 21
+The PR 3 local suite passed 482 default Rust tests, 488 all-features Rust tests with 21
 protected PostgreSQL tests ignored by design, both warning-denied Clippy configurations,
 deploy and release-installer contracts, and `pnpm check:pr:auto` quick and heavy tiers.
 The protected local PostgreSQL tier was unavailable because `qintopia_test` was not
@@ -115,6 +115,26 @@ PR 3 locks these implementation rules:
 - The existing V3 tables already carry the required target, snapshot, attempt, and
   idempotency facts. PR 3 adds no schema migration and does not create another queue.
 
+The remaining production closeout is intentionally one reviewed PR and one Release. It
+owns the missing production configuration transaction, the direct-only ingress
+configuration correction, and the operator runbook needed to finish both the direct
+acceptance and one internal-group canary on that same immutable Release. It must not be
+split into separate HMAC, Bot identity, allowlist, database-hash, or group-switch
+releases.
+
+The closeout configuration entrypoint reads bounded JSON from stdin, writes only the
+fixed sidecar and Xiaoman Hermes environment files, preserves their existing ownership
+and modes, updates both through one locked transaction, and emits only counts and
+boolean evidence. It may accept a newly rotated database URL through stdin and update
+the fixed production database hash bindings in the same transaction. It must never print
+the URL, secrets, chat ids, user ids, file contents, or backup contents. It does not
+restart services, call Postgres or Feishu, or enable a delivery timer.
+
+Direct ingress does not use a Bot open id and therefore must not require one while the
+internal-group switch is `0`. Group configuration continues to require the exact Bot
+open id, chat and user ceilings, and reviewer ceiling before the separate group
+activation can succeed. This is a scope correction, not a weaker group boundary.
+
 ## Delivery Plan
 
 ### PR 1: Authenticated Ingress And Policy Foundation
@@ -176,15 +196,28 @@ review authority and zero-publication invariants remain enforced.
 
 ## Release Sequence
 
-1. Ship PR 1 and PR 2 with internal-group features disabled.
-2. Install the PR 3 release with `QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED=0`.
-3. Revalidate the existing direct path.
-4. Rotate previously exposed database credentials and update the approved database hash
-   before any production reactivation.
-5. Apply one private and one internal-group policy through the protected command.
-6. Run no-external-call preflight against the exact chat/user deployment ceilings.
-7. Obtain a separate owner approval, enable one internal group, and run one canary.
-8. Expand only after the direct and group evidence chains both pass.
+1. PR 1, PR 2, PR 3, and the trusted-session binding fix are already merged. Do not
+   create another feature slice for production configuration.
+2. Merge and publish one final closeout Release containing the protected configuration
+   transaction and direct-only Bot identity correction.
+3. Have the database owner create the replacement production credential, then stream the
+   replacement URL and approved hash into the release-local configuration entrypoint.
+   Keep the previous credential valid until the same-Release service reload succeeds;
+   revoke it immediately after that proof.
+4. Apply the `direct` desired state with the group switch fixed at `0`. The entrypoint
+   reuses the reviewed direct chat/user ceiling, creates or rotates the dedicated
+   ingress HMAC without printing it, and binds all Xiaoman poster settings to the exact
+   Release and database hash.
+5. Use one same-SHA deploy request to reload the fixed system service family after the
+   database URL rotation. This is not another PR or Release.
+6. Run the release-local no-external-call direct preflight, obtain the existing direct
+   activation approval, and complete one real private-message request and review.
+7. Stream one reviewed internal-group configuration into the same entrypoint, apply one
+   private and one internal-group policy through `conversation-policy-apply --stdin`,
+   and run the disabled-state group observation. No new build or Release is required.
+8. Obtain the separate owner approval, activate one group on the same Release, and run
+   one real thread canary. Expand only after the direct and group evidence chains both
+   pass.
 
 ## Validation
 

@@ -29,9 +29,10 @@ Xiaoman profile and the sidecar service; a one-sided or partial cutover fails cl
 The same plugin's `pre_gateway_dispatch` hook preserves the existing review-card path
 and can persist authentic Feishu message events before model dispatch. The message
 envelope uses a dedicated HMAC key, timestamp, and nonce; it contains only normalized
-message fields rather than the full SDK payload. Direct messages and explicit Xiaoman
-mentions in internal groups are candidates, but PR 1 keeps internal-group ingress
-disabled. Persistence failure is bounded and does not skip normal Hermes dispatch.
+message fields rather than the full SDK payload. Direct messages do not require a Bot
+open id. Explicit Xiaoman mentions in internal groups require the exact Bot open id and
+the separately enabled group switch. Persistence failure is bounded and does not skip
+normal Hermes dispatch.
 
 Activity facts are structured as title, schedule, and location. AgentOS verifies each
 fact against the persisted originating Feishu message, or against an existing governed
@@ -45,8 +46,9 @@ workflows for authenticated humans in the same authorized conversation. A later
 modification uses the same production tool with the workflow and generated-image ids
 after the image has been marked for changes. Only the requester or the workflow's
 snapshotted reviewers may submit a group revision, and that instruction must come from
-the original thread. PR 2 persists group notification work but does not deliver it;
-thread delivery remains a separately gated PR 3 boundary.
+the original thread. Group notification work is delivered only by the separately
+scope-pinned and owner-activated group timer; it never falls back to the main timeline
+or a direct conversation.
 
 ## Tools
 
