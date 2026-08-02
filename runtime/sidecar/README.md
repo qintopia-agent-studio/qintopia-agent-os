@@ -51,11 +51,11 @@ group-send authorization.
 ### Conversation Ingress V3
 
 The existing operations-intake socket also accepts a signed `feishu_message_ingest` V3
-envelope. This operation is available only when the dedicated ingress HMAC key, Bot
-identity, and exact chat/user deployment allowlists are configured. The sidecar verifies
-the timestamp, nonce, HMAC, minimal message schema, deployment ceilings, and active
-Postgres conversation policy before persisting the message. The complete Feishu SDK
-payload is never stored by this path.
+envelope. Direct ingress requires the dedicated ingress HMAC key and exact chat/user
+deployment allowlists. Internal-group ingress additionally requires the exact Bot
+identity. The sidecar verifies the timestamp, nonce, HMAC, minimal message schema,
+deployment ceilings, and active Postgres conversation policy before persisting the
+message. The complete Feishu SDK payload is never stored by this path.
 
 The explicit `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE=1` flag plus a complete
 authenticated-ingress configuration is also the protocol cutover boundary: the socket

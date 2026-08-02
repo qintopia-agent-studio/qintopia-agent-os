@@ -17,6 +17,47 @@ symlinks.
 
 ## Xiaoman Feishu Poster Return
 
+Production configuration is owned by the release-local protected transaction, not by
+manual edits to `/etc` or `.hermes`:
+
+```bash
+secure-reviewed-json-source | \
+  sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py \
+    --stdin
+
+secure-reviewed-json-source | \
+  sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py \
+    --stdin --apply \
+    --approval approved-production-xiaoman-feishu-config-v1
+```
+
+Preview and apply read the same bounded schema. `desired_state=direct` keeps group
+ingress and delivery disabled and may reuse the existing direct delivery ceiling;
+`desired_state=group` requires explicit Bot, chat, user, and reviewer ceilings;
+`desired_state=disabled` only writes the persistent disable flags needed by rollback. An
+optional replacement database URL is accepted only through stdin and updates its fixed
+production hash bindings in the same transaction. The command preserves unrelated
+environment entries and file metadata, prints no values or raw ids, and never contacts
+Postgres, Feishu, systemd, or another network service. After a database credential
+rotation, use the reviewed same-SHA deploy path to reload the system service family
+before revoking the old credential.
+
+Apply the reviewed private and internal-group policies without sourcing the production
+environment or exposing unrelated credentials:
+
+```bash
+secure-reviewed-policy-json-source | \
+  sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py \
+    --stdin --apply \
+    --approval approved-production-xiaoman-conversation-policy-v3
+```
+
+The wrapper binds to the immutable `release/current` sidecar, passes only the database
+URL, its approved hash, and the exact ingress chat/user ceilings to the existing
+`conversation-policy-apply --stdin` command, and rejects output containing any raw input
+or deployment identifiers. This is the only database-writing step in the configuration
+closeout; it never calls Feishu or enables delivery.
+
 The release bundle installs disabled intake, notification starter, callback, direct
 delivery, and internal-group delivery units. The two delivery services share one durable
 notification queue and worker binary, but each systemd command pins exactly one

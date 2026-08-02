@@ -61,6 +61,24 @@ without a trusted source message id.
 - Add regression coverage for the real event-to-session transition and for mismatched
   ingress keys failing before systemd or gateway side effects.
 
+The released binding fix exposed one remaining operations gap: production has no
+reviewed entrypoint that owns updates to both fixed environment files. Read-only
+inspection found only runtime services and historical ad hoc backup files; no installed
+configuration, secret, or values service owns this update. Both live environment files
+are regular, non-group-writable files owned by `ubuntu`, while activation and rollback
+scripts only validate them. Direct editing would repeat the configuration drift that the
+release/current model is intended to remove.
+
+The final closeout therefore adds one release-local, root-only configuration transaction
+instead of another feature slice. It accepts bounded JSON on stdin, validates the exact
+Release and approved database URL hash, can consume a newly rotated database URL without
+printing it, creates or rotates the dedicated ingress HMAC in memory, updates both fixed
+files through one lock with rollback-on-error, and emits only sanitized counts and
+booleans. An abrupt process stop can leave a partial replacement, which the activation
+preflight rejects until the same reviewed payload is retried. It also removes the
+irrelevant Bot open-id requirement from direct-only sidecar ingress; group ingress still
+fails closed without that exact identity.
+
 This is a Xiaoman plugin and deployment-contract correction. It does not modify or fork
 Hermes core, accept identity from process environment, add a service or table, or allow
 the model to choose a target, reviewer, provider, or authorization state.
@@ -81,3 +99,9 @@ both fixed environments, a successful no-network preflight, and a new real direc
 request that produces one ingress receipt and one accepted workflow. Image generation,
 same-image return, review persistence, and zero-publication evidence remain subsequent
 gates.
+
+The closeout is complete only after one final PR and Release cover all remaining code,
+the rotated database credential and hashes are applied through that Release, direct
+acceptance succeeds, and one group canary succeeds on the same SHA. Configuration,
+preflight, activation, policy application, and canary are separate approval gates but
+must not require another code PR or Release.
