@@ -4837,6 +4837,23 @@ def _xiaoman_activity_message_text_is_sensitive(value: str) -> bool:
         marker in value for marker in ["回执", "自动执行", "工具", "内部", "调试"]
     ):
         return True
+    if any(
+        marker in value
+        for marker in [
+            "发送通道本身是通的",
+            "执行过程转成给用户看的回复",
+            "保护机制在兜底",
+        ]
+    ):
+        return True
+    if "安全过滤" in value and any(
+        marker in value for marker in ["拦截", "固定提示", "执行信息", "发给人"]
+    ):
+        return True
+    if "执行过程" in value and any(
+        marker in value for marker in ["人看的回复", "用户看的回复"]
+    ):
+        return True
     return any(
         token in lower
         for token in [

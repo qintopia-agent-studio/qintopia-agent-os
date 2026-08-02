@@ -110,7 +110,8 @@ thread delivery remains a separately gated PR 3 boundary.
   markers, it hides the original text and returns a user-visible “用人话重述” path plus
   an optional public draft built only from safe `public_conclusion` and
   `public_next_step` fields. It also treats explanations of timers, tool calls, internal
-  state, or guard mechanisms as non-public text.
+  state, safety filters, send-channel status, execution flow, or guard mechanisms as
+  non-public text.
 - `qintopia_xiaoman_public_reply_rewrite`: stateless “用人话重述” helper for a blocked
   Xiaoman reply. It never returns the blocked internal text; the returned public reply
   contains only the safe conclusion and next step, and it does not create work items or

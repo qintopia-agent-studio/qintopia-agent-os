@@ -796,6 +796,11 @@ class QintopiaToolsTest(unittest.TestCase):
                 "后台智能体会先产生内部协作内容，包括发送工具的调用结果、"
                 "记录 ID、命令或调试信息，以及已生成回复准备发送之类的内部状态。"
             ),
+            (
+                "企业微信的安全过滤会拦截这类内容，不允许把执行信息直接发给人；"
+                "刚才测试消息能够成功，说明发送通道本身是通的；"
+                "问题出在执行过程被转成给用户看的回复，本质上是保护机制在兜底。"
+            ),
         ]:
             with self.subTest(message_text=message_text):
                 report = json.loads(
@@ -888,6 +893,28 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertTrue(report["hidden_original"])
         self.assertEqual(report["rewrite_trigger"], "用人话重述")
         self.assertEqual(report["missing_rewrite_fields"], ["public_conclusion"])
+
+    def test_xiaoman_public_reply_rewrite_rejects_guard_mechanism_explanations(self):
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_public_reply_rewrite(
+                {
+                    "blocked_reply": "为什么总是回复内部执行信息已自动隐藏？",
+                    "public_conclusion": (
+                        "企业微信的安全过滤会拦截这类内容，说明发送通道本身是通的，"
+                        "问题出在执行过程被转成给用户看的回复。"
+                    ),
+                    "public_next_step": "后续要避免执行过程变成人看的回复。",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertTrue(report["hidden_original"])
+        self.assertEqual(report["rewrite_trigger"], "用人话重述")
+        self.assertEqual(
+            report["missing_rewrite_fields"],
+            ["public_conclusion", "public_next_step"],
+        )
 
     def test_xiaoman_activity_announcement_prepare_rejects_non_integer_material_followup(self):
         self.enable_xiaoman_activity_wrappers()
