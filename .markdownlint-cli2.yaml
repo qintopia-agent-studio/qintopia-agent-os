@@ -11,6 +11,7 @@ globs:
   - "**/*.md"
 ignores:
   - "node_modules"
+  - ".git"
   - ".workbuddy"
   - "dist"
   - "CHANGELOG.md"

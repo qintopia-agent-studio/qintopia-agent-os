@@ -5333,6 +5333,22 @@ def _feishu_message_ingress_call(envelope: dict[str, str]) -> dict[str, Any]:
     return response
 
 
+def _bind_trusted_feishu_message_to_session(
+    event: Any, payload: dict[str, Any]
+) -> None:
+    source = _poster_review_attr(event, "source")
+    message = payload.get("message")
+    message_id = message.get("message_id") if isinstance(message, dict) else None
+    if source is None or not isinstance(message_id, str) or not message_id:
+        raise ValueError("trusted Feishu message cannot bind to the session")
+    try:
+        setattr(source, "message_id", message_id)
+    except (AttributeError, TypeError) as exc:
+        raise ValueError("trusted Feishu message cannot bind to the session") from exc
+    if _poster_review_attr(source, "message_id") != message_id:
+        raise ValueError("trusted Feishu message session binding failed")
+
+
 def handle_xiaoman_gateway_dispatch(event: Any, **_: Any) -> dict[str, str] | None:
     review_result = handle_xiaoman_poster_review_card(event)
     if review_result is not None:
@@ -5359,6 +5375,7 @@ def handle_xiaoman_gateway_dispatch(event: Any, **_: Any) -> dict[str, str] | No
             )
         ):
             raise ValueError("Feishu message ingress response contract failed")
+        _bind_trusted_feishu_message_to_session(event, payload)
     except Exception:
         LOGGER.warning("Xiaoman Feishu message ingress unavailable")
     return None

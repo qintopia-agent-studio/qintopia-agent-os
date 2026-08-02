@@ -10,7 +10,7 @@ ids, QiWe tokens, message ids, or private member data into this file.
 - Release: `v0.2.28`; Deploy Production run `30000866695`
 - Operator: `qiaopengjun5162` release publish; Codex read-only production preflight
 - Run time: `2026-07-23T19:06+08:00`
-- Server: `paxon-server`
+- Server: `ubuntu@122.51.77.220` from `docs/operations/inventory/server-sources.yaml`
 - Environment file loaded without printing values: `/etc/qintopia/message-sidecar.env`
 - Command:
 
