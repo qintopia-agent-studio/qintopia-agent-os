@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render and verify the fixed, non-secret Erhua model overlay."""
+"""Render and verify the fixed, non-secret Erhua Livecool provider overlay."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import yaml
 from yaml.events import AliasEvent
 
 
-MANAGED_MODEL_KEYS = ("default", "provider", "base_url")
+MANAGED_MODEL_KEYS = ("provider", "base_url")
 PROVIDER_KEYS = ("name", "base_url", "model", "key_env", "api_mode")
 PRESERVED_PROVIDER_FIELDS = {"timeout"}
 FORBIDDEN_PROVIDER_FIELDS = {
@@ -39,7 +39,6 @@ EXPECTED_OVERLAY = {
     "agent_id": "erhua",
     "managed": {
         "model": {
-            "default": "gpt-5.5",
             "provider": "custom:livecool.net",
             "base_url": "",
         },

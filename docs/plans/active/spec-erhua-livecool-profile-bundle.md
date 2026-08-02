@@ -18,19 +18,21 @@ context:
 
 ## Intent
 
-**Problem:** The Erhua profile selects `gpt-5.5` through
+**Problem:** The Erhua profile routes its conversational model through
 `custom:livecool.net`, but its profile-local `custom_providers` list does not register
-Livecool. Hermes therefore rejects the provider before making an inference call.
+Livecool. Hermes therefore rejects the provider before making an inference call. The
+provider overlay must not become the owner of the independently changing default model.
 
-**Approach:** Ship a non-secret Erhua model overlay. Extend the fixed deploy runner to
-render it against runtime-local config, migrate the existing credential to a
-profile-local environment binding, activate atomically, run non-sending checks, and
-restore config and secret state on rollback.
+**Approach:** Ship a non-secret Erhua provider overlay. Extend the fixed deploy runner
+to render it against runtime-local config while preserving `model.default`, migrate the
+existing credential to a profile-local environment binding, activate atomically, run
+non-sending checks, and restore config and secret state on rollback.
 
 ## Boundaries & Constraints
 
-**Always:** Manage only the main model and named `Livecool.net` provider; use
-`gpt-5.5`, `custom:livecool.net`, `https://livecool.net/v1`, and
+**Always:** Preserve the runtime-local `model.default`; manage only the Livecool route
+and named `Livecool.net` provider; use `custom:livecool.net`,
+`https://livecool.net/v1`, provider model `gpt-5.5`, and
 `key_env: LIVECOOL_API_KEY`; keep credentials and rendered config outside Git,
 artifacts, requests, diffs, and logs; preserve unrelated Erhua config and `.env` values;
 require a redacted dry-run; back up config and `.env` as `0600`; pair the fixed scope
@@ -48,7 +50,7 @@ model for smoke, or treat restart alone as provider validation.
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|---------------|----------------------------|----------------|
-| Render | Sanitized base and overlay | Change only managed fields; preserve Ark and all unrelated values | Reject malformed YAML, duplicates, path aliasing, or forbidden fields |
+| Render | Sanitized base and overlay | Change only provider-managed fields; preserve the default model, Ark, and all unrelated values | Reject malformed YAML, duplicates, path aliasing, or forbidden fields |
 | Dry run | Erhua lacks Livecool; default has one Livecool credential | Emit redacted diff/report; write nothing | Fail closed if any runtime prerequisite is absent |
 | Activation | Fixed scope/target after successful dry run | Atomically update config/env, restart Erhua, record checks | Restore runtime files and release on any failure |
 | Repeat/rollback | Exact state already exists, or activation fails | Idempotent render, or exact restore plus smoke | Rollback succeeds only when every restore/check passes |
@@ -97,6 +99,9 @@ model for smoke, or treat restart alone as provider validation.
   activation and a second dry-run-reviewed request activates Erhua.
 
 ## Spec Change Log
+
+- 2026-08-02: Owner-approved correction stops the Livecool provider overlay from
+  managing `model.default`; the `v0.2.63` deployment proved that coupling was stale.
 
 ## Design Notes
 
@@ -163,7 +168,7 @@ rollback write distinct smoke and restore evidence.
 
 **Contract And Tests**
 
-- Confirm the exact non-secret Erhua model overlay.
+- Confirm the exact non-secret Erhua Livecool provider overlay.
   [`config.template.yaml:1`](../../../agents/erhua/config.template.yaml#L1)
 
 - Finish with renderer, migration, transaction, rollback, and smoke coverage.

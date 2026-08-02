@@ -34,9 +34,10 @@ controlled handoff, and trainer memory submission through audited backend paths.
   `skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py`
 - Runtime `.env`, memories, identities, caches, locks, logs, and state databases are
   excluded from this package.
-- `config.template.yaml` is a non-secret, field-limited model overlay. It is rendered
-  against the runtime-local config by the governed deploy runner; it is not a complete
-  Hermes config and must never receive an inline credential.
+- `config.template.yaml` is a non-secret, field-limited Livecool provider overlay. It
+  preserves the runtime-local `model.default` when rendered by the governed deploy
+  runner; it is not a complete Hermes config and must never receive an inline
+  credential.
 
 The weather entrypoint is packaged but not activated. Erhua's live 07:00 job and
 `cron/jobs.json` remain runtime-local until their non-secret structure and script hashes

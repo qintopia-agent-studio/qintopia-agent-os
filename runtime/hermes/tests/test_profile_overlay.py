@@ -66,6 +66,8 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertEqual(rendered, repeated)
             self.assertEqual(original["channel"], rendered["channel"])
             self.assertEqual(original["unrelated_flag"], rendered["unrelated_flag"])
+            self.assertEqual("gpt-5.6-luna", rendered["model"]["default"])
+            self.assertEqual(original["model"]["default"], rendered["model"]["default"])
             self.assertEqual(0.3, rendered["model"]["temperature"])
             self.assertEqual(original["custom_providers"][0], rendered["custom_providers"][0])
             self.assertEqual("custom:livecool.net", rendered["model"]["provider"])
@@ -76,8 +78,34 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertEqual(0o600, stat.S_IMODE(report_path.stat().st_mode))
             report_text = report_path.read_text()
             self.assertNotIn("fixture-livecool-key-not-real", report_text)
-            self.assertTrue(json.loads(report_text)["secret_values_redacted"])
+            report = json.loads(report_text)
+            self.assertTrue(report["secret_values_redacted"])
+            self.assertNotIn("model.default", report["changed_paths"])
             self.assertEqual("unchanged", json.loads(second_report.read_text())["status"])
+
+    def test_overlay_cannot_manage_default_model(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            overlay = yaml.safe_load(OVERLAY.read_text())
+            overlay["managed"]["model"]["default"] = "gpt-5.5"
+            overlay_path = directory / "overlay.yaml"
+            overlay_path.write_text(yaml.safe_dump(overlay, sort_keys=False))
+            output = directory / "config.yaml"
+            result = self.run_tool(
+                RENDERER,
+                "render",
+                "--base",
+                str(FIXTURES / "erhua-base.yaml"),
+                "--overlay",
+                str(overlay_path),
+                "--output",
+                str(output),
+                "--report",
+                str(directory / "report.json"),
+                expect=1,
+            )
+            self.assertIn("model fields must be exactly: provider, base_url", result.stderr)
+            self.assertFalse(output.exists())
 
     def test_existing_inline_provider_is_replaced_without_secret(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
