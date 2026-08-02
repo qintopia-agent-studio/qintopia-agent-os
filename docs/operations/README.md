@@ -26,6 +26,9 @@ deployment docs.
   and final completion-manifest sequence. The same runbook also includes the reviewed
   one-shot completion finalizer for the last retained-evidence step.
   <p>reviewed one-shot completion finalizer</p>
+- [xiaoman-feishu-poster-production-closeout-runbook.md](xiaoman-feishu-poster-production-closeout-runbook.md):
+  one-Release database credential rollover, trusted direct configuration and policy,
+  direct acceptance, one internal-group canary, and rollback sequence.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):

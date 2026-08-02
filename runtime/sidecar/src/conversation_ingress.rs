@@ -114,7 +114,7 @@ pub struct IngressConfig {
     hmac_key: Zeroizing<Vec<u8>>,
     allowed_chat_ids: BTreeSet<String>,
     allowed_user_ids: BTreeSet<String>,
-    bot_open_id_ref: String,
+    bot_open_id_ref: Option<String>,
     internal_group_enabled: bool,
 }
 
@@ -155,10 +155,19 @@ impl IngressConfig {
         if callback_key.as_deref().map(|value| value.trim()) == Some(hmac_key.as_str()) {
             bail!("Xiaoman Feishu ingress and callback keys must be distinct");
         }
-        let bot_open_id = required_config_value(&mut values, BOT_OPEN_ID_ENV)?;
-        if !valid_external_id(&bot_open_id) {
-            bail!("Xiaoman Feishu Bot identity is invalid");
-        }
+        let bot_open_id_ref = match values.remove(BOT_OPEN_ID_ENV) {
+            Some(value) if !value.trim().is_empty() => {
+                let bot_open_id = value.trim();
+                if !valid_external_id(bot_open_id) {
+                    bail!("Xiaoman Feishu Bot identity is invalid");
+                }
+                Some(bot_open_id_ref(bot_open_id))
+            }
+            _ if internal_group_enabled => {
+                bail!("Xiaoman Feishu Bot identity is required for internal-group ingress")
+            }
+            _ => None,
+        };
         let allowed_chat_ids = parse_identifier_set(
             INGRESS_ALLOWED_CHAT_IDS_ENV,
             &required_config_value(&mut values, INGRESS_ALLOWED_CHAT_IDS_ENV)?,
@@ -171,7 +180,7 @@ impl IngressConfig {
             hmac_key: Zeroizing::new(hmac_key.as_bytes().to_vec()),
             allowed_chat_ids,
             allowed_user_ids,
-            bot_open_id_ref: bot_open_id_ref(&bot_open_id),
+            bot_open_id_ref,
             internal_group_enabled,
         }))
     }
@@ -200,7 +209,7 @@ impl IngressConfig {
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            bot_open_id_ref: bot_open_id_ref("ou_xiaoman_bot_fixture"),
+            bot_open_id_ref: Some(bot_open_id_ref("ou_xiaoman_bot_fixture")),
             internal_group_enabled: group_enabled,
         }
     }
@@ -315,7 +324,7 @@ fn validate_message(config: &IngressConfig, message: &FeishuIngressMessage) -> R
             }
             if !message.should_trigger
                 || !message.is_mention_bot
-                || message.mentioned_bot_ref != config.bot_open_id_ref
+                || config.bot_open_id_ref.as_deref() != Some(message.mentioned_bot_ref.as_str())
                 || message.thread_root_message_id.is_empty()
             {
                 bail!("Feishu group mention binding is invalid");
@@ -725,6 +734,28 @@ mod tests {
         let enabled = ingress_values("1");
         assert!(IngressConfig::from_values(enabled).unwrap().is_some());
 
+        let mut direct_without_bot = ingress_values("1");
+        direct_without_bot.remove(BOT_OPEN_ID_ENV);
+        let direct_config = IngressConfig::from_values(direct_without_bot)
+            .unwrap()
+            .expect("direct ingress remains enabled");
+        assert!(direct_config.bot_open_id_ref.is_none());
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 8, 0, 0).unwrap();
+        let direct_envelope = signed_envelope(
+            &direct_config,
+            direct_message(),
+            now.timestamp(),
+            "3123456789abcdef0123456789abcdef",
+        );
+        let verified = verify_envelope(&direct_config, direct_envelope, now)
+            .expect("signed direct ingress verifies without a Bot identity");
+        assert_eq!(verified.message.chat_type, "direct");
+
+        let mut group_without_bot = ingress_values("1");
+        group_without_bot.insert(INTERNAL_GROUP_ENABLED_ENV, "1".to_string());
+        group_without_bot.remove(BOT_OPEN_ID_ENV);
+        assert!(IngressConfig::from_values(group_without_bot).is_err());
+
         for invalid in ["", "true", "2"] {
             let values = ingress_values(invalid);
             assert!(IngressConfig::from_values(values).is_err());
@@ -899,7 +930,7 @@ mod tests {
             hmac_key: Zeroizing::new(b"fixture-ingress-key-with-32-bytes-minimum".to_vec()),
             allowed_chat_ids: [chat_id.clone()].into_iter().collect(),
             allowed_user_ids: [user_id.clone()].into_iter().collect(),
-            bot_open_id_ref: bot_open_id_ref("ou_xiaoman_bot_fixture"),
+            bot_open_id_ref: None,
             internal_group_enabled: false,
         };
         let request_text = "AgentOS 海报链路验收 2026-08-01 16:00 线上";
