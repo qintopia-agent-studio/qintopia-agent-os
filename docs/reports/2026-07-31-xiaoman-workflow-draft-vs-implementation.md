@@ -280,6 +280,8 @@
   升级草稿，并在 payload/source refs 标记
   `material_followup_attempt=3`、`escalation_required=true` 和
   `external_send_executed=false`。
+- 显式传 `date` 的本地复放和预检可以同时传 `material_followup_attempt=1|2|3`
+  选择对应轮次；未传时保持第一轮兼容行为，默认 timer 不依赖该字段而是一次覆盖三轮。
 - 新增 CLI 命令 `run-xiaoman-activity-material-followup-worker`（`--check-only` /
   `--once` / `--apply` / `--poll-seconds`）。
 - 新增 systemd 单元
