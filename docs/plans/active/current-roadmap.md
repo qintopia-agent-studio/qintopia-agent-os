@@ -137,9 +137,11 @@ unless correcting historical evidence.
      `xiaoman-feishu-poster-adapter`, and must not bundle `qiwe-production-adapter`.
      Single-feature builds still fail closed. This is code-level implementation
      evidence, not real staging or send evidence. A read-only 2026-07-16 Asia/Shanghai
-     server observation confirmed that `paxon-server` still lacks the fixed staging env
-     file and immutable staging release root, so real staging must first provision those
-     owner-reviewed inputs instead of treating local fake smokes as runtime evidence.
+     observation of the production host recorded in
+     `docs/operations/inventory/server-sources.yaml` confirmed that it still lacks the
+     fixed staging env file and immutable staging release root, so real staging must
+     first provision those owner-reviewed inputs instead of treating local fake smokes
+     as runtime evidence.
    - As of Friday, July 24, 2026, the repository-local implementation for the reviewed
      Xiaoman production evidence chain has been re-verified: deploy contracts, deploy
      runner checks, Huabaosi production canary evidence checks, QiWe production
