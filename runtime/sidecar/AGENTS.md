@@ -54,9 +54,10 @@ From the monorepo root, prefer:
 - Group-message send-readiness and policy-denial transitions must release the complete
   claim tuple (`claimed_by`, `locked_at`, and `claim_expires_at`) and require exactly
   one work-item update before appending the corresponding audit event.
-- Work-item creation events intentionally mirror sanitized request metadata for audit.
-  Keep metadata free of secrets, live runtime references, and private record ids before
-  it reaches either `work_items.metadata` or `work_item_events.data`.
+- Work-item creation events must not mirror full request metadata. If a capability needs
+  metadata in `work_item_events.data`, add an explicit allowlist that emits only stable,
+  non-secret audit fields; `work_items.metadata` may retain broader internal context
+  after normal sensitivity validation.
 - The complete sidecar suite needs a 32 MiB test-thread stack. `pnpm test:sidecar` and
   CI set `RUST_MIN_STACK=33554432`; this is test-only and must not be copied into the
   production sidecar service environment.
