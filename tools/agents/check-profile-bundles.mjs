@@ -141,6 +141,21 @@ for (const file of xiaomanBundleFiles) {
   }
 }
 
+if (exists(`${xiaomanBundleRoot}/templates/SOUL.md.template`)) {
+  const xiaomanSoulTemplate = readText(
+    `${xiaomanBundleRoot}/templates/SOUL.md.template`
+  );
+  for (const fragment of [
+    "如果回复被内部执行信息拦截，先提示“用人话重述”",
+    "不要解释定时任务、工具调用、内部状态、安全过滤、发送通道、执行过程或保护机制",
+    "我拦下了不可公开的草稿",
+  ]) {
+    if (!xiaomanSoulTemplate.includes(fragment)) {
+      addError(`${xiaomanBundleRoot}/templates/SOUL.md.template: missing ${fragment}`);
+    }
+  }
+}
+
 for (const file of [
   `${xiaomanBundleRoot}/migrate_values.py`,
   `${xiaomanBundleRoot}/render.py`,
