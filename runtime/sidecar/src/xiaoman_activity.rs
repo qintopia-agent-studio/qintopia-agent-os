@@ -1355,6 +1355,16 @@ fn material_followup_work_item_request(
     } else {
         "activity_owner"
     };
+    let escalation_stage = if followup.escalation_required {
+        "third_attempt_overdue"
+    } else {
+        "none"
+    };
+    let escalation_level = if followup.escalation_required {
+        "operations_lead"
+    } else {
+        "none"
+    };
     WorkItemCreateRequest {
         requester_agent: ACTOR_AGENT.to_string(),
         target_agent: ACTOR_AGENT.to_string(),
@@ -1376,6 +1386,9 @@ fn material_followup_work_item_request(
             "table_role": "activity_occurrence",
             "material_followup_attempt": followup.attempt,
             "escalation_required": followup.escalation_required,
+            "escalation_stage": escalation_stage,
+            "escalation_level": escalation_level,
+            "material_followup_terminal_attempt": followup.escalation_required,
         }),
         source_event_signal_id: None,
         payload: json!({
@@ -1388,13 +1401,20 @@ fn material_followup_work_item_request(
             "activity_route": "activity_recap",
             "material_followup_attempt": followup.attempt,
             "escalation_required": followup.escalation_required,
+            "escalation_stage": escalation_stage,
+            "escalation_level": escalation_level,
+            "material_followup_terminal_attempt": followup.escalation_required,
             "recipient_scope": recipient_scope,
             "external_send_executed": false,
         }),
         payload_redaction_policy: "default".to_string(),
         idempotency_key,
         dedupe_key: String::new(),
-        metadata: serde_json::json!({}),
+        metadata: json!({
+            "escalation_stage": escalation_stage,
+            "escalation_level": escalation_level,
+            "material_followup_terminal_attempt": followup.escalation_required,
+        }),
         parent_work_item_id: None,
         approved_artifact_id: None,
     }
@@ -4267,9 +4287,27 @@ mod tests {
         assert_eq!(request.source_type, "xiaoman_activity");
         assert_eq!(request.source_refs["material_followup_attempt"], 3);
         assert_eq!(request.payload["material_followup_attempt"], 3);
+        assert_eq!(
+            request.source_refs["escalation_stage"],
+            "third_attempt_overdue"
+        );
+        assert_eq!(request.source_refs["escalation_level"], "operations_lead");
+        assert_eq!(
+            request.source_refs["material_followup_terminal_attempt"],
+            true
+        );
         assert_eq!(request.payload["escalation_required"], true);
+        assert_eq!(request.payload["escalation_stage"], "third_attempt_overdue");
+        assert_eq!(request.payload["escalation_level"], "operations_lead");
+        assert_eq!(request.payload["material_followup_terminal_attempt"], true);
         assert_eq!(request.payload["recipient_scope"], "operations_lead");
         assert_eq!(request.payload["external_send_executed"], false);
+        assert_eq!(
+            request.metadata["escalation_stage"],
+            "third_attempt_overdue"
+        );
+        assert_eq!(request.metadata["escalation_level"], "operations_lead");
+        assert_eq!(request.metadata["material_followup_terminal_attempt"], true);
     }
 
     #[tokio::test]
@@ -4317,7 +4355,7 @@ mod tests {
         let row = sqlx::query(
             r#"
             SELECT capability_key, work_item_type, requester_agent, target_agent,
-                   priority, status, source_type, source_refs, payload
+                   priority, status, source_type, source_refs, payload, metadata
             FROM qintopia_agent_os.work_items
             WHERE id = $1
             "#,
@@ -4328,6 +4366,7 @@ mod tests {
         .expect("load material followup work item");
         let source_refs: Value = row.get("source_refs");
         let payload: Value = row.get("payload");
+        let metadata: Value = row.get("metadata");
 
         assert_eq!(
             row.get::<String, _>("capability_key"),
@@ -4344,8 +4383,17 @@ mod tests {
         assert_eq!(row.get::<String, _>("source_type"), "xiaoman_activity");
         assert_eq!(source_refs["material_followup_attempt"], 3);
         assert_eq!(source_refs["escalation_required"], true);
+        assert_eq!(source_refs["escalation_stage"], "third_attempt_overdue");
+        assert_eq!(source_refs["escalation_level"], "operations_lead");
+        assert_eq!(source_refs["material_followup_terminal_attempt"], true);
         assert_eq!(payload["recipient_scope"], "operations_lead");
         assert_eq!(payload["external_send_executed"], false);
+        assert_eq!(payload["escalation_stage"], "third_attempt_overdue");
+        assert_eq!(payload["escalation_level"], "operations_lead");
+        assert_eq!(payload["material_followup_terminal_attempt"], true);
+        assert_eq!(metadata["escalation_stage"], "third_attempt_overdue");
+        assert_eq!(metadata["escalation_level"], "operations_lead");
+        assert_eq!(metadata["material_followup_terminal_attempt"], true);
 
         let work_item_count: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM qintopia_agent_os.work_items WHERE idempotency_key = $1",
@@ -4363,6 +4411,9 @@ mod tests {
             WHERE work_item_id = $1
               AND event_type = 'created'
               AND data ->> 'capability_key' = 'xiaoman.material_followup_request'
+              AND data -> 'metadata' ->> 'escalation_stage' = 'third_attempt_overdue'
+              AND data -> 'metadata' ->> 'escalation_level' = 'operations_lead'
+              AND data -> 'metadata' ->> 'material_followup_terminal_attempt' = 'true'
             "#,
         )
         .bind(work_item_id)

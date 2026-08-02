@@ -4170,6 +4170,7 @@ pub async fn create_work_item(
                     "status": initial_status,
                     "target_agent": request.target_agent,
                     "parent_work_item_id": request.parent_work_item_id,
+                    "metadata": request.metadata,
                     "human_workbench_provider": "feishu_task",
                     "requires_human_final_confirmation": initial_status == "awaiting_publish"
                 }),

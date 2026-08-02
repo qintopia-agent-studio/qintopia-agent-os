@@ -10,14 +10,17 @@ The material follow-up worker scans sanitized `activity_occurrence` records and 
 internal `activity_recap_request` work items for T+24/T+48/T+72 reminder handling.
 
 The third attempt is represented as an operations-lead escalation draft through work
-item priority and payload metadata. It is not a group-send authorization.
+item priority plus stable source refs, payload, metadata, and creation audit event
+fields. It is not a group-send authorization.
 
 ## Contract
 
 `xiaoman.material_followup_request` is provided by Xiaoman, may be requested only by
 Xiaoman, and may create only `activity_recap_request` work items. Requests must bind a
 sanitized `source_record_ref`, `material_followup_attempt`, `escalation_required`, and
-`external_send_executed=false`.
+`external_send_executed=false`. A third-attempt overdue escalation must also carry
+`escalation_stage=third_attempt_overdue`, `escalation_level=operations_lead`, and
+`material_followup_terminal_attempt=true` in the internal work item metadata.
 
 The worker idempotency key remains bound to the business scan date, sanitized source
 record reference, and follow-up attempt so replay returns the existing work item instead
