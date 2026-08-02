@@ -221,6 +221,7 @@ required_versions=(
   "2026-07-14.001|202607140001_xiaoman_event_signal_mutations.sql"
   "2026-07-15.001|202607150001_xiaoman_activity_phases.sql"
   "2026-07-15.002|202607150002_xiaoman_promotion_details.sql"
+  "2026-08-02.001|202608020001_xiaoman_material_followup_capability.sql"
 )
 
 required_capabilities=(
@@ -229,6 +230,7 @@ required_capabilities=(
   erhua.send_group_message
   wenyuange.retrieve_evidence
   xiaoman.create_activity_request
+  xiaoman.material_followup_request
 )
 
 for schema in "${required_schemas[@]}"; do
@@ -275,8 +277,8 @@ if [[ "$capabilities_table_exists" == "t" ]]; then
   done
   check_count_at_least \
     "capability_seed_count" \
-    "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','huabaosi.generate_image_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request') AND enabled IS TRUE;" \
-    5
+    "SELECT count(*) FROM qintopia_agent_os.capabilities WHERE capability_key IN ('huabaosi.create_visual_asset','huabaosi.generate_image_asset','erhua.send_group_message','wenyuange.retrieve_evidence','xiaoman.create_activity_request','xiaoman.material_followup_request') AND enabled IS TRUE;" \
+    6
 fi
 
 if (( ${#failures[@]} > 0 )); then

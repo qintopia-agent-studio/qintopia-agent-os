@@ -195,6 +195,14 @@ function runPostgresChecks() {
     [
       "--features",
       "postgres-integration-tests",
+      "xiaoman_activity::tests::postgres_material_followup_apply_is_idempotent_and_audits_escalation",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
       "conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow",
       "--",
       "--ignored",

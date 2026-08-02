@@ -1,5 +1,15 @@
 # Data Design Changelog
 
+## `2026-08-02.001`
+
+Migration: `migrations/202608020001_xiaoman_material_followup_capability.sql` Design note:
+`docs/data-design/2026-08-02-xiaoman-material-followup-capability.md`
+
+Registers an internal Xiaoman material follow-up capability. The worker can create
+idempotent post-event reminder and escalation work items without creating
+`erhua.send_group_message`, sending externally, or treating the reminder as approved
+public copy.
+
 ## 2026-08-01 - Xiaoman conversation poster participants V3
 
 - Activates persisted conversation policy for unified direct/internal-group poster

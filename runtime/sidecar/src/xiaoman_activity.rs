@@ -1348,23 +1348,18 @@ fn material_followup_work_item_request(
     let priority = if followup.escalation_required {
         "high"
     } else {
-        "medium"
+        "normal"
     };
     let recipient_scope = if followup.escalation_required {
         "operations_lead"
     } else {
         "activity_owner"
     };
-    let target_group_alias = if followup.escalation_required {
-        Value::Null
-    } else {
-        json!("community_activity_group")
-    };
     WorkItemCreateRequest {
         requester_agent: ACTOR_AGENT.to_string(),
-        target_agent: "erhua".to_string(),
-        capability_key: "erhua.send_group_message".to_string(),
-        work_item_type: "group_message_request".to_string(),
+        target_agent: ACTOR_AGENT.to_string(),
+        capability_key: "xiaoman.material_followup_request".to_string(),
+        work_item_type: "activity_recap_request".to_string(),
         brief_summary: if followup.escalation_required {
             format!("升级：{} 活动素材回填逾期", followup.title)
         } else {
@@ -1373,7 +1368,7 @@ fn material_followup_work_item_request(
         purpose: String::new(),
         human_owner: String::new(),
         priority: priority.to_string(),
-        source_type: "scheduled_scan".to_string(),
+        source_type: "xiaoman_activity".to_string(),
         source_refs: json!({
             "scan_date": scan_date,
             "scan_type": "material_followup",
@@ -1388,8 +1383,9 @@ fn material_followup_work_item_request(
             "activity_date": scan_date,
             "owner_name": followup.owner,
             "reminder_text": followup.reminder_text,
-            "target_group_alias": target_group_alias,
             "priority": priority,
+            "activity_phase": "post_event",
+            "activity_route": "activity_recap",
             "material_followup_attempt": followup.attempt,
             "escalation_required": followup.escalation_required,
             "recipient_scope": recipient_scope,
@@ -2867,6 +2863,32 @@ mod tests {
     use clap::Parser;
     use serde_json::json;
 
+    #[cfg(feature = "postgres-integration-tests")]
+    fn postgres_integration_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "PostgreSQL integration test requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("PostgreSQL integration test requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = url::Url::parse(&database_url).expect("integration database URL must parse");
+        assert!(
+            matches!(parsed.scheme(), "postgres" | "postgresql"),
+            "PostgreSQL integration test requires a postgres URL"
+        );
+        assert!(
+            matches!(parsed.host_str(), Some("127.0.0.1" | "::1")),
+            "PostgreSQL integration test may only use a literal loopback database"
+        );
+        assert_eq!(
+            parsed.path().trim_start_matches('/'),
+            "qintopia_test",
+            "PostgreSQL integration test may only use qintopia_test"
+        );
+        database_url
+    }
+
     fn payload(value: serde_json::Value) -> ActivityPayload {
         serde_json::from_value(value).expect("test payload should deserialize")
     }
@@ -4238,12 +4260,116 @@ mod tests {
         );
 
         assert!(request.idempotency_key.ends_with(":3"));
+        assert_eq!(request.capability_key, "xiaoman.material_followup_request");
+        assert_eq!(request.work_item_type, "activity_recap_request");
+        assert_eq!(request.requester_agent, "xiaoman");
+        assert_eq!(request.target_agent, "xiaoman");
+        assert_eq!(request.source_type, "xiaoman_activity");
         assert_eq!(request.source_refs["material_followup_attempt"], 3);
         assert_eq!(request.payload["material_followup_attempt"], 3);
         assert_eq!(request.payload["escalation_required"], true);
         assert_eq!(request.payload["recipient_scope"], "operations_lead");
-        assert!(request.payload["target_group_alias"].is_null());
         assert_eq!(request.payload["external_send_executed"], false);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_material_followup_apply_is_idempotent_and_audits_escalation() {
+        let database_url = postgres_integration_database_url();
+        let pool = crate::db::connect(&database_url, 1)
+            .await
+            .expect("connect guarded integration database");
+        crate::db::run_migrations(&pool)
+            .await
+            .expect("run integration migrations");
+
+        let source_record_id = format!("rec_material_followup_{}", Uuid::new_v4());
+        let request = material_followup_work_item_request(
+            "2026-07-29",
+            PendingMaterialFollowup {
+                source_record_ref: activity_record_ref("activity_occurrence", &source_record_id),
+                attempt: 3,
+                escalation_required: true,
+                title: "木作体验课".to_string(),
+                owner: "阿成".to_string(),
+                reminder_text: "third reminder".to_string(),
+            },
+        );
+        let policy = operations::OperationsPolicy::dry_run();
+
+        let first = operations::create_work_item(&pool, request.clone(), true, &policy)
+            .await
+            .expect("first material followup apply should create one work item");
+        let second = operations::create_work_item(&pool, request.clone(), true, &policy)
+            .await
+            .expect("replay should return the idempotent existing work item");
+
+        assert_eq!(first.action_status, "created");
+        assert!(!first.existing);
+        assert_eq!(second.action_status, "idempotent_existing");
+        assert!(second.existing);
+        assert_eq!(first.work_item_id, second.work_item_id);
+
+        let work_item_id = first
+            .work_item_id
+            .expect("created report should include id");
+        let row = sqlx::query(
+            r#"
+            SELECT capability_key, work_item_type, requester_agent, target_agent,
+                   priority, status, source_type, source_refs, payload
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+            "#,
+        )
+        .bind(work_item_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load material followup work item");
+        let source_refs: Value = row.get("source_refs");
+        let payload: Value = row.get("payload");
+
+        assert_eq!(
+            row.get::<String, _>("capability_key"),
+            "xiaoman.material_followup_request"
+        );
+        assert_eq!(
+            row.get::<String, _>("work_item_type"),
+            "activity_recap_request"
+        );
+        assert_eq!(row.get::<String, _>("requester_agent"), "xiaoman");
+        assert_eq!(row.get::<String, _>("target_agent"), "xiaoman");
+        assert_eq!(row.get::<String, _>("priority"), "high");
+        assert_eq!(row.get::<String, _>("status"), "queued");
+        assert_eq!(row.get::<String, _>("source_type"), "xiaoman_activity");
+        assert_eq!(source_refs["material_followup_attempt"], 3);
+        assert_eq!(source_refs["escalation_required"], true);
+        assert_eq!(payload["recipient_scope"], "operations_lead");
+        assert_eq!(payload["external_send_executed"], false);
+
+        let work_item_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM qintopia_agent_os.work_items WHERE idempotency_key = $1",
+        )
+        .bind(&request.idempotency_key)
+        .fetch_one(&pool)
+        .await
+        .expect("count material followup idempotency rows");
+        assert_eq!(work_item_count, 1);
+
+        let created_event_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT count(*)
+            FROM qintopia_agent_os.work_item_events
+            WHERE work_item_id = $1
+              AND event_type = 'created'
+              AND data ->> 'capability_key' = 'xiaoman.material_followup_request'
+            "#,
+        )
+        .bind(work_item_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count created audit events");
+        assert_eq!(created_event_count, 1);
     }
 
     #[test]
