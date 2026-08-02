@@ -83,6 +83,8 @@ struct ActivityPayload {
     #[serde(default)]
     date: String,
     #[serde(default)]
+    material_followup_attempt: Option<u8>,
+    #[serde(default)]
     table_role: String,
     #[serde(default)]
     status: String,
@@ -379,6 +381,7 @@ async fn run_material_followup_worker_batch(
         record_id: String::new(),
         source_record_id: String::new(),
         date: String::new(),
+        material_followup_attempt: None,
         table_role: String::new(),
         status: String::new(),
         gap_summary: String::new(),
@@ -1216,15 +1219,8 @@ async fn execute_material_followup_scan(
         return Ok(());
     }
 
-    let scan_targets = if payload.date.trim().is_empty() {
-        material_followup_scan_targets(&cli.daily_digest_timezone)?
-    } else {
-        vec![MaterialFollowupScanTarget {
-            scan_date: payload.date.trim().to_string(),
-            attempt: 1,
-            escalation_required: false,
-        }]
-    };
+    let scan_targets =
+        material_followup_scan_targets_for_payload(payload, &cli.daily_digest_timezone)?;
 
     let records = if let Some(path) = config.fixture_path.as_deref() {
         load_fixture_records(path)?
@@ -1408,8 +1404,33 @@ fn material_followup_work_item_request(
     }
 }
 
-fn material_followup_scan_targets(timezone: &str) -> Result<Vec<MaterialFollowupScanTarget>> {
-    material_followup_scan_targets_at(timezone, Utc::now())
+fn material_followup_scan_targets_for_payload(
+    payload: &ActivityPayload,
+    timezone: &str,
+) -> Result<Vec<MaterialFollowupScanTarget>> {
+    material_followup_scan_targets_for_payload_at(payload, timezone, Utc::now())
+}
+
+fn material_followup_scan_targets_for_payload_at(
+    payload: &ActivityPayload,
+    timezone: &str,
+    now_utc: DateTime<Utc>,
+) -> Result<Vec<MaterialFollowupScanTarget>> {
+    let scan_date = payload.date.trim();
+    if scan_date.is_empty() {
+        if payload.material_followup_attempt.is_some() {
+            bail!("material_followup_attempt requires date");
+        }
+        return material_followup_scan_targets_at(timezone, now_utc);
+    }
+
+    let attempt = payload.material_followup_attempt.unwrap_or(1);
+    validate_material_followup_attempt(attempt)?;
+    Ok(vec![MaterialFollowupScanTarget {
+        scan_date: scan_date.to_string(),
+        attempt,
+        escalation_required: attempt == 3,
+    }])
 }
 
 fn material_followup_scan_targets_at(
@@ -2065,6 +2086,7 @@ impl EventSignalIngestCandidate {
             record_id: String::new(),
             source_record_id: String::new(),
             date: String::new(),
+            material_followup_attempt: None,
             table_role: String::new(),
             status: String::new(),
             gap_summary: String::new(),
@@ -2755,10 +2777,26 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
             ("table_role", &payload.table_role),
         ])?,
         "shadow-validate" => require_fields(&[("date", &payload.date)])?,
-        MATERIAL_FOLLOWUP_OPERATION => {
-            // Empty date defaults to yesterday in the configured business timezone.
-        }
+        MATERIAL_FOLLOWUP_OPERATION => validate_material_followup_payload(payload)?,
         _ => unreachable!("operation allowlist checked above"),
+    }
+    Ok(())
+}
+
+fn validate_material_followup_payload(payload: &ActivityPayload) -> Result<()> {
+    let Some(attempt) = payload.material_followup_attempt else {
+        return Ok(());
+    };
+    validate_material_followup_attempt(attempt)?;
+    if payload.date.trim().is_empty() {
+        bail!("material_followup_attempt requires date");
+    }
+    Ok(())
+}
+
+fn validate_material_followup_attempt(attempt: u8) -> Result<()> {
+    if !(1..=3).contains(&attempt) {
+        bail!("material_followup_attempt must be between 1 and 3");
     }
     Ok(())
 }
@@ -4157,6 +4195,31 @@ mod tests {
                 .map(|target| target.escalation_required)
                 .collect::<Vec<_>>(),
             vec![false, false, true]
+        );
+    }
+
+    #[test]
+    fn material_followup_explicit_date_can_select_third_attempt() {
+        let payload = payload(json!({
+            "actor_agent": "xiaoman",
+            "operation": "material-followup-scan",
+            "date": "2026-07-29",
+            "material_followup_attempt": 3
+        }));
+        let now_utc = Utc.with_ymd_and_hms(2026, 7, 31, 16, 30, 0).unwrap();
+
+        validate("material-followup-scan", &payload).expect("scan payload should be valid");
+        let targets =
+            material_followup_scan_targets_for_payload_at(&payload, "Asia/Shanghai", now_utc)
+                .expect("explicit third followup attempt should be supported");
+
+        assert_eq!(
+            targets,
+            vec![MaterialFollowupScanTarget {
+                scan_date: "2026-07-29".to_string(),
+                attempt: 3,
+                escalation_required: true,
+            }]
         );
     }
 
