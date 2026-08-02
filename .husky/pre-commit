@@ -4,6 +4,7 @@ export PATH="node_modules/.bin:$PATH"
 
 prettier --check .
 markdownlint-cli2 "**/*.md" "!node_modules"
+node tools/skills/check-qintopia-tools.mjs
 node tools/workflows/check-workflows.mjs
 node tools/deploy/check-deploy-contracts.mjs
 node tools/deploy/check-xiaoman-preflight-readiness.mjs
