@@ -103,6 +103,7 @@ cache/
 
 # Local scratch and generated reports
 .codex-tmp/
+.workbuddy/
 scratch/
 out/
 outputs/

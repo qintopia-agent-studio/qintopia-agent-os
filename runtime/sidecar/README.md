@@ -37,7 +37,12 @@ by default, and requires the exact owner phrase, release/database bindings, offi
 Feishu API root, app credentials, and chat/user/media allowlists. Card callbacks use a
 bounded signed envelope containing `timestamp`, `nonce`, `signature`, and `body_base64`;
 the sidecar verifies the Feishu signature and five-minute clock window before any review
-mutation.
+mutation. When authenticated Xiaoman Feishu ingress is explicitly enabled with
+`QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE=1` and
+`QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY`, legacy V2 operations intake is rejected
+instead of downgrading around the signed ingress boundary. Unset or `0` hook enablement
+keeps that ingress disabled even when non-secret config or keys are pre-provisioned;
+other values fail closed.
 
 Delivery attempts are persisted before upload. Expired `uploading` or `sending` attempts
 become terminal `ambiguous` and are not automatically replayed. The path never creates

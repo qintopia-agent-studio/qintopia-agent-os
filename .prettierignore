@@ -1,6 +1,7 @@
 node_modules/
 target/
 .git/
+.workbuddy/
 pnpm-lock.yaml
 CHANGELOG.md
 *.png
