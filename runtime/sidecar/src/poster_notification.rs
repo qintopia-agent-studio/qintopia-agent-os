@@ -514,18 +514,29 @@ pub async fn run_review_callback(cli: &Cli, apply: bool, dry_run: bool) -> Resul
     let callback = verify_and_parse_callback(&envelope, &callback_key, unix_timestamp_now()?)?;
     validate_callback(&callback)?;
     let database_url = cli.database_url_required()?;
-    let runtime_boundary = if apply {
-        Some(poster_delivery::review_runtime_boundary_from_env(
-            database_url,
-        )?)
-    } else {
-        None
-    };
+    let runtime_boundary = review_callback_runtime_boundary(
+        database_url,
+        apply,
+        dry_run,
+        poster_delivery::review_runtime_boundary_from_env,
+    )?;
     let pool = db::connect(database_url, cli.db_max_connections).await?;
     let report =
-        process_review_callback(&pool, cli, callback, apply, runtime_boundary.as_ref()).await?;
+        process_review_callback(&pool, cli, callback, apply, Some(&runtime_boundary)).await?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+fn review_callback_runtime_boundary(
+    database_url: &str,
+    apply: bool,
+    dry_run: bool,
+    load_boundary: impl FnOnce(&str) -> Result<poster_delivery::PosterReviewRuntimeBoundary>,
+) -> Result<poster_delivery::PosterReviewRuntimeBoundary> {
+    if apply == dry_run {
+        bail!("choose exactly one of --apply or --dry-run");
+    }
+    load_boundary(database_url)
 }
 
 pub async fn run_callback_ingress(cli: &Cli, socket_path: PathBuf) -> Result<()> {
@@ -1250,6 +1261,15 @@ mod tests {
         assert_eq!(callback_decision("approve"), "approved");
         assert_eq!(callback_decision("modify"), "changes_requested");
         assert_eq!(callback_decision("abandon"), "rejected");
+    }
+
+    #[test]
+    fn review_callback_dry_run_loads_runtime_boundary() {
+        let error = review_callback_runtime_boundary("postgres://fixture", false, true, |_| {
+            bail!("fixture runtime boundary loaded")
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "fixture runtime boundary loaded");
     }
 
     #[test]

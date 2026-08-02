@@ -93,8 +93,9 @@ From the monorepo root, prefer:
   inside the sidecar, never fall back from a group thread to a main timeline or direct
   chat, and never create group-send authorization. Keep direct and group production
   scheduling in separate scope-pinned services and timers even though they share the
-  durable queue and worker binary; group activation and rollback must not mutate the
-  direct timer.
+  durable queue and worker binary; review callback dry-runs must enforce the same
+  runtime delivery boundary as apply and may skip only persistence mutations; group
+  activation and rollback must not mutate the direct timer.
 - When `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE=1` and
   `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY` are configured, legacy V2 operations intake
   must fail closed before session trust, Postgres, or workflow mutation. Unset or `0`
