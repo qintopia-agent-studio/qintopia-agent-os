@@ -426,6 +426,20 @@ jobs:
           conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow
           -- --ignored --exact
 
+      - name: Xiaoman V3 direct poster participant PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          operations_intake::tests::postgres_v3_direct_snapshots_participants_and_isolates_status
+          -- --ignored --exact
+
+      - name: Xiaoman internal-group poster PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          operations_intake::tests::postgres_internal_group_snapshots_authority_and_accepts_only_first_revision
+          -- --ignored --exact
+
       - name: Xiaoman poster brief authorization upsert PostgreSQL integration
         run: >-
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features

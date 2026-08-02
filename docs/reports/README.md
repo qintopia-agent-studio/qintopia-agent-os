@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-08-01 Work-item idempotency binding CI failure](2026-08-01-work-item-idempotency-binding-ci-failure.md)
 - [2026-07-31 Xiaoman poster review hook boundary](2026-07-31-xiaoman-poster-review-hook-boundary.md)
 - [2026-07-31 Xiaoman poster systemd install gap](2026-07-31-xiaoman-poster-systemd-install-gap.md)
 - [2026-07-31 v0.2.59 legacy deploy-runner bootstrap](2026-07-31-v0259-legacy-runner-bootstrap.md)
@@ -42,6 +43,7 @@ steps still block any `production-complete` claim.
 
 | Source                                                                             | Disposition | Notes                                                                  |
 | ---------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `2026-08-01-work-item-idempotency-binding-ci-failure.md`                           | adopt-input | Stable identity versus presentation-field replay boundary              |
 | `2026-07-31-xiaoman-poster-review-hook-boundary.md`                                | adopt-input | P2P card trust, log redaction, callback binding, and activation gates  |
 | `2026-07-31-v0259-legacy-runner-bootstrap.md`                                      | adopt-input | v0.2.59 runner contract deadlock and guarded bootstrap remediation     |
 | `../qintopia-agent-os/docs/reports/agent-os-internal-sync-2026-07-03.html`         | report-ref  | Internal sync HTML for architecture, current state, risks, and roadmap |

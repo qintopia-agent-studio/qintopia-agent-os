@@ -371,7 +371,7 @@ def call_agent(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]
         return {
             "success": False,
             "error": "poster_production_moved_to_agentos_intake",
-            "message": "Use qintopia_xiaoman_poster_production_request from a trusted Xiaoman direct session.",
+            "message": "Use qintopia_xiaoman_poster_production_request from a trusted Xiaoman Feishu conversation.",
             "target_agent": target_agent,
             "capability": capability,
             "retryable": False,

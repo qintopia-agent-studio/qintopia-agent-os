@@ -19,22 +19,61 @@ Data design:
 
 ## Implementation Status
 
-PR 1 implementation is complete on the feature branch as of 2026-08-01. It includes the
-authenticated message-first ingress, additive policy and receipt migration, protected
-policy apply command, strict Hermes session identity, message-scoped V3 return-target
-identity, V2 direct compatibility, plugin manifest checks, and guarded PostgreSQL tests
-wired into CI. Internal-group ingress remains disabled by default and the V3 poster
-workflow still accepts direct conversations only.
+PR 1 was merged to `master` as `f1e0347b0b983f628f42c8db65b9017c8f251c3c` on 2026-08-01.
+It includes the authenticated message-first ingress, additive policy and receipt
+migration, protected policy apply command, strict Hermes session identity,
+message-scoped V3 return-target identity, V2 direct compatibility, plugin manifest
+checks, and guarded PostgreSQL tests wired into CI. Internal-group ingress remains
+disabled by default and the V3 poster workflow still accepts direct conversations only.
 
-Local plugin tests, default and all-features Rust suites, both warning-denied Clippy
-configurations, Markdown, CI contracts, MCP regression, secret scanning, and package
-checks pass. The guarded PostgreSQL tests compile locally, but execution requires the
-CI-equivalent `pgvector/pgvector:pg16` service. The local image pull failed before
-repository SQL ran, so the PR's disposable `qintopia_test` CI job remains the required
-database execution proof.
+PR 1's merge checks passed the plugin, default and all-features Rust, both
+warning-denied Clippy, Markdown, CI-contract, MCP, secret-scan, package, and disposable
+PostgreSQL 16 tiers.
 
-PR 2 and PR 3 have not started. No Feishu call, image generation, group notification,
-service activation, deployment, or production database write is part of PR 1.
+PR 2 is implementation-complete on an independent branch and awaiting replacement CI and
+review. It adds the unified direct/internal-group intake, participant snapshots,
+conversation-scoped status, first-valid revision and review-decision rules,
+capability-registry routing, and durable group notification work. Its boundary remains
+persistence and authorization only: it makes no Feishu call, activates no service,
+deploys nothing, and writes no production database. PR 3 has not started.
+
+The PR 2 local suite passes 479 default Rust tests, 485 all-features Rust tests with 20
+protected PostgreSQL tests ignored by design, both warning-denied Clippy configurations,
+plugin/MCP checks, runtime and deploy contracts, and `pnpm check:pr:auto`. Before the
+later idempotency hardening, a fresh disposable PostgreSQL 18.4 database with pgvector
+0.8.1 passed all three poster intake integration tests. The current head must still pass
+the repository-supported `pgvector/pgvector:pg16` service job; the earlier PG18 result
+is additional migration evidence, not a substitute for current CI.
+
+Successive PostgreSQL 16 runs exposed three distinct stable-identity boundaries:
+presentation-only brief fields, canonical activity-signal source provenance, and the
+artifact-scoped first-valid poster revision race. The validator now keeps capability,
+type, parent, requester/provider, source, payload, and policy bindings strict, while
+allowing only presentation replay drift and the narrowly validated first-writer revision
+contenders documented below. Replacement PostgreSQL 16 CI remains required.
+
+The PR Reviewer Guide also identified that rejected or duplicate card-callback dry-runs
+could write mutation audit rows before the apply gate. Callback preview now performs the
+same validation without any audit, review-action, artifact, or workflow mutation; the
+real callback ingress continues to audit rejected and duplicate apply requests.
+
+PR 2 locks these implementation rules:
+
+- V3 session classification, return mode, thread anchor, and policy identity come only
+  from the persisted ingress receipt and message. V2 remains direct-only.
+- Each V3 workflow snapshots exactly one requester and the policy-version reviewers.
+  Status visibility uses the conversation policy, while every mutation uses the
+  immutable participant snapshot.
+- A source message remains the workflow idempotency boundary. A generated-image artifact
+  is the revision boundary, so only the first valid revision instruction can create its
+  next image work item.
+- Direct and internal-group workflows may create durable conversation notifications, but
+  the existing direct adapter remains direct-only. Group notifications cannot be
+  delivered until PR 3 adds the separately gated thread adapter.
+- Capability-provider bindings are resolved from the AgentOS capability registry on
+  apply. Neither the model nor the poster intake payload supplies a provider.
+- Poster callback `--dry-run` is read-only even for target mismatch, unauthorized actor,
+  runtime-allowlist denial, duplicate callback, or conflicting decision outcomes.
 
 ## Delivery Plan
 
@@ -113,6 +152,17 @@ The guarded PostgreSQL smoke must use a literal loopback `qintopia_test` databas
 must prove migration backfill, policy double gates, message/workflow idempotency,
 participant snapshots, review authority, restart safety, and zero
 `group_message_request`, `send_executed`, and `external_published` facts.
+
+For PR 2, the focused local database command is:
+
+```bash
+QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1 \
+QINTOPIA_SIDECAR_DATABASE_URL=postgres://postgres:qintopia_test@127.0.0.1:55432/qintopia_test \
+RUST_MIN_STACK=33554432 \
+cargo test --manifest-path runtime/sidecar/Cargo.toml \
+  --features postgres-integration-tests \
+  operations_intake::tests::postgres_ -- --ignored --test-threads=1
+```
 
 Production acceptance requires one real direct request and one real internal-group
 thread request. It must retain sanitized evidence for acceptance, exact-image return,
