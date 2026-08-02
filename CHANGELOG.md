@@ -6,6 +6,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.63](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.62...v0.2.63) (2026-08-02)
+
+
+### Features
+
+* **runtime:** add authenticated Xiaoman conversation ingress ([f1e0347](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f1e0347b0b983f628f42c8db65b9017c8f251c3c))
+* **runtime:** add authenticated Xiaoman conversation ingress ([90eba66](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/90eba6646e678a6b89e378d2e0fc59d9051e644f))
+* **runtime:** add scoped Xiaoman group poster delivery ([#347](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/347)) ([6d4c283](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6d4c283a58d0311250e6b103fd4ad55c4175c81e))
+* **runtime:** add Xiaoman conversation poster participants ([#346](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/346)) ([05d648e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/05d648ebb328b573ae7ef860c2520bf9c6119f1a))
+* **xiaoman:** add material followup attempts ([561a64d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/561a64d8d69da8b9d0cf7aa54cd2fd48c3e787c2))
+* **xiaoman:** add material followup scan worker ([8c6b0ab](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8c6b0abb8eba0e5b91bfea00a05d0ab3f4014e3f))
+
+
+### Bug Fixes
+
+* **runtime:** reject poster protocol downgrade after cutover ([b727b7d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b727b7da230ace8603b30121206286407ac747bb))
+* **runtime:** require explicit Xiaoman ingress enablement ([c564695](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c564695e82a9fe87439fc9678020ee2e371c03d3))
+* **xiaoman:** align material followup date and reports ([587d8e5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/587d8e555c54f468725a482b0c828ee0880e11cc))
+* **xiaoman:** harden material followup worker guards ([2407f35](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2407f353b0c835abc511ee5a1e9b8f6d1320c792))
+
+
+### Maintenance
+
+* merge master into xiaoman material followup worker ([bce61eb](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bce61eb35bf3e81382fb198c86a7b0ad79bc7e59))
+
 ## [0.2.62](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.61...v0.2.62) (2026-07-31)
 
 
