@@ -778,6 +778,143 @@ class QintopiaToolsTest(unittest.TestCase):
             report["error"],
             "message_text contains disallowed sensitive or raw internal content",
         )
+        self.assertTrue(report["human_rewrite_required"])
+        self.assertIn("用人话重述", report["user_visible_message"])
+
+        for message_text in [
+            "请看表格 tblIRfkR6vmwiynbu 的配置。",
+            "按 view vew5C6T2FF 发送。",
+            "record_id=recABCDEFG123456789 obj_token=secretish",
+            "⏳ Working — 3 min — iteration 2/90, execute_code",
+            (
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+                "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+                "sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+            ),
+            (
+                "这是因为定时任务的自动执行回执和正常发消息混在了一起。"
+                "后台智能体会先产生内部协作内容，包括发送工具的调用结果、"
+                "记录 ID、命令或调试信息，以及已生成回复准备发送之类的内部状态。"
+            ),
+            (
+                "企业微信的安全过滤会拦截这类内容，不允许把执行信息直接发给人；"
+                "刚才测试消息能够成功，说明发送通道本身是通的；"
+                "问题出在执行过程被转成给用户看的回复，本质上是保护机制在兜底。"
+            ),
+        ]:
+            with self.subTest(message_text=message_text):
+                report = json.loads(
+                    self.module.handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
+                        {
+                            "source_record_id": "activity_plan:abc123def456",
+                            "approved_artifact_id": "44444444-4444-4444-8444-444444444444",
+                            "message_text": message_text,
+                        }
+                    )
+                )
+
+                self.assertFalse(report["success"])
+                self.assertEqual(
+                    report["error"],
+                    "message_text contains disallowed sensitive or raw internal content",
+                )
+
+    def test_xiaoman_activity_text_group_message_request_prepare_returns_public_rewrite_draft(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
+                {
+                    "source_record_id": "activity_plan:abc123def456",
+                    "approved_artifact_id": "44444444-4444-4444-8444-444444444444",
+                    "message_text": (
+                        "⏳ Working — 3 min — iteration 2/90, execute_code\n"
+                        "记录 ID recABCDEFG123456789，路径 /home/ubuntu/qintopia/debug.log"
+                    ),
+                    "public_conclusion": "下周活动预告草稿已经准备好。",
+                    "public_next_step": "请确认时间、地点和负责人，确认后我再整理成可发到群里的版本。",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertTrue(report["hidden_original"])
+        self.assertEqual(report["rewrite_trigger"], "用人话重述")
+        self.assertEqual(
+            report["public_rewrite_draft"],
+            "下周活动预告草稿已经准备好。\n下一步：请确认时间、地点和负责人，确认后我再整理成可发到群里的版本。",
+        )
+        serialized = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("recABCDEFG123456789", serialized)
+        self.assertNotIn("/home/ubuntu/qintopia/debug.log", serialized)
+        self.assertNotIn("execute_code", serialized)
+
+    def test_xiaoman_public_reply_rewrite_keeps_only_conclusion_and_next_step(self):
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_public_reply_rewrite(
+                {
+                    "blocked_reply": (
+                        "⏳ Working — 3 min — iteration 2/90, execute_code\n"
+                        "记录 ID recABCDEFG123456789，路径 /home/ubuntu/qintopia/debug.log"
+                    ),
+                    "public_conclusion": "下周活动预告草稿已经准备好。",
+                    "public_next_step": "请确认时间、地点和负责人，确认后我再整理成可发到群里的版本。",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["hidden_original"])
+        self.assertEqual(report["rewrite_trigger"], "用人话重述")
+        self.assertEqual(
+            report["public_reply"],
+            "下周活动预告草稿已经准备好。\n下一步：请确认时间、地点和负责人，确认后我再整理成可发到群里的版本。",
+        )
+        serialized = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("recABCDEFG123456789", serialized)
+        self.assertNotIn("/home/ubuntu/qintopia/debug.log", serialized)
+        self.assertNotIn("execute_code", serialized)
+
+    def test_xiaoman_public_reply_rewrite_rejects_internal_mechanism_explanations(self):
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_public_reply_rewrite(
+                {
+                    "blocked_reply": "为什么总是回复内部执行信息已自动隐藏？",
+                    "public_conclusion": (
+                        "这是因为定时任务的自动执行回执和正常发消息混在了一起，"
+                        "后台智能体会产生工具调用结果和内部状态。"
+                    ),
+                    "public_next_step": "后续会把任务改成只发送固定正文。",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertTrue(report["hidden_original"])
+        self.assertEqual(report["rewrite_trigger"], "用人话重述")
+        self.assertEqual(report["missing_rewrite_fields"], ["public_conclusion"])
+
+    def test_xiaoman_public_reply_rewrite_rejects_guard_mechanism_explanations(self):
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_public_reply_rewrite(
+                {
+                    "blocked_reply": "为什么总是回复内部执行信息已自动隐藏？",
+                    "public_conclusion": (
+                        "企业微信的安全过滤会拦截这类内容，说明发送通道本身是通的，"
+                        "问题出在执行过程被转成给用户看的回复。"
+                    ),
+                    "public_next_step": "后续要避免执行过程变成人看的回复。",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertTrue(report["hidden_original"])
+        self.assertEqual(report["rewrite_trigger"], "用人话重述")
+        self.assertEqual(
+            report["missing_rewrite_fields"],
+            ["public_conclusion", "public_next_step"],
+        )
 
     def test_xiaoman_activity_announcement_prepare_rejects_non_integer_material_followup(self):
         self.enable_xiaoman_activity_wrappers()

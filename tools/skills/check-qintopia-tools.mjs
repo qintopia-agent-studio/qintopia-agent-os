@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
+import YAML from "yaml";
 
 const repoRoot = process.cwd();
 const packageRoot = path.join(repoRoot, "skills/qintopia-tools");
@@ -22,6 +23,7 @@ const requiredRegisteredTools = {
     "qintopia_xiaoman_activity_record_get",
     "qintopia_xiaoman_activity_list_by_date",
     "qintopia_xiaoman_activity_announcement_prepare",
+    "qintopia_xiaoman_public_reply_rewrite",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_phase_update",
@@ -71,8 +73,19 @@ for (const variant of variants) {
 
   const variantSource = readText(variantPath);
   const pluginYaml = readText(`skills/qintopia-tools/variants/${variant}/plugin.yaml`);
+  let pluginConfig;
+  try {
+    pluginConfig = YAML.parse(pluginYaml);
+  } catch (error) {
+    errors.push(`${variant}: plugin.yaml must be valid YAML: ${error.message}`);
+    pluginConfig = {};
+  }
+  const providesTools = pluginConfig.provides_tools;
+  if (!Array.isArray(providesTools)) {
+    errors.push(`${variant}: plugin.yaml provides_tools must be a YAML list`);
+  }
   for (const toolName of requiredRegisteredTools[variant]) {
-    if (!pluginYaml.includes(`- ${toolName}`)) {
+    if (!providesTools?.includes(toolName)) {
       errors.push(`${variant}: plugin.yaml must list ${toolName}`);
     }
   }

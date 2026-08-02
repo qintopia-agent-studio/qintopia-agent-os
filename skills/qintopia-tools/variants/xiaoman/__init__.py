@@ -128,6 +128,7 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_handoff_create",
     "qintopia_xiaoman_activity_promotion_review_draft",
     "qintopia_xiaoman_activity_material_summary",
+    "qintopia_xiaoman_public_reply_rewrite",
 ]
 XIAOMAN_ACTIVITY_TABLE_ROLES = ["activity_plan", "activity_occurrence"]
 XIAOMAN_ACTIVITY_PHASES = ["pre_event", "in_event", "post_event"]
@@ -992,6 +993,14 @@ QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA = {
                 "type": "string",
                 "description": "Human-confirmed text announcement body for Erhua review.",
             },
+            "public_conclusion": {
+                "type": "string",
+                "description": "Optional safe conclusion to keep when rewriting a blocked internal reply.",
+            },
+            "public_next_step": {
+                "type": "string",
+                "description": "Optional safe next step to keep when rewriting a blocked internal reply.",
+            },
             "target_group_alias": {
                 "type": "string",
                 "description": "Allowed group alias. Defaults to community_activity_group.",
@@ -1009,6 +1018,34 @@ QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA = {
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
         "required": ["source_record_id", "approved_artifact_id", "message_text"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_PUBLIC_REPLY_REWRITE_SCHEMA = {
+    "description": (
+        "Rewrite a blocked Xiaoman reply into public-safe human language. It never returns "
+        "the blocked internal text and keeps only a safe conclusion plus next step."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "blocked_reply": {
+                "type": "string",
+                "description": "Original blocked reply. Used only for detection and never echoed.",
+            },
+            "public_conclusion": {
+                "type": "string",
+                "description": "Safe conclusion to keep for the human-visible reply.",
+            },
+            "public_next_step": {
+                "type": "string",
+                "description": "Safe next step to keep for the human-visible reply.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["public_conclusion", "public_next_step"],
         "additionalProperties": False,
     },
 }
@@ -4760,7 +4797,62 @@ def _xiaoman_activity_message_text_is_sensitive(value: str) -> bool:
     lower = value.lower()
     if re.search(r"https?://", lower):
         return True
-    if re.search(r"\b(?:tbl|rec)[A-Za-z0-9]{8,}\b", value):
+    if re.search(r"\b(?:tbl|rec|vew)[A-Za-z0-9]{6,}\b", value):
+        return True
+    if re.search(r"(?:/home/ubuntu|/Users/[^ \n]+|/tmp|/var/tmp)/\S+", value):
+        return True
+    if re.search(r"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", value):
+        return True
+    if re.search(r"^\s*⏳?\s*(?:working|retrying)\b", lower, flags=re.MULTILINE):
+        return True
+    if any(
+        marker in value
+        for marker in [
+            "后台智能体",
+            "工具调用",
+            "调用结果",
+            "调试信息",
+            "内部协作",
+            "内部状态",
+            "内部执行信息",
+            "自动执行回执",
+        ]
+    ):
+        return True
+    if "内部" in value and any(
+        marker in value
+        for marker in [
+            "命令",
+            "执行",
+            "机制",
+            "路径",
+            "回执",
+            "记录 ID",
+            "记录ID",
+            "调试",
+        ]
+    ):
+        return True
+    if "定时任务" in value and any(
+        marker in value for marker in ["回执", "自动执行", "工具", "内部", "调试"]
+    ):
+        return True
+    if any(
+        marker in value
+        for marker in [
+            "发送通道本身是通的",
+            "执行过程转成给用户看的回复",
+            "保护机制在兜底",
+        ]
+    ):
+        return True
+    if "安全过滤" in value and any(
+        marker in value for marker in ["拦截", "固定提示", "执行信息", "发给人"]
+    ):
+        return True
+    if "执行过程" in value and any(
+        marker in value for marker in ["人看的回复", "用户看的回复"]
+    ):
         return True
     return any(
         token in lower
@@ -4781,7 +4873,105 @@ def _xiaoman_activity_message_text_is_sensitive(value: str) -> bool:
             "lark_app_secret",
             "base_token",
             "table_id",
+            "record_id",
+            "source_record_id",
+            "artifact_id",
+            "obj_token",
+            "app_token",
+            "session_key",
+            "runid",
+            "file_token",
+            "collab_event",
+            "task.completed",
+            "handoff.requested",
+            "execute_code",
+            "skill_view",
+            "tool_progress",
+            "traceback (most recent call last)",
+            "dangerous command requires approval",
+            "/approve",
         ]
+    )
+
+
+def _xiaoman_activity_public_rewrite_draft(args: dict[str, Any]) -> tuple[str, list[str]]:
+    conclusion = _body_text(args.get("public_conclusion"), max_len=500)
+    next_step = _body_text(args.get("public_next_step"), max_len=500)
+    missing: list[str] = []
+    if not conclusion or _xiaoman_activity_message_text_is_sensitive(conclusion):
+        conclusion = ""
+        missing.append("public_conclusion")
+    if not next_step or _xiaoman_activity_message_text_is_sensitive(next_step):
+        next_step = ""
+        missing.append("public_next_step")
+    if missing:
+        return "", missing
+    return f"{conclusion}\n下一步：{next_step}", []
+
+
+def _xiaoman_activity_sensitive_group_message_response(
+    skill: str,
+    *,
+    actor_agent: str,
+    args: dict[str, Any],
+) -> str:
+    public_rewrite_draft, missing_rewrite_fields = _xiaoman_activity_public_rewrite_draft(args)
+    return _xiaoman_activity_error(
+        skill,
+        "message_text contains disallowed sensitive or raw internal content",
+        actor_agent=actor_agent,
+        hidden_original=True,
+        human_rewrite_required=True,
+        rewrite_trigger="用人话重述",
+        user_visible_message=(
+            "刚才生成的回复包含内部执行信息，已自动隐藏。\n"
+            "我还在，但这条不能原样发到企微。\n\n"
+            "你可以直接回复：用人话重述\n"
+            "我会只保留结论和下一步，不带记录 ID、命令、路径或调试细节。"
+        ),
+        public_rewrite_draft=public_rewrite_draft,
+        missing_rewrite_fields=missing_rewrite_fields,
+        external_send_executed=False,
+    )
+
+
+def handle_qintopia_xiaoman_public_reply_rewrite(args: dict[str, Any], **_: Any) -> str:
+    skill = "qintopia_xiaoman_public_reply_rewrite"
+    actor_agent = _xiaoman_activity_actor(args)
+    if actor_agent != "xiaoman":
+        return _xiaoman_activity_error(
+            skill,
+            "actor_agent must be xiaoman",
+            actor_agent=actor_agent,
+        )
+    public_reply, missing_rewrite_fields = _xiaoman_activity_public_rewrite_draft(args)
+    if missing_rewrite_fields:
+        return _xiaoman_activity_error(
+            skill,
+            "public rewrite requires safe public_conclusion and public_next_step",
+            actor_agent=actor_agent,
+            hidden_original=True,
+            human_rewrite_required=True,
+            rewrite_trigger="用人话重述",
+            missing_rewrite_fields=missing_rewrite_fields,
+            external_send_executed=False,
+        )
+    blocked_reply = _body_text(args.get("blocked_reply"), max_len=1800)
+    return _json(
+        {
+            "success": True,
+            "skill": skill,
+            "actor_agent": actor_agent,
+            "hidden_original": _xiaoman_activity_message_text_is_sensitive(blocked_reply),
+            "rewrite_trigger": "用人话重述",
+            "public_reply": public_reply,
+            "guardrails": [
+                "blocked reply is used only for detection and never returned",
+                "public reply contains only conclusion and next step",
+                "does not create work items, write Feishu, call Erhua, call QiWe, publish, or send",
+            ],
+            "external_send_executed": False,
+        }
     )
 
 
@@ -4828,10 +5018,10 @@ def handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
             actor_agent=actor_agent,
         )
     if _xiaoman_activity_message_text_is_sensitive(message_text):
-        return _xiaoman_activity_error(
+        return _xiaoman_activity_sensitive_group_message_response(
             skill,
-            "message_text contains disallowed sensitive or raw internal content",
             actor_agent=actor_agent,
+            args=args,
         )
 
     target_group_alias = _clean_text(
@@ -6278,6 +6468,14 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA["description"],
         emoji="📣",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_public_reply_rewrite",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_PUBLIC_REPLY_REWRITE_SCHEMA,
+        handler=handle_qintopia_xiaoman_public_reply_rewrite,
+        description=QINTOPIA_XIAOMAN_PUBLIC_REPLY_REWRITE_SCHEMA["description"],
+        emoji="🧹",
     )
     ctx.register_tool(
         name="qintopia_xiaoman_activity_status_update",

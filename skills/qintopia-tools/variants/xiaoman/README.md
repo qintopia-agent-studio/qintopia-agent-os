@@ -105,6 +105,17 @@ thread delivery remains a separately gated PR 3 boundary.
   activity announcement MVP for operations review. It turns sanitized activity records
   into a draft for 刘珊, missing-field follow-ups, and an Erhua handoff draft that still
   requires human confirmation before any group delivery.
+- `qintopia_xiaoman_activity_text_group_message_request_prepare`: rejects raw internal
+  execution output before any Erhua/QiWe handoff. When `message_text` contains internal
+  markers, it hides the original text and returns a user-visible “用人话重述” path plus
+  an optional public draft built only from safe `public_conclusion` and
+  `public_next_step` fields. It also treats explanations of timers, tool calls, internal
+  state, safety filters, send-channel status, execution flow, or guard mechanisms as
+  non-public text.
+- `qintopia_xiaoman_public_reply_rewrite`: stateless “用人话重述” helper for a blocked
+  Xiaoman reply. It never returns the blocked internal text; the returned public reply
+  contains only the safe conclusion and next step, and it does not create work items or
+  send messages.
 - `qintopia_xiaoman_activity_handoff_create`: currently exposes only the mapped
   `visual_asset_request -> huabaosi` handoff because the Rust sidecar routes that pair
   to `huabaosi.create_visual_asset`. A completed promotion brief may use this path to
