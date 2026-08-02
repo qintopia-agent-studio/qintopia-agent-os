@@ -196,6 +196,8 @@ def validate_request(value: dict[str, Any]) -> dict[str, Any]:
             raise ConfigError(
                 "group state requires explicit Bot, chat, user, and reviewer ceilings"
             )
+    elif bot_open_id is not None:
+        raise ConfigError("direct state does not accept a Bot identity")
     elif supplied_lists and not {"allowed_chat_ids", "allowed_user_ids"}.issubset(
         supplied_lists
     ):
@@ -359,13 +361,18 @@ def reject_symlinked_parents(path: Path) -> None:
             raise ConfigError("protected runtime parent must be a regular directory")
 
 
-def render_env(text: str, updates: dict[str, str]) -> str:
+def render_env(
+    text: str, updates: dict[str, str], removals: set[str] | None = None
+) -> str:
+    managed_keys = set(updates)
+    if removals:
+        managed_keys.update(removals)
     kept: list[str] = []
     for raw in text.splitlines():
         if raw == MANAGED_COMMENT:
             continue
         match = ASSIGNMENT_RE.fullmatch(raw)
-        if match and match.group(1) in updates:
+        if match and match.group(1) in managed_keys:
             continue
         kept.append(raw)
     while kept and not kept[-1].strip():
@@ -477,18 +484,6 @@ def build_plan(
         raise ConfigError("ingress and callback keys must be distinct")
 
     bot_open_id = request.get("bot_open_id")
-    existing_bot_sidecar = sidecar.values.get("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID")
-    existing_bot_hermes = hermes.values.get("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID")
-    if bot_open_id is None and (existing_bot_sidecar or existing_bot_hermes):
-        if (
-            existing_bot_sidecar != existing_bot_hermes
-            or not existing_bot_sidecar
-            or not IDENTIFIER_RE.fullmatch(existing_bot_sidecar)
-        ):
-            raise ConfigError("Bot identity binding is invalid")
-        bot_open_id = existing_bot_sidecar
-    if desired_state == "group" and bot_open_id is None:
-        raise ConfigError("group state requires an exact Bot identity")
 
     hash_keys = {
         name
@@ -520,8 +515,12 @@ def build_plan(
         sidecar_updates["QINTOPIA_SIDECAR_DATABASE_URL"] = database_url
     for name in sorted(hash_keys):
         sidecar_updates[name] = database_hash
-    if bot_open_id is not None:
+    sidecar_removals: set[str] = set()
+    hermes_removals: set[str] = set()
+    if desired_state == "group":
         sidecar_updates["QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID"] = bot_open_id
+    else:
+        sidecar_removals.add("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID")
 
     hermes_updates: dict[str, str] = {
         "QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE": "1",
@@ -531,11 +530,13 @@ def build_plan(
             "1" if desired_state == "group" else "0"
         ),
     }
-    if bot_open_id is not None:
+    if desired_state == "group":
         hermes_updates["QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID"] = bot_open_id
+    else:
+        hermes_removals.add("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID")
 
-    sidecar_text = render_env(sidecar.text, sidecar_updates)
-    hermes_text = render_env(hermes.text, hermes_updates)
+    sidecar_text = render_env(sidecar.text, sidecar_updates, sidecar_removals)
+    hermes_text = render_env(hermes.text, hermes_updates, hermes_removals)
     validate_rendered_binding(sidecar_text, hermes_text, desired_state)
     return ConfigPlan(
         sidecar_text,
@@ -579,6 +580,11 @@ def validate_rendered_binding(sidecar_text: str, hermes_text: str, desired_state
         != hermes.get("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID")
     ):
         raise ConfigError("rendered group Bot identity binding is invalid")
+    if desired_state == "direct" and (
+        sidecar.get("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID")
+        or hermes.get("QINTOPIA_XIAOMAN_FEISHU_BOT_OPEN_ID")
+    ):
+        raise ConfigError("rendered direct configuration retained a Bot identity")
 
 
 def base_report(
