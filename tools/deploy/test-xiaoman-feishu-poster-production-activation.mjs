@@ -163,11 +163,17 @@ esac
   const enabledSidecar = {
     QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED: "1",
     QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY: "fixture-callback-key",
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE: "1",
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY:
+      "fixture-ingress-key-with-at-least-32-bytes",
     QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
   };
   const enabledHermes = {
     QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE: "1",
     QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY: "fixture-callback-key",
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE: "1",
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY:
+      "fixture-ingress-key-with-at-least-32-bytes",
     QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
   };
 
@@ -235,6 +241,50 @@ esac
     );
   }
 
+  writeEnv(hermesEnv, enabledHermes);
+  resetLog();
+  writeEnv(hermesEnv, {
+    ...enabledHermes,
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY:
+      "different-ingress-key-with-at-least-32-bytes",
+  });
+  result = run(activation, {
+    QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION:
+      "approved-production-xiaoman-feishu-poster-return",
+  });
+  if (result.status === 0 || commandLog() !== "") {
+    throw new Error(
+      "mismatched ingress keys must fail before systemd or gateway side effects"
+    );
+  }
+
+  const reusedSecret = "shared-secret-with-at-least-thirty-two-bytes";
+  writeEnv(sidecarEnv, {
+    ...enabledSidecar,
+    QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY: reusedSecret,
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY: reusedSecret,
+  });
+  writeEnv(hermesEnv, {
+    ...enabledHermes,
+    QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY: reusedSecret,
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY: reusedSecret,
+  });
+  resetLog();
+  result = run(activation, {
+    QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION:
+      "approved-production-xiaoman-feishu-poster-return",
+  });
+  if (
+    result.status === 0 ||
+    commandLog() !== "" ||
+    `${result.stdout}\n${result.stderr}`.includes(reusedSecret)
+  ) {
+    throw new Error(
+      "reused ingress and callback key must fail before side effects or disclosure"
+    );
+  }
+
+  writeEnv(sidecarEnv, enabledSidecar);
   writeEnv(hermesEnv, enabledHermes);
   resetLog();
   fs.writeFileSync(restartFailureMarker, "fail\n", "utf8");
@@ -311,10 +361,12 @@ esac
 
   writeEnv(sidecarEnv, {
     QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED: "0",
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE: "0",
     QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
   });
   writeEnv(hermesEnv, {
     QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE: "0",
+    QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE: "0",
     QINTOPIA_XIAOMAN_FEISHU_INTERNAL_GROUP_ENABLED: "0",
   });
   resetLog();

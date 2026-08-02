@@ -363,8 +363,9 @@ huabaosi-image-generation-preflight
 readiness；ready 后才可在隔离 staging 素材和媒体前缀上执行受保护的真实 adapter
 smoke。该 smoke 不得发送、发布或写飞书。
 
-2026-07-16 Asia/Shanghai 的只读 server 观察确认 `paxon-server` 尚无固定 staging env
-file 和 immutable staging release root；见
+2026-07-16 Asia/Shanghai 对 `docs/operations/inventory/server-sources.yaml`
+所记录生产主机的只读观察确认，固定 staging env file 和 immutable staging release
+root 仍不存在；见
 `docs/reports/2026-07-16-staging-runtime-prerequisite-observation.md`。因此下一步先是 owner-reviewed
 staging provisioning，再运行 readiness/smoke，而不是把本地 fake
 smoke 当成真实 staging 证据。Provisioning 步骤见

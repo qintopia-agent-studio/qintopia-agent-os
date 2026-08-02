@@ -29,17 +29,19 @@ QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ACTIVATION=approved-production-xiaoman
 
 Activation requires persistent `QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED=1` in the fixed
 sidecar env and `QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE=1` in the fixed Xiaoman
-Hermes env. Both env files must contain the same callback key and must keep the
-internal-group switch at `0`; group enablement is accepted only by the separate script
-below. The live plugin must resolve to the immutable `release/current` Xiaoman variant.
-The script first disables the internal-group delivery timer, runs the release-local
-preflight, restarts and verifies `hermes-gateway-xiaoman.service` through the fixed
-`ubuntu` user boundary, then starts intake/callback/starter and enables direct delivery
-last. A failed gateway restart occurs before any workflow unit or timer is enabled. The
-script does not source either env file or print the callback key. Full poster rollback
-stops both scoped delivery timers first, requires the direct and group persistent
-switches to be `0`, restarts Xiaoman to unload the hook, and retains all workflow,
-attempt, notification, and review audit data:
+Hermes env. Both env files must also set
+`QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE=1`, contain the same dedicated ingress HMAC
+key and callback key, keep those two keys distinct, and keep the internal-group switch
+at `0`; group enablement is accepted only by the separate script below. The live plugin
+must resolve to the immutable `release/current` Xiaoman variant. The script first
+disables the internal-group delivery timer, runs the release-local preflight, restarts
+and verifies `hermes-gateway-xiaoman.service` through the fixed `ubuntu` user boundary,
+then starts intake/callback/starter and enables direct delivery last. A failed gateway
+restart occurs before any workflow unit or timer is enabled. The script does not source
+either env file or print the callback key. Full poster rollback stops both scoped
+delivery timers first, requires the direct and group persistent switches to be `0`,
+restarts Xiaoman to unload the hook, and retains all workflow, attempt, notification,
+and review audit data:
 
 ```bash
 QINTOPIA_XIAOMAN_FEISHU_POSTER_PRODUCTION_ROLLBACK=approved-production-xiaoman-feishu-poster-return-rollback \
