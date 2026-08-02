@@ -112,8 +112,8 @@ for (const variant of variants) {
       "执行过程被转成给用户看的回复",
       "保护机制在兜底",
     ]) {
-      if (!variantSource.includes(fragment) && !variantTests.includes(fragment)) {
-        errors.push(`xiaoman: public reply guard must cover ${fragment}`);
+      if (!variantTests.includes(fragment)) {
+        errors.push(`xiaoman: public reply regression tests must cover ${fragment}`);
       }
     }
   }
