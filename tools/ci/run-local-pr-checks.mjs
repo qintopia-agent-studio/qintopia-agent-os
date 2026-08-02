@@ -33,6 +33,16 @@ const postgresEnv = {
     "postgres://postgres:postgres@127.0.0.1:5432/qintopia_test",
 };
 
+const sidecarTestEnv = {
+  ...process.env,
+  RUST_MIN_STACK: process.env.RUST_MIN_STACK ?? "33554432",
+};
+
+const postgresTestEnv = {
+  ...postgresEnv,
+  RUST_MIN_STACK: process.env.RUST_MIN_STACK ?? "33554432",
+};
+
 function run(command, args, options = {}) {
   const display = [command, ...args].join(" ");
   process.stdout.write(`\n$ ${display}\n`);
@@ -136,12 +146,7 @@ function runHeavyRustChecks() {
   run(
     "cargo",
     ["test", "--manifest-path", "runtime/sidecar/Cargo.toml", "--all-features"],
-    {
-      env: {
-        ...process.env,
-        RUST_MIN_STACK: process.env.RUST_MIN_STACK ?? "33554432",
-      },
-    }
+    { env: sidecarTestEnv }
   );
 }
 
@@ -279,7 +284,7 @@ function runPostgresChecks() {
 
   for (const args of postgresTests) {
     run("cargo", ["test", "--manifest-path", "runtime/sidecar/Cargo.toml", ...args], {
-      env: postgresEnv,
+      env: postgresTestEnv,
     });
   }
   run("deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh", [], {
