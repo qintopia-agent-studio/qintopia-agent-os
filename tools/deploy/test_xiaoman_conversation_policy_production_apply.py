@@ -5,12 +5,16 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+
+sys.dont_write_bytecode = True
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = (
@@ -116,6 +120,7 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
             "import json, os, sys\n"
             "assert sys.argv[1:] == ['conversation-policy-apply', '--stdin']\n"
             "assert 'QINTOPIA_UNRELATED_RUNTIME_SECRET' not in os.environ\n"
+            "assert os.environ['PYTHONDONTWRITEBYTECODE'] == '1'\n"
             "assert os.environ['QINTOPIA_XIAOMAN_CONVERSATION_POLICY_APPROVAL'] == "
             f"{MODULE.APPLY_APPROVAL!r}\n"
             "payload = json.load(sys.stdin)\n"
@@ -207,10 +212,44 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
             MODULE.APPLY_APPROVAL,
             '[str(binary), "conversation-policy-apply", "--stdin"]',
             '"PATH": "/usr/bin:/bin"',
+            '"PYTHONDONTWRITEBYTECODE": "1"',
+            "sys.dont_write_bytecode = True",
         ]:
             self.assertIn(required, script)
         for forbidden in ["--test-mode", "--output", "systemctl", "curl ", "psql "]:
             self.assertNotIn(forbidden, script)
+
+    def test_config_helper_import_leaves_no_release_bytecode(self) -> None:
+        scripts = self.root / "release/deploy/sidecar/scripts"
+        scripts.mkdir(parents=True)
+        policy_path = scripts / SCRIPT_PATH.name
+        config_path = scripts / "apply-xiaoman-feishu-poster-production-config.py"
+        shutil.copy2(SCRIPT_PATH, policy_path)
+        shutil.copy2(MODULE.CONFIG_HELPER_PATH, config_path)
+        probe = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys\n"
+                    "from pathlib import Path\n"
+                    "path = Path(sys.argv[1])\n"
+                    "namespace = {'__file__': str(path), '__name__': 'probe'}\n"
+                    "exec(compile(path.read_bytes(), str(path), 'exec'), namespace)\n"
+                    "namespace['load_config_helper']()\n"
+                    "assert sys.dont_write_bytecode\n"
+                ),
+                str(policy_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            env={"PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.assertEqual(list(scripts.rglob("__pycache__")), [])
+        self.assertEqual(list(scripts.rglob("*.pyc")), [])
 
     def test_intermediate_sidecar_symlink_cannot_escape_release(self) -> None:
         escaped_sha = "e" * 40

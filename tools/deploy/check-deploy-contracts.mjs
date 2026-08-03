@@ -3647,6 +3647,10 @@ const xiaomanPolicyApplyPath =
   "deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py";
 const xiaomanPolicyApplyTestPath =
   "tools/deploy/test_xiaoman_conversation_policy_production_apply.py";
+const xiaomanDbRolloverPath =
+  "deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py";
+const xiaomanDbRolloverTestPath =
+  "tools/deploy/test_xiaoman_shared_db_password_rollover_production.py";
 if (!exists(xiaomanPosterConfigApplyPath)) {
   addError(
     `${xiaomanPosterConfigApplyPath}: missing protected production config entrypoint`
@@ -3656,6 +3660,7 @@ if (!exists(xiaomanPosterConfigApplyPath)) {
   for (const fragment of [
     'SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")',
     'HERMES_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/xiaoman/.env")',
+    'ERHUA_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/erhua/.env")',
     'RELEASE_CURRENT_PATH = Path("/home/ubuntu/qintopia-agent-os-releases/current")',
     "approved-production-xiaoman-feishu-config-v1",
     "MAX_INPUT_BYTES = 64 * 1024",
@@ -3666,6 +3671,9 @@ if (!exists(xiaomanPosterConfigApplyPath)) {
     "fcntl.flock(lock_descriptor, fcntl.LOCK_EX)",
     "secrets.token_urlsafe(48)",
     "database_url_sha256_matched",
+    "previous_database_url_sha256",
+    "cleanup_production_stage_files",
+    "staged_secret_files_absent",
     '"external_calls_executed": False',
     '"database_writes_executed": False',
     '"service_changes_executed": False',
@@ -3693,8 +3701,12 @@ if (!exists(xiaomanPosterConfigApplyTestPath)) {
   for (const fragment of [
     "test_direct_preview_and_apply_generate_one_redacted_hmac",
     "test_database_rotation_updates_url_and_all_present_production_hashes",
+    "test_database_rotation_retry_reconciles_interrupted_first_replace",
+    "test_orphaned_secret_stages_are_cleaned_and_exact_retry_stages_nothing",
+    "test_unsafe_orphaned_config_stage_fails_closed",
+    "test_zero_byte_stage_before_metadata_update_is_recoverable",
     "test_group_and_disabled_states_use_the_same_transaction",
-    "test_pair_commit_restores_first_file_when_second_replace_fails",
+    "test_document_commit_restores_all_files_when_third_replace_fails",
     "test_release_owner_and_write_boundaries_match_promoter",
   ]) {
     requireFragment(xiaomanPosterConfigApplyTestPath, test, fragment);
@@ -3722,6 +3734,8 @@ if (!exists(xiaomanPolicyApplyPath)) {
     "approved-production-xiaoman-conversation-policy-v3",
     '[str(binary), "conversation-policy-apply", "--stdin"]',
     '"PATH": "/usr/bin:/bin"',
+    '"PYTHONDONTWRITEBYTECODE": "1"',
+    "sys.dont_write_bytecode = True",
     "sensitive_values",
     "validate_policy_report",
     "OPAQUE_REF_RE",
@@ -3753,6 +3767,7 @@ if (!exists(xiaomanPolicyApplyTestPath)) {
     "test_fixed_release_policy_apply_uses_minimal_environment_and_redacted_output",
     "test_approval_database_and_output_boundaries_fail_closed",
     "test_input_and_cli_surface_are_bounded",
+    "test_config_helper_import_leaves_no_release_bytecode",
     "test_release_owner_and_write_boundaries_match_promoter",
   ]) {
     requireFragment(xiaomanPolicyApplyTestPath, test, fragment);
@@ -3770,10 +3785,112 @@ requireFragment(
   readText("tools/deploy/build-deploy-bundle.mjs"),
   "docs/operations/xiaoman-feishu-poster-production-closeout-runbook.md"
 );
+for (const fragment of [
+  "release_scope=sidecar-runtime,deploy-bundle,hermes-plugins",
+  "restart_targets=hermes-erhua,qintopia-system-services",
+  '"dry_run_request_id": "<successful-same-sha-dry-run-request-id>"',
+  "Stop before password rotation",
+  "automatically points `current` to `previous`",
+]) {
+  requireFragment(
+    "docs/operations/xiaoman-feishu-poster-production-closeout-runbook.md",
+    readText("docs/operations/xiaoman-feishu-poster-production-closeout-runbook.md"),
+    fragment
+  );
+}
 requireFragment(
   "package.json",
   readText("package.json"),
   "python3 tools/deploy/test_xiaoman_conversation_policy_production_apply.py"
+);
+if (!exists(xiaomanDbRolloverPath)) {
+  addError(
+    `${xiaomanDbRolloverPath}: missing protected database rollover state machine`
+  );
+} else {
+  const script = readText(xiaomanDbRolloverPath);
+  for (const fragment of [
+    'STATE_ROOT_PATH = Path("/var/lib/qintopia-xiaoman-db-password-rollover")',
+    'DEPLOY_STATE_ROOT_PATH = Path("/var/lib/qintopia-agent-os-deploy")',
+    'ERHUA_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/erhua/.env")',
+    "approved-production-xiaoman-shared-db-password-rollover-v1",
+    '"previous_database_url_sha256"',
+    '"unexpected_database_configuration_binding"',
+    '"alter_in_flight"',
+    '"private_policy_applied"',
+    '"secret_cleanup_completed": False',
+    "cleanup_temporary_records",
+    "cleanup_config_stage_files",
+    '"active_database_url_sha256"',
+    '"successor_database_url_sha256"',
+    "AUTH_REJECTED_RE",
+    "TLS_ERROR_MARKERS",
+    "SCRAM-SHA-256$",
+    "verify_release_boundary",
+    "verify_pre_rotation_dry_run",
+    "dry_run_request_id",
+    'EXPECTED_RELEASE_SCOPE = ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]',
+    'EXPECTED_RESTART_TARGETS = ["hermes-erhua", "qintopia-system-services"]',
+    '"runtime_artifact_profile": "huabaosi-production"',
+    '"PYTHONDONTWRITEBYTECODE": "1"',
+    "CONFIG_SCRIPT_RELATIVE_PATH",
+    "POLICY_SCRIPT_RELATIVE_PATH",
+    '"feishu_calls_executed": False',
+    '"service_changes_executed": False',
+  ]) {
+    requireFragment(xiaomanDbRolloverPath, script, fragment);
+  }
+  for (const forbidden of [
+    'Path("/run/',
+    "open-apis",
+    "send_as_bot",
+    '"start",',
+    '"restart",',
+    '"enable",',
+    "enable --now",
+    "curl ",
+  ]) {
+    forbidFragment(xiaomanDbRolloverPath, script, forbidden);
+  }
+}
+if (!exists(xiaomanDbRolloverTestPath)) {
+  addError(
+    `${xiaomanDbRolloverTestPath}: missing database rollover state-machine test`
+  );
+} else {
+  const test = readText(xiaomanDbRolloverTestPath);
+  for (const fragment of [
+    "test_prepare_reconciles_unknown_alter_commit_and_persists_root_only_state",
+    "test_pre_rotation_dry_run_gate_accepts_exact_protected_evidence",
+    "test_pre_rotation_dry_run_gate_rejects_incomplete_or_mismatched_evidence",
+    "test_failed_pre_rotation_gate_creates_no_state_or_password_change",
+    "test_pre_rotation_evidence_file_boundaries_fail_closed",
+    "test_pre_rotation_evidence_wrong_owner_fails_closed",
+    "test_mixed_old_new_configuration_converges_but_third_value_fails_closed",
+    "test_persistent_state_is_reentrant_after_process_and_boot_restart",
+    "test_post_policy_rollback_keeps_valid_rotated_credential_and_disables_poster",
+    "test_terminal_receipt_precedes_secret_cleanup_and_recovers_after_crash",
+    "test_sigkill_during_secret_state_replace_cleans_orphan_on_restart",
+    "test_unsafe_orphaned_state_record_fails_before_terminal_reconciliation",
+    "test_production_config_stage_cleanup_is_release_bound_and_redacted",
+    "test_exact_operator_binding_rejects_wrong_database_role_chat_and_actor",
+    "test_persisted_state_rederives_targets_and_password_only_rotation",
+    "test_production_operations_bind_payload_and_reconciliation_to_erhua",
+    "test_protected_python_children_disable_bytecode_writes",
+    "test_release_boundary_rejects_symlink_writable_and_digest_drift",
+  ]) {
+    requireFragment(xiaomanDbRolloverTestPath, test, fragment);
+  }
+}
+requireFragment(
+  "tools/deploy/build-deploy-bundle.mjs",
+  readText("tools/deploy/build-deploy-bundle.mjs"),
+  xiaomanDbRolloverPath
+);
+requireFragment(
+  "package.json",
+  readText("package.json"),
+  "python3 tools/deploy/test_xiaoman_shared_db_password_rollover_production.py"
 );
 
 const xiaomanInternalGroupObservationPath =

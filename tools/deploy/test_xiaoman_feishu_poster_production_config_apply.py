@@ -14,6 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 
+sys.dont_write_bytecode = True
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = (
     REPO_ROOT
@@ -46,6 +48,7 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         self.release_current.symlink_to(self.release_root)
         self.sidecar = self.root / "message-sidecar.env"
         self.hermes = self.root / "xiaoman.env"
+        self.erhua = self.root / "erhua.env"
         self.lock = self.root / "config.lock"
         self.database_url = (
             "postgresql://poster_user:old-secret@db.example.internal:5432/qintopia"
@@ -78,6 +81,14 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
             },
             0o600,
         )
+        self.write_env(
+            self.erhua,
+            {
+                "QINTOPIA_SIDECAR_DATABASE_URL": self.database_url,
+                "QINTOPIA_UNRELATED_ERHUA_SETTING": "preserved",
+            },
+            0o640,
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -107,6 +118,7 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
             request=request,
             sidecar_path=self.sidecar,
             hermes_path=self.hermes,
+            erhua_path=self.erhua,
             release_current_path=self.release_current,
             lock_path=self.lock,
             apply=apply,
@@ -122,14 +134,28 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
             self.direct_request(), apply=True, approval=MODULE.APPLY_APPROVAL
         )
 
+    def cleanup_stages(self):
+        return MODULE.cleanup_production_stage_files(
+            sidecar_path=self.sidecar,
+            hermes_path=self.hermes,
+            erhua_path=self.erhua,
+            release_current_path=self.release_current,
+            lock_path=self.lock,
+            release_sha=self.release_sha,
+            approval=MODULE.APPLY_APPROVAL,
+            effective_uid=0,
+        )
+
     def test_direct_preview_and_apply_generate_one_redacted_hmac(self) -> None:
         original_sidecar = self.sidecar.read_bytes()
         original_hermes = self.hermes.read_bytes()
+        original_erhua = self.erhua.read_bytes()
         preview = self.run_config(self.direct_request())
         self.assertEqual(preview["action_status"], "production_config_ready")
         self.assertEqual(preview["ingress_hmac_action"], "generated")
         self.assertEqual(self.sidecar.read_bytes(), original_sidecar)
         self.assertEqual(self.hermes.read_bytes(), original_hermes)
+        self.assertEqual(self.erhua.read_bytes(), original_erhua)
 
         report = self.apply_direct()
         sidecar = self.values(self.sidecar)
@@ -152,6 +178,10 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         self.assertIn("QINTOPIA_UNRELATED_HERMES_SETTING='preserved'", self.hermes.read_text())
         self.assertEqual(stat.S_IMODE(self.sidecar.stat().st_mode), 0o640)
         self.assertEqual(stat.S_IMODE(self.hermes.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(self.erhua.stat().st_mode), 0o640)
+        self.assertFalse(report["erhua_database_binding_checked"])
+        self.assertFalse(report["erhua_change_required"])
+        self.assertEqual(report["shared_database_env_count"], 1)
 
         rendered_report = json.dumps(report, sort_keys=True)
         for sensitive in [
@@ -177,6 +207,17 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
 
     def test_database_rotation_updates_url_and_all_present_production_hashes(self) -> None:
         self.apply_direct()
+        originals = {
+            path: path.read_bytes() for path in (self.sidecar, self.hermes, self.erhua)
+        }
+        metadata = {
+            path: (
+                stat.S_IMODE(path.stat().st_mode),
+                path.stat().st_uid,
+                path.stat().st_gid,
+            )
+            for path in (self.sidecar, self.hermes, self.erhua)
+        }
         new_url = (
             "postgresql://poster_user:new-secret@db.example.internal:5432/qintopia"
         )
@@ -184,21 +225,52 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         request = self.direct_request(
             database_url=new_url,
             database_url_sha256=new_hash,
+            previous_database_url_sha256=sha256(self.database_url),
             rotate_ingress_hmac=True,
         )
-        report = self.run_config(
-            request, apply=True, approval=MODULE.APPLY_APPROVAL
-        )
+        preview = self.run_config(request)
+        self.assertTrue(preview["erhua_database_binding_checked"])
+        self.assertTrue(preview["erhua_change_required"])
+        self.assertEqual(preview["shared_database_env_count"], 2)
+        self.assertTrue(preview["previous_database_url_sha256_matched"])
+        self.assertFalse(preview["external_calls_executed"])
+        self.assertFalse(preview["database_writes_executed"])
+        self.assertFalse(preview["service_changes_executed"])
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+        report = self.run_config(request, apply=True, approval=MODULE.APPLY_APPROVAL)
         values = self.values(self.sidecar)
+        erhua_values = self.values(self.erhua)
         self.assertEqual(values["QINTOPIA_SIDECAR_DATABASE_URL"], new_url)
+        self.assertEqual(erhua_values["QINTOPIA_SIDECAR_DATABASE_URL"], new_url)
+        self.assertIn(
+            "QINTOPIA_UNRELATED_ERHUA_SETTING='preserved'",
+            self.erhua.read_text(encoding="utf-8"),
+        )
         for name in MODULE.PRODUCTION_DATABASE_HASH_KEYS:
             if name in values:
                 self.assertEqual(values[name], new_hash)
+        for path, expected in metadata.items():
+            current = path.stat()
+            self.assertEqual(
+                (stat.S_IMODE(current.st_mode), current.st_uid, current.st_gid),
+                expected,
+            )
         self.assertTrue(report["database_url_rotated"])
+        self.assertTrue(report["erhua_database_binding_checked"])
+        self.assertTrue(report["erhua_change_required"])
+        self.assertEqual(report["shared_database_env_count"], 2)
+        self.assertTrue(report["previous_database_url_sha256_matched"])
         self.assertEqual(report["ingress_hmac_action"], "rotated")
-        report_text = json.dumps(report, sort_keys=True)
-        self.assertNotIn(new_url, report_text)
-        self.assertNotIn(new_hash, report_text)
+        for rendered_report in (
+            json.dumps(preview, sort_keys=True),
+            json.dumps(report, sort_keys=True),
+        ):
+            self.assertNotIn(self.database_url, rendered_report)
+            self.assertNotIn(new_url, rendered_report)
+            self.assertNotIn(new_hash, rendered_report)
+            self.assertNotIn(str(self.erhua), rendered_report)
 
     def test_group_and_disabled_states_use_the_same_transaction(self) -> None:
         self.apply_direct()
@@ -249,6 +321,50 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         self.assertEqual(hermes["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE"], "0")
         self.assertEqual(sidecar["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"], direct_hmac)
 
+    def test_database_rotation_retry_reconciles_interrupted_first_replace(self) -> None:
+        self.apply_direct()
+        new_url = (
+            "postgresql://poster_user:new-secret@db.example.internal:5432/qintopia"
+        )
+        request = self.direct_request(
+            database_url=new_url,
+            database_url_sha256=sha256(new_url),
+            previous_database_url_sha256=sha256(self.database_url),
+        )
+        normalized = MODULE.validate_request(request)
+        interrupted_plan = MODULE.build_plan(
+            normalized,
+            MODULE.read_env(self.sidecar),
+            MODULE.read_env(self.hermes),
+            MODULE.read_env(self.erhua, MODULE.SHARED_DATABASE_TRACKED_KEYS),
+            self.release_sha,
+        )
+        self.sidecar.write_text(interrupted_plan.sidecar_text, encoding="utf-8")
+        original_hermes = self.hermes.read_bytes()
+        original_erhua = self.erhua.read_bytes()
+
+        preview = self.run_config(request)
+        self.assertTrue(preview["database_url_rotated"])
+        self.assertTrue(preview["erhua_database_binding_checked"])
+        self.assertTrue(preview["erhua_change_required"])
+        self.assertTrue(preview["previous_database_url_sha256_matched"])
+        self.assertEqual(self.hermes.read_bytes(), original_hermes)
+        self.assertEqual(self.erhua.read_bytes(), original_erhua)
+
+        report = self.run_config(request, apply=True, approval=MODULE.APPLY_APPROVAL)
+        self.assertTrue(report["previous_database_url_sha256_matched"])
+        self.assertEqual(
+            self.values(self.erhua)["QINTOPIA_SIDECAR_DATABASE_URL"], new_url
+        )
+        repeated = self.run_config(
+            request, apply=True, approval=MODULE.APPLY_APPROVAL
+        )
+        self.assertTrue(repeated["deduped"])
+        self.assertFalse(repeated["database_url_rotated"])
+        self.assertTrue(repeated["erhua_database_binding_checked"])
+        self.assertFalse(repeated["erhua_change_required"])
+        self.assertFalse(repeated["previous_database_url_sha256_matched"])
+
     def test_invalid_boundaries_fail_before_mutation(self) -> None:
         original_sidecar = self.sidecar.read_bytes()
         original_hermes = self.hermes.read_bytes()
@@ -257,6 +373,15 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
             {**self.direct_request(), "database_url_sha256": "b" * 64},
             {**self.direct_request(), "unsupported": True},
             {**self.direct_request(), "bot_open_id": "ou_stale_bot"},
+            {
+                **self.direct_request(),
+                "database_url": (
+                    "postgresql://poster_user:new-secret@db.example.internal:5432/qintopia"
+                ),
+                "database_url_sha256": sha256(
+                    "postgresql://poster_user:new-secret@db.example.internal:5432/qintopia"
+                ),
+            },
             {
                 "schema_version": 1,
                 "desired_state": "group",
@@ -288,6 +413,7 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
                 request=self.direct_request(),
                 sidecar_path=self.sidecar,
                 hermes_path=self.hermes,
+                erhua_path=self.erhua,
                 release_current_path=self.release_current,
                 lock_path=self.lock,
                 apply=True,
@@ -299,6 +425,7 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
                 request=self.direct_request(),
                 sidecar_path=self.sidecar,
                 hermes_path=self.hermes,
+                erhua_path=self.erhua,
                 release_current_path=self.release_current,
                 lock_path=self.lock,
                 apply=False,
@@ -313,6 +440,96 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         self.release_current.symlink_to(escaped_release)
         with self.assertRaises(MODULE.ConfigError):
             self.run_config(self.direct_request())
+
+    def test_database_rotation_rejects_invalid_erhua_binding_before_write(self) -> None:
+        self.apply_direct()
+        new_url = (
+            "postgresql://poster_user:new-secret@db.example.internal:5432/qintopia"
+        )
+        request = self.direct_request(
+            database_url=new_url,
+            database_url_sha256=sha256(new_url),
+            previous_database_url_sha256=sha256(self.database_url),
+        )
+
+        mismatched_url = (
+            "postgresql://poster_user:other-secret@db.example.internal:5432/qintopia"
+        )
+        self.write_env(
+            self.erhua,
+            {"QINTOPIA_SIDECAR_DATABASE_URL": mismatched_url},
+            0o640,
+        )
+        originals = {
+            path: path.read_bytes() for path in (self.sidecar, self.hermes, self.erhua)
+        }
+        with self.assertRaises(MODULE.ConfigError):
+            self.run_config(request, apply=True, approval=MODULE.APPLY_APPROVAL)
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+        self.erhua.write_text(
+            "QINTOPIA_SIDECAR_DATABASE_URL='{}'\n"
+            "QINTOPIA_SIDECAR_DATABASE_URL='{}'\n".format(
+                self.database_url, self.database_url
+            ),
+            encoding="utf-8",
+        )
+        self.erhua.chmod(0o640)
+        originals[self.erhua] = self.erhua.read_bytes()
+        with self.assertRaises(MODULE.ConfigError):
+            self.run_config(request, apply=True, approval=MODULE.APPLY_APPROVAL)
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_database_rotation_rejects_unsafe_erhua_file_before_write(self) -> None:
+        self.apply_direct()
+        new_url = (
+            "postgresql://poster_user:new-secret@db.example.internal:5432/qintopia"
+        )
+        request = self.direct_request(
+            database_url=new_url,
+            database_url_sha256=sha256(new_url),
+            previous_database_url_sha256=sha256(self.database_url),
+        )
+        original_sidecar = self.sidecar.read_bytes()
+        original_hermes = self.hermes.read_bytes()
+
+        self.erhua.chmod(0o660)
+        with self.assertRaises(MODULE.ConfigError):
+            self.run_config(request, apply=True, approval=MODULE.APPLY_APPROVAL)
+        self.assertEqual(self.sidecar.read_bytes(), original_sidecar)
+        self.assertEqual(self.hermes.read_bytes(), original_hermes)
+
+        real_erhua = self.root / "real-erhua.env"
+        self.erhua.replace(real_erhua)
+        real_erhua.chmod(0o640)
+        self.erhua.symlink_to(real_erhua)
+        with self.assertRaises(MODULE.ConfigError):
+            self.run_config(request, apply=True, approval=MODULE.APPLY_APPROVAL)
+        self.assertEqual(self.sidecar.read_bytes(), original_sidecar)
+        self.assertEqual(self.hermes.read_bytes(), original_hermes)
+
+    def test_disabled_and_unchanged_url_do_not_depend_on_erhua_env(self) -> None:
+        self.erhua.unlink()
+        report = self.apply_direct()
+        self.assertFalse(report["erhua_database_binding_checked"])
+        self.assertFalse(report["erhua_change_required"])
+        self.assertEqual(report["shared_database_env_count"], 1)
+
+        repeated = self.apply_direct()
+        self.assertTrue(repeated["deduped"])
+        disabled = {
+            "schema_version": 1,
+            "desired_state": "disabled",
+            "release_sha": self.release_sha,
+        }
+        report = self.run_config(
+            disabled, apply=True, approval=MODULE.APPLY_APPROVAL
+        )
+        self.assertFalse(report["erhua_database_binding_checked"])
+        self.assertFalse(report["erhua_change_required"])
+        self.assertEqual(report["shared_database_env_count"], 0)
 
     def test_incomplete_hmac_requires_explicit_rotation(self) -> None:
         with self.sidecar.open("a", encoding="utf-8") as handle:
@@ -343,24 +560,99 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         with self.assertRaises(MODULE.ConfigError):
             MODULE.resolve_release_sha(self.release_current)
 
-    def test_pair_commit_restores_first_file_when_second_replace_fails(self) -> None:
-        original_sidecar = self.sidecar.read_bytes()
-        original_hermes = self.hermes.read_bytes()
+    def test_document_commit_restores_all_files_when_third_replace_fails(self) -> None:
+        self.apply_direct()
+        originals = {
+            path: path.read_bytes() for path in (self.sidecar, self.hermes, self.erhua)
+        }
+        new_url = (
+            "postgresql://poster_user:new-secret@db.example.internal:5432/qintopia"
+        )
+        request = self.direct_request(
+            database_url=new_url,
+            database_url_sha256=sha256(new_url),
+            previous_database_url_sha256=sha256(self.database_url),
+            rotate_ingress_hmac=True,
+        )
         real_replace = MODULE.os.replace
         failed = False
 
         def flaky_replace(source, target):
             nonlocal failed
-            if Path(target) == self.hermes and not failed:
+            if Path(target) == self.erhua and not failed:
                 failed = True
-                raise OSError("fixture second replace failure")
+                raise OSError("fixture third replace failure")
             return real_replace(source, target)
 
         with mock.patch.object(MODULE.os, "replace", side_effect=flaky_replace):
             with self.assertRaises(OSError):
-                self.apply_direct()
-        self.assertEqual(self.sidecar.read_bytes(), original_sidecar)
-        self.assertEqual(self.hermes.read_bytes(), original_hermes)
+                self.run_config(
+                    request, apply=True, approval=MODULE.APPLY_APPROVAL
+                )
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_orphaned_secret_stages_are_cleaned_and_exact_retry_stages_nothing(self) -> None:
+        self.apply_direct()
+        sidecar_document = MODULE.read_env(self.sidecar)
+        hermes_document = MODULE.read_env(self.hermes)
+        orphan = MODULE.stage_file(
+            sidecar_document,
+            sidecar_document.text + "QINTOPIA_TEST_SECRET='orphaned-value'\n",
+        )
+        legacy_orphan = self.hermes.parent / f".{self.hermes.name}.abcdefgh"
+        legacy_orphan.write_text(
+            hermes_document.text + "QINTOPIA_TEST_SECRET='legacy-orphan'\n",
+            encoding="utf-8",
+        )
+        legacy_orphan.chmod(hermes_document.mode)
+
+        with mock.patch.object(MODULE, "stage_file", wraps=MODULE.stage_file) as stage:
+            report = self.apply_direct()
+        self.assertFalse(orphan.exists())
+        self.assertFalse(legacy_orphan.exists())
+        self.assertEqual(report["staged_secret_files_removed_count"], 2)
+        self.assertTrue(report["staged_secret_files_absent"])
+        stage.assert_not_called()
+
+        cleanup = self.cleanup_stages()
+        self.assertEqual(cleanup["staged_secret_files_removed_count"], 0)
+        self.assertTrue(cleanup["staged_secret_files_absent"])
+
+    def test_unsafe_orphaned_config_stage_fails_closed(self) -> None:
+        orphan = self.sidecar.parent / f".{self.sidecar.name}.abcdefgh"
+        orphan.symlink_to(self.sidecar)
+        originals = {
+            path: path.read_bytes() for path in (self.sidecar, self.hermes, self.erhua)
+        }
+        with self.assertRaisesRegex(
+            MODULE.ConfigError, "protected staged file boundary is invalid"
+        ):
+            self.cleanup_stages()
+        self.assertTrue(orphan.is_symlink())
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_zero_byte_stage_before_metadata_update_is_recoverable(self) -> None:
+        document = MODULE.read_env(self.sidecar)
+        future_owner = MODULE.EnvDocument(
+            path=document.path,
+            text=document.text,
+            values=document.values,
+            mode=document.mode,
+            uid=document.uid + 1,
+            gid=document.gid,
+        )
+        orphan = self.sidecar.parent / (
+            f".{self.sidecar.name}.abcdefgh{MODULE.STAGE_SUFFIX}"
+        )
+        orphan.write_bytes(b"")
+        orphan.chmod(0o600)
+        self.assertEqual(
+            MODULE.cleanup_orphaned_stage_files([future_owner]),
+            1,
+        )
+        self.assertFalse(orphan.exists())
 
     def test_input_and_cli_surface_are_bounded(self) -> None:
         with self.assertRaises(MODULE.ConfigError):
@@ -373,6 +665,7 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         for required in [
             'SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")',
             'HERMES_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/xiaoman/.env")',
+            'ERHUA_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/erhua/.env")',
             'RELEASE_CURRENT_PATH = Path("/home/ubuntu/qintopia-agent-os-releases/current")',
             MODULE.APPLY_APPROVAL,
             'parser.add_argument("--stdin", action="store_true")',

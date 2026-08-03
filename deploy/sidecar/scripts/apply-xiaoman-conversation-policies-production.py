@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 
+sys.dont_write_bytecode = True
+
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_HELPER_PATH = SCRIPT_DIR / "apply-xiaoman-feishu-poster-production-config.py"
 SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")
@@ -216,6 +219,7 @@ def run_policy_apply(
 
     child_env = {
         "PATH": "/usr/bin:/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
         "QINTOPIA_SIDECAR_DATABASE_URL": database_url,
         "QINTOPIA_XIAOMAN_CONVERSATION_POLICY_APPROVAL": APPLY_APPROVAL,
         "QINTOPIA_XIAOMAN_CONVERSATION_POLICY_DATABASE_URL_SHA256": database_hash,

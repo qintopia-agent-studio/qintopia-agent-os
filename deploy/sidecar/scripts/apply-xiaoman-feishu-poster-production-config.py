@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")
 HERMES_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/xiaoman/.env")
+ERHUA_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/erhua/.env")
 RELEASE_CURRENT_PATH = Path("/home/ubuntu/qintopia-agent-os-releases/current")
 LOCK_PATH = Path("/run/qintopia-xiaoman-feishu-config.lock")
 APPLY_APPROVAL = "approved-production-xiaoman-feishu-config-v1"
@@ -33,6 +34,8 @@ SHA_RE = re.compile(r"[0-9a-f]{40}")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 ASSIGNMENT_RE = re.compile(r"^(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.*)$")
 CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+STAGE_TOKEN_RE = re.compile(r"[a-z0-9_]{8}")
+STAGE_SUFFIX = ".qintopia-stage"
 
 SIDECAR_ACTIVE_KEYS = [
     "QINTOPIA_XIAOMAN_FEISHU_POSTER_ENABLED",
@@ -82,6 +85,7 @@ ALL_TRACKED_KEYS = set(
     + SIDECAR_REQUIRED_EXISTING
     + HERMES_REQUIRED_EXISTING
 )
+SHARED_DATABASE_TRACKED_KEYS = {"QINTOPIA_SIDECAR_DATABASE_URL"}
 
 
 class ConfigError(ValueError):
@@ -102,6 +106,7 @@ class EnvDocument:
 class ConfigPlan:
     sidecar_text: str
     hermes_text: str
+    erhua_text: str | None
     report: dict[str, Any]
 
 
@@ -133,6 +138,7 @@ def validate_request(value: dict[str, Any]) -> dict[str, Any]:
         "desired_state",
         "release_sha",
         "database_url_sha256",
+        "previous_database_url_sha256",
         "database_url",
         "rotate_ingress_hmac",
         "bot_open_id",
@@ -180,6 +186,22 @@ def validate_request(value: dict[str, Any]) -> dict[str, Any]:
         normalized["database_url"] = validate_database_url(
             value["database_url"], database_hash
         )
+    if "previous_database_url_sha256" in value:
+        previous_database_hash = value["previous_database_url_sha256"]
+        if (
+            not isinstance(previous_database_hash, str)
+            or not SHA256_RE.fullmatch(previous_database_hash)
+        ):
+            raise ConfigError(
+                "previous_database_url_sha256 must be a lowercase SHA-256"
+            )
+        if "database_url" not in normalized:
+            raise ConfigError(
+                "previous_database_url_sha256 requires an explicit database_url"
+            )
+        if previous_database_hash == database_hash:
+            raise ConfigError("previous and replacement database hashes must differ")
+        normalized["previous_database_url_sha256"] = previous_database_hash
 
     bot_open_id = value.get("bot_open_id")
     if bot_open_id is not None:
@@ -276,7 +298,9 @@ def parse_env_text(text: str, tracked_keys: set[str]) -> dict[str, str]:
     return values
 
 
-def read_env(path: Path) -> EnvDocument:
+def read_env(
+    path: Path, tracked_keys: set[str] | None = None
+) -> EnvDocument:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -307,7 +331,7 @@ def read_env(path: Path) -> EnvDocument:
     return EnvDocument(
         path=path,
         text=text,
-        values=parse_env_text(text, ALL_TRACKED_KEYS),
+        values=parse_env_text(text, tracked_keys or ALL_TRACKED_KEYS),
         mode=stat.S_IMODE(metadata.st_mode),
         uid=metadata.st_uid,
         gid=metadata.st_gid,
@@ -393,6 +417,7 @@ def build_plan(
     request: dict[str, Any],
     sidecar: EnvDocument,
     hermes: EnvDocument,
+    erhua: EnvDocument | None,
     release_sha: str,
 ) -> ConfigPlan:
     if request["release_sha"] != release_sha:
@@ -412,9 +437,10 @@ def build_plan(
         sidecar_text = render_env(sidecar.text, sidecar_updates)
         hermes_text = render_env(hermes.text, hermes_updates)
         return ConfigPlan(
-            sidecar_text,
-            hermes_text,
-            base_report(
+            sidecar_text=sidecar_text,
+            hermes_text=hermes_text,
+            erhua_text=None,
+            report=base_report(
                 desired_state,
                 release_sha,
                 sidecar_text != sidecar.text,
@@ -445,6 +471,53 @@ def build_plan(
     database_hash = sha256_hex(database_url.encode("utf-8"))
     if database_hash != request["database_url_sha256"]:
         raise ConfigError("configured database URL does not match the approved SHA-256")
+    previous_database_hash = request.get("previous_database_url_sha256")
+    current_database_hash = sha256_hex(current_database_url.encode("utf-8"))
+    sidecar_database_change_required = database_url != current_database_url
+    if sidecar_database_change_required and previous_database_hash is None:
+        raise ConfigError(
+            "database URL rotation requires the approved previous SHA-256"
+        )
+
+    erhua_text: str | None = None
+    erhua_database_change_required = False
+    previous_database_hash_matched = False
+    if previous_database_hash is not None:
+        if erhua is None:
+            raise ConfigError("shared database environment binding was not checked")
+        if sidecar_database_change_required:
+            if current_database_hash != previous_database_hash:
+                raise ConfigError("current database URL does not match the previous SHA-256")
+            previous_database_hash_matched = True
+
+        erhua_database_url = require_value(
+            erhua.values, "QINTOPIA_SIDECAR_DATABASE_URL"
+        )
+        erhua_database_hash = sha256_hex(erhua_database_url.encode("utf-8"))
+        if erhua_database_url == database_url:
+            pass
+        elif sidecar_database_change_required and erhua_database_url == current_database_url:
+            previous_database_hash_matched = True
+            erhua_database_change_required = True
+        elif erhua_database_hash == previous_database_hash:
+            previous_database_hash_matched = True
+            erhua_database_change_required = True
+        else:
+            raise ConfigError("shared database environment binding does not match")
+        erhua_text = render_env(
+            erhua.text, {"QINTOPIA_SIDECAR_DATABASE_URL": database_url}
+        )
+        if (
+            require_value(
+                parse_env_text(erhua_text, SHARED_DATABASE_TRACKED_KEYS),
+                "QINTOPIA_SIDECAR_DATABASE_URL",
+            )
+            != database_url
+        ):
+            raise ConfigError("rendered shared database environment binding is invalid")
+    database_url_rotated = (
+        sidecar_database_change_required or erhua_database_change_required
+    )
 
     if "allowed_chat_ids" in request:
         chats = request["allowed_chat_ids"]
@@ -513,7 +586,7 @@ def build_plan(
             "1" if desired_state == "group" else "0"
         ),
     }
-    if database_url != current_database_url:
+    if sidecar_database_change_required:
         sidecar_updates["QINTOPIA_SIDECAR_DATABASE_URL"] = database_url
     for name in sorted(hash_keys):
         sidecar_updates[name] = database_hash
@@ -541,9 +614,10 @@ def build_plan(
     hermes_text = render_env(hermes.text, hermes_updates, hermes_removals)
     validate_rendered_binding(sidecar_text, hermes_text, desired_state)
     return ConfigPlan(
-        sidecar_text,
-        hermes_text,
-        base_report(
+        sidecar_text=sidecar_text,
+        hermes_text=hermes_text,
+        erhua_text=erhua_text,
+        report=base_report(
             desired_state,
             release_sha,
             sidecar_text != sidecar.text,
@@ -552,8 +626,12 @@ def build_plan(
             len(users),
             len(reviewers),
             ingress_action,
-            database_url != current_database_url,
+            database_url_rotated,
             len(hash_keys),
+            erhua_database_binding_checked=previous_database_hash is not None,
+            erhua_changed=erhua_text is not None and erhua_text != erhua.text,
+            shared_database_env_count=2 if previous_database_hash is not None else 1,
+            previous_database_url_sha256_matched=previous_database_hash_matched,
         ),
     )
 
@@ -600,6 +678,11 @@ def base_report(
     ingress_hmac_action: str,
     database_url_rotated: bool,
     database_hash_binding_count: int,
+    *,
+    erhua_database_binding_checked: bool = False,
+    erhua_changed: bool = False,
+    shared_database_env_count: int = 0,
+    previous_database_url_sha256_matched: bool = False,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -615,6 +698,12 @@ def base_report(
         "database_url_rotated": database_url_rotated,
         "database_hash_binding_count": database_hash_binding_count,
         "database_url_sha256_matched": desired_state != "disabled",
+        "erhua_database_binding_checked": erhua_database_binding_checked,
+        "erhua_change_required": erhua_changed,
+        "shared_database_env_count": shared_database_env_count,
+        "previous_database_url_sha256_matched": (
+            previous_database_url_sha256_matched
+        ),
         "external_calls_executed": False,
         "database_writes_executed": False,
         "service_changes_executed": False,
@@ -626,9 +715,72 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def is_staged_file_name(document: EnvDocument, name: str) -> bool:
+    prefix = f".{document.path.name}."
+    if not name.startswith(prefix):
+        return False
+    suffix = name[len(prefix) :]
+    if suffix.endswith(STAGE_SUFFIX):
+        suffix = suffix[: -len(STAGE_SUFFIX)]
+    return STAGE_TOKEN_RE.fullmatch(suffix) is not None
+
+
+def cleanup_orphaned_stage_files(documents: list[EnvDocument]) -> int:
+    removed = 0
+    for document in documents:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(
+            os, "O_CLOEXEC", 0
+        ) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            directory_descriptor = os.open(document.path.parent, flags)
+        except OSError as exc:
+            raise ConfigError("protected staging directory is unavailable") from exc
+        directory_changed = False
+        try:
+            for name in os.listdir(directory_descriptor):
+                if not is_staged_file_name(document, name):
+                    continue
+                try:
+                    metadata = os.stat(
+                        name,
+                        dir_fd=directory_descriptor,
+                        follow_symlinks=False,
+                    )
+                except OSError as exc:
+                    raise ConfigError("protected staged file is unavailable") from exc
+                expected_metadata = (
+                    (metadata.st_uid, metadata.st_gid)
+                    == (document.uid, document.gid)
+                    and stat.S_IMODE(metadata.st_mode) == document.mode
+                    and metadata.st_size <= MAX_ENV_BYTES
+                )
+                interrupted_before_metadata = (
+                    metadata.st_uid == os.geteuid()
+                    and stat.S_IMODE(metadata.st_mode) in {0o600, document.mode}
+                    and metadata.st_size == 0
+                )
+                if not stat.S_ISREG(metadata.st_mode) or not (
+                    expected_metadata or interrupted_before_metadata
+                ):
+                    raise ConfigError("protected staged file boundary is invalid")
+                try:
+                    os.unlink(name, dir_fd=directory_descriptor)
+                except OSError as exc:
+                    raise ConfigError("protected staged file cleanup failed") from exc
+                removed += 1
+                directory_changed = True
+            if directory_changed:
+                os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    return removed
+
+
 def stage_file(document: EnvDocument, text: str) -> Path:
     descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{document.path.name}.", dir=document.path.parent
+        prefix=f".{document.path.name}.",
+        suffix=STAGE_SUFFIX,
+        dir=document.path.parent,
     )
     temporary = Path(temporary_name)
     try:
@@ -666,38 +818,94 @@ def restore_document(document: EnvDocument) -> None:
     fsync_directory(document.path.parent)
 
 
-def commit_pair(
-    sidecar: EnvDocument,
-    hermes: EnvDocument,
-    sidecar_text: str,
-    hermes_text: str,
-) -> None:
-    staged_sidecar = stage_file(sidecar, sidecar_text)
+def commit_documents(documents: list[tuple[EnvDocument, str]]) -> None:
+    staged: list[tuple[EnvDocument, str, Path]] = []
     try:
-        staged_hermes = stage_file(hermes, hermes_text)
+        for document, text in documents:
+            if text == document.text:
+                continue
+            staged.append((document, text, stage_file(document, text)))
     except BaseException:
-        staged_sidecar.unlink(missing_ok=True)
+        for _, _, temporary in staged:
+            temporary.unlink(missing_ok=True)
         raise
-    replaced_sidecar = False
-    replaced_hermes = False
+
+    replaced: list[EnvDocument] = []
     try:
-        if sidecar_text != sidecar.text:
-            os.replace(staged_sidecar, sidecar.path)
-            replaced_sidecar = True
-            fsync_directory(sidecar.path.parent)
-        if hermes_text != hermes.text:
-            os.replace(staged_hermes, hermes.path)
-            replaced_hermes = True
-            fsync_directory(hermes.path.parent)
-    except BaseException:
-        if replaced_sidecar:
-            restore_document(sidecar)
-        if replaced_hermes:
-            restore_document(hermes)
+        for document, _, temporary in staged:
+            os.replace(temporary, document.path)
+            replaced.append(document)
+            fsync_directory(document.path.parent)
+    except BaseException as commit_error:
+        rollback_failed = False
+        for document in reversed(replaced):
+            try:
+                restore_document(document)
+            except BaseException:
+                rollback_failed = True
+        if rollback_failed:
+            raise ConfigError("configuration rollback failed") from commit_error
         raise
     finally:
-        staged_sidecar.unlink(missing_ok=True)
-        staged_hermes.unlink(missing_ok=True)
+        for _, _, temporary in staged:
+            temporary.unlink(missing_ok=True)
+
+
+def cleanup_production_stage_files(
+    *,
+    sidecar_path: Path,
+    hermes_path: Path,
+    erhua_path: Path,
+    release_current_path: Path,
+    lock_path: Path,
+    release_sha: str,
+    approval: str,
+    effective_uid: int,
+) -> dict[str, Any]:
+    if effective_uid != 0:
+        raise ConfigError("Xiaoman Feishu production configuration requires root")
+    if approval != APPLY_APPROVAL:
+        raise ConfigError("exact owner approval is required for staged file cleanup")
+    if not SHA_RE.fullmatch(release_sha):
+        raise ConfigError("cleanup Release SHA is invalid")
+    for path in (sidecar_path, hermes_path, erhua_path, lock_path):
+        reject_symlinked_parents(path)
+    reject_symlinked_parents(release_current_path)
+    if resolve_release_sha(release_current_path) != release_sha:
+        raise ConfigError("cleanup Release does not match release/current")
+
+    lock_descriptor = os.open(
+        lock_path,
+        os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(
+            os, "O_NOFOLLOW", 0
+        ),
+        0o600,
+    )
+    try:
+        os.fchmod(lock_descriptor, 0o600)
+        fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
+        documents = [
+            read_env(sidecar_path),
+            read_env(hermes_path),
+            read_env(erhua_path, SHARED_DATABASE_TRACKED_KEYS),
+        ]
+        removed = cleanup_orphaned_stage_files(documents)
+        if cleanup_orphaned_stage_files(documents) != 0:
+            raise ConfigError("protected staged file cleanup did not converge")
+        return {
+            "schema_version": 1,
+            "success": True,
+            "action_status": "production_config_stage_cleanup_completed",
+            "release_sha": release_sha,
+            "staged_secret_files_removed_count": removed,
+            "staged_secret_files_absent": True,
+            "external_calls_executed": False,
+            "database_writes_executed": False,
+            "service_changes_executed": False,
+            "sensitive_values_redacted": True,
+        }
+    finally:
+        os.close(lock_descriptor)
 
 
 def configure(
@@ -705,6 +913,7 @@ def configure(
     request: dict[str, Any],
     sidecar_path: Path,
     hermes_path: Path,
+    erhua_path: Path,
     release_current_path: Path,
     lock_path: Path,
     apply: bool,
@@ -731,9 +940,35 @@ def configure(
         fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
         sidecar = read_env(sidecar_path)
         hermes = read_env(hermes_path)
-        plan = build_plan(normalized, sidecar, hermes, release_sha)
+        erhua: EnvDocument | None = None
+        if normalized["desired_state"] != "disabled" and "database_url" in normalized:
+            current_database_url = require_value(
+                sidecar.values, "QINTOPIA_SIDECAR_DATABASE_URL"
+            )
+            if (
+                normalized["database_url"] != current_database_url
+                or "previous_database_url_sha256" in normalized
+            ):
+                reject_symlinked_parents(erhua_path)
+                erhua = read_env(erhua_path, SHARED_DATABASE_TRACKED_KEYS)
+        plan = build_plan(normalized, sidecar, hermes, erhua, release_sha)
+        staged_secret_files_removed = 0
         if apply:
-            commit_pair(sidecar, hermes, plan.sidecar_text, plan.hermes_text)
+            documents = [
+                (sidecar, plan.sidecar_text),
+                (hermes, plan.hermes_text),
+            ]
+            if plan.erhua_text is not None:
+                if erhua is None:
+                    raise ConfigError("shared database environment binding was not checked")
+                documents.append((erhua, plan.erhua_text))
+            staged_secret_files_removed += cleanup_orphaned_stage_files(
+                [document for document, _ in documents]
+            )
+            commit_documents(documents)
+            staged_secret_files_removed += cleanup_orphaned_stage_files(
+                [document for document, _ in documents]
+            )
         report = dict(plan.report)
         report["success"] = True
         report["apply_requested"] = apply
@@ -741,8 +976,13 @@ def configure(
             "production_config_applied" if apply else "production_config_ready"
         )
         report["deduped"] = not (
-            report["sidecar_change_required"] or report["hermes_change_required"]
+            report["sidecar_change_required"]
+            or report["hermes_change_required"]
+            or report["erhua_change_required"]
         )
+        if apply:
+            report["staged_secret_files_removed_count"] = staged_secret_files_removed
+            report["staged_secret_files_absent"] = True
         return report
     finally:
         os.close(lock_descriptor)
@@ -754,6 +994,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--stdin", action="store_true")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--cleanup-staged-files", action="store_true")
+    parser.add_argument("--release-sha", default="")
     parser.add_argument("--approval", default="")
     return parser.parse_args()
 
@@ -767,19 +1009,28 @@ def emit(report: dict[str, Any]) -> None:
 
 def main() -> int:
     args = parse_args()
-    if not args.stdin:
-        emit(
-            {
-                "success": False,
-                "action_status": "validation_failed",
-                "error": "--stdin is required",
-                "sensitive_values_redacted": True,
-            }
-        )
-        return 1
     try:
         if os.geteuid() != 0:
             raise ConfigError("Xiaoman Feishu production configuration requires root")
+        if args.cleanup_staged_files:
+            if args.stdin or args.apply:
+                raise ConfigError("staged file cleanup does not accept config input")
+            report = cleanup_production_stage_files(
+                sidecar_path=SIDECAR_ENV_PATH,
+                hermes_path=HERMES_ENV_PATH,
+                erhua_path=ERHUA_ENV_PATH,
+                release_current_path=RELEASE_CURRENT_PATH,
+                lock_path=LOCK_PATH,
+                release_sha=args.release_sha,
+                approval=args.approval,
+                effective_uid=os.geteuid(),
+            )
+            emit(report)
+            return 0
+        if not args.stdin:
+            raise ConfigError("--stdin is required")
+        if args.release_sha:
+            raise ConfigError("--release-sha is only valid for staged file cleanup")
         if args.apply and args.approval != APPLY_APPROVAL:
             raise ConfigError("exact owner approval is required for configuration apply")
         request = load_request(sys.stdin.buffer)
@@ -787,6 +1038,7 @@ def main() -> int:
             request=request,
             sidecar_path=SIDECAR_ENV_PATH,
             hermes_path=HERMES_ENV_PATH,
+            erhua_path=ERHUA_ENV_PATH,
             release_current_path=RELEASE_CURRENT_PATH,
             lock_path=LOCK_PATH,
             apply=args.apply,
