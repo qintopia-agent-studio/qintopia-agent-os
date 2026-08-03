@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.71](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.70...v0.2.71) (2026-08-03)
+
+
+### Bug Fixes
+
+* accept redacted Huabaosi canary previews ([#371](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/371)) ([62cdabf](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/62cdabfc61000c0efcf8b81618a791f98bba4b03))
+
 ## [0.2.70](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.69...v0.2.70) (2026-08-03)
 
 
