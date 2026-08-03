@@ -22,6 +22,8 @@ try {
   const scriptsDir = path.join(releaseDir, "deploy", "sidecar", "scripts");
   const unitDir = path.join(tmpRoot, "units");
   const systemctlLog = path.join(tmpRoot, "systemctl.log");
+  const envMetadataLog = path.join(tmpRoot, "env-metadata.log");
+  const envFile = path.join(tmpRoot, "message-sidecar.env");
   const systemctl = path.join(tmpRoot, "bin", "systemctl");
 
   fs.mkdirSync(path.join(releaseDir, "sidecar"), { recursive: true });
@@ -75,6 +77,15 @@ case "$1" in
 esac
 `
   );
+  writeExecutable(
+    path.join(tmpRoot, "bin", "chown"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
+`
+  );
+  fs.writeFileSync(envFile, "QINTOPIA_SIDECAR_DATABASE_URL=postgres://example\n");
+  fs.chmodSync(envFile, 0o600);
 
   const result = spawnSync(
     "bash",
@@ -89,8 +100,10 @@ esac
       cwd: repoRoot,
       env: {
         ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}:${process.env.PATH}`,
         SYSTEMCTL: systemctl,
         QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+        QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE: envFile,
       },
       encoding: "utf8",
     }
@@ -100,6 +113,13 @@ esac
     throw new Error(
       `expected systemd install to pass, got ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
     );
+  }
+  const envMetadata = fs.readFileSync(envMetadataLog, "utf8");
+  if (!envMetadata.includes(`chown root:ubuntu ${envFile}`)) {
+    throw new Error("release installer must normalize sidecar env owner");
+  }
+  if ((fs.statSync(envFile).mode & 0o777) !== 0o640) {
+    throw new Error("release installer must normalize sidecar env mode to 0640");
   }
   const sidecarUnit = fs.readFileSync(
     path.join(unitDir, "qintopia-message-sidecar.service"),

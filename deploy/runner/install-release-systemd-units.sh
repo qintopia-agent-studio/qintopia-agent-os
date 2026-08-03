@@ -75,11 +75,61 @@ fi
 
 systemctl_bin="${SYSTEMCTL:-systemctl}"
 unit_dir="${QINTOPIA_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+sidecar_env_file="/etc/qintopia/message-sidecar.env"
+if [[ -n "${QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE:-}" ]]; then
+  case "$release_root" in
+    /tmp/* | /private/tmp/* | /var/folders/* | /private/var/folders/*) ;;
+    *)
+      echo "test env file override is allowed only with a temporary release root" >&2
+      exit 1
+      ;;
+  esac
+  case "$QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE" in
+    /tmp/* | /private/tmp/* | /var/folders/* | /private/var/folders/*)
+      sidecar_env_file="$QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE"
+      ;;
+    *)
+      echo "test env file override must stay under a temporary directory" >&2
+      exit 1
+      ;;
+  esac
+fi
 render_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$render_dir"
 }
 trap cleanup EXIT
+
+normalize_production_sidecar_env_metadata() {
+  local env_file="$1"
+  if [[ ! -e "$env_file" ]]; then
+    echo "Production sidecar env file is absent; metadata normalization skipped"
+    return
+  fi
+  python3 - "$env_file" <<'PY'
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+if not os.path.isabs(path):
+    raise SystemExit("production sidecar env path must be absolute")
+metadata = os.lstat(path)
+if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+    raise SystemExit("production sidecar env must be a non-symlink regular file")
+if metadata.st_nlink != 1:
+    raise SystemExit("production sidecar env hard links are forbidden")
+if metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    raise SystemExit("production sidecar env must not be group/world writable")
+if metadata.st_size > 1024 * 1024:
+    raise SystemExit("production sidecar env is unexpectedly large")
+PY
+  chown root:ubuntu "$env_file"
+  chmod 0640 "$env_file"
+  echo "Normalized production sidecar env metadata"
+}
+
+normalize_production_sidecar_env_metadata "$sidecar_env_file"
 
 "$render_script" \
   --target-sha "$release_sha" \

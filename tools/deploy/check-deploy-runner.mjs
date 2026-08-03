@@ -1420,6 +1420,10 @@ if (exists("deploy/runner/install-release-systemd-units.sh")) {
     "qintopia-agent-os-deploy-runner.service",
     "qintopia-agent-os-deploy-runner.timer",
     'source_path="${release_dir}/deploy/runner/${unit_file}"',
+    'sidecar_env_file="/etc/qintopia/message-sidecar.env"',
+    "normalize_production_sidecar_env_metadata",
+    'chown root:ubuntu "$env_file"',
+    'chmod 0640 "$env_file"',
   ]) {
     if (!installer.includes(fragment)) {
       addError(`release systemd installer is missing ${fragment}`);
