@@ -245,11 +245,7 @@ function assertGithubReleaseFacts(options) {
   if (releasePlease.mergeCommit?.oid !== options.releasedCommitSha) {
     fail("Release Please PR merge commit does not match the released commit SHA");
   }
-  for (const checkName of ["changes", "check", "Release Please validation"]) {
-    if (!hasSuccessfulCheck(releasePlease.statusCheckRollup, checkName)) {
-      fail(`Release Please PR is missing successful ${checkName} status`);
-    }
-  }
+  assertReleasePleaseChecks(releasePlease, options.releasePleaseHeadSha);
 
   const qiweEnablement = runGhJson("QiWe production enablement PR", [
     "pr",
@@ -264,15 +260,36 @@ function assertGithubReleaseFacts(options) {
     headSha: options.qiweProductionEnablementHeadSha,
   });
 
-  const compare = runGhJson("QiWe production enablement inclusion", [
-    "api",
-    `repos/:owner/:repo/compare/${options.qiweProductionEnablementHeadSha}...${options.releasedCommitSha}`,
-  ]);
-  if (!["ahead", "identical"].includes(compare.status)) {
+  if (
+    !pullRequestRevisionIncludedInRelease(
+      qiweEnablement,
+      options.qiweProductionEnablementHeadSha,
+      options.releasedCommitSha
+    )
+  ) {
     fail(
-      "QiWe production enablement PR head is not included in the released commit SHA"
+      "QiWe production enablement PR head or merge commit is not included in the released commit SHA"
     );
   }
+}
+
+function pullRequestRevisionIncludedInRelease(record, headSha, releasedCommitSha) {
+  if (commitIncludedInRelease(headSha, releasedCommitSha)) {
+    return true;
+  }
+  const mergeCommitSha = record.mergeCommit?.oid;
+  return (
+    isGitSha(mergeCommitSha) &&
+    commitIncludedInRelease(mergeCommitSha, releasedCommitSha)
+  );
+}
+
+function commitIncludedInRelease(candidateSha, releasedCommitSha) {
+  const compare = runGhJson("QiWe production enablement inclusion", [
+    "api",
+    `repos/:owner/:repo/compare/${candidateSha}...${releasedCommitSha}`,
+  ]);
+  return ["ahead", "identical"].includes(compare.status);
 }
 
 function assertPublishedReleaseTag(options) {
@@ -296,6 +313,74 @@ function assertPublishedReleaseTag(options) {
   if (tagCommitSha !== options.releasedCommitSha) {
     fail("published GitHub Release tag does not point to the released commit SHA");
   }
+}
+
+function assertReleasePleaseChecks(record, headSha) {
+  if (!hasSuccessfulCheck(record.statusCheckRollup, "Release Please validation")) {
+    fail("Release Please PR is missing successful Release Please validation status");
+  }
+
+  const missingChecks = ["changes", "check"].filter(
+    (checkName) => !hasSuccessfulCheck(record.statusCheckRollup, checkName)
+  );
+  if (missingChecks.length === 0) {
+    return;
+  }
+
+  const workflowRun = releasePleaseValidationWorkflowRun(record, headSha);
+  for (const checkName of missingChecks) {
+    if (!hasSuccessfulJob(workflowRun.jobs, checkName)) {
+      fail(`Release Please PR is missing successful ${checkName} status`);
+    }
+  }
+}
+
+function releasePleaseValidationWorkflowRun(record, headSha) {
+  const runId = releasePleaseValidationRunId(record.statusCheckRollup);
+  if (!runId) {
+    fail("Release Please validation run URL is missing from GitHub state");
+  }
+
+  const workflowRun = runGhJson("Release Please validation workflow run", [
+    "run",
+    "view",
+    runId,
+    "--json",
+    "headSha,status,conclusion,jobs",
+  ]);
+  if (
+    workflowRun.headSha !== headSha ||
+    !/^completed$/i.test(workflowRun.status ?? "") ||
+    !/^success$/i.test(workflowRun.conclusion ?? "")
+  ) {
+    fail("Release Please validation workflow run does not match the PR head");
+  }
+  return workflowRun;
+}
+
+function releasePleaseValidationRunId(statusCheckRollup) {
+  const check = statusCheckRollup?.find((entry) => {
+    const name = entry.name ?? entry.context ?? "";
+    const conclusion = entry.conclusion ?? entry.state ?? "";
+    return (
+      name === "Release Please validation" && /^(SUCCESS|success)$/i.test(conclusion)
+    );
+  });
+  const targetUrl = check?.targetUrl ?? "";
+  const match = targetUrl.match(/\/actions\/runs\/([0-9]+)(?:\/|$)/);
+  return match?.[1] ?? "";
+}
+
+function hasSuccessfulJob(jobs, expectedName) {
+  if (!Array.isArray(jobs)) {
+    return false;
+  }
+  return jobs.some(
+    (job) =>
+      job.name === expectedName &&
+      /^completed$/i.test(job.status ?? "") &&
+      /^success$/i.test(job.conclusion ?? "")
+  );
 }
 
 function resolveTagCommitSha(tagRef, releaseTag) {

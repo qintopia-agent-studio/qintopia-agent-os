@@ -44,6 +44,13 @@ Prepare these owner-reviewed facts before starting:
   visibly arrived in the intended group;
 - one sanitized human confirmation file for the QiWe group arrival.
 
+For a squash-merged or otherwise non-linear QiWe production enablement PR, still pass
+the PR head SHA as `--qiwe-production-enablement-head-sha`. The completion manifest
+builder verifies release inclusion through the PR merge commit when the PR head commit
+is not itself an ancestor of the published Release. If GitHub's PR status rollup omits
+the manual CI `changes` or `check` job, the builder verifies those jobs through the
+successful `Release Please validation` workflow run URL.
+
 Before running any external production evidence step, rerun the repository-local
 verification bundle from the reviewed commit:
 
