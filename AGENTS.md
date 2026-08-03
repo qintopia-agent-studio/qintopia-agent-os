@@ -432,6 +432,10 @@ Use `rg` and `rg --files` for search.
   CLI arguments, or environment-derived output. A failed or ambiguous Feishu write must
   not create a pending artifact or be retried automatically as if no external write
   occurred.
+- Huabaosi image-generation worker reports intentionally omit the generated artifact URI
+  even for Feishu-backed storage. Production canary evidence must not depend on a worker
+  stdout `artifact_uri`; use the reviewed Feishu primary-storage revalidation step to
+  prove the stored JPEG identity.
 - A Feishu-backed image canary may cross from `pending` to `approved` only through an
   explicit human apply that first completes authenticated Feishu attachment revalidation
   and then matches the memory-only evidence against the transaction-locked Postgres
