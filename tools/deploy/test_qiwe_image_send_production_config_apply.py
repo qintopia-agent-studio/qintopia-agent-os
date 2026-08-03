@@ -196,6 +196,11 @@ class QiweImageSendProductionConfigApplyTest(unittest.TestCase):
     def test_enable_rejects_feishu_delivery_drift_before_mutation(self) -> None:
         for key, value, error in [
             (
+                "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+                "approved-production-huabaosi-feishu-artifact-mirror",
+                "Feishu primary-storage approval is not approved",
+            ),
+            (
                 "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
                 "c" * 40,
                 "Feishu primary-storage release SHA is not approved",

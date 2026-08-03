@@ -544,7 +544,9 @@ printf '%s\n' '{
 
 The entrypoint does not source env files, call QiWe, write Postgres, or change systemd
 state; activation still happens through
-`deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`.
+`deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`. It validates the
+persistent Huabaosi Feishu primary-storage approval phrase
+`approved-huabaosi-feishu-artifact-mirror`, not the separate timer-activation phrase.
 
 For the Feishu-backed canary, set `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`,
 exact Base/table allowlists, the fixed `huabaosi-generated-image-v1` schema, the

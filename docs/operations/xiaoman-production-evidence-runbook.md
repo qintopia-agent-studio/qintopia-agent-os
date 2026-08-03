@@ -103,7 +103,9 @@ release-local configuration entrypoint before activation. The entrypoint validat
 fixed sidecar env metadata (`root:ubuntu 0640`), current Release SHA, existing owner
 approval phrase, database URL hash, webhook readiness, and exact Feishu delivery
 release/database/schema/allowlist boundaries; it does not call QiWe, write Postgres, or
-change services:
+change services. The persistent Huabaosi Feishu primary-storage approval remains
+`approved-huabaosi-feishu-artifact-mirror`; do not replace it with the separate
+timer-activation phrase:
 
 ```bash
 printf '%s\n' '{
