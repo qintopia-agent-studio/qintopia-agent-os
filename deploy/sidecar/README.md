@@ -35,12 +35,50 @@ Preview and apply read the same bounded schema. `desired_state=direct` keeps gro
 ingress and delivery disabled and may reuse the existing direct delivery ceiling;
 `desired_state=group` requires explicit Bot, chat, user, and reviewer ceilings;
 `desired_state=disabled` only writes the persistent disable flags needed by rollback. An
-optional replacement database URL is accepted only through stdin and updates its fixed
-production hash bindings in the same transaction. The command preserves unrelated
-environment entries and file metadata, prints no values or raw ids, and never contacts
-Postgres, Feishu, systemd, or another network service. After a database credential
-rotation, use the reviewed same-SHA deploy path to reload the system service family
-before revoking the old credential.
+optional replacement database URL is accepted only through stdin for the guarded
+rollover/recovery caller and updates its fixed production hash bindings in the same
+transaction. The command preserves unrelated environment entries and file metadata,
+prints no values or raw ids, and never contacts Postgres, Feishu, systemd, or another
+network service. After a credential change, use the reviewed same-SHA deploy path to
+reload both credential-holding target families before activation.
+
+The production closeout must not supply a hand-created successor URL directly. Use the
+Release-owned rollover state machine, which generates the password, persists root-only
+recovery state, changes PostgreSQL, invokes the protected configuration transaction for
+the sidecar, Xiaoman, and Erhua environments, and retains a sanitized terminal receipt.
+Before creating recovery state, `prepare` requires the exact processed same-SHA dry-run
+request id and validates the current Release manifest, successful deploy-runner result,
+dual restart targets, and no-rollback evidence:
+
+```bash
+secure-reviewed-rollover-json | \
+  sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py \
+    --stdin --command prepare \
+    --approval approved-production-xiaoman-shared-db-password-rollover-v1
+```
+
+After the exact same-SHA deploy reloads both `qintopia-system-services` and
+`hermes-erhua`, run `verify-reload`, `apply-private-policy`, and `forward-verify` in
+that order with the same JSON and approval. `status` does not advance a nonterminal
+phase; it reports the current phase and may finish interrupted secret cleanup after a
+terminal receipt is already durable. Resume `escrowed`, `preview_validated`,
+`alter_in_flight`, or `credential_rotated` with `prepare`; resume
+`direct_config_applied` after the dual reload with `verify-reload`; resume
+`reload_verified` with `apply-private-policy`; and resume `private_policy_applied` with
+`forward-verify`. A pre-terminal rollback uses `rollback`; when it returns
+`rollback_config_applied`, reload both target families and finish with
+`rollback-verify`. Never run the rejected temporary guardian under `/private/tmp`.
+
+The previous and successor URLs exist only in the mode `0600` state under
+`/var/lib/qintopia-xiaoman-db-password-rollover` until a sanitized receipt is durable.
+All configuration holders must hash to the approved previous or generated successor
+value. Mixed previous/successor state is reconciled; a third value fails closed. Before
+the receipt reports secret cleanup, the Release-owned configuration cleanup removes
+bounded orphan stages under the same protected lock and the rollover removes its own
+mode `0600` temporary state. Unsafe stage or state entries fail closed. The rollover
+command never calls Feishu, enables poster services, starts a delivery timer, or sends a
+message. The complete operator sequence is in
+`../../docs/operations/xiaoman-feishu-poster-production-closeout-runbook.md`.
 
 Apply the reviewed private and internal-group policies without sourcing the production
 environment or exposing unrelated credentials:

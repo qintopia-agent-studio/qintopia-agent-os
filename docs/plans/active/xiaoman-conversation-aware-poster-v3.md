@@ -122,13 +122,14 @@ acceptance and one internal-group canary on that same immutable Release. It must
 split into separate HMAC, Bot identity, allowlist, database-hash, or group-switch
 releases.
 
-The closeout configuration entrypoint reads bounded JSON from stdin, writes only the
-fixed sidecar and Xiaoman Hermes environment files, preserves their existing ownership
-and modes, updates both through one locked transaction, and emits only counts and
-boolean evidence. It may accept a newly rotated database URL through stdin and update
-the fixed production database hash bindings in the same transaction. It must never print
-the URL, secrets, chat ids, user ids, file contents, or backup contents. It does not
-restart services, call Postgres or Feishu, or enable a delivery timer.
+The closeout configuration entrypoint reads bounded JSON from stdin, always owns the
+fixed sidecar and Xiaoman Hermes environment files, and includes the fixed Erhua
+environment when a database URL rollover or reconciliation is requested. It preserves
+ownership and modes, stages every change under one lock, reverse-restores ordinary
+replacement failures, and reconciles an interrupted mixed previous/successor state on
+exact retry. It emits only counts and boolean evidence. It must never print the URL,
+secrets, chat ids, user ids, file contents, or recovery contents. It does not restart
+services, call Postgres or Feishu, or enable a delivery timer.
 
 Direct ingress does not use a Bot open id and therefore must not require one while the
 internal-group switch is `0`. Group configuration continues to require the exact Bot
@@ -198,18 +199,29 @@ review authority and zero-publication invariants remain enforced.
 
 1. PR 1, PR 2, PR 3, and the trusted-session binding fix are already merged. Do not
    create another feature slice for production configuration.
-2. Merge and publish one final closeout Release containing the protected configuration
-   transaction and direct-only Bot identity correction.
-3. Have the database owner create the replacement production credential, then stream the
-   replacement URL and approved hash into the release-local configuration entrypoint.
-   Keep the previous credential valid until the same-Release service reload succeeds;
-   revoke it immediately after that proof.
-4. Apply the `direct` desired state with the group switch fixed at `0`. The entrypoint
-   reuses the reviewed direct chat/user ceiling, creates or rotates the dedicated
-   ingress HMAC without printing it, and binds all Xiaoman poster settings to the exact
-   Release and database hash.
-5. Use one same-SHA deploy request to reload the fixed system service family after the
-   database URL rotation. This is not another PR or Release.
+2. Merge and publish the closeout Release containing the protected configuration
+   transaction, direct-only Bot identity correction, and release-owned credential
+   rollover state machine. The Release restart manifest must include both the fixed
+   system-service family and `hermes-erhua` because they share the credential.
+3. Copy the successful Release deploy's immutable identity and pass a same-SHA dry run
+   before changing the credential. It must preserve
+   `release_scope=sidecar-runtime,deploy-bundle,hermes-plugins` and the exact
+   `hermes-erhua,qintopia-system-services` restart target set. Retain its processed
+   request id; the rollover entrypoint fails before state creation or PostgreSQL access
+   unless the root-owned request/result evidence proves a successful, non-rollback dry
+   run. Review and approve the identical live request in advance.
+4. Use the release-owned rollover entrypoint with owner-approved opaque target hashes.
+   Its root-only recovery escrow must survive a host restart. When the database URL
+   changes, the protected configuration transaction updates the sidecar, Xiaoman, and
+   Erhua environment files through one retry-reconcilable transaction; a mismatch in any
+   existing credential binding fails before the PostgreSQL password changes. It applies
+   `direct` with group fixed at `0`, rotates the dedicated ingress HMAC without printing
+   it, and binds all poster settings to the exact Release and database hash.
+5. Immediately dispatch the already reviewed same-SHA live request to reload both the
+   fixed system-service family and `hermes-erhua`. No process may retain the previous
+   URL. A post-promotion failure that restores `current` to `previous` must first
+   re-promote the exact approved SHA before the rollover status or rollback command can
+   run. This is not another PR or Release.
 6. Run the release-local no-external-call direct preflight, obtain the existing direct
    activation approval, and complete one real private-message request and review.
 7. Stream one reviewed internal-group configuration into the same entrypoint, apply one

@@ -36,6 +36,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh",
   "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py",
   "deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py",
+  "deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py",
   "deploy/sidecar/scripts/activate-xiaoman-feishu-poster-production.sh",
   "deploy/sidecar/scripts/rollback-xiaoman-feishu-poster-production.sh",
   "deploy/sidecar/scripts/xiaoman-feishu-internal-group-production-observation-smoke.sh",

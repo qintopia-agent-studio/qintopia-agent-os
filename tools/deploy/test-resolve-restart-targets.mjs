@@ -73,6 +73,14 @@ assertSuccess(
   ["hermes-erhua"]
 );
 assertSuccess(
+  "xiaoman-shared-database-entrypoints",
+  [
+    "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py",
+    "deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py",
+  ],
+  ["hermes-erhua", "qintopia-system-services"]
+);
+assertSuccess(
   "sidecar-only",
   ["runtime/sidecar/src/context_tools.rs"],
   ["hermes-erhua", "qintopia-system-services"]

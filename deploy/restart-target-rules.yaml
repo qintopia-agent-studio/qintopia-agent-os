@@ -69,6 +69,8 @@ rules:
       - "runtime/hermes/render_profile_overlay.py"
       - "runtime/hermes/verify_runtime_provider.py"
       - "runtime/hermes/validate_hermes_python.py"
+      - "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py"
+      - "deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py"
       - "runtime/sidecar/**"
       - "skills/postgres-context/**"
       - "mcp/postgres/**"

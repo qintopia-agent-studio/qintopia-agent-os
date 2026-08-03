@@ -61,7 +61,7 @@ const writeRequest = (runtimeArtifactProfile = "huabaosi-production") => {
         commit_sha: sha,
         request_id: "deploy-20260719T000000Z-0123456789ab",
         release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
-        restart_targets: ["qintopia-system-services", "hermes-erhua"],
+        restart_targets: ["hermes-erhua", "qintopia-system-services"],
         dry_run: false,
       },
       null,
@@ -161,6 +161,19 @@ try {
     "#!/usr/bin/env bash\nexit 0\n",
     0o755
   );
+  ensureDirectory(path.join(deployFixture, "payload/deploy/sidecar"));
+  ensureDirectory(path.join(deployFixture, "payload/deploy/sidecar/scripts"));
+  for (const relativePath of [
+    "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py",
+    "deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py",
+    "deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py",
+  ]) {
+    const sourcePath = path.join(repoRoot, relativePath);
+    const targetPath = path.join(deployFixture, "payload", relativePath);
+    ensureDirectory(path.dirname(targetPath));
+    fs.copyFileSync(sourcePath, targetPath);
+    fs.chmodSync(targetPath, 0o755);
+  }
   writeChecksums(deployFixture, [
     "qintopia-agent-os-deploy-bundle.tar.gz",
     "artifact-manifest.json",
@@ -262,42 +275,74 @@ exec /usr/bin/id "$@"
     [
       "-c",
       `
+import hashlib
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
-repo_root, current_path, expected_sha = sys.argv[1:4]
+current_path, expected_sha = sys.argv[1:3]
 
-def load(name, relative):
-    path = Path(repo_root) / relative
+def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise SystemExit(f"cannot load {relative}")
+        raise SystemExit(f"cannot load {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
+current = Path(current_path)
 config = load(
     "promoted_xiaoman_config",
-    "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py",
+    current / "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py",
 )
 policy = load(
     "promoted_xiaoman_policy",
-    "deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py",
+    current / "deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py",
 )
-current = Path(current_path)
+rollover = load(
+    "promoted_xiaoman_rollover",
+    current / "deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py",
+)
 if config.resolve_release_sha(current) != expected_sha:
     raise SystemExit("promoted release failed Xiaoman config boundary")
 expected_binary = current.resolve() / "sidecar/qintopia-message-sidecar"
 if policy.resolve_sidecar_binary(current, expected_sha) != expected_binary:
     raise SystemExit("promoted release failed Xiaoman policy boundary")
+
+def digest(relative):
+    return hashlib.sha256((current / relative).read_bytes()).hexdigest()
+
+approved = rollover.ApprovedRequest(
+    operation_id="11111111-1111-1111-1111-111111111111",
+    release_sha=expected_sha,
+    dry_run_request_id="deploy-20260803T000000Z-aaaaaaaaaaaa",
+    rollover_script_sha256=digest(rollover.SCRIPT_RELATIVE_PATH),
+    config_script_sha256=digest(rollover.CONFIG_SCRIPT_RELATIVE_PATH),
+    policy_script_sha256=digest(rollover.POLICY_SCRIPT_RELATIVE_PATH),
+    old_database_url_sha256="0" * 64,
+    role_ref="sha256:" + "1" * 64,
+    conversation_ref="sha256:" + "2" * 64,
+    actor_ref="sha256:" + "3" * 64,
+)
+paths = rollover.RuntimePaths(
+    release_current=current,
+    sidecar_env=current / "unused-sidecar.env",
+    hermes_env=current / "unused-xiaoman.env",
+    erhua_env=current / "unused-erhua.env",
+    state_root=current / "unused-state",
+    self_path=current / rollover.SCRIPT_RELATIVE_PATH,
+)
+rollover.verify_release_boundary(paths, approved, owner_uid=os.geteuid())
 `,
-      repoRoot,
       path.join(validRoot, "current"),
       sha,
     ],
-    { encoding: "utf8" }
+    {
+      encoding: "utf8",
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+    }
   );
   if (boundaryProbe.status !== 0) {
     throw new Error(
@@ -318,6 +363,21 @@ if policy.resolve_sidecar_binary(current, expected_sha) != expected_binary:
   }
   if (fs.realpathSync(path.join(validRoot, "current")) !== releaseDir) {
     throw new Error("valid same-SHA reuse changed current");
+  }
+
+  fs.unlinkSync(path.join(validRoot, "current"));
+  fs.symlinkSync(previousDir, path.join(validRoot, "current"));
+  const recovered = runPromotion(requestFile, validRoot);
+  if (recovered.status !== 0) {
+    throw new Error(`exact-SHA recovery promotion failed: ${recovered.stderr}`);
+  }
+  if (fs.realpathSync(path.join(validRoot, "current")) !== releaseDir) {
+    throw new Error("exact-SHA recovery did not restore approved current");
+  }
+  if (
+    fs.realpathSync(path.join(validRoot, "previous")) !== fs.realpathSync(previousDir)
+  ) {
+    throw new Error("exact-SHA recovery did not preserve previous");
   }
 
   const qiweRequestFile = writeRequest("qiwe-production");
