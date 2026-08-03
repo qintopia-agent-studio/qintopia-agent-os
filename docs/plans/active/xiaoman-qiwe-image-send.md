@@ -263,15 +263,19 @@ feature to the Huabaosi artifact.
 Production activation is guarded rather than automatic. It requires the persistent
 enablement flag, exact production owner phrase, canonical production database URL hash,
 and release-local `qiwe-image-send-production-preflight` before enabling the worker
-timer. After the timer is enabled, the activation boundary reruns the release-local
-production observation in `enabled` mode so the immutable `release/current` artifact
-profile and timer state are re-proved without passing secrets to child processes. That
-worker can upload one approved send-ready image and persist sanitized
-`awaiting_callback` state, but final `/msg/sendImage` still depends on one reviewed
-`cmd=20000` callback reaching `process-qiwe-image-send-callback --apply`. The activation
-and rollback scripts read only the fixed reviewed `/etc/qintopia/message-sidecar.env`
-and do not accept caller-provided env-file or systemctl command overrides; they reset
-PATH and call systemctl by absolute path.
+timer. The reviewed `apply-qiwe-image-send-production-config.py` entrypoint may flip
+only that persistent enablement flag after proving the fixed env file owner/group/mode,
+release SHA, existing owner phrase, database URL hash, webhook readiness, and exact
+Feishu delivery release/database/schema/allowlist boundaries; it does not call QiWe,
+write Postgres, or change services. After the timer is enabled, the activation boundary
+reruns the release-local production observation in `enabled` mode so the immutable
+`release/current` artifact profile and timer state are re-proved without passing secrets
+to child processes. That worker can upload one approved send-ready image and persist
+sanitized `awaiting_callback` state, but final `/msg/sendImage` still depends on one
+reviewed `cmd=20000` callback reaching the `process-qiwe-image-send-callback --apply`
+command. The activation and rollback scripts read only the fixed reviewed
+`/etc/qintopia/message-sidecar.env` and do not accept caller-provided env-file or
+systemctl command overrides; they reset PATH and call systemctl by absolute path.
 
 The Hermes webhook callback bridge is the reviewed callback ingress for that final step.
 In production mode it must use exactly

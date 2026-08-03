@@ -98,6 +98,25 @@ QINTOPIA_QIWE_IMAGE_CALLBACK_BRIDGE_EXPECTED_STATE=disabled \
 deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh
 ```
 
+If image-send is still disabled, apply the reviewed non-secret enablement through the
+release-local configuration entrypoint before activation. The entrypoint validates the
+fixed sidecar env metadata (`root:ubuntu 0640`), current Release SHA, existing owner
+approval phrase, database URL hash, webhook readiness, and exact Feishu delivery
+release/database/schema/allowlist boundaries; it does not call QiWe, write Postgres, or
+change services:
+
+```bash
+printf '%s\n' '{
+  "schema_version": 1,
+  "desired_state": "enabled",
+  "release_sha": "<published-production-release-sha>",
+  "database_url_sha256": "<approved-production-database-url-sha256>"
+}' | sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-qiwe-image-send-production-config.py \
+  --stdin \
+  --apply \
+  --approval approved-production-qiwe-image-send-config-v1
+```
+
 After owner-approved activation, rerun the corresponding observation with
 `EXPECTED_STATE=enabled`. Keep sanitized deploy and observation evidence proving both
 runtime identities belong to the same Release SHA.

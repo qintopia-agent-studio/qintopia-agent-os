@@ -48,6 +48,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
   "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
   "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/apply-qiwe-image-send-production-config.py",
   "deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh",
   "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",

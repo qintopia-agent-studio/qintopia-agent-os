@@ -306,6 +306,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/huabaosi-image-generation-production-canary-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/apply-qiwe-image-send-production-config.py",
     "deploy/sidecar/scripts/qiwe-image-callback-bridge-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
@@ -2203,6 +2204,96 @@ if (!exists(huabaosiFeishuMirrorActivationPath)) {
 
 const qiweImageSendProductionActivationPath =
   "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh";
+const qiweImageSendProductionConfigApplyPath =
+  "deploy/sidecar/scripts/apply-qiwe-image-send-production-config.py";
+const qiweImageSendProductionConfigApplyTestPath =
+  "tools/deploy/test_qiwe_image_send_production_config_apply.py";
+if (!exists(qiweImageSendProductionConfigApplyPath)) {
+  addError(
+    `${qiweImageSendProductionConfigApplyPath}: missing production config apply command`
+  );
+} else {
+  const script = readText(qiweImageSendProductionConfigApplyPath);
+  for (const fragment of [
+    'SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")',
+    'RELEASE_ROOT_PATH = Path("/home/ubuntu/qintopia-agent-os-releases")',
+    'RELEASE_CURRENT_PATH = Path("/home/ubuntu/qintopia-agent-os-releases/current")',
+    "approved-production-qiwe-image-send-config-v1",
+    "approved-production-qiwe-image-send",
+    "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
+    "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
+    "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+    "huabaosi-generated-image-v1",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "validate_database_url",
+    "release/current does not match the approved release SHA",
+    "release/current must resolve to the fixed release root",
+    "database URL hash does not match the approved production hash",
+    "Feishu primary-storage release SHA is not approved",
+    "Feishu primary-storage database hash is not approved",
+    "Feishu artifact table allowlist is not exact",
+    "sidecar env file must be a regular non-symlink file",
+    "sidecar env file must not have hard links",
+    "sidecar env file must not be group/world writable",
+    "sidecar env file owner is not approved",
+    "sidecar env file group is not approved",
+    "sidecar env file mode is not approved",
+    "stage_path.unlink()",
+    "FileNotFoundError",
+    "external_calls_executed",
+    "database_writes_executed",
+    "service_changes_executed",
+  ]) {
+    requireFragment(qiweImageSendProductionConfigApplyPath, script, fragment);
+  }
+  for (const fragment of [
+    "systemctl",
+    "curl ",
+    "psql ",
+    "source ",
+    "eval ",
+    "QIWE_TOKEN=",
+    "print(values",
+  ]) {
+    forbidFragment(qiweImageSendProductionConfigApplyPath, script, fragment);
+  }
+}
+if (!exists(qiweImageSendProductionConfigApplyTestPath)) {
+  addError(
+    `${qiweImageSendProductionConfigApplyTestPath}: missing production config apply test`
+  );
+} else {
+  const test = readText(qiweImageSendProductionConfigApplyTestPath);
+  for (const fragment of [
+    "test_preview_and_apply_enable_without_leaking_sensitive_values",
+    "test_disabled_only_flips_enable_flag",
+    "test_enable_rejects_unmatched_database_hash_before_mutation",
+    "test_enable_rejects_feishu_delivery_drift_before_mutation",
+    "test_apply_requires_exact_owner_approval_and_root",
+    "test_release_current_must_match_request",
+    "test_release_current_must_stay_under_fixed_root",
+    "test_env_metadata_must_match_production_boundary",
+    "test_failed_commit_removes_secret_stage_file",
+  ]) {
+    requireFragment(qiweImageSendProductionConfigApplyTestPath, test, fragment);
+  }
+}
+requireFragment(
+  "tools/deploy/build-deploy-bundle.mjs",
+  readText("tools/deploy/build-deploy-bundle.mjs"),
+  qiweImageSendProductionConfigApplyPath
+);
+requireFragment(
+  "package.json",
+  readText("package.json"),
+  "python3 tools/deploy/test_qiwe_image_send_production_config_apply.py"
+);
 if (!exists(qiweImageSendProductionActivationPath)) {
   addError(
     `${qiweImageSendProductionActivationPath}: missing production activation command`

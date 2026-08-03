@@ -523,6 +523,29 @@ release SHA and database URL hash plus provider and fixed Feishu Base/table
 configuration through the production configuration channel. Do not edit the server
 checkout or commit those values.
 
+For QiWe image-send production, use the reviewed release-local configuration entrypoint
+to flip only the persistent send enablement flag after the existing production owner
+approval phrase, database URL hash, webhook readiness, and Feishu delivery boundaries
+are already present. The fixed sidecar env file must be a regular non-symlink
+`root:ubuntu 0640` file, and the Feishu delivery release/database/schema/allowlists must
+match exactly:
+
+```bash
+printf '%s\n' '{
+  "schema_version": 1,
+  "desired_state": "enabled",
+  "release_sha": "<published-production-release-sha>",
+  "database_url_sha256": "<approved-production-database-url-sha256>"
+}' | sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-qiwe-image-send-production-config.py \
+  --stdin \
+  --apply \
+  --approval approved-production-qiwe-image-send-config-v1
+```
+
+The entrypoint does not source env files, call QiWe, write Postgres, or change systemd
+state; activation still happens through
+`deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`.
+
 For the Feishu-backed canary, set `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`,
 exact Base/table allowlists, the fixed `huabaosi-generated-image-v1` schema, the
 Huabaosi profile env path, and both image/Feishu production bindings. Do not configure
