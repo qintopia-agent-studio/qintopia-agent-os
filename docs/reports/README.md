@@ -1,6 +1,7 @@
 # Reports
 
 - [2026-08-03 Xiaoman shared database rollover gap](2026-08-03-xiaoman-shared-database-rollover-gap.md)
+- [2026-08-03 Production sidecar env metadata repair](2026-08-03-production-sidecar-env-metadata-repair.md)
 - [2026-08-03 Xiaoman Release boundary contract mismatch](2026-08-03-xiaoman-release-boundary-contract-mismatch.md)
 - [2026-08-02 Xiaoman V3 trusted session binding gap](2026-08-02-xiaoman-v3-trusted-session-binding-gap.md)
 - [2026-08-02 v0.2.63 Erhua profile overlay model drift](2026-08-02-v0263-erhua-profile-overlay-model-drift.md)
@@ -48,6 +49,7 @@ steps still block any `production-complete` claim.
 | Source                                                                             | Disposition | Notes                                                                  |
 | ---------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------- |
 | `2026-08-03-xiaoman-shared-database-rollover-gap.md`                               | adopt-input | Shared credential transaction and dual restart boundary                |
+| `2026-08-03-production-sidecar-env-metadata-repair.md`                             | adopt-input | Existing sidecar env owner repair through reviewed deploy runner       |
 | `2026-08-03-xiaoman-release-boundary-contract-mismatch.md`                         | adopt-input | Promotion and protected-entrypoint ownership contract                  |
 | `2026-08-02-xiaoman-v3-trusted-session-binding-gap.md`                             | adopt-input | Real SDK message-to-session binding and V3 direct activation gate      |
 | `2026-08-02-v0263-erhua-profile-overlay-model-drift.md`                            | adopt-input | Provider governance must preserve the runtime default model            |
