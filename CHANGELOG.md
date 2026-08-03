@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.70](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.69...v0.2.70) (2026-08-03)
+
+
+### Bug Fixes
+
+* normalize production sidecar env metadata ([#369](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/369)) ([4eec309](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4eec309a3b6e84de4f471e7890d9d84f299358ea))
+* **xiaoman:** align rollover restart target order ([#368](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/368)) ([0354173](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/035417348ec2f153e38622627c5f23250393379d))
+
 ## [0.2.69](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.68...v0.2.69) (2026-08-03)
 
 
