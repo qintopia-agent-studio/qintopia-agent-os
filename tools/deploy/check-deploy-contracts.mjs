@@ -3787,7 +3787,7 @@ requireFragment(
 );
 for (const fragment of [
   "release_scope=sidecar-runtime,deploy-bundle,hermes-plugins",
-  "restart_targets=hermes-erhua,qintopia-system-services",
+  "restart_targets=qintopia-system-services,hermes-erhua",
   '"dry_run_request_id": "<successful-same-sha-dry-run-request-id>"',
   "Stop before password rotation",
   "automatically points `current` to `previous`",
@@ -3830,7 +3830,7 @@ if (!exists(xiaomanDbRolloverPath)) {
     "verify_pre_rotation_dry_run",
     "dry_run_request_id",
     'EXPECTED_RELEASE_SCOPE = ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]',
-    'EXPECTED_RESTART_TARGETS = ["hermes-erhua", "qintopia-system-services"]',
+    'EXPECTED_RESTART_TARGETS = ["qintopia-system-services", "hermes-erhua"]',
     '"runtime_artifact_profile": "huabaosi-production"',
     '"PYTHONDONTWRITEBYTECODE": "1"',
     "CONFIG_SCRIPT_RELATIVE_PATH",

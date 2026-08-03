@@ -231,6 +231,45 @@ try {
       `expected malformed prior result to be ignored for restart base, got ${malformedIdentity.stdout.trim()}`
     );
   }
+
+  fs.rmSync(path.join(fixtureRepo, "releases.json"), { force: true });
+  fs.rmSync(path.join(fixtureRepo, "results.json"), { force: true });
+  write(
+    "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py",
+    "protected Xiaoman config entrypoint\n"
+  );
+  write(
+    "deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py",
+    "protected Xiaoman rollover entrypoint\n"
+  );
+  const v023Sha = commit("v0.2.3 Xiaoman shared database entrypoints");
+  tag("v0.2.3");
+  const sharedDatabaseTargets = runResolver({
+    currentTag: "v0.2.3",
+    releases: [{ tag_name: "v0.2.3", draft: false, prerelease: false }, ...releases],
+    results: [
+      trustedResult({
+        releaseSha: v022Sha,
+        previousSha: v021Sha,
+        workflowRunId: "103",
+        startedAt: "2026-07-08T07:00:00Z",
+        restartTargets: ["qintopia-system-services"],
+      }),
+    ],
+  });
+  if (sharedDatabaseTargets.status !== 0) {
+    throw new Error(
+      `expected shared database target resolution success\nstdout:\n${sharedDatabaseTargets.stdout}\nstderr:\n${sharedDatabaseTargets.stderr}`
+    );
+  }
+  if (sharedDatabaseTargets.stdout.trim() !== "qintopia-system-services,hermes-erhua") {
+    throw new Error(
+      `expected canonical shared database target order, got ${sharedDatabaseTargets.stdout.trim()}`
+    );
+  }
+  if (!v023Sha) {
+    throw new Error("shared database fixture commit was not created");
+  }
 } finally {
   fs.rmSync(fixtureRepo, { recursive: true, force: true });
 }

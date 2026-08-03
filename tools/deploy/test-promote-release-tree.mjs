@@ -16,6 +16,7 @@ const fixtureRoot = path.join(tmpRoot, "fixtures");
 const fakeBin = path.join(tmpRoot, "bin");
 const sha = "0123456789abcdef0123456789abcdef01234567";
 const previousSha = "89abcdef0123456789abcdef0123456789abcdef";
+const canonicalRestartTargets = ["qintopia-system-services", "hermes-erhua"];
 fs.mkdirSync(path.dirname(promoteScript), { recursive: true });
 fs.mkdirSync(runnerState, { recursive: true });
 fs.copyFileSync(path.join(repoRoot, "deploy/runner/promote-release.sh"), promoteScript);
@@ -48,8 +49,12 @@ const writeChecksums = (directory, names) => {
   );
 };
 
-const writeRequest = (runtimeArtifactProfile = "huabaosi-production") => {
-  const requestPath = path.join(tmpRoot, `${runtimeArtifactProfile}-request.json`);
+const writeRequest = (
+  runtimeArtifactProfile = "huabaosi-production",
+  restartTargets = canonicalRestartTargets,
+  label = runtimeArtifactProfile
+) => {
+  const requestPath = path.join(tmpRoot, `${label}-request.json`);
   writeFile(
     requestPath,
     `${JSON.stringify(
@@ -61,7 +66,7 @@ const writeRequest = (runtimeArtifactProfile = "huabaosi-production") => {
         commit_sha: sha,
         request_id: "deploy-20260719T000000Z-0123456789ab",
         release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
-        restart_targets: ["hermes-erhua", "qintopia-system-services"],
+        restart_targets: restartTargets,
         dry_run: false,
       },
       null,
@@ -243,6 +248,11 @@ exec /usr/bin/id "$@"
     );
   }
   if (
+    promotedManifest.restart_targets?.join(",") !== canonicalRestartTargets.join(",")
+  ) {
+    throw new Error("promoted manifest did not retain canonical restart target order");
+  }
+  if (
     promotedManifest.companion_runtime_artifact_profiles?.join(",") !==
     "qiwe-production"
   ) {
@@ -277,8 +287,10 @@ exec /usr/bin/id "$@"
       `
 import hashlib
 import importlib.util
+import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 current_path, expected_sha = sys.argv[1:3]
@@ -335,6 +347,60 @@ paths = rollover.RuntimePaths(
     self_path=current / rollover.SCRIPT_RELATIVE_PATH,
 )
 rollover.verify_release_boundary(paths, approved, owner_uid=os.geteuid())
+
+manifest = json.loads((current / "manifest.json").read_text(encoding="utf-8"))
+with tempfile.TemporaryDirectory(prefix="qintopia-rollover-evidence-") as evidence_dir:
+    deploy_state = Path(evidence_dir)
+    (deploy_state / "requests/processed").mkdir(parents=True)
+    (deploy_state / "results").mkdir()
+
+    def write_json(path, value):
+        path.write_text(json.dumps(value) + "\\n", encoding="utf-8")
+        path.chmod(0o600)
+
+    write_json(
+        deploy_state / "requests/processed" / f"{approved.dry_run_request_id}.json",
+        {
+            "schema_version": 1,
+            "request_id": approved.dry_run_request_id,
+            "environment": "production",
+            "repository": "qintopia-agent-studio/qintopia-agent-os",
+            "commit_sha": expected_sha,
+            "runtime_sha": expected_sha,
+            "runtime_artifact_profile": "huabaosi-production",
+            "deploy_bundle_sha": expected_sha,
+            "release_sha": expected_sha,
+            "release_scope": manifest["release_scope"],
+            "restart_targets": manifest["restart_targets"],
+            "rollback_on_smoke_failure": True,
+            "dry_run": True,
+        },
+    )
+    write_json(
+        deploy_state / "results" / f"{approved.dry_run_request_id}.json",
+        {
+            "schema_version": 1,
+            "request_id": approved.dry_run_request_id,
+            "environment": "production",
+            "status": "dry_run_succeeded",
+            "release_sha": expected_sha,
+            "commit_sha": expected_sha,
+            "runtime_sha": expected_sha,
+            "runtime_artifact_profile": "huabaosi-production",
+            "deploy_bundle_sha": expected_sha,
+            "release_scope": manifest["release_scope"],
+            "current_target": str(current.resolve()),
+            "restart_targets": manifest["restart_targets"],
+            "checks": [{"name": "deploy-runner", "status": "passed"}],
+            "rollback": {"attempted": False, "status": "not_needed"},
+        },
+    )
+    rollover.verify_pre_rotation_dry_run(
+        release_current=current,
+        deploy_state_root=deploy_state,
+        approved=approved,
+        owner_uid=os.geteuid(),
+    )
 `,
       path.join(validRoot, "current"),
       sha,
@@ -364,6 +430,16 @@ rollover.verify_release_boundary(paths, approved, owner_uid=os.geteuid())
   if (fs.realpathSync(path.join(validRoot, "current")) !== releaseDir) {
     throw new Error("valid same-SHA reuse changed current");
   }
+
+  const reversedRestartRequest = writeRequest(
+    "huabaosi-production",
+    [...canonicalRestartTargets].reverse(),
+    "reversed-restarts"
+  );
+  expectFailure(
+    runPromotion(reversedRestartRequest, validRoot),
+    "existing release manifest restart_targets mismatch"
+  );
 
   fs.unlinkSync(path.join(validRoot, "current"));
   fs.symlinkSync(previousDir, path.join(validRoot, "current"));
