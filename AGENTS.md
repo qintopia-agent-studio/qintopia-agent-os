@@ -974,9 +974,10 @@ Use `rg` and `rg --files` for search.
   release with the provider timer disabled and inactive, use a fixed minimal `PATH` and
   `/usr/bin/systemctl` in production mode, reject test mode from production release
   roots, parse only allowlisted keys from the fixed production env without `source` or
-  `eval`, reuse reviewer `trainer`, and bind one pending brief to one new request, one
-  pending Feishu-backed JPEG, and authenticated same-byte revalidation. Its approval
-  request must transactionally require the target artifact to be a pending
+  `eval`, use an existing operations reviewer while emitting only the fixed
+  `allowlisted-production-reviewer` evidence alias, and bind one pending brief to one
+  new request, one pending Feishu-backed JPEG, and authenticated same-byte revalidation.
+  Its approval request must transactionally require the target artifact to be a pending
   `poster_brief` before mutation or Feishu revalidation. Each retained canary evidence
   phase must preserve `release_binary_verified=true`,
   `approved_sidecar_sha256_matched=true`, and

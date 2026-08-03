@@ -153,7 +153,7 @@ if (
   !isUuid(briefReview.brief_artifact_id) ||
   !isUuid(briefReview.brief_work_item_id) ||
   briefReview.review_status !== "approved" ||
-  briefReview.reviewer_id !== "trainer"
+  briefReview.reviewer_id !== "allowlisted-production-reviewer"
 ) {
   fail("production canary brief review evidence is incomplete");
 }

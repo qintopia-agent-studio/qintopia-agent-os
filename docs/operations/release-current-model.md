@@ -110,9 +110,10 @@ timer. A release may install its preflight, worker, and timer units, but the ord
 installer must leave that timer disabled. After the owner manually publishes the
 Release, production configuration must bind the enablement to that exact release SHA and
 database URL hash. Run the release-local one-shot production canary first with the timer
-inactive; it binds one pending brief, the fixed `trainer` reviewer, one new request, one
-pending Feishu-backed JPEG, and authenticated same-byte revalidation to the immutable
-release evidence. It does not approve the generated image or call QiWe. Enable ongoing
+inactive; it binds one pending brief, one existing allowlisted reviewer represented in
+evidence only as `allowlisted-production-reviewer`, one new request, one pending
+Feishu-backed JPEG, and authenticated same-byte revalidation to the immutable release
+evidence. It does not approve the generated image or call QiWe. Enable ongoing
 scheduling through the separate activation script only after that canary is reviewed.
 
 The normal `release.published` deploy path builds and verifies two independent

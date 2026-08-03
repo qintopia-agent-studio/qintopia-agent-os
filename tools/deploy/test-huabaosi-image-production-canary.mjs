@@ -92,6 +92,7 @@ const fakeSidecar = (
       "xiaoman-feishu-poster-adapter",
     ],
     includeArtifactUri = false,
+    reviewerId = "trainer",
     writeManifest = true,
   } = {}
 ) => {
@@ -147,7 +148,7 @@ case "\${1:-}" in
       artifact_type: "poster_brief",
       previous_review_status: "pending",
       review_status: "approved",
-      reviewer_id: "trainer",
+      reviewer_id: reviewerId,
       reason_required: true,
     })}'
     ;;
@@ -344,6 +345,7 @@ esac
     evidence[3].content_hash !== contentHash ||
     evidence[4].content_hash !== contentHash ||
     evidence[3].review_status !== "pending" ||
+    evidence[1].reviewer_id !== "allowlisted-production-reviewer" ||
     evidence[1].brief_work_item_id !== briefWorkItemId ||
     evidence[2].brief_work_item_id !== briefWorkItemId ||
     evidence[4].database_writes_executed !== false
@@ -496,14 +498,28 @@ esac
   }
 
   writeEnv("", "owner");
-  const missingReviewer = run(sidecar);
-  if (
-    missingReviewer.status === 0 ||
-    !missingReviewer.stderr.includes(
-      "trainer is not in the production reviewer allowlist"
+  fs.writeFileSync(commandLog, "", "utf8");
+  const ownerReviewerSidecar = fakeSidecar("sidecar-owner-reviewer", {
+    reviewerId: "owner",
+  });
+  const ownerReviewer = run(ownerReviewerSidecar);
+  if (ownerReviewer.status !== 0) {
+    throw new Error(
+      `production canary should accept an existing allowlisted reviewer\n${ownerReviewer.stderr}`
+    );
+  }
+  assertNoSecrets(`${ownerReviewer.stdout}\n${ownerReviewer.stderr}`);
+  const ownerReviewerEvidence = ownerReviewer.stdout
+    .split("\n")
+    .filter((line) =>
+      line.startsWith("huabaosi_image_generation_production_canary_evidence=")
     )
+    .map((line) => JSON.parse(line.split("=", 2)[1]));
+  if (
+    ownerReviewerEvidence[1]?.reviewer_id !== "allowlisted-production-reviewer" ||
+    !fs.readFileSync(commandLog, "utf8").includes('"reviewer_id":"owner"')
   ) {
-    throw new Error("missing trainer reviewer allowlist entry must fail closed");
+    throw new Error("production canary did not redact the allowlisted reviewer");
   }
   writeEnv();
 

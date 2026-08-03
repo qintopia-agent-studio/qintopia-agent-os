@@ -19,7 +19,8 @@ TEST_MODE="${QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_CANARY_TEST_MODE:-0}"
 PRODUCTION_RELEASE_PARENT="/home/ubuntu/qintopia-agent-os-releases"
 PRODUCTION_ENV_FILE="/etc/qintopia/message-sidecar.env"
 PROVIDER_TIMER="qintopia-agentos-huabaosi-image-generation-worker.timer"
-REVIEWER_ID="trainer"
+PREFERRED_REVIEWER_ID="trainer"
+REVIEWER_EVIDENCE_ID="allowlisted-production-reviewer"
 
 if [[ ! "$EXPECTED_DATABASE_HASH" =~ ^[0-9a-f]{64}$ ]]; then
   echo "production canary database URL hash must be canonical SHA-256" >&2
@@ -361,13 +362,16 @@ if [[ "$actual_database_hash" != "$EXPECTED_DATABASE_HASH" ]]; then
   echo "Huabaosi production canary database hash does not match" >&2
   exit 1
 fi
-if ! printf '%s' "${QINTOPIA_OPERATIONS_ALLOWED_REVIEWER_IDS:-}" | python3 -c '
+if ! REVIEWER_ID="$(printf '%s' "${QINTOPIA_OPERATIONS_ALLOWED_REVIEWER_IDS:-}" | python3 -c '
 import sys
 
-reviewers = {value.strip() for value in sys.stdin.read().split(",") if value.strip()}
-raise SystemExit(0 if sys.argv[1] in reviewers else 1)
-' "$REVIEWER_ID"; then
-  echo "trainer is not in the production reviewer allowlist" >&2
+reviewers = [value.strip() for value in sys.stdin.read().split(",") if value.strip()]
+if not reviewers:
+    raise SystemExit(1)
+preferred = sys.argv[1]
+print(preferred if preferred in reviewers else reviewers[0])
+' "$PREFERRED_REVIEWER_ID")"; then
+  echo "production reviewer allowlist is empty" >&2
   exit 1
 fi
 
@@ -446,11 +450,11 @@ run_sanitized() {
 emit_evidence() {
   local phase="$1"
   shift
-  python3 - "$phase" "$EXPECTED_RELEASE_SHA" "$EXPECTED_SIDECAR_HASH" "$EXPECTED_DATABASE_HASH" "$ARTIFACT_PROFILE" "$@" <<'PY'
+  python3 - "$phase" "$EXPECTED_RELEASE_SHA" "$EXPECTED_SIDECAR_HASH" "$EXPECTED_DATABASE_HASH" "$ARTIFACT_PROFILE" "$REVIEWER_EVIDENCE_ID" "$@" <<'PY'
 import json
 import sys
 
-phase, release_sha, binary_hash, database_hash, artifact_profile, *values = sys.argv[1:]
+phase, release_sha, binary_hash, database_hash, artifact_profile, reviewer_evidence_id, *values = sys.argv[1:]
 evidence = {
     "approved_database_url_sha256_matched": True,
     "approved_sidecar_sha256_matched": True,
@@ -474,7 +478,7 @@ elif phase == "brief_review":
         "brief_artifact_id": values[1],
         "brief_work_item_id": values[2],
         "review_status": values[3],
-        "reviewer_id": "trainer",
+        "reviewer_id": reviewer_evidence_id,
     })
 elif phase == "request_intake":
     evidence.update({
