@@ -91,6 +91,7 @@ const fakeSidecar = (
       "huabaosi-feishu-mirror-adapter",
       "xiaoman-feishu-poster-adapter",
     ],
+    includeArtifactUri = false,
     writeManifest = true,
   } = {}
 ) => {
@@ -100,6 +101,18 @@ const fakeSidecar = (
   const starterParentWorkItemId = starterParentMismatch
     ? "55555555-6666-4777-8888-999999999999"
     : briefWorkItemId;
+  const artifactPreview = {
+    artifact_type: "generated_image",
+    review_status: "pending",
+    mime_type: "image/jpeg",
+    width: 1254,
+    height: 1254,
+    byte_size: 123456,
+    content_hash: contentHash,
+  };
+  if (includeArtifactUri) {
+    artifactPreview.artifact_uri = `feishu-base://huabaosi-generated-image/${generatedArtifactId}`;
+  }
   writeExecutable(
     filePath,
     `#!/usr/bin/env bash
@@ -164,16 +177,7 @@ case "\${1:-}" in
       apply_requested: true,
       work_item_id: imageWorkItemId,
       artifact_ids: [generatedArtifactId],
-      artifact_preview: {
-        artifact_type: "generated_image",
-        review_status: "pending",
-        mime_type: "image/jpeg",
-        artifact_uri: `feishu-base://huabaosi-generated-image/${generatedArtifactId}`,
-        width: 1254,
-        height: 1254,
-        byte_size: 123456,
-        content_hash: contentHash,
-      },
+      artifact_preview: artifactPreview,
     })}'
     ;;
   huabaosi-feishu-primary-storage-revalidate)

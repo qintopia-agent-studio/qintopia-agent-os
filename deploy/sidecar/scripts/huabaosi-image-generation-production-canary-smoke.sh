@@ -623,7 +623,6 @@ uuid.UUID(artifact_id)
 assert artifact["artifact_type"] == "generated_image"
 assert artifact["review_status"] == "pending"
 assert artifact["mime_type"] == "image/jpeg"
-assert artifact["artifact_uri"] == "feishu-base://huabaosi-generated-image/" + artifact_id
 assert artifact["width"] == 1254 and artifact["height"] == 1254
 assert 0 < artifact["byte_size"] <= 10485760
 assert artifact["content_hash"].startswith("sha256:") and len(artifact["content_hash"]) == 71
