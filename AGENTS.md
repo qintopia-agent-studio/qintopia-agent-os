@@ -352,6 +352,9 @@ Use `rg` and `rg --files` for search.
 - Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
   new language/toolchain stack without an explicit owner-approved architecture decision.
 - Do not hot-edit production servers.
+- Existing `/etc/qintopia/message-sidecar.env` owner/mode drift must be repaired only by
+  reviewed deploy/runner code. The release systemd installer normalizes it to
+  `root:ubuntu 0640`; do not run ad-hoc production `chown`/`chmod`.
 - Any script expected to exist under `/home/ubuntu/qintopia-agent-os-releases/current`
   after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
   guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does
