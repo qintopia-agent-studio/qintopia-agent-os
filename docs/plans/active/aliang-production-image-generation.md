@@ -34,7 +34,8 @@ publishes the Release. The production artifact must contain the reviewed
 `huabaosi-feishu-mirror-adapter`; it must never contain the staging or QiWe adapter
 features. The release installer may install the fixed worker service and timer, but it
 must not enable the timer as part of an ordinary promotion. The first post-deploy run
-uses the release-local one-shot canary to bind one pending brief, reviewer `trainer`,
+uses the release-local one-shot canary to bind one pending brief, one existing
+allowlisted reviewer represented in evidence only as `allowlisted-production-reviewer`,
 one new request, one pending Feishu-backed JPEG, and authenticated revalidation to the
 exact release/binary/database hashes. Ongoing scheduling may be enabled through the
 reviewed activation script only after that evidence is accepted.
@@ -327,7 +328,8 @@ data but are not eligible for the future QiWe JPG send contract.
   item、不写 artifact、不调用 provider/media、飞书或企微。禁用状态通过只证明 adapter 安全关闭；启用状态通过只证明 production
   gate 和 timer 已就绪，不替代真实 canary 产物审核。
 - The final production Release must include a one-shot canary runner that binds one
-  pending `poster_brief` to reviewer `trainer`, one newly created image request, one
+  pending `poster_brief` to one existing allowlisted reviewer, redacts that reviewer as
+  `allowlisted-production-reviewer` in evidence, creates one new image request, one
   pending Feishu-backed JPEG, and one authenticated same-byte revalidation. This is the
   reviewed entrypoint for the first image after deployment; it does not approve the
   generated image, enable scheduling, mirror, publish, call QiWe, or send.

@@ -492,7 +492,7 @@ function huabaosiProductionCanaryOutput(overrides = {}) {
       brief_artifact_id: briefArtifactId,
       brief_work_item_id: briefWorkItemId,
       review_status: "approved",
-      reviewer_id: "trainer",
+      reviewer_id: "allowlisted-production-reviewer",
     },
     {
       ...common,
