@@ -338,8 +338,10 @@ def resolve_release_sha(path: Path) -> str:
         raise ConfigError("release/current is unavailable") from exc
     if resolved.parent != release_root:
         raise ConfigError("release/current must resolve within the fixed release root")
-    if not resolved.is_dir() or metadata.st_mode & (
-        stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
+    if (
+        not resolved.is_dir()
+        or metadata.st_uid != os.geteuid()
+        or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
     ):
         raise ConfigError("release/current target is not an immutable directory")
     if not SHA_RE.fullmatch(resolved.name):

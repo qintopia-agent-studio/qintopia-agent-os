@@ -46,6 +46,12 @@ for the Release-triggered production deploy result to succeed before proceeding.
 
 Do not publish an intermediate configuration-only or group-only Release.
 
+Before configuration, the promoted Release must pass the same boundary in the deploy
+runner and both Xiaoman protected entrypoints: the Release root, `sidecar/`, and sidecar
+binary are owned by the privileged deploy identity, required paths are not symlinks, and
+no protected path is group- or world-writable. Owner-writable `root:root` directories
+are valid because same-SHA metadata repair remains owned by the deploy runner.
+
 ## 2. Prepare Direct Configuration
 
 Stream this schema from an owner-controlled secret source. Do not create a

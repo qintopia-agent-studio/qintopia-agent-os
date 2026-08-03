@@ -48,6 +48,13 @@ builds, `scp` source overwrites, or direct edits under `.hermes`.
 `/home/ubuntu/qintopia-agent-os-artifacts/<sha>` is only an artifact cache and audit
 evidence. Services should use `/home/ubuntu/qintopia-agent-os-releases/current`.
 
+Release integrity is relative to the privileged deploy boundary: promoted directories
+and executable files must be owned by the deploy process (`root` in production), must
+not be symlinks where a regular path is required, and must never be group- or
+world-writable. The deploy runner may retain the owner write bit so it can perform an
+idempotent same-SHA metadata repair. Release-local activation and configuration tools
+must enforce this same ownership and write boundary instead of assuming mode `0555`.
+
 ## Release Payloads
 
 The M9-F release established the release assembly pattern from two verified COS inputs:

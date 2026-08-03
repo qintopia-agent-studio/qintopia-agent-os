@@ -77,13 +77,22 @@ def load_policy_input(data: bytes) -> tuple[dict[str, Any], set[str]]:
 def resolve_sidecar_binary(release_current: Path, release_sha: str) -> Path:
     release_root = release_current.resolve(strict=True)
     sidecar_dir = release_root / "sidecar"
+    expected_uid = os.geteuid()
     try:
+        release_metadata = os.lstat(release_root)
+        if (
+            stat.S_ISLNK(release_metadata.st_mode)
+            or not stat.S_ISDIR(release_metadata.st_mode)
+            or release_metadata.st_uid != expected_uid
+            or release_metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            raise PolicyApplyError("release root directory boundary is invalid")
         sidecar_metadata = os.lstat(sidecar_dir)
         if (
             stat.S_ISLNK(sidecar_metadata.st_mode)
             or not stat.S_ISDIR(sidecar_metadata.st_mode)
-            or sidecar_metadata.st_mode
-            & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+            or sidecar_metadata.st_uid != expected_uid
+            or sidecar_metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
             raise PolicyApplyError("release sidecar directory boundary is invalid")
         expected = sidecar_dir / "qintopia-message-sidecar"
@@ -94,6 +103,7 @@ def resolve_sidecar_binary(release_current: Path, release_sha: str) -> Path:
     if (
         stat.S_ISLNK(metadata.st_mode)
         or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != expected_uid
         or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         or not os.access(expected, os.X_OK)
         or release_root.name != release_sha

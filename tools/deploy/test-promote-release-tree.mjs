@@ -257,6 +257,53 @@ exec /usr/bin/id "$@"
   }
 
   const releaseDir = fs.realpathSync(path.join(validRoot, "current"));
+  const boundaryProbe = spawnSync(
+    "python3",
+    [
+      "-c",
+      `
+import importlib.util
+import sys
+from pathlib import Path
+
+repo_root, current_path, expected_sha = sys.argv[1:4]
+
+def load(name, relative):
+    path = Path(repo_root) / relative
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {relative}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+config = load(
+    "promoted_xiaoman_config",
+    "deploy/sidecar/scripts/apply-xiaoman-feishu-poster-production-config.py",
+)
+policy = load(
+    "promoted_xiaoman_policy",
+    "deploy/sidecar/scripts/apply-xiaoman-conversation-policies-production.py",
+)
+current = Path(current_path)
+if config.resolve_release_sha(current) != expected_sha:
+    raise SystemExit("promoted release failed Xiaoman config boundary")
+expected_binary = current.resolve() / "sidecar/qintopia-message-sidecar"
+if policy.resolve_sidecar_binary(current, expected_sha) != expected_binary:
+    raise SystemExit("promoted release failed Xiaoman policy boundary")
+`,
+      repoRoot,
+      path.join(validRoot, "current"),
+      sha,
+    ],
+    { encoding: "utf8" }
+  );
+  if (boundaryProbe.status !== 0) {
+    throw new Error(
+      `promoted release did not satisfy Xiaoman protected entrypoints\nstdout:\n${boundaryProbe.stdout}\nstderr:\n${boundaryProbe.stderr}`
+    );
+  }
   const previousDir = path.join(validRoot, previousSha);
   ensureDirectory(previousDir);
   fs.symlinkSync(previousDir, path.join(validRoot, "previous"));
