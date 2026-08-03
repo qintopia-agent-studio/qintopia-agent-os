@@ -30,6 +30,11 @@ MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
+PRODUCTION_RELEASE_RESTART_TARGETS = [
+    "qintopia-system-services",
+    "hermes-erhua",
+]
+
 
 def sha256(value: str | bytes) -> str:
     data = value if isinstance(value, bytes) else value.encode("utf-8")
@@ -251,7 +256,7 @@ class XiaomanSharedDbPasswordRolloverTest(unittest.TestCase):
                 "deploy_bundle_sha": self.release_sha,
                 "commit_sha": self.release_sha,
                 "release_scope": list(MODULE.EXPECTED_RELEASE_SCOPE),
-                "restart_targets": list(MODULE.EXPECTED_RESTART_TARGETS),
+                "restart_targets": list(PRODUCTION_RELEASE_RESTART_TARGETS),
                 "dry_run": False,
             },
         )
@@ -268,7 +273,7 @@ class XiaomanSharedDbPasswordRolloverTest(unittest.TestCase):
                 "deploy_bundle_sha": self.release_sha,
                 "release_sha": self.release_sha,
                 "release_scope": list(MODULE.EXPECTED_RELEASE_SCOPE),
-                "restart_targets": list(MODULE.EXPECTED_RESTART_TARGETS),
+                "restart_targets": list(PRODUCTION_RELEASE_RESTART_TARGETS),
                 "rollback_on_smoke_failure": True,
                 "dry_run": True,
             },
@@ -287,7 +292,7 @@ class XiaomanSharedDbPasswordRolloverTest(unittest.TestCase):
                 "deploy_bundle_sha": self.release_sha,
                 "release_scope": list(MODULE.EXPECTED_RELEASE_SCOPE),
                 "current_target": str(release.resolve()),
-                "restart_targets": list(MODULE.EXPECTED_RESTART_TARGETS),
+                "restart_targets": list(PRODUCTION_RELEASE_RESTART_TARGETS),
                 "checks": [{"name": "deploy-runner", "status": "passed"}],
                 "rollback": {"attempted": False, "status": "not_needed"},
             },
@@ -295,6 +300,10 @@ class XiaomanSharedDbPasswordRolloverTest(unittest.TestCase):
         return current, deploy_state, files
 
     def test_pre_rotation_dry_run_gate_accepts_exact_protected_evidence(self) -> None:
+        self.assertEqual(
+            MODULE.EXPECTED_RESTART_TARGETS,
+            PRODUCTION_RELEASE_RESTART_TARGETS,
+        )
         current, deploy_state, _ = self.write_pre_rotation_evidence(
             self.root / "valid-gate"
         )
@@ -318,6 +327,12 @@ class XiaomanSharedDbPasswordRolloverTest(unittest.TestCase):
                 "release_scope",
                 ["sidecar-runtime"],
             ),
+            (
+                "manifest-restart-order",
+                "manifest",
+                "restart_targets",
+                list(reversed(PRODUCTION_RELEASE_RESTART_TARGETS)),
+            ),
             ("manifest-not-live", "manifest", "dry_run", True),
             ("request-id", "request", "request_id", "deploy-invalid"),
             ("request-sha", "request", "release_sha", "b" * 40),
@@ -339,6 +354,12 @@ class XiaomanSharedDbPasswordRolloverTest(unittest.TestCase):
                 "restart_targets",
                 ["qintopia-system-services"],
             ),
+            (
+                "request-restart-order",
+                "request",
+                "restart_targets",
+                list(reversed(PRODUCTION_RELEASE_RESTART_TARGETS)),
+            ),
             ("request-not-dry", "request", "dry_run", False),
             ("result-failed", "result", "status", "failed"),
             ("result-target", "result", "current_target", "/wrong/release"),
@@ -347,6 +368,12 @@ class XiaomanSharedDbPasswordRolloverTest(unittest.TestCase):
                 "result",
                 "restart_targets",
                 ["hermes-erhua"],
+            ),
+            (
+                "result-restart-order",
+                "result",
+                "restart_targets",
+                list(reversed(PRODUCTION_RELEASE_RESTART_TARGETS)),
             ),
             (
                 "result-rollback",

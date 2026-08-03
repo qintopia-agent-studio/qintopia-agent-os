@@ -206,7 +206,7 @@ review authority and zero-publication invariants remain enforced.
 3. Copy the successful Release deploy's immutable identity and pass a same-SHA dry run
    before changing the credential. It must preserve
    `release_scope=sidecar-runtime,deploy-bundle,hermes-plugins` and the exact
-   `hermes-erhua,qintopia-system-services` restart target set. Retain its processed
+   `qintopia-system-services,hermes-erhua` restart target set. Retain its processed
    request id; the rollover entrypoint fails before state creation or PostgreSQL access
    unless the root-owned request/result evidence proves a successful, non-rollback dry
    run. Review and approve the identical live request in advance.

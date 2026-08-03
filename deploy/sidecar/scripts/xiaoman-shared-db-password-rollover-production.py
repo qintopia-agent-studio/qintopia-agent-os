@@ -118,7 +118,7 @@ NONTERMINAL_PHASES = {
     "rollback_config_applied",
 }
 EXPECTED_RELEASE_SCOPE = ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]
-EXPECTED_RESTART_TARGETS = ["hermes-erhua", "qintopia-system-services"]
+EXPECTED_RESTART_TARGETS = ["qintopia-system-services", "hermes-erhua"]
 
 
 class RolloverError(RuntimeError):

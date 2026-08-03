@@ -74,7 +74,7 @@ values:
   `release_sha`;
 - `runtime_artifact_profile=huabaosi-production`;
 - `release_scope=sidecar-runtime,deploy-bundle,hermes-plugins`;
-- `restart_targets=hermes-erhua,qintopia-system-services`; and
+- `restart_targets=qintopia-system-services,hermes-erhua`; and
 - `rollback_on_smoke_failure=true`.
 
 Do not use the manual workflow defaults or reconstruct this identity from memory. Run

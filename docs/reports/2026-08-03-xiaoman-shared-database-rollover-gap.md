@@ -24,6 +24,15 @@ post-deploy read-only check confirmed that every Xiaoman poster feature flag rem
 remained inactive and disabled. The successful Release therefore preserves the safe
 disabled state but does not make the direct poster flow ready for testing.
 
+Release `v0.2.69` then deployed the recoverable rollover implementation successfully
+with both restart targets. Its production manifest and processed request used the
+canonical deploy-runner order `qintopia-system-services,hermes-erhua`, but the protected
+rollover entrypoint required the reverse array order. Because the entrypoint compares
+the complete manifest, dry-run request, and dry-run result identities exactly, no one
+request could satisfy both the existing immutable Release manifest and the rollover
+gate. The mismatch was found before dispatching the same-SHA dry run or accessing
+PostgreSQL. Production remained disabled and unchanged after the Release deploy.
+
 ## Evidence
 
 - Release deploy run `30780095491` succeeded for
@@ -35,6 +44,14 @@ disabled state but does not make the direct poster flow ready for testing.
 - Release deploy run `30787033670` succeeded for `v0.2.68` at `c5f9dcc`; its retained
   request recorded `dry_run=false` and only `qintopia-system-services` in
   `restart_targets`.
+- Release deploy run `30795908782` succeeded for `v0.2.69` at `a5362013`; its GitHub
+  audit artifact, root-owned processed request, root-owned result, and current Release
+  manifest all recorded the complete target array in canonical order:
+  `qintopia-system-services,hermes-erhua`.
+- The installed Release-owned rollover script required
+  `hermes-erhua,qintopia-system-services`. The same-SHA promoter compares the target
+  arrays exactly, so reversing the manual dry-run input would fail against the existing
+  manifest, while preserving the manifest order would fail the rollover gate.
 - The production `release/current` link resolved to `c5f9dcc`; both Xiaoman and Erhua
   gateways were active, while all poster intake/delivery flags were `0` and all poster
   notification, callback, direct-delivery, and group-delivery units were inactive and
@@ -68,6 +85,12 @@ The attempted operational workaround also lacked a durable recovery escrow. A ho
 restart after PostgreSQL accepted the new password but before configuration persisted it
 could have made the replacement credential unrecoverable.
 
+The `v0.2.69` follow-up exposed a separate ordering defect. The release restart resolver
+emits targets in the authoritative `allowed_targets` order from
+`deploy/restart-target-rules.yaml`, with system services before Erhua. The rollover
+implementation and its fixture both used their own reversed constant, so the tests
+proved only self-consistency and did not replay a production-shaped Release manifest.
+
 ## Resolution
 
 - Extend the fixed protected configuration transaction to include the Erhua profile
@@ -93,6 +116,15 @@ could have made the replacement credential unrecoverable.
   lock and rollover lock before a terminal receipt can claim secret cleanup.
 - Keep all Xiaoman poster units stopped until rollover, reload, private-policy apply,
   and the no-network preflight have all passed.
+- Bind the rollover gate to the production resolver's canonical target order:
+  `qintopia-system-services,hermes-erhua`. Keep exact array comparison so the reviewed
+  dry-run remains field-for-field aligned with the immutable Release identity.
+- Make the rollover test fixture use the explicit production-shaped target order rather
+  than deriving its evidence from the implementation constant, so a future ordering
+  drift fails locally and in CI.
+- Assert the Release resolver's dual-target order, pass a real promoted manifest through
+  the rollover dry-run gate, and prove that a reversed same-SHA request still fails at
+  the immutable manifest boundary.
 
 ## Validation
 
