@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.69](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.68...v0.2.69) (2026-08-03)
+
+
+### Bug Fixes
+
+* **xiaoman:** close shared database rollover gap ([#366](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/366)) ([2dc1431](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2dc1431d97b45ac9086fee0600d812a9fbe695dd))
+
 ## [0.2.68](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.67...v0.2.68) (2026-08-03)
 
 
