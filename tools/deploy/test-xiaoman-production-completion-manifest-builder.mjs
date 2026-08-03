@@ -25,6 +25,7 @@ const productionReleaseSha = "89abcdef012345670123456789abcdef01234567";
 const releaseTag = "v0.2.21";
 const releasePleaseHeadSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const qiweEnablementHeadSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const qiweEnablementMergeSha = "dddddddddddddddddddddddddddddddddddddddd";
 const sidecarHash = "1".repeat(64);
 const huabaosiProductionSidecarHash = "2".repeat(64);
 const qiweProductionSidecarHash = "5".repeat(64);
@@ -67,6 +68,15 @@ try {
     confirmed_by: "owner",
     confirmed_at: "2026-07-20T06:30:00Z",
   });
+
+  result = runBuilder(
+    files,
+    path.join(tmpRoot, "release-pr-job-fallback-manifest.json"),
+    {
+      FAKE_RELEASE_PR_MISSING_CHECK: "changes",
+    }
+  );
+  assert.equal(result.status, 0, result.stderr);
 
   result = runCompletionChecker({ ...files, manifest });
   assert.equal(result.status, 0, result.stderr);
@@ -144,11 +154,24 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /shared production boundary/);
 
+  result = runBuilder(
+    files,
+    path.join(tmpRoot, "squash-merged-qiwe-pr-manifest.json"),
+    {
+      FAKE_QIWE_HEAD_COMPARE_STATUS: "diverged",
+      FAKE_QIWE_MERGE_COMPARE_STATUS: "ahead",
+    }
+  );
+  assert.equal(result.status, 0, result.stderr);
+
   result = runBuilder(files, path.join(tmpRoot, "unreleased-qiwe-pr-manifest.json"), {
     FAKE_COMPARE_STATUS: "diverged",
   });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /QiWe production enablement PR head is not included/);
+  assert.match(
+    result.stderr,
+    /QiWe production enablement PR head or merge commit is not included/
+  );
 
   console.log("Xiaoman production completion manifest builder test passed.");
 } finally {
@@ -228,6 +251,7 @@ const releaseTag = ${JSON.stringify(releaseTag)};
 const releasePleaseHeadSha = ${JSON.stringify(releasePleaseHeadSha)};
 const productionReleaseSha = ${JSON.stringify(productionReleaseSha)};
 const qiweEnablementHeadSha = ${JSON.stringify(qiweEnablementHeadSha)};
+const qiweEnablementMergeSha = ${JSON.stringify(qiweEnablementMergeSha)};
 
 function write(payload) {
   process.stdout.write(JSON.stringify(payload));
@@ -245,7 +269,12 @@ if (args[0] === "pr" && args[1] === "view") {
     const checks = [
       { name: "changes", conclusion: "SUCCESS" },
       { name: "check", conclusion: "SUCCESS" },
-      { context: "Release Please validation", state: "SUCCESS" },
+      {
+        context: "Release Please validation",
+        state: "SUCCESS",
+        targetUrl:
+          "https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/123456",
+      },
     ].filter((check) => !missingCheck || (check.name !== missingCheck && check.context !== missingCheck));
     write({
       number,
@@ -263,7 +292,9 @@ if (args[0] === "pr" && args[1] === "view") {
       state: process.env.FAKE_QIWE_PR_STATE || "MERGED",
       baseRefName: "master",
       headRefOid: process.env.FAKE_QIWE_PR_HEAD_SHA || qiweEnablementHeadSha,
-      mergeCommit: { oid: "dddddddddddddddddddddddddddddddddddddddd" },
+      mergeCommit: {
+        oid: process.env.FAKE_QIWE_PR_MERGE_SHA || qiweEnablementMergeSha,
+      },
     });
     process.exit(0);
   }
@@ -302,7 +333,45 @@ if (args[0] === "api" && args[1] === "repos/:owner/:repo/git/tags/eeeeeeeeeeeeee
 }
 
 if (args[0] === "api" && args[1]?.includes("/compare/")) {
+  const compareSpec = args[1].split("/compare/")[1] || "";
+  const base = compareSpec.split("...")[0] || "";
+  if (base === qiweEnablementHeadSha) {
+    write({
+      status:
+        process.env.FAKE_QIWE_HEAD_COMPARE_STATUS ||
+        process.env.FAKE_COMPARE_STATUS ||
+        "ahead",
+    });
+    process.exit(0);
+  }
+  if (base === (process.env.FAKE_QIWE_PR_MERGE_SHA || qiweEnablementMergeSha)) {
+    write({
+      status:
+        process.env.FAKE_QIWE_MERGE_COMPARE_STATUS ||
+        process.env.FAKE_COMPARE_STATUS ||
+        "ahead",
+    });
+    process.exit(0);
+  }
   write({ status: process.env.FAKE_COMPARE_STATUS || "ahead" });
+  process.exit(0);
+}
+
+if (args[0] === "run" && args[1] === "view" && args[2] === "123456") {
+  write({
+    headSha: releasePleaseHeadSha,
+    status: "completed",
+    conclusion: "success",
+    jobs: [
+      { name: "changes", status: "completed", conclusion: "success" },
+      { name: "check", status: "completed", conclusion: "success" },
+      {
+        name: "Release Please validation",
+        status: "completed",
+        conclusion: "success",
+      },
+    ],
+  });
   process.exit(0);
 }
 

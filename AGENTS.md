@@ -182,6 +182,12 @@
 - Xiaoman QiWe group-arrival human confirmation evidence validation after a real
   activity send:
   `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`
+- Xiaoman completion manifest inputs must keep the exact PR head SHA values. For a
+  squash-merged or otherwise non-linear QiWe production enablement PR, the manifest
+  builder verifies inclusion through the PR merge commit; do not substitute the merge
+  commit for `--qiwe-production-enablement-head-sha`. If GitHub's PR status rollup omits
+  the manual CI `changes` or `check` job, the builder verifies those jobs through the
+  successful `Release Please validation` workflow run URL.
 - Build the non-secret Xiaoman production completion manifest after the Huabaosi canary,
   real-activity, and QiWe group-arrival evidence checks pass. Run it where `gh` can
   verify the Release Please PR, QiWe production enablement PR, and published release
