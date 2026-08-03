@@ -41,7 +41,7 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
         self.release_sha = "a" * 40
         self.release_root = self.root / self.release_sha
         self.release_root.mkdir()
-        self.release_root.chmod(0o555)
+        self.release_root.chmod(0o755)
         self.release_current = self.root / "current"
         self.release_current.symlink_to(self.release_root)
         self.sidecar = self.root / "message-sidecar.env"
@@ -329,6 +329,19 @@ class XiaomanPosterConfigApplyTest(unittest.TestCase):
             self.values(self.sidecar)["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"],
             self.values(self.hermes)["QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY"],
         )
+
+    def test_release_owner_and_write_boundaries_match_promoter(self) -> None:
+        self.assertEqual(
+            MODULE.resolve_release_sha(self.release_current), self.release_sha
+        )
+
+        with mock.patch.object(MODULE.os, "geteuid", return_value=os.geteuid() + 1):
+            with self.assertRaises(MODULE.ConfigError):
+                MODULE.resolve_release_sha(self.release_current)
+
+        self.release_root.chmod(0o775)
+        with self.assertRaises(MODULE.ConfigError):
+            MODULE.resolve_release_sha(self.release_current)
 
     def test_pair_commit_restores_first_file_when_second_replace_fails(self) -> None:
         original_sidecar = self.sidecar.read_bytes()

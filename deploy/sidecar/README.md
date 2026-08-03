@@ -58,6 +58,12 @@ URL, its approved hash, and the exact ingress chat/user ceilings to the existing
 or deployment identifiers. This is the only database-writing step in the configuration
 closeout; it never calls Feishu or enables delivery.
 
+Both protected entrypoints use the deploy runner's Release integrity contract: the
+Release root, `sidecar/`, and binary must be owned by the effective privileged process,
+required regular paths cannot be symlinks, and no protected path may be group- or
+world-writable. A root-owned owner write bit remains valid for reviewed same-SHA
+metadata repair.
+
 The release bundle installs disabled intake, notification starter, callback, direct
 delivery, and internal-group delivery units. The two delivery services share one durable
 notification queue and worker binary, but each systemd command pins exactly one

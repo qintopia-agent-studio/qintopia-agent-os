@@ -3652,6 +3652,7 @@ if (!exists(xiaomanPosterConfigApplyPath)) {
     'parser.add_argument("--stdin", action="store_true")',
     'parser.add_argument("--apply", action="store_true")',
     "if os.geteuid() != 0:",
+    "metadata.st_uid != os.geteuid()",
     "fcntl.flock(lock_descriptor, fcntl.LOCK_EX)",
     "secrets.token_urlsafe(48)",
     "database_url_sha256_matched",
@@ -3684,6 +3685,7 @@ if (!exists(xiaomanPosterConfigApplyTestPath)) {
     "test_database_rotation_updates_url_and_all_present_production_hashes",
     "test_group_and_disabled_states_use_the_same_transaction",
     "test_pair_commit_restores_first_file_when_second_replace_fails",
+    "test_release_owner_and_write_boundaries_match_promoter",
   ]) {
     requireFragment(xiaomanPosterConfigApplyTestPath, test, fragment);
   }
@@ -3714,6 +3716,8 @@ if (!exists(xiaomanPolicyApplyPath)) {
     "validate_policy_report",
     "OPAQUE_REF_RE",
     "release sidecar directory boundary is invalid",
+    "sidecar_metadata.st_uid != expected_uid",
+    "metadata.st_uid != expected_uid",
   ]) {
     requireFragment(xiaomanPolicyApplyPath, script, fragment);
   }
@@ -3737,6 +3741,7 @@ if (!exists(xiaomanPolicyApplyTestPath)) {
     "test_fixed_release_policy_apply_uses_minimal_environment_and_redacted_output",
     "test_approval_database_and_output_boundaries_fail_closed",
     "test_input_and_cli_surface_are_bounded",
+    "test_release_owner_and_write_boundaries_match_promoter",
   ]) {
     requireFragment(xiaomanPolicyApplyTestPath, test, fragment);
   }

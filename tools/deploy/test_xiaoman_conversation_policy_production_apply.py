@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -51,8 +52,8 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
         self.user_id = "ou_requester"
         self.write_env(self.database_hash)
         self.write_fake_binary()
-        self.release_root.chmod(0o555)
-        self.sidecar_dir.chmod(0o555)
+        self.release_root.chmod(0o755)
+        self.sidecar_dir.chmod(0o755)
         self.body = json.dumps(
             {
                 "schema_version": 3,
@@ -136,8 +137,8 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
             encoding="utf-8",
         )
         self.binary.chmod(0o755)
-        self.sidecar_dir.chmod(0o555)
-        self.release_root.chmod(0o555)
+        self.sidecar_dir.chmod(0o755)
+        self.release_root.chmod(0o755)
 
     def run_apply(self) -> str:
         return MODULE.run_policy_apply(
@@ -229,6 +230,25 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
 
         with self.assertRaises(MODULE.PolicyApplyError):
             MODULE.resolve_sidecar_binary(escaped_current, escaped_sha)
+
+    def test_release_owner_and_write_boundaries_match_promoter(self) -> None:
+        self.assertEqual(
+            MODULE.resolve_sidecar_binary(self.release_current, self.release_sha),
+            self.binary,
+        )
+
+        with mock.patch.object(MODULE.os, "geteuid", return_value=os.geteuid() + 1):
+            with self.assertRaises(MODULE.PolicyApplyError):
+                MODULE.resolve_sidecar_binary(self.release_current, self.release_sha)
+
+        self.sidecar_dir.chmod(0o775)
+        with self.assertRaises(MODULE.PolicyApplyError):
+            MODULE.resolve_sidecar_binary(self.release_current, self.release_sha)
+        self.sidecar_dir.chmod(0o755)
+
+        self.binary.chmod(0o775)
+        with self.assertRaises(MODULE.PolicyApplyError):
+            MODULE.resolve_sidecar_binary(self.release_current, self.release_sha)
 
 
 if __name__ == "__main__":
