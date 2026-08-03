@@ -241,6 +241,11 @@ class XiaomanConversationPolicyApplyTest(unittest.TestCase):
             with self.assertRaises(MODULE.PolicyApplyError):
                 MODULE.resolve_sidecar_binary(self.release_current, self.release_sha)
 
+        self.release_root.chmod(0o775)
+        with self.assertRaises(MODULE.PolicyApplyError):
+            MODULE.resolve_sidecar_binary(self.release_current, self.release_sha)
+        self.release_root.chmod(0o755)
+
         self.sidecar_dir.chmod(0o775)
         with self.assertRaises(MODULE.PolicyApplyError):
             MODULE.resolve_sidecar_binary(self.release_current, self.release_sha)

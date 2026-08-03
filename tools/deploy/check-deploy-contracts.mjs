@@ -3715,6 +3715,8 @@ if (!exists(xiaomanPolicyApplyPath)) {
     "sensitive_values",
     "validate_policy_report",
     "OPAQUE_REF_RE",
+    "release root directory boundary is invalid",
+    "release_metadata.st_uid != expected_uid",
     "release sidecar directory boundary is invalid",
     "sidecar_metadata.st_uid != expected_uid",
     "metadata.st_uid != expected_uid",

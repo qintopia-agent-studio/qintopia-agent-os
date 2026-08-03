@@ -79,6 +79,14 @@ def resolve_sidecar_binary(release_current: Path, release_sha: str) -> Path:
     sidecar_dir = release_root / "sidecar"
     expected_uid = os.geteuid()
     try:
+        release_metadata = os.lstat(release_root)
+        if (
+            stat.S_ISLNK(release_metadata.st_mode)
+            or not stat.S_ISDIR(release_metadata.st_mode)
+            or release_metadata.st_uid != expected_uid
+            or release_metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            raise PolicyApplyError("release root directory boundary is invalid")
         sidecar_metadata = os.lstat(sidecar_dir)
         if (
             stat.S_ISLNK(sidecar_metadata.st_mode)
