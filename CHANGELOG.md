@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.74](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.73...v0.2.74) (2026-08-04)
+
+
+### Bug Fixes
+
+* align QiWe send Feishu approval gate ([#377](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/377)) ([0999d7c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0999d7c8358b29b23ff708dbaece465a85c42069))
+
 ## [0.2.73](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.72...v0.2.73) (2026-08-03)
 
 
