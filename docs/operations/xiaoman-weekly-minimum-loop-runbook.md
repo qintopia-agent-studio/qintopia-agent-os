@@ -4,11 +4,11 @@ Updated: 2026-08-02
 
 ## Current Setup
 
-| Step | Schedule | Status | Next action |
-| ---- | -------- | ------ | ----------- |
-| Resident recruitment form | Saturday 10:00 | Built | Keep observed; no repository change needed. |
-| Plan-sheet confirmation | Sunday 20:00 | Timer built; link provided | Fill the scheduled action content below. |
-| Confirmed next-week preview | After plan confirmation | Pending configuration | Configure Xiaoman read and Erhua handoff below. |
+| Step                        | Schedule                | Status                     | Next action                                     |
+| --------------------------- | ----------------------- | -------------------------- | ----------------------------------------------- |
+| Resident recruitment form   | Saturday 10:00          | Built                      | Keep observed; no repository change needed.     |
+| Plan-sheet confirmation     | Sunday 20:00            | Timer built; link provided | Fill the scheduled action content below.        |
+| Confirmed next-week preview | After plan confirmation | Pending configuration      | Configure Xiaoman read and Erhua handoff below. |
 
 This runbook records the 2026-08-01 simplified Xiaoman loop. It is not Xiaoman
 production-completion evidence and must not be used to claim real QiWe group delivery.
@@ -29,8 +29,8 @@ Use this Xiaoman draft mode for the Sunday 20:00 营造司群 timer:
 }
 ```
 
-The timer may attach the already-provided plan-sheet link from runtime configuration.
-Do not commit the live Feishu URL, Base token, table id, view id, chat id, or user id.
+The timer may attach the already-provided plan-sheet link from runtime configuration. Do
+not commit the live Feishu URL, Base token, table id, view id, chat id, or user id.
 
 Expected draft boundary:
 

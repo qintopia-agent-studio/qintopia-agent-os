@@ -30,8 +30,8 @@ deployment docs.
   one-Release database credential rollover, trusted direct configuration and policy,
   direct acceptance, one internal-group canary, and rollback sequence.
 - [xiaoman-weekly-minimum-loop-runbook.md](xiaoman-weekly-minimum-loop-runbook.md):
-  2026-08-01 Xiaoman three-step weekly operations loop status and action content for
-  the Sunday 20:00 plan confirmation plus the pending next-week preview configuration.
+  2026-08-01 Xiaoman three-step weekly operations loop status and action content for the
+  Sunday 20:00 plan confirmation plus the pending next-week preview configuration.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):
