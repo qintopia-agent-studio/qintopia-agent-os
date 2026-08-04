@@ -2321,6 +2321,8 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     "qintopia-agentos-qiwe-image-send-worker.service",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1",
     "QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE=enabled",
+    "unsafe env value for",
+    "duplicate env key",
     '"$OBSERVATION_SCRIPT" >/dev/null',
     '"$SYSTEMCTL" start "$PREFLIGHT_SERVICE"',
     '"$SYSTEMCTL" enable "$WORKER_TIMER"',
@@ -2344,6 +2346,7 @@ if (!exists(qiweImageSendProductionActivationPath)) {
     'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
     'SYSTEMCTL="systemctl"',
     "sha256sum | awk",
+    'grep -E "^${key}="',
   ]) {
     forbidFragment(qiweImageSendProductionActivationPath, activation, fragment);
   }
