@@ -297,6 +297,32 @@ printf '%s  -\\n' "${databaseHash}"
     envFile,
     [
       "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
+      `QINTOPIA_SIDECAR_DATABASE_URL='${databaseUrl}'`,
+      "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
+      `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256=${databaseHash}`,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  writeManifest("qiwe-production", [
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+  ]);
+  fs.writeFileSync(logPath, "", "utf8");
+  const quotedDatabaseUrl = run(activationFixture, {
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION:
+      "approved-production-qiwe-image-send",
+  });
+  if (quotedDatabaseUrl.status !== 0) {
+    throw new Error(
+      `activation must parse quoted database URLs\n${quotedDatabaseUrl.stdout}\n${quotedDatabaseUrl.stderr}`
+    );
+  }
+
+  fs.writeFileSync(
+    envFile,
+    [
+      "QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1",
       `QINTOPIA_SIDECAR_DATABASE_URL=${databaseUrl}`,
       "QINTOPIA_SIDECAR_DATABASE_URL=postgres://duplicate-secret@127.0.0.1:55432/qintopia",
       "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
@@ -325,10 +351,6 @@ printf '%s  -\\n' "${databaseHash}"
     );
   }
 
-  writeManifest("qiwe-production", [
-    "qiwe-production-adapter",
-    "huabaosi-feishu-mirror-adapter",
-  ]);
   writeEnv("1");
   fs.writeFileSync(logPath, "", "utf8");
   const preflightRejected = run(activationFixture, {
