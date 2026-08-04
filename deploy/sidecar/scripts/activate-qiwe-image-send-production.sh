@@ -69,15 +69,50 @@ require_sha256_env_line() {
 
 env_line_value() {
   local key="$1"
-  local count
-  local line
-  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
-  if [[ "$count" != "1" ]]; then
+  local value
+  if ! value="$(python3 - "$ENV_FILE" "$key" <<'PY'
+import re
+import sys
+
+path, expected_key = sys.argv[1:3]
+assignment = re.compile(
+    r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=[ \t]*(.*?)[ \t]*(?:#[^\"']*)?$"
+)
+seen = False
+
+with open(path, encoding="utf-8") as fh:
+    for lineno, raw in enumerate(fh, 1):
+        line = raw.rstrip("\r\n")
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = assignment.fullmatch(line)
+        if not match:
+            raise SystemExit(f"invalid env line {lineno}")
+        key, value = match.groups()
+        if key != expected_key:
+            continue
+        if seen:
+            raise SystemExit(f"duplicate env key {expected_key}")
+        seen = True
+        value = value.strip()
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        has_control = any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+        if "$(" in value or "`" in value or has_control:
+            raise SystemExit(f"unsafe env value for {expected_key}")
+        print(value)
+
+if not seen:
+    raise SystemExit(f"missing env key {expected_key}")
+PY
+)"; then
     echo "QiWe image-send production activation requires exactly one ${key}" >&2
     exit 1
   fi
-  line="$(grep -E "^${key}=" "$ENV_FILE")"
-  printf '%s' "${line#*=}"
+  printf '%s' "$value"
 }
 
 require_database_hash_match() {
