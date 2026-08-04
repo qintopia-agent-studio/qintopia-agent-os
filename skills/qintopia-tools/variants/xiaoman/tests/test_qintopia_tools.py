@@ -874,7 +874,6 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("recABCDEFG123456789", serialized)
         self.assertNotIn("/home/ubuntu/qintopia/debug.log", serialized)
         self.assertNotIn("execute_code", serialized)
-
     def test_xiaoman_public_reply_rewrite_rejects_internal_mechanism_explanations(self):
         report = json.loads(
             self.module.handle_qintopia_xiaoman_public_reply_rewrite(
@@ -2713,6 +2712,86 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIsNone(
             self.module.handle_xiaoman_gateway_dispatch(self.feishu_message_event())
         )
+
+    def test_xiaoman_activity_announcement_prepare_weekly_minimum_loop_drafts(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        recruit = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    "date": "2026-W32",
+                    "mode": "weekly_recruitment_form",
+                    "operator_name": "小乔",
+                    "community_audience": "居民群",
+                    "form_label": "活动招募表单",
+                }
+            )
+        )
+        confirmation = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    "date": "2026-W32",
+                    "mode": "weekly_plan_confirmation",
+                    "operator_name": "小乔",
+                    "community_audience": "营造司群",
+                    "confirmation_owner_name": "张百忍",
+                    "plan_sheet_label": (
+                        "https://ranuox3qst4.feishu.cn/wiki/VvAmwU3zCikSa2kVgK7c8JySnle"
+                        "?table=tblIRfkR6vmwiynbu&view=vew5C6T2FF"
+                    ),
+                }
+            )
+        )
+        preview = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                {
+                    "date": "2026-W32",
+                    "mode": "weekly_preview",
+                    "operator_name": "小乔",
+                    "community_audience": "居民群",
+                    "records": [
+                        {
+                            "table_role": "activity_plan",
+                            "record_ref": "activity_plan:abc123def456",
+                            "title": "周末共创晚餐",
+                            "activity_date": "2026-08-08",
+                            "start_time": "18:30",
+                            "location": "秦托邦一楼",
+                            "owner_name": "张百忍",
+                            "promotion_status": "已确认排期",
+                        }
+                    ],
+                }
+            )
+        )
+
+        self.assertTrue(recruit["success"])
+        self.assertEqual(recruit["workflow_step"], "weekly_recruitment_form")
+        self.assertEqual(recruit["record_source"], "not_required")
+        self.assertIn("活动招募表单", recruit["announcement_text"])
+        self.assertFalse(recruit["external_send_executed"])
+
+        rendered_confirmation = json.dumps(confirmation, ensure_ascii=False)
+        self.assertTrue(confirmation["success"])
+        self.assertEqual(confirmation["workflow_step"], "weekly_plan_confirmation")
+        self.assertEqual(confirmation["record_source"], "not_required")
+        self.assertEqual(confirmation["mentions"], ["张百忍"])
+        self.assertIn("@张百忍", confirmation["operator_review_message"])
+        self.assertIn("周日 20:00", confirmation["operator_review_message"])
+        self.assertIn("下周活动计划表", confirmation["announcement_text"])
+        self.assertNotIn("https://", rendered_confirmation)
+        self.assertNotIn("tblIRfkR6vmwiynbu", rendered_confirmation)
+        self.assertNotIn("vew5C6T2FF", rendered_confirmation)
+        self.assertFalse(confirmation["external_send_executed"])
+
+        self.assertTrue(preview["success"])
+        self.assertEqual(preview["workflow_step"], "weekly_preview")
+        self.assertEqual(preview["publishable_count"], 1)
+        self.assertIn("下周活动预告", preview["announcement_text"])
+        self.assertIn("周末共创晚餐", preview["announcement_text"])
+        self.assertTrue(preview["requires_human_confirmation"])
+        self.assertFalse(preview["external_send_executed"])
+        self.assertNotIn("record_ref", json.dumps(preview, ensure_ascii=False))
 
 
 if __name__ == "__main__":
