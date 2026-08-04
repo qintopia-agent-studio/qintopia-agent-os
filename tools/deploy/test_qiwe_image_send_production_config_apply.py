@@ -193,22 +193,27 @@ class QiweImageSendProductionConfigApplyTest(unittest.TestCase):
             )
         self.assertEqual(self.sidecar.read_bytes(), original)
 
+    def test_enable_allows_persistent_release_identity_to_lag_current(self) -> None:
+        updated = dict(self.base_env)
+        updated["QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA"] = "c" * 40
+        updated["QINTOPIA_DEPLOYED_COMMIT_SHA"] = "d" * 40
+        self.write_env(updated)
+
+        report = self.run_config(
+            self.request(), apply=True, approval=MODULE.APPLY_APPROVAL
+        )
+
+        self.assertTrue(report["success"])
+        rendered = self.sidecar.read_text()
+        self.assertIn("QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA", rendered)
+        self.assertIn("QINTOPIA_DEPLOYED_COMMIT_SHA", rendered)
+
     def test_enable_rejects_feishu_delivery_drift_before_mutation(self) -> None:
         for key, value, error in [
             (
                 "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
                 "approved-production-huabaosi-feishu-artifact-mirror",
                 "Feishu primary-storage approval is not approved",
-            ),
-            (
-                "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
-                "c" * 40,
-                "Feishu primary-storage release SHA is not approved",
-            ),
-            (
-                "QINTOPIA_DEPLOYED_COMMIT_SHA",
-                "c" * 40,
-                "deployed release SHA is not approved",
             ),
             (
                 "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",

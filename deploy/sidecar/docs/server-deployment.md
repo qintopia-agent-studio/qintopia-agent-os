@@ -547,6 +547,9 @@ state; activation still happens through
 `deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`. It validates the
 persistent Huabaosi Feishu primary-storage approval phrase
 `approved-huabaosi-feishu-artifact-mirror`, not the separate timer-activation phrase.
+The current release identity comes from `release/current` and the release-rendered QiWe
+systemd units; do not require persistent env release SHA values to move with every
+promotion.
 
 For the Feishu-backed canary, set `QINTOPIA_HUABAOSI_IMAGE_STORAGE_BACKEND=feishu-base`,
 exact Base/table allowlists, the fixed `huabaosi-generated-image-v1` schema, the

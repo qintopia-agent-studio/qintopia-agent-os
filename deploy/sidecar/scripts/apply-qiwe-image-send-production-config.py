@@ -52,8 +52,6 @@ REQUIRED_ENABLE_KEYS = {
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
     "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
     "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
-    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
-    "QINTOPIA_DEPLOYED_COMMIT_SHA",
     "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
     "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
@@ -233,7 +231,7 @@ def require_singleton_allowlist(value: str, expected: str, label: str) -> None:
 
 
 def require_enabled_boundaries(
-    values: dict[str, str], database_hash: str, release_sha: str
+    values: dict[str, str], database_hash: str
 ) -> None:
     missing = sorted(key for key in REQUIRED_ENABLE_KEYS if not values.get(key, "").strip())
     if missing:
@@ -248,10 +246,6 @@ def require_enabled_boundaries(
         raise ConfigError("Feishu primary-storage delivery is not enabled")
     if values.get("QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL") != FEISHU_MIRROR_APPROVAL:
         raise ConfigError("Feishu primary-storage approval is not approved")
-    if values.get("QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA") != release_sha:
-        raise ConfigError("Feishu primary-storage release SHA is not approved")
-    if values.get("QINTOPIA_DEPLOYED_COMMIT_SHA") != release_sha:
-        raise ConfigError("deployed release SHA is not approved")
     if values.get("QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256") != database_hash:
         raise ConfigError("Feishu primary-storage database hash is not approved")
     if values.get("QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH") != HUABAOSI_PROFILE_ENV_PATH:
@@ -373,7 +367,6 @@ def configure(
             require_enabled_boundaries(
                 sidecar.values,
                 normalized["database_url_sha256"],
-                normalized["release_sha"],
             )
         replacements = desired_values(normalized)
         next_text = render_env_text(sidecar.text, replacements)

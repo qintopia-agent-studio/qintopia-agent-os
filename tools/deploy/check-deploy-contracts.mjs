@@ -2224,8 +2224,6 @@ if (!exists(qiweImageSendProductionConfigApplyPath)) {
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
-    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
-    "QINTOPIA_DEPLOYED_COMMIT_SHA",
     "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
     "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
@@ -2235,7 +2233,6 @@ if (!exists(qiweImageSendProductionConfigApplyPath)) {
     "release/current does not match the approved release SHA",
     "release/current must resolve to the fixed release root",
     "database URL hash does not match the approved production hash",
-    "Feishu primary-storage release SHA is not approved",
     "Feishu primary-storage database hash is not approved",
     "Feishu artifact table allowlist is not exact",
     "sidecar env file must be a regular non-symlink file",
@@ -2260,6 +2257,9 @@ if (!exists(qiweImageSendProductionConfigApplyPath)) {
     "eval ",
     "QIWE_TOKEN=",
     "print(values",
+    "QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA",
+    "QINTOPIA_DEPLOYED_COMMIT_SHA",
+    "Feishu primary-storage release SHA is not approved",
   ]) {
     forbidFragment(qiweImageSendProductionConfigApplyPath, script, fragment);
   }
@@ -2274,6 +2274,7 @@ if (!exists(qiweImageSendProductionConfigApplyTestPath)) {
     "test_preview_and_apply_enable_without_leaking_sensitive_values",
     "test_disabled_only_flips_enable_flag",
     "test_enable_rejects_unmatched_database_hash_before_mutation",
+    "test_enable_allows_persistent_release_identity_to_lag_current",
     "test_enable_rejects_feishu_delivery_drift_before_mutation",
     "test_apply_requires_exact_owner_approval_and_root",
     "test_release_current_must_match_request",
