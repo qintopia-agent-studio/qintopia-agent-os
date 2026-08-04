@@ -132,7 +132,18 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
 ]
 XIAOMAN_ACTIVITY_TABLE_ROLES = ["activity_plan", "activity_occurrence"]
 XIAOMAN_ACTIVITY_PHASES = ["pre_event", "in_event", "post_event"]
-XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES = ["next_day_preview", "same_day_preview", "post_event_followup"]
+XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES = [
+    "next_day_preview",
+    "same_day_preview",
+    "post_event_followup",
+    "weekly_recruitment_form",
+    "weekly_plan_confirmation",
+    "weekly_preview",
+]
+XIAOMAN_ACTIVITY_ANNOUNCEMENT_RECORD_OPTIONAL_MODES = {
+    "weekly_recruitment_form",
+    "weekly_plan_confirmation",
+}
 XIAOMAN_ACTIVITY_HANDOFF_TYPES = ["visual_asset_request"]
 XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
 XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
@@ -4161,6 +4172,12 @@ def _xiaoman_activity_announcement_header(mode: str, date: str, audience: str) -
         return f"{date} 今日活动预告"
     if mode == "post_event_followup":
         return f"{date} 活动素材回填提醒"
+    if mode == "weekly_recruitment_form":
+        return f"{date} 活动招募"
+    if mode == "weekly_plan_confirmation":
+        return f"{date} 下周活动计划确认"
+    if mode == "weekly_preview":
+        return f"{date} 下周活动预告"
     return f"{date} 明日活动预告"
 
 
@@ -4199,6 +4216,137 @@ def _xiaoman_activity_material_followup_text(title: str, stage: int, operations_
     if stage == 1:
         return f"{title} 已到第 1 次素材补交提醒，请补活动照片/反馈/可公开亮点。"
     return f"{title} 活动结束未满 24 小时，先观察，不升级提醒。"
+
+
+def _xiaoman_activity_text_has_internal_marker(value: str) -> bool:
+    lower = value.lower()
+    if re.search(r"https?://", lower):
+        return True
+    if re.search(r"\b(?:tbl|rec|vew)[A-Za-z0-9]{6,}\b", value):
+        return True
+    if re.search(r"(?:/home/ubuntu|/Users/[^ \n]+|/tmp|/var/tmp)/\S+", value):
+        return True
+    if re.search(r"\b[A-Z0-9]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", value):
+        return True
+    if re.search(r"^\s*⏳?\s*(?:working|retrying)\b", lower, flags=re.MULTILINE):
+        return True
+    return any(
+        token in lower
+        for token in [
+            "postgres://",
+            "postgresql://",
+            "tenant_access_token",
+            "access_token",
+            "refresh_token",
+            "api_key",
+            "app_secret",
+            "client_secret",
+            "authorization",
+            "bearer ",
+            "qiwe_token",
+            "qiwe_guid",
+            "feishu_app_secret",
+            "lark_app_secret",
+            "base_token",
+            "table_id",
+            "record_id",
+            "source_record_id",
+            "artifact_id",
+            "obj_token",
+            "app_token",
+            "session_key",
+            "runid",
+            "file_token",
+            "collab_event",
+            "task.completed",
+            "handoff.requested",
+            "execute_code",
+            "skill_view",
+            "tool_progress",
+            "traceback (most recent call last)",
+            "dangerous command requires approval",
+            "/approve",
+        ]
+    )
+
+
+def _xiaoman_activity_public_label(raw_value: Any, fallback: str, max_len: int) -> str:
+    value = _clean_text(raw_value, max_len=max_len)
+    if not value or _xiaoman_activity_text_has_internal_marker(value):
+        return fallback
+    return value
+
+
+def _xiaoman_activity_weekly_recruitment_draft(
+    *,
+    date: str,
+    operator_name: str,
+    community_audience: str,
+    form_label: str,
+) -> dict[str, Any]:
+    header = _xiaoman_activity_announcement_header("weekly_recruitment_form", date, community_audience)
+    announcement_text = (
+        f"{header}\n\n"
+        f"下周活动开始募集啦。想发起活动的居民请填写「{form_label}」，"
+        "把活动主题、时间意向、地点和需要支持的事项写清楚。"
+        "小满会汇总到计划表，确认后再整理下周预告。"
+    )
+    return {
+        "workflow_step": "weekly_recruitment_form",
+        "announcement_text": announcement_text,
+        "operator_review_message": (
+            f"{operator_name}，这是发给{community_audience}的活动招募草稿。"
+            "确认表单入口已在定时任务配置里绑定后，再交给二花发送；我不会自动发群。"
+            f"\n\n{announcement_text}"
+        ),
+        "erhua_handoff_draft": (
+            f"给{community_audience}的活动招募草稿如下。只有在{operator_name}确认后才交给二花执行："
+            f"\n\n{announcement_text}"
+        ),
+        "mentions": [],
+        "missing_followups": [],
+        "material_followup_reminders": [],
+        "material_escalations": [],
+        "post_event_followup_stage": "",
+        "skipped_records": [],
+        "publishable_count": 0,
+        "skipped_count": 0,
+    }
+
+
+def _xiaoman_activity_weekly_plan_confirmation_draft(
+    *,
+    date: str,
+    operator_name: str,
+    community_audience: str,
+    confirmation_owner_name: str,
+    plan_sheet_label: str,
+) -> dict[str, Any]:
+    header = _xiaoman_activity_announcement_header("weekly_plan_confirmation", date, community_audience)
+    announcement_text = (
+        f"{header}\n\n"
+        f"@{confirmation_owner_name} 请确认「{plan_sheet_label}」里哪些活动排入下周。"
+        "只需要处理单点事项：保留要发的活动、补齐缺失时间/地点/负责人，"
+        "不确定的先标记待确认。确认后小满再生成下周活动预告草稿。"
+    )
+    return {
+        "workflow_step": "weekly_plan_confirmation",
+        "announcement_text": announcement_text,
+        "operator_review_message": (
+            f"{operator_name}，这是周日 20:00 发到{community_audience}的计划确认草稿。"
+            f"它需要 @{confirmation_owner_name} 响应；我不会自动修改表或发群。"
+            f"\n\n{announcement_text}"
+        ),
+        "erhua_handoff_draft": "",
+        "mentions": [confirmation_owner_name],
+        "missing_followups": [],
+        "material_followup_reminders": [],
+        "material_escalations": [],
+        "post_event_followup_stage": "",
+        "skipped_records": [],
+        "publishable_count": 0,
+        "skipped_count": 0,
+    }
 
 
 def _xiaoman_activity_build_announcement(
@@ -4305,9 +4453,11 @@ def _xiaoman_activity_build_announcement(
     )
 
     return {
+        "workflow_step": mode,
         "announcement_text": announcement_text,
         "operator_review_message": operator_review_message,
         "erhua_handoff_draft": erhua_handoff_draft,
+        "mentions": [],
         "missing_followups": missing_followups,
         "material_followup_reminders": material_followup_reminders,
         "material_escalations": material_escalations,
@@ -4693,7 +4843,10 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
     if mode not in XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES:
         return _xiaoman_activity_error(skill, "mode is not allowed", actor_agent=actor_agent, mode=mode)
 
-    records, record_source, record_error = _xiaoman_activity_announcement_records(args, actor_agent)
+    if mode in XIAOMAN_ACTIVITY_ANNOUNCEMENT_RECORD_OPTIONAL_MODES and not isinstance(args.get("records"), list):
+        records, record_source, record_error = [], "not_required", ""
+    else:
+        records, record_source, record_error = _xiaoman_activity_announcement_records(args, actor_agent)
     if record_error:
         return _xiaoman_activity_error(
             skill,
@@ -4749,17 +4902,37 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
             )
         material_followup_attempt = raw_followup_attempt
     operations_lead_name = _clean_text(args.get("operations_lead_name") or "运营负责人", max_len=80)
-    draft = _xiaoman_activity_build_announcement(
-        date=date,
-        mode=mode,
-        operator_name=operator_name,
-        community_audience=community_audience,
-        records=records,
-        include_temporary_meals=include_temporary_meals,
-        post_event_elapsed_hours=post_event_elapsed_hours,
-        material_followup_attempt=material_followup_attempt,
-        operations_lead_name=operations_lead_name,
-    )
+    if mode == "weekly_recruitment_form":
+        draft = _xiaoman_activity_weekly_recruitment_draft(
+            date=date,
+            operator_name=operator_name,
+            community_audience=community_audience,
+            form_label=_xiaoman_activity_public_label(args.get("form_label"), "活动招募表单", 120),
+        )
+    elif mode == "weekly_plan_confirmation":
+        draft = _xiaoman_activity_weekly_plan_confirmation_draft(
+            date=date,
+            operator_name=operator_name,
+            community_audience=community_audience,
+            confirmation_owner_name=_xiaoman_activity_public_label(
+                args.get("confirmation_owner_name"),
+                "社区营造负责人",
+                80,
+            ),
+            plan_sheet_label=_xiaoman_activity_public_label(args.get("plan_sheet_label"), "下周活动计划表", 120),
+        )
+    else:
+        draft = _xiaoman_activity_build_announcement(
+            date=date,
+            mode=mode,
+            operator_name=operator_name,
+            community_audience=community_audience,
+            records=records,
+            include_temporary_meals=include_temporary_meals,
+            post_event_elapsed_hours=post_event_elapsed_hours,
+            material_followup_attempt=material_followup_attempt,
+            operations_lead_name=operations_lead_name,
+        )
 
     return _json(
         {
