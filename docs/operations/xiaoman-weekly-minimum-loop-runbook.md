@@ -81,6 +81,40 @@ Do not add these to this first loop unless the owner explicitly reopens scope:
 - automatic final confirmation;
 - direct QiWe send.
 
+## Conversation-Created Timer Storage
+
+Timers created by chatting with Xiaoman live only in the live Hermes profile at
+`/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json`. They are runtime state: they are
+not in git, are not reviewed, and carry no evidence chain. When such a timer fires,
+Hermes replays the stored message to Xiaoman in whatever session context exists at that
+moment, so execution quality depends on the stored message text and the live session. If
+execution drifts from expectations, read the stored messages first:
+
+```bash
+jq . /home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json
+```
+
+For this loop, the stored message for steps 2 and 3 must be exactly the fixed skill JSON
+from [Step 2 Action Content](#step-2-action-content) and
+[Step 3 Configuration](#step-3-configuration). Pinning the message to the reviewed skill
+call keeps the timer on the deterministic draft boundary instead of Xiaoman improvising
+from conversation memory.
+
+Two standing constraints:
+
+- The reviewed production baseline expects the legacy runtime cron file to be empty.
+  `deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh` fails when it finds
+  runtime cron declarations, and the aggregate production preflight requires legacy-cron
+  absence. Conversation-created timers are a temporary operations convenience, not a
+  production-scheduled path.
+- `cron/jobs.json` is runtime-only profile state. The profile bundle migration will not
+  carry it over, so these timers must be re-registered or recreated before the live
+  profile symlink cutover.
+
+If the weekly loop proves stable, the durable fix is a separate reviewed PR that moves
+the schedule to a release-managed systemd timer, matching the other Xiaoman runtime
+timers, with observation and rollback notes. Do not hot-edit production units.
+
 ## Local Verification
 
 ```bash
