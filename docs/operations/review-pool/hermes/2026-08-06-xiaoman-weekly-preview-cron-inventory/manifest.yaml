@@ -1,0 +1,51 @@
+id: docs/operations/review-pool/hermes/2026-08-06-xiaoman-weekly-preview-cron-inventory
+type: review-evidence
+name: Xiaoman Weekly Preview Cron Declaration Inventory
+owner: qiaopengjun
+status: review-pool
+risk_level: low
+description:
+  Prerequisite governance evidence for turning the Monday activity-preview cron job into
+  a reviewed bundle input. Records the cron-job key contract, the deterministic
+  weekly_preview script hashes, and a draft declaration. Not deployable; does not change
+  runtime behavior.
+source:
+  repository: qintopia-agent-os
+  observed_at: 2026-08-06
+  disposition: review-pool
+  evidence_files:
+    - workflows/xiaoman-weekly-preview/weekly_preview.py
+    - workflows/xiaoman-weekly-preview/README.md
+    - deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh
+proposed_target:
+  bundle_input: agents/xiaoman/profile-bundle (future change, gated by smoke + review)
+  script: workflows/xiaoman-weekly-preview/weekly_preview.py
+  announcement_mode: qintopia_xiaoman_activity_announcement_prepare(mode=weekly_preview) # PR #384
+production_boundary:
+  deployable: false
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+gates:
+  - id: bundle-observation-only
+    note:
+      agents/xiaoman/profile-bundle/bundle.json status is observation-only;
+      cron/jobs.json excluded
+  - id: smoke-no-legacy-cron
+    note:
+      xiaoman-legacy-cron-observation-smoke.sh hard-fails on any live cron declaration
+  - id: inventory-prerequisite
+    note:
+      runtime/hermes/README.md requires this inventory before any declaration is
+      invented
+pending_before_activation:
+  - owner-triggered live read of /home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json
+  - reviewed bundle + smoke-gate change allowing a specific signed cron declaration
+  - separate production cutover PR with rollback
+validation:
+  commands:
+    - pnpm runtime:hermes:check
+    - pnpm agents:profile-bundles:check
+    - git diff --check
+rollback: No runtime state is touched by this evidence package; rollback is a no-op.

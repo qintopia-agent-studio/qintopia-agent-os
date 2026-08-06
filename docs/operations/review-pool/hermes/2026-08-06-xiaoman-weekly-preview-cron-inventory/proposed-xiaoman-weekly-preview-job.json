@@ -1,0 +1,21 @@
+{
+  "_note": "DRAFT — proposed Xiaoman weekly-preview cron declaration. NOT live. Shape derived from the JOB_KEYS contract in xiaoman-legacy-cron-observation-smoke.sh. Exact envelope, schedule/cron semantics, and handler/command runner contract must be confirmed by an owner-triggered live read before adoption.",
+  "schema_version": 1,
+  "agent_id": "xiaoman",
+  "jobs": [
+    {
+      "id": "xiaoman-weekly-preview-monday",
+      "enabled": true,
+      "active": true,
+      "schedule": "0 10 * * 1",
+      "cron": "0 10 * * 1",
+      "handler": "script",
+      "command": "python3 workflows/xiaoman-weekly-preview/weekly_preview.py",
+      "target": "GROUP:{{QINTOPIA_XIAOMAN_TECHNICAL_HOME_CHANNEL}}",
+      "tool": null,
+      "prompt": null,
+      "message": null,
+      "interval": null
+    }
+  ]
+}
