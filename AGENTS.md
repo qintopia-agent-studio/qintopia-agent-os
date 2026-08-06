@@ -11,6 +11,8 @@
 - Agent OS design: `docs/agent-os/README.md`
 - Runtime baseline: `docs/operations/runtime-baseline.md`
 - Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`
+- Xiaoman weekly minimum loop runbook:
+  `docs/operations/xiaoman-weekly-minimum-loop-runbook.md`
 - Collaboration model: `docs/engineering/collaboration-model.md`
 - Migration policy: `docs/engineering/migration-policy.md`
 - Server change policy: `docs/engineering/server-change-policy.md`

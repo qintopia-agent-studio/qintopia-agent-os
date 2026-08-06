@@ -106,7 +106,9 @@ or a direct conversation.
 - `qintopia_xiaoman_activity_announcement_prepare`: prepares the text-only community
   activity announcement MVP for operations review. It turns sanitized activity records
   into a draft for 刘珊, missing-field follow-ups, and an Erhua handoff draft that still
-  requires human confirmation before any group delivery.
+  requires human confirmation before any group delivery. It also supports the 2026-08-01
+  weekly minimum loop: Sunday 20:00 plan-sheet confirmation and confirmed next-week
+  preview.
 - `qintopia_xiaoman_activity_text_group_message_request_prepare`: rejects raw internal
   execution output before any Erhua/QiWe handoff. When `message_text` contains internal
   markers, it hides the original text and returns a user-visible “用人话重述” path plus
@@ -161,6 +163,14 @@ create work items, call Huabaosi, call Erhua, call QiWe, publish, or send. The
 `weekly_preview` mode expands a Monday `date` into the full Mon–Sun window, reads both
 the plan and occurrence tables, deduplicates by record reference, and clearly reports an
 empty week instead of sending stale or wrong text.
+
+For the 2026-08-01 weekly minimum loop, use these modes:
+
+- `weekly_plan_confirmation`: Sunday 20:00 营造司群 plan-sheet confirmation draft with a
+  required 张百忍 mention. The live plan-sheet link belongs in runtime configuration,
+  not in git.
+- `weekly_preview`: next-week preview from sanitized confirmed `activity_plan` records.
+  Human approval is still required before preparing the Erhua group-message request.
 
 For the boss-visible promotion review path, Xiaoman should first read activity records,
 then pass the selected sanitized record to
