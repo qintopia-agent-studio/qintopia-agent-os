@@ -1,0 +1,38 @@
+id: workflows/xiaoman-weekly-preview
+type: workflow
+name: Xiaoman Weekly Activity Preview
+owner: PatrickLiveCool
+status: draft
+risk_level: low
+description:
+  Deterministic Monday weekly-preview script for Xiaoman community activities. It reads
+  the next 7 days of activity records through the qintopia-tools wrapper, filters by
+  field completeness, and produces a human-reviewed draft. It never sends.
+source:
+  path: skills/qintopia-tools/variants/xiaoman/__init__.py
+  reference: qintopia_xiaoman_activity_announcement_prepare weekly_preview mode
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm workflows:check
+    - pnpm check:python
+dependencies:
+  - skills/qintopia-tools
+  - agents/xiaoman
+tags:
+  - workflow
+  - xiaoman
+  - activity
+  - weekly-preview
+next_actions:
+  - Replace the legacy natural-language Monday cron task with weekly_preview.py and put
+    it behind an owner-reviewed production timer.
+  - Keep the human confirmation gate; the script only drafts, Liu Shan must confirm
+    before any Erhua handoff or group send.
+  - After adoption, remove the old natural-language Monday task from the server
+    jobs.json.

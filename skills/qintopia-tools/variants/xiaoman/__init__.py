@@ -28,7 +28,7 @@ import textwrap
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from urllib import error as urlerror
 from urllib import request as urlrequest
@@ -927,7 +927,7 @@ QINTOPIA_XIAOMAN_ACTIVITY_ANNOUNCEMENT_PREPARE_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "date": {"type": "string", "description": "Local activity date in YYYY-MM-DD format."},
+            "date": {"type": "string", "description": "Local activity date in YYYY-MM-DD format. For weekly_preview this is the Monday that starts the preview week; the tool expands it to the full Mon-Sun window."},
             "mode": {
                 "type": "string",
                 "enum": XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES,
@@ -4107,6 +4107,76 @@ def _xiaoman_activity_announcement_records(args: dict[str, Any], actor_agent: st
     return _xiaoman_activity_sanitize_records(list_report.get("records")), "read_through", ""
 
 
+def _xiaoman_activity_week_range(monday: str) -> tuple[str, str]:
+    try:
+        start = datetime.strptime(monday, "%Y-%m-%d")
+    except ValueError:
+        # ISO week label, e.g. 2026-W32
+        year, week = monday.split("-W")
+        start = datetime.fromisocalendar(int(year), int(week), 1)
+    start -= timedelta(days=start.weekday())
+    end = start + timedelta(days=6)
+    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+
+def _xiaoman_activity_week_label(start: str, end: str) -> str:
+    start_date = datetime.strptime(start, "%Y-%m-%d")
+    end_date = datetime.strptime(end, "%Y-%m-%d")
+    return f"{start_date.month}/{start_date.day}–{end_date.month}/{end_date.day}"
+
+
+def _xiaoman_activity_weekly_records(
+    args: dict[str, Any], actor_agent: str, week_start: str, week_end: str
+) -> tuple[list[dict[str, str]], str, str, list[str]]:
+    raw_records = args.get("records")
+    if isinstance(raw_records, list):
+        return _xiaoman_activity_sanitize_records(raw_records), "provided_records", "", []
+
+    if not _xiaoman_activity_read_through_enabled():
+        return [], "missing_records", "records are required unless read-through is enabled", []
+
+    timezone = _clean_text(args.get("timezone") or "Asia/Shanghai", max_len=80)
+    table_roles = ["activity_plan", "activity_occurrence"]
+    records: list[dict[str, str]] = []
+    seen_refs: set[str] = set()
+    read_issues: list[str] = []
+    day = datetime.strptime(week_start, "%Y-%m-%d")
+    end = datetime.strptime(week_end, "%Y-%m-%d")
+    while day <= end:
+        day_str = day.strftime("%Y-%m-%d")
+        for table_role in table_roles:
+            try:
+                list_report = json.loads(
+                    handle_qintopia_xiaoman_activity_list_by_date(
+                        {
+                            "date": day_str,
+                            "table_role": table_role,
+                            "timezone": timezone,
+                            "actor_agent": actor_agent,
+                            "dry_run": False,
+                        }
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                read_issues.append(f"{day_str} {table_role} 读取异常：{exc}")
+                continue
+            if not list_report.get("success") or not list_report.get("read_through"):
+                read_issues.append(f"{day_str} {table_role} 读取失败：{list_report.get('error', 'unknown')}")
+                continue
+            for record in _xiaoman_activity_sanitize_records(list_report.get("records")):
+                ref = record.get("record_ref")
+                if ref:
+                    if ref in seen_refs:
+                        continue
+                    seen_refs.add(ref)
+                records.append(record)
+        day += timedelta(days=1)
+
+    if not records and read_issues:
+        return [], "read_through_failed", "weekly activity records could not be read through", read_issues
+    return records, "read_through_weekly", "", read_issues
+
+
 def _xiaoman_activity_is_temporary_meal(record: dict[str, str]) -> bool:
     text = " ".join(
         record.get(key, "")
@@ -4167,18 +4237,18 @@ def _xiaoman_activity_announcement_line(record: dict[str, str], index: int) -> s
     return "\n".join(pieces)
 
 
-def _xiaoman_activity_announcement_header(mode: str, date: str, audience: str) -> str:
-    if mode == "same_day_preview":
-        return f"{date} 今日活动预告"
-    if mode == "post_event_followup":
-        return f"{date} 活动素材回填提醒"
-    if mode == "weekly_recruitment_form":
-        return f"{date} 活动招募"
-    if mode == "weekly_plan_confirmation":
-        return f"{date} 下周活动计划确认"
+def _xiaoman_activity_announcement_header(mode: str, display_date: str, audience: str) -> str:
     if mode == "weekly_preview":
-        return f"{date} 下周活动预告"
-    return f"{date} 明日活动预告"
+        return f"{display_date} 下周活动预告"
+    if mode == "same_day_preview":
+        return f"{display_date} 今日活动预告"
+    if mode == "post_event_followup":
+        return f"{display_date} 活动素材回填提醒"
+    if mode == "weekly_recruitment_form":
+        return f"{display_date} 活动招募"
+    if mode == "weekly_plan_confirmation":
+        return f"{display_date} 下周活动计划确认"
+    return f"{display_date} 明日活动预告"
 
 
 def _xiaoman_activity_post_event_stage(elapsed_hours: int | None, explicit_attempt: int | None) -> int:
@@ -4351,7 +4421,7 @@ def _xiaoman_activity_weekly_plan_confirmation_draft(
 
 def _xiaoman_activity_build_announcement(
     *,
-    date: str,
+    display_date: str,
     mode: str,
     operator_name: str,
     community_audience: str,
@@ -4360,6 +4430,7 @@ def _xiaoman_activity_build_announcement(
     post_event_elapsed_hours: int | None,
     material_followup_attempt: int | None,
     operations_lead_name: str,
+    read_issues: list[str] = [],
 ) -> dict[str, Any]:
     publishable = []
     skipped = []
@@ -4411,7 +4482,7 @@ def _xiaoman_activity_build_announcement(
                     )
         publishable.append(record)
 
-    header = _xiaoman_activity_announcement_header(mode, date, community_audience)
+    header = _xiaoman_activity_announcement_header(mode, display_date, community_audience)
     if publishable:
         body = "\n\n".join(
             _xiaoman_activity_announcement_line(record, index)
@@ -4419,7 +4490,10 @@ def _xiaoman_activity_build_announcement(
         )
         announcement_text = f"{header}\n\n{body}"
     else:
-        announcement_text = f"{header}\n\n暂无需要宣发的计划类活动。"
+        if mode == "weekly_preview":
+            announcement_text = f"{header}\n\n下周暂无已确认活动，暂不生成预告。"
+        else:
+            announcement_text = f"{header}\n\n暂无需要宣发的计划类活动。"
 
     if missing_followups:
         gap_lines = "\n".join(
@@ -4441,9 +4515,12 @@ def _xiaoman_activity_build_announcement(
             for item in material_escalations
         )
         gap_text = f"{gap_text}\n\n运营升级草稿：\n{escalation_lines}"
+    if read_issues:
+        issue_lines = "\n".join(f"- {issue}" for issue in read_issues)
+        gap_text = f"{gap_text}\n\n部分日期读取异常（已跳过，建议重跑）：\n{issue_lines}"
 
     operator_review_message = (
-        f"{operator_name}，我先把 {date} 的活动文字预告整理好了。"
+        f"{operator_name}，我先把 {display_date} 的活动文字预告整理好了。"
         "可以发就回复“发”，要改就直接说改哪里；我不会自动发群。"
         f"\n\n{announcement_text}{gap_text}"
     )
@@ -4843,9 +4920,21 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
     if mode not in XIAOMAN_ACTIVITY_ANNOUNCEMENT_MODES:
         return _xiaoman_activity_error(skill, "mode is not allowed", actor_agent=actor_agent, mode=mode)
 
-    if mode in XIAOMAN_ACTIVITY_ANNOUNCEMENT_RECORD_OPTIONAL_MODES and not isinstance(args.get("records"), list):
+    week_start = ""
+    week_end = ""
+    read_issues: list[str] = []
+    if mode == "weekly_preview":
+        week_start, week_end = _xiaoman_activity_week_range(date)
+        display_date = _xiaoman_activity_week_label(week_start, week_end)
+        records, record_source, record_error, read_issues = _xiaoman_activity_weekly_records(
+            args, actor_agent, week_start, week_end
+        )
+    elif mode in XIAOMAN_ACTIVITY_ANNOUNCEMENT_RECORD_OPTIONAL_MODES and not isinstance(args.get("records"), list):
         records, record_source, record_error = [], "not_required", ""
+        display_date = date
     else:
+        display_date = date
+        records, record_source, record_error = _xiaoman_activity_announcement_records(args, actor_agent)
         records, record_source, record_error = _xiaoman_activity_announcement_records(args, actor_agent)
     if record_error:
         return _xiaoman_activity_error(
@@ -4923,7 +5012,7 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
         )
     else:
         draft = _xiaoman_activity_build_announcement(
-            date=date,
+            display_date=display_date,
             mode=mode,
             operator_name=operator_name,
             community_audience=community_audience,
@@ -4932,6 +5021,7 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
             post_event_elapsed_hours=post_event_elapsed_hours,
             material_followup_attempt=material_followup_attempt,
             operations_lead_name=operations_lead_name,
+            read_issues=read_issues,
         )
 
     return _json(
@@ -4941,6 +5031,9 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
             "actor_agent": actor_agent,
             "mode": mode,
             "date": date,
+            "week_start": week_start,
+            "week_end": week_end,
+            "read_issues": read_issues,
             "record_source": record_source,
             "record_count": len(records),
             **draft,

@@ -159,7 +159,10 @@ MVP. It may use records already returned by `qintopia_xiaoman_activity_list_by_d
 perform read-through only when that read-only path is explicitly enabled. It skips
 temporary meal records by default, keeps paid planned activities in the scheduling pool,
 flags missing time/location/owner/material fields, and returns only drafts. It does not
-create work items, call Huabaosi, call Erhua, call QiWe, publish, or send.
+create work items, call Huabaosi, call Erhua, call QiWe, publish, or send. The
+`weekly_preview` mode expands a Monday `date` into the full Mon–Sun window, reads both
+the plan and occurrence tables, deduplicates by record reference, and clearly reports an
+empty week instead of sending stale or wrong text.
 
 For the 2026-08-01 weekly minimum loop, use these modes:
 
