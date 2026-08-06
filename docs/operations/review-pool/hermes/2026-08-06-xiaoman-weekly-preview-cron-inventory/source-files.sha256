@@ -1,0 +1,3 @@
+add1b249e695476655d31a1101158136713e046e5571c18211aa1a5b733ddf58  workflows/xiaoman-weekly-preview/weekly_preview.py
+3f6effac536983b3ddb306fac533999fb7f68f922c8c4b3d5af4747960c41e9e  workflows/xiaoman-weekly-preview/README.md
+7ed9aae488f7ce9fab0cbc622f202886c670853d18aa0be15af512af1f107dea  deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh
