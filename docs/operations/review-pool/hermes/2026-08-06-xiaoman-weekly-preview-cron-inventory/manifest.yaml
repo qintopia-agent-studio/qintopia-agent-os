@@ -2,13 +2,14 @@ id: docs/operations/review-pool/hermes/2026-08-06-xiaoman-weekly-preview-cron-in
 type: review-evidence
 name: Xiaoman Weekly Preview Cron Declaration Inventory
 owner: qiaopengjun
-status: review-pool
+status: active
 risk_level: low
 description:
   Prerequisite governance evidence for turning the Monday activity-preview cron job into
   a reviewed bundle input. Records the cron-job key contract, the deterministic
-  weekly_preview script hashes, and a draft declaration. Not deployable; does not change
-  runtime behavior.
+  weekly_preview script hashes, and a draft declaration. The workflow package is now
+  promoted to active via the cutover PR; activation still requires the owner-approved
+  runbook with live-read + bundle/smoke gates, not a hot-edit.
 source:
   repository: qintopia-agent-os
   observed_at: 2026-08-06
@@ -21,8 +22,13 @@ proposed_target:
   bundle_input: agents/xiaoman/profile-bundle (future change, gated by smoke + review)
   script: workflows/xiaoman-weekly-preview/weekly_preview.py
   announcement_mode: qintopia_xiaoman_activity_announcement_prepare(mode=weekly_preview) # PR #384
+cutover:
+  pr: feat/xiaoman-weekly-preview-cutover
+  runbook: docs/operations/xiaoman-weekly-preview-cutover-runbook.md
+  activates: release-managed systemd timer (not conversation-created cron)
+  requires_owner: live-read gate + bundle/smoke gate + approved runbook
 production_boundary:
-  deployable: false
+  deployable: true
   external_sends: false
   database_writes: false
   runtime_profile: false
@@ -43,6 +49,8 @@ pending_before_activation:
   - owner-triggered live read of /home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json
   - reviewed bundle + smoke-gate change allowing a specific signed cron declaration
   - separate production cutover PR with rollback
+  # These are now delivered by the cutover PR + runbook above; the timer is not
+  # activated until the owner executes the runbook on the host with smoke evidence.
 validation:
   commands:
     - pnpm runtime:hermes:check
