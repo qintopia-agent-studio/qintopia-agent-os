@@ -67,3 +67,17 @@ Erhua for delivery.
 - Reads Feishu activity tables; does not write them.
 - Produces a draft only; never sends externally.
 - Requires the same secrets as the Xiaoman read-through path.
+
+## Production Activation
+
+This workflow replaces the legacy natural-language Monday cron task. Activation is a
+**separate, owner-approved cutover** and is not performed by merging the workflow
+package alone:
+
+- Runbook:
+  [`docs/operations/xiaoman-weekly-preview-cutover-runbook.md`](../operations/xiaoman-weekly-preview-cutover-runbook.md)
+- It registers a release-managed systemd timer (not a conversation-created cron), keeps
+  the human confirmation gate, and removes the old Monday task from the server
+  `jobs.json`.
+- Installing or enabling the timer requires the owner-approved runbook plus observation
+  and rollback smoke evidence. Do not hot-edit production units.

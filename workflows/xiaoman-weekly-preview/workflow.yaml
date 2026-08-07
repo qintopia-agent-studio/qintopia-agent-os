@@ -2,7 +2,7 @@ id: workflows/xiaoman-weekly-preview
 type: workflow
 name: Xiaoman Weekly Activity Preview
 owner: PatrickLiveCool
-status: draft
+status: active
 risk_level: low
 description:
   Deterministic Monday weekly-preview script for Xiaoman community activities. It reads
@@ -30,9 +30,12 @@ tags:
   - activity
   - weekly-preview
 next_actions:
-  - Replace the legacy natural-language Monday cron task with weekly_preview.py and put
-    it behind an owner-reviewed production timer.
+  - ? Activate via the cutover PR + owner-reviewed runbook (see
+      docs/operations/xiaoman-weekly-preview-cutover-runbook.md)
+    : register a release-managed systemd timer instead of the legacy
+      conversation-created cron, then remove the old natural-language Monday task from
+      the server jobs.json.
   - Keep the human confirmation gate; the script only drafts, Liu Shan must confirm
     before any Erhua handoff or group send.
-  - After adoption, remove the old natural-language Monday task from the server
-    jobs.json.
+  - Do not hot-edit production units; install or enable only through the approved
+    runbook with observation and rollback smoke evidence.
