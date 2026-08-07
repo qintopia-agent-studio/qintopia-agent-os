@@ -1,0 +1,57 @@
+id: docs/operations/review-pool/hermes/2026-08-07-erhua-mention-guard-inventory
+type: review-evidence
+name: Erhua Mention Guard Inventory
+owner: qiaopengjun
+status: review-pool
+risk_level: low
+description:
+  Prerequisite governance evidence for tightening the Erhua group-reply mention guard
+  (the "Erhua snatch / 二花抢答" risk). Inventories the current QiWe group-mention
+  filter, the Erhua consultation workflow trigger boundary, the Xiaoman V3 bot-mention
+  binding, residual risk points, and a governance proposal. Not deployable; changes no
+  runtime.
+source:
+  repository: qintopia-agent-os
+  observed_at: 2026-08-07
+  disposition: review-pool
+  evidence_files:
+    - skills/qiwe/README.md
+    - workflows/erhua-consultation/workflow.yaml
+    - workflows/erhua-consultation/README.md
+    - fixtures/qiwe/README.md
+    - runtime/sidecar/src/conversation_ingress.rs
+proposed_target:
+  lock_erhua_mention_boundary:
+    workflows/erhua-consultation (add replay fixtures + package tests per its
+    next_actions)
+  confirm_passive_pipeline_value: QIWE_PASSIVE_PIPELINE_ENABLED live value (owner read)
+  escalate_broadcast_fix:
+    Hermes runtime dispatch change (out of repo scope, owner decision)
+production_boundary:
+  deployable: false
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+gates:
+  - id: mention-guard-exists
+    note:
+      QiWe group layer already filters non-mention (QIWE_PASSIVE_PIPELINE_ENABLED
+      default off)
+  - id: consultation-draft
+    note:
+      workflows/erhua-consultation is draft/high; mention boundary documented but not
+      CI-locked
+  - id: runtime-dispatch-out-of-scope
+    note:
+      true "broadcast to Xiaoman+Erhua" root cause is Hermes runtime dispatch, not repo
+      Python
+pending_before_activation:
+  - P1 owner-reviewed PR adding Erhua consultation replay fixtures + package tests
+  - P2 owner read of live QIWE_PASSIVE_PIPELINE_ENABLED value
+  - P3 separate runtime/orchestration owner decision for the broadcast fix
+validation:
+  commands:
+    - pnpm test:qiwe
+    - pnpm workflows:check
+rollback: No runtime state is touched by this evidence package; rollback is a no-op.
