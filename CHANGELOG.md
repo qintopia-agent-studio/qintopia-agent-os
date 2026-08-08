@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.75](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.74...v0.2.75) (2026-08-08)
+
+
+### Features
+
+* **erhua:** add morning brief no-publishable activity follow-up ([#392](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/392)) ([b1b9a79](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b1b9a798720c6005f982497dcb6872209c8edb92))
+* **xiaoman:** activate weekly-preview workflow with cutover runbook ([9bb13a2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9bb13a2511554bd11936aa4bdce6c5b482824748))
+* **xiaoman:** add daily case-report workflow for 秦托邦的小伙伴（新） group ([#389](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/389)) ([5d65a51](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5d65a51f348827770255912e85cce38e448014d5))
+* **xiaoman:** add deterministic weekly_preview announcement mode ([#384](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/384)) ([3087a82](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3087a82ab887bd14309c38cf849063462e9036ef))
+* **xiaoman:** add weekly minimum loop announcement modes ([#382](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/382)) ([4c5d858](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4c5d858651a4b67f48e82d304b690b84dd116f85))
+
+
+### Bug Fixes
+
+* harden QiWe activation env value parsing ([#381](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/381)) ([c1bbbaa](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c1bbbaad439c4d966a8d8c9ea62e8155e6d09766))
+* trust release unit identity for QiWe config ([#379](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/379)) ([ff2568a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ff2568a7efcceb614e1a5d7049e20f2a53afaf30))
+
+
+### Documentation
+
+* document conversation-created Xiaoman timer storage ([#383](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/383)) ([15789e6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/15789e69d590ba2f87ee994fd1a784d69a0d5fe8))
+* **hermes:** add env-drift and secret-rotation review inventories ([#388](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/388)) ([dc743be](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/dc743bef43ada9b2aa4958880e1a4da2c685b47a))
+* **hermes:** add erhua mention-guard review inventory (治二花抢答治理证据) ([#387](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/387)) ([67cba72](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/67cba720b71f643ca84e538478dab7b530679ebc))
+* **hermes:** add xiaoman weekly-preview cron declaration review inventory ([#385](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/385)) ([b842aeb](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b842aeb0441d4123aad66ee4e2230af3cc1da8d5))
+* **xiaoman:** keep preview timer design non-executable ([#391](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/391)) ([675e1a6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/675e1a6c029f567cb2aacc9c7fe582ded01dd018))
+* **xiaoman:** record daily report systemd design draft ([#390](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/390)) ([b844bc4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b844bc44d1ff1d9f9efe1cf978c4d559ddf9dde2))
+
 ## [0.2.74](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.73...v0.2.74) (2026-08-04)
 
 
