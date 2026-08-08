@@ -13,6 +13,13 @@ entries:
     notes:
       Erhua group consultation, missing-source escalation, complaint intake, and
       handoff.
+  - id: workflows/erhua-morning-brief
+    path: workflows/erhua-morning-brief
+    manifest: workflows/erhua-morning-brief/workflow.yaml
+    status: draft
+    notes:
+      Daily Erhua morning text draft that combines Xiaoman same-day activities with
+      QunMind public-source AI news; send activation remains separately gated.
   - id: workflows/xiaoman-activity-signal
     path: workflows/xiaoman-activity-signal
     manifest: workflows/xiaoman-activity-signal/workflow.yaml

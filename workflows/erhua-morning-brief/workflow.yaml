@@ -1,0 +1,47 @@
+id: workflows/erhua-morning-brief
+type: workflow
+name: Erhua Morning Brief
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Daily morning Erhua text draft that combines today's Xiaoman activity preview with
+  QunMind public-source AI news. On Sunday morning, zero publishable Xiaoman activities
+  trigger a second collection prompt after the Saturday reminder. It can prepare a
+  reviewed AgentOS group message request after a text_announcement artifact is approved,
+  but it never sends.
+source:
+  path: workflows/erhua-morning-brief/morning_brief.py
+  reference: Xiaoman same_day_preview plus QunMind daily-report --public-only
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm workflows:check
+    - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s
+      workflows/erhua-morning-brief/tests -v
+dependencies:
+  - skills/qintopia-tools
+  - workflows/xiaoman-weekly-preview
+  - runtime/sidecar
+  - agents/erhua
+  - agents/xiaoman
+  - qunmind
+tags:
+  - workflow
+  - erhua
+  - xiaoman
+  - morning-brief
+  - ai-news
+next_actions:
+  - Keep status as draft until the reviewed production timer and Erhua/QiWe text-send
+    boundary are designed.
+  - Inventory any existing Hermes cron/jobs.json Saturday or Sunday collection job
+    before changing schedule ownership.
+  - Install the planned 08:05 Asia/Shanghai schedule only through deploy/runner code
+    with observation and rollback evidence; do not hand-copy a cron or hot-edit
+    production units.

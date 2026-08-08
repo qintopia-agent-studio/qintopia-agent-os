@@ -46,6 +46,8 @@
 - Local PR quick tier: `pnpm check:pr:quick`
 - Local PR heavy tier: `pnpm check:pr:heavy`
 - Local PR auto tier: `pnpm check:pr:auto`
+- Erhua morning brief fixture test:
+  `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/erhua-morning-brief/tests -v`
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
 - Release Please PR manual CI validation:
   `gh workflow run ci.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
@@ -278,6 +280,9 @@ Use `rg` and `rg --files` for search.
 - Rust, Python, TypeScript, shell, and SQL are implementation details inside a package.
 - Do not create top-level `python/`, `rust/`, `typescript/`, or similar language
   buckets.
+- When adding a new workflow package, update `registry/workflows.yaml`,
+  `tools/workflows/check-workflows.mjs`, and `deploy/restart-target-rules.yaml` in the
+  same PR. CI treats unmatched `workflows/**` files as production-adjacent.
 - On macOS, run the complete sidecar unit suite with
   `RUST_MIN_STACK=33554432 cargo test --manifest-path runtime/sidecar/Cargo.toml`. The
   default test-thread stack can overflow in an existing Xiaoman async test; see
