@@ -3,7 +3,7 @@ type: workflow
 name: Xiaoman Daily Community Case-File Report
 owner: PatrickLiveCool
 status: draft
-risk_level: low
+risk_level: medium
 description:
   Deterministic daily case-file poster generator for Xiaoman community groups. It reads
   the last 24 hours of QiWe group messages from the Qintopia message store, clusters
@@ -36,6 +36,8 @@ tags:
 next_actions:
   - Keep status as draft until the visual style, read-through path, and render
     dependencies are reviewed and accepted.
+  - Add psycopg, Playwright, and Chromium through a reviewed runtime packaging boundary
+    before enabling production PNG/database runs; do not hand-install them on servers.
   - Add an explicit cutover runbook before switching to active and installing a systemd
     timer, mirroring the xiaoman-weekly-preview activation pattern.
   - The script only drafts; a human must confirm before any QiWe group send.

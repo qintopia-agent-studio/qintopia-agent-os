@@ -59,12 +59,12 @@ This mode treats the HTML file as the deliverable and keeps it on disk.
 ### Render PNG with Playwright
 
 ```bash
-# Playwright must be installed in the Python environment.
-python -m pip install playwright
-python -m playwright install chromium
-
 python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render png
 ```
+
+PNG rendering requires Playwright and Chromium from a reviewed repository/runtime
+package boundary. Do not install them manually on production servers; keep production
+activation blocked until that dependency path is reviewed.
 
 ### Production read-through
 
@@ -100,6 +100,9 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 
 ## Production Boundary
 
+- This draft workflow is `risk_level: medium` because production read-through handles
+  real group-message content and database credentials, even though it never sends or
+  writes externally.
 - Reads `qintopia_messages.messages` only; does not write to the message store.
 - Does not send to QiWe, Feishu, or any other external channel.
 - Requires the same Postgres read credentials as the message-store search path.
@@ -116,6 +119,9 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
   can contain real member names and message excerpts, so it is written only into a
   `0700` output directory as a `0600` file and is removed after PNG rendering or
   failure.
+- Production PNG/database runs require `psycopg`, Playwright, and Chromium to be added
+  through a reviewed runtime packaging path first. Hand-installed Python packages or
+  browsers are outside the approved production boundary for this draft.
 
 ## Validation
 
