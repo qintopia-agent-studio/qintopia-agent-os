@@ -843,6 +843,9 @@ def _render_html(report: ReportData, width: int) -> str:
 </html>"""
 
 
+def _file_url(path: Path) -> str:
+    return path.resolve().as_uri()
+
 
 def _render_png(html_path: Path, output_path: Path, width: int) -> None:
     try:
@@ -861,7 +864,7 @@ def _render_png(html_path: Path, output_path: Path, width: int) -> None:
             if route.request.url.startswith(("http://", "https://"))
             else route.continue_(),
         )
-        page.goto(f"file://{html_path}", wait_until="load")
+        page.goto(_file_url(html_path), wait_until="load")
         height = page.evaluate("document.body.scrollHeight")
         page.set_viewport_size({"width": width, "height": height})
         page.screenshot(path=str(output_path), full_page=True)

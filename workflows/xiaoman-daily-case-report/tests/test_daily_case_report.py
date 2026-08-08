@@ -313,6 +313,75 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("https://", rendered)
         self.assertNotIn("http://", rendered)
 
+    def test_render_png_uses_absolute_file_uri_for_relative_html_path(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakePage:
+            def route(self, *_args):
+                pass
+
+            def goto(self, url, wait_until):
+                captured["url"] = url
+                captured["wait_until"] = wait_until
+
+            def evaluate(self, _script):
+                return 120
+
+            def set_viewport_size(self, size):
+                captured["viewport"] = size
+
+            def screenshot(self, path, full_page):
+                captured["screenshot"] = (path, full_page)
+
+        class FakeBrowser:
+            def new_page(self, **_kwargs):
+                return FakePage()
+
+            def close(self):
+                captured["closed"] = True
+
+        class FakePlaywright:
+            chromium = types.SimpleNamespace(launch=lambda: FakeBrowser())
+
+        class FakeSyncPlaywright:
+            def __enter__(self):
+                return FakePlaywright()
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        old_cwd = Path.cwd()
+        old_playwright = sys.modules.get("playwright")
+        old_sync_api = sys.modules.get("playwright.sync_api")
+        fake_playwright = types.ModuleType("playwright")
+        fake_sync_api = types.ModuleType("playwright.sync_api")
+        fake_sync_api.sync_playwright = lambda: FakeSyncPlaywright()
+        sys.modules["playwright"] = fake_playwright
+        sys.modules["playwright.sync_api"] = fake_sync_api
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                os.chdir(tmpdir)
+                html_path = Path("reports") / "preview.html"
+                html_path.parent.mkdir()
+                html_path.write_text("<html></html>", encoding="utf-8")
+
+                daily_case_report._render_png(html_path, Path("reports") / "preview.png", 750)
+        finally:
+            os.chdir(old_cwd)
+            if old_playwright is None:
+                sys.modules.pop("playwright", None)
+            else:
+                sys.modules["playwright"] = old_playwright
+            if old_sync_api is None:
+                sys.modules.pop("playwright.sync_api", None)
+            else:
+                sys.modules["playwright.sync_api"] = old_sync_api
+
+        self.assertEqual(captured["wait_until"], "load")
+        self.assertTrue(str(captured["url"]).startswith("file:///"))
+        self.assertIn("/reports/preview.html", str(captured["url"]))
+        self.assertNotIn("file://reports", str(captured["url"]))
+
     def test_render_html_mode_returns_existing_html_deliverable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             env = os.environ.copy()
