@@ -1,0 +1,53 @@
+id: docs/operations/review-pool/hermes/2026-08-08-secret-rotation-inventory
+type: review-evidence
+name: Secret Rotation Review Inventory
+owner: qiaopengjun
+status: review-pool
+risk_level: low
+description:
+  Prerequisite governance evidence for secret/credential rotation. Inventories the
+  existing Release-bundled shared-DB password rollover state machine, the 2026-08-03
+  rollover gap report, the secret static check, the .env.example placeholders, residual
+  risk points, and a governance proposal. Not deployable; changes no runtime. Key
+  finding - rotation is not unsolved for the DB password; open work is confirming gap
+  closure and covering non-DB secrets.
+source:
+  repository: qintopia-agent-os
+  observed_at: 2026-08-08
+  disposition: review-pool
+  evidence_files:
+    - deploy/sidecar/scripts/xiaoman-shared-db-password-rollover-production.py
+    - docs/reports/2026-08-03-xiaoman-shared-database-rollover-gap.md
+    - tools/security/check-secrets.mjs
+    - tools/security/README.md
+    - runtime/sidecar/.env.example
+proposed_target:
+  confirm_db_gap_closed:
+    owner read of current Release state (no process retains prior URL)
+  cover_non_db_secrets:
+    owner-reviewed PR extending rotation to Feishu/QiWe/embedding/HMAC, or manual
+    runbook
+  schedule_decision: owner decision on recurring rotation scope (same immutable pattern)
+production_boundary:
+  deployable: false
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+gates:
+  - id: db-rollover-state-machine-exists
+    note:
+      immutable-Release script; root-only escrow; dual-target; exact-SHA dry-run gate
+  - id: gap-documented
+    note: 2026-08-03 report names root cause and resolution
+  - id: template-only-secrets
+    note: .env.example placeholders; live secrets are host-side
+pending_before_activation:
+  - P1 owner read of current Release state to confirm gap closure
+  - P2 owner-reviewed PR covering non-DB secret rotation (or manual runbook)
+  - P3 separate owner decision on scheduled rotation scope
+validation:
+  commands:
+    - pnpm security:check
+    - pnpm deploy:contracts:check
+rollback: No runtime state is touched by this evidence package; rollback is a no-op.
