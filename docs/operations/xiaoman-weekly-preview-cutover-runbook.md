@@ -1,39 +1,48 @@
-# Xiaoman Weekly Preview — Production Activation Cutover Runbook
+# Xiaoman Weekly Preview — Systemd Design Draft
 
 Updated: 2026-08-07
 
-This runbook is the **owner-approved activation path** for promoting
-`workflows/xiaoman-weekly-preview` from a merged, `status: active` workflow package into
-a live, release-managed Monday timer. It replaces the legacy conversation-created
-natural-language Monday cron task.
+This document is a **non-executable design draft** for a future reviewed deploy/runner
+implementation. It is not an owner-approved production activation path and must not be
+used to copy unit files into `/etc/systemd/system`, run `systemctl enable`, or mutate
+server cron state by hand.
+
+Production activation may happen only after the unit templates, installer, rollback,
+bundle inclusion, and deploy-contract checks land under `deploy/` through reviewed code.
 
 It is **not** production-completion evidence and must not be used to claim real group
 delivery. The script only drafts; a human confirms before any Erhua handoff or send.
 
 ## Scope
 
-In scope (this cutover):
+In scope (this design draft):
 
-- Register a release-managed systemd timer that runs `weekly_preview.py` every Monday.
-- Keep the human confirmation gate; the timer only prints `operator_review_message`.
-- Remove the old natural-language Monday task from the server `jobs.json`.
+- Capture the intended release-managed systemd timer shape for review.
+- Capture the human confirmation gate; the timer would only print
+  `operator_review_message`.
+- Record the legacy natural-language Monday task as a future deploy/runner cleanup
+  requirement.
 
 Out of scope (deferred, unchanged by this runbook):
 
 - Auto-send, QiWe delivery, feedback forms, material recap, poster generation.
-- Edits to `.env`, secrets, or any other production timer.
+- Edits to `.env`, secrets, cron files, `/etc/systemd/system`, or any production timer.
+- Any operator-executed install, rollback, `daemon-reload`, or `systemctl enable`.
 
-## Preconditions (owner gates, must pass before install)
+## Preconditions (future deploy/runner gates)
 
 1. **Live-read gate.** Confirm the Xiaoman read-through can read both `activity_plan`
    and `activity_occurrence` for the target week on the live host. The script fails
    closed (non-zero exit) if read-through is not enabled.
-2. **Bundle/smoke gate.** Run the aggregate Xiaoman production preflight smoke and the
-   `xiaoman-legacy-cron-observation-smoke.sh` on the target host. The production
-   baseline expects the legacy runtime cron file to be **empty**; this cutover must not
-   leave a conversation-created Monday cron behind.
-3. **Review.** This cutover PR is reviewed and approved. No hot-edits to production
-   units.
+2. **Deploy contract gate.** Add the unit templates and install/rollback logic to
+   `deploy/`, include them in `tools/deploy/build-deploy-bundle.mjs`, and guard them in
+   `tools/deploy/check-deploy-contracts.mjs` before any production activation.
+3. **Bundle/smoke gate.** The future deploy path must run the aggregate Xiaoman
+   production preflight smoke and the `xiaoman-legacy-cron-observation-smoke.sh` on the
+   target host. The production baseline expects the legacy runtime cron file to be
+   **empty**; activation must not leave a conversation-created Monday cron behind.
+4. **Review.** The deploy/runner implementation PR is reviewed and approved. No
+   hot-edits to production units.
 
 ## Systemd unit design (draft — owner validates parameters)
 
@@ -43,16 +52,21 @@ script, not a sidecar subcommand, so it follows the standalone `deploy/runner` p
 rather than the M9 sidecar renderer (`render-systemd-units.sh`, which only renders fixed
 sidecar subcommands).
 
-### Owner decisions (do NOT commit; set on the host)
+### Future reviewed parameters (not host-local edits)
 
 - `OnCalendar` — the exact Monday time. Example: `OnCalendar=Mon *-*-* 09:30:00`.
-  Confirm it falls after the Sunday 20:00 plan-sheet confirmation.
+  Confirm it falls after the Sunday 20:00 plan-sheet confirmation. Store the selected
+  value in reviewed deploy/runner configuration, not by editing a live unit.
 - Secrets env file — the Feishu base token / table id / view id file. Reference it via
-  `EnvironmentFile=`; never inline secrets. Path is host-specific.
+  `EnvironmentFile=`; never inline secrets. The reviewed installer must own the allowed
+  path.
 - `WorkingDirectory` / release path — point at the immutable release checkout
   (`/home/ubuntu/qintopia-agent-os-releases/current/...`); do not use a build or
   standalone checkout path.
 - `User` / `Group` — match the other Xiaoman runtime units on the host.
+- Runtime interpreter — use an absolute reviewed interpreter path from the production
+  runtime package or venv. Never use `/usr/bin/env python3` or any PATH-dependent
+  command in the rendered unit.
 
 ### `qintopia-xiaoman-weekly-preview.timer` (draft)
 
@@ -61,7 +75,7 @@ sidecar subcommands).
 Description=Run Xiaoman weekly activity preview (deterministic draft)
 
 [Timer]
-# OWNER DECISION: exact Monday time, after Sunday plan confirmation.
+# FUTURE DEPLOY CODE: exact Monday time, after Sunday plan confirmation.
 OnCalendar=Mon *-*-* 09:30:00
 Persistent=true
 Unit=qintopia-xiaoman-weekly-preview.service
@@ -80,65 +94,60 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# OWNER DECISION: user/group matching other Xiaoman runtime units.
+# FUTURE DEPLOY CODE: user/group matching other Xiaoman runtime units.
 User=ubuntu
 Group=ubuntu
-# OWNER DECISION: immutable release checkout.
+# FUTURE DEPLOY CODE: immutable release checkout.
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
-# OWNER DECISION: secrets env file (Feishu token/table id). Never inline.
+# FUTURE DEPLOY CODE: secrets env file allowlist. Never inline.
 EnvironmentFile=/etc/qintopia/xiaoman-activity-readthrough.env
 Environment=QINTOPIA_PROFILE_ID=xiaoman
 Environment=QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1
 Environment=QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1
-# OWNER DECISION: python interpreter + immutable release script path.
-ExecStart=/usr/bin/env python3 /home/ubuntu/qintopia-agent-os-releases/current/workflows/xiaoman-weekly-preview/weekly_preview.py
+# FUTURE DEPLOY CODE: absolute reviewed interpreter + immutable release script path.
+ExecStart=<reviewed-absolute-python-interpreter> /home/ubuntu/qintopia-agent-os-releases/current/workflows/xiaoman-weekly-preview/weekly_preview.py
 NoNewPrivileges=true
 PrivateTmp=true
 ```
 
-## Install procedure (owner-executed on the host)
+## Future Deployment Requirements
 
-1. Copy the reviewed `qintopia-xiaoman-weekly-preview.{timer,service}` into
-   `/etc/systemd/system`.
-2. `sudo systemctl daemon-reload`.
-3. `sudo systemctl enable --now qintopia-xiaoman-weekly-preview.timer`.
-4. Remove the old natural-language Monday task from the server cron:
+The future executable path must be reviewed code under `deploy/`; this design draft is
+not enough. That implementation must:
 
-   ```bash
-   jq 'del(.[] | select(.name == "<legacy-monday-preview-task-name>"))' \
-     /home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json > /tmp/jobs.json && \
-     mv /tmp/jobs.json /home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json
-   ```
+- render or install the fixed timer/service from repository-owned templates;
+- include those templates and scripts in the deploy bundle;
+- validate the bundle and unit contract in repository checks;
+- use a fixed systemd boundary and reviewed activation/rollback commands;
+- render `ExecStart` with an absolute reviewed interpreter and reject `/usr/bin/env`,
+  `python3`, shell wrappers, or any PATH-dependent interpreter lookup;
+- preflight the interpreter identity and import/runtime dependency set before enabling
+  the timer, then retain only sanitized interpreter path/version and dependency status;
+- remove or disable the legacy natural-language Monday task only through reviewed
+  deploy/runner logic, not by manual `jq`/`mv` edits on the server;
+- retain sanitized evidence for timer state, service command, and legacy-cron absence.
 
-   Then re-run `deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh`; it
-   must pass (legacy cron must be empty/absent of the Monday preview task).
-
-## Observation (after install)
+## Observation (future deploy/runner evidence)
 
 - `systemctl list-timers qintopia-xiaoman-weekly-preview.timer` shows the next Monday.
-- Forced run for validation (no production send occurs):
-
-  ```bash
-  sudo systemctl start qintopia-xiaoman-weekly-preview.service
-  journalctl -u qintopia-xiaoman-weekly-preview.service -n 50
-  ```
-
+- The preflight proves the rendered service uses the reviewed absolute interpreter, not
+  a PATH-resolved Python.
 - Confirm the output prints `operator_review_message`, never sends, and exits 0 on an
   empty week with "下周暂无已确认活动，暂不生成预告".
 
 ## Rollback
 
-1. `sudo systemctl disable --now qintopia-xiaoman-weekly-preview.timer`.
-2. Remove the unit files from `/etc/systemd/system`; `sudo systemctl daemon-reload`.
-3. If the legacy Monday cron was removed, restore it only if the owner approves
-   reverting to the conversation-created task (temporary operations convenience only).
-4. Re-run `xiaoman-legacy-cron-observation-smoke.sh` to confirm the expected state.
+Rollback must also be implemented under `deploy/`. It must stop/disable only the
+reviewed weekly-preview timer, preserve unrelated production timers, and restore legacy
+cron state only through an explicit owner-approved reviewed path. Do not remove unit
+files from `/etc/systemd/system` by hand.
 
 ## Acceptance
 
 - `external_send_executed` is always `false`; `requires_human_confirmation` is always
   `true`.
-- The legacy natural-language Monday cron task is gone from `jobs.json`.
-- The weekly preview runs as a release-managed systemd timer, not a conversation-created
-  cron.
+- A future reviewed deploy/runner activation removes the legacy natural-language Monday
+  cron task from `jobs.json`.
+- A future reviewed deploy/runner activation runs the weekly preview as a
+  release-managed systemd timer, not a conversation-created cron.
 - The aggregate Xiaoman production preflight smoke and legacy-cron smoke both pass.
