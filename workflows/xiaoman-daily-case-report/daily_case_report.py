@@ -328,8 +328,17 @@ def _validate_production_boundaries(args: argparse.Namespace) -> None:
 
 def _prepare_output_dir(path: str) -> Path:
     output_dir = Path(path)
+    existed = output_dir.exists()
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.chmod(0o700)
+    if existed:
+        mode = output_dir.stat().st_mode & 0o777
+        if mode != 0o700:
+            raise RuntimeError(
+                f"output directory already exists with mode {mode:04o}; "
+                "use a dedicated private 0700 directory"
+            )
+    else:
+        output_dir.chmod(0o700)
     return output_dir
 
 
@@ -499,7 +508,13 @@ def _cluster_cases(
                 speaker_counts[name] += 1
         top_speaker = speaker_counts.most_common(1)[0][0] if speaker_counts else "群友"
         # Build bullets from representative messages: longest first, then earliest.
-        sorted_by_length = sorted(cluster, key=lambda m: (-len(m.text), m.sent_at or datetime.min))[:3]
+        sorted_by_length = sorted(
+            cluster,
+            key=lambda m: (
+                -len(m.text),
+                m.sent_at.timestamp() if m.sent_at else float("-inf"),
+            ),
+        )[:3]
         bullets = []
         for m in sorted_by_length:
             snippet = _clean_text(m.text)[:70]

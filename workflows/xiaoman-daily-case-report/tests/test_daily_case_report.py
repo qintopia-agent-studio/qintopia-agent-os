@@ -183,6 +183,17 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertEqual(html_path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(html_path.read_text(encoding="utf-8"), "private group text")
 
+    def test_prepare_output_dir_rejects_existing_non_private_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "shared"
+            output_dir.mkdir()
+            output_dir.chmod(0o755)
+
+            with self.assertRaisesRegex(RuntimeError, "already exists with mode 0755"):
+                daily_case_report._prepare_output_dir(str(output_dir))
+
+            self.assertEqual(output_dir.stat().st_mode & 0o777, 0o755)
+
     def test_production_mode_rejects_retained_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             env = os.environ.copy()
@@ -287,6 +298,39 @@ class DailyCaseReportTest(unittest.TestCase):
             daily_case_report._clean_text("@张三今天活动几点开始"),
             "@张三今天活动几点开始",
         )
+
+    def test_cluster_cases_sorts_missing_and_aware_times_without_crashing(self) -> None:
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="张三",
+                text="活动讨论：开始",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u2",
+                sender_name="李四",
+                text="活动安排",
+                sent_at=None,
+                message_kind="text",
+            ),
+            daily_case_report.ReportMessage(
+                id="m3",
+                sender_id="u3",
+                sender_name="王五",
+                text="活动安排",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+        ]
+
+        cases = daily_case_report._cluster_cases(messages)
+
+        self.assertEqual(len(cases), 1)
+        self.assertEqual(cases[0].message_count, 3)
 
     def test_render_html_has_no_external_font_fetch(self) -> None:
         report = daily_case_report.ReportData(
