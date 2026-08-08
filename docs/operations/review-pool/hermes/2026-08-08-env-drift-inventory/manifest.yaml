@@ -1,0 +1,55 @@
+id: docs/operations/review-pool/hermes/2026-08-08-env-drift-inventory
+type: review-evidence
+name: Environment Drift Review Inventory
+owner: qiaopengjun
+status: review-pool
+risk_level: low
+description:
+  Prerequisite governance evidence for detecting/reconciling .env drift between the
+  repository template (runtime/sidecar/.env.example), rendered staging env, and live
+  host secret files under /etc/qintopia/*.env and /home/ubuntu/.hermes/profiles/*/.env.
+  Inventories the existing anti-drift policy, runtime-baseline server-handling rules,
+  the .env.example template, residual risk points, and a governance proposal. Not
+  deployable; changes no runtime.
+source:
+  repository: qintopia-agent-os
+  observed_at: 2026-08-08
+  disposition: review-pool
+  evidence_files:
+    - docs/engineering/anti-drift-policy.md
+    - tools/policy/check-anti-drift.mjs
+    - docs/operations/runtime-baseline.md
+    - runtime/sidecar/.env.example
+    - deploy/sidecar/scripts/render-staging-runtime-env.py
+    - docs/reports/2026-07-29-systemd-release-env-precedence.md
+proposed_target:
+  add_env_parity_check:
+    tools/security/check-env-parity.mjs (read-only key-set diff, host-run, emits no
+    values)
+  confirm_live_key_sets: owner read of /etc/qintopia/*.env and .hermes/profiles/*/.env
+  reconcile_if_drift: owner-reviewed PR, never a direct host edit
+production_boundary:
+  deployable: false
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+gates:
+  - id: anti-drift-policy-exists
+    note:
+      pnpm policy:check already blocks live .env from entering agents/*
+      (check-anti-drift.mjs)
+  - id: runtime-baseline-rules
+    note:
+      read-only inventory allowed, direct server edits forbidden (runtime-baseline.md)
+  - id: template-only-secrets
+    note: .env.example carries placeholders; live values are host-side
+pending_before_activation:
+  - P1 owner-reviewed PR adding the read-only env-parity check
+  - P2 owner read of live host env key sets
+  - P3 separate owner decision if reconciliation is required
+validation:
+  commands:
+    - pnpm policy:check
+    - pnpm security:check
+rollback: No runtime state is touched by this evidence package; rollback is a no-op.
