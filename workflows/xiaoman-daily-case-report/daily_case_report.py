@@ -18,6 +18,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
@@ -281,6 +282,8 @@ def _fetch_messages(
         FROM qintopia_messages.messages m
         WHERE m.platform = 'qiwe'
           AND m.chat_type = 'group'
+          AND m.message_kind = 'text'
+          AND NULLIF(BTRIM(m.text), '') IS NOT NULL
           AND COALESCE(m.sent_at, m.received_at) >= %s
           AND COALESCE(m.sent_at, m.received_at) < %s
     """
@@ -307,6 +310,33 @@ def _fetch_messages(
                     )
                 )
     return messages
+
+
+def _uses_real_messages(args: argparse.Namespace) -> bool:
+    return not args.dry_run and not args.fixture
+
+
+def _prepare_output_dir(path: str) -> Path:
+    output_dir = Path(path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.chmod(0o700)
+    return output_dir
+
+
+def _write_private_text(path: Path, content: str) -> None:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.stem}-",
+        suffix=path.suffix,
+        delete=False,
+    ) as handle:
+        tmp_path = Path(handle.name)
+        os.chmod(tmp_path, 0o600)
+        handle.write(content)
+    tmp_path.replace(path)
+    os.chmod(path, 0o600)
 
 
 def _clean_text(text: str) -> str:
@@ -884,52 +914,63 @@ def _result_json(
 def main() -> int:
     args = _parse_args()
 
+    real_messages = _uses_real_messages(args)
+    if real_messages and (args.keep_html or args.render == "html"):
+        print(
+            "ERROR: production read-through cannot retain HTML because it contains real group content; "
+            "use --render png without --keep-html",
+            file=sys.stderr,
+        )
+        return 2
+
     try:
         report = _build_report(args)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = _prepare_output_dir(args.output_dir)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     html_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.html"
     png_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.png"
 
     html_content = _render_html(report, args.output_width)
-    html_path.write_text(html_content, encoding="utf-8")
+    _write_private_text(html_path, html_content)
 
     png_generated = False
-    if args.render in ("auto", "png"):
-        try:
-            _render_png(html_path, png_path, args.output_width)
-            png_generated = True
-        except RuntimeError as exc:
-            print(f"WARN: PNG rendering skipped: {exc}", file=sys.stderr)
-            if args.render == "png":
-                return 2
+    try:
+        if args.render in ("auto", "png"):
+            try:
+                _render_png(html_path, png_path, args.output_width)
+                png_generated = True
+            except RuntimeError as exc:
+                print(f"WARN: PNG rendering skipped: {exc}", file=sys.stderr)
+                if args.render == "png" or real_messages:
+                    return 2
 
-    html_is_deliverable = not png_generated
+        html_is_deliverable = not png_generated
 
-    if not args.keep_html and not html_is_deliverable and html_path.exists():
-        try:
-            html_path.unlink()
-        except OSError:
-            pass
+        deliverable = png_path if png_generated else html_path
+        result = _result_json(
+            report,
+            deliverable,
+            png_path if png_generated else None,
+            None if real_messages else html_path if html_path.exists() else None,
+        )
 
-    deliverable = png_path if png_generated else html_path
-    result = _result_json(
-        report,
-        deliverable,
-        png_path if png_generated else None,
-        html_path if html_path.exists() else None,
-    )
-
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        print(result["operator_review_message"])
-    return 0
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(result["operator_review_message"])
+        return 0
+    finally:
+        html_is_deliverable = not png_generated
+        should_remove_html = real_messages or (not args.keep_html and not html_is_deliverable)
+        if should_remove_html and html_path.exists():
+            try:
+                html_path.unlink()
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

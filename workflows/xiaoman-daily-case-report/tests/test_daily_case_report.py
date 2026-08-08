@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -128,7 +130,110 @@ class DailyCaseReportTest(unittest.TestCase):
                 sys.modules["psycopg"] = old_psycopg
 
         self.assertIn("COALESCE(m.sent_at, m.received_at) AS report_time", captured["sql"])
+        self.assertIn("m.message_kind = 'text'", captured["sql"])
+        self.assertIn("NULLIF(BTRIM(m.text), '') IS NOT NULL", captured["sql"])
         self.assertEqual(messages[0].sent_at, report_time)
+
+    def test_private_output_helpers_restrict_local_file_permissions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = daily_case_report._prepare_output_dir(str(Path(tmpdir) / "report"))
+            html_path = output_dir / "report.html"
+
+            daily_case_report._write_private_text(html_path, "private group text")
+
+            self.assertEqual(output_dir.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(html_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(html_path.read_text(encoding="utf-8"), "private group text")
+
+    def test_production_mode_rejects_retained_html(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--render",
+                    "html",
+                    "--output-dir",
+                    tmpdir,
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("cannot retain HTML", completed.stderr)
+
+    def test_production_keep_html_is_rejected_before_reading_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--keep-html",
+                    "--output-dir",
+                    tmpdir,
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("cannot retain HTML", completed.stderr)
+        self.assertNotIn("database read-through is disabled", completed.stderr)
+
+    def test_production_auto_render_failure_removes_intermediate_html(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = argparse.Namespace(
+                dry_run=False,
+                fixture=None,
+                keep_html=False,
+                render="auto",
+                output_dir=tmpdir,
+                output_width=750,
+                json=True,
+            )
+            report = daily_case_report.ReportData(
+                group_name="group",
+                report_title="case file",
+                report_date="过去24小时",
+                time_range="00:00-23:59",
+                member_count=1,
+                message_count=0,
+                participant_count=0,
+                case_count=0,
+                suspect_count=0,
+                hourly_counts=[0] * 24,
+                cases=[],
+                suspects=[],
+                quote="done",
+                highlight="done",
+            )
+            old_parse_args = daily_case_report._parse_args
+            old_build_report = daily_case_report._build_report
+            old_render_png = daily_case_report._render_png
+            daily_case_report._parse_args = lambda: args
+            daily_case_report._build_report = lambda _args: report
+            daily_case_report._render_png = lambda *_args: (_ for _ in ()).throw(
+                RuntimeError("missing browser")
+            )
+            try:
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    code = daily_case_report.main()
+            finally:
+                daily_case_report._parse_args = old_parse_args
+                daily_case_report._build_report = old_build_report
+                daily_case_report._render_png = old_render_png
+
+            self.assertEqual(code, 2)
+            self.assertIn("PNG rendering skipped", stderr.getvalue())
+            self.assertEqual(list(Path(tmpdir).glob("*.html")), [])
 
     def test_clean_text_removes_mention_token_without_dropping_body(self) -> None:
         self.assertEqual(

@@ -10,6 +10,8 @@ automatically.
 
 - Read QiWe group messages from `qintopia_messages.messages` for the latest rolling
   24-hour window.
+- Count only text messages with non-empty `text`; image, emoji-only, system, and blank
+  messages are excluded from activity statistics.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
 - Render a mobile-friendly PNG poster styled like a detective case file.
@@ -106,6 +108,10 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 - The default report window is the latest rolling 24 hours in the configured
   `--timezone` (default `Asia/Shanghai`) before querying Postgres. `--date` is an
   explicit calendar-day backfill mode.
+- Production read-through rejects `--render html` and `--keep-html`. Intermediate HTML
+  can contain real member names and message excerpts, so it is written only into a
+  `0700` output directory as a `0600` file and is removed after PNG rendering or
+  failure.
 
 ## Validation
 
