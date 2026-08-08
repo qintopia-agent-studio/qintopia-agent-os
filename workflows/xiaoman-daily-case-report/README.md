@@ -103,6 +103,9 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 - Reads `qintopia_messages.messages` only; does not write to the message store.
 - Does not send to QiWe, Feishu, or any other external channel.
 - Requires the same Postgres read credentials as the message-store search path.
+- Production read-through accepts only `QINTOPIA_MESSAGE_STORE_DATABASE_URL` or
+  `QINTOPIA_SIDECAR_DATABASE_URL`; generic `DATABASE_URL` is ignored.
+- Production read-through is allowlisted to the default 秦托邦的小伙伴（新） `chat_id`.
 - Rendering happens locally in the runtime environment; no external image service,
   remote font, or other third-party network resource is called.
 - The default report window is the latest rolling 24 hours in the configured

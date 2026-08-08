@@ -220,7 +220,6 @@ def _database_url() -> str | None:
     return (
         os.environ.get("QINTOPIA_MESSAGE_STORE_DATABASE_URL")
         or os.environ.get("QINTOPIA_SIDECAR_DATABASE_URL")
-        or os.environ.get("DATABASE_URL")
     )
 
 
@@ -314,6 +313,13 @@ def _fetch_messages(
 
 def _uses_real_messages(args: argparse.Namespace) -> bool:
     return not args.dry_run and not args.fixture
+
+
+def _validate_production_boundaries(args: argparse.Namespace) -> None:
+    if args.chat_id != DEFAULT_CHAT_ID:
+        raise RuntimeError(
+            "production read-through is allowlisted to the default 秦托邦的小伙伴（新） chat id"
+        )
 
 
 def _prepare_output_dir(path: str) -> Path:
@@ -922,6 +928,12 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if real_messages:
+        try:
+            _validate_production_boundaries(args)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
 
     try:
         report = _build_report(args)

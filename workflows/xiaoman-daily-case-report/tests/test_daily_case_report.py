@@ -134,6 +134,45 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("NULLIF(BTRIM(m.text), '') IS NOT NULL", captured["sql"])
         self.assertEqual(messages[0].sent_at, report_time)
 
+    def test_database_url_ignores_generic_database_url(self) -> None:
+        old_message_store = os.environ.pop("QINTOPIA_MESSAGE_STORE_DATABASE_URL", None)
+        old_sidecar = os.environ.pop("QINTOPIA_SIDECAR_DATABASE_URL", None)
+        old_generic = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = "postgresql://wrong"
+        try:
+            self.assertIsNone(daily_case_report._database_url())
+        finally:
+            if old_message_store is not None:
+                os.environ["QINTOPIA_MESSAGE_STORE_DATABASE_URL"] = old_message_store
+            if old_sidecar is not None:
+                os.environ["QINTOPIA_SIDECAR_DATABASE_URL"] = old_sidecar
+            if old_generic is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = old_generic
+
+    def test_production_mode_rejects_non_default_chat_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--chat-id",
+                    "other-chat",
+                    "--output-dir",
+                    tmpdir,
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("allowlisted to the default", completed.stderr)
+        self.assertNotIn("database read-through is disabled", completed.stderr)
+
     def test_private_output_helpers_restrict_local_file_permissions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = daily_case_report._prepare_output_dir(str(Path(tmpdir) / "report"))
@@ -197,6 +236,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 output_dir=tmpdir,
                 output_width=750,
                 json=True,
+                chat_id=daily_case_report.DEFAULT_CHAT_ID,
             )
             report = daily_case_report.ReportData(
                 group_name="group",
