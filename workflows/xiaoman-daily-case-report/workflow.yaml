@@ -21,8 +21,7 @@ production_boundary:
 validation:
   commands:
     - pnpm workflows:check
-    - python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run
-      --render html
+    - "python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html"
 dependencies:
   - skills/qiwe
   - runtime/postgres
