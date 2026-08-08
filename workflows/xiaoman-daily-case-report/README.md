@@ -1,13 +1,15 @@
 # Workflow: Xiaoman Daily Community Case-File Report
 
 `workflows/xiaoman-daily-case-report` generates a playful daily "group chat case file"
-poster for Xiaoman community groups. It reads the last 24 hours of QiWe group messages,
-clusters discussion topics into "cases", highlights active participants as "suspects",
-and renders a PNG poster for human review. It never sends automatically.
+poster for Xiaoman community groups. By default it reads the latest rolling 24 hours of
+QiWe group messages, clusters discussion topics into "cases", highlights active
+participants as "suspects", and renders a PNG poster for human review. It never sends
+automatically.
 
 ## Responsibility
 
-- Read QiWe group messages from `qintopia_messages.messages` for a 24-hour window.
+- Read QiWe group messages from `qintopia_messages.messages` for the latest rolling
+  24-hour window.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
 - Render a mobile-friendly PNG poster styled like a detective case file.
@@ -76,7 +78,9 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 
 > `--chat-id` and `--group-name` both default to the 秦托邦的小伙伴（新） group
 > (`10859791146538059`), so in production you can omit both and just enable
-> read-through.
+> read-through. Without `--date`, the query window is the latest rolling 24 hours ending
+> at run time. Use `--date YYYY-MM-DD` only for a specific calendar-day backfill in
+> `--timezone`.
 
 ## Acceptance Scenarios
 
@@ -87,7 +91,8 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
   intermediate render surface.
 - Database mode fails closed (non-zero exit) if read-through is not enabled or the
   database URL is missing.
-- An empty 24-hour window exits 0 with a report showing zero messages and no cases.
+- An empty rolling 24-hour window exits 0 with a report showing zero messages and no
+  cases.
 - `external_send_executed` is always `false`; `requires_human_confirmation` is always
   `true`.
 
@@ -98,8 +103,9 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 - Requires the same Postgres read credentials as the message-store search path.
 - Rendering happens locally in the runtime environment; no external image service,
   remote font, or other third-party network resource is called.
-- The report window is computed in the configured `--timezone` (default `Asia/Shanghai`)
-  before querying Postgres.
+- The default report window is the latest rolling 24 hours in the configured
+  `--timezone` (default `Asia/Shanghai`) before querying Postgres. `--date` is an
+  explicit calendar-day backfill mode.
 
 ## Validation
 

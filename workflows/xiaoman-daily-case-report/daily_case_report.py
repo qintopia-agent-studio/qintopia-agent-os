@@ -34,6 +34,7 @@ DEFAULT_OUTPUT_WIDTH = 750
 DEFAULT_CASE_LIMIT = 6
 DEFAULT_SUSPECT_LIMIT = 5
 DEFAULT_HOURLY_BUCKETS = 24
+DEFAULT_WINDOW_HOURS = 24
 DEFAULT_MIN_CASE_MESSAGES = 3
 DEFAULT_TOP_KEYWORDS = 18
 
@@ -78,6 +79,7 @@ class CaseCard:
     participant_count: int
     color_bg: str
     color_text: str
+    top_speaker: str
 
 
 @dataclass
@@ -104,13 +106,14 @@ class ReportData:
     cases: list[CaseCard]
     suspects: list[Suspect]
     quote: str
+    highlight: str
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Xiaoman daily community case-file report")
     parser.add_argument(
         "--date",
-        help="Report date (YYYY-MM-DD). Defaults to yesterday if before 06:00 local, else today.",
+        help="Backfill one calendar day (YYYY-MM-DD). Omit for the latest rolling 24-hour window.",
     )
     parser.add_argument(
         "--chat-id",
@@ -154,25 +157,37 @@ def _report_timezone(timezone_name: str) -> ZoneInfo:
         raise RuntimeError(f"unsupported daily case report timezone: {timezone_name}") from exc
 
 
-def _report_date(args: argparse.Namespace) -> tuple[datetime, datetime, str]:
-    """Return report start (inclusive), end (exclusive), and display date string.
-
-    The day boundary follows --timezone so Postgres receives the intended
-    local-day window even when the server runs in another timezone.
-    """
+def _report_date_at(
+    args: argparse.Namespace,
+    now: datetime,
+) -> tuple[datetime, datetime, str]:
     report_zone = _report_timezone(args.timezone)
     if args.date:
         base_date = datetime.strptime(args.date, "%Y-%m-%d").date()
-    else:
-        local_now = datetime.now(report_zone)
-        base_date = local_now.date()
-        if local_now.hour < 6:
-            base_date -= timedelta(days=1)
+        start = datetime.combine(base_date, time.min, tzinfo=report_zone)
+        end = start + timedelta(days=1)
+        display = start.strftime("%Y年%m月%d日")
+        return start, end, display
 
-    start = datetime.combine(base_date, time.min, tzinfo=report_zone)
-    end = start + timedelta(days=1)
-    display = start.strftime("%Y年%m月%d日")
+    local_now = now.astimezone(report_zone) if now.tzinfo else now.replace(tzinfo=report_zone)
+    end = local_now.replace(microsecond=0)
+    start = end - timedelta(hours=DEFAULT_WINDOW_HOURS)
+    display = f"过去{DEFAULT_WINDOW_HOURS}小时（截至 {end.strftime('%Y年%m月%d日 %H:%M')}）"
     return start, end, display
+
+
+def _report_date(args: argparse.Namespace) -> tuple[datetime, datetime, str]:
+    """Return report start (inclusive), end (exclusive), and display date string."""
+    report_zone = _report_timezone(args.timezone)
+    return _report_date_at(args, datetime.now(report_zone))
+
+
+def _time_range_label(start: datetime, end: datetime) -> str:
+    """Return a human-readable time range like 08/07 07:45–08/08 07:44."""
+    end_display = end - timedelta(seconds=1)
+    if start.date() == end_display.date():
+        return f"{start.strftime('%H:%M')}–{end_display.strftime('%H:%M')}"
+    return f"{start.strftime('%m/%d %H:%M')}–{end_display.strftime('%m/%d %H:%M')}"
 
 
 def _normalize_message_times(
@@ -200,12 +215,6 @@ def _normalize_message_times(
     return normalized
 
 
-def _time_range_label(start: datetime, end: datetime) -> str:
-    """Return a human-readable time range like 00:00–23:59."""
-    end_display = end - timedelta(seconds=1)
-    return f"{start.strftime('%H:%M')}–{end_display.strftime('%H:%M')}"
-
-
 def _database_url() -> str | None:
     return (
         os.environ.get("QINTOPIA_MESSAGE_STORE_DATABASE_URL")
@@ -223,7 +232,7 @@ def _load_fixture(path: str) -> list[ReportMessage]:
     messages = []
     for item in data.get("messages", []):
         sent_at = None
-        raw_sent = item.get("sent_at")
+        raw_sent = item.get("sent_at") or item.get("received_at")
         if raw_sent:
             try:
                 sent_at = datetime.fromisoformat(raw_sent)
@@ -268,7 +277,7 @@ def _fetch_messages(
             m.sender_name,
             m.text,
             m.message_kind,
-            m.sent_at
+            COALESCE(m.sent_at, m.received_at) AS report_time
         FROM qintopia_messages.messages m
         WHERE m.platform = 'qiwe'
           AND m.chat_type = 'group'
@@ -302,9 +311,8 @@ def _fetch_messages(
 
 def _clean_text(text: str) -> str:
     text = text or ""
-    # Drop URLs, @mentions, and excessive whitespace.
     text = re.sub(r"https?://\S+", "", text)
-    text = re.sub(r"@[\w\s]+", "", text)
+    text = re.sub(r"(?<!\S)@(?:[A-Za-z0-9_.-]{1,64}|[\u4e00-\u9fff]{1,6})(?=\s|$)", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -444,6 +452,12 @@ def _cluster_cases(
         else:
             time_label = "时间未知"
         participants = {m.sender_name for m in cluster}
+        speaker_counts: Counter = Counter()
+        for m in cluster:
+            name = m.sender_name or "匿名"
+            if name != "匿名":
+                speaker_counts[name] += 1
+        top_speaker = speaker_counts.most_common(1)[0][0] if speaker_counts else "群友"
         # Build bullets from representative messages: longest first, then earliest.
         sorted_by_length = sorted(cluster, key=lambda m: (-len(m.text), m.sent_at or datetime.min))[:3]
         bullets = []
@@ -464,6 +478,7 @@ def _cluster_cases(
                 bullets=bullets,
                 message_count=len(cluster),
                 participant_count=len(participants),
+                top_speaker=top_speaker,
                 color_bg=color_bg,
                 color_text=color_text,
             )
@@ -492,6 +507,23 @@ def _compute_suspects(messages: list[ReportMessage], limit: int = DEFAULT_SUSPEC
             )
         )
     return suspects
+
+
+def _extract_highlight(messages: list[ReportMessage]) -> str:
+    """Pick one real, quotable group message for the '今日高亮' block."""
+    candidates = []
+    for m in messages:
+        text = _clean_text(m.text)
+        if len(text) < 20:
+            continue
+        if "接龙" in text or text.startswith("打卡"):
+            continue
+        candidates.append((len(text), text))
+    if not candidates:
+        return "今日群聊暂无特别亮眼的发言，但每一次交流都在悄悄累积。"
+    candidates.sort(reverse=True)
+    best = candidates[0][1]
+    return best[:80] + ("…" if len(best) > 80 else "")
 
 
 def _hourly_timeline(messages: list[ReportMessage], start: datetime, buckets: int = DEFAULT_HOURLY_BUCKETS) -> list[int]:
@@ -554,6 +586,7 @@ def _build_report(args: argparse.Namespace) -> ReportData:
         cases=cases,
         suspects=suspects,
         quote=quote,
+        highlight=_extract_highlight(messages),
     )
 
 
@@ -591,7 +624,7 @@ def _sample_messages(start: datetime) -> list[ReportMessage]:
     messages = []
     for idx, (time_str, name, text) in enumerate(demos, start=1):
         hour, minute = map(int, time_str.split(":"))
-        sent_at = start.replace(hour=hour, minute=minute)
+        sent_at = start + timedelta(hours=hour, minutes=minute)
         messages.append(
             ReportMessage(
                 id=f"demo-{idx}",
@@ -626,10 +659,51 @@ def _render_html(report: ReportData, width: int) -> str:
     max_hourly = max(report.hourly_counts) if report.hourly_counts else 1
     timeline_svg = _bar_svg(report.hourly_counts, max_hourly, width - 80, 80)
     timeline_labels = []
+    peak_idx = report.hourly_counts.index(max_hourly) if report.hourly_counts else -1
     for idx in range(0, 25, 4):
         x = 40 + int((idx / 24) * (width - 80))
-        label = f"{idx:02d}:00"
-        timeline_labels.append(f'<text x="{x}" y="105" font-size="10" fill="#6b7280" text-anchor="middle">{label}</text>')
+        is_peak = idx == peak_idx
+        color = "#c45c48" if is_peak else "#9ca3af"
+        weight = "700" if is_peak else "400"
+        timeline_labels.append(
+            f'<text x="{x}" y="105" font-size="10" fill="{color}" font-weight="{weight}" text-anchor="middle">{idx:02d}</text>'
+        )
+    peak_svg = ""
+    if peak_idx >= 0 and max_hourly > 0:
+        bar_w = (width - 80) // 24
+        peak_x = peak_idx * bar_w + bar_w // 2
+        peak_svg = f'<text x="{peak_x}" y="16" font-size="11" fill="#c45c48" font-weight="700" text-anchor="middle">{max_hourly}</text>'
+
+    def _topic_emoji(title: str) -> str:
+        if any(k in title for k in ("打卡", "共学", "学习")):
+            return "\U0001F4DA"
+        if any(k in title for k in ("资源", "分享", "链接", "文章")):
+            return "\U0001F517"
+        if any(k in title for k in ("求助", "问题", "问", "报错", "bug", "BUG")):
+            return "\u2753"
+        if any(k in title for k in ("活动", "预告", "AMA", "报名", "直播")):
+            return "\U0001F4C5"
+        if any(k in title for k in ("行情", "闲聊", "大盘", "跌", "涨", "市场")):
+            return "\U0001F4AC"
+        if any(k in title for k in ("新人", "报到", "欢迎", "进群")):
+            return "\U0001F44B"
+        return "\U0001F4CC"
+
+    kpi_specs = [
+        (report.message_count, "消息总量", "\U0001F4AC", "#2563eb"),
+        (report.participant_count, "活跃人数", "\U0001F525", "#0891b2"),
+        (report.case_count, "今日话题", "\U0001F9E9", "#7c3aed"),
+        (report.suspect_count, "活跃之星", "\u2B50", "#d97706"),
+    ]
+    stats_html = "\n".join(
+        f"""
+        <div style="background:linear-gradient(160deg,{accent} 0%,{accent}cc 100%);border-radius:16px;padding:16px 8px;text-align:center;box-shadow:0 6px 16px rgba(0,0,0,0.12);">
+          <div style="font-size:20px;margin-bottom:4px;">{icon}</div>
+          <div style="font-size:26px;font-weight:900;color:#ffffff;line-height:1;">{value}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.85);margin-top:4px;">{label}</div>
+        </div>"""
+        for value, label, icon, accent in kpi_specs
+    )
 
     case_cards = []
     for case in report.cases:
@@ -637,13 +711,14 @@ def _render_html(report: ReportData, width: int) -> str:
             f'<li style="margin:0 0 6px 16px;font-size:13px;line-height:1.5;color:{case.color_text}">{html.escape(b)}</li>'
             for b in case.bullets
         )
+        tag = _topic_emoji(case.title)
         card = f"""
-        <div style="background:{case.color_bg};border-radius:16px;padding:16px;margin-bottom:14px;break-inside:avoid;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-            <span style="font-size:11px;font-weight:700;color:{case.color_text};opacity:.7">{case.case_no}</span>
-            <span style="font-size:11px;color:{case.color_text};opacity:.7">{case.time_label}</span>
+        <div style="background:{case.color_bg};border-radius:16px;padding:16px 16px 16px 18px;margin-bottom:14px;break-inside:avoid;border-left:5px solid {case.color_text};">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:11px;font-weight:700;color:{case.color_text};opacity:.65;letter-spacing:1px">{case.case_no}</span>
+            <span style="font-size:10px;background:rgba(0,0,0,0.06);color:{case.color_text};padding:2px 8px;border-radius:999px">{html.escape(case.time_label)}</span>
           </div>
-          <div style="font-size:15px;font-weight:700;color:{case.color_text};margin-bottom:6px;line-height:1.4">{html.escape(case.title)}</div>
+          <div style="font-size:16px;font-weight:800;color:{case.color_text};margin-bottom:6px;line-height:1.4">{tag} {html.escape(case.title)}</div>
           <div style="font-size:12px;color:{case.color_text};opacity:.8;margin-bottom:10px">{html.escape(case.summary)}</div>
           <ul style="padding:0;list-style:disc">{bullets}</ul>
         </div>
@@ -651,15 +726,17 @@ def _render_html(report: ReportData, width: int) -> str:
         case_cards.append(card)
 
     suspects_html = []
+    rank_colors = ["#c45c48", "#d97706", "#ca8a04", "#65a30d", "#0891b2"]
     for suspect in report.suspects:
+        badge = rank_colors[(suspect.rank - 1) % len(rank_colors)]
         suspects_html.append(f"""
-        <div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:14px;padding:12px 14px;border:1px solid #e5e7eb;">
-          <div style="width:44px;height:44px;border-radius:50%;background:#1a2744;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px">{suspect.avatar_emoji}</div>
+        <div style="display:flex;align-items:center;gap:12px;background:#fff;border-radius:14px;padding:12px 14px;border:1px solid #e5e7eb;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+          <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#1a2744,#2d3a5f);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px">{suspect.avatar_emoji}</div>
           <div style="flex:1">
             <div style="font-size:14px;font-weight:700;color:#1f2937">{html.escape(suspect.name)}</div>
             <div style="font-size:12px;color:#6b7280">{suspect.message_count} 条消息 · {suspect.word_count} 字</div>
           </div>
-          <div style="font-size:20px;font-weight:800;color:#c45c48">#{suspect.rank}</div>
+          <div style="width:38px;height:38px;border-radius:12px;background:{badge};color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;">{suspect.rank}</div>
         </div>
         """)
 
@@ -672,75 +749,59 @@ def _render_html(report: ReportData, width: int) -> str:
 <meta charset="utf-8">
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #f5f1e8; color: #1f2937; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background:#eef1f6; color:#1f2937; }}
 </style>
 </head>
 <body>
-<div style="width:{width}px;background:#f5f1e8;padding:32px 28px 28px;position:relative;overflow:hidden;">
-  <!-- header -->
-  <div style="text-align:center;margin-bottom:20px;">
-    <div style="font-size:11px;letter-spacing:2px;color:#6b7280;margin-bottom:6px;">DAILY COMMUNITY REPORT</div>
-    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:26px;font-weight:700;color:#1a2744;margin-bottom:6px;">{html.escape(report.group_name)}</div>
-    <div style="font-size:18px;font-weight:800;color:#c45c48;">{html.escape(report.report_title)}</div>
+<div style="width:{width}px;background:linear-gradient(180deg,#1a2744 0%,#22304f 230px,#eef1f6 230px,#eef1f6 100%);padding:30px 24px 28px;position:relative;overflow:hidden;">
+  <div style="text-align:center;margin-bottom:18px;">
+    <div style="font-size:11px;letter-spacing:3px;color:#aab4c8;margin-bottom:6px;">DAILY COMMUNITY REPORT</div>
+    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:25px;font-weight:700;color:#ffffff;margin-bottom:6px;">{html.escape(report.group_name)}</div>
+    <div style="font-size:16px;font-weight:800;color:#f0b69a;">{html.escape(report.report_title)}</div>
   </div>
 
-  <!-- meta row -->
-  <div style="display:flex;justify-content:center;gap:16px;font-size:11px;color:#6b7280;margin-bottom:22px;">
-    <span>档案日期：{report.report_date}</span>
-    <span>统计时段：{report.time_range}</span>
-    <span>群成员：{report.member_count} 名</span>
+  <div style="display:flex;justify-content:center;gap:14px;font-size:11px;color:#cbd5e1;margin-bottom:20px;">
+    <span>\U0001F4C5 {report.report_date}</span>
+    <span>⏱ {report.time_range}</span>
+    <span>\U0001F465 {report.member_count} 名成员</span>
   </div>
 
-  <!-- stats -->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px;">
-    <div style="background:#fff;border-radius:14px;padding:14px 8px;text-align:center;border:1px solid #e5e7eb;">
-      <div style="font-size:24px;font-weight:900;color:#1a2744;">{report.message_count}</div>
-      <div style="font-size:11px;color:#6b7280;">消息总量</div>
-    </div>
-    <div style="background:#fff;border-radius:14px;padding:14px 8px;text-align:center;border:1px solid #e5e7eb;">
-      <div style="font-size:24px;font-weight:900;color:#1a2744;">{report.participant_count}</div>
-      <div style="font-size:11px;color:#6b7280;">活跃人数</div>
-    </div>
-    <div style="background:#fff;border-radius:14px;padding:14px 8px;text-align:center;border:1px solid #e5e7eb;">
-      <div style="font-size:24px;font-weight:900;color:#1a2744;">{report.case_count}</div>
-      <div style="font-size:11px;color:#6b7280;">今日案件</div>
-    </div>
-    <div style="background:#fff;border-radius:14px;padding:14px 8px;text-align:center;border:1px solid #e5e7eb;">
-      <div style="font-size:24px;font-weight:900;color:#1a2744;">{report.suspect_count}</div>
-      <div style="font-size:11px;color:#6b7280;">头号嫌疑人</div>
-    </div>
+    {stats_html}
   </div>
 
-  <!-- timeline -->
-  <div style="background:#fff;border-radius:16px;padding:16px 18px;margin-bottom:22px;border:1px solid #e5e7eb;">
-    <div style="font-size:13px;font-weight:700;color:#1a2744;margin-bottom:10px;">24H 作案时间线</div>
-    <svg width="{width - 56}" height="115" viewBox="0 0 {width - 56} 115">
+  <div style="background:#fff;border-radius:18px;padding:16px 18px;margin-bottom:22px;border:1px solid #e5e7eb;box-shadow:0 4px 14px rgba(20,30,60,0.05);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <div style="font-size:13px;font-weight:700;color:#1a2744;">24H 活跃节奏</div>
+      <div style="font-size:11px;color:#9ca3af;">峰值 {max_hourly} 条 / {peak_idx:02d}:00</div>
+    </div>
+    <svg width="{width - 56}" height="120" viewBox="0 0 {width - 56} 120">
       {timeline_svg}
+      {peak_svg}
       {"".join(timeline_labels)}
     </svg>
   </div>
 
-  <!-- cases -->
   <div style="margin-bottom:22px;">
-    <div style="font-size:15px;font-weight:800;color:#1a2744;margin-bottom:12px;">今日案件 · 线索便签墙</div>
+    <div style="font-size:15px;font-weight:800;color:#1a2744;margin-bottom:12px;">今日话题 · 便签墙</div>
     {cases_grid}
   </div>
 
-  <!-- suspects -->
   <div style="margin-bottom:22px;">
-    <div style="font-size:15px;font-weight:800;color:#1a2744;margin-bottom:12px;">头号嫌疑人名单</div>
+    <div style="font-size:15px;font-weight:800;color:#1a2744;margin-bottom:12px;">活跃之星榜</div>
     <div style="display:grid;grid-template-columns:1fr;gap:10px;">
       {suspects_grid}
     </div>
   </div>
 
-  <!-- footer quote -->
-  <div style="text-align:center;padding-top:10px;border-top:1px dashed #d1d5db;">
-    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:14px;color:#4b5563;line-height:1.7;font-style:italic;">“{html.escape(report.quote)}”</div>
+  <div style="text-align:center;padding-top:14px;border-top:1px dashed #cbd5e1;">
+    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:14px;color:#475569;line-height:1.7;font-style:italic;">"{html.escape(report.quote)}"</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:8px;">本报告由小满自动整理群聊生成 · 仅草稿，未发送</div>
   </div>
 </div>
 </body>
 </html>"""
+
 
 
 def _render_png(html_path: Path, output_path: Path, width: int) -> None:
