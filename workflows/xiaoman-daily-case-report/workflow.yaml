@@ -38,6 +38,9 @@ next_actions:
     dependencies are reviewed and accepted.
   - Add psycopg, Playwright, and Chromium through a reviewed runtime packaging boundary
     before enabling production PNG/database runs; do not hand-install them on servers.
-  - Add an explicit cutover runbook before switching to active and installing a systemd
-    timer, mirroring the xiaoman-weekly-preview activation pattern.
+  - Add reviewed deploy/runner unit templates, install logic, rollback logic, bundle
+    inclusion, and deploy-contract checks before switching to active or installing a
+    systemd timer. The rendered unit must use an absolute reviewed Python interpreter
+    with dependency preflight evidence. Do not activate through hand-copied units or
+    server-local edits.
   - The script only drafts; a human must confirm before any QiWe group send.
