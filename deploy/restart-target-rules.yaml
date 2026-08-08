@@ -95,6 +95,7 @@ rules:
       - "workflows/xiaoman-activity-signal/**"
       - "workflows/activity-promotion/**"
       - "workflows/xiaoman-weekly-preview/**"
+      - "workflows/xiaoman-daily-case-report/**"
 
   - target: hermes-silaoshi
     reason: Silaoshi profile and daily operations workflow behavior.
