@@ -50,6 +50,8 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run
 python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html
 ```
 
+This mode treats the HTML file as the deliverable and keeps it on disk.
+
 ### Render PNG with Playwright
 
 ```bash
@@ -78,10 +80,11 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 
 ## Acceptance Scenarios
 
-- `--dry-run` exits 0, writes an HTML file, and prints a review message with stats and
-  file paths.
-- `--render png` exits 0 and writes both `.html` and `.png` files when Playwright is
-  available.
+- `--dry-run --render html` exits 0, writes a retained HTML file, and prints a review
+  message with stats and file paths.
+- `--render png --keep-html` exits 0 and writes both `.html` and `.png` files when
+  Playwright is available; without `--keep-html`, the HTML file remains only an
+  intermediate render surface.
 - Database mode fails closed (non-zero exit) if read-through is not enabled or the
   database URL is missing.
 - An empty 24-hour window exits 0 with a report showing zero messages and no cases.
@@ -93,11 +96,15 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 - Reads `qintopia_messages.messages` only; does not write to the message store.
 - Does not send to QiWe, Feishu, or any other external channel.
 - Requires the same Postgres read credentials as the message-store search path.
-- Rendering happens locally in the runtime environment; no external image service is
-  called.
+- Rendering happens locally in the runtime environment; no external image service,
+  remote font, or other third-party network resource is called.
+- The report window is computed in the configured `--timezone` (default `Asia/Shanghai`)
+  before querying Postgres.
 
 ## Validation
 
 - `pnpm workflows:check` validates the workflow manifest.
+- `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/xiaoman-daily-case-report/tests -v`
+  validates the local render boundary and date/output contracts.
 - `python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html`
   validates the template generation path without image rendering dependencies.

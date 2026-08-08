@@ -20,9 +20,10 @@ import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 DEFAULT_GROUP_NAME = "秦托邦的小伙伴（新）"
@@ -146,17 +147,57 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _report_date(args: argparse.Namespace) -> tuple[datetime, datetime, str]:
-    """Return report start (inclusive), end (exclusive), and display date string."""
-    if args.date:
-        base = datetime.strptime(args.date, "%Y-%m-%d")
-    else:
-        base = datetime.now()
+def _report_timezone(timezone_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise RuntimeError(f"unsupported daily case report timezone: {timezone_name}") from exc
 
-    start = base.replace(hour=0, minute=0, second=0, microsecond=0)
+
+def _report_date(args: argparse.Namespace) -> tuple[datetime, datetime, str]:
+    """Return report start (inclusive), end (exclusive), and display date string.
+
+    The day boundary follows --timezone so Postgres receives the intended
+    local-day window even when the server runs in another timezone.
+    """
+    report_zone = _report_timezone(args.timezone)
+    if args.date:
+        base_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+    else:
+        local_now = datetime.now(report_zone)
+        base_date = local_now.date()
+        if local_now.hour < 6:
+            base_date -= timedelta(days=1)
+
+    start = datetime.combine(base_date, time.min, tzinfo=report_zone)
     end = start + timedelta(days=1)
     display = start.strftime("%Y年%m月%d日")
     return start, end, display
+
+
+def _normalize_message_times(
+    messages: list[ReportMessage],
+    report_zone: ZoneInfo,
+) -> list[ReportMessage]:
+    normalized: list[ReportMessage] = []
+    for msg in messages:
+        sent_at = msg.sent_at
+        if sent_at is not None:
+            if sent_at.tzinfo is None:
+                sent_at = sent_at.replace(tzinfo=report_zone)
+            else:
+                sent_at = sent_at.astimezone(report_zone)
+        normalized.append(
+            ReportMessage(
+                id=msg.id,
+                sender_id=msg.sender_id,
+                sender_name=msg.sender_name,
+                text=msg.text,
+                sent_at=sent_at,
+                message_kind=msg.message_kind,
+            )
+        )
+    return normalized
 
 
 def _time_range_label(start: datetime, end: datetime) -> str:
@@ -468,6 +509,7 @@ def _hourly_timeline(messages: list[ReportMessage], start: datetime, buckets: in
 
 def _build_report(args: argparse.Namespace) -> ReportData:
     start, end, display_date = _report_date(args)
+    report_zone = _report_timezone(args.timezone)
 
     if args.fixture:
         messages = _load_fixture(args.fixture)
@@ -480,6 +522,7 @@ def _build_report(args: argparse.Namespace) -> ReportData:
                 "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1 or use --fixture/--dry-run"
             )
         messages = _fetch_messages(args.chat_id, start, end)
+    messages = _normalize_message_times(messages, report_zone)
 
     if not messages and not args.dry_run and not args.fixture:
         # Empty day is a normal result, not an error.
@@ -628,9 +671,8 @@ def _render_html(report: ReportData, width: int) -> str:
 <head>
 <meta charset="utf-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@500;700&display=swap');
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f1e8; color: #1f2937; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #f5f1e8; color: #1f2937; }}
 </style>
 </head>
 <body>
@@ -638,7 +680,7 @@ def _render_html(report: ReportData, width: int) -> str:
   <!-- header -->
   <div style="text-align:center;margin-bottom:20px;">
     <div style="font-size:11px;letter-spacing:2px;color:#6b7280;margin-bottom:6px;">DAILY COMMUNITY REPORT</div>
-    <div style="font-family:'Noto Serif SC',serif;font-size:26px;font-weight:700;color:#1a2744;margin-bottom:6px;">{html.escape(report.group_name)}</div>
+    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:26px;font-weight:700;color:#1a2744;margin-bottom:6px;">{html.escape(report.group_name)}</div>
     <div style="font-size:18px;font-weight:800;color:#c45c48;">{html.escape(report.report_title)}</div>
   </div>
 
@@ -694,7 +736,7 @@ def _render_html(report: ReportData, width: int) -> str:
 
   <!-- footer quote -->
   <div style="text-align:center;padding-top:10px;border-top:1px dashed #d1d5db;">
-    <div style="font-family:'Noto Serif SC',serif;font-size:14px;color:#4b5563;line-height:1.7;font-style:italic;">“{html.escape(report.quote)}”</div>
+    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:14px;color:#4b5563;line-height:1.7;font-style:italic;">“{html.escape(report.quote)}”</div>
   </div>
 </div>
 </body>
@@ -712,8 +754,13 @@ def _render_png(html_path: Path, output_path: Path, width: int) -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": width, "height": 100}, device_scale_factor=2)
-        page.goto(f"file://{html_path}")
-        page.wait_for_load_state("networkidle")
+        page.route(
+            "**/*",
+            lambda route: route.abort()
+            if route.request.url.startswith(("http://", "https://"))
+            else route.continue_(),
+        )
+        page.goto(f"file://{html_path}", wait_until="load")
         height = page.evaluate("document.body.scrollHeight")
         page.set_viewport_size({"width": width, "height": height})
         page.screenshot(path=str(output_path), full_page=True)
@@ -724,7 +771,7 @@ def _operator_review_message(
     report: ReportData,
     html_path: Path,
     png_path: Path | None,
-    keep_html: bool = False,
+    include_html: bool = False,
 ) -> str:
     lines = [
         f"【{report.group_name}｜{report.report_title}】",
@@ -737,8 +784,9 @@ def _operator_review_message(
     lines.append("")
     if png_path:
         lines.append(f"图片（可直接发群）：{png_path}")
-    if keep_html and html_path.exists():
-        lines.append(f"HTML 预览（仅调试用）：{html_path}")
+    if include_html and html_path.exists():
+        label = "HTML 预览（仅调试用）" if png_path else "HTML 预览"
+        lines.append(f"{label}：{html_path}")
     lines.append("")
     lines.append("本报告仅生成草稿，未发送到任何群聊。确认无误后请回复「发」再执行外发。")
     return "\n".join(lines)
@@ -748,9 +796,9 @@ def _result_json(
     report: ReportData,
     deliverable_path: Path,
     png_path: Path | None,
-    keep_html: bool,
     html_path: Path | None = None,
 ) -> dict[str, Any]:
+    html_exists = html_path is not None and html_path.exists()
     return {
         "success": True,
         "skill": "xiaoman_daily_case_report",
@@ -765,9 +813,9 @@ def _result_json(
         "suspect_count": report.suspect_count,
         "deliverable_path": str(deliverable_path),
         "png_path": str(png_path) if png_path else None,
-        "html_path": str(html_path) if (keep_html and html_path and html_path.exists()) else None,
+        "html_path": str(html_path) if html_exists else None,
         "operator_review_message": _operator_review_message(
-            report, html_path or deliverable_path, png_path, keep_html
+            report, html_path or deliverable_path, png_path, html_exists
         ),
     }
 
@@ -787,7 +835,6 @@ def main() -> int:
     html_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.html"
     png_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.png"
 
-    # HTML is always the intermediate render surface; PNG is the deliverable.
     html_content = _render_html(report, args.output_width)
     html_path.write_text(html_content, encoding="utf-8")
 
@@ -801,8 +848,9 @@ def main() -> int:
             if args.render == "png":
                 return 2
 
-    # Drop the intermediate HTML unless the user explicitly asked to keep it.
-    if not args.keep_html and html_path.exists():
+    html_is_deliverable = not png_generated
+
+    if not args.keep_html and not html_is_deliverable and html_path.exists():
         try:
             html_path.unlink()
         except OSError:
@@ -813,8 +861,7 @@ def main() -> int:
         report,
         deliverable,
         png_path if png_generated else None,
-        args.keep_html,
-        html_path if args.keep_html else None,
+        html_path if html_path.exists() else None,
     )
 
     if args.json:
