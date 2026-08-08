@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "publishable_count": 1,
+  "announcement_text": "2026-08-08 今日活动预告\n\n1. AI 工具共学\n时间：10:00\n地点：社区客厅\n负责人：小满",
+  "operator_review_message": "今日活动预告草稿已生成。",
+  "requires_human_confirmation": true,
+  "external_send_executed": false
+}

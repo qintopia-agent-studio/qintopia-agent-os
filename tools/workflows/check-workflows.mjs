@@ -11,6 +11,7 @@ const errors = [];
 const workflows = [
   "workflows/activity-promotion",
   "workflows/erhua-consultation",
+  "workflows/erhua-morning-brief",
   "workflows/xiaoman-activity-signal",
   "workflows/visual-asset-request",
   "workflows/silaoshi-daily-ops",
