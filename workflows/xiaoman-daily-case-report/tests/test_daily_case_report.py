@@ -151,16 +151,15 @@ class DailyCaseReportTest(unittest.TestCase):
             else:
                 os.environ["DATABASE_URL"] = old_generic
 
-    def test_production_mode_rejects_non_default_chat_id(self) -> None:
+    def test_production_mode_requires_chat_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             env = os.environ.copy()
             env["PYTHONDONTWRITEBYTECODE"] = "1"
+            env.pop(daily_case_report.CHAT_ID_ENV, None)
             completed = subprocess.run(
                 [
                     sys.executable,
                     str(SCRIPT),
-                    "--chat-id",
-                    "other-chat",
                     "--output-dir",
                     tmpdir,
                 ],
@@ -170,7 +169,7 @@ class DailyCaseReportTest(unittest.TestCase):
             )
 
         self.assertEqual(completed.returncode, 2)
-        self.assertIn("allowlisted to the default", completed.stderr)
+        self.assertIn("requires --chat-id", completed.stderr)
         self.assertNotIn("database read-through is disabled", completed.stderr)
 
     def test_private_output_helpers_restrict_local_file_permissions(self) -> None:
@@ -236,7 +235,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 output_dir=tmpdir,
                 output_width=750,
                 json=True,
-                chat_id=daily_case_report.DEFAULT_CHAT_ID,
+                chat_id="chat-1",
             )
             report = daily_case_report.ReportData(
                 group_name="group",

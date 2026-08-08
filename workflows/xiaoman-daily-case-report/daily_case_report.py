@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DEFAULT_GROUP_NAME = "秦托邦的小伙伴（新）"
 DEFAULT_REPORT_TITLE = "群聊案件档案"
-DEFAULT_CHAT_ID = "10859791146538059"
+CHAT_ID_ENV = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_OUTPUT_WIDTH = 750
 DEFAULT_CASE_LIMIT = 6
@@ -118,8 +118,11 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--chat-id",
-        default=DEFAULT_CHAT_ID,
-        help="QiWe chat id to report on. Defaults to the 秦托邦的小伙伴（新） group.",
+        default=os.environ.get(CHAT_ID_ENV),
+        help=(
+            "QiWe chat id to report on. Required for database mode; "
+            f"may be set with {CHAT_ID_ENV}."
+        ),
     )
     parser.add_argument("--group-name", default=DEFAULT_GROUP_NAME)
     parser.add_argument("--report-title", default=DEFAULT_REPORT_TITLE)
@@ -316,9 +319,10 @@ def _uses_real_messages(args: argparse.Namespace) -> bool:
 
 
 def _validate_production_boundaries(args: argparse.Namespace) -> None:
-    if args.chat_id != DEFAULT_CHAT_ID:
+    if not args.chat_id:
         raise RuntimeError(
-            "production read-through is allowlisted to the default 秦托邦的小伙伴（新） chat id"
+            f"production read-through requires --chat-id or {CHAT_ID_ENV}; "
+            "do not run an unscoped group-message query"
         )
 
 

@@ -70,18 +70,18 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --rend
 
 ```bash
 export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1
+export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID="<reviewed-qiwe-group-chat-id>"
 export QINTOPIA_MESSAGE_STORE_DATABASE_URL="postgresql://..."
 export QINTOPIA_DAILY_CASE_REPORT_MEMBER_COUNT=148
 
 python workflows/xiaoman-daily-case-report/daily_case_report.py \
-  --chat-id 10859791146538059 \
   --group-name "秦托邦的小伙伴（新）"
 ```
 
-> `--chat-id` and `--group-name` both default to the 秦托邦的小伙伴（新） group
-> (`10859791146538059`), so in production you can omit both and just enable
-> read-through. Without `--date`, the query window is the latest rolling 24 hours ending
-> at run time. Use `--date YYYY-MM-DD` only for a specific calendar-day backfill in
+> Production read-through requires `--chat-id` or
+> `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID`; do not commit real QiWe group IDs to
+> git. Without `--date`, the query window is the latest rolling 24 hours ending at run
+> time. Use `--date YYYY-MM-DD` only for a specific calendar-day backfill in
 > `--timezone`.
 
 ## Acceptance Scenarios
@@ -105,7 +105,8 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 - Requires the same Postgres read credentials as the message-store search path.
 - Production read-through accepts only `QINTOPIA_MESSAGE_STORE_DATABASE_URL` or
   `QINTOPIA_SIDECAR_DATABASE_URL`; generic `DATABASE_URL` is ignored.
-- Production read-through is allowlisted to the default 秦托邦的小伙伴（新） `chat_id`.
+- Production read-through requires a reviewed runtime `chat_id` and fails closed without
+  one; no real QiWe group ID is committed as a source default.
 - Rendering happens locally in the runtime environment; no external image service,
   remote font, or other third-party network resource is called.
 - The default report window is the latest rolling 24 hours in the configured
