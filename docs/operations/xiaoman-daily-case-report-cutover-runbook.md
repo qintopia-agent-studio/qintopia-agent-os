@@ -1,11 +1,15 @@
-# Xiaoman Daily Case-Report — Production Activation Cutover Runbook
+# Xiaoman Daily Case-Report — Systemd Design Draft
 
 Updated: 2026-08-08
 
-This runbook is the **owner-approved activation path** for promoting
+This document records the reviewed design for promoting
 `workflows/xiaoman-daily-case-report` from a merged, `status: draft` workflow package
-into a live, release-managed **daily** timer. It replaces any ad-hoc /
-conversation-created scheduling and produces a human-reviewed draft PNG every morning.
+into a live, release-managed **daily** timer.
+
+It is **not** the owner-approved activation path. Do not copy unit files to the host,
+enable timers, edit production parameters, or remove legacy schedules from this
+document. Production activation must land as reviewed deploy/runner code, be included in
+the deploy bundle, and be guarded by deploy-contract checks before an owner executes it.
 
 It is **not** production-completion evidence and must not be used to claim real group
 delivery. The script only drafts; a human confirms before any Erhua (二花) handoff or
@@ -13,23 +17,25 @@ group send.
 
 ## Scope
 
-In scope (this cutover):
+In scope (this design draft):
 
-- Register a release-managed systemd timer that runs `daily_case_report.py` every day at
-  07:45.
-- Keep the human confirmation gate; the timer only prints `operator_review_message` and
-  writes the PNG draft.
-- Remove any legacy / conversation-created cron for this report (if present).
+- Specify the intended release-managed systemd timer that runs `daily_case_report.py`
+  every day at 07:45.
+- Preserve the human confirmation gate; the timer only prints `operator_review_message`
+  and writes the PNG draft.
+- Define the deploy/runner requirements that must replace any legacy /
+  conversation-created cron for this report.
 
-Out of scope (deferred, unchanged by this runbook):
+Out of scope (deferred, unchanged by this design draft):
 
 - Auto-send, QiWe image delivery, Erhua (二花) group send. The production QiWe
   image-send adapter is **disabled by design**; enabling it is a separate, heavier
   cutover (owner approval phrase + allowlist + runbook) and is intentionally NOT part of
   this change.
-- Edits to `.env`, secrets, or any other production timer.
+- Host-local edits to `.env`, secrets, unit files, timers, or any other production
+  state.
 
-## Preconditions (owner gates, must pass before install)
+## Preconditions (future owner gates)
 
 1. **PR #389 merged.** The workflow package (script + `workflow.yaml` + rolling-window
    fix) must be merged to `master` so the release checkout contains
@@ -39,13 +45,16 @@ Out of scope (deferred, unchanged by this runbook):
    fails closed (non-zero exit) if
    `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1` is unset or the database
    URL is missing.
-3. **Bundle/smoke gate.** Run the relevant Xiaoman production preflight smoke on the
-   target host. The production baseline expects no conflicting conversation-created cron
-   for this report.
-4. **Review.** This cutover PR is reviewed and approved. No hot-edits to production
+3. **Deploy implementation gate.** A follow-up deploy/runner change must add the unit
+   templates, render/install/rollback logic, and contract checks before production
+   activation.
+4. **Bundle/smoke gate.** The future activation must run the relevant Xiaoman production
+   preflight smoke through reviewed deploy/runner code. The production baseline expects
+   no conflicting conversation-created cron for this report.
+5. **Review.** The activation PR is reviewed and approved. No hot-edits to production
    units.
 
-## Systemd unit design (draft — owner validates parameters)
+## Systemd Unit Design
 
 Modeled on the existing standalone unit in `deploy/runner/`
 (`qintopia-agent-os-deploy-runner.{timer,service}`). The daily case report is a Python
@@ -53,18 +62,20 @@ script, not a sidecar subcommand, so it follows the standalone `deploy/runner` p
 rather than the M9 sidecar renderer (`render-systemd-units.sh`, which only renders fixed
 sidecar subcommands).
 
-### Owner decisions (do NOT commit; set on the host)
+### Future reviewed parameters
 
-- `OnCalendar` — the daily time. Default `*-*-* 07:45:00` (generate ~07:45 so the
-  rolling 24h window covers roughly the previous day; human reviews and sends by
-  ~08:00).
+- `OnCalendar` — the daily time. Default `*-*-* 07:45:00` so the rolling 24h window
+  covers roughly the previous day; human review happens around 08:00.
 - Secrets env file — the message-store database URL file. Reference it via
-  `EnvironmentFile=`; never inline secrets. Path is host-specific.
+  `EnvironmentFile=`; never inline secrets. The reviewed deploy/runner path owns the
+  host-specific location.
 - `WorkingDirectory` / release path — point at the immutable release checkout
   (`/home/ubuntu/qintopia-agent-os-releases/current/...`); do not use a build or
   standalone checkout path.
 - `User` / `Group` — match the other Xiaoman runtime units on the host.
-- Python interpreter — the host's managed `python3` at the immutable release path.
+- Python interpreter — a reviewed absolute interpreter path from the production
+  uv-managed environment. The service must reject `/usr/bin/env`, bare `python3`, shell
+  wrappers, or any PATH-dependent interpreter lookup.
 
 ### `qintopia-xiaoman-daily-case-report.timer` (draft)
 
@@ -92,62 +103,69 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# OWNER DECISION: user/group matching other Xiaoman runtime units.
+# REVIEWED PARAMETER: user/group matching other Xiaoman runtime units.
 User=ubuntu
 Group=ubuntu
-# OWNER DECISION: immutable release checkout.
+# REVIEWED PARAMETER: immutable release checkout.
 WorkingDirectory=/home/ubuntu/qintopia-agent-os-releases/current
-# OWNER DECISION: secrets env file (message-store DB URL). Never inline.
+# REVIEWED PARAMETER: secrets env file (message-store DB URL). Never inline.
 EnvironmentFile=/etc/qintopia/xiaoman-daily-case-report.env
 Environment=QINTOPIA_PROFILE_ID=xiaoman
 Environment=QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1
-# OWNER DECISION: python interpreter + immutable release script path.
-ExecStart=/usr/bin/env python3 /home/ubuntu/qintopia-agent-os-releases/current/workflows/xiaoman-daily-case-report/daily_case_report.py --render png --output-dir /var/lib/qintopia-xiaoman-daily-case-report
+# REVIEWED PARAMETER: absolute production venv interpreter + immutable release script path.
+ExecStart=<reviewed-absolute-python-interpreter> /home/ubuntu/qintopia-agent-os-releases/current/workflows/xiaoman-daily-case-report/daily_case_report.py --render png --output-dir /var/lib/qintopia-xiaoman-daily-case-report
 NoNewPrivileges=true
 PrivateTmp=true
 ```
 
 > The timer runs **without** `--date`, so `_report_date` uses the rolling 24h window
-> ending at run time (per the fix in PR #389). To backfill a specific calendar day, run
-> the script manually with `--date YYYY-MM-DD`.
+> ending at run time (per the fix in PR #389). Any backfill path must be added through a
+> separate reviewed operational procedure.
 
-## Install procedure (owner-executed on the host)
+## Future Deployment Requirements
 
-1. Copy the reviewed `qintopia-xiaoman-daily-case-report.{timer,service}` into
-   `/etc/systemd/system`.
-2. `sudo systemctl daemon-reload`.
-3. `sudo systemctl enable --now qintopia-xiaoman-daily-case-report.timer`.
-4. If a legacy conversation-created cron for this report exists, remove it (mirror the
-   weekly-preview cleanup), then re-run the relevant observation smoke to confirm it is
-   gone.
+Before this timer can be activated, a follow-up reviewed deploy/runner change must:
 
-## Observation (after install)
+- Add the unit templates and render/install/rollback logic under `deploy/`.
+- Include the activation assets in `tools/deploy/build-deploy-bundle.mjs`.
+- Guard the release-root paths, unit identities, and rollback assets in
+  `tools/deploy/check-deploy-contracts.mjs`.
+- Use the fixed systemd boundary already required by production deploy scripts.
+- Render `ExecStart=` with an absolute, reviewed production interpreter path from the
+  immutable release environment. The preflight must prove the interpreter identity and
+  required Python packages for this workflow, including `psycopg`, Playwright, Chromium,
+  and text-processing dependencies used by the script.
+- Remove or disable any legacy conversation-created schedule only inside reviewed
+  deploy/runner logic, with rollback that restores the previous reviewed state.
+- Emit sanitized activation evidence only; do not print secrets, member-level raw chat
+  logs, or HTML contents.
 
-- `systemctl list-timers qintopia-xiaoman-daily-case-report.timer` shows the next daily
-  07:45.
-- Forced run for validation (no production send occurs):
+## Future Observation Evidence
 
-  ```bash
-  sudo systemctl start qintopia-xiaoman-daily-case-report.service
-  journalctl -u qintopia-xiaoman-daily-case-report.service -n 50
-  ```
+The future deploy/runner observation must prove:
 
-- Confirm the output prints `operator_review_message` with the PNG path and the line
-  "本报告仅生成草稿，未发送到任何群聊。确认无误后请回复「发」再执行外发。", never sends,
-  and exits 0.
-- Confirm the PNG draft is written to the configured `--output-dir`.
+- The reviewed timer is enabled only by the activation runner, and its next run is the
+  expected daily 07:45 schedule.
+- A validation run generates a PNG draft, prints `operator_review_message`, does not
+  send to QiWe or Erhua, and exits 0.
+- The script executes from the immutable release checkout using the reviewed absolute
+  interpreter path, not a PATH-resolved interpreter.
+- The configured `--output-dir` receives the PNG draft with production-appropriate file
+  permissions.
+- Any legacy conversation-created schedule is absent after activation.
 
-## Rollback
+## Future Rollback Requirements
 
-1. `sudo systemctl disable --now qintopia-xiaoman-daily-case-report.timer`.
-2. Remove the unit files from `/etc/systemd/system`; `sudo systemctl daemon-reload`.
-3. Re-run the observation smoke to confirm the expected idle state.
+Rollback must be reviewed deploy/runner code that disables the timer, restores or
+removes only reviewed activation assets, reloads systemd through the fixed production
+boundary, and emits sanitized idle-state evidence. It must not rely on owner hand-edits
+or host-local unit deletion outside the reviewed runner.
 
-## Acceptance
+## Future Activation Acceptance
 
 - `external_send_executed` is always `false`; `requires_human_confirmation` is always
   `true`.
-- The report is generated as a release-managed systemd timer, not a conversation-created
-  cron.
+- The report is generated as a reviewed release-managed systemd timer, not a
+  conversation-created cron.
 - No production QiWe image-send adapter is enabled by this change.
-- The relevant Xiaoman production preflight smoke passes.
+- The relevant Xiaoman production preflight and deploy-contract checks pass.
