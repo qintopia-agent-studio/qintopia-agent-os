@@ -17,6 +17,7 @@ provides_tools:
   - qintopia_daily_digest_publish
   - qintopia_xiaoman_activity_record_get
   - qintopia_xiaoman_activity_list_by_date
+  - qintopia_xiaoman_activity_plan_table_probe
   - qintopia_xiaoman_activity_announcement_prepare
   - qintopia_xiaoman_activity_text_group_message_request_prepare
   - qintopia_xiaoman_public_reply_rewrite
