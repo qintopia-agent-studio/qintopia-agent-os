@@ -333,6 +333,7 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
     "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL=approved-production-erhua-morning-brief",
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1",
   ]) {
     if (!configuredEnv.includes(line)) {
       throw new Error(`config did not write ${line}`);

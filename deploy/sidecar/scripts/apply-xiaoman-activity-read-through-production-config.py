@@ -35,6 +35,9 @@ READ_THROUGH_KEYS = (
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
 )
+FEISHU_BASE_MODE_KEY = "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"
+FEISHU_BASE_MODE_VALUE = "1"
+MANAGED_KEYS = READ_THROUGH_KEYS + (FEISHU_BASE_MODE_KEY,)
 
 
 class ConfigError(ValueError):
@@ -171,7 +174,7 @@ def render_env_text(text: str, replacements: dict[str, str]) -> str:
     while retained and not retained[-1].strip():
         retained.pop()
     managed = [MANAGED_COMMENT] + [
-        f"{key}={shlex.quote(replacements[key])}" for key in READ_THROUGH_KEYS
+        f"{key}={shlex.quote(replacements[key])}" for key in MANAGED_KEYS
     ]
     return "\n".join(retained + [""] + managed) + "\n"
 
@@ -251,6 +254,7 @@ def configure(
             expected_mode=0o600,
         )
         replacements = validate_profile_values(profile.values, profile_env_path)
+        replacements[FEISHU_BASE_MODE_KEY] = FEISHU_BASE_MODE_VALUE
         next_text = render_env_text(sidecar.text, replacements)
         change_required = next_text.encode("utf-8") != sidecar.text.encode("utf-8")
         if apply and change_required:
@@ -263,6 +267,7 @@ def configure(
             else "xiaoman_activity_read_through_config_ready",
             "release_sha_matched": True,
             "copied_key_count": len(READ_THROUGH_KEYS),
+            "feishu_base_mode_enabled": True,
             "sidecar_change_required": change_required,
             "deduped": not change_required,
             "sensitive_values_redacted": True,
