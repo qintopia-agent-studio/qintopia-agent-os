@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.94](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.93...v0.2.94) (2026-08-09)
+
+
+### Features
+
+* **xiaoman:** refresh daily report and schedule ([#442](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/442)) ([02df3ac](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/02df3ac82b9b8f28e9f47e1c8fbd79e176e46c78))
+
+
+### Bug Fixes
+
+* allow Xiaoman read-through on root-owned releases ([#441](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/441)) ([1256c45](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1256c45392a80e48810798f568f7365cee58fd8e))
+
 ## [0.2.93](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.92...v0.2.93) (2026-08-09)
 
 
