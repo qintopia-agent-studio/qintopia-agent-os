@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -44,9 +44,13 @@ DEFAULT_HOURLY_BUCKETS = 24
 DEFAULT_WINDOW_HOURS = 24
 DEFAULT_MIN_CASE_MESSAGES = 3
 DEFAULT_TOP_KEYWORDS = 18
+DEFAULT_HOT_TOPIC_LIMIT = 4
+DEFAULT_HOT_TOPIC_MIN_MESSAGES = 2
+DEFAULT_HOT_TOPIC_MIN_CHARS = 3
+DEFAULT_HOT_TOPIC_MAX_CHARS = 8
 DEFAULT_IMAGE_FORMAT = "jpeg"
 DEFAULT_JPEG_QUALITY = 92
-TEMPLATE_VERSION = "xiaoman-daily-case-report-v1"
+TEMPLATE_VERSION = "xiaoman-daily-case-report-v2"
 
 STOP_WORDS: set[str] = {
     "这个", "那个", "然后", "就是", "什么", "怎么", "还是", "可以", "今天",
@@ -149,6 +153,14 @@ class Suspect:
 
 
 @dataclass
+class HotTopic:
+    rank: int
+    keyword: str
+    message_count: int
+    participant_count: int
+
+
+@dataclass
 class ReportData:
     group_name: str
     report_title: str
@@ -162,8 +174,8 @@ class ReportData:
     hourly_counts: list[int]
     cases: list[CaseCard]
     suspects: list[Suspect]
-    quote: str
-    highlight: str
+    highlight: str | None
+    hot_topics: list[HotTopic] = field(default_factory=list)
     window_start: str = ""
     window_end: str = ""
     timezone: str = DEFAULT_TIMEZONE
@@ -599,6 +611,70 @@ def _keyword_scores(messages: list[ReportMessage]) -> Counter:
     return counter
 
 
+def _hot_topics(
+    messages: list[ReportMessage],
+    limit: int = DEFAULT_HOT_TOPIC_LIMIT,
+) -> list[HotTopic]:
+    grouped: dict[str, list[ReportMessage]] = {}
+    repeated_phrases: dict[str, list[ReportMessage]] = {}
+    for message in messages:
+        for token in set(_tokenize(message.text)):
+            if _is_clean_topic(token) and len(token) >= DEFAULT_HOT_TOPIC_MIN_CHARS:
+                grouped.setdefault(token, []).append(message)
+        for phrase in _hot_topic_phrases(message.text):
+            repeated_phrases.setdefault(phrase, []).append(message)
+
+    # Fallback tokenization has no Chinese word boundaries. A phrase must appear in
+    # distinct messages before it can replace those coarse fragments on the hotlist.
+    for phrase, group in repeated_phrases.items():
+        if len({_clean_text(message.text) for message in group}) >= DEFAULT_HOT_TOPIC_MIN_MESSAGES:
+            existing = grouped.setdefault(phrase, [])
+            existing_ids = {message.id for message in existing}
+            existing.extend(message for message in group if message.id not in existing_ids)
+
+    ranked = sorted(
+        (
+            (keyword, group)
+            for keyword, group in grouped.items()
+            if len(group) >= DEFAULT_HOT_TOPIC_MIN_MESSAGES
+        ),
+        key=lambda item: (
+            -(len(item[0]) * len(item[1])),
+            -len(item[1]),
+            -len({message.sender_id or message.sender_name for message in item[1]}),
+            -len(item[0]),
+            item[0],
+        ),
+    )
+    topics: list[HotTopic] = []
+    for keyword, group in ranked:
+        if any(keyword in topic.keyword or topic.keyword in keyword for topic in topics):
+            continue
+        topics.append(
+            HotTopic(
+                rank=len(topics) + 1,
+                keyword=keyword,
+                message_count=len(group),
+                participant_count=len({message.sender_id or message.sender_name for message in group}),
+            )
+        )
+        if len(topics) == limit:
+            break
+    return topics
+
+
+def _hot_topic_phrases(text: str) -> set[str]:
+    phrases: set[str] = set()
+    for source in re.findall(r"[\u4e00-\u9fa5]+", _clean_text(text)):
+        max_length = min(len(source), DEFAULT_HOT_TOPIC_MAX_CHARS)
+        for length in range(DEFAULT_HOT_TOPIC_MIN_CHARS, max_length + 1):
+            for start in range(len(source) - length + 1):
+                phrase = source[start:start + length]
+                if _is_clean_topic(phrase):
+                    phrases.add(phrase)
+    return phrases
+
+
 def _is_clean_topic(kw: str) -> bool:
     """Reject noise tokens so case titles stay meaningful.
 
@@ -611,9 +687,11 @@ def _is_clean_topic(kw: str) -> bool:
         return False
     if any(noise in kw for noise in ("现在规定叫", "规定叫")):
         return False
+    if "群里" in kw:
+        return False
     if any(noise in kw for noise in ("哈哈", "嘿嘿", "呵呵", "嘻嘻", "呲牙", "啧啧")):
         return False
-    if kw.endswith(("不", "吗", "么", "吧", "呢", "啊", "呀", "啦", "哦", "哈", "的")):
+    if kw.endswith(("不", "吗", "么", "吧", "呢", "啊", "呀", "啦", "哦", "哈", "的", "了")):
         return False
     if len(kw) >= 3 and len(set(kw)) == 1:
         return False
@@ -631,16 +709,10 @@ def _time_bucket_title(hour: int, messages: list[ReportMessage]) -> str:
         period = "晚场"
     else:
         period = "夜场"
-    if len(messages) >= 10:
-        momentum = "高能连击"
-    elif len(messages) >= 6:
-        momentum = "持续推进"
-    else:
-        momentum = "轻量回合"
     for keyword, count in _keyword_scores(messages).most_common(DEFAULT_TOP_KEYWORDS):
         if count >= DEFAULT_MIN_CASE_MESSAGES and _is_clean_topic(keyword):
             return f"{period} · {keyword}"
-    return f"{period}{hour:02d}:00 · {momentum}"
+    return f"{period} {hour:02d}:00 时段"
 
 
 def _topic_marker_title(cleaned: str) -> str | None:
@@ -675,22 +747,11 @@ def _is_digest_snippet_text(text: str) -> bool:
 
 
 def _time_bucket_bullet(
-    title: str,
     time_label: str,
     message_count: int,
     participant_count: int,
-    top_speaker: str,
 ) -> str:
-    if "高能连击" in title:
-        return (
-            f"{time_label} 像一波快攻：{message_count} 条消息、{participant_count} 位群友轮番接力，"
-            f"{top_speaker} 把节奏顶到前排。"
-        )
-    if "持续推进" in title:
-        return (
-            f"{time_label} 没有单点爆炸，但接话不断：{message_count} 条消息把这一段稳稳推起来。"
-        )
-    return f"{time_label} 是一段轻量回合：{participant_count} 位群友短暂接力，给全天补上一个小波峰。"
+    return f"{time_label}：{message_count} 条群消息，{participant_count} 人参与。"
 
 
 def _detect_topic_markers(messages: list[ReportMessage]) -> dict[str, list[ReportMessage]]:
@@ -810,17 +871,19 @@ def _cluster_cases(
         if keyword in time_bucket_titles:
             bullets = [
                 _time_bucket_bullet(
-                    keyword,
                     time_label,
                     len(cluster),
                     len(participants),
-                    top_speaker,
                 )
             ]
         else:
             # Pick representative snippets by signal density so noisy chatter does not
             # become the visible takeaway for a topic card.
             representative_messages = [m for m in cluster if _is_digest_snippet_text(m.text)]
+            if not representative_messages:
+                representative_messages = [
+                    m for m in cluster if _clean_text(m.text) and not _looks_promotional_noise(m.text)
+                ]
             sorted_by_length = sorted(
                 representative_messages,
                 key=lambda m: (
@@ -834,7 +897,7 @@ def _cluster_cases(
                 if snippet and snippet not in bullets:
                     bullets.append(snippet)
             if not bullets:
-                bullets = ["这一时段互动明显升温，群友连续抛出问题、回应和补充信息。"]
+                continue
 
         color_bg, color_text = CASE_CARD_COLORS[(index - 1) % len(CASE_CARD_COLORS)]
         cases.append(
@@ -877,7 +940,7 @@ def _compute_suspects(messages: list[ReportMessage], limit: int = DEFAULT_SUSPEC
     return suspects
 
 
-def _extract_highlight(messages: list[ReportMessage]) -> str:
+def _extract_highlight(messages: list[ReportMessage]) -> str | None:
     """Pick one real, quotable group message for the '今日高亮' block."""
     candidates = []
     for m in messages:
@@ -893,7 +956,7 @@ def _extract_highlight(messages: list[ReportMessage]) -> str:
             score -= 25
         candidates.append((score, len(text), text))
     if not candidates:
-        return "今日群聊暂无特别亮眼的发言，但每一次交流都在悄悄累积。"
+        return None
     candidates.sort(reverse=True)
     best = candidates[0][2]
     return best[:92] + ("…" if len(best) > 92 else "")
@@ -936,16 +999,12 @@ def _build_report(args: argparse.Namespace) -> ReportData:
     discussion_messages = _discussion_messages(messages)
     unique_senders = {m.sender_id for m in discussion_messages}
     cases = _cluster_cases(discussion_messages)
+    hot_topics = _hot_topics(discussion_messages)
     suspects = _compute_suspects(discussion_messages)
     hourly = _hourly_timeline(messages, start)
     max_hourly = max(hourly) if hourly else 1
 
     time_range = _time_range_label(start, end)
-    quote = os.environ.get(
-        "QINTOPIA_DAILY_CASE_REPORT_QUOTE",
-        "我们最大的光荣不在于从不跌倒，而在于每次跌倒后都能爬起来。",
-    )
-
     return ReportData(
         group_name=args.group_name,
         report_title=args.report_title,
@@ -959,8 +1018,8 @@ def _build_report(args: argparse.Namespace) -> ReportData:
         hourly_counts=hourly,
         cases=cases,
         suspects=suspects,
-        quote=quote,
         highlight=_extract_highlight(discussion_messages),
+        hot_topics=hot_topics,
         window_start=start.isoformat(),
         window_end=end.isoformat(),
         timezone=args.timezone,
@@ -1033,92 +1092,91 @@ def _bar_svg(counts: list[int], max_count: int, width: int, height: int) -> str:
 
 
 def _render_html(report: ReportData, width: int) -> str:
-    max_hourly = max(report.hourly_counts) if report.hourly_counts else 1
-    timeline_svg = _bar_svg(report.hourly_counts, max_hourly, width - 80, 80)
-    timeline_labels = []
-    peak_idx = report.hourly_counts.index(max_hourly) if report.hourly_counts else -1
-    for idx in range(0, 25, 4):
-        x = 40 + int((idx / 24) * (width - 80))
-        is_peak = idx == peak_idx
-        color = "#c45c48" if is_peak else "#9ca3af"
-        weight = "700" if is_peak else "400"
-        timeline_labels.append(
-            f'<text x="{x}" y="105" font-size="10" fill="{color}" font-weight="{weight}" text-anchor="middle">{idx:02d}</text>'
-        )
-    peak_svg = ""
-    if peak_idx >= 0 and max_hourly > 0:
-        bar_w = (width - 80) // 24
-        peak_x = peak_idx * bar_w + bar_w // 2
-        peak_svg = f'<text x="{peak_x}" y="16" font-size="11" fill="#c45c48" font-weight="700" text-anchor="middle">{max_hourly}</text>'
+    chart_width = width - 96
+    peak_count = max(report.hourly_counts or [0])
+    max_hourly = peak_count or 1
+    peak_idx = report.hourly_counts.index(peak_count) if peak_count else 0
+    timeline_svg = _bar_svg(report.hourly_counts, max_hourly, chart_width, 68)
+    timeline_labels = "".join(
+        f'<text x="{int((idx / 24) * chart_width)}" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">{idx:02d}</text>'
+        for idx in range(0, 25, 4)
+    )
+    peak_x = peak_idx * (chart_width // 24) + (chart_width // 48)
+    peak_svg = f'<text x="{peak_x}" y="12" font-size="10" fill="#f25a18" font-weight="700" text-anchor="middle">{peak_count}</text>'
 
-    def _topic_emoji(title: str) -> str:
-        if any(k in title for k in ("打卡", "共学", "学习")):
-            return "\U0001F4DA"
-        if any(k in title for k in ("资源", "分享", "链接", "文章")):
-            return "\U0001F517"
-        if any(k in title for k in ("求助", "问题", "问", "报错", "bug", "BUG")):
-            return "\u2753"
-        if any(k in title for k in ("活动", "预告", "AMA", "报名", "直播")):
-            return "\U0001F4C5"
-        if any(k in title for k in ("行情", "闲聊", "大盘", "跌", "涨", "市场")):
-            return "\U0001F4AC"
-        if any(k in title for k in ("新人", "报到", "欢迎", "进群")):
-            return "\U0001F44B"
-        return "\U0001F4CC"
-
-    kpi_specs = [
-        (report.message_count, "消息总量", "\U0001F4AC", "#2563eb"),
-        (report.participant_count, "活跃人数", "\U0001F525", "#0891b2"),
-        (report.case_count, "今日话题", "\U0001F9E9", "#7c3aed"),
-        (report.suspect_count, "活跃之星", "\u2B50", "#d97706"),
-    ]
     stats_html = "\n".join(
         f"""
-        <div style="background:linear-gradient(160deg,{accent} 0%,{accent}cc 100%);border-radius:16px;padding:16px 8px;text-align:center;box-shadow:0 6px 16px rgba(0,0,0,0.12);">
-          <div style="font-size:20px;margin-bottom:4px;">{icon}</div>
-          <div style="font-size:26px;font-weight:900;color:#ffffff;line-height:1;">{value}</div>
-          <div style="font-size:11px;color:rgba(255,255,255,0.85);margin-top:4px;">{label}</div>
-        </div>"""
-        for value, label, icon, accent in kpi_specs
+      <div class="stat">
+        <div class="stat-label">{label}</div>
+        <div class="stat-value">{value}</div>
+        <div class="stat-caption">{caption}</div>
+      </div>"""
+        for label, value, caption in (
+            ("CHAT", report.message_count, "消息"),
+            ("PLAYERS", report.participant_count, "有效活跃"),
+            ("TOPICS", report.case_count, "话题"),
+            ("MVP", report.suspect_count, "上榜"),
+        )
     )
 
-    case_cards = []
-    for case in report.cases:
-        bullets = "".join(
-            f'<li style="margin:0 0 6px 16px;font-size:13px;line-height:1.5;color:{case.color_text}">{html.escape(b)}</li>'
-            for b in case.bullets
-        )
-        tag = _topic_emoji(case.title)
-        card = f"""
-        <div style="background:{case.color_bg};border-radius:16px;padding:16px 16px 16px 18px;margin-bottom:14px;break-inside:avoid;border-left:5px solid {case.color_text};">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-size:11px;font-weight:700;color:{case.color_text};opacity:.65;letter-spacing:1px">{case.case_no}</span>
-            <span style="font-size:10px;background:rgba(0,0,0,0.06);color:{case.color_text};padding:2px 8px;border-radius:999px">{html.escape(case.time_label)}</span>
-          </div>
-          <div style="font-size:16px;font-weight:800;color:{case.color_text};margin-bottom:6px;line-height:1.4">{tag} {html.escape(case.title)}</div>
-          <div style="font-size:12px;color:{case.color_text};opacity:.8;margin-bottom:10px">{html.escape(case.summary)}</div>
-          <ul style="padding:0;list-style:disc">{bullets}</ul>
+    case_cards = "".join(
+        f"""
+      <article class="case-card">
+        <div class="case-head">
+          <span class="case-number">{html.escape(case.case_no.replace("CASE ", ""))}</span>
+          <span class="case-time">{html.escape(case.time_label)}</span>
         </div>
-        """
-        case_cards.append(card)
+        <h3>{html.escape(case.title)}</h3>
+        <p class="case-summary">{html.escape(case.summary)}</p>
+        <ul class="case-notes">{"".join(f"<li>{html.escape(bullet)}</li>" for bullet in case.bullets[:3])}</ul>
+      </article>"""
+        for case in report.cases
+    )
+    cases_html = f"""
+  <section class="section cases-section">
+    <div class="section-kicker">PLAY BY PLAY</div>
+    <h2>今日局势</h2>
+    <div class="cases">{case_cards}</div>
+  </section>""" if case_cards else ""
 
-    suspects_html = []
-    rank_colors = ["#c45c48", "#d97706", "#ca8a04", "#65a30d", "#0891b2"]
-    for suspect in report.suspects:
-        badge = rank_colors[(suspect.rank - 1) % len(rank_colors)]
-        suspects_html.append(f"""
-        <div style="display:flex;align-items:center;gap:12px;background:#fff;border-radius:14px;padding:12px 14px;border:1px solid #e5e7eb;box-shadow:0 1px 2px rgba(0,0,0,0.03);">
-          <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#1a2744,#2d3a5f);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px">{suspect.avatar_emoji}</div>
-          <div style="flex:1">
-            <div style="font-size:14px;font-weight:700;color:#1f2937">{html.escape(suspect.name)}</div>
-            <div style="font-size:12px;color:#6b7280">{suspect.message_count} 条消息 · {suspect.word_count} 字</div>
-          </div>
-          <div style="width:38px;height:38px;border-radius:12px;background:{badge};color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;">{suspect.rank}</div>
+    suspects_html = "".join(
+        f"""
+      <div class="mvp-card">
+        <div class="mvp-rank">{suspect.rank}</div>
+        <div class="mvp-copy">
+          <div class="mvp-name">{html.escape(suspect.name)}</div>
+          <div class="mvp-meta">{suspect.message_count} 条 / {suspect.word_count} 字</div>
         </div>
-        """)
+        <div class="mvp-score">{suspect.message_count}</div>
+      </div>"""
+        for suspect in report.suspects
+    )
+    mvp_html = f"""
+  <section class="section mvp-section">
+    <div class="section-kicker">STARTING FIVE</div>
+    <h2>今日 MVP</h2>
+    <div class="mvp-grid">{suspects_html}</div>
+  </section>""" if suspects_html else ""
 
-    cases_grid = "\n".join(case_cards)
-    suspects_grid = "\n".join(suspects_html)
+    highlight_html = ""
+    if report.highlight:
+        highlight_html = f"""
+  <section class="highlight">
+    <div class="highlight-kicker">TODAY'S SIGNAL</div>
+    <div class="highlight-title">今日高亮</div>
+    <p>“{html.escape(report.highlight)}”</p>
+  </section>"""
+
+    hot_topics_html = ""
+    if report.hot_topics:
+        hot_topics_html = f"""
+  <section class="hotlist">
+    <div class="hotlist-heading"><span>HOT TOPICS</span><h2>群聊热榜</h2></div>
+    <div class="hotlist-grid">{"".join(
+        f'''<div class="hot-topic"><span class="hot-rank">{topic.rank}</span><strong>{html.escape(topic.keyword)}</strong><small>{topic.message_count} 条 · {topic.participant_count} 人</small></div>'''
+        for topic in report.hot_topics
+    )}</div>
+  </section>"""
 
     return f"""<!DOCTYPE html>
 <html>
@@ -1126,56 +1184,80 @@ def _render_html(report: ReportData, width: int) -> str:
 <meta charset="utf-8">
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background:#eef1f6; color:#1f2937; }}
+  body {{ background: #d9d6ce; color: #111111; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }}
+  .scoreboard {{ width: {width}px; margin: 18px auto; background: #fff8df; border: 9px solid #111111; }}
+  .topline {{ min-height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: #111111; color: #ffd92e; font-size: 11px; font-weight: 800; }}
+  .hero {{ position: relative; min-height: 152px; padding: 22px 144px 20px 24px; background: #ffd92e; border-bottom: 4px solid #111111; }}
+  .hero-group {{ font-size: 25px; font-weight: 800; line-height: 1.25; }}
+  .hero-title {{ margin-top: 7px; font-size: 42px; font-weight: 900; line-height: 1; }}
+  .hero-time {{ margin-top: 16px; padding-top: 6px; border-top: 4px solid #111111; font-size: 11px; }}
+  .hero-badge {{ position: absolute; right: 24px; top: 24px; display: grid; width: 96px; height: 96px; place-items: center; border: 4px solid #111111; border-radius: 18px; background: #88d7ff; font-size: 27px; font-weight: 900; }}
+  .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); background: #111111; color: #fff8df; }}
+  .stat {{ min-height: 96px; padding: 17px 20px; border-right: 2px solid #3d3d3d; }}
+  .stat:last-child {{ border-right: 0; }}
+  .stat-label, .section-kicker, .highlight-kicker, .hotlist-heading span {{ color: #ffd92e; font-size: 11px; font-weight: 800; }}
+  .stat-value {{ margin-top: 5px; font-size: 34px; font-weight: 900; line-height: 1; }}
+  .stat-caption {{ margin-top: 5px; color: #c9c9c9; font-size: 11px; }}
+  .timeline {{ margin: 0; padding: 26px 24px 18px; background: #ffd92e; border-bottom: 4px solid #111111; }}
+  .timeline-head {{ display: flex; align-items: baseline; justify-content: space-between; }}
+  .timeline h2, .section h2 {{ font-size: 26px; font-weight: 900; line-height: 1.1; }}
+  .peak {{ font-size: 12px; font-weight: 700; }}
+  .timeline svg {{ display: block; width: 100%; height: 106px; margin-top: 8px; }}
+  .highlight {{ display: grid; grid-template-columns: 154px 1fr; gap: 18px; margin: 34px 24px 0; padding: 18px 20px; border: 4px solid #111111; background: #f25a18; color: #fff8df; }}
+  .highlight-kicker {{ grid-column: 1; color: #ffd92e; }}
+  .highlight-title {{ grid-column: 1; align-self: center; font-size: 25px; font-weight: 900; }}
+  .highlight p {{ grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 15px; font-weight: 700; line-height: 1.65; }}
+  .hotlist {{ margin: 20px 24px 0; padding: 14px 16px 16px; border: 4px solid #111111; background: #fff8df; }}
+  .hotlist-heading {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }}
+  .hotlist-heading span {{ color: #f25a18; }}
+  .hotlist-heading h2 {{ font-size: 20px; font-weight: 900; }}
+  .hotlist-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }}
+  .hot-topic {{ display: grid; grid-template-columns: 25px 1fr auto; align-items: center; gap: 7px; min-height: 40px; padding: 6px 8px; border: 2px solid #111111; background: #fff0a6; }}
+  .hot-rank {{ display: grid; width: 23px; height: 23px; place-items: center; border: 2px solid #111111; border-radius: 50%; background: #ffd92e; font-size: 11px; font-weight: 900; }}
+  .hot-topic strong {{ min-width: 0; font-size: 14px; }}
+  .hot-topic small {{ color: #555555; font-size: 10px; white-space: nowrap; }}
+  .section {{ margin: 34px 24px 0; }}
+  .section-kicker {{ color: #f25a18; }}
+  .section h2 {{ margin-top: 6px; }}
+  .cases {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 18px; }}
+  .case-card {{ min-height: 214px; padding: 16px; border: 4px solid #111111; background: #ffffff; }}
+  .case-head {{ display: flex; align-items: center; gap: 12px; }}
+  .case-number {{ display: grid; width: 39px; height: 39px; place-items: center; border: 3px solid #111111; border-radius: 50%; background: #ffd92e; font-size: 12px; font-weight: 900; }}
+  .case-time {{ color: #f25a18; font-size: 11px; font-weight: 800; }}
+  .case-card h3 {{ margin-top: 13px; font-size: 18px; line-height: 1.35; }}
+  .case-summary {{ margin-top: 8px; color: #555555; font-size: 12px; line-height: 1.5; }}
+  .case-notes {{ margin-top: 14px; padding: 10px 12px 8px 26px; background: #fff0a6; font-size: 11px; line-height: 1.55; }}
+  .case-notes li + li {{ margin-top: 4px; }}
+  .mvp-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 18px; }}
+  .mvp-card {{ display: grid; grid-template-columns: 34px 1fr 48px; align-items: center; min-height: 70px; border: 3px solid #111111; background: #ffffff; }}
+  .mvp-rank {{ display: grid; height: 100%; place-items: center; border-right: 2px solid #111111; font-size: 16px; font-weight: 900; }}
+  .mvp-copy {{ padding: 8px 10px; }}
+  .mvp-name {{ font-size: 15px; font-weight: 800; }}
+  .mvp-meta {{ margin-top: 3px; color: #555555; font-size: 10px; }}
+  .mvp-score {{ padding-right: 10px; text-align: right; font-size: 28px; font-weight: 900; }}
+  .footer {{ margin-top: 34px; padding: 14px 24px; background: #111111; color: #ffd92e; font-size: 10px; }}
 </style>
 </head>
 <body>
-<div style="width:{width}px;background:linear-gradient(180deg,#1a2744 0%,#22304f 230px,#eef1f6 230px,#eef1f6 100%);padding:30px 24px 28px;position:relative;overflow:hidden;">
-  <div style="text-align:center;margin-bottom:18px;">
-    <div style="font-size:11px;letter-spacing:3px;color:#aab4c8;margin-bottom:6px;">DAILY COMMUNITY REPORT</div>
-    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:25px;font-weight:700;color:#ffffff;margin-bottom:6px;">{html.escape(report.group_name)}</div>
-    <div style="font-size:16px;font-weight:800;color:#f0b69a;">{html.escape(report.report_title)}</div>
-  </div>
-
-  <div style="display:flex;justify-content:center;gap:14px;font-size:11px;color:#cbd5e1;margin-bottom:20px;">
-    <span>\U0001F4C5 {report.report_date}</span>
-    <span>⏱ {report.time_range}</span>
-    <span>\U0001F465 {report.member_count} 名成员</span>
-  </div>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px;">
-    {stats_html}
-  </div>
-
-  <div style="background:#fff;border-radius:18px;padding:16px 18px;margin-bottom:22px;border:1px solid #e5e7eb;box-shadow:0 4px 14px rgba(20,30,60,0.05);">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <div style="font-size:13px;font-weight:700;color:#1a2744;">24H 活跃节奏</div>
-      <div style="font-size:11px;color:#9ca3af;">峰值 {max_hourly} 条 / {peak_idx:02d}:00</div>
-    </div>
-    <svg width="{width - 56}" height="120" viewBox="0 0 {width - 56} 120">
-      {timeline_svg}
-      {peak_svg}
-      {"".join(timeline_labels)}
-    </svg>
-  </div>
-
-  <div style="margin-bottom:22px;">
-    <div style="font-size:15px;font-weight:800;color:#1a2744;margin-bottom:12px;">今日话题 · 便签墙</div>
-    {cases_grid}
-  </div>
-
-  <div style="margin-bottom:22px;">
-    <div style="font-size:15px;font-weight:800;color:#1a2744;margin-bottom:12px;">活跃之星榜</div>
-    <div style="display:grid;grid-template-columns:1fr;gap:10px;">
-      {suspects_grid}
-    </div>
-  </div>
-
-  <div style="text-align:center;padding-top:14px;border-top:1px dashed #cbd5e1;">
-    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:14px;color:#475569;line-height:1.7;font-style:italic;">"{html.escape(report.quote)}"</div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:8px;">本报告由小满自动整理群聊生成 · AgentOS 自动发布版</div>
-  </div>
-</div>
+<main class="scoreboard">
+  <div class="topline"><span>XIAOMAN COMMUNITY SCOREBOARD</span><span>{html.escape(report.report_date)}</span></div>
+  <header class="hero">
+    <div class="hero-group">{html.escape(report.group_name)}</div>
+    <div class="hero-title">{html.escape(report.report_title)}</div>
+    <div class="hero-time">{html.escape(report.time_range)} · {report.member_count} 名成员</div>
+    <div class="hero-badge">XM</div>
+  </header>
+  <section class="stats">{stats_html}</section>
+  <section class="timeline">
+    <div class="timeline-head"><h2>24H 活跃节奏</h2><div class="peak">峰值 {peak_count} 条 / {peak_idx:02d}:00</div></div>
+    <svg viewBox="0 0 {chart_width} 106" aria-label="24小时活跃节奏">{timeline_svg}{peak_svg}{timeline_labels}</svg>
+  </section>
+  {highlight_html}
+  {hot_topics_html}
+  {cases_html}
+  {mvp_html}
+  <footer class="footer">本报告由小满自动整理群聊生成 · AgentOS 自动发布版</footer>
+</main>
 </body>
 </html>"""
 
@@ -1364,21 +1446,42 @@ def _render_image_with_pillow(
         draw.rectangle((x, base_y - height, x + bar_width, base_y), fill=fill)
     y = timeline_top + timeline_height + 34 * scale
 
-    highlight_top = y
-    highlight_height = 138 * scale
-    draw.rectangle((outer, highlight_top, canvas_width - outer, highlight_top + highlight_height), fill=orange, outline=ink, width=3 * scale)
-    draw.text((padding, highlight_top + 22 * scale), "TODAY'S SIGNAL", font=tiny_font, fill=yellow)
-    draw.text((padding, highlight_top + 46 * scale), "今日高亮", font=section_font, fill=cream)
-    _draw_wrapped_text(
-        draw,
-        (padding + 180 * scale, highlight_top + 30 * scale),
-        f"“{report.highlight}”",
-        body_font,
-        cream,
-        content_width - 180 * scale,
-        max_lines=3,
-    )
-    y += highlight_height + 38 * scale
+    if report.highlight:
+        highlight_top = y
+        highlight_height = 138 * scale
+        draw.rectangle((outer, highlight_top, canvas_width - outer, highlight_top + highlight_height), fill=orange, outline=ink, width=3 * scale)
+        draw.text((padding, highlight_top + 22 * scale), "TODAY'S SIGNAL", font=tiny_font, fill=yellow)
+        draw.text((padding, highlight_top + 46 * scale), "今日高亮", font=section_font, fill=cream)
+        _draw_wrapped_text(
+            draw,
+            (padding + 180 * scale, highlight_top + 30 * scale),
+            f"“{report.highlight}”",
+            body_font,
+            cream,
+            content_width - 180 * scale,
+            max_lines=3,
+        )
+        y += highlight_height + 38 * scale
+
+    if report.hot_topics:
+        hotlist_top = y
+        hotlist_rows = (len(report.hot_topics) + 1) // 2
+        hotlist_height = (54 + 50 * hotlist_rows) * scale
+        draw.rectangle((outer, hotlist_top, canvas_width - outer, hotlist_top + hotlist_height), fill=cream, outline=ink, width=3 * scale)
+        draw.text((padding, hotlist_top + 14 * scale), "HOT TOPICS", font=tiny_font, fill=orange)
+        draw.text((padding + 102 * scale, hotlist_top + 10 * scale), "群聊热榜", font=body_font, fill=ink)
+        topic_width = (content_width - gutter) // 2
+        for index, topic in enumerate(report.hot_topics):
+            column = index % 2
+            row = index // 2
+            x = padding + column * (topic_width + gutter)
+            row_top = hotlist_top + (44 + row * 46) * scale
+            draw.rectangle((x, row_top, x + topic_width, row_top + 34 * scale), fill=pale_yellow, outline=ink, width=2 * scale)
+            draw.ellipse((x + 8 * scale, row_top + 7 * scale, x + 30 * scale, row_top + 29 * scale), fill=yellow, outline=ink, width=2 * scale)
+            draw.text((x + 14 * scale, row_top + 10 * scale), str(topic.rank), font=tiny_font, fill=ink)
+            draw.text((x + 40 * scale, row_top + 8 * scale), topic.keyword, font=small_font, fill=ink)
+            text_right(x + topic_width - 10 * scale, row_top + 10 * scale, f"{topic.message_count} 条 · {topic.participant_count} 人", tiny_font, ink)
+        y = hotlist_top + hotlist_height + 38 * scale
 
     y = section_label(y, "PLAY BY PLAY", "今日局势")
     cases = report.cases[:DEFAULT_CASE_LIMIT]
@@ -1419,7 +1522,7 @@ def _render_image_with_pillow(
             )
             note_top = card_y + 150 * scale
             draw.rectangle((x + 18 * scale, note_top, x + card_width - 18 * scale, card_y + card_height - 18 * scale), fill=pale_yellow)
-            bullet_text = " / ".join(case.bullets[:2]) if case.bullets else "群友围绕该话题展开了讨论。"
+            bullet_text = " / ".join(case.bullets[:2])
             _draw_wrapped_text(
                 draw,
                 (x + 30 * scale, note_top + 12 * scale),
@@ -1449,10 +1552,6 @@ def _render_image_with_pillow(
             text_right(x + row_width - 16 * scale, row_y + 21 * scale, f"{suspect.message_count}", stat_font, ink)
         y += ((min(len(report.suspects), DEFAULT_SUSPECT_LIMIT) + 1) // 2) * (row_height + 10 * scale) + 28 * scale
 
-    draw.rectangle((outer, y, canvas_width - outer, y + 116 * scale), fill=yellow, outline=ink, width=3 * scale)
-    draw.text((padding, y + 22 * scale), "COACH'S TIMEOUT", font=tiny_font, fill=orange)
-    _draw_wrapped_text(draw, (padding, y + 48 * scale), f"“{report.quote}”", body_font, ink, content_width, max_lines=2)
-    y += 116 * scale
     draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
     draw.text((padding, y + 14 * scale), "本报告由小满自动整理群聊生成 · AgentOS 自动发布版", font=tiny_font, fill=yellow)
     y += 42 * scale + outer
