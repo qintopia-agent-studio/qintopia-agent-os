@@ -12,6 +12,7 @@ TIMER_NAME="qintopia-agentos-erhua-morning-brief.timer"
 EXPECTED_STATE="${QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE:-disabled}"
 EXPECTED_CALENDAR="*-*-* 08:05:00"
 JOURNAL_LINES="80"
+JOURNAL_DISABLED_SINCE="30 minutes ago"
 SYSTEMCTL="/usr/bin/systemctl"
 JOURNALCTL="/usr/bin/journalctl"
 PYTHON_BIN="/usr/bin/python3"
@@ -203,7 +204,7 @@ journal="$tmp_dir/journal.txt"
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   "$JOURNALCTL" -u "$SERVICE_NAME" --since "$timer_active_since" -n "$JOURNAL_LINES" --no-pager >"$journal" 2>/dev/null || true
 else
-  : >"$journal"
+  "$JOURNALCTL" -u "$SERVICE_NAME" --since "$JOURNAL_DISABLED_SINCE" -n "$JOURNAL_LINES" --no-pager >"$journal" 2>/dev/null || true
 fi
 assert_no_sensitive_output "service journal" "$journal"
 

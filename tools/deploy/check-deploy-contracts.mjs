@@ -3538,7 +3538,17 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.s
   requireFragment(
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     timerObservation,
+    'JOURNAL_DISABLED_SINCE="30 minutes ago"'
+  );
+  requireFragment(
+    "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+    timerObservation,
     '--since "$timer_active_since" -n "$JOURNAL_LINES"'
+  );
+  requireFragment(
+    "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+    timerObservation,
+    '--since "$JOURNAL_DISABLED_SINCE" -n "$JOURNAL_LINES"'
   );
   forbidFragment(
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
