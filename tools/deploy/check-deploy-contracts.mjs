@@ -2550,7 +2550,7 @@ if (exists(xiaomanDailyCaseReportObservationPath)) {
     'SYSTEMCTL="/usr/bin/systemctl"',
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
-    "OnCalendar=*-*-* 07:45:00",
+    "OnCalendar=*-*-* 08:00:00",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND",
     "feishu-base",
   ]) {

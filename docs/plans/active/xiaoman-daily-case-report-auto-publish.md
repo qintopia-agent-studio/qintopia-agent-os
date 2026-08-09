@@ -29,7 +29,7 @@ This does not remove reviewed production enablement. It removes the recurring hu
   release-local entrypoint.
 - The release systemd renderer installs
   `qintopia-agentos-xiaoman-daily-case-report-auto-publish.{service,timer}` with a daily
-  `OnCalendar=*-*-* 07:45:00` timer. Release install does not default-enable the timer;
+  `OnCalendar=*-*-* 08:00:00` timer. Release install does not default-enable the timer;
   production activation/rollback are dedicated reviewed scripts.
 - `group_message_send` records send-ready only; the existing QiWe image-send timer
   performs the external delivery.

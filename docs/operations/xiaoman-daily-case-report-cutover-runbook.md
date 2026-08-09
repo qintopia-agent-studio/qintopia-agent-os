@@ -18,7 +18,7 @@ through the governed QiWe image-send adapter.
 
 In scope:
 
-- Run the daily report flow every day at 07:45 from a release-managed systemd timer.
+- Run the daily report flow every day at 08:00 from a release-managed systemd timer.
 - Render the daily JPEG from the immutable release workflow package.
 - Upload the JPEG through `operations-daily-case-report-media-upload`.
 - Create one idempotent automatic publish work item with
@@ -53,7 +53,7 @@ Timer:
 
 ```ini
 [Timer]
-OnCalendar=*-*-* 07:45:00
+OnCalendar=*-*-* 08:00:00
 AccuracySec=1min
 Persistent=true
 Unit=qintopia-agentos-xiaoman-daily-case-report-auto-publish.service
@@ -119,7 +119,7 @@ QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=enabled \
   deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh
 ```
 
-The observation proves the timer state, daily 07:45 schedule, release-local service
+The observation proves the timer state, daily 08:00 schedule, release-local service
 command, and persistent env boundary. Retained worker and QiWe evidence after a real run
 must additionally show one window created one approved generated-image artifact, one
 automatic publish request, `requires_human_final_confirmation=false`, QiWe upload and
