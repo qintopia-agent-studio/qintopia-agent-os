@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.82](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.81...v0.2.82) (2026-08-09)
+
+
+### Features
+
+* add xiaoman weekly loop production timers ([#408](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/408)) ([8693f2b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8693f2b4446993b6986b5e803718f4a1b77d7f11))
+
+
+### Bug Fixes
+
+* enable xiaoman activity feishu read through mode ([#409](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/409)) ([b92e07b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b92e07b71299a5a048e63e8e54b53ed202151ed3))
+
 ## [0.2.81](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.80...v0.2.81) (2026-08-09)
 
 
