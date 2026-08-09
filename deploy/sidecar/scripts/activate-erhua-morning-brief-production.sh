@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION:-}" != "approved-production-erhua-morning-brief" ]]; then
+  echo "Erhua morning brief production activation requires explicit owner approval" >&2
+  exit 1
+fi
+
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+SYSTEMCTL="/usr/bin/systemctl"
+PYTHON_BIN="/usr/bin/python3"
+ENV_FILE="/etc/qintopia/message-sidecar.env"
+RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
+HERMES_PYTHON="/home/ubuntu/.hermes/hermes-agent/venv/bin/python"
+HERMES_VENV="/home/ubuntu/.hermes/hermes-agent/venv"
+SERVICE_NAME="qintopia-agentos-erhua-morning-brief.service"
+TIMER_NAME="qintopia-agentos-erhua-morning-brief.timer"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OBSERVATION_SCRIPT="${SCRIPT_DIR}/erhua-morning-brief-timer-observation-smoke.sh"
+ERHUA_CRON_OBSERVATION_SCRIPT="${SCRIPT_DIR}/erhua-legacy-cron-observation-smoke.sh"
+XIAOMAN_CRON_OBSERVATION_SCRIPT="${SCRIPT_DIR}/xiaoman-legacy-cron-observation-smoke.sh"
+
+fail() {
+  echo "Erhua morning brief activation failed: $1" >&2
+  exit 1
+}
+
+if [[ ! -x "$SYSTEMCTL" || ! -x "$PYTHON_BIN" ]]; then
+  fail "fixed systemctl and python3 are required"
+fi
+if [[ ! -f "$ENV_FILE" ]]; then
+  fail "persistent sidecar env file is required"
+fi
+for script in "$OBSERVATION_SCRIPT" "$ERHUA_CRON_OBSERVATION_SCRIPT" "$XIAOMAN_CRON_OBSERVATION_SCRIPT"; do
+  if [[ ! -x "$script" ]]; then
+    fail "release-local observation script is missing"
+  fi
+done
+
+release_dir="$("$PYTHON_BIN" - "$RELEASE_CURRENT_DIR" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+if not path.exists() and not path.is_symlink():
+    raise SystemExit(1)
+resolved = path.resolve()
+if not resolved.is_dir():
+    raise SystemExit(1)
+print(resolved)
+PY
+)" || fail "release/current is not a valid release directory"
+
+python_validator="${release_dir}/runtime/hermes/validate_hermes_python.py"
+if [[ ! -f "$python_validator" ]]; then
+  fail "Hermes Python validator is missing from release/current"
+fi
+PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$python_validator" \
+  --python "$HERMES_PYTHON" \
+  --venv-dir "$HERMES_VENV" \
+  --release-dir "$release_dir" >/dev/null
+
+require_env_line() {
+  local key="$1"
+  local expected="$2"
+  local count
+  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
+  if [[ "$count" != "1" ]]; then
+    fail "requires exactly one ${key}"
+  fi
+  if ! grep -Fxq "${key}=${expected}" "$ENV_FILE"; then
+    fail "requires ${key}=${expected}"
+  fi
+}
+
+require_present_env_line() {
+  local key="$1"
+  local count
+  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
+  if [[ "$count" != "1" ]]; then
+    fail "requires exactly one ${key}"
+  fi
+}
+
+read_env_value() {
+  local key="$1"
+  "$PYTHON_BIN" - "$ENV_FILE" "$key" <<'PY'
+import re
+import sys
+
+path, expected_key = sys.argv[1:3]
+assignment = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=[ \t]*(.*?)[ \t]*(?:#[^\"']*)?$")
+seen = False
+
+with open(path, encoding="utf-8") as fh:
+    for raw in fh:
+        line = raw.rstrip("\r\n")
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = assignment.fullmatch(line)
+        if not match:
+            continue
+        key, value = match.groups()
+        if key != expected_key:
+            continue
+        if seen:
+            raise SystemExit(1)
+        seen = True
+        value = value.strip()
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        if "$(" in value or "`" in value or any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+            raise SystemExit(1)
+        print(value)
+PY
+}
+
+cleanup_failed_activation() {
+  "$SYSTEMCTL" disable --now "$TIMER_NAME" >/dev/null 2>&1 || true
+  "$SYSTEMCTL" stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+  "$SYSTEMCTL" reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
+}
+
+require_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"
+require_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"
+require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
+require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
+require_present_env_line "QINTOPIA_SIDECAR_DATABASE_URL"
+require_present_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN"
+require_present_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG"
+
+qunmind_bin="$(read_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN")" || fail "invalid QunMind binary env value"
+qunmind_config="$(read_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG")" || fail "invalid QunMind config env value"
+if [[ -z "$qunmind_bin" || -z "$qunmind_config" ]]; then
+  fail "QunMind runtime values must be non-empty"
+fi
+case "$qunmind_bin" in
+  /*) ;;
+  *) fail "QunMind binary must be an absolute path" ;;
+esac
+if [[ ! -x "$qunmind_bin" ]]; then
+  fail "QunMind binary must be executable"
+fi
+case "$qunmind_config" in
+  /*) ;;
+  *) fail "QunMind config must be an absolute path" ;;
+esac
+if [[ ! -r "$qunmind_config" ]]; then
+  fail "QunMind config must be readable"
+fi
+
+env -i PATH="$PATH" QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 "$ERHUA_CRON_OBSERVATION_SCRIPT" >/dev/null
+env -i PATH="$PATH" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 "$XIAOMAN_CRON_OBSERVATION_SCRIPT" >/dev/null
+
+"$SYSTEMCTL" daemon-reload
+"$SYSTEMCTL" enable "$TIMER_NAME"
+"$SYSTEMCTL" restart "$TIMER_NAME"
+if ! "$SYSTEMCTL" is-enabled --quiet "$TIMER_NAME"; then
+  cleanup_failed_activation
+  exit 1
+fi
+if ! "$SYSTEMCTL" is-active --quiet "$TIMER_NAME"; then
+  cleanup_failed_activation
+  exit 1
+fi
+timer_next="$("$SYSTEMCTL" show --property=NextElapseUSecRealtime --value "$TIMER_NAME")"
+if [[ -z "$timer_next" || "$timer_next" == "0" || "$timer_next" == "infinity" ]]; then
+  cleanup_failed_activation
+  fail "timer does not have a future realtime trigger"
+fi
+
+if ! env -i \
+  PATH="$PATH" \
+  QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 \
+  QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=enabled \
+  "$OBSERVATION_SCRIPT" >/dev/null; then
+  cleanup_failed_activation
+  exit 1
+fi
+
+echo "Erhua morning brief production timer enabled"

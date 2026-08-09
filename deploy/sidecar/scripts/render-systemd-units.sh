@@ -301,6 +301,57 @@ WantedBy=timers.target
 EOF
 }
 
+render_release_script_oneshot_service() {
+  local service_name="$1"
+  local description="$2"
+  local script_path="$3"
+  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}"
+  if [[ -n "${4:-}" ]]; then
+    release_environment+=" ${4}"
+  fi
+
+  write_file "$service_name" <<EOF
+[Unit]
+Description=${description}
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${MONOREPO_DIR}
+EnvironmentFile=${ENV_FILE}
+Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
+ExecStart=/usr/bin/env ${release_environment} ${script_path}
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+EOF
+}
+
+render_calendar_timer() {
+  local timer_name="$1"
+  local description="$2"
+  local service_name="$3"
+  local calendar="$4"
+  local accuracy_sec="${5:-1min}"
+
+  write_file "$timer_name" <<EOF
+[Unit]
+Description=${description}
+
+[Timer]
+OnCalendar=${calendar}
+AccuracySec=${accuracy_sec}
+Persistent=true
+Unit=${service_name}
+
+[Install]
+WantedBy=timers.target
+EOF
+}
+
 render_plan() {
   write_file "_M9_SYSTEMD_PLAN.txt" <<EOF
 M9 sidecar systemd render plan
@@ -365,6 +416,7 @@ EOF
 render_all() {
   local huabaosi_feishu_release_environment="QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"
   local huabaosi_image_release_environment="QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA} ${huabaosi_feishu_release_environment}"
+  local erhua_morning_brief_python_environment="QINTOPIA_ERHUA_MORNING_BRIEF_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python"
 
   mkdir -p "$OUTPUT_DIR"
   render_plan
@@ -662,6 +714,18 @@ render_all() {
     "qintopia-agentos-xiaoman-activity-material-followup-worker.service" \
     "1h" \
     "${QINTOPIA_XIAOMAN_ACTIVITY_MATERIAL_FOLLOWUP_TIMER_INTERVAL:-1h}"
+
+  render_release_script_oneshot_service \
+    "qintopia-agentos-erhua-morning-brief.service" \
+    "Qintopia AgentOS Erhua morning brief draft artifact worker" \
+    "${MONOREPO_DIR}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh" \
+    "$erhua_morning_brief_python_environment"
+  render_calendar_timer \
+    "qintopia-agentos-erhua-morning-brief.timer" \
+    "Run Qintopia AgentOS Erhua morning brief draft artifact worker" \
+    "qintopia-agentos-erhua-morning-brief.service" \
+    "*-*-* 08:05:00" \
+    "1min"
 }
 
 validate_output() {
@@ -715,6 +779,8 @@ validate_output() {
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
     "qintopia-agentos-xiaoman-activity-material-followup-worker.service"
     "qintopia-agentos-xiaoman-activity-material-followup-worker.timer"
+    "qintopia-agentos-erhua-morning-brief.service"
+    "qintopia-agentos-erhua-morning-brief.timer"
   )
 
   local file
@@ -732,6 +798,10 @@ validate_output() {
     case "$(basename "$file")" in
       qintopia-agentos-qiwe-image-send-preflight.service | qintopia-agentos-qiwe-image-send-worker.service)
         grep -F " ${QIWE_BIN} " "$file" >/dev/null
+        ;;
+      qintopia-agentos-erhua-morning-brief.service)
+        grep -F " ${MONOREPO_DIR}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh" "$file" >/dev/null
+        grep -F "QINTOPIA_ERHUA_MORNING_BRIEF_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python" "$file" >/dev/null
         ;;
       *)
         grep -F " ${BIN} " "$file" >/dev/null

@@ -54,6 +54,11 @@ const sourceFiles = [
   "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
   "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
   "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
+  "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+  "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+  "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
+  "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
@@ -132,6 +137,7 @@ const sourceFiles = [
 ];
 const sourceDirs = [
   "agents/xiaoman/profile-bundle",
+  "workflows/erhua-morning-brief",
   "runtime/postgres/migrations",
   "skills/qintopia-tools/variants",
   "skills/qintopia-weather/tests",

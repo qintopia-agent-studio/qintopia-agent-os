@@ -139,6 +139,37 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       "sidecar unit must bind deployed commit SHA after EnvironmentFile at the exec boundary"
     );
   }
+  const erhuaMorningBriefUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-erhua-morning-brief.service"),
+    "utf8"
+  );
+  for (const required of [
+    `WorkingDirectory=${resolvedReleaseDir}`,
+    `ExecStart=${releaseExecPrefix} QINTOPIA_ERHUA_MORNING_BRIEF_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python ${resolvedReleaseDir}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh`,
+  ]) {
+    if (!erhuaMorningBriefUnit.includes(required)) {
+      throw new Error(`Erhua morning brief unit is missing ${required}`);
+    }
+  }
+  const erhuaMorningBriefTimer = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-erhua-morning-brief.timer"),
+    "utf8"
+  );
+  for (const required of [
+    "OnCalendar=*-*-* 08:05:00",
+    "Persistent=true",
+    "Unit=qintopia-agentos-erhua-morning-brief.service",
+  ]) {
+    if (!erhuaMorningBriefTimer.includes(required)) {
+      throw new Error(`Erhua morning brief timer is missing ${required}`);
+    }
+  }
+  const systemctlLogText = fs.readFileSync(systemctlLog, "utf8");
+  if (systemctlLogText.includes("qintopia-agentos-erhua-morning-brief.timer")) {
+    throw new Error(
+      "release installer must install but not enable Erhua morning brief"
+    );
+  }
   for (const unitName of [
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
     "qintopia-agentos-huabaosi-image-generation-worker.service",
