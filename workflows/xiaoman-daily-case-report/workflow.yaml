@@ -3,19 +3,18 @@ type: workflow
 name: Xiaoman Daily Community Case-File Report
 owner: PatrickLiveCool
 status: draft
-risk_level: medium
+risk_level: high
 description:
-  Deterministic daily case-file poster generator for Xiaoman community groups. It reads
-  the last 24 hours of QiWe group messages from the Qintopia message store, clusters
-  topics into playful "cases", picks active "suspects", renders a PNG poster, and
-  produces a human-review draft. It never sends.
+  Deterministic daily case-file poster generator for Xiaoman community groups. The
+  production target is daily automatic publication through the reviewed QiWe image-send
+  boundary without per-day human confirmation.
 source:
   path: workflows/xiaoman-daily-case-report/daily_case_report.py
   reference: standalone Python script with optional Postgres read-through
   disposition: adopt
 production_boundary:
-  external_sends: false
-  database_writes: false
+  external_sends: true
+  database_writes: true
   runtime_profile: false
   secrets: true
 validation:
@@ -26,6 +25,7 @@ validation:
 dependencies:
   - skills/qiwe
   - runtime/postgres
+  - runtime/sidecar
   - agents/xiaoman
 tags:
   - workflow
@@ -34,13 +34,16 @@ tags:
   - community
   - image
 next_actions:
-  - Keep status as draft until the visual style, read-through path, and render
-    dependencies are reviewed and accepted.
   - Add psycopg, Playwright, and Chromium through a reviewed runtime packaging boundary
-    before enabling production PNG/database runs; do not hand-install them on servers.
-  - Add reviewed deploy/runner unit templates, install logic, rollback logic, bundle
-    inclusion, and deploy-contract checks before switching to active or installing a
-    systemd timer. The rendered unit must use an absolute reviewed Python interpreter
-    with dependency preflight evidence. Do not activate through hand-copied units or
-    server-local edits.
-  - The script only drafts; a human must confirm before any QiWe group send.
+    before enabling production JPEG/database runs; do not hand-install them on servers.
+  - Keep the reviewed render/upload entrypoint
+    `xiaoman-daily-case-report-auto-publish-worker.sh` in the release bundle so the
+    local JPEG becomes a stable HTTPS artifact URI before publish creation.
+  - Production publication must use the reviewed QiWe image-send adapter branch for
+    `workflow_type=daily_case_report`; do not add a Python QiWe sender or send from a
+    local image path.
+  - Activate only through
+    `activate-xiaoman-daily-case-report-auto-publish-production.sh`; rollback only
+    through `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+  - Keep status draft until production observation proves the daily timer, artifact
+    binding, QiWe upload/callback/send, idempotency, and rollback evidence.

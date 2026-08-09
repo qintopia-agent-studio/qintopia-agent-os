@@ -948,6 +948,48 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Create a pending text_announcement artifact for reviewed group-message use.
+    OperationsTextAnnouncementArtifactCreate {
+        /// JSON payload with date, message_text, and source_record_ref.
+        #[arg(long)]
+        payload_json: String,
+
+        /// Apply changes. Without this flag the command only validates and previews.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run mode even if --apply is not present.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Create a Xiaoman daily case-report image artifact and automatic QiWe send work item.
+    OperationsDailyCaseReportAutoPublishCreate {
+        /// JSON payload with report window, artifact identity, and runtime target group.
+        #[arg(long)]
+        payload_json: String,
+
+        /// Apply changes. Without this flag the command only validates and previews.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run mode even if --apply is not present.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Upload a rendered Xiaoman daily case-report JPEG to reviewed HTTPS media storage.
+    OperationsDailyCaseReportMediaUpload {
+        /// JSON payload with local image path and optional expected artifact identity.
+        #[arg(long)]
+        payload_json: String,
+
+        /// Apply the media upload. Without this flag the command only validates locally.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run mode even if --apply is not present.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// List AgentOS capabilities available for governed cross-Agent work.
     OperationsCapabilityList {
         /// Load capabilities from Postgres instead of the built-in offline registry.

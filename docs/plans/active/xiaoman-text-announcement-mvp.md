@@ -41,12 +41,13 @@ The output is safe for operations review, not member chat delivery. A human must
 the text before any Erhua handoff or group send is considered.
 
 `qintopia_xiaoman_activity_text_group_message_request_prepare` covers only the next
-bounded handoff after that review: it prepares an `operations-create` command for an
-`erhua.send_group_message` / `group_message_request` work item from an approved text
-announcement artifact. The generated request binds both the artifact id and the approved
-text content hash so the message body cannot be swapped after approval. The request
-remains `awaiting_publish`; a separate human final confirmation is still required before
-queueing, send-ready, QiWe, or external delivery.
+bounded handoff after that review: it prepares an `operations-work-item-create` command
+for an `erhua.send_group_message` / `group_message_request` work item from an approved
+text announcement artifact. The generated request binds both the artifact id and the
+approved text content hash so the message body cannot be swapped after approval. The
+request is not queued automatically. The request remains `awaiting_publish`; a separate
+human final confirmation is still required before queueing, send-ready, QiWe, or
+external delivery.
 
 This text path is intentionally not a production-complete evidence path. It can support
 Liu Shan's minimum operational review loop, but it does not prove image generation,
@@ -66,8 +67,8 @@ escalation. It does not mark work omissions or update activity records.
 - The tool returns one operations review message, one Erhua handoff draft, missing-field
   reminders, and explicit `external_send_executed=false`.
 - The text group-message request wrapper requires `approved_artifact_id`, binds the
-  approved text content hash, emits an `operations-create` command only, and retains
-  `external_send_executed=false`.
+  approved text content hash, emits an `operations-work-item-create` command only, and
+  retains `external_send_executed=false`.
 - The MVP cannot be reported as Xiaoman production-complete or QiWe group-delivered
   evidence.
 - Temporary meal records are skipped by default.

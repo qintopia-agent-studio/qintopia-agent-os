@@ -1,10 +1,16 @@
 # Workflow: Xiaoman Daily Community Case-File Report
 
 `workflows/xiaoman-daily-case-report` generates a playful daily "group chat case file"
-poster for Xiaoman community groups. By default it reads the latest rolling 24 hours of
-QiWe group messages, clusters discussion topics into "cases", highlights active
-participants as "suspects", and renders a PNG poster for human review. It never sends
-automatically.
+poster for Xiaoman community groups. The production target is a release-managed daily
+timer that reads the latest rolling 24 hours of QiWe group messages, renders a JPEG
+poster, and publishes it automatically to the reviewed target group through the governed
+QiWe image-send boundary.
+
+The current script generates the report image locally and emits artifact identity. The
+sidecar has the reviewed binding command that turns a durable JPEG URI into an approved
+`generated_image` artifact plus one automatic QiWe send-ready work item. Production
+activation still needs the render/upload entrypoint, runtime packaging, timer,
+observation, and rollback path from the immutable release.
 
 ## Responsibility
 
@@ -14,9 +20,13 @@ automatically.
   messages are excluded from activity statistics.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
-- Render a mobile-friendly PNG poster styled like a detective case file.
-- Produce an `operator_review_message` with the HTML and PNG file paths.
-- Never send, publish, or write to external systems. A human confirms first.
+- Render a mobile-friendly JPEG poster styled like a detective case file.
+- Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
+  downstream sendable artifact boundary.
+- Publish once per daily window to the reviewed QiWe target group after production
+  activation.
+- Never send from a local image path, a conversation-created cron, or an unreviewed
+  server-local script.
 
 ## Why this exists
 
@@ -35,6 +45,12 @@ mattered—without requiring anyone to scroll through hundreds of messages.
    demos.
 3. **Dry-run mode** (`--dry-run`): uses deterministic demo data to validate the template
    and rendering pipeline.
+
+Automatic publication is not implemented inside `daily_case_report.py` directly. The
+release worker renders the JPEG, calls `operations-daily-case-report-media-upload` to
+obtain a durable HTTPS URI, then calls
+`operations-daily-case-report-auto-publish-create` so retries, allowlists, storage
+identity, callback correlation, and send evidence stay in Postgres.
 
 Topic clustering is heuristic by default: messages are grouped around top keywords
 extracted from the text. This keeps the workflow deterministic and free of LLM costs. A
@@ -56,15 +72,18 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --rend
 
 This mode treats the HTML file as the deliverable and keeps it on disk.
 
-### Render PNG with Playwright
+### Render JPEG with Playwright
 
 ```bash
-python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render png
+python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render image
 ```
 
-PNG rendering requires Playwright and Chromium from a reviewed repository/runtime
+Image rendering requires Playwright and Chromium from a reviewed repository/runtime
 package boundary. Do not install them manually on production servers; keep production
 activation blocked until that dependency path is reviewed.
+
+JPEG is the default image encoding because the governed QiWe image-send boundary uses
+JPG identity. Use `--image-format png` only for local debugging.
 
 ### Production read-through
 
@@ -84,27 +103,47 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 > time. Use `--date YYYY-MM-DD` only for a specific calendar-day backfill in
 > `--timezone`.
 
+### Production auto-publish entrypoint
+
+The release-managed worker is:
+
+```bash
+deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh
+```
+
+It requires the persistent production env to provide read-through, target group, and
+media upload values. The systemd timer is rendered as
+`qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer` and is activated only by
+`activate-xiaoman-daily-case-report-auto-publish-production.sh`.
+
 ## Acceptance Scenarios
 
 - `--dry-run --render html` exits 0, writes a retained HTML file, and prints a review
   message with stats and file paths.
-- `--render png --keep-html` exits 0 and writes both `.html` and `.png` files when
-  Playwright is available; without `--keep-html`, the HTML file remains only an
-  intermediate render surface.
+- `--render image --keep-html` exits 0 and writes both `.html` and a `.jpg` file by
+  default when Playwright is available; without `--keep-html`, the HTML file remains
+  only an intermediate render surface.
+- `--image-format png` is accepted for local debugging but is not the production
+  auto-publish target.
 - Database mode fails closed (non-zero exit) if read-through is not enabled or the
   database URL is missing.
 - An empty rolling 24-hour window exits 0 with a report showing zero messages and no
   cases.
-- `external_send_executed` is always `false`; `requires_human_confirmation` is always
-  `true`.
+- Local generation reports `requires_human_confirmation=false` and
+  `auto_publish_ready=false`: per-day human confirmation is not part of the target
+  design, but the local script has not uploaded or sent anything.
+- Production auto-publish mode creates exactly one sendable daily report artifact for a
+  window and exactly one QiWe send attempt for the reviewed target group.
 
 ## Production Boundary
 
-- This draft workflow is `risk_level: medium` because production read-through handles
-  real group-message content and database credentials, even though it never sends or
-  writes externally.
+- This workflow becomes `risk_level: high` before activation because production
+  read-through handles real group-message content and automatic publication performs an
+  external QiWe send.
 - Reads `qintopia_messages.messages` only; does not write to the message store.
-- Does not send to QiWe, Feishu, or any other external channel.
+- Current local generation does not send to QiWe, Feishu, or any other external channel.
+  The future auto-publish step may send only through the reviewed QiWe image-send
+  production adapter.
 - Requires the same Postgres read credentials as the message-store search path.
 - Production read-through accepts only `QINTOPIA_MESSAGE_STORE_DATABASE_URL` or
   `QINTOPIA_SIDECAR_DATABASE_URL`; generic `DATABASE_URL` is ignored.
@@ -117,11 +156,21 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
   explicit calendar-day backfill mode.
 - Production read-through rejects `--render html` and `--keep-html`. Intermediate HTML
   can contain real member names and message excerpts, so it is written only into a
-  `0700` output directory as a `0600` file and is removed after PNG rendering or
+  `0700` output directory as a `0600` file and is removed after image rendering or
   failure.
-- Production PNG/database runs require `psycopg`, Playwright, and Chromium to be added
+- Production JPEG/database runs require `psycopg`, Playwright, and Chromium to be added
   through a reviewed runtime packaging path first. Hand-installed Python packages or
   browsers are outside the approved production boundary for this draft.
+- The automatic publisher uses the dedicated `xiaoman.daily_case_report_auto_publish`
+  capability and `review_policy=automatic_publish`; only
+  `workflow_type=daily_case_report` may bypass per-day human final confirmation.
+- Auto-publish creation must carry `media_upload_evidence` from the reviewed media
+  upload command. The create command rechecks the public media base, allowed host,
+  content hash, MD5, byte size, dimensions, MIME type, and filename before it can
+  approve the artifact or queue QiWe send-ready.
+- Daily scheduling must be installed by reviewed deploy/runner code with observation and
+  rollback checks. A hand-copied systemd unit or conversation-created cron is not an
+  acceptable production activation.
 
 ## Validation
 

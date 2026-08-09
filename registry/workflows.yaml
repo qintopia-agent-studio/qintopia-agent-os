@@ -27,6 +27,13 @@ entries:
     notes:
       Xiaoman activity signal intake and AgentOS-only downstream workflow; v0.2.6
       production observation passed while external adapters remain gated.
+  - id: workflows/xiaoman-daily-case-report
+    path: workflows/xiaoman-daily-case-report
+    manifest: workflows/xiaoman-daily-case-report/workflow.yaml
+    status: draft
+    notes:
+      Daily Xiaoman community case-report generator targeting automatic QiWe publication
+      after reviewed artifact, adapter, and timer gates land.
   - id: workflows/visual-asset-request
     path: workflows/visual-asset-request
     manifest: workflows/visual-asset-request/workflow.yaml

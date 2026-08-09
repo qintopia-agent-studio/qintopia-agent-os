@@ -182,31 +182,73 @@ pub async fn claim_ready_work_item(
               ON artifact.id::text = request.payload->>'approved_artifact_id'
              AND artifact.artifact_type = 'generated_image'
              AND artifact.review_status = 'approved'
-             AND artifact.created_by_agent = 'huabaosi'
-            JOIN qintopia_agent_os.work_items image_request
-              ON image_request.id = artifact.work_item_id
-             AND image_request.work_item_type = 'image_generation_request'
-             AND image_request.capability_key = 'huabaosi.generate_image_asset'
-             AND image_request.target_agent = 'huabaosi'
-             AND image_request.status = 'completed'
+            JOIN qintopia_agent_os.work_items source_request
+              ON source_request.id = artifact.work_item_id
+             AND (
+                (
+                    artifact.created_by_agent = 'huabaosi'
+                    AND source_request.work_item_type = 'image_generation_request'
+                    AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                    AND source_request.target_agent = 'huabaosi'
+                    AND source_request.status = 'completed'
+                )
+                OR
+                (
+                    artifact.created_by_agent = 'xiaoman'
+                    AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                    AND source_request.work_item_type = 'daily_case_report_request'
+                    AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                    AND source_request.target_agent = 'xiaoman'
+                    AND source_request.status = 'completed'
+                )
+             )
             WHERE request.work_item_type = $1
               AND request.capability_key = $2
               AND request.requester_agent = 'xiaoman'
               AND request.target_agent = 'erhua'
-              AND request.review_policy = 'human_final_confirmation'
+              AND (
+                  (
+                      artifact.created_by_agent = 'huabaosi'
+                      AND request.review_policy = 'human_final_confirmation'
+                  )
+                  OR (
+                      artifact.created_by_agent = 'xiaoman'
+                      AND request.review_policy = 'automatic_publish'
+                      AND request.payload->>'workflow_type' = 'daily_case_report'
+                      AND request.payload->>'requires_human_final_confirmation' = 'false'
+                  )
+              )
+              AND (
+                  request.review_policy = 'human_final_confirmation'
+                  OR (
+                      request.review_policy = 'automatic_publish'
+                      AND request.payload->>'workflow_type' = 'daily_case_report'
+                      AND request.payload->>'requires_human_final_confirmation' = 'false'
+                  )
+              )
               AND request.status = 'queued'
               AND request.available_at <= now()
               AND request.payload->>'target_channel' = 'qiwe'
               AND COALESCE(request.payload->>'target_group_id', '') <> ''
               AND ($3::uuid IS NULL OR request.id = $3)
-              AND EXISTS (
-                  SELECT 1
-                  FROM qintopia_agent_os.work_item_events confirmation
-                  WHERE confirmation.work_item_id = request.id
-                    AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                    AND confirmation.data->>'decision' = 'confirmed'
-                    AND confirmation.data->>'current_status' = 'queued'
-                    AND confirmation.data->>'send_executed' = 'false'
+              AND (
+                  (
+                      request.review_policy = 'human_final_confirmation'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM qintopia_agent_os.work_item_events confirmation
+                          WHERE confirmation.work_item_id = request.id
+                            AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                            AND confirmation.data->>'decision' = 'confirmed'
+                            AND confirmation.data->>'current_status' = 'queued'
+                            AND confirmation.data->>'send_executed' = 'false'
+                      )
+                  )
+                  OR (
+                      request.review_policy = 'automatic_publish'
+                      AND request.payload->>'workflow_type' = 'daily_case_report'
+                      AND request.payload->>'requires_human_final_confirmation' = 'false'
+                  )
               )
               AND EXISTS (
                   SELECT 1
@@ -232,7 +274,7 @@ pub async fn claim_ready_work_item(
               )
             ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
             LIMIT 1
-            FOR UPDATE OF request, artifact, image_request SKIP LOCKED
+            FOR UPDATE OF request, artifact, source_request SKIP LOCKED
         )
         UPDATE qintopia_agent_os.work_items request
         SET
@@ -414,31 +456,73 @@ pub async fn preview_ready_work_item(
           ON artifact.id::text = request.payload->>'approved_artifact_id'
          AND artifact.artifact_type = 'generated_image'
          AND artifact.review_status = 'approved'
-         AND artifact.created_by_agent = 'huabaosi'
-        JOIN qintopia_agent_os.work_items image_request
-          ON image_request.id = artifact.work_item_id
-         AND image_request.work_item_type = 'image_generation_request'
-         AND image_request.capability_key = 'huabaosi.generate_image_asset'
-         AND image_request.target_agent = 'huabaosi'
-         AND image_request.status = 'completed'
+        JOIN qintopia_agent_os.work_items source_request
+          ON source_request.id = artifact.work_item_id
+         AND (
+            (
+                artifact.created_by_agent = 'huabaosi'
+                AND source_request.work_item_type = 'image_generation_request'
+                AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                AND source_request.target_agent = 'huabaosi'
+                AND source_request.status = 'completed'
+            )
+            OR
+            (
+                artifact.created_by_agent = 'xiaoman'
+                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                AND source_request.work_item_type = 'daily_case_report_request'
+                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                AND source_request.target_agent = 'xiaoman'
+                AND source_request.status = 'completed'
+            )
+         )
         WHERE request.work_item_type = $1
           AND request.capability_key = $2
           AND request.requester_agent = 'xiaoman'
           AND request.target_agent = 'erhua'
-          AND request.review_policy = 'human_final_confirmation'
+          AND (
+              (
+                  artifact.created_by_agent = 'huabaosi'
+                  AND request.review_policy = 'human_final_confirmation'
+              )
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
+          AND (
+              request.review_policy = 'human_final_confirmation'
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND request.status = 'queued'
           AND request.available_at <= now()
           AND request.payload->>'target_channel' = 'qiwe'
           AND COALESCE(request.payload->>'target_group_id', '') <> ''
           AND ($3::uuid IS NULL OR request.id = $3)
-          AND EXISTS (
-              SELECT 1
-              FROM qintopia_agent_os.work_item_events confirmation
-              WHERE confirmation.work_item_id = request.id
-                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                AND confirmation.data->>'decision' = 'confirmed'
-                AND confirmation.data->>'current_status' = 'queued'
-                AND confirmation.data->>'send_executed' = 'false'
+          AND (
+              (
+                  request.review_policy = 'human_final_confirmation'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.work_item_events confirmation
+                      WHERE confirmation.work_item_id = request.id
+                        AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                        AND confirmation.data->>'decision' = 'confirmed'
+                        AND confirmation.data->>'current_status' = 'queued'
+                        AND confirmation.data->>'send_executed' = 'false'
+                  )
+              )
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
           )
           AND EXISTS (
               SELECT 1
@@ -1608,12 +1692,26 @@ async fn lock_current_claim(
         JOIN qintopia_agent_os.artifacts artifact
           ON artifact.id = $3
          AND artifact.id::text = request.payload->>'approved_artifact_id'
-        JOIN qintopia_agent_os.work_items image_request
-          ON image_request.id = artifact.work_item_id
-         AND image_request.work_item_type = 'image_generation_request'
-         AND image_request.capability_key = 'huabaosi.generate_image_asset'
-         AND image_request.target_agent = 'huabaosi'
-         AND image_request.status = 'completed'
+        JOIN qintopia_agent_os.work_items source_request
+          ON source_request.id = artifact.work_item_id
+         AND (
+            (
+                artifact.created_by_agent = 'huabaosi'
+                AND source_request.work_item_type = 'image_generation_request'
+                AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                AND source_request.target_agent = 'huabaosi'
+                AND source_request.status = 'completed'
+            )
+            OR
+            (
+                artifact.created_by_agent = 'xiaoman'
+                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                AND source_request.work_item_type = 'daily_case_report_request'
+                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                AND source_request.target_agent = 'xiaoman'
+                AND source_request.status = 'completed'
+            )
+         )
         WHERE request.id = $1
           AND request.status = 'processing'
           AND request.claimed_by = $2
@@ -1621,18 +1719,39 @@ async fn lock_current_claim(
           AND request.payload->>'target_group_id' = $4
           AND artifact.artifact_type = 'generated_image'
           AND artifact.review_status = 'approved'
-          AND artifact.created_by_agent = 'huabaosi'
+          AND (
+              (
+                  artifact.created_by_agent = 'huabaosi'
+                  AND request.review_policy = 'human_final_confirmation'
+              )
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND artifact.content_hash = $5
           AND artifact.artifact_uri = $6
           AND artifact.metadata->>'file_md5' = $7
           AND artifact.metadata->>'byte_size' = $8
-          AND EXISTS (
-              SELECT 1
-              FROM qintopia_agent_os.work_item_events confirmation
-              WHERE confirmation.work_item_id = request.id
-                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                AND confirmation.data->>'decision' = 'confirmed'
-                AND confirmation.data->>'send_executed' = 'false'
+          AND (
+              (
+                  request.review_policy = 'human_final_confirmation'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.work_item_events confirmation
+                      WHERE confirmation.work_item_id = request.id
+                        AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                        AND confirmation.data->>'decision' = 'confirmed'
+                        AND confirmation.data->>'send_executed' = 'false'
+                  )
+              )
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
           )
           AND EXISTS (
               SELECT 1
@@ -1650,7 +1769,7 @@ async fn lock_current_claim(
                 AND created.artifact_id = artifact.id
                 AND created.event_type = 'generated_image_created'
           )
-        FOR UPDATE OF request, artifact, image_request
+        FOR UPDATE OF request, artifact, source_request
         "#,
     )
     .bind(claim.work_item_id)
@@ -1686,12 +1805,26 @@ async fn lock_callback_policy(
         JOIN qintopia_agent_os.artifacts artifact
           ON artifact.id = $3
          AND artifact.id::text = request.payload->>'approved_artifact_id'
-        JOIN qintopia_agent_os.work_items image_request
-          ON image_request.id = artifact.work_item_id
-         AND image_request.work_item_type = 'image_generation_request'
-         AND image_request.capability_key = 'huabaosi.generate_image_asset'
-         AND image_request.target_agent = 'huabaosi'
-         AND image_request.status = 'completed'
+        JOIN qintopia_agent_os.work_items source_request
+          ON source_request.id = artifact.work_item_id
+         AND (
+            (
+                artifact.created_by_agent = 'huabaosi'
+                AND source_request.work_item_type = 'image_generation_request'
+                AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                AND source_request.target_agent = 'huabaosi'
+                AND source_request.status = 'completed'
+            )
+            OR
+            (
+                artifact.created_by_agent = 'xiaoman'
+                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                AND source_request.work_item_type = 'daily_case_report_request'
+                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                AND source_request.target_agent = 'xiaoman'
+                AND source_request.status = 'completed'
+            )
+         )
         WHERE request.id = $1
           AND request.status = 'processing'
           AND request.claimed_by = $2
@@ -1699,18 +1832,50 @@ async fn lock_callback_policy(
           AND request.capability_key = 'erhua.send_group_message'
           AND request.requester_agent = 'xiaoman'
           AND request.target_agent = 'erhua'
-          AND request.review_policy = 'human_final_confirmation'
+          AND (
+              (
+                  artifact.created_by_agent = 'huabaosi'
+                  AND request.review_policy = 'human_final_confirmation'
+              )
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND artifact.artifact_type = 'generated_image'
           AND artifact.review_status = 'approved'
-          AND artifact.created_by_agent = 'huabaosi'
+          AND (
+              (
+                  artifact.created_by_agent = 'huabaosi'
+                  AND request.review_policy = 'human_final_confirmation'
+              )
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND artifact.content_hash = $4
-          AND EXISTS (
-              SELECT 1
-              FROM qintopia_agent_os.work_item_events confirmation
-              WHERE confirmation.work_item_id = request.id
-                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                AND confirmation.data->>'decision' = 'confirmed'
-                AND confirmation.data->>'send_executed' = 'false'
+          AND (
+              (
+                  request.review_policy = 'human_final_confirmation'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.work_item_events confirmation
+                      WHERE confirmation.work_item_id = request.id
+                        AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                        AND confirmation.data->>'decision' = 'confirmed'
+                        AND confirmation.data->>'send_executed' = 'false'
+                  )
+              )
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
           )
           AND EXISTS (
               SELECT 1
@@ -1728,7 +1893,7 @@ async fn lock_callback_policy(
                 AND created.artifact_id = artifact.id
                 AND created.event_type = 'generated_image_created'
           )
-        FOR UPDATE OF request, artifact, image_request
+        FOR UPDATE OF request, artifact, source_request
         "#,
     )
     .bind(attempt.work_item_id)
@@ -2089,6 +2254,131 @@ mod tests {
     }
 
     #[cfg(feature = "postgres-integration-tests")]
+    async fn insert_daily_case_report_send_ready_fixture(
+        pool: &PgPool,
+        review_policy: &str,
+        requires_human_final_confirmation: bool,
+    ) -> (Uuid, Uuid, Uuid) {
+        let report_work_item_id = Uuid::new_v4();
+        let artifact_id = Uuid::new_v4();
+        let group_work_item_id = Uuid::new_v4();
+        let suffix = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, payload, review_policy)
+            VALUES
+                ($1, 'daily_case_report_request', 'completed', 'xiaoman', 'xiaoman',
+                 'xiaoman.daily_case_report_auto_publish', 'Daily case report fixture',
+                 'integration_test', $2, $2, '{}'::jsonb, 'automatic_publish')
+            "#,
+        )
+        .bind(report_work_item_id)
+        .bind(format!("qiwe-state-daily-report:{suffix}"))
+        .execute(pool)
+        .await
+        .expect("insert daily case report work item");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, metadata)
+            VALUES
+                ($1, $2, 'generated_image', 'approved', 'xiaoman',
+                 'Daily case report JPEG', 'sanitized fixture',
+                 'https://media.example.test/reports/xiaoman-daily-report.jpg',
+                 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                 '{"mime_type":"image/jpeg","file_md5":"98e7c2acf4391f8b4a2bbd39e364c5e3","byte_size":48300,"workflow_type":"daily_case_report"}'::jsonb)
+            "#,
+        )
+        .bind(artifact_id)
+        .bind(report_work_item_id)
+        .execute(pool)
+        .await
+        .expect("insert approved daily case report artifact");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_item_events
+                (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+            VALUES
+                ($1, $2, 'generated_image_created', 'worker',
+                 'xiaoman-daily-case-report-auto-publish-worker',
+                 'sanitized integration fixture',
+                 '{"external_send_executed":false}'::jsonb)
+            "#,
+        )
+        .bind(report_work_item_id)
+        .bind(artifact_id)
+        .execute(pool)
+        .await
+        .expect("insert daily report artifact provenance event");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, risk_level, payload, review_policy)
+            VALUES
+                ($1, 'group_message_request', 'queued', 'xiaoman', 'erhua',
+                 'erhua.send_group_message', 'Daily case report send',
+                 'integration_test', $2, $2, 'high', $3, $4)
+            "#,
+        )
+        .bind(group_work_item_id)
+        .bind(format!("qiwe-state-daily-report-send:{suffix}"))
+        .bind(json!({
+            "approved_artifact_id": artifact_id,
+            "approved_artifact_type": "generated_image",
+            "workflow_type": "daily_case_report",
+            "target_channel": "qiwe",
+            "target_group_id": "integration-group-id",
+            "requires_human_final_confirmation": requires_human_final_confirmation,
+            "message_text": "小满日报已自动生成。"
+        }))
+        .bind(review_policy)
+        .execute(pool)
+        .await
+        .expect("insert daily report group message work item");
+        for (event_type, data) in [
+            (
+                "group_message_final_confirmation_recorded",
+                json!({
+                    "decision": "confirmed",
+                    "current_status": "queued",
+                    "send_executed": false
+                }),
+            ),
+            (
+                "group_message_send_ready_recorded",
+                json!({
+                    "approved_artifact_id": artifact_id,
+                    "target_group_id": "integration-group-id",
+                    "send_executed": false
+                }),
+            ),
+        ] {
+            sqlx::query(
+                r#"
+                INSERT INTO qintopia_agent_os.work_item_events
+                    (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+                VALUES ($1, $2, $3, 'integration_test', 'qiwe-state-test',
+                        'sanitized integration fixture', $4)
+                "#,
+            )
+            .bind(group_work_item_id)
+            .bind(artifact_id)
+            .bind(event_type)
+            .bind(data)
+            .execute(pool)
+            .await
+            .expect("insert daily report send policy event");
+        }
+        (report_work_item_id, artifact_id, group_work_item_id)
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
     async fn delete_fixture(pool: &PgPool, image_id: Uuid, group_id: Uuid) {
         sqlx::query(
             "DELETE FROM qintopia_agent_os.qiwe_image_send_attempts WHERE work_item_id = $1",
@@ -2107,6 +2397,149 @@ mod tests {
             .execute(pool)
             .await
             .expect("delete image work item");
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    async fn rewrite_group_request_as_abnormal_huabaosi_automatic_daily_report(
+        pool: &PgPool,
+        group_id: Uuid,
+    ) {
+        sqlx::query(
+            r#"
+            UPDATE qintopia_agent_os.work_items
+            SET review_policy = 'automatic_publish',
+                payload = payload
+                    || '{"workflow_type":"daily_case_report","requires_human_final_confirmation":false}'::jsonb
+            WHERE id = $1
+            "#,
+        )
+        .bind(group_id)
+        .execute(pool)
+        .await
+        .expect("rewrite abnormal Huabaosi automatic daily report request");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_huabaosi_claim_lock_requires_human_confirmation_policy() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let (image_id, _artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+
+        let claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("claim human-confirmed Huabaosi send")
+            .expect("human-confirmed Huabaosi send should be claimable");
+        rewrite_group_request_as_abnormal_huabaosi_automatic_daily_report(&pool, group_id).await;
+        let error = record_upload_acceptance(&pool, &claim, "abnormal-huabaosi-upload")
+            .await
+            .expect_err("abnormal Huabaosi automatic publish must not pass current-claim lock");
+
+        assert!(error
+            .to_string()
+            .contains("claim or approved artifact is no longer current"));
+        delete_fixture(&pool, image_id, group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_huabaosi_callback_lock_requires_human_confirmation_policy() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let (image_id, _artifact_id, group_id) = insert_send_ready_fixture(&pool).await;
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+        let request_id = format!("abnormal-huabaosi-callback-{}", Uuid::new_v4());
+        let callback = format!(
+            r#"{{
+          "requestId":"{}",
+          "cmd":20000,
+          "msgData":{{
+            "fileAesKey":"raw-aes-secret",
+            "fileId":"raw-file-secret",
+            "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
+            "fileSize":48300
+          }}
+        }}"#,
+            request_id
+        );
+
+        let claim = claim_ready_work_item(&pool, Some(group_id), &groups, &hosts)
+            .await
+            .expect("claim human-confirmed Huabaosi send")
+            .expect("human-confirmed Huabaosi send should be claimable");
+        record_upload_acceptance(&pool, &claim, &request_id)
+            .await
+            .expect("record normal Huabaosi upload acceptance");
+        rewrite_group_request_as_abnormal_huabaosi_automatic_daily_report(&pool, group_id).await;
+        let error = claim_callback_for_send(
+            &pool,
+            &request_id,
+            callback.as_bytes(),
+            &integration_callback_file_identity(),
+        )
+        .await
+        .expect_err("abnormal Huabaosi automatic publish must not pass callback lock");
+
+        assert!(error
+            .to_string()
+            .contains("QiWe callback policy or claim is no longer current"));
+        delete_fixture(&pool, image_id, group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_daily_case_report_claim_requires_automatic_publish_policy() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+
+        let (human_source_id, _human_artifact_id, human_group_id) =
+            insert_daily_case_report_send_ready_fixture(&pool, "human_final_confirmation", true)
+                .await;
+        assert_eq!(
+            preview_ready_work_item(&pool, Some(human_group_id), &groups, &hosts)
+                .await
+                .expect("preview human-confirmed daily report send"),
+            None
+        );
+        assert!(
+            claim_ready_work_item(&pool, Some(human_group_id), &groups, &hosts)
+                .await
+                .expect("claim human-confirmed daily report send")
+                .is_none()
+        );
+        delete_fixture(&pool, human_source_id, human_group_id).await;
+
+        let (auto_source_id, _auto_artifact_id, auto_group_id) =
+            insert_daily_case_report_send_ready_fixture(&pool, "automatic_publish", false).await;
+        let claim = claim_ready_work_item(&pool, Some(auto_group_id), &groups, &hosts)
+            .await
+            .expect("claim automatic daily report send")
+            .expect("automatic daily report send should be claimable");
+        assert_eq!(claim.work_item_id, auto_group_id);
+        delete_fixture(&pool, auto_source_id, auto_group_id).await;
     }
 
     fn lazy_pool() -> PgPool {
@@ -2877,6 +3310,56 @@ mod tests {
             }
         );
         delete_fixture(&pool, image_id, group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_qiwe_send_state_keeps_daily_report_on_automatic_publish_path() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+
+        let (human_report_id, _human_artifact_id, human_group_id) =
+            insert_daily_case_report_send_ready_fixture(&pool, "human_final_confirmation", true)
+                .await;
+        assert!(
+            preview_ready_work_item(&pool, Some(human_group_id), &groups, &hosts)
+                .await
+                .expect("preview human-confirmed daily report")
+                .is_none()
+        );
+        assert!(
+            claim_ready_work_item(&pool, Some(human_group_id), &groups, &hosts)
+                .await
+                .expect("claim human-confirmed daily report")
+                .is_none()
+        );
+        delete_fixture(&pool, human_report_id, human_group_id).await;
+
+        let (auto_report_id, auto_artifact_id, auto_group_id) =
+            insert_daily_case_report_send_ready_fixture(&pool, "automatic_publish", false).await;
+        assert_eq!(
+            preview_ready_work_item(&pool, Some(auto_group_id), &groups, &hosts)
+                .await
+                .expect("preview automatic daily report"),
+            Some(QiweUploadPreview {
+                work_item_id: auto_group_id
+            })
+        );
+        let claim = claim_ready_work_item(&pool, Some(auto_group_id), &groups, &hosts)
+            .await
+            .expect("claim automatic daily report")
+            .expect("automatic daily report is claimable");
+        assert_eq!(claim.generated_image_artifact_id, auto_artifact_id);
+        assert_eq!(claim.target_group_id, "integration-group-id");
+        delete_fixture(&pool, auto_report_id, auto_group_id).await;
     }
 
     #[tokio::test]

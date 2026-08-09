@@ -28,3 +28,4 @@ Agent OS data layer.
 - `2026-07-14.001`: `2026-07-14-xiaoman-event-signal-mutations.md`
 - `2026-07-14.002`: `2026-07-14-qiwe-image-send-state.md`
 - `2026-07-14.003`: `2026-07-14-qiwe-upload-attempt-lifecycle.md`
+- `2026-08-08.001`: `2026-08-08-xiaoman-daily-case-report-auto-publish.md`

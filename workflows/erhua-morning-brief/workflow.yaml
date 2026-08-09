@@ -38,8 +38,8 @@ tags:
   - morning-brief
   - ai-news
 next_actions:
-  - Keep status as draft until the reviewed production timer and Erhua/QiWe text-send
-    boundary are designed.
+  - Keep status as draft until production activation proves the reviewed timer and
+    Erhua/QiWe text-send boundary evidence.
   - Inventory any existing Hermes cron/jobs.json Saturday or Sunday collection job
     before changing schedule ownership.
   - Install the planned 08:05 Asia/Shanghai schedule only through deploy/runner code

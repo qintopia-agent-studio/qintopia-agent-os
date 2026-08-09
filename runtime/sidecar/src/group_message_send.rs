@@ -456,6 +456,7 @@ fn validate_payload(payload: &Value, policy: &SendPolicy) -> Result<SendPlan> {
 fn required_artifact_type(payload: &Value) -> Option<&'static str> {
     match payload.get("workflow_type").and_then(Value::as_str) {
         Some("activity_promotion") => Some("generated_image"),
+        Some("daily_case_report") => Some("generated_image"),
         Some("text_activity_announcement") => Some("text_announcement"),
         _ => None,
     }
@@ -1113,6 +1114,10 @@ mod tests {
     fn workflow_group_messages_require_matching_artifact_types() {
         assert_eq!(
             required_artifact_type(&json!({"workflow_type": "activity_promotion"})),
+            Some("generated_image")
+        );
+        assert_eq!(
+            required_artifact_type(&json!({"workflow_type": "daily_case_report"})),
             Some("generated_image")
         );
         assert_eq!(

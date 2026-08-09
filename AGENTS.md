@@ -192,6 +192,20 @@
 
 - Real Xiaoman activity production evidence validation:
   `node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>`
+- Xiaoman daily case-report auto-publish binding after a reviewed render/upload step has
+  produced a durable JPEG URI and identity. This creates/updates the approved
+  `generated_image` artifact and one automatic `group_message_request`; it does not
+  upload the local file, call QiWe directly, trust a bare caller-provided media URL, or
+  accept a committed target group id. The create payload must include
+  `media_upload_evidence` from the reviewed upload step and revalidate the public media
+  boundary plus JPEG identity before send-ready:
+  `qintopia-message-sidecar operations-daily-case-report-media-upload --payload-json <local-jpeg-identity-json> --apply`,
+  `qintopia-message-sidecar operations-daily-case-report-auto-publish-create --payload-json <sanitized-json> --apply`
+- Xiaoman daily case-report production auto-publish uses a release-managed timer, not
+  cron or hand-copied unit files. Activation, observation, and rollback are:
+  `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
+  `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
+  `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
 - Xiaoman QiWe group-arrival human confirmation evidence validation after a real
   activity send:
   `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`
@@ -820,6 +834,11 @@ Use `rg` and `rg --files` for search.
   provider output. Record that cross-flow result only in
   `docs/reports/templates/xiaoman-image-send-staging-evidence.md`; staging evidence is a
   prerequisite, not proof that production sending is complete.
+- Xiaoman daily case-report auto-publish must use the reviewed AgentOS artifact plus
+  QiWe image-send boundary. Do not treat a local image path, hand-copied systemd unit,
+  conversation-created cron, Python QiWe sender, deprecated synchronous upload shortcut,
+  caller-provided HTTPS image URL without `media_upload_evidence`, or committed group id
+  as an acceptable automatic publication path.
 - The staging-only sidecar artifact `qintopia-message-sidecar-staging-linux-x86_64-gnu`
   may be built only by manual artifact workflow dispatch or
   `pnpm artifact:sidecar:staging`. It must compile exactly `huabaosi-staging-adapter`
