@@ -353,6 +353,25 @@ class QintopiaToolsTest(unittest.TestCase):
             release_dir.parent.chmod(0o700)
             release_root.chmod(0o700)
 
+    def test_xiaoman_activity_read_through_allows_root_owned_release_modes(self):
+        info = SimpleNamespace(st_uid=0, st_mode=0o755)
+
+        self.module._xiaoman_activity_validate_read_through_component(
+            info,
+            current_uid=1000,
+        )
+
+    def test_xiaoman_activity_read_through_rejects_group_world_writable_component(self):
+        for mode in (0o775, 0o757):
+            with self.subTest(mode=oct(mode)):
+                info = SimpleNamespace(st_uid=0, st_mode=mode)
+
+                with self.assertRaises(PermissionError):
+                    self.module._xiaoman_activity_validate_read_through_component(
+                        info,
+                        current_uid=1000,
+                    )
+
     def test_xiaoman_activity_read_through_executes_validated_worker_path(self):
         self.enable_xiaoman_activity_wrappers()
         trusted_sidecar = self.write_fake_xiaoman_sidecar(
