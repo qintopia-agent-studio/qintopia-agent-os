@@ -30,12 +30,11 @@ tags:
   - activity
   - weekly-preview
 next_actions:
-  - ? Activate via the cutover PR + owner-reviewed runbook (see
-      docs/operations/xiaoman-weekly-preview-cutover-runbook.md)
-    : register a release-managed systemd timer instead of the legacy
-      conversation-created cron, then remove the old natural-language Monday task from
-      the server jobs.json.
+  - Activate via the owner-approved runbook at
+    docs/operations/xiaoman-weekly-preview-cutover-runbook.md; use the release-managed
+    systemd timer and keep the legacy Xiaoman Hermes cron observation empty before
+    enablement.
   - Keep the human confirmation gate; the script only drafts, Liu Shan must confirm
     before any Erhua handoff or group send.
-  - Do not hot-edit production units; install or enable only through the approved
-    runbook with observation and rollback smoke evidence.
+  - Do not hot-edit production units; enable only through release-local config,
+    activation, observation, and rollback scripts.

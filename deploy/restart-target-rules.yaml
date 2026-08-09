@@ -89,7 +89,8 @@ rules:
       - "skills/knowledge-retrieval/**"
 
   - target: hermes-xiaoman
-    reason: Xiaoman profile, activity signal, and activity promotion behavior.
+    reason:
+      Xiaoman profile, activity signal, weekly preview, and activity promotion behavior.
     paths:
       - "agents/xiaoman/**"
       - "skills/qintopia-tools/variants/xiaoman/**"
