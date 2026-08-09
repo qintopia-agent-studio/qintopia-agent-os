@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.83](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.82...v0.2.83) (2026-08-09)
+
+
+### Features
+
+* **xiaoman:** reply with inline conclusion for instant queries ([#414](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/414)) ([e2bc7b5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e2bc7b579e67a75efca88e1c35fc21a6c4e22357))
+
+
+### Bug Fixes
+
+* enforce weekly loop read-through config ([#415](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/415)) ([aa5918b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/aa5918bac0cafecdb57ebc22555b4f773b85a103))
+* require xiaoman feishu read-through mode ([#412](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/412)) ([2f68b65](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2f68b65965094070e99ea72f16fbe0d11ec5d901))
+* support Feishu-backed daily report auto-publish ([#410](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/410)) ([254afb7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/254afb7f2cee1bf8c1dade66fc0723c4d7349b1a))
+
 ## [0.2.82](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.81...v0.2.82) (2026-08-09)
 
 
