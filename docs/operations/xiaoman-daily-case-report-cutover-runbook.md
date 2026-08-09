@@ -125,6 +125,23 @@ must additionally show one window created one approved generated-image artifact,
 automatic publish request, `requires_human_final_confirmation=false`, QiWe upload and
 callback completion, and no duplicate send on rerun.
 
+## Backfill
+
+To publish a missed calendar day, start the same release-managed service through the
+reviewed backfill entrypoint. For example, on 2026-08-09, yesterday is 2026-08-08:
+
+```bash
+QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_BACKFILL=approved-production-xiaoman-daily-case-report-auto-publish-backfill \
+QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA=<published-production-release-sha> \
+QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE=2026-08-08 \
+  deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-backfill.sh
+```
+
+The backfill script validates the fixed production env, service unit, reviewed release
+SHA, and target group boundary, then injects the one-day `--date` override through
+systemd for a single service start. It does not create cron entries, copy units, call
+QiWe directly, or accept a local image path.
+
 ## Rollback
 
 Use the production configuration entrypoint with `desired_state: "disabled"` to clear
