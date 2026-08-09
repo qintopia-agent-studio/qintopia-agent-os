@@ -1324,15 +1324,21 @@ const runnerServiceText = exists(
 )
   ? readText("deploy/runner/qintopia-agent-os-deploy-runner.service")
   : "";
+const runnerReadWritePaths = runnerServiceText
+  .split("\n")
+  .filter((line) => line.startsWith("ReadWritePaths="))
+  .flatMap((line) =>
+    line.slice("ReadWritePaths=".length).trim().split(/\s+/).filter(Boolean)
+  );
 if (
   runnerServiceText &&
-  !runnerServiceText.includes("ReadWritePaths=/home/ubuntu/.hermes/profiles/erhua ")
+  !runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/erhua")
 ) {
   addError("deploy runner service must explicitly allow governed Erhua profile writes");
 }
 if (
   runnerServiceText &&
-  !runnerServiceText.includes(" /home/ubuntu/.hermes/profiles/xiaoman/cron ")
+  !runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/xiaoman/cron")
 ) {
   addError(
     "deploy runner service must explicitly allow fixed Xiaoman cron retirement writes"
@@ -1340,9 +1346,7 @@ if (
 }
 if (
   runnerServiceText &&
-  /ReadWritePaths=.*\/home\/ubuntu\/\.hermes\/profiles\/xiaoman(?:\s|$)/.test(
-    runnerServiceText
-  )
+  runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/xiaoman")
 ) {
   addError("deploy runner service must not allow whole Xiaoman profile writes");
 }
