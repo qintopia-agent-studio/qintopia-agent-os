@@ -1065,6 +1065,60 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(result.success, True)
         self.assertEqual(adapter.calls, ["/room/batchGetRoomDetail", "/msg/sendHyperText"])
 
+    def test_existing_room_cache_is_bound_to_guid_and_target(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(type("Config", (), {"extra": {"token": "test-token", "guid": "guid-1"}})())
+                self.room_guids = []
+
+            async def _call_qiwe_api(self, method, params, *, require_send_enabled=True):
+                if method != "/room/batchGetRoomDetail":
+                    raise AssertionError(f"room proof should not call {method}")
+                self.room_guids.append(params["guid"])
+                if params["guid"] == "guid-2":
+                    return SendResult(
+                        success=True,
+                        raw_response={"code": 0, "data": {"roomList": [{"roomId": "10733506388826175"}]}},
+                    )
+                return SendResult(success=True, raw_response={"code": 0, "data": {"roomList": []}})
+
+        adapter = RecordingAdapter()
+
+        first = asyncio.run(adapter._is_existing_group_room("10733506388826175", guid="guid-1"))
+        second = asyncio.run(adapter._is_existing_group_room("10733506388826175", guid="guid-2"))
+        cached = asyncio.run(adapter._is_existing_group_room("10733506388826175", guid="guid-2"))
+
+        self.assertIs(first, False)
+        self.assertIs(second, True)
+        self.assertIs(cached, True)
+        self.assertEqual(adapter.room_guids, ["guid-1", "guid-2"])
+
+    def test_room_detail_without_matching_id_still_uses_direct_contact_guard(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(type("Config", (), {"extra": {"token": "test-token", "guid": "guid-1"}})())
+                self.calls = []
+
+            async def _call_qiwe_api(self, method, params, *, require_send_enabled=True):
+                self.calls.append(method)
+                if method == "/room/batchGetRoomDetail":
+                    return SendResult(
+                        success=True,
+                        raw_response={
+                            "code": 0,
+                            "data": {"roomList": [{"memberList": [], "roomName": "群名但无 ID"}]},
+                        },
+                    )
+                if method == "/contact/getWxContactList":
+                    return SendResult(success=False, error="QiWe HTTP 502", retryable=True)
+                raise AssertionError(f"send should be blocked before {method}")
+
+        adapter = RecordingAdapter()
+        result = asyncio.run(adapter.send("10733506388826175", "hello"))
+
+        self.assertIs(result.success, False)
+        self.assertEqual(adapter.calls, ["/room/batchGetRoomDetail", "/contact/getWxContactList"])
+
     def test_unconfigured_explicit_send_still_uses_direct_contact_guard(self) -> None:
         class RecordingAdapter(QiWeAdapter):
             def __init__(self) -> None:
