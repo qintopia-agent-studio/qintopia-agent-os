@@ -22,6 +22,10 @@ const sourceObservation = path.join(
   repoRoot,
   "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh"
 );
+const sourceConfig = path.join(
+  repoRoot,
+  "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh"
+);
 const sourceErhuaCron = path.join(
   repoRoot,
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh"
@@ -75,6 +79,10 @@ try {
     scriptsDir,
     "erhua-morning-brief-timer-observation-smoke.sh"
   );
+  const config = path.join(
+    scriptsDir,
+    "apply-erhua-morning-brief-production-config.sh"
+  );
   const erhuaCron = path.join(scriptsDir, "erhua-legacy-cron-observation-smoke.sh");
   const xiaomanCron = path.join(scriptsDir, "xiaoman-legacy-cron-observation-smoke.sh");
   const systemctl = path.join(tmpRoot, "systemctl");
@@ -83,8 +91,6 @@ try {
   const statePath = path.join(tmpRoot, "timer-state");
   const activePath = path.join(tmpRoot, "timer-active");
   const sidecarEnv = path.join(tmpRoot, "message-sidecar.env");
-  const qunmindBin = path.join(tmpRoot, "bin", "qunmind");
-  const qunmindConfig = path.join(tmpRoot, "qunmind.toml");
   const releaseSha = "0123456789abcdef0123456789abcdef01234567";
   const releaseRoot = path.join(tmpRoot, "releases");
   const releaseDir = path.join(releaseRoot, releaseSha);
@@ -94,9 +100,6 @@ try {
   const erhuaProfile = path.join(tmpRoot, "profiles", "erhua");
   const xiaomanProfile = path.join(tmpRoot, "profiles", "xiaoman");
 
-  fs.mkdirSync(path.dirname(qunmindBin), { recursive: true });
-  writeExecutable(qunmindBin, "#!/usr/bin/env bash\nexit 0\n");
-  fs.writeFileSync(qunmindConfig, "public_only = true\n", "utf8");
   fs.mkdirSync(path.dirname(fakeHermesPython), { recursive: true });
   writeExecutable(fakeHermesPython, "#!/usr/bin/env bash\nexit 0\n");
   fs.mkdirSync(path.join(releaseDir, "runtime", "hermes"), { recursive: true });
@@ -123,6 +126,7 @@ try {
     sourceActivation,
     sourceRollback,
     sourceObservation,
+    sourceConfig,
     sourceErhuaCron,
     sourceXiaomanCron,
   ]) {
@@ -145,6 +149,10 @@ try {
   writeExecutable(
     observation,
     replaceAll(fs.readFileSync(sourceObservation, "utf8"), fixedReplacements)
+  );
+  writeExecutable(
+    config,
+    replaceAll(fs.readFileSync(sourceConfig, "utf8"), fixedReplacements)
   );
   writeExecutable(
     erhuaCron,
@@ -257,19 +265,12 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
 `
   );
 
-  const enabledEnv = {
-    QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED: "1",
-    QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL:
-      "approved-production-erhua-morning-brief",
+  const runtimeEnv = {
     QINTOPIA_SIDECAR_DATABASE_URL:
       "postgres://fixture-user:fixture-password@127.0.0.1/qintopia",
-    QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE: "1",
-    QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE: "1",
-    QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN: qunmindBin,
-    QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG: qunmindConfig,
   };
-  const run = (script, extraEnv = {}) =>
-    spawnSync("bash", [script], {
+  const run = (script, extraEnv = {}, args = []) =>
+    spawnSync("bash", [script, ...args], {
       cwd: repoRoot,
       env: {
         ...process.env,
@@ -285,26 +286,59 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
   };
   const commandLog = () => fs.readFileSync(logPath, "utf8");
 
-  writeEnv(sidecarEnv, enabledEnv);
+  writeEnv(sidecarEnv, runtimeEnv);
   resetLog();
   let result = run(activation);
   if (result.status === 0 || commandLog() !== "") {
     throw new Error("activation must fail before side effects without owner approval");
   }
 
-  writeEnv(sidecarEnv, {
-    ...enabledEnv,
-    QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN: "qunmind",
-  });
+  writeEnv(sidecarEnv, runtimeEnv);
   resetLog();
   result = run(activation, {
     QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION: "approved-production-erhua-morning-brief",
   });
   if (result.status === 0 || commandLog() !== "") {
-    throw new Error("relative QunMind binary must fail before systemd side effects");
+    throw new Error(
+      "activation must fail before side effects without persistent config"
+    );
   }
 
-  writeEnv(sidecarEnv, enabledEnv);
+  writeEnv(sidecarEnv, runtimeEnv);
+  result = run(config);
+  if (result.status === 0) {
+    throw new Error("config must require explicit owner approval");
+  }
+  result = run(config, {
+    QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_CONFIG:
+      "approved-production-erhua-morning-brief-config",
+  });
+  if (result.status === 0) {
+    throw new Error("config must require an explicit mode");
+  }
+  result = run(
+    config,
+    {
+      QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_CONFIG:
+        "approved-production-erhua-morning-brief-config",
+    },
+    ["--enable"]
+  );
+  if (result.status !== 0) {
+    throw new Error(`config failed\n${result.stdout}\n${result.stderr}`);
+  }
+  const configuredEnv = fs.readFileSync(sidecarEnv, "utf8");
+  for (const line of [
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=1",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL=approved-production-erhua-morning-brief",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1",
+  ]) {
+    if (!configuredEnv.includes(line)) {
+      throw new Error(`config did not write ${line}`);
+    }
+  }
+
   resetLog();
   result = run(activation, {
     QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION: "approved-production-erhua-morning-brief",
@@ -327,7 +361,7 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
       throw new Error(`activation is missing systemctl command: ${command}`);
     }
   }
-  if (activationLog.includes(enabledEnv.QINTOPIA_SIDECAR_DATABASE_URL)) {
+  if (activationLog.includes(runtimeEnv.QINTOPIA_SIDECAR_DATABASE_URL)) {
     throw new Error("activation leaked database URL");
   }
 
@@ -343,14 +377,33 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
     throw new Error("activation accepted a timer without a future realtime trigger");
   }
 
-  writeEnv(sidecarEnv, {
-    ...enabledEnv,
-    QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED: "0",
-  });
   resetLog("enabled", "active");
   result = run(rollback);
   if (result.status === 0 || commandLog() !== "") {
     throw new Error("rollback must fail before side effects without owner approval");
+  }
+
+  resetLog("enabled", "active");
+  result = run(rollback, {
+    QINTOPIA_ERHUA_MORNING_BRIEF_ROLLBACK:
+      "approved-production-erhua-morning-brief-rollback",
+  });
+  if (result.status === 0 || commandLog() !== "") {
+    throw new Error(
+      "rollback must fail before side effects until persistent config is disabled"
+    );
+  }
+
+  result = run(
+    config,
+    {
+      QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_CONFIG:
+        "approved-production-erhua-morning-brief-config",
+    },
+    ["--disable"]
+  );
+  if (result.status !== 0) {
+    throw new Error(`disable config failed\n${result.stdout}\n${result.stderr}`);
   }
 
   resetLog("enabled", "active");

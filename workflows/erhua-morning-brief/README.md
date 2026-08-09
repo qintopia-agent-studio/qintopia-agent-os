@@ -1,8 +1,8 @@
 # Workflow: Erhua Morning Brief
 
 `workflows/erhua-morning-brief` generates a daily morning text draft for 二花. The draft
-combines today's Xiaoman activity preview with AI news extracted from QunMind's
-public-source daily report.
+combines today's Xiaoman activity preview with AI news from QunMind when available, or
+from public RSS/Atom feeds when QunMind is not installed in production.
 
 ## Responsibility
 
@@ -12,8 +12,8 @@ public-source daily report.
   to start an activity.
 - On Sunday morning, if there are still no publishable activities after the Saturday
   collection reminder, generate a second gentle collection prompt.
-- Run QunMind in `daily-report --public-only` mode and extract up to three items from
-  its `AI 前沿` section.
+- Run QunMind in `daily-report --public-only` mode when configured; otherwise fetch up
+  to three public RSS/Atom items from the built-in AI news feeds.
 - Produce a single Erhua-style morning text draft and an operator-review envelope.
 - After a reviewed `text_announcement` artifact exists, prepare an AgentOS
   `group_message_request` payload for Erhua/QiWe delivery.
@@ -22,9 +22,9 @@ public-source daily report.
 ## Why this exists
 
 The request is "每天早上二花发一个内容": activities first, then fresh AI news. The
-activity half already exists in Agent OS, and QunMind already owns public-source AI news
-collection. This workflow connects the two without making a new crawler or teaching
-Erhua to improvise from raw sources every morning.
+activity half already exists in Agent OS, and QunMind can own public-source AI news
+collection where it is installed. Production can still run without host-local QunMind by
+using a small public RSS fallback.
 
 ## How it works
 
@@ -32,10 +32,10 @@ Erhua to improvise from raw sources every morning.
 
 1. It gets same-day activity text from the Xiaoman wrapper, using read-through in real
    runtime or a sanitized fixture in tests.
-2. It asks QunMind to generate a public-only daily report into a temporary markdown
-   file.
-3. It extracts the `AI 前沿` section, strips URLs and internal markers, and composes the
-   final morning brief.
+2. It asks QunMind to generate a public-only daily report into a temporary markdown file
+   if QunMind is configured or available on `PATH`.
+3. If QunMind is unavailable, it fetches the configured public RSS/Atom feeds, strips
+   URLs and internal markers, and composes the final morning brief.
 
 When the run date is Sunday and the activity preview returns zero publishable
 activities, the activity section switches from the generic "no confirmed activity today"
@@ -48,9 +48,10 @@ this is only a command preview. With `--execute-send-request --apply-send-reques
 sidecar creates an `awaiting_publish` `group_message_request`; that still does not send
 to QiWe until a human final-confirmation step queues it.
 
-The default behavior fails closed if QunMind cannot produce an AI section. Operators may
-use `--allow-news-unavailable` for an explicit degraded preview, but production
-scheduling should not silently send a "news missing" fallback.
+The default behavior fails closed only if neither QunMind nor the public feed fallback
+can produce AI news. Operators may use `--allow-news-unavailable` for an explicit
+degraded preview, but production scheduling should not silently send a "news missing"
+fallback.
 
 ## Running it
 
@@ -69,19 +70,26 @@ python workflows/erhua-morning-brief/morning_brief.py \
 export QINTOPIA_PROFILE_ID=xiaoman
 export QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1
 export QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1
-export QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN=qunmind
-export QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG="<local-qunmind-config-path>"
 
 python workflows/erhua-morning-brief/morning_brief.py --json
 ```
 
-In the current local desktop workspace, `qunmind` may not be on `PATH`. Use the existing
-local build when needed:
+Optional QunMind override:
 
 ```bash
 export QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN=/Users/qiaopengjun/Code/Rust/qunmind/target/debug/qunmind
 export QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG="<local-qunmind-config-path>"
 ```
+
+Optional RSS override:
+
+```bash
+export QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS="https://openai.com/news/rss.xml,https://blog.google/technology/ai/rss/"
+```
+
+The RSS fallback accepts only `https` URLs on the reviewed public hosts `openai.com`,
+`blog.google`, and `deepmind.google`. It does not follow feed redirects, and it
+revalidates the final response URL before reading the feed body.
 
 ### Prepare a reviewed send request
 
@@ -114,8 +122,8 @@ sidecar dry-run, add `--execute-send-request`. To create the `awaiting_publish` 
 item in AgentOS after artifact approval, use both `--execute-send-request` and
 `--apply-send-request`.
 
-The QunMind config path stays local runtime state. Do not commit it, print it into
-operator-facing copy, or copy QunMind secrets into this repository.
+The QunMind config path stays local runtime state when used. Do not commit it, print it
+into operator-facing copy, or copy QunMind secrets into this repository.
 
 ### Tomorrow morning release path
 

@@ -52,6 +52,15 @@
   `QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh`
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
+- Erhua morning brief reviewed production config apply/disable:
+
+  ```bash
+  QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_CONFIG=approved-production-erhua-morning-brief-config \
+    deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh --enable
+  QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_CONFIG=approved-production-erhua-morning-brief-config \
+    deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh --disable
+  ```
+
 - Erhua morning brief production activation after Release promotion and reviewed
   persistent env approval:
   `QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh`

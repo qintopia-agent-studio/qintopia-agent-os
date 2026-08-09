@@ -65,6 +65,36 @@ with open(path, encoding="utf-8") as fh:
 PY
 }
 
+require_observed_env_value() {
+  local key="$1"
+  local expected="$2"
+  local value
+  value="$(env_value "$key")" || {
+    echo "erhua morning brief timer observation requires exactly one ${key}" >&2
+    exit 1
+  }
+  if [[ "$value" != "$expected" ]]; then
+    echo "erhua morning brief timer observation found unexpected ${key}" >&2
+    exit 1
+  fi
+}
+
+if [[ "$EXPECTED_STATE" == "enabled" ]]; then
+  require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"
+  require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"
+  require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
+  require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
+else
+  erhua_enabled="$(env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED")" || {
+    echo "erhua morning brief timer observation requires at most one QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" >&2
+    exit 1
+  }
+  if [[ -n "$erhua_enabled" && "$erhua_enabled" != "0" ]]; then
+    echo "erhua morning brief timer observation expected disabled Erhua config" >&2
+    exit 1
+  fi
+fi
+
 assert_no_sensitive_output() {
   local label="$1"
   local file="$2"
@@ -108,16 +138,6 @@ assert_no_sensitive_output() {
     fi
   done
 }
-
-enabled_flag="$(env_value QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED || true)"
-if [[ "$EXPECTED_STATE" == "enabled" && "$enabled_flag" != "1" ]]; then
-  echo "erhua morning brief enabled observation requires persistent enablement flag 1" >&2
-  exit 1
-fi
-if [[ "$EXPECTED_STATE" == "disabled" && "$enabled_flag" == "1" ]]; then
-  echo "erhua morning brief disabled observation requires persistent enablement flag not to be 1" >&2
-  exit 1
-fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT

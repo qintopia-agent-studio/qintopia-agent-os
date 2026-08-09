@@ -59,6 +59,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
   "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh",

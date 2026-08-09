@@ -8,11 +8,6 @@ DEFAULT_HERMES_PYTHON="/home/ubuntu/.hermes/hermes-agent/venv/bin/python"
 PYTHON_BIN="${QINTOPIA_ERHUA_MORNING_BRIEF_PYTHON:-$DEFAULT_HERMES_PYTHON}"
 WORK_DIR="/home/ubuntu/.local/state/qintopia-agentos/erhua-morning-brief"
 
-if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED:-}" != "1" ]]; then
-  echo "erhua_morning_brief_worker_status=disabled"
-  exit 0
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RELEASE_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 WORKFLOW_PY="${RELEASE_DIR}/workflows/erhua-morning-brief/morning_brief.py"
@@ -35,15 +30,24 @@ required_env() {
 for key in \
   QINTOPIA_DEPLOYED_COMMIT_SHA \
   QINTOPIA_SIDECAR_DATABASE_URL \
+  QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED \
+  QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL \
   QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE \
-  QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE \
-  QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN \
-  QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG; do
+  QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE; do
   required_env "$key"
 done
 
+export QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE
+export QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE
+
 if [[ "$(basename "$RELEASE_DIR")" != "$QINTOPIA_DEPLOYED_COMMIT_SHA" ]]; then
   fail "release directory does not match deployed commit SHA"
+fi
+if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED}" != "1" ]]; then
+  fail "Erhua morning brief is not enabled"
+fi
+if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL}" != "approved-production-erhua-morning-brief" ]]; then
+  fail "Erhua morning brief production approval is missing"
 fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE}" != "1" ]]; then
   fail "Xiaoman activity wrappers are not enabled"
@@ -62,22 +66,6 @@ if [[ ! -f "$PYTHON_VALIDATOR" ]]; then
 fi
 if [[ ! -x "$SYSTEM_PYTHON" ]]; then
   fail "system Python validator runner is missing"
-fi
-
-case "$QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN" in
-  /*) ;;
-  *) fail "QunMind binary path must be absolute" ;;
-esac
-if [[ ! -x "$QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN" ]]; then
-  fail "QunMind binary is not executable"
-fi
-
-case "$QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG" in
-  /*) ;;
-  *) fail "QunMind config path must be absolute" ;;
-esac
-if [[ ! -r "$QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG" ]]; then
-  fail "QunMind config is not readable"
 fi
 
 PYTHONDONTWRITEBYTECODE=1 "$SYSTEM_PYTHON" "$PYTHON_VALIDATOR" \

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1]
@@ -113,6 +114,10 @@ class ErhuaMorningBriefTests(unittest.TestCase):
                 str(FIXTURES / "activity-empty.json"),
                 "--news-fixture",
                 str(FIXTURES / "missing.md"),
+                "--news-feed-url",
+                "https://127.0.0.1:1/rss",
+                "--news-feed-timeout-seconds",
+                "1",
             ],
             check=False,
             capture_output=True,
@@ -133,6 +138,10 @@ class ErhuaMorningBriefTests(unittest.TestCase):
                 str(FIXTURES / "activity-empty.json"),
                 "--news-fixture",
                 str(FIXTURES / "missing.md"),
+                "--news-feed-url",
+                "https://127.0.0.1:1/rss",
+                "--news-feed-timeout-seconds",
+                "1",
                 "--allow-news-unavailable",
             ],
             check=False,
@@ -142,6 +151,192 @@ class ErhuaMorningBriefTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("QunMind 的公开新闻源暂时没读到", result.stdout)
+
+    def test_rss_fallback_parser_extracts_public_items(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>OpenAI 发布新的研究更新</title>
+      <description><![CDATA[<p>重点是更稳定的工具调用与评估。</p>]]></description>
+    </item>
+    <item>
+      <title>Anthropic 更新企业安全实践</title>
+      <description>面向团队协作的模型治理建议。</description>
+    </item>
+  </channel>
+</rss>"""
+
+        items = module._extract_feed_news_items(rss, 2)
+
+        self.assertEqual(
+            [item.title for item in items],
+            ["OpenAI 发布新的研究更新", "Anthropic 更新企业安全实践"],
+        )
+        self.assertIn("工具调用", items[0].summary)
+
+    def test_rss_fallback_parser_rejects_dtd_and_entities(self):
+        module = load_module()
+
+        for xml in (
+            """<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY xxe "blocked">]><rss />""",
+            """<?xml version="1.0"?><rss><!ENTITY xxe "blocked"></rss>""",
+        ):
+            with self.subTest(xml=xml):
+                with self.assertRaisesRegex(RuntimeError, "DTD or entity"):
+                    module._extract_feed_news_items(xml, 1)
+
+    def test_rss_fallback_skips_unsafe_feed_and_uses_next_feed(self):
+        module = load_module()
+        args = SimpleNamespace(
+            news_feed_url=[
+                "https://openai.com/news/rss.xml",
+                "https://blog.google/technology/ai/rss/",
+            ],
+            news_feed_timeout_seconds=1,
+            news_limit=1,
+        )
+        unsafe = b'<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY xxe "blocked">]><rss />'
+        valid = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Google 发布 Gemini 更新</title>
+      <description>面向开发者的模型工具更新。</description>
+    </item>
+  </channel>
+</rss>""".encode()
+        calls = []
+
+        class FakeResponse:
+            def __init__(self, body: bytes, final_url: str):
+                self.body = body
+                self.final_url = final_url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def geturl(self) -> str:
+                return self.final_url
+
+            def read(self, limit: int) -> bytes:
+                return self.body[:limit]
+
+        class FakeOpener:
+            def open(self, request, timeout):
+                calls.append((request.full_url, timeout))
+                if request.full_url.startswith("https://openai.com/"):
+                    return FakeResponse(unsafe, request.full_url)
+                return FakeResponse(valid, request.full_url)
+
+        original_build_opener = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_handlers: FakeOpener()
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original_build_opener
+
+        self.assertEqual([url for url, _timeout in calls], args.news_feed_url)
+        self.assertEqual([item.title for item in items], ["Google 发布 Gemini 更新"])
+
+    def test_rss_fallback_rejects_unsafe_final_response_url(self):
+        module = load_module()
+        args = SimpleNamespace(
+            news_feed_url=[
+                "https://openai.com/news/rss.xml",
+                "https://blog.google/technology/ai/rss/",
+            ],
+            news_feed_timeout_seconds=1,
+            news_limit=1,
+        )
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Should Not Be Read</title>
+      <description>Unsafe redirected target.</description>
+    </item>
+  </channel>
+</rss>""".encode()
+        valid = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Google 发布 Gemini 更新</title>
+      <description>面向开发者的模型工具更新。</description>
+    </item>
+  </channel>
+</rss>""".encode()
+        reads = []
+
+        class FakeResponse:
+            def __init__(self, body: bytes, final_url: str):
+                self.body = body
+                self.final_url = final_url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def geturl(self) -> str:
+                return self.final_url
+
+            def read(self, limit: int) -> bytes:
+                reads.append(self.final_url)
+                return self.body[:limit]
+
+        class FakeOpener:
+            def open(self, request, timeout):
+                if request.full_url.startswith("https://openai.com/"):
+                    return FakeResponse(rss, "https://169.254.169.254/latest/meta-data")
+                return FakeResponse(valid, request.full_url)
+
+        original_build_opener = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_handlers: FakeOpener()
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original_build_opener
+
+        self.assertEqual(reads, ["https://blog.google/technology/ai/rss/"])
+        self.assertEqual([item.title for item in items], ["Google 发布 Gemini 更新"])
+
+    def test_news_feed_redirect_handler_rejects_redirects(self):
+        module = load_module()
+        handler = module.NoNewsFeedRedirect()
+        request = module.urllib.request.Request("https://openai.com/news/rss.xml")
+
+        with self.assertRaises(module.urllib.error.HTTPError) as context:
+            handler.redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {},
+                "https://127.0.0.1/internal",
+            )
+
+        try:
+            self.assertEqual(context.exception.code, 302)
+        finally:
+            context.exception.close()
+
+    def test_feed_urls_reject_non_allowlisted_hosts(self):
+        module = load_module()
+        args = SimpleNamespace(
+            news_feed_url=[
+                "https://127.0.0.1:1/rss",
+                "https://openai.com/news/rss.xml",
+            ]
+        )
+
+        self.assertEqual(module._feed_urls(args), ["https://openai.com/news/rss.xml"])
 
     def test_ai_section_parser_handles_qunmind_headings(self):
         module = load_module()
