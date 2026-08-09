@@ -1521,6 +1521,7 @@ class QiWeAdapter(BasePlatformAdapter):
         self._seen_messages: Dict[str, float] = {}
         self._dispatch_tasks: set[asyncio.Task] = set()
         self._contact_guard_cache: Dict[str, Tuple[float, QiWeContactGuardDecision]] = {}
+        self._room_guard_cache: Dict[str, Tuple[float, bool]] = {}
         self._sender_display_names: Dict[Tuple[str, str], str] = {}
         self._identity_resolver = QiWeIdentityResolver(self)
         self._auditor = QiWeAuditor(self.qiwe.state_dir, self.qiwe.audit_enabled)
@@ -1814,7 +1815,15 @@ class QiWeAdapter(BasePlatformAdapter):
             or metadata.get("chat_type") == "group"
             or metadata.get("conversation_type") == "group"
             or (home_group and str(chat_id).strip() == home_group)
+            or self._is_configured_group_chat(chat_id)
         )
+        if (
+            not is_group
+            and metadata.get("chat_type") != "direct"
+            and metadata.get("conversation_type") != "direct"
+            and await self._is_existing_group_room(chat_id, guid=guid)
+        ):
+            is_group = True
         sender_display_names = self._sender_display_name_candidates(chat_id, sender_id, metadata)
         if isinstance(location_card, dict):
             return await self._send_location_bundle(
@@ -1846,6 +1855,53 @@ class QiWeAdapter(BasePlatformAdapter):
 
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
         return {"name": str(chat_id), "type": "chat", "chat_id": str(chat_id)}
+
+    def _is_configured_group_chat(self, chat_id: str) -> bool:
+        target = _text(chat_id)
+        if not target:
+            return False
+        configured_groups = {
+            _text(os.getenv("QIWE_HOME_GROUP")),
+            *[_text(group) for group in self.qiwe.passive_allowed_groups],
+            *[_text(group) for group in self.qiwe.passive_ack_allowed_groups],
+            *[_text(group) for group in self.qiwe.activity_reminder_allowed_groups],
+            *[_text(group) for group in self.qiwe.human_handoff_group_map.keys()],
+        }
+        configured_groups.discard("")
+        return target in configured_groups
+
+    async def _is_existing_group_room(self, chat_id: str, *, guid: str = "") -> bool:
+        target = _text(chat_id)
+        if not target or not self.qiwe.token or not self.qiwe.send_enabled:
+            return False
+
+        now = time.time()
+        ttl = max(1, self.qiwe.contact_guard_cache_ttl_seconds)
+        cached = self._room_guard_cache.get(target)
+        if cached and now - cached[0] <= ttl:
+            return cached[1]
+
+        result = await self._call_qiwe_api(
+            "/room/batchGetRoomDetail",
+            {"guid": guid or self.qiwe.guid, "roomIdList": [target]},
+            require_send_enabled=False,
+        )
+        confirmed = False
+        if result.success and isinstance(result.raw_response, dict):
+            room_list = _first_mapping(result.raw_response.get("data")).get("roomList", [])
+            if isinstance(room_list, list):
+                for room in room_list:
+                    if not isinstance(room, dict):
+                        continue
+                    room_id = _text(room.get("roomId") or room.get("room_id") or room.get("chatId") or room.get("id"))
+                    if room_id and room_id != target:
+                        continue
+                    if room_id == target or isinstance(room.get("memberList"), list) or _text(room.get("roomName") or room.get("name")):
+                        confirmed = True
+                        break
+
+        self._room_guard_cache[target] = (now, confirmed)
+        return confirmed
 
     async def _handle_health(self, request: "web.Request") -> "web.Response":
         return web.json_response({"status": "ok", "platform": "qiwe"})

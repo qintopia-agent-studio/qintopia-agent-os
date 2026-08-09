@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -37,6 +38,7 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_OUTPUT_WIDTH = 750
 DEFAULT_CASE_LIMIT = 6
 PRODUCTION_PSQL_BIN = "/usr/bin/psql"
+PRODUCTION_PSQL_PATH = "/usr/bin:/bin"
 DEFAULT_SUSPECT_LIMIT = 5
 DEFAULT_HOURLY_BUCKETS = 24
 DEFAULT_WINDOW_HOURS = 24
@@ -291,7 +293,7 @@ def _fetch_messages(
 
     try:
         import psycopg
-    except ImportError as exc:
+    except ImportError:
         return _fetch_messages_with_psql(db_url, chat_id, start, end)
 
     sql = """
@@ -335,6 +337,34 @@ def _fetch_messages(
     return messages
 
 
+def _psql_env(db_url: str) -> dict[str, str]:
+    parsed = urlparse(db_url)
+    database = unquote(parsed.path.lstrip("/"))
+    if (
+        parsed.scheme not in {"postgres", "postgresql"}
+        or not parsed.hostname
+        or not parsed.username
+        or parsed.password is None
+        or not database
+    ):
+        raise RuntimeError("message store database URL shape is not supported by psql fallback")
+
+    env = {
+        "PATH": PRODUCTION_PSQL_PATH,
+        "PGCONNECT_TIMEOUT": "10",
+        "PGDATABASE": database,
+        "PGHOST": parsed.hostname,
+        "PGPASSWORD": unquote(parsed.password),
+        "PGUSER": unquote(parsed.username),
+    }
+    if parsed.port is not None:
+        env["PGPORT"] = str(parsed.port)
+    sslmode = parse_qs(parsed.query).get("sslmode", [""])[0]
+    if sslmode:
+        env["PGSSLMODE"] = sslmode
+    return env
+
+
 def _fetch_messages_with_psql(
     db_url: str,
     chat_id: str | None,
@@ -363,28 +393,26 @@ def _fetch_messages_with_psql(
         SELECT COALESCE(json_agg(row_to_json(selected)), '[]'::json)::text
         FROM selected;
     """
-    env = os.environ.copy()
-    env["PGDATABASE"] = db_url
+    command = [
+        PRODUCTION_PSQL_BIN,
+        "--no-psqlrc",
+        "--no-align",
+        "--tuples-only",
+        "--quiet",
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--set",
+        f"window_start={start.isoformat()}",
+        "--set",
+        f"window_end={end.isoformat()}",
+        "--set",
+        f"chat_id={chat_id or ''}",
+    ]
     try:
         completed = subprocess.run(
-            [
-                PRODUCTION_PSQL_BIN,
-                "--no-psqlrc",
-                "--no-align",
-                "--tuples-only",
-                "--quiet",
-                "--set",
-                "ON_ERROR_STOP=1",
-                "--set",
-                f"window_start={start.isoformat()}",
-                "--set",
-                f"window_end={end.isoformat()}",
-                "--set",
-                f"chat_id={chat_id or ''}",
-                "--command",
-                sql,
-            ],
-            env=env,
+            command,
+            input=sql,
+            env=_psql_env(db_url),
             text=True,
             capture_output=True,
             timeout=30,
