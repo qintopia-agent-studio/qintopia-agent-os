@@ -129,6 +129,10 @@ callback completion, and no duplicate send on rerun.
 
 ## Rollback
 
+Use the production configuration entrypoint with `desired_state: "disabled"` to clear
+the managed daily report keys and leave only the persistent disabled flag. Then stop the
+timer through the reviewed rollback script.
+
 After the persistent env flag is set to
 `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0`:
 

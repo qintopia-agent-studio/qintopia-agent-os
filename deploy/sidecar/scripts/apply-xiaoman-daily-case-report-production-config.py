@@ -380,7 +380,7 @@ def render_env_text(text: str, replacements: dict[str, str]) -> str:
     retained = []
     for raw in text.splitlines():
         match = ASSIGNMENT_RE.match(raw)
-        if match and match.group(1) in replacements:
+        if match and match.group(1) in ACTIVE_KEYS:
             continue
         if raw.strip() == MANAGED_COMMENT:
             continue

@@ -160,6 +160,11 @@ class XiaomanDailyCaseReportProductionConfigTests(unittest.TestCase):
         )
 
     def test_disable_apply_sets_only_persistent_enablement_to_zero(self) -> None:
+        self.configure(
+            self.enabled_request(),
+            apply=True,
+            approval=MODULE.APPLY_APPROVAL,
+        )
         request = {
             "schema_version": 1,
             "desired_state": "disabled",
