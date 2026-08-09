@@ -88,6 +88,38 @@ const DAILY_CASE_REPORT_STORAGE_BACKEND_ENV: &str =
 const DAILY_CASE_REPORT_HTTP_STORAGE_BACKEND: &str = "https-public";
 const DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND: &str = "feishu-base";
 const FEISHU_PRIMARY_STORAGE_URI_PREFIX: &str = "feishu-base://huabaosi-generated-image/";
+const DAILY_CASE_REPORT_GENERATED_IMAGE_ARTIFACT_UPSERT_SQL: &str = r#"
+        INSERT INTO qintopia_agent_os.artifacts
+            (id, work_item_id, artifact_type, review_status, created_by_agent, title,
+             summary, artifact_uri, content_hash, source_ids, risk_labels,
+             information_class, metadata, review_requested_at, reviewed_at,
+             review_decision_reason)
+        VALUES
+            ($1, $2, 'generated_image', 'approved', 'xiaoman', $3, $4, $5, $6, $7,
+             ARRAY['automatic_external_send','daily_case_report']::text[],
+             'internal_ops', $8, now(), now(),
+             'approved by reviewed daily case report automatic publish boundary')
+        ON CONFLICT (work_item_id, content_hash) WHERE content_hash IS NOT NULL AND content_hash <> ''
+        DO UPDATE SET
+            title = EXCLUDED.title,
+            summary = EXCLUDED.summary,
+            artifact_uri = EXCLUDED.artifact_uri,
+            source_ids = EXCLUDED.source_ids,
+            risk_labels = EXCLUDED.risk_labels,
+            information_class = EXCLUDED.information_class,
+            metadata = qintopia_agent_os.artifacts.metadata || EXCLUDED.metadata,
+            updated_at = now()
+        WHERE qintopia_agent_os.artifacts.id = EXCLUDED.id
+           OR (
+               $9 <> 'feishu-base'
+               AND
+               qintopia_agent_os.artifacts.artifact_type = 'generated_image'
+               AND qintopia_agent_os.artifacts.review_status = 'approved'
+               AND qintopia_agent_os.artifacts.created_by_agent = 'xiaoman'
+               AND qintopia_agent_os.artifacts.metadata->>'workflow_type' = 'daily_case_report'
+           )
+        RETURNING id
+        "#;
 const DAILY_CASE_REPORT_MEDIA_MAX_BYTES_ENV: &str =
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_MAX_BYTES";
 const DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT_ENV: &str =
@@ -4448,52 +4480,20 @@ async fn upsert_daily_case_report_generated_image_artifact(
     )
     .await?;
 
-    let artifact_id: Uuid = sqlx::query_scalar(
-        r#"
-        INSERT INTO qintopia_agent_os.artifacts
-            (id, work_item_id, artifact_type, review_status, created_by_agent, title,
-             summary, artifact_uri, content_hash, source_ids, risk_labels,
-             information_class, metadata, review_requested_at, reviewed_at,
-             review_decision_reason)
-        VALUES
-            ($1, $2, 'generated_image', 'approved', 'xiaoman', $3, $4, $5, $6, $7,
-             ARRAY['automatic_external_send','daily_case_report']::text[],
-             'internal_ops', $8, now(), now(),
-             'approved by reviewed daily case report automatic publish boundary')
-        ON CONFLICT (work_item_id, content_hash) WHERE content_hash IS NOT NULL AND content_hash <> ''
-        DO UPDATE SET
-            title = EXCLUDED.title,
-            summary = EXCLUDED.summary,
-            artifact_uri = EXCLUDED.artifact_uri,
-            source_ids = EXCLUDED.source_ids,
-            risk_labels = EXCLUDED.risk_labels,
-            information_class = EXCLUDED.information_class,
-            metadata = qintopia_agent_os.artifacts.metadata || EXCLUDED.metadata,
-            updated_at = now()
-        WHERE qintopia_agent_os.artifacts.id = EXCLUDED.id
-           OR (
-               $9 <> 'feishu-base'
-               AND
-               qintopia_agent_os.artifacts.artifact_type = 'generated_image'
-               AND qintopia_agent_os.artifacts.review_status = 'approved'
-               AND qintopia_agent_os.artifacts.created_by_agent = 'xiaoman'
-               AND qintopia_agent_os.artifacts.metadata->>'workflow_type' = 'daily_case_report'
-           )
-        RETURNING id
-        "#,
-    )
-    .bind(requested_artifact_id)
-    .bind(source_work_item_id)
-    .bind(daily_case_report_title(request))
-    .bind(daily_case_report_summary(request))
-    .bind(&request.artifact_uri)
-    .bind(&request.content_hash)
-    .bind(daily_case_report_source_ids(request))
-    .bind(daily_case_report_artifact_metadata(request))
-    .bind(daily_case_report_storage_backend(request))
-    .fetch_one(&mut **tx)
-    .await
-    .context("upsert daily case report generated-image artifact")?;
+    let artifact_id: Uuid =
+        sqlx::query_scalar(DAILY_CASE_REPORT_GENERATED_IMAGE_ARTIFACT_UPSERT_SQL)
+            .bind(requested_artifact_id)
+            .bind(source_work_item_id)
+            .bind(daily_case_report_title(request))
+            .bind(daily_case_report_summary(request))
+            .bind(&request.artifact_uri)
+            .bind(&request.content_hash)
+            .bind(daily_case_report_source_ids(request))
+            .bind(daily_case_report_artifact_metadata(request))
+            .bind(daily_case_report_storage_backend(request))
+            .fetch_one(&mut **tx)
+            .await
+            .context("upsert daily case report generated-image artifact")?;
     Ok(artifact_id)
 }
 
@@ -10777,6 +10777,28 @@ mod tests {
             Some(Uuid::new_v4()),
         )
         .expect("HTTP public media keeps legacy artifact reuse behavior");
+    }
+
+    #[test]
+    fn daily_case_report_artifact_upsert_blocks_feishu_id_uri_drift() {
+        let sql = DAILY_CASE_REPORT_GENERATED_IMAGE_ARTIFACT_UPSERT_SQL;
+        let update_start = sql
+            .find("DO UPDATE SET")
+            .expect("upsert updates existing daily report artifacts");
+        let artifact_uri_assignment = sql
+            .find("artifact_uri = EXCLUDED.artifact_uri")
+            .expect("upsert refreshes delivery URI only inside guarded update");
+        let id_guard = sql
+            .find("WHERE qintopia_agent_os.artifacts.id = EXCLUDED.id")
+            .expect("upsert requires exact artifact id before Feishu URI refresh");
+        let non_feishu_escape = sql
+            .find("$9 <> 'feishu-base'")
+            .expect("legacy conflict reuse is limited to non-Feishu storage");
+
+        assert!(update_start < artifact_uri_assignment);
+        assert!(artifact_uri_assignment < id_guard);
+        assert!(id_guard < non_feishu_escape);
+        assert!(!sql.contains("$9 = 'feishu-base'"));
     }
 
     #[test]
