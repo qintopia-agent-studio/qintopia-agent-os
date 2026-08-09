@@ -370,6 +370,26 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       "daily case report service must not inherit Huabaosi image release binding"
     );
   }
+  const dailyCaseReportTimer = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"),
+    "utf8"
+  );
+  for (const required of [
+    "OnCalendar=*-*-* 08:00:00",
+    "Persistent=true",
+    "Unit=qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
+  ]) {
+    if (!dailyCaseReportTimer.includes(required)) {
+      throw new Error(`daily case report timer is missing ${required}`);
+    }
+  }
+  if (
+    systemctlLogText.includes(
+      "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
+    )
+  ) {
+    throw new Error("release installer must install but not enable daily case report");
+  }
   for (const forbidden of [
     "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=",
     "Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=",
