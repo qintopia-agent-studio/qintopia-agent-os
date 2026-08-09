@@ -61,10 +61,13 @@ retirement path for the exact observed `jobs.json` hash. Do not edit
 
 ```bash
 QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-preview \
+QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh
 ```
 
-Activation enables only `qintopia-agentos-xiaoman-weekly-preview.timer`.
+Activation first verifies the installed service unit is bound to the same reviewed
+release SHA through `QINTOPIA_DEPLOYED_COMMIT_SHA`, then enables only
+`qintopia-agentos-xiaoman-weekly-preview.timer`.
 
 ```text
 OnCalendar=Mon *-*-* 09:30:00
@@ -88,11 +91,13 @@ message path.
 ```bash
 QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE=1 \
 QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=enabled \
+QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-weekly-preview-production-observation-smoke.sh
 ```
 
 This proves the timer state, exact Monday schedule, release-local worker command, and
-persistent env gate. It must not run the worker, inspect Feishu data, publish, or send.
+exact owner-reviewed release SHA binding plus the persistent env gate. It must not run
+the worker, inspect Feishu data, publish, or send.
 
 ## Rollback
 
@@ -118,6 +123,7 @@ Verify the disabled state:
 ```bash
 QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE=1 \
 QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=disabled \
+QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-weekly-preview-production-observation-smoke.sh
 ```
 
@@ -128,3 +134,5 @@ QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=disabled \
 - The timer generates an operations-review draft and never performs external send.
 - Human confirmation remains required before Erhua handoff or any group message.
 - Activation, observation, and rollback scripts all pass from `release/current`.
+- Observation proves the installed systemd unit is bound to the owner-reviewed release
+  SHA.

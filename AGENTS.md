@@ -230,13 +230,15 @@
   QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-preview-config \
     deploy/sidecar/scripts/apply-xiaoman-weekly-preview-production-config.sh --enable
   QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-preview \
+  QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
     deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh
   ```
 
   Observation and rollback are `xiaoman-weekly-preview-production-observation-smoke.sh`
-  and `rollback-xiaoman-weekly-preview-production.sh`. Activation must first pass
-  `xiaoman-legacy-cron-observation-smoke.sh`; do not manually edit
-  `/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json`.
+  and `rollback-xiaoman-weekly-preview-production.sh`. Activation and observation must
+  verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the owner-reviewed
+  release SHA. Activation must first pass `xiaoman-legacy-cron-observation-smoke.sh`; do
+  not manually edit `/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json`.
 
 - Xiaoman QiWe group-arrival human confirmation evidence validation after a real
   activity send:

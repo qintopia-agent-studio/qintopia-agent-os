@@ -7,12 +7,17 @@ if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE:-}" != "1" ]]; then
 fi
 
 EXPECTED_STATE="${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE:-enabled}"
+EXPECTED_RELEASE_SHA="${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA:-}"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 SYSTEMCTL="/usr/bin/systemctl"
 SERVICE_NAME="qintopia-agentos-xiaoman-weekly-preview.service"
 TIMER_NAME="qintopia-agentos-xiaoman-weekly-preview.timer"
 
+if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
+  exit 1
+fi
 if [[ "$EXPECTED_STATE" != "enabled" && "$EXPECTED_STATE" != "disabled" ]]; then
   echo "xiaoman weekly preview expected state must be enabled or disabled" >&2
   exit 1
@@ -55,7 +60,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 service_unit="$tmp_dir/service-unit.txt"
 "$SYSTEMCTL" cat "$SERVICE_NAME" >"$service_unit"
 grep -F "xiaoman-weekly-preview-worker.sh" "$service_unit" >/dev/null
-grep -F "QINTOPIA_DEPLOYED_COMMIT_SHA=" "$service_unit" >/dev/null
+grep -F "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${EXPECTED_RELEASE_SHA} " "$service_unit" >/dev/null
 grep -F "EnvironmentFile=${ENV_FILE}" "$service_unit" >/dev/null
 
 timer_unit="$tmp_dir/timer-unit.txt"

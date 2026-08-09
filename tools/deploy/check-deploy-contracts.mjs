@@ -2641,8 +2641,11 @@ if (exists(xiaomanWeeklyPreviewObservationPath)) {
   for (const fragment of [
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE",
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA must be a 40-character lowercase hex SHA",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
     'SYSTEMCTL="/usr/bin/systemctl"',
+    "QINTOPIA_DEPLOYED_COMMIT_SHA=${EXPECTED_RELEASE_SHA}",
     "qintopia-agentos-xiaoman-weekly-preview.service",
     "qintopia-agentos-xiaoman-weekly-preview.timer",
     "OnCalendar=Mon *-*-* 09:30:00",
@@ -2663,12 +2666,14 @@ if (exists(xiaomanWeeklyPreviewActivationPath)) {
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
     "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
     'SYSTEMCTL="/usr/bin/systemctl"',
     'if ! "$SYSTEMCTL" enable "$TIMER_NAME"; then',
     'if ! "$SYSTEMCTL" restart "$TIMER_NAME"; then',
     '"$SYSTEMCTL" enable "$TIMER_NAME"',
     '"$SYSTEMCTL" restart "$TIMER_NAME"',
+    'QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA="$EXPECTED_RELEASE_SHA"',
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=enabled",
   ]) {
     requireFragment(xiaomanWeeklyPreviewActivationPath, activation, fragment);

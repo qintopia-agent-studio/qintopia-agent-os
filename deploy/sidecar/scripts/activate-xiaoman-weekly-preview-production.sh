@@ -9,12 +9,17 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OBSERVATION_SCRIPT="${SCRIPT_DIR}/xiaoman-weekly-preview-production-observation-smoke.sh"
 LEGACY_CRON_OBSERVATION_SCRIPT="${SCRIPT_DIR}/xiaoman-legacy-cron-observation-smoke.sh"
+EXPECTED_RELEASE_SHA="${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA:-}"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 SYSTEMCTL="/usr/bin/systemctl"
 SERVICE_NAME="qintopia-agentos-xiaoman-weekly-preview.service"
 TIMER_NAME="qintopia-agentos-xiaoman-weekly-preview.timer"
 
+if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
+  exit 1
+fi
 if [[ ! -x "$OBSERVATION_SCRIPT" || ! -x "$LEGACY_CRON_OBSERVATION_SCRIPT" ]]; then
   echo "xiaoman weekly preview activation requires release-local observation scripts" >&2
   exit 1
@@ -49,6 +54,9 @@ cleanup_failed_activation() {
   "$SYSTEMCTL" reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
 }
 
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
 require_env_line "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED" "1"
 require_env_line "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL" "approved-production-xiaoman-weekly-preview"
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
@@ -60,6 +68,16 @@ if ! env -i PATH="$PATH" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 "$LEG
 fi
 
 if ! "$SYSTEMCTL" daemon-reload; then
+  cleanup_failed_activation
+  exit 1
+fi
+service_unit="$tmp_dir/service-unit.txt"
+if ! "$SYSTEMCTL" cat "$SERVICE_NAME" >"$service_unit"; then
+  cleanup_failed_activation
+  exit 1
+fi
+if ! grep -F "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${EXPECTED_RELEASE_SHA} " "$service_unit" >/dev/null; then
+  echo "xiaoman weekly preview activation requires service unit bound to ${EXPECTED_RELEASE_SHA}" >&2
   cleanup_failed_activation
   exit 1
 fi
@@ -84,6 +102,7 @@ if ! env -i \
   PATH="$PATH" \
   QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE=1 \
   QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=enabled \
+  QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA="$EXPECTED_RELEASE_SHA" \
   "$OBSERVATION_SCRIPT" >/dev/null; then
   cleanup_failed_activation
   exit 1
