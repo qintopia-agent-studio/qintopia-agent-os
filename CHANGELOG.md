@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.81](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.80...v0.2.81) (2026-08-09)
+
+
+### Features
+
+* **deploy:** add production timer activation requests ([#404](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/404)) ([3bea0f3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3bea0f3037ffea52ede489bde5144cfd47966866))
+
 ## [0.2.80](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.79...v0.2.80) (2026-08-09)
 
 
