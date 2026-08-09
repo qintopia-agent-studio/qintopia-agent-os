@@ -162,8 +162,7 @@ class ReportData:
     hourly_counts: list[int]
     cases: list[CaseCard]
     suspects: list[Suspect]
-    quote: str
-    highlight: str
+    highlight: str | None
     window_start: str = ""
     window_end: str = ""
     timezone: str = DEFAULT_TIMEZONE
@@ -631,16 +630,10 @@ def _time_bucket_title(hour: int, messages: list[ReportMessage]) -> str:
         period = "晚场"
     else:
         period = "夜场"
-    if len(messages) >= 10:
-        momentum = "高能连击"
-    elif len(messages) >= 6:
-        momentum = "持续推进"
-    else:
-        momentum = "轻量回合"
     for keyword, count in _keyword_scores(messages).most_common(DEFAULT_TOP_KEYWORDS):
         if count >= DEFAULT_MIN_CASE_MESSAGES and _is_clean_topic(keyword):
             return f"{period} · {keyword}"
-    return f"{period}{hour:02d}:00 · {momentum}"
+    return f"{period} {hour:02d}:00 时段"
 
 
 def _topic_marker_title(cleaned: str) -> str | None:
@@ -675,22 +668,11 @@ def _is_digest_snippet_text(text: str) -> bool:
 
 
 def _time_bucket_bullet(
-    title: str,
     time_label: str,
     message_count: int,
     participant_count: int,
-    top_speaker: str,
 ) -> str:
-    if "高能连击" in title:
-        return (
-            f"{time_label} 像一波快攻：{message_count} 条消息、{participant_count} 位群友轮番接力，"
-            f"{top_speaker} 把节奏顶到前排。"
-        )
-    if "持续推进" in title:
-        return (
-            f"{time_label} 没有单点爆炸，但接话不断：{message_count} 条消息把这一段稳稳推起来。"
-        )
-    return f"{time_label} 是一段轻量回合：{participant_count} 位群友短暂接力，给全天补上一个小波峰。"
+    return f"{time_label}：{message_count} 条群消息，{participant_count} 人参与。"
 
 
 def _detect_topic_markers(messages: list[ReportMessage]) -> dict[str, list[ReportMessage]]:
@@ -810,17 +792,19 @@ def _cluster_cases(
         if keyword in time_bucket_titles:
             bullets = [
                 _time_bucket_bullet(
-                    keyword,
                     time_label,
                     len(cluster),
                     len(participants),
-                    top_speaker,
                 )
             ]
         else:
             # Pick representative snippets by signal density so noisy chatter does not
             # become the visible takeaway for a topic card.
             representative_messages = [m for m in cluster if _is_digest_snippet_text(m.text)]
+            if not representative_messages:
+                representative_messages = [
+                    m for m in cluster if _clean_text(m.text) and not _looks_promotional_noise(m.text)
+                ]
             sorted_by_length = sorted(
                 representative_messages,
                 key=lambda m: (
@@ -834,7 +818,7 @@ def _cluster_cases(
                 if snippet and snippet not in bullets:
                     bullets.append(snippet)
             if not bullets:
-                bullets = ["这一时段互动明显升温，群友连续抛出问题、回应和补充信息。"]
+                continue
 
         color_bg, color_text = CASE_CARD_COLORS[(index - 1) % len(CASE_CARD_COLORS)]
         cases.append(
@@ -877,7 +861,7 @@ def _compute_suspects(messages: list[ReportMessage], limit: int = DEFAULT_SUSPEC
     return suspects
 
 
-def _extract_highlight(messages: list[ReportMessage]) -> str:
+def _extract_highlight(messages: list[ReportMessage]) -> str | None:
     """Pick one real, quotable group message for the '今日高亮' block."""
     candidates = []
     for m in messages:
@@ -893,7 +877,7 @@ def _extract_highlight(messages: list[ReportMessage]) -> str:
             score -= 25
         candidates.append((score, len(text), text))
     if not candidates:
-        return "今日群聊暂无特别亮眼的发言，但每一次交流都在悄悄累积。"
+        return None
     candidates.sort(reverse=True)
     best = candidates[0][2]
     return best[:92] + ("…" if len(best) > 92 else "")
@@ -941,11 +925,6 @@ def _build_report(args: argparse.Namespace) -> ReportData:
     max_hourly = max(hourly) if hourly else 1
 
     time_range = _time_range_label(start, end)
-    quote = os.environ.get(
-        "QINTOPIA_DAILY_CASE_REPORT_QUOTE",
-        "我们最大的光荣不在于从不跌倒，而在于每次跌倒后都能爬起来。",
-    )
-
     return ReportData(
         group_name=args.group_name,
         report_title=args.report_title,
@@ -959,7 +938,6 @@ def _build_report(args: argparse.Namespace) -> ReportData:
         hourly_counts=hourly,
         cases=cases,
         suspects=suspects,
-        quote=quote,
         highlight=_extract_highlight(discussion_messages),
         window_start=start.isoformat(),
         window_end=end.isoformat(),
@@ -1119,6 +1097,13 @@ def _render_html(report: ReportData, width: int) -> str:
 
     cases_grid = "\n".join(case_cards)
     suspects_grid = "\n".join(suspects_html)
+    highlight_html = ""
+    if report.highlight:
+        highlight_html = f"""
+  <div style="background:#fff;border-radius:18px;padding:16px 18px;margin-bottom:22px;border:1px solid #e5e7eb;box-shadow:0 4px 14px rgba(20,30,60,0.05);">
+    <div style="font-size:13px;font-weight:700;color:#1a2744;margin-bottom:8px;">今日高亮</div>
+    <div style="font-size:14px;line-height:1.7;color:#475569;">“{html.escape(report.highlight)}”</div>
+  </div>"""
 
     return f"""<!DOCTYPE html>
 <html>
@@ -1159,6 +1144,8 @@ def _render_html(report: ReportData, width: int) -> str:
     </svg>
   </div>
 
+  {highlight_html}
+
   <div style="margin-bottom:22px;">
     <div style="font-size:15px;font-weight:800;color:#1a2744;margin-bottom:12px;">今日话题 · 便签墙</div>
     {cases_grid}
@@ -1172,8 +1159,7 @@ def _render_html(report: ReportData, width: int) -> str:
   </div>
 
   <div style="text-align:center;padding-top:14px;border-top:1px dashed #cbd5e1;">
-    <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:14px;color:#475569;line-height:1.7;font-style:italic;">"{html.escape(report.quote)}"</div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:8px;">本报告由小满自动整理群聊生成 · AgentOS 自动发布版</div>
+    <div style="font-size:10px;color:#94a3b8;">本报告由小满自动整理群聊生成 · AgentOS 自动发布版</div>
   </div>
 </div>
 </body>
@@ -1364,21 +1350,22 @@ def _render_image_with_pillow(
         draw.rectangle((x, base_y - height, x + bar_width, base_y), fill=fill)
     y = timeline_top + timeline_height + 34 * scale
 
-    highlight_top = y
-    highlight_height = 138 * scale
-    draw.rectangle((outer, highlight_top, canvas_width - outer, highlight_top + highlight_height), fill=orange, outline=ink, width=3 * scale)
-    draw.text((padding, highlight_top + 22 * scale), "TODAY'S SIGNAL", font=tiny_font, fill=yellow)
-    draw.text((padding, highlight_top + 46 * scale), "今日高亮", font=section_font, fill=cream)
-    _draw_wrapped_text(
-        draw,
-        (padding + 180 * scale, highlight_top + 30 * scale),
-        f"“{report.highlight}”",
-        body_font,
-        cream,
-        content_width - 180 * scale,
-        max_lines=3,
-    )
-    y += highlight_height + 38 * scale
+    if report.highlight:
+        highlight_top = y
+        highlight_height = 138 * scale
+        draw.rectangle((outer, highlight_top, canvas_width - outer, highlight_top + highlight_height), fill=orange, outline=ink, width=3 * scale)
+        draw.text((padding, highlight_top + 22 * scale), "TODAY'S SIGNAL", font=tiny_font, fill=yellow)
+        draw.text((padding, highlight_top + 46 * scale), "今日高亮", font=section_font, fill=cream)
+        _draw_wrapped_text(
+            draw,
+            (padding + 180 * scale, highlight_top + 30 * scale),
+            f"“{report.highlight}”",
+            body_font,
+            cream,
+            content_width - 180 * scale,
+            max_lines=3,
+        )
+        y += highlight_height + 38 * scale
 
     y = section_label(y, "PLAY BY PLAY", "今日局势")
     cases = report.cases[:DEFAULT_CASE_LIMIT]
@@ -1419,7 +1406,7 @@ def _render_image_with_pillow(
             )
             note_top = card_y + 150 * scale
             draw.rectangle((x + 18 * scale, note_top, x + card_width - 18 * scale, card_y + card_height - 18 * scale), fill=pale_yellow)
-            bullet_text = " / ".join(case.bullets[:2]) if case.bullets else "群友围绕该话题展开了讨论。"
+            bullet_text = " / ".join(case.bullets[:2])
             _draw_wrapped_text(
                 draw,
                 (x + 30 * scale, note_top + 12 * scale),
@@ -1449,10 +1436,6 @@ def _render_image_with_pillow(
             text_right(x + row_width - 16 * scale, row_y + 21 * scale, f"{suspect.message_count}", stat_font, ink)
         y += ((min(len(report.suspects), DEFAULT_SUSPECT_LIMIT) + 1) // 2) * (row_height + 10 * scale) + 28 * scale
 
-    draw.rectangle((outer, y, canvas_width - outer, y + 116 * scale), fill=yellow, outline=ink, width=3 * scale)
-    draw.text((padding, y + 22 * scale), "COACH'S TIMEOUT", font=tiny_font, fill=orange)
-    _draw_wrapped_text(draw, (padding, y + 48 * scale), f"“{report.quote}”", body_font, ink, content_width, max_lines=2)
-    y += 116 * scale
     draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
     draw.text((padding, y + 14 * scale), "本报告由小满自动整理群聊生成 · AgentOS 自动发布版", font=tiny_font, fill=yellow)
     y += 42 * scale + outer

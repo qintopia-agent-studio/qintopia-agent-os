@@ -21,6 +21,10 @@ observation, and rollback path from the immutable release.
 - Keep raw text-message counts as the top-line activity metric, but filter obvious
   payment prompts, copy-token promotions, and external-platform shopping redirects out
   of highlights, topic cards, and MVP ranking.
+- Keep every displayed highlight and topic-card excerpt traceable to a source-group
+  message in the report window. The renderer must omit a section when it has no
+  qualifying source text; it must not fill the space with generated copy, fixed quotes,
+  or synthetic fallback commentary.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
 - Render a mobile-friendly JPEG poster styled like an original community scoreboard.

@@ -413,7 +413,6 @@ class DailyCaseReportTest(unittest.TestCase):
                 hourly_counts=[0] * 24,
                 cases=[],
                 suspects=[],
-                quote="done",
                 highlight="done",
             )
             old_parse_args = daily_case_report._parse_args
@@ -485,6 +484,20 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("订单在30分钟内有效", highlight)
         self.assertTrue(cases)
         self.assertNotIn("促销号", {suspect.name for suspect in suspects})
+
+    def test_missing_highlight_is_omitted_instead_of_synthesized(self) -> None:
+        self.assertIsNone(
+            daily_case_report._extract_highlight([
+                daily_case_report.ReportMessage(
+                    id="short",
+                    sender_id="u1",
+                    sender_name="成员",
+                    text="收到",
+                    sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                    message_kind="text",
+                )
+            ])
+        )
 
     def test_weak_colon_sentence_does_not_capture_later_messages(self) -> None:
         messages = [
@@ -597,8 +610,7 @@ class DailyCaseReportTest(unittest.TestCase):
             hourly_counts=[0] * 24,
             cases=[],
             suspects=[],
-            quote="done",
-            highlight="done",
+            highlight=None,
         )
 
         rendered = daily_case_report._render_html(report, 750)
@@ -607,6 +619,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("@import", rendered)
         self.assertNotIn("https://", rendered)
         self.assertNotIn("http://", rendered)
+        self.assertNotIn("今日高亮", rendered)
+        self.assertNotIn("COACH'S TIMEOUT", rendered)
 
     def test_render_image_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
@@ -698,7 +712,6 @@ class DailyCaseReportTest(unittest.TestCase):
             hourly_counts=[0] * 24,
             cases=[],
             suspects=[],
-            quote="done",
             highlight="done",
         )
         old_import = builtins.__import__
@@ -742,7 +755,6 @@ class DailyCaseReportTest(unittest.TestCase):
             hourly_counts=[0] * 24,
             cases=[],
             suspects=[],
-            quote="done",
             highlight="done",
         )
 
@@ -843,7 +855,6 @@ class DailyCaseReportTest(unittest.TestCase):
                 hourly_counts=[0] * 24,
                 cases=[],
                 suspects=[],
-                quote="done",
                 highlight="done",
                 window_start="2026-08-07T07:45:00+08:00",
                 window_end="2026-08-08T07:45:00+08:00",
