@@ -135,15 +135,20 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("NULLIF(BTRIM(m.text), '') IS NOT NULL", captured["sql"])
         self.assertEqual(messages[0].sent_at, report_time)
 
-    def test_fetch_messages_psql_fallback_uses_pgdatabase_not_command_args(self) -> None:
+    def test_fetch_messages_psql_fallback_uses_fixed_psql_stdin_and_minimal_env(self) -> None:
         report_time = datetime(2026, 8, 8, 9, 30, tzinfo=timezone.utc)
         captured: dict[str, object] = {}
         old_psql_override = os.environ.get("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL")
         os.environ["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL"] = "/tmp/not-reviewed-psql"
 
-        def fake_run(args, *, env, **_kwargs):
+        def fake_run(args, *, input, env, text, capture_output, timeout, check):
             captured["args"] = args
+            captured["input"] = input
             captured["env"] = env
+            self.assertTrue(text)
+            self.assertTrue(capture_output)
+            self.assertEqual(timeout, 30)
+            self.assertFalse(check)
             return types.SimpleNamespace(
                 returncode=0,
                 stdout=json.dumps(
@@ -165,7 +170,7 @@ class DailyCaseReportTest(unittest.TestCase):
         daily_case_report.subprocess.run = fake_run
         try:
             messages = daily_case_report._fetch_messages_with_psql(
-                "postgresql://user:pass@db.example/qintopia",
+                "postgresql://user:p%40ss@db.example:5433/qintopia?sslmode=require",
                 "chat-1",
                 report_time,
                 report_time + timedelta(hours=1),
@@ -179,12 +184,20 @@ class DailyCaseReportTest(unittest.TestCase):
 
         self.assertEqual(messages[0].sent_at, report_time)
         self.assertEqual(captured["args"][0], "/usr/bin/psql")
-        self.assertEqual(
-            captured["env"]["PGDATABASE"],
-            "postgresql://user:pass@db.example/qintopia",
-        )
-        self.assertNotIn("postgresql://user:pass@db.example/qintopia", captured["args"])
+        self.assertEqual(captured["env"]["PATH"], "/usr/bin:/bin")
+        self.assertEqual(captured["env"]["PGDATABASE"], "qintopia")
+        self.assertEqual(captured["env"]["PGHOST"], "db.example")
+        self.assertEqual(captured["env"]["PGPORT"], "5433")
+        self.assertEqual(captured["env"]["PGPASSWORD"], "p@ss")
+        self.assertEqual(captured["env"]["PGSSLMODE"], "require")
+        self.assertNotIn("postgresql://", " ".join(captured["args"]))
+        self.assertNotIn("postgresql://", " ".join(captured["env"].values()))
+        self.assertNotIn("--command", captured["args"])
+        self.assertIn(":'window_start'::timestamptz", captured["input"])
+        self.assertIn(":'window_end'::timestamptz", captured["input"])
+        self.assertIn("AND (:'chat_id' = '' OR m.chat_id = :'chat_id')", captured["input"])
         self.assertIn("--set", captured["args"])
+        self.assertIn("chat_id=chat-1", captured["args"])
 
     def test_fetch_messages_psql_failure_does_not_echo_database_url(self) -> None:
         def fake_run(*_args, **_kwargs):

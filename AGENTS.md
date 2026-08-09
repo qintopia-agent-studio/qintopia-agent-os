@@ -238,9 +238,12 @@
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
 - The Xiaoman daily case-report production host does not provide Python `psycopg`,
   Python Playwright, or a Playwright browser binary by default. The reviewed production
-  path must keep the `/usr/bin/psql` database fallback and system Pillow renderer
+  path must keep the fixed `/usr/bin/psql` database fallback and system Pillow renderer
   available through `/usr/bin/python3`; do not replace this with runtime package
-  installation or browser downloads on the server.
+  installation or browser downloads on the server. Database fallback must use a minimal
+  `PATH`, keep the database URL out of process arguments, pass connection fields through
+  `PG*` environment variables only, and feed SQL on stdin so `psql` variable
+  substitution is applied.
 - Production timer activation should use the `Activate Production Timers` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-activation` deploy-runner request and accepts only these
