@@ -2414,6 +2414,8 @@ const xiaomanDailyCaseReportConfigApplyPath =
   "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py";
 const xiaomanDailyCaseReportObservationPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh";
+const xiaomanDailyCaseReportBackfillPath =
+  "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-backfill.sh";
 const xiaomanDailyCaseReportActivationPath =
   "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh";
 const xiaomanDailyCaseReportRollbackPath =
@@ -2421,6 +2423,7 @@ const xiaomanDailyCaseReportRollbackPath =
 for (const scriptPath of [
   xiaomanDailyCaseReportConfigApplyPath,
   xiaomanDailyCaseReportWorkerPath,
+  xiaomanDailyCaseReportBackfillPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
   xiaomanDailyCaseReportRollbackPath,
@@ -2474,6 +2477,9 @@ if (exists(xiaomanDailyCaseReportWorkerPath)) {
     '--chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"',
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE",
+    "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+    'report_date_args=(--date "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE")',
     "feishu-base",
     "artifact_uri",
     '"width": uploaded["width"]',
@@ -2496,6 +2502,40 @@ if (exists(xiaomanDailyCaseReportWorkerPath)) {
     "eval ",
   ]) {
     forbidFragment(xiaomanDailyCaseReportWorkerPath, worker, fragment);
+  }
+}
+if (exists(xiaomanDailyCaseReportBackfillPath)) {
+  const backfill = readText(xiaomanDailyCaseReportBackfillPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_BACKFILL",
+    "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
+    'require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "1"',
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL",
+    'require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE" "1"',
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE=${BACKFILL_DATE}",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL=${APPROVAL}",
+    '"$SYSTEMCTL" start "$SERVICE_NAME"',
+  ]) {
+    requireFragment(xiaomanDailyCaseReportBackfillPath, backfill, fragment);
+  }
+  for (const fragment of [
+    "run-qiwe-image-send-worker",
+    "reply",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "source ",
+    "eval ",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+  ]) {
+    forbidFragment(xiaomanDailyCaseReportBackfillPath, backfill, fragment);
   }
 }
 if (exists(xiaomanDailyCaseReportObservationPath)) {
