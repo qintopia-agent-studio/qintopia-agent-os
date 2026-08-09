@@ -629,6 +629,11 @@ Use `rg` and `rg --files` for search.
   the configured sidecar for read-only, non-dry-run queries and return sanitized
   `record_count`, `records`, and `summaries`; write wrappers must continue to return
   bounded worker commands.
+- Xiaoman prompt rules for immediate Feishu/Base queries must require explicit requester
+  authorization and current conversation visibility checks before inlining table names,
+  counts, or record summaries. If either boundary is unclear, the reply must ask for
+  authorization or move to a controlled private/review channel instead of exposing row
+  summaries in the current conversation.
 - `qintopia_xiaoman_activity_promotion_review_draft` may only transform already-read
   sanitized Xiaoman activity records into a human-reviewable activity summary, promotion
   assessment, copy draft, poster brief, and dry-run controlled record-path payload. It

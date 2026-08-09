@@ -58,6 +58,9 @@ class RenderProfileBundleTest(unittest.TestCase):
             self.assertIn("OperationsOwnerFixture", soul)
             self.assertIn("技术负责人乙", soul)
             self.assertIn("TechnicalHomeFixture", soul)
+            self.assertIn("先校验请求人和当前会话可见范围", soul)
+            self.assertIn("不要内联记录摘要", soul)
+            self.assertNotIn("必须**当场执行读取并在当前消息直接给出结论**", soul)
 
             manifest = json.loads((output / "bundle-manifest.json").read_text())
             self.assertEqual(manifest["status"], "observation-only")
