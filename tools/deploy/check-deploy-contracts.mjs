@@ -75,6 +75,8 @@ if (!exists(rootAgentsPath)) {
     "A same-SHA request for an existing release must reuse the immutable",
     "manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and",
     "restart-target fields",
+    "apply-xiaoman-activity-read-through-production-config.py",
+    "sourcing the Xiaoman Hermes profile",
   ]) {
     requireFragment(rootAgentsPath, rootAgents, fragment);
   }
@@ -317,6 +319,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
     "docs/operations/staging-runtime-provisioning-runbook.md",
@@ -2608,8 +2611,11 @@ if (exists(xiaomanWeeklyPreviewWorkerPath)) {
     "approved-production-xiaoman-weekly-preview",
     'RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
     'PYTHON_BIN="/usr/bin/python3"',
+    'SIDECAR_BIN="${RELEASE_DIR}/sidecar/qintopia-message-sidecar"',
     'WORK_DIR="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-preview"',
     "xiaoman weekly preview refuses runtime path overrides",
+    'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
+    "xiaoman weekly preview requires the release-local sidecar binary",
     "workflows/xiaoman-weekly-preview/weekly_preview.py",
     "--json",
     "operator_review_message_path",
@@ -2867,6 +2873,7 @@ const erhuaMorningBriefScripts = [
   "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+  "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
   "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
   "deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh",
@@ -2910,6 +2917,9 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     'PYTHON_VALIDATOR="${RELEASE_DIR}/runtime/hermes/validate_hermes_python.py"',
     "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED",
     "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL",
+    'SIDECAR_BIN="${RELEASE_DIR}/sidecar/qintopia-message-sidecar"',
+    'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
+    "reviewed primary sidecar binary is missing",
     "--prepare-artifact",
     "--execute-artifact-create",
     "--apply-artifact-create",
@@ -2933,6 +2943,91 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     );
   }
 }
+const xiaomanActivityReadThroughConfigPath =
+  "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py";
+if (!exists(xiaomanActivityReadThroughConfigPath)) {
+  addError(
+    `${xiaomanActivityReadThroughConfigPath}: missing Xiaoman activity read-through production config script`
+  );
+} else {
+  const config = readText(xiaomanActivityReadThroughConfigPath);
+  const expectedReadThroughKeys = [
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
+    "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
+    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
+  ];
+  for (const fragment of [
+    'SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")',
+    'PROFILE_ENV_PATH = Path("/home/ubuntu/.hermes/profiles/xiaoman/.env")',
+    'RELEASE_CURRENT_PATH = RELEASE_ROOT_PATH / "current"',
+    'LOCK_PATH = Path("/run/qintopia-xiaoman-activity-read-through-config.lock")',
+    'APPLY_APPROVAL = "approved-production-xiaoman-activity-read-through-config-v1"',
+    "expected_sidecar_uid=0",
+    "expected_profile_uid=ubuntu_uid",
+    "expected_profile_gid=ubuntu_gid",
+    "expected_mode=0o640",
+    "expected_mode=0o600",
+    "Xiaoman profile env path must be the fixed production path",
+    "Xiaoman activity Feishu Base token must be explicitly allowlisted",
+    "copied_key_count",
+    "sensitive_values_redacted",
+    "external_calls_executed",
+    "service_changes_executed",
+  ]) {
+    requireFragment(xiaomanActivityReadThroughConfigPath, config, fragment);
+  }
+  for (const key of expectedReadThroughKeys) {
+    requireFragment(xiaomanActivityReadThroughConfigPath, config, `"${key}"`);
+  }
+  const keyBlock = config.match(/READ_THROUGH_KEYS = \([\s\S]*?\n\)/)?.[0] ?? "";
+  const declaredKeys = [...keyBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  if (
+    declaredKeys.length !== expectedReadThroughKeys.length ||
+    declaredKeys.some((key) => !expectedReadThroughKeys.includes(key))
+  ) {
+    addError(
+      `${xiaomanActivityReadThroughConfigPath}: must copy exactly the reviewed Xiaoman activity read-through keys`
+    );
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    "subprocess",
+    "urllib",
+    "requests",
+  ]) {
+    forbidFragment(xiaomanActivityReadThroughConfigPath, config, fragment);
+  }
+}
+const xiaomanActivityReadThroughConfigTestPath =
+  "tools/deploy/test_xiaoman_activity_read_through_production_config_apply.py";
+if (!exists(xiaomanActivityReadThroughConfigTestPath)) {
+  addError(
+    `${xiaomanActivityReadThroughConfigTestPath}: missing Xiaoman activity read-through production config tests`
+  );
+} else {
+  const test = readText(xiaomanActivityReadThroughConfigTestPath);
+  for (const fragment of [
+    "test_apply_copies_only_reviewed_read_through_keys_without_leaking_values",
+    "test_rejects_release_current_mismatch",
+    "test_apply_requires_exact_owner_approval_and_root",
+    "test_rejects_bad_env_metadata_before_mutation",
+    "test_rejects_duplicate_or_unsafe_profile_values",
+    "test_rejects_unallowlisted_token_or_wrong_profile_path",
+  ]) {
+    requireFragment(xiaomanActivityReadThroughConfigTestPath, test, fragment);
+  }
+}
+requireFragment(
+  "package.json",
+  readText("package.json"),
+  "python3 tools/deploy/test_xiaoman_activity_read_through_production_config_apply.py"
+);
 if (exists("deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh")) {
   const legacyCronObservation = readText(
     "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh"

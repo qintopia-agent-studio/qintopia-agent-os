@@ -1400,6 +1400,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
     "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py",
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh",
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",

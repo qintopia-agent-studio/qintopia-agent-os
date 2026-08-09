@@ -720,6 +720,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
     "deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh",
     "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",

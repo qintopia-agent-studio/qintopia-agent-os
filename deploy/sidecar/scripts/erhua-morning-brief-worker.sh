@@ -39,6 +39,7 @@ done
 
 export QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE
 export QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE
+export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"
 
 if [[ "$(basename "$RELEASE_DIR")" != "$QINTOPIA_DEPLOYED_COMMIT_SHA" ]]; then
   fail "release directory does not match deployed commit SHA"
