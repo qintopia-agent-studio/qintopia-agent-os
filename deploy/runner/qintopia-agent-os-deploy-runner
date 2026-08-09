@@ -93,6 +93,7 @@ allowed_scope = {
     "hermes-plugins",
     "hermes-profile-erhua",
     "production-activation",
+    "production-legacy-cron-retirement",
 }
 allowed_runtime_artifact_profiles = {"huabaosi-production", "qiwe-production"}
 allowed_activation_targets = {
@@ -101,6 +102,10 @@ allowed_activation_targets = {
     "xiaoman-weekly-plan-confirmation",
     "xiaoman-weekly-preview",
     "xiaoman-daily-case-report-auto-publish",
+}
+allowed_legacy_cron_retirement_targets = {
+    "erhua-legacy-cron",
+    "xiaoman-legacy-cron",
 }
 allowed_targets = {
     "qintopia-system-services",
@@ -215,6 +220,28 @@ if "production-activation" in release_scope:
 elif data.get("activation") is not None:
     fail("activation metadata is only allowed for production-activation")
 
+if "production-legacy-cron-retirement" in release_scope:
+    if release_scope != ["production-legacy-cron-retirement"]:
+        fail("production-legacy-cron-retirement must be the only release scope")
+    if restart_targets != ["qintopia-system-services"]:
+        fail("production-legacy-cron-retirement requires exactly qintopia-system-services")
+    if data.get("rollback_on_smoke_failure") is not False:
+        fail("production-legacy-cron-retirement requires rollback_on_smoke_failure=false")
+    if data.get("dry_run") is not False:
+        fail("production-legacy-cron-retirement does not support dry_run")
+    retirement = data.get("legacy_cron_retirement")
+    if not isinstance(retirement, dict):
+        fail("production-legacy-cron-retirement requires legacy_cron_retirement metadata")
+    targets = retirement.get("targets")
+    if not isinstance(targets, list) or not targets:
+        fail("legacy_cron_retirement.targets must be a non-empty list")
+    if set(targets) - allowed_legacy_cron_retirement_targets or len(set(targets)) != len(targets):
+        fail("legacy_cron_retirement.targets contains unsupported or duplicate entries")
+    if data.get("profile_dry_run_request_id") is not None:
+        fail("production-legacy-cron-retirement must not set profile_dry_run_request_id")
+elif data.get("legacy_cron_retirement") is not None:
+    fail("legacy_cron_retirement metadata is only allowed for production-legacy-cron-retirement")
+
 for key in ("rollback_on_smoke_failure", "dry_run"):
     if not isinstance(data.get(key), bool):
         fail(f"{key} must be boolean")
@@ -289,6 +316,7 @@ dry_run="$(json_get dry_run)"
 rollback_on_smoke_failure="$(json_get rollback_on_smoke_failure)"
 profile_dry_run_request_id="$(json_get profile_dry_run_request_id)"
 activation_targets="$(json_get activation.targets)"
+legacy_cron_retirement_targets="$(json_get legacy_cron_retirement.targets)"
 if [[ "$force_dry_run" == true ]]; then
   dry_run=true
 fi
@@ -322,7 +350,8 @@ write_result() {
     "${RESULT_DIR}/${request_id}.smoke.json" "${RESULT_DIR}/${request_id}.restore.json" \
     "$release_scope" "$deploy_failure_stage" "$deploy_failure_status" \
     "$promoted_current" "$profile_activation_attempted" \
-    "${RESULT_DIR}/${request_id}.activation.json" <<'PY'
+    "${RESULT_DIR}/${request_id}.activation.json" \
+    "${RESULT_DIR}/${request_id}.legacy-cron-retirement.json" <<'PY'
 import json
 import os
 import sys
@@ -354,7 +383,8 @@ import sys
     promoted_current,
     profile_activation_attempted,
     activation_evidence_path,
-) = sys.argv[1:27]
+    legacy_cron_retirement_evidence_path,
+) = sys.argv[1:28]
 
 runner_check = {
     "name": "deploy-runner",
@@ -424,6 +454,14 @@ if os.path.isfile(activation_evidence_path):
         "status": "passed" if status == "succeeded" else "failed",
         "detail": json.dumps(activation_evidence, separators=(",", ":")),
     })
+if os.path.isfile(legacy_cron_retirement_evidence_path):
+    with open(legacy_cron_retirement_evidence_path, encoding="utf-8") as fh:
+        legacy_cron_retirement_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "production-legacy-cron-retirement",
+        "status": "passed" if status == "succeeded" else "failed",
+        "detail": json.dumps(legacy_cron_retirement_evidence, separators=(",", ":")),
+    })
 if rollback_target:
     result["rollback"]["target"] = rollback_target
 if error:
@@ -472,6 +510,8 @@ assert_current_profile_release() {
 
 activation_release_dir=""
 activation_evidence_file="${RESULT_DIR}/${request_id}.activation.json"
+legacy_cron_retirement_release_dir=""
+legacy_cron_retirement_evidence_file="${RESULT_DIR}/${request_id}.legacy-cron-retirement.json"
 validate_current_activation_release() {
   local current_release=""
   current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
@@ -496,6 +536,61 @@ for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
         raise SystemExit(f"current release manifest {key} mismatch")
 PY
   activation_release_dir="$current_release"
+}
+
+validate_current_retirement_release() {
+  local current_release=""
+  current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -z "$current_release" || ! -d "$current_release" ]]; then
+    echo "current release is unavailable for production legacy cron retirement" >&2
+    return 1
+  fi
+  python3 - "$request_file" "${current_release}/manifest.json" "$current_release" <<'PY'
+import json
+import os
+import sys
+
+request_path, manifest_path, current_release = sys.argv[1:4]
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if os.path.basename(current_release) != request["release_sha"]:
+    raise SystemExit("production legacy cron retirement request must target the current release SHA")
+for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
+    if manifest.get(key) != request.get(key):
+        raise SystemExit(f"current release manifest {key} mismatch")
+PY
+  legacy_cron_retirement_release_dir="$current_release"
+}
+
+write_legacy_cron_retirement_evidence() {
+  local target="$1"
+  local status="$2"
+  local detail="${3:-}"
+  python3 - "$legacy_cron_retirement_evidence_file" "$target" "$status" "$detail" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+path, target, status, detail = sys.argv[1:5]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+if os.path.isfile(path):
+    with open(path, encoding="utf-8") as fh:
+        evidence = json.load(fh)
+else:
+    evidence = {"schema_version": 1, "targets": []}
+evidence["targets"].append({
+    "target": target,
+    "status": status,
+    "detail": detail,
+    "recorded_at": now,
+})
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(evidence, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
 }
 
 write_activation_evidence() {
@@ -559,6 +654,39 @@ observe_xiaoman_legacy_cron() {
   local script_dir="${activation_release_dir}/deploy/sidecar/scripts"
   env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 \
     "${script_dir}/xiaoman-legacy-cron-observation-smoke.sh" >/dev/null
+}
+
+observe_retired_erhua_legacy_cron() {
+  local script_dir="${legacy_cron_retirement_release_dir}/deploy/sidecar/scripts"
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 \
+    "${script_dir}/erhua-legacy-cron-observation-smoke.sh" >/dev/null
+}
+
+observe_retired_xiaoman_legacy_cron() {
+  local script_dir="${legacy_cron_retirement_release_dir}/deploy/sidecar/scripts"
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 \
+    "${script_dir}/xiaoman-legacy-cron-observation-smoke.sh" >/dev/null
+}
+
+run_legacy_cron_retirement_target() {
+  local target="$1"
+  local script_dir="${legacy_cron_retirement_release_dir}/deploy/sidecar/scripts"
+  case "$target" in
+    erhua-legacy-cron)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_LEGACY_CRON_RETIREMENT=approved-production-erhua-legacy-cron-retirement \
+        "${script_dir}/retire-erhua-legacy-cron-production.sh" >/dev/null || return $?
+      observe_retired_erhua_legacy_cron || return $?
+      ;;
+    xiaoman-legacy-cron)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-retirement \
+        "${script_dir}/retire-xiaoman-legacy-cron-production.sh" >/dev/null || return $?
+      observe_retired_xiaoman_legacy_cron || return $?
+      ;;
+    *)
+      echo "unsupported production legacy cron retirement target: ${target}" >&2
+      return 2
+      ;;
+  esac
 }
 
 run_activation_target() {
@@ -642,7 +770,37 @@ run_production_activation() {
   write_result succeeded
 }
 
+run_production_legacy_cron_retirement() {
+  deploy_stage="validate-current-retirement-release"
+  validate_current_retirement_release || return $?
+  rm -f "$legacy_cron_retirement_evidence_file"
+  local retirement_log_dir
+  retirement_log_dir="$(mktemp -d)"
+  IFS=',' read -r -a legacy_cron_retirement_target_list <<< "$legacy_cron_retirement_targets"
+  local target
+  for target in "${legacy_cron_retirement_target_list[@]}"; do
+    deploy_stage="retire-${target}"
+    local target_log="${retirement_log_dir}/${target}.log"
+    if run_legacy_cron_retirement_target "$target" >"$target_log" 2>&1; then
+      write_legacy_cron_retirement_evidence "$target" passed
+    else
+      local status=$?
+      write_legacy_cron_retirement_evidence "$target" failed "$(activation_failure_detail "$status" "$target_log")"
+      rm -rf "$retirement_log_dir"
+      return "$status"
+    fi
+  done
+  rm -rf "$retirement_log_dir"
+  deploy_stage="write-legacy-cron-retirement-success-result"
+  write_result succeeded
+}
+
 run_promotion() {
+  if [[ "$release_scope" == "production-legacy-cron-retirement" ]]; then
+    run_production_legacy_cron_retirement
+    return
+  fi
+
   if [[ "$release_scope" == "production-activation" ]]; then
     run_production_activation
     return

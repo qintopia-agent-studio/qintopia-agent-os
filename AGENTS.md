@@ -56,6 +56,13 @@
   `QINTOPIA_ERHUA_LEGACY_CRON_RETIREMENT=approved-production-erhua-legacy-cron-retirement deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh`
 - Xiaoman legacy Hermes cron reviewed retirement:
   `QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-retirement deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh`
+- Production legacy Hermes cron retirement should use the
+  `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
+  the runner support is deployed. It creates a signed
+  `production-legacy-cron-retirement` deploy-runner request and accepts only these fixed
+  targets: `erhua-legacy-cron` and `xiaoman-legacy-cron`. Retirement is explicit and
+  must not be triggered as an automatic side effect of timer activation or observation
+  failure.
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
@@ -237,10 +244,12 @@
   `xiaoman-daily-case-report-auto-publish`. The activation request does not retire
   legacy cron files, write persistent production config, or promise automatic rollback;
   each selected target requires its owner-approved production config to have been
-  applied first. The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation`
-  target additions are a 2026-08-09 owner-approved fixed-boundary expansion for the
-  Xiaoman weekly minimum loop; they may enable only their own release-managed systemd
-  timers and must not send, publish, write Feishu, call Erhua, or call QiWe.
+  applied first. Legacy cron retirement must be handled through the explicit
+  `production-legacy-cron-retirement` request and evidenced before activation retries.
+  The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation` target
+  additions are a 2026-08-09 owner-approved fixed-boundary expansion for the Xiaoman
+  weekly minimum loop; they may enable only their own release-managed systemd timers and
+  must not send, publish, write Feishu, call Erhua, or call QiWe.
 - Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
   cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
   configured and activated with:

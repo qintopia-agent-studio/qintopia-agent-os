@@ -166,6 +166,12 @@ const profileDryRunRequestId = argValue(
 const activationTargets = splitList(
   argValue("--activation-targets", process.env.DEPLOY_ACTIVATION_TARGETS || "")
 );
+const legacyCronRetirementTargets = splitList(
+  argValue(
+    "--legacy-cron-retirement-targets",
+    process.env.DEPLOY_LEGACY_CRON_RETIREMENT_TARGETS || ""
+  )
+);
 const signingKey = requireValue(
   "DEPLOY_REQUEST_SIGNING_KEY",
   argValue("--signing-key", process.env.DEPLOY_REQUEST_SIGNING_KEY || "")
@@ -220,6 +226,9 @@ if (profileDryRunRequestId) {
 }
 if (activationTargets.length > 0) {
   request.activation = { targets: activationTargets };
+}
+if (legacyCronRetirementTargets.length > 0) {
+  request.legacy_cron_retirement = { targets: legacyCronRetirementTargets };
 }
 
 const signatureMetadata = {
