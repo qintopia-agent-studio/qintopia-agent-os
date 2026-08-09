@@ -37,6 +37,8 @@ CHAT_ID_ENV = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_OUTPUT_WIDTH = 750
 DEFAULT_CASE_LIMIT = 6
+PRODUCTION_PSQL_BIN = "/usr/bin/psql"
+PRODUCTION_PSQL_PATH = "/usr/bin:/bin"
 DEFAULT_SUSPECT_LIMIT = 5
 DEFAULT_HOURLY_BUCKETS = 24
 DEFAULT_WINDOW_HOURS = 24
@@ -45,8 +47,6 @@ DEFAULT_TOP_KEYWORDS = 18
 DEFAULT_IMAGE_FORMAT = "jpeg"
 DEFAULT_JPEG_QUALITY = 92
 TEMPLATE_VERSION = "xiaoman-daily-case-report-v1"
-PSQL_BIN = Path("/usr/bin/psql")
-PSQL_PATH = "/usr/bin:/bin"
 
 STOP_WORDS: set[str] = {
     "这个", "那个", "然后", "就是", "什么", "怎么", "还是", "可以", "今天",
@@ -293,8 +293,8 @@ def _fetch_messages(
 
     try:
         import psycopg
-    except ImportError as exc:
-        return _fetch_messages_with_psql(db_url, chat_id, start, end, exc)
+    except ImportError:
+        return _fetch_messages_with_psql(db_url, chat_id, start, end)
 
     sql = """
         SELECT
@@ -350,7 +350,7 @@ def _psql_env(db_url: str) -> dict[str, str]:
         raise RuntimeError("message store database URL shape is not supported by psql fallback")
 
     env = {
-        "PATH": PSQL_PATH,
+        "PATH": PRODUCTION_PSQL_PATH,
         "PGCONNECT_TIMEOUT": "10",
         "PGDATABASE": database,
         "PGHOST": parsed.hostname,
@@ -370,17 +370,9 @@ def _fetch_messages_with_psql(
     chat_id: str | None,
     start: datetime,
     end: datetime,
-    import_error: ImportError,
 ) -> list[ReportMessage]:
-    if not PSQL_BIN.is_file() or not os.access(PSQL_BIN, os.X_OK):
-        raise RuntimeError(
-            "psycopg is required for database reads and psql fallback is unavailable; "
-            "install one of them or use --fixture/--dry-run"
-        ) from import_error
-
-    sql = """
-        SELECT COALESCE(json_agg(row_to_json(report_rows)), '[]'::json)
-        FROM (
+    sql = r"""
+        WITH selected AS (
             SELECT
                 m.id::text AS id,
                 COALESCE(m.sender_id, '') AS sender_id,
@@ -393,11 +385,16 @@ def _fetch_messages_with_psql(
               AND m.chat_type = 'group'
               AND m.message_kind = 'text'
               AND NULLIF(BTRIM(m.text), '') IS NOT NULL
-              AND COALESCE(m.sent_at, m.received_at) >= :'report_start'::timestamptz
-              AND COALESCE(m.sent_at, m.received_at) < :'report_end'::timestamptz
+              AND COALESCE(m.sent_at, m.received_at) >= :'window_start'::timestamptz
+              AND COALESCE(m.sent_at, m.received_at) < :'window_end'::timestamptz
+              AND (:'chat_id' = '' OR m.chat_id = :'chat_id')
+            ORDER BY COALESCE(m.sent_at, m.received_at) ASC
+        )
+        SELECT COALESCE(json_agg(row_to_json(selected)), '[]'::json)::text
+        FROM selected;
     """
     command = [
-        str(PSQL_BIN),
+        PRODUCTION_PSQL_BIN,
         "--no-psqlrc",
         "--no-align",
         "--tuples-only",
@@ -405,49 +402,51 @@ def _fetch_messages_with_psql(
         "--set",
         "ON_ERROR_STOP=1",
         "--set",
-        f"report_start={start.isoformat()}",
+        f"window_start={start.isoformat()}",
         "--set",
-        f"report_end={end.isoformat()}",
+        f"window_end={end.isoformat()}",
+        "--set",
+        f"chat_id={chat_id or ''}",
     ]
-    if chat_id:
-        sql += " AND m.chat_id = :'chat_id'"
-        command.extend(["--set", f"chat_id={chat_id}"])
-    sql += """
-            ORDER BY COALESCE(m.sent_at, m.received_at) ASC
-        ) report_rows
-    """
     try:
         completed = subprocess.run(
             command,
             input=sql,
             env=_psql_env(db_url),
-            check=True,
             text=True,
             capture_output=True,
             timeout=30,
+            check=False,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError("psql fallback failed to read daily report messages") from exc
-
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"database reads require psycopg or executable {PRODUCTION_PSQL_BIN}"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("message store query timed out") from exc
+    if completed.returncode != 0:
+        raise RuntimeError("message store query failed")
     try:
         rows = json.loads(completed.stdout.strip() or "[]")
     except json.JSONDecodeError as exc:
-        raise RuntimeError("psql fallback returned invalid daily report JSON") from exc
-
+        raise RuntimeError("message store query returned invalid JSON") from exc
     messages: list[ReportMessage] = []
     for row in rows:
-        raw_report_time = row.get("report_time")
         report_time = None
-        if raw_report_time:
-            report_time = datetime.fromisoformat(str(raw_report_time))
+        raw_time = row.get("report_time")
+        if raw_time:
+            try:
+                report_time = datetime.fromisoformat(str(raw_time))
+            except ValueError:
+                report_time = None
         messages.append(
             ReportMessage(
                 id=str(row.get("id", "")),
                 sender_id=str(row.get("sender_id", "")),
-                sender_name=str(row.get("sender_name") or "匿名"),
-                text=str(row.get("text") or ""),
+                sender_name=str(row.get("sender_name", "匿名") or "匿名"),
+                text=str(row.get("text", "")),
                 sent_at=report_time,
-                message_kind=str(row.get("message_kind") or "text"),
+                message_kind=str(row.get("message_kind", "text") or "text"),
             )
         )
     return messages
@@ -1004,18 +1003,257 @@ def _file_url(path: Path) -> str:
     return path.resolve().as_uri()
 
 
-def _render_image(
-    html_path: Path,
+def _font_candidates() -> list[str]:
+    configured = os.environ.get("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_FONT")
+    candidates = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+    ]
+    return ([configured] if configured else []) + candidates
+
+
+def _pil_font(size: int, *, bold: bool = False) -> Any:
+    from PIL import ImageFont
+
+    candidates = _font_candidates()
+    if bold:
+        candidates = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+        ] + candidates
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return ImageFont.truetype(candidate, size=size)
+    return ImageFont.load_default()
+
+
+def _wrap_for_draw(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
+    words = list(text)
+    lines: list[str] = []
+    line = ""
+    for word in words:
+        candidate = line + word
+        if line and draw.textlength(candidate, font=font) > max_width:
+            lines.append(line)
+            line = word
+        else:
+            line = candidate
+    if line:
+        lines.append(line)
+    return lines or [""]
+
+
+def _draw_wrapped_text(
+    draw: Any,
+    xy: tuple[int, int],
+    text: str,
+    font: Any,
+    fill: str,
+    max_width: int,
+    *,
+    line_gap: int = 8,
+    max_lines: int | None = None,
+) -> int:
+    x, y = xy
+    lines = _wrap_for_draw(draw, text, font, max_width)
+    if max_lines is not None and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip("，。；、 ") + "..."
+    line_height = int(font.size * 1.35) if hasattr(font, "size") else 24
+    for line in lines:
+        draw.text((x, y), line, font=font, fill=fill)
+        y += line_height + line_gap
+    return y
+
+
+def _draw_card(
+    draw: Any,
+    box: tuple[int, int, int, int],
+    fill: str,
+    outline: str = "#d8c7a2",
+) -> None:
+    draw.rounded_rectangle(box, radius=18, fill=fill, outline=outline, width=2)
+
+
+def _render_image_with_pillow(
+    report: ReportData,
     output_path: Path,
     width: int,
     image_format: str,
 ) -> None:
     try:
-        from playwright.sync_api import sync_playwright
+        from PIL import Image, ImageDraw
     except ImportError as exc:
         raise RuntimeError(
-            "playwright is required for image rendering; install it or use --render html"
+            "image rendering requires playwright or Pillow; use --render html only for non-production debugging"
         ) from exc
+
+    scale = 2
+    canvas_width = width * scale
+    padding = 44 * scale
+    gutter = 16 * scale
+    content_width = canvas_width - padding * 2
+    image = Image.new("RGB", (canvas_width, 6200), "#f7f1df")
+    draw = ImageDraw.Draw(image)
+
+    title_font = _pil_font(42 * scale, bold=True)
+    h2_font = _pil_font(22 * scale, bold=True)
+    body_font = _pil_font(17 * scale)
+    small_font = _pil_font(13 * scale)
+    mono_font = _pil_font(15 * scale)
+
+    y = padding
+    draw.rectangle((0, 0, canvas_width, 18 * scale), fill="#1f2937")
+    draw.text((padding, y), report.report_title, font=title_font, fill="#111827")
+    y += 56 * scale
+    draw.text((padding, y), report.group_name, font=h2_font, fill="#374151")
+    y += 34 * scale
+    draw.text((padding, y), f"{report.report_date} / {report.time_range}", font=body_font, fill="#6b7280")
+    y += 46 * scale
+
+    stats = [
+        ("消息", report.message_count),
+        ("活跃", report.participant_count),
+        ("案件", report.case_count),
+        ("嫌疑人", report.suspect_count),
+    ]
+    stat_width = (content_width - gutter * 3) // 4
+    for index, (label, value) in enumerate(stats):
+        x = padding + index * (stat_width + gutter)
+        _draw_card(draw, (x, y, x + stat_width, y + 106 * scale), "#fffaf0")
+        draw.text((x + 18 * scale, y + 16 * scale), label, font=small_font, fill="#6b7280")
+        draw.text((x + 18 * scale, y + 48 * scale), str(value), font=h2_font, fill="#111827")
+    y += 132 * scale
+
+    _draw_card(draw, (padding, y, padding + content_width, y + 128 * scale), "#111827", "#111827")
+    draw.text((padding + 24 * scale, y + 22 * scale), "今日高亮", font=h2_font, fill="#fbbf24")
+    _draw_wrapped_text(
+        draw,
+        (padding + 24 * scale, y + 62 * scale),
+        report.highlight,
+        body_font,
+        "#f9fafb",
+        content_width - 48 * scale,
+        max_lines=2,
+    )
+    y += 154 * scale
+
+    draw.text((padding, y), "24H 时间线", font=h2_font, fill="#111827")
+    y += 42 * scale
+    max_count = max(report.hourly_counts or [0]) or 1
+    bar_gap = 5 * scale
+    bar_width = max(4 * scale, (content_width - bar_gap * 23) // 24)
+    base_y = y + 72 * scale
+    for index, count in enumerate(report.hourly_counts[:24]):
+        height = int((count / max_count) * 72 * scale)
+        x = padding + index * (bar_width + bar_gap)
+        draw.rounded_rectangle(
+            (x, base_y - height, x + bar_width, base_y),
+            radius=4 * scale,
+            fill="#f97316" if count else "#d6d3d1",
+        )
+    y = base_y + 48 * scale
+
+    draw.text((padding, y), "今日话题", font=h2_font, fill="#111827")
+    y += 42 * scale
+    cases = report.cases[:DEFAULT_CASE_LIMIT]
+    if not cases:
+        _draw_card(draw, (padding, y, padding + content_width, y + 96 * scale), "#fffaf0")
+        draw.text((padding + 22 * scale, y + 30 * scale), "过去 24 小时暂无可归档案件。", font=body_font, fill="#6b7280")
+        y += 120 * scale
+    for case in cases:
+        card_top = y
+        card_height = 190 * scale
+        _draw_card(draw, (padding, card_top, padding + content_width, card_top + card_height), case.color_bg)
+        draw.text((padding + 20 * scale, y + 18 * scale), case.case_no, font=small_font, fill=case.color_text)
+        draw.text((padding + 138 * scale, y + 16 * scale), case.time_label, font=small_font, fill="#6b7280")
+        y += 48 * scale
+        y = _draw_wrapped_text(
+            draw,
+            (padding + 20 * scale, y),
+            case.title,
+            h2_font,
+            case.color_text,
+            content_width - 40 * scale,
+            max_lines=1,
+        )
+        y = _draw_wrapped_text(
+            draw,
+            (padding + 20 * scale, y + 2 * scale),
+            case.summary,
+            body_font,
+            "#374151",
+            content_width - 40 * scale,
+            max_lines=2,
+        )
+        meta = f"{case.message_count} 条消息 / {case.participant_count} 人参与 / 高频发言：{case.top_speaker}"
+        draw.text((padding + 20 * scale, card_top + card_height - 34 * scale), meta, font=small_font, fill="#6b7280")
+        y = card_top + card_height + 18 * scale
+
+    draw.text((padding, y), "活跃之星", font=h2_font, fill="#111827")
+    y += 42 * scale
+    if not report.suspects:
+        draw.text((padding, y), "暂无发言榜。", font=body_font, fill="#6b7280")
+        y += 44 * scale
+    for suspect in report.suspects[:DEFAULT_SUSPECT_LIMIT]:
+        _draw_card(draw, (padding, y, padding + content_width, y + 66 * scale), "#ffffff")
+        draw.text((padding + 20 * scale, y + 18 * scale), f"#{suspect.rank}", font=mono_font, fill="#f97316")
+        draw.text((padding + 92 * scale, y + 16 * scale), suspect.name, font=body_font, fill="#111827")
+        draw.text(
+            (padding + content_width - 230 * scale, y + 18 * scale),
+            f"{suspect.message_count} 条 / {suspect.word_count} 字",
+            font=small_font,
+            fill="#6b7280",
+        )
+        y += 78 * scale
+
+    y += 14 * scale
+    draw.line((padding, y, padding + content_width, y), fill="#d8c7a2", width=2)
+    y += 24 * scale
+    y = _draw_wrapped_text(draw, (padding, y), f"“{report.quote}”", body_font, "#475569", content_width, max_lines=2)
+    y += 14 * scale
+    draw.text((padding, y), "本报告由小满自动整理群聊生成 · AgentOS 自动发布版", font=small_font, fill="#94a3b8")
+    y += padding
+
+    cropped = image.crop((0, 0, canvas_width, min(y, image.height)))
+    save_kwargs: dict[str, Any] = {}
+    if image_format == "jpeg":
+        save_kwargs["quality"] = DEFAULT_JPEG_QUALITY
+        save_kwargs["optimize"] = True
+        save_format = "JPEG"
+    else:
+        save_format = "PNG"
+    cropped.save(output_path, format=save_format, **save_kwargs)
+
+
+def _render_image(
+    html_path: Path,
+    output_path: Path,
+    width: int,
+    image_format: str,
+    report: ReportData | None = None,
+) -> None:
+    try:
+        _render_image_with_playwright(html_path, output_path, width, image_format)
+    except Exception as exc:
+        if report is not None:
+            _render_image_with_pillow(report, output_path, width, image_format)
+            return
+        raise RuntimeError(
+            "image rendering requires playwright or a report object for Pillow fallback"
+        ) from exc
+
+
+def _render_image_with_playwright(
+    html_path: Path,
+    output_path: Path,
+    width: int,
+    image_format: str,
+) -> None:
+    from playwright.sync_api import sync_playwright
 
     screenshot_options: dict[str, Any] = {
         "path": str(output_path),
@@ -1199,7 +1437,13 @@ def main() -> int:
     try:
         if args.render in ("auto", "image", "png"):
             try:
-                _render_image(html_path, image_path, args.output_width, args.image_format)
+                _render_image(
+                    html_path,
+                    image_path,
+                    args.output_width,
+                    args.image_format,
+                    report,
+                )
                 image_generated = True
             except RuntimeError as exc:
                 print(f"WARN: image rendering skipped: {exc}", file=sys.stderr)

@@ -78,9 +78,9 @@ This mode treats the HTML file as the deliverable and keeps it on disk.
 python workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render image
 ```
 
-Image rendering requires Playwright and Chromium from a reviewed repository/runtime
-package boundary. Do not install them manually on production servers; keep production
-activation blocked until that dependency path is reviewed.
+Image rendering prefers Playwright when the reviewed runtime already provides it, and
+falls back to the local Pillow renderer with system fonts when browser binaries are not
+available. Do not install Python packages or browsers manually on production servers.
 
 JPEG is the default image encoding because the governed QiWe image-send boundary uses
 JPG identity. Use `--image-format png` only for local debugging.
@@ -158,12 +158,14 @@ media upload values. The systemd timer is rendered as
   can contain real member names and message excerpts, so it is written only into a
   `0700` output directory as a `0600` file and is removed after image rendering or
   failure.
-- Production database read-through prefers `psycopg` and falls back only to fixed
-  `/usr/bin/psql` with a minimal `PATH`, without putting the database URL in process
-  arguments. The fallback feeds SQL through stdin so `psql` variable substitution is
-  applied. Production JPEG rendering still requires Playwright and Chromium to be
-  present through a reviewed runtime packaging path; hand-installed Python packages or
-  browsers are outside the approved production boundary for this draft.
+- Production JPEG/database runs use fixed local runtime tools only. Database
+  read-through prefers `psycopg` when already present and otherwise falls back to the
+  reviewed `/usr/bin/psql` boundary without placing the database URL in command
+  arguments, with a minimal `PATH`, `PG*` connection fields, and SQL on stdin so `psql`
+  variable substitution is applied. Image rendering prefers Python Playwright when
+  available and otherwise uses the system Pillow renderer plus system fonts.
+  Hand-installed Python packages or browsers remain outside the approved production
+  boundary.
 - The automatic publisher uses the dedicated `xiaoman.daily_case_report_auto_publish`
   capability and `review_policy=automatic_publish`; only
   `workflow_type=daily_case_report` may bypass per-day human final confirmation.
