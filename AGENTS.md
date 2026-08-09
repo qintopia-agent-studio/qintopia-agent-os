@@ -236,6 +236,11 @@
   `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+- The Xiaoman daily case-report worker uploads through the Huabaosi Feishu primary
+  storage boundary. Its systemd `ExecStart` must bind
+  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}` at the release exec
+  boundary alongside `QINTOPIA_DEPLOYED_COMMIT_SHA`; do not rely on stale persistent env
+  release keys from `/etc/qintopia/message-sidecar.env`.
 - The Xiaoman daily case-report production host does not provide Python `psycopg`,
   Python Playwright, or a Playwright browser binary by default. The reviewed production
   path must keep the fixed `/usr/bin/psql` database fallback and system Pillow renderer
