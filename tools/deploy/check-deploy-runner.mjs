@@ -49,6 +49,7 @@ const hasDangerousInputInterpolationInRun = (workflowText) => {
 const requiredFiles = [
   ".github/workflows/deploy-production.yml",
   ".github/workflows/rollback-production.yml",
+  ".github/workflows/activate-production-timers.yml",
   "deploy/runner/README.md",
   "deploy/runner/manifest.yaml",
   "deploy/runner/deploy-request.schema.json",
@@ -81,6 +82,7 @@ const requiredFiles = [
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
+  "tools/deploy/test-production-timer-activation-runner.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
   "tools/deploy/test-promote-release-tree.mjs",
@@ -92,6 +94,7 @@ const requiredFiles = [
   "tools/deploy/test-erhua-morning-brief-production-activation.mjs",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
+  "docs/operations/production-timer-activation-runbook.md",
 ];
 
 for (const file of requiredFiles) {
@@ -313,6 +316,51 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     })
   ) {
     addError("deploy request schema must bind profile activation to a dry-run request");
+  }
+  const productionActivationRequest = {
+    ...sampleRequest,
+    release_scope: ["production-activation"],
+    restart_targets: ["qintopia-system-services"],
+    dry_run: false,
+    rollback_on_smoke_failure: false,
+    activation: {
+      targets: ["erhua-morning-brief", "xiaoman-weekly-preview"],
+    },
+  };
+  if (!validateRequest(productionActivationRequest)) {
+    addError(
+      `deploy request schema must accept fixed production activation requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
+  for (const badRequest of [
+    { ...sampleRequest, activation: { targets: ["erhua-morning-brief"] } },
+    {
+      ...productionActivationRequest,
+      release_scope: ["production-activation", "deploy-bundle"],
+    },
+    {
+      ...productionActivationRequest,
+      restart_targets: ["hermes-xiaoman"],
+    },
+    { ...productionActivationRequest, dry_run: true },
+    { ...productionActivationRequest, rollback_on_smoke_failure: true },
+    {
+      ...productionActivationRequest,
+      activation: { targets: ["erhua-morning-brief", "erhua-morning-brief"] },
+    },
+    {
+      ...productionActivationRequest,
+      activation: { targets: ["unknown-target"] },
+    },
+  ]) {
+    if (validateRequest(badRequest)) {
+      addError(
+        "deploy request schema must reject unsafe production activation variants"
+      );
+      break;
+    }
   }
 }
 
@@ -724,6 +772,95 @@ exit 2`;
   }
 }
 
+if (exists(".github/workflows/activate-production-timers.yml")) {
+  const workflow = YAML.parse(
+    readText(".github/workflows/activate-production-timers.yml")
+  );
+  const workflowText = readText(".github/workflows/activate-production-timers.yml");
+  const job = workflow?.jobs?.["request-activation"];
+  const activationTargetsInput =
+    workflow?.on?.workflow_dispatch?.inputs?.activation_targets;
+  const releaseShaInput = workflow?.on?.workflow_dispatch?.inputs?.release_sha;
+
+  if (!workflow?.on?.workflow_dispatch) {
+    addError(
+      ".github/workflows/activate-production-timers.yml: must use workflow_dispatch"
+    );
+  }
+  if (workflow?.concurrency?.group !== "production-deploy") {
+    addError(
+      ".github/workflows/activate-production-timers.yml: must share production-deploy concurrency"
+    );
+  }
+  if (job?.environment !== "production") {
+    addError(
+      ".github/workflows/activate-production-timers.yml: request-activation must use production environment"
+    );
+  }
+  if (job?.permissions?.contents !== "read") {
+    addError(
+      ".github/workflows/activate-production-timers.yml: request-activation must keep contents permission read-only"
+    );
+  }
+  if (releaseShaInput?.required !== true || releaseShaInput?.type !== "string") {
+    addError(
+      ".github/workflows/activate-production-timers.yml: release_sha must be a required string input"
+    );
+  }
+  if (
+    activationTargetsInput?.default !== "erhua-morning-brief,xiaoman-weekly-preview"
+  ) {
+    addError(
+      ".github/workflows/activate-production-timers.yml: default activation targets must stay limited to Erhua and weekly preview"
+    );
+  }
+  const uploadJobNames = Object.entries(workflow?.jobs || {})
+    .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
+    .map(([jobName]) => jobName);
+  if (uploadJobNames.length !== 0) {
+    addError(
+      ".github/workflows/activate-production-timers.yml: timer activation must not require contents: write"
+    );
+  }
+  if (hasDangerousInputInterpolationInRun(workflowText)) {
+    addError(
+      ".github/workflows/activate-production-timers.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
+    );
+  }
+  for (const forbidden of ["ssh ", "bash -c", "eval ", "gh release upload"]) {
+    if (workflowText.includes(forbidden)) {
+      addError(
+        `.github/workflows/activate-production-timers.yml: forbidden ${forbidden}`
+      );
+    }
+  }
+  for (const fragment of [
+    "Activate Production Timers",
+    "ref: master",
+    "require_single_line()",
+    "normalize_csv_allowlist()",
+    "release_sha must be a lowercase 40-character git SHA.",
+    "git merge-base --is-ancestor",
+    "erhua-morning-brief,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish",
+    "pnpm deploy:runner:check",
+    "DEPLOY_RELEASE_SCOPE: production-activation",
+    "DEPLOY_RESTART_TARGETS: qintopia-system-services",
+    'DEPLOY_DRY_RUN: "false"',
+    'DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"',
+    "DEPLOY_ACTIVATION_TARGETS",
+    "DEPLOY_REQUEST_SIGNING_KEY",
+    "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "create-deploy-request.mjs",
+    "upload-deploy-request.sh",
+    "wait-deploy-result.sh",
+    "WAIT_FOR_SERVER_DEPLOY_RESULT",
+  ]) {
+    if (!workflowText.includes(fragment)) {
+      addError(`.github/workflows/activate-production-timers.yml: missing ${fragment}`);
+    }
+  }
+}
+
 const runnerText = exists("deploy/runner/qintopia-agent-os-deploy-runner")
   ? readText("deploy/runner/qintopia-agent-os-deploy-runner")
   : "";
@@ -777,6 +914,18 @@ for (const fragment of [
   "rollback failed",
   "rollback succeeded",
   "hermes-profile-erhua requires exactly hermes-erhua",
+  "production-activation must be the only release scope",
+  "production-activation requires exactly qintopia-system-services",
+  "production-activation requires rollback_on_smoke_failure=false",
+  "activation metadata is only allowed for production-activation",
+  "validate_current_activation_release",
+  "observe_erhua_legacy_cron",
+  "observe_xiaoman_legacy_cron",
+  "run_production_activation",
+  "production-timer-activation",
+  "activate-erhua-morning-brief-production.sh",
+  "activate-xiaoman-weekly-preview-production.sh",
+  "activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "validate_current_profile_release",
   "activate-erhua-profile.sh",
   "rollback-erhua-profile.sh",
@@ -1254,6 +1403,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-promotion.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-production-timer-activation-runner.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-promote-release-tree.mjs"], {

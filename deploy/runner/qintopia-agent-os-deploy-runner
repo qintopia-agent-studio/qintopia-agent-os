@@ -87,8 +87,19 @@ import sys
 from datetime import datetime, timezone
 
 path = sys.argv[1]
-allowed_scope = {"sidecar-runtime", "deploy-bundle", "hermes-plugins", "hermes-profile-erhua"}
+allowed_scope = {
+    "sidecar-runtime",
+    "deploy-bundle",
+    "hermes-plugins",
+    "hermes-profile-erhua",
+    "production-activation",
+}
 allowed_runtime_artifact_profiles = {"huabaosi-production", "qiwe-production"}
+allowed_activation_targets = {
+    "erhua-morning-brief",
+    "xiaoman-weekly-preview",
+    "xiaoman-daily-case-report-auto-publish",
+}
 allowed_targets = {
     "qintopia-system-services",
     "hermes-erhua",
@@ -180,6 +191,27 @@ if "hermes-profile-erhua" in release_scope:
             fail("non-dry-run Erhua profile activation requires profile_dry_run_request_id")
     elif dry_run_reference is not None:
         fail("dry-run Erhua profile request must not set profile_dry_run_request_id")
+if "production-activation" in release_scope:
+    if release_scope != ["production-activation"]:
+        fail("production-activation must be the only release scope")
+    if restart_targets != ["qintopia-system-services"]:
+        fail("production-activation requires exactly qintopia-system-services")
+    if data.get("rollback_on_smoke_failure") is not False:
+        fail("production-activation requires rollback_on_smoke_failure=false")
+    if data.get("dry_run") is not False:
+        fail("production-activation does not support dry_run")
+    activation = data.get("activation")
+    if not isinstance(activation, dict):
+        fail("production-activation requires activation metadata")
+    targets = activation.get("targets")
+    if not isinstance(targets, list) or not targets:
+        fail("activation.targets must be a non-empty list")
+    if set(targets) - allowed_activation_targets or len(set(targets)) != len(targets):
+        fail("activation.targets contains unsupported or duplicate entries")
+    if data.get("profile_dry_run_request_id") is not None:
+        fail("production-activation must not set profile_dry_run_request_id")
+elif data.get("activation") is not None:
+    fail("activation metadata is only allowed for production-activation")
 
 for key in ("rollback_on_smoke_failure", "dry_run"):
     if not isinstance(data.get(key), bool):
@@ -254,6 +286,7 @@ restart_targets="$(json_get restart_targets)"
 dry_run="$(json_get dry_run)"
 rollback_on_smoke_failure="$(json_get rollback_on_smoke_failure)"
 profile_dry_run_request_id="$(json_get profile_dry_run_request_id)"
+activation_targets="$(json_get activation.targets)"
 if [[ "$force_dry_run" == true ]]; then
   dry_run=true
 fi
@@ -286,7 +319,8 @@ write_result() {
     "$rollback_status" "$rollback_target" "${RESULT_DIR}/${request_id}.profile.json" \
     "${RESULT_DIR}/${request_id}.smoke.json" "${RESULT_DIR}/${request_id}.restore.json" \
     "$release_scope" "$deploy_failure_stage" "$deploy_failure_status" \
-    "$promoted_current" "$profile_activation_attempted" <<'PY'
+    "$promoted_current" "$profile_activation_attempted" \
+    "${RESULT_DIR}/${request_id}.activation.json" <<'PY'
 import json
 import os
 import sys
@@ -317,7 +351,8 @@ import sys
     deploy_failure_status,
     promoted_current,
     profile_activation_attempted,
-) = sys.argv[1:26]
+    activation_evidence_path,
+) = sys.argv[1:27]
 
 runner_check = {
     "name": "deploy-runner",
@@ -379,6 +414,14 @@ if status == "rolled_back" and os.path.isfile(restore_evidence_path):
         "status": "passed" if restore_evidence.get("phase") == "restored" else "failed",
         "detail": json.dumps(restore_evidence, separators=(",", ":")),
     })
+if os.path.isfile(activation_evidence_path):
+    with open(activation_evidence_path, encoding="utf-8") as fh:
+        activation_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "production-timer-activation",
+        "status": "passed" if status == "succeeded" else "failed",
+        "detail": json.dumps(activation_evidence, separators=(",", ":")),
+    })
 if rollback_target:
     result["rollback"]["target"] = rollback_target
 if error:
@@ -425,7 +468,137 @@ assert_current_profile_release() {
   fi
 }
 
+activation_release_dir=""
+activation_evidence_file="${RESULT_DIR}/${request_id}.activation.json"
+validate_current_activation_release() {
+  local current_release=""
+  current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -z "$current_release" || ! -d "$current_release" ]]; then
+    echo "current release is unavailable for production timer activation" >&2
+    return 1
+  fi
+  python3 - "$request_file" "${current_release}/manifest.json" "$current_release" <<'PY'
+import json
+import os
+import sys
+
+request_path, manifest_path, current_release = sys.argv[1:4]
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if os.path.basename(current_release) != request["release_sha"]:
+    raise SystemExit("production activation request must target the current release SHA")
+for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
+    if manifest.get(key) != request.get(key):
+        raise SystemExit(f"current release manifest {key} mismatch")
+PY
+  activation_release_dir="$current_release"
+}
+
+write_activation_evidence() {
+  local target="$1"
+  local status="$2"
+  local detail="${3:-}"
+  python3 - "$activation_evidence_file" "$target" "$status" "$detail" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+path, target, status, detail = sys.argv[1:5]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+if os.path.isfile(path):
+    with open(path, encoding="utf-8") as fh:
+        evidence = json.load(fh)
+else:
+    evidence = {"schema_version": 1, "targets": []}
+evidence["targets"].append({
+    "target": target,
+    "status": status,
+    "detail": detail,
+    "recorded_at": now,
+})
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(evidence, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
+
+observe_erhua_legacy_cron() {
+  local script_dir="${activation_release_dir}/deploy/sidecar/scripts"
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 \
+    "${script_dir}/erhua-legacy-cron-observation-smoke.sh" >/dev/null
+}
+
+observe_xiaoman_legacy_cron() {
+  local script_dir="${activation_release_dir}/deploy/sidecar/scripts"
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 \
+    "${script_dir}/xiaoman-legacy-cron-observation-smoke.sh" >/dev/null
+}
+
+run_activation_target() {
+  local target="$1"
+  local script_dir="${activation_release_dir}/deploy/sidecar/scripts"
+  case "$target" in
+    erhua-morning-brief)
+      observe_erhua_legacy_cron
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief \
+        "${script_dir}/activate-erhua-morning-brief-production.sh" >/dev/null
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 \
+        QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=enabled \
+        "${script_dir}/erhua-morning-brief-timer-observation-smoke.sh" >/dev/null
+      ;;
+    xiaoman-weekly-preview)
+      observe_xiaoman_legacy_cron
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-preview \
+        QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA="$release_sha" \
+        "${script_dir}/activate-xiaoman-weekly-preview-production.sh" >/dev/null
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE=1 \
+        QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=enabled \
+        QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA="$release_sha" \
+        "${script_dir}/xiaoman-weekly-preview-production-observation-smoke.sh" >/dev/null
+      ;;
+    xiaoman-daily-case-report-auto-publish)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_ACTIVATION=approved-production-xiaoman-daily-case-report-auto-publish \
+        "${script_dir}/activate-xiaoman-daily-case-report-auto-publish-production.sh" >/dev/null
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_OBSERVATION_ENABLE=1 \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=enabled \
+        "${script_dir}/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh" >/dev/null
+      ;;
+    *)
+      echo "unsupported production activation target: ${target}" >&2
+      return 2
+      ;;
+  esac
+}
+
+run_production_activation() {
+  deploy_stage="validate-current-activation-release"
+  validate_current_activation_release || return $?
+  rm -f "$activation_evidence_file"
+  IFS=',' read -r -a activation_target_list <<< "$activation_targets"
+  local target
+  for target in "${activation_target_list[@]}"; do
+    deploy_stage="activate-${target}"
+    if run_activation_target "$target"; then
+      write_activation_evidence "$target" passed
+    else
+      local status=$?
+      write_activation_evidence "$target" failed "exit ${status}"
+      return "$status"
+    fi
+  done
+  deploy_stage="write-activation-success-result"
+  write_result succeeded
+}
+
 run_promotion() {
+  if [[ "$release_scope" == "production-activation" ]]; then
+    run_production_activation
+    return
+  fi
+
   if [[ "$release_scope" == "hermes-profile-erhua" ]]; then
     deploy_stage="validate-current-profile-release"
     validate_current_profile_release || return $?
