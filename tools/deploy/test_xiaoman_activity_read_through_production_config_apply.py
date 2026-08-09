@@ -57,18 +57,25 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         profile_path: str | None = None,
     ) -> str:
         profile_path = profile_path or str(self.profile_env)
-        base_token_key = MODULE.READ_THROUGH_KEYS[0]
-        allowed_tokens_key = MODULE.READ_THROUGH_KEYS[1]
-        plan_table_key = MODULE.READ_THROUGH_KEYS[2]
-        occurrence_table_key = MODULE.READ_THROUGH_KEYS[3]
-        profile_path_key = MODULE.READ_THROUGH_KEYS[4]
         return "\n".join(
             [
-                self.env_line(base_token_key, token),
-                self.env_line(allowed_tokens_key, allowed_tokens),
-                self.env_line(plan_table_key, "plan-table-alpha"),
-                self.env_line(occurrence_table_key, "occurrence-table-alpha"),
-                self.env_line(profile_path_key, profile_path),
+                self.env_line("QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN", token),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
+                    allowed_tokens,
+                ),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
+                    "plan-table-alpha",
+                ),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
+                    "occurrence-table-alpha",
+                ),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
+                    profile_path,
+                ),
                 "EXTRA_PROFILE_ONLY=profile-only-value",
                 "",
             ]

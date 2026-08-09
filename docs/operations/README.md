@@ -47,7 +47,9 @@ deployment docs.
 - Xiaoman activity read-through production config is applied through the release-local
   `deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py`
   allowlist copier before release-managed Erhua or weekly-preview workers are manually
-  exercised in production.
+  exercised in production. Feishu Base mode must be enabled with
+  `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`; otherwise the read-through wrapper
+  omits `--use-feishu-base` and no live activity records are read.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):

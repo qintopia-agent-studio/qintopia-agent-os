@@ -60,6 +60,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 require_env_line "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED" "1"
 require_env_line "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL" "approved-production-xiaoman-weekly-preview"
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
+require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
 
