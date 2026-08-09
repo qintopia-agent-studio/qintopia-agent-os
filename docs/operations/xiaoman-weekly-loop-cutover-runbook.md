@@ -7,6 +7,15 @@ plan-confirmation timers for the Xiaoman weekly activity loop. Both timers produ
 operations-review drafts only; they do not send, publish, write Feishu, call Erhua, or
 call QiWe.
 
+## Production Boundary
+
+On 2026-08-09 the owner approved adding `xiaoman-weekly-recruitment` and
+`xiaoman-weekly-plan-confirmation` to the fixed `production-activation` target allowlist
+so the weekly minimum loop can be enabled through the reviewed GitHub Actions plus
+deploy-runner path. This expands only the selectable timer targets; it does not allow
+caller-provided shell, runtime values, automatic legacy cron retirement, automatic
+rollback, direct sending, Feishu writes, Erhua handoff, or QiWe calls.
+
 ## Timers
 
 | Step                 | Unit                                                      | Schedule       |

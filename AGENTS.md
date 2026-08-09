@@ -230,7 +230,10 @@
   `xiaoman-daily-case-report-auto-publish`. The activation request does not retire
   legacy cron files, write persistent production config, or promise automatic rollback;
   each selected target requires its owner-approved production config to have been
-  applied first.
+  applied first. The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation`
+  target additions are a 2026-08-09 owner-approved fixed-boundary expansion for the
+  Xiaoman weekly minimum loop; they may enable only their own release-managed systemd
+  timers and must not send, publish, write Feishu, call Erhua, or call QiWe.
 - Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
   cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
   configured and activated with:
