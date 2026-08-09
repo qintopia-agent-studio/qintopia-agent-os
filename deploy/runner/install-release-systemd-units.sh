@@ -186,6 +186,8 @@ unit_files=(
   qintopia-agentos-qiwe-image-send-worker.timer
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.service
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer
+  qintopia-agentos-erhua-morning-brief.service
+  qintopia-agentos-erhua-morning-brief.timer
 )
 
 mkdir -p "$unit_dir"

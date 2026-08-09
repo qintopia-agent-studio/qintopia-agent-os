@@ -86,6 +86,8 @@ const requiredFiles = [
   "tools/deploy/test-promote-release-tree.mjs",
   "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
   "tools/deploy/test-release-systemd-install.mjs",
+  "tools/deploy/test-erhua-legacy-cron-observation.mjs",
+  "tools/deploy/test-erhua-morning-brief-production-activation.mjs",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
 ];
@@ -1214,6 +1216,15 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/rollback-erhua-profile.sh"], {
     cwd: repoRoot,
   });
+  for (const scriptPath of [
+    "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+    "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+    "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+    "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+  ]) {
+    execFileSync("bash", ["-n", scriptPath], { cwd: repoRoot });
+  }
   execFileSync("bash", ["-n", "deploy/runner/wait-deploy-result.sh"], {
     cwd: repoRoot,
   });
@@ -1253,6 +1264,14 @@ try {
   execFileSync("node", ["tools/deploy/test-release-systemd-install.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync("node", ["tools/deploy/test-erhua-legacy-cron-observation.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync(
+    "node",
+    ["tools/deploy/test-erhua-morning-brief-production-activation.mjs"],
+    { cwd: repoRoot }
+  );
   execFileSync(
     "node",
     ["tools/deploy/test-staging-runtime-prerequisite-observation.mjs"],
@@ -1362,6 +1381,11 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/qiwe-image-send-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
+    "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+    "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+    "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+    "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
@@ -1375,6 +1399,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
     "agents/xiaoman/profile-bundle",
     "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
+    "workflows/erhua-morning-brief",
   ]) {
     if (!builder.includes(fragment)) {
       addError(`tools/deploy/build-deploy-bundle.mjs: must package ${fragment}`);
@@ -1404,6 +1429,8 @@ if (exists("deploy/runner/install-release-systemd-units.sh")) {
     "qintopia-agentos-xiaoman-activity-promotion-starter-worker.timer",
     "qintopia-agentos-xiaoman-activity-image-generation-starter-worker.timer",
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer",
+    "qintopia-agentos-erhua-morning-brief.service",
+    "qintopia-agentos-erhua-morning-brief.timer",
     "qintopia-agentos-operations-intake.service",
     "qintopia-agentos-xiaoman-poster-notification-starter.service",
     "qintopia-agentos-xiaoman-poster-notification-starter.timer",
@@ -1474,6 +1501,10 @@ if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
     "xiaoman-feishu-poster-preflight --conversation-scope group",
     'grep -F " ${QIWE_BIN} "',
     'grep -F " ${BIN} "',
+    "qintopia-agentos-erhua-morning-brief.service",
+    "qintopia-agentos-erhua-morning-brief.timer",
+    "erhua-morning-brief-worker.sh",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python",
   ]) {
     if (!renderer.includes(fragment)) {
       addError(`release systemd renderer is missing ${fragment}`);

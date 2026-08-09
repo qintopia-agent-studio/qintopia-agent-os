@@ -32,6 +32,9 @@ deployment docs.
 - [xiaoman-weekly-minimum-loop-runbook.md](xiaoman-weekly-minimum-loop-runbook.md):
   2026-08-01 Xiaoman three-step weekly operations loop status and action content for the
   Sunday 20:00 plan confirmation plus the pending next-week preview configuration.
+- [erhua-morning-brief-production-activation-runbook.md](erhua-morning-brief-production-activation-runbook.md):
+  release-managed Erhua morning brief timer activation, observation, and rollback for
+  the reviewed 08:05 text artifact workflow.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):

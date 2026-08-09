@@ -48,6 +48,15 @@
 - Local PR auto tier: `pnpm check:pr:auto`
 - Erhua morning brief fixture test:
   `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/erhua-morning-brief/tests -v`
+- Erhua morning brief production timer observation:
+  `QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh`
+- Erhua legacy Hermes cron observation:
+  `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
+- Erhua morning brief production activation after Release promotion and reviewed
+  persistent env approval:
+  `QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh`
+- Erhua morning brief production rollback after persistent env disables the timer:
+  `QINTOPIA_ERHUA_MORNING_BRIEF_ROLLBACK=approved-production-erhua-morning-brief-rollback deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh`
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
 - Release Please PR manual CI validation:
   `gh workflow run ci.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`

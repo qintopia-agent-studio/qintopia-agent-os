@@ -204,8 +204,12 @@ channel manually after the AgentOS evidence steps.
 
 ## Production Activation
 
-Merging this workflow does not install a morning timer or send to a group. Activation
-needs a separate owner-approved deploy change that:
+The release deploy bundle includes this workflow and the release-local activation
+scripts under `deploy/sidecar/scripts/`. The systemd renderer installs the timer
+disabled; activation still requires an explicit owner command and reviewed persistent
+runtime values.
+
+The reviewed production shape:
 
 - installs a release-managed timer for `08:05 Asia/Shanghai`
   (`OnCalendar=*-*-* 08:05:00`);
@@ -215,11 +219,13 @@ needs a separate owner-approved deploy change that:
   collection reminder;
 - inventories any existing Hermes `cron/jobs.json` job for the same Saturday/Sunday
   collection surface before changing schedule ownership;
-- proves the reviewed QunMind binary/config are available on the server;
-- creates/imports and approves the reviewed `text_announcement` artifact for the morning
-  text;
-- routes the final text through Erhua/QiWe with idempotency, target allowlist,
-  observation, and rollback evidence.
+- proves the reviewed absolute QunMind binary/config are available on the server;
+- creates a pending `text_announcement` artifact for the morning text;
+- leaves artifact approval, group-message request creation, final confirmation, and
+  send-ready recording as separate gates.
+
+Use `docs/operations/erhua-morning-brief-production-activation-runbook.md` for the
+activation and rollback sequence.
 
 Do not activate this through a hand-copied cron, server-local script, or direct QiWe
 send.
