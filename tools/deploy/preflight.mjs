@@ -714,6 +714,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+    "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",

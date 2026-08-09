@@ -87,6 +87,7 @@ const requiredFiles = [
   "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
   "tools/deploy/test-release-systemd-install.mjs",
   "tools/deploy/test-erhua-legacy-cron-observation.mjs",
+  "tools/deploy/test-erhua-legacy-cron-retirement.mjs",
   "tools/deploy/test-erhua-morning-brief-production-activation.mjs",
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
@@ -1218,6 +1219,7 @@ try {
   });
   for (const scriptPath of [
     "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+    "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
@@ -1265,6 +1267,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-erhua-legacy-cron-observation.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-erhua-legacy-cron-retirement.mjs"], {
     cwd: repoRoot,
   });
   execFileSync(
@@ -1382,6 +1387,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+    "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",

@@ -311,6 +311,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/activate-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+    "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
@@ -2644,6 +2645,7 @@ const erhuaMorningBriefScripts = [
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+  "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
 ];
 for (const scriptPath of erhuaMorningBriefScripts) {
   if (!exists(scriptPath)) {
@@ -2720,6 +2722,47 @@ if (exists("deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh")) {
     legacyCronObservation,
     "\npython3 -"
   );
+}
+if (exists("deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh")) {
+  const retirement = readText(
+    "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh"
+  );
+  for (const fragment of [
+    "QINTOPIA_ERHUA_LEGACY_CRON_RETIREMENT",
+    "approved-production-erhua-legacy-cron-retirement",
+    'PYTHON_BIN="/usr/bin/python3"',
+    "/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json",
+    "052cd6617e241442539689f7fabb20606a375ca1341e7182193a6a5c294338ad",
+    "legacy cron file sha256 does not match the reviewed production observation",
+    "previous_decl_count",
+    "new_decl_count",
+    "backup_created",
+    "external_calls_executed",
+    "safe_for_chat",
+  ]) {
+    requireFragment(
+      "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
+      retirement,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "QINTOPIA_ERHUA_PROFILE_DIR",
+    "QINTOPIA_ERHUA_LEGACY_CRON_FILE",
+    "source ",
+    ". /etc/qintopia",
+    "systemctl",
+    "journalctl",
+    "\npython3 -",
+    "curl ",
+    "psql ",
+  ]) {
+    forbidFragment(
+      "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
+      retirement,
+      fragment
+    );
+  }
 }
 if (exists("deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh")) {
   const timerObservation = readText(
