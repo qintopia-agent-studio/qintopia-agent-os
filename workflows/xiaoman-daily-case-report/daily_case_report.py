@@ -416,11 +416,10 @@ def _fetch_messages_with_psql(
             ORDER BY COALESCE(m.sent_at, m.received_at) ASC
         ) report_rows
     """
-    command.extend(["--command", sql])
-
     try:
         completed = subprocess.run(
             command,
+            input=sql,
             env=_psql_env(db_url),
             check=True,
             text=True,

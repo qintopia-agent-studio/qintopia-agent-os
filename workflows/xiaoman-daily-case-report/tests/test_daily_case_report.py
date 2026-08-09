@@ -138,8 +138,9 @@ class DailyCaseReportTest(unittest.TestCase):
         report_time = datetime(2026, 8, 8, 9, 30, tzinfo=timezone.utc)
         captured: dict[str, object] = {}
 
-        def fake_run(command, *, env, check, text, capture_output, timeout):
+        def fake_run(command, *, input, env, check, text, capture_output, timeout):
             captured["command"] = command
+            captured["input"] = input
             captured["env"] = env
             self.assertTrue(check)
             self.assertTrue(text)
@@ -191,6 +192,10 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertTrue(command[0].endswith("/psql"))
         self.assertNotIn("p%40ss", " ".join(command))
         self.assertNotIn("postgresql://", " ".join(command))
+        self.assertNotIn("--command", command)
+        self.assertIn(":'report_start'::timestamptz", captured["input"])
+        self.assertIn(":'report_end'::timestamptz", captured["input"])
+        self.assertIn("m.chat_id = :'chat_id'", captured["input"])
         self.assertEqual(env["PATH"], "/usr/bin:/bin")
         self.assertEqual(env["PGPASSWORD"], "p@ss")
         self.assertEqual(env["PGSSLMODE"], "require")

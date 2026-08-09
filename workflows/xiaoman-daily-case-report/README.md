@@ -160,7 +160,8 @@ media upload values. The systemd timer is rendered as
   failure.
 - Production database read-through prefers `psycopg` and falls back only to fixed
   `/usr/bin/psql` with a minimal `PATH`, without putting the database URL in process
-  arguments. Production JPEG rendering still requires Playwright and Chromium to be
+  arguments. The fallback feeds SQL through stdin so `psql` variable substitution is
+  applied. Production JPEG rendering still requires Playwright and Chromium to be
   present through a reviewed runtime packaging path; hand-installed Python packages or
   browsers are outside the approved production boundary for this draft.
 - The automatic publisher uses the dedicated `xiaoman.daily_case_report_auto_publish`

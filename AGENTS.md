@@ -239,7 +239,8 @@
 - The Xiaoman daily case-report production worker runs the release script with
   `/usr/bin/python3`. Database read-through may fall back from `psycopg` only to fixed
   `/usr/bin/psql` with a minimal `PATH`; the database URL must stay out of process
-  arguments, and connection fields must pass through `PG*` environment variables only.
+  arguments, connection fields must pass through `PG*` environment variables only, and
+  SQL must be passed on stdin so `psql` variable substitution is applied.
 - Production timer activation should use the `Activate Production Timers` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-activation` deploy-runner request and accepts only these
