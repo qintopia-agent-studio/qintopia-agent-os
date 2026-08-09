@@ -148,7 +148,7 @@ def _parse_args() -> argparse.Namespace:
         "--image-format",
         choices=["jpeg", "png"],
         default=None,
-        help="Image encoding for rendered output. Production auto-publish uses jpeg for QiWe.",
+        help="Image encoding for rendered output. Defaults to png for --render png, otherwise jpeg.",
     )
     parser.add_argument(
         "--keep-html",
@@ -166,9 +166,13 @@ def _parse_args() -> argparse.Namespace:
         help="Generate from fixture or empty stub; do not read the database.",
     )
     args = parser.parse_args()
+    _normalize_render_args(args)
+    return args
+
+
+def _normalize_render_args(args: argparse.Namespace) -> None:
     if args.image_format is None:
         args.image_format = "png" if args.render == "png" else DEFAULT_IMAGE_FORMAT
-    return args
 
 
 def _report_timezone(timezone_name: str) -> ZoneInfo:
@@ -1040,6 +1044,7 @@ def _result_json(
 
 def main() -> int:
     args = _parse_args()
+    _normalize_render_args(args)
 
     real_messages = _uses_real_messages(args)
     if real_messages and (args.keep_html or args.render == "html"):

@@ -1833,9 +1833,13 @@ async fn lock_callback_policy(
           AND request.requester_agent = 'xiaoman'
           AND request.target_agent = 'erhua'
           AND (
-              request.review_policy = 'human_final_confirmation'
+              (
+                  artifact.created_by_agent = 'huabaosi'
+                  AND request.review_policy = 'human_final_confirmation'
+              )
               OR (
-                  request.review_policy = 'automatic_publish'
+                  artifact.created_by_agent = 'xiaoman'
+                  AND request.review_policy = 'automatic_publish'
                   AND request.payload->>'workflow_type' = 'daily_case_report'
                   AND request.payload->>'requires_human_final_confirmation' = 'false'
               )

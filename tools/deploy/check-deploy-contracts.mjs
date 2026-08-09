@@ -2419,7 +2419,7 @@ if (exists(xiaomanDailyCaseReportWorkerPath)) {
     "operations-daily-case-report-media-upload",
     "operations-daily-case-report-auto-publish-create",
     "--image-format jpeg",
-    "--chat-id",
+    '--chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"',
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT",
     "artifact_uri",

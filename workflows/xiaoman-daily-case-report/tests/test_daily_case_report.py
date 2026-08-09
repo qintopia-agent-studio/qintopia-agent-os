@@ -258,6 +258,49 @@ class DailyCaseReportTest(unittest.TestCase):
         finally:
             sys.argv = old_argv
 
+    def test_main_legacy_render_png_defaults_to_png_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = argparse.Namespace(
+                dry_run=True,
+                fixture=None,
+                keep_html=False,
+                render="png",
+                output_dir=tmpdir,
+                output_width=750,
+                image_format=None,
+                json=True,
+                chat_id="chat-1",
+                date="2026-08-08",
+                timezone="Asia/Shanghai",
+                group_name="group",
+                report_title="case file",
+            )
+            old_parse_args = daily_case_report._parse_args
+            old_render_image = daily_case_report._render_image
+
+            def fake_render_image(_html_path, output_path, _width, image_format):
+                self.assertEqual(image_format, "png")
+                Path(output_path).write_bytes(b"main-fixture-png")
+
+            daily_case_report._parse_args = lambda: args
+            daily_case_report._render_image = fake_render_image
+            try:
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    code = daily_case_report.main()
+            finally:
+                daily_case_report._parse_args = old_parse_args
+                daily_case_report._render_image = old_render_image
+
+            self.assertEqual(code, 0)
+            result = json.loads(stdout.getvalue())
+            self.assertEqual(result["image_format"], "png")
+            self.assertEqual(result["image_mime_type"], "image/png")
+            self.assertTrue(result["image_path"].endswith(".png"))
+            self.assertEqual(result["png_path"], result["image_path"])
+            self.assertEqual(result["artifact_candidate"]["mime_type"], "image/png")
+            self.assertIsNone(result["artifact_candidate"]["render"]["jpeg_quality"])
+
     def test_production_auto_render_failure_removes_intermediate_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             args = argparse.Namespace(
