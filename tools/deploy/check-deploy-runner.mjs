@@ -1329,7 +1329,8 @@ const runnerReadWritePaths = runnerServiceText
   .filter((line) => line.startsWith("ReadWritePaths="))
   .flatMap((line) =>
     line.slice("ReadWritePaths=".length).trim().split(/\s+/).filter(Boolean)
-  );
+  )
+  .map((pathToken) => pathToken.replace(/\/+$/, "") || "/");
 if (
   runnerServiceText &&
   !runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/erhua")
