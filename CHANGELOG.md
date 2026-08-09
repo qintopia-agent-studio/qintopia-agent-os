@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.88](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.87...v0.2.88) (2026-08-09)
+
+
+### Features
+
+* add xiaoman daily report backfill ([#427](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/427)) ([759cb0b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/759cb0b8677b0d1befe2c46024a434a59b41718c))
+
+
+### Bug Fixes
+
+* allow xiaoman cron retirement writes ([#429](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/429)) ([5cca0b7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5cca0b783ad53ea472eed57201d5e6f3b07f5a8d))
+* fall back to psql for daily report reads ([78fb75a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/78fb75ad53de408660157b9d2cc8a3b2dfc1426b))
+* preserve qiwe group cron delivery ([7d87944](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7d879449213f54f40ea676f45b2ee3c43d06482b))
+
 ## [0.2.87](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.86...v0.2.87) (2026-08-09)
 
 
