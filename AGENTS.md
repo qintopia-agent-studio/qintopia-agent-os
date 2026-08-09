@@ -211,7 +211,10 @@
   `qintopia-message-sidecar operations-daily-case-report-media-upload --payload-json <local-jpeg-identity-json> --apply`,
   `qintopia-message-sidecar operations-daily-case-report-auto-publish-create --payload-json <sanitized-json> --apply`
 - Xiaoman daily case-report production auto-publish uses a release-managed timer, not
-  cron or hand-copied unit files. Activation, observation, and rollback are:
+  cron or hand-copied unit files. Production configuration must be applied before
+  activation through the fixed release-local config entrypoint:
+  `deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py --stdin --apply --approval approved-production-xiaoman-daily-case-report-config-v1`.
+  Activation, observation, and rollback are:
   `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
