@@ -12,6 +12,7 @@ TIMER_NAME="qintopia-agentos-erhua-morning-brief.timer"
 EXPECTED_STATE="${QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE:-disabled}"
 EXPECTED_CALENDAR="*-*-* 08:05:00"
 JOURNAL_LINES="80"
+JOURNAL_DISABLED_SINCE="30 minutes ago"
 SYSTEMCTL="/usr/bin/systemctl"
 JOURNALCTL="/usr/bin/journalctl"
 PYTHON_BIN="/usr/bin/python3"
@@ -175,11 +176,17 @@ fi
 
 timer_status="$tmp_dir/timer-status.txt"
 "$SYSTEMCTL" is-active "$TIMER_NAME" >"$timer_status" 2>/dev/null || true
+timer_active_since=""
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   grep -Fx active "$timer_status" >/dev/null
   timer_next="$("$SYSTEMCTL" show --property=NextElapseUSecRealtime --value "$TIMER_NAME")"
   if [[ -z "$timer_next" || "$timer_next" == "0" || "$timer_next" == "infinity" ]]; then
     echo "erhua morning brief timer must have a future realtime trigger" >&2
+    exit 1
+  fi
+  timer_active_since="$("$SYSTEMCTL" show --property=ActiveEnterTimestamp --value "$TIMER_NAME")"
+  if [[ -z "$timer_active_since" || "$timer_active_since" == "n/a" ]]; then
+    echo "erhua morning brief timer must have an active-enter timestamp" >&2
     exit 1
   fi
 else
@@ -194,7 +201,11 @@ timer_list="$tmp_dir/list-timers.txt"
 assert_no_sensitive_output "timer list" "$timer_list"
 
 journal="$tmp_dir/journal.txt"
-"$JOURNALCTL" -u "$SERVICE_NAME" -n "$JOURNAL_LINES" --no-pager >"$journal" 2>/dev/null || true
+if [[ "$EXPECTED_STATE" == "enabled" ]]; then
+  "$JOURNALCTL" -u "$SERVICE_NAME" --since "$timer_active_since" -n "$JOURNAL_LINES" --no-pager >"$journal" 2>/dev/null || true
+else
+  "$JOURNALCTL" -u "$SERVICE_NAME" --since "$JOURNAL_DISABLED_SINCE" -n "$JOURNAL_LINES" --no-pager >"$journal" 2>/dev/null || true
+fi
 assert_no_sensitive_output "service journal" "$journal"
 
 echo "erhua morning brief timer observation passed"
