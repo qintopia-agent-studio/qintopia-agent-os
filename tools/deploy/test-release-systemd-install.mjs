@@ -356,6 +356,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
     "StateDirectory=qintopia-agent-os-deploy",
     "StateDirectoryMode=0700",
     "WorkingDirectory=/var/lib/qintopia-agent-os-deploy",
+    "/home/ubuntu/.hermes/profiles/xiaoman/cron",
   ]) {
     if (!runnerUnit.includes(required)) {
       throw new Error(`deploy runner unit is missing ${required}`);

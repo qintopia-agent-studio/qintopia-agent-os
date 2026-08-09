@@ -35,6 +35,9 @@ caller-provided shell.
 - `release_sha` must match the production `release/current` manifest.
 - The release must contain the reviewed retirement and observation scripts for each
   selected target.
+- The production deploy-runner unit must grant `ReadWritePaths` access to the selected
+  legacy cron directory. `ProtectHome=read-only` otherwise blocks the reviewed
+  retirement script before it can create its backup or retired manifest.
 - Retirement is explicit. Timer activation requests do not retire legacy cron files, and
   observation failure does not trigger retirement as an automatic side effect.
 - The request sets `rollback_on_smoke_failure=false`. A retired legacy cron file is

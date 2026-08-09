@@ -499,6 +499,11 @@ Use `rg` and `rg --files` for search.
 - Existing `/etc/qintopia/message-sidecar.env` owner/mode drift must be repaired only by
   reviewed deploy/runner code. The release systemd installer normalizes it to
   `root:ubuntu 0640`; do not run ad-hoc production `chown`/`chmod`.
+- The production deploy-runner service uses `ProtectHome=read-only`; any reviewed
+  operation that mutates live Hermes profile state must have the smallest target path in
+  `deploy/runner/qintopia-agent-os-deploy-runner.service` `ReadWritePaths`. Xiaoman
+  legacy cron retirement needs `/home/ubuntu/.hermes/profiles/xiaoman/cron` there;
+  without it backups and retired manifests fail with a read-only filesystem error.
 - Any script expected to exist under `/home/ubuntu/qintopia-agent-os-releases/current`
   after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
   guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does
