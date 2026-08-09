@@ -218,6 +218,9 @@
   it back through the Feishu delivery bridge:
   `qintopia-message-sidecar operations-daily-case-report-media-upload --payload-json <local-jpeg-identity-json> --apply`,
   `qintopia-message-sidecar operations-daily-case-report-auto-publish-create --payload-json <sanitized-json> --apply`
+  Feishu-backed publish idempotency may reuse only an existing artifact whose id matches
+  the reviewed upload evidence; reject conflicting random-id artifacts instead of
+  writing an `artifact_uri` whose Feishu suffix no longer matches `artifacts.id`.
 - Xiaoman daily case-report production auto-publish uses a release-managed timer, not
   cron or hand-copied unit files. Production configuration must be applied before
   activation through the fixed release-local config entrypoint:

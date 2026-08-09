@@ -4440,6 +4440,14 @@ async fn upsert_daily_case_report_generated_image_artifact(
     source_work_item_id: Uuid,
     requested_artifact_id: Uuid,
 ) -> Result<Uuid> {
+    reject_daily_case_report_feishu_artifact_id_conflict(
+        tx,
+        request,
+        source_work_item_id,
+        requested_artifact_id,
+    )
+    .await?;
+
     let artifact_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO qintopia_agent_os.artifacts
@@ -4464,6 +4472,8 @@ async fn upsert_daily_case_report_generated_image_artifact(
             updated_at = now()
         WHERE qintopia_agent_os.artifacts.id = EXCLUDED.id
            OR (
+               $9 <> 'feishu-base'
+               AND
                qintopia_agent_os.artifacts.artifact_type = 'generated_image'
                AND qintopia_agent_os.artifacts.review_status = 'approved'
                AND qintopia_agent_os.artifacts.created_by_agent = 'xiaoman'
@@ -4480,10 +4490,44 @@ async fn upsert_daily_case_report_generated_image_artifact(
     .bind(&request.content_hash)
     .bind(daily_case_report_source_ids(request))
     .bind(daily_case_report_artifact_metadata(request))
+    .bind(daily_case_report_storage_backend(request))
     .fetch_one(&mut **tx)
     .await
     .context("upsert daily case report generated-image artifact")?;
     Ok(artifact_id)
+}
+
+async fn reject_daily_case_report_feishu_artifact_id_conflict(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    request: &DailyCaseReportAutoPublishCreateRequest,
+    source_work_item_id: Uuid,
+    requested_artifact_id: Uuid,
+) -> Result<()> {
+    if daily_case_report_storage_backend(request) != DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND {
+        return Ok(());
+    }
+    let existing_artifact_id =
+        find_daily_case_report_artifact_id_tx(tx, source_work_item_id, &request.content_hash)
+            .await?;
+    validate_daily_case_report_existing_artifact_id(
+        request,
+        requested_artifact_id,
+        existing_artifact_id,
+    )
+}
+
+fn validate_daily_case_report_existing_artifact_id(
+    request: &DailyCaseReportAutoPublishCreateRequest,
+    requested_artifact_id: Uuid,
+    existing_artifact_id: Option<Uuid>,
+) -> Result<()> {
+    if daily_case_report_storage_backend(request) != DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND {
+        return Ok(());
+    }
+    if existing_artifact_id.is_some_and(|artifact_id| artifact_id != requested_artifact_id) {
+        bail!("daily case report Feishu artifact id conflicts with existing artifact identity");
+    }
+    Ok(())
 }
 
 pub fn plan_request(mut input: RequestPlanInput) -> Result<RequestPlanReport> {
@@ -10685,6 +10729,57 @@ mod tests {
     }
 
     #[test]
+    fn daily_case_report_existing_artifact_id_rejects_feishu_conflict() {
+        let artifact_id = Uuid::new_v4();
+        let source_work_item_id = Uuid::new_v4();
+        let artifact_uri = daily_case_report_feishu_artifact_uri(artifact_id);
+        let mut payload = daily_case_report_auto_publish_request_json(
+            &artifact_uri,
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            48300,
+            "xiaoman-2026-08-08.jpg",
+        );
+        payload["media_upload_evidence"]["boundary"] =
+            json!(DAILY_CASE_REPORT_FEISHU_MEDIA_UPLOAD_BOUNDARY_KEY);
+        payload["media_upload_evidence"]["storage_backend"] =
+            json!(DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND);
+        payload["media_upload_evidence"]["artifact_id"] = json!(artifact_id);
+        payload["media_upload_evidence"]["source_work_item_id"] = json!(source_work_item_id);
+        let request: DailyCaseReportAutoPublishCreateRequest =
+            serde_json::from_value(payload).expect("request parses");
+
+        validate_daily_case_report_existing_artifact_id(&request, artifact_id, Some(artifact_id))
+            .expect("same Feishu artifact id remains idempotent");
+        let err = validate_daily_case_report_existing_artifact_id(
+            &request,
+            artifact_id,
+            Some(Uuid::new_v4()),
+        )
+        .expect_err("different existing Feishu artifact id must fail");
+        assert!(err
+            .to_string()
+            .contains("daily case report Feishu artifact id conflicts"));
+
+        let mut public_request: DailyCaseReportAutoPublishCreateRequest =
+            serde_json::from_value(daily_case_report_auto_publish_request_json(
+                "https://media.example.test/daily/xiaoman-2026-08-08.jpg",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                48300,
+                "xiaoman-2026-08-08.jpg",
+            ))
+            .expect("request parses");
+        normalize_daily_case_report_auto_publish_request(&mut public_request);
+        validate_daily_case_report_existing_artifact_id(
+            &public_request,
+            artifact_id,
+            Some(Uuid::new_v4()),
+        )
+        .expect("HTTP public media keeps legacy artifact reuse behavior");
+    }
+
+    #[test]
     fn daily_case_report_apply_rejects_storage_backend_env_drift() {
         std::env::set_var(
             DAILY_CASE_REPORT_STORAGE_BACKEND_ENV,
@@ -10900,6 +10995,144 @@ mod tests {
             daily_case_report_source_ids(&request),
             "source_ids should be refreshed for deterministic delivery evidence"
         );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_daily_case_report_auto_publish_rejects_conflicting_legacy_artifact_id() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 1)
+            .await
+            .expect("connect guarded integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded integration database");
+
+        let unique = Uuid::new_v4();
+        let content_hash = content_hash_bytes(unique.to_string().as_bytes());
+        let source_key = daily_case_report_source_idempotency_key_from_parts(
+            "2026-08-07T07:45:00+08:00",
+            "2026-08-08T07:45:00+08:00",
+            &content_hash,
+        );
+        let requested_artifact_id = deterministic_uuid_from_parts(&[
+            "xiaoman-daily-case-report-generated-image-v1",
+            &source_key,
+        ]);
+        let source_work_item_id = deterministic_uuid_from_parts(&[
+            "xiaoman-daily-case-report-source-work-item-v1",
+            &source_key,
+        ]);
+        let legacy_artifact_id = Uuid::new_v4();
+        let legacy_artifact_uri = daily_case_report_feishu_artifact_uri(legacy_artifact_id);
+        assert_ne!(legacy_artifact_id, requested_artifact_id);
+
+        let mut payload = daily_case_report_auto_publish_request_json(
+            &daily_case_report_feishu_artifact_uri(requested_artifact_id),
+            &content_hash,
+            "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            48300,
+            "xiaoman-2026-08-08.jpg",
+        );
+        payload["media_upload_evidence"]["boundary"] =
+            json!(DAILY_CASE_REPORT_FEISHU_MEDIA_UPLOAD_BOUNDARY_KEY);
+        payload["media_upload_evidence"]["storage_backend"] =
+            json!(DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND);
+        payload["media_upload_evidence"]["artifact_id"] = json!(requested_artifact_id);
+        payload["media_upload_evidence"]["source_work_item_id"] = json!(source_work_item_id);
+
+        let mut request: DailyCaseReportAutoPublishCreateRequest =
+            serde_json::from_value(payload).expect("request parses");
+        normalize_daily_case_report_auto_publish_request(&mut request);
+        validate_daily_case_report_auto_publish_request(&request)
+            .expect("fixture request is valid");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, priority, brief_summary, purpose, source_type,
+                 source_refs, dedupe_key, idempotency_key, risk_level,
+                 information_class, payload, payload_redaction_policy,
+                 review_policy, metadata)
+            VALUES
+                ($1, $2, 'completed', 'xiaoman', 'xiaoman', $3, $4, $5,
+                 'xiaoman_daily_case_report_auto_publish', 'operations_workflow',
+                 $6, $7, $7, 'high', 'internal_ops', $8, 'summary_only',
+                 'automatic_publish', $9)
+            "#,
+        )
+        .bind(source_work_item_id)
+        .bind(DAILY_CASE_REPORT_WORK_ITEM_TYPE)
+        .bind(DAILY_CASE_REPORT_CAPABILITY_KEY)
+        .bind(&request.priority)
+        .bind(daily_case_report_title(&request))
+        .bind(daily_case_report_source_refs(&request))
+        .bind(daily_case_report_source_idempotency_key(&request))
+        .bind(daily_case_report_payload(&request))
+        .bind(json!({"legacy_conflict_fixture": true}))
+        .execute(&pool)
+        .await
+        .expect("insert source work item");
+
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, source_ids,
+                 risk_labels, information_class, metadata, review_requested_at,
+                 reviewed_at, review_decision_reason)
+            VALUES
+                ($1, $2, 'generated_image', 'approved', 'xiaoman',
+                 'Legacy daily report image', 'legacy random-id daily image',
+                 $3, $4, $5, ARRAY['automatic_external_send','daily_case_report']::text[],
+                 'internal_ops', $6, now(), now(),
+                 'legacy approved by reviewed daily case report boundary')
+            "#,
+        )
+        .bind(legacy_artifact_id)
+        .bind(source_work_item_id)
+        .bind(&legacy_artifact_uri)
+        .bind(&request.content_hash)
+        .bind(json!([{"legacy_source_ids": true}]))
+        .bind(json!({
+            "workflow_type": DAILY_CASE_REPORT_WORKFLOW_TYPE,
+            "legacy_random_id": true
+        }))
+        .execute(&pool)
+        .await
+        .expect("insert legacy random-id artifact");
+
+        let mut tx = pool.begin().await.expect("begin upsert transaction");
+        let err = upsert_daily_case_report_generated_image_artifact(
+            &mut tx,
+            &request,
+            source_work_item_id,
+            requested_artifact_id,
+        )
+        .await
+        .expect_err("legacy Feishu artifact id conflict must fail");
+        tx.rollback()
+            .await
+            .expect("rollback failed upsert transaction");
+
+        assert!(err
+            .to_string()
+            .contains("daily case report Feishu artifact id conflicts"));
+        let stored: (String, Value) = sqlx::query_as(
+            r#"
+            SELECT artifact_uri, source_ids
+            FROM qintopia_agent_os.artifacts
+            WHERE id = $1
+            "#,
+        )
+        .bind(legacy_artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load unchanged legacy artifact");
+        assert_eq!(stored.0, legacy_artifact_uri);
+        assert_eq!(stored.1, json!([{"legacy_source_ids": true}]));
     }
 
     #[test]
