@@ -255,10 +255,12 @@
   Observation scripts are `xiaoman-weekly-recruitment-production-observation-smoke.sh`
   and `xiaoman-weekly-plan-confirmation-production-observation-smoke.sh`; rollback
   scripts are `rollback-xiaoman-weekly-recruitment-production.sh` and
-  `rollback-xiaoman-weekly-plan-confirmation-production.sh`. Activation and observation
-  must verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the
-  owner-reviewed release SHA and must first pass
-  `xiaoman-legacy-cron-observation-smoke.sh`.
+  `rollback-xiaoman-weekly-plan-confirmation-production.sh`. Config, activation,
+  observation, and workers must require `QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1`,
+  `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`, and
+  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. Activation and observation must
+  verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the owner-reviewed
+  release SHA and must first pass `xiaoman-legacy-cron-observation-smoke.sh`.
 
 - Xiaoman weekly preview production uses a release-managed timer, not Hermes
   conversation cron or hand-copied unit files. Apply the persistent non-secret config
