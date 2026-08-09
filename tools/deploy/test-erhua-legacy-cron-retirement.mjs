@@ -19,7 +19,7 @@ const sourceObservation = path.join(
 );
 const fixedCronFile = "/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json";
 const fixedObservedSha =
-  "052cd6617e241442539689f7fabb20606a375ca1341e7182193a6a5c294338ad";
+  "59edf8abc1602a10a5ffb83120c631395d8c486df66343bfd1591a94da30412c";
 
 const writeExecutable = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
