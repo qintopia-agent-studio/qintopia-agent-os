@@ -218,6 +218,12 @@
   `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+- Xiaoman weekly preview is a release-managed Monday draft timer, not a Hermes
+  conversation-created cron. Activation first requires the Xiaoman legacy cron
+  observation to find no runtime cron declarations. Activation, observation, and
+  rollback are: `activate-xiaoman-weekly-preview-production.sh`,
+  `xiaoman-weekly-preview-timer-observation-smoke.sh`, and
+  `rollback-xiaoman-weekly-preview-production.sh`.
 - Xiaoman QiWe group-arrival human confirmation evidence validation after a real
   activity send:
   `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`

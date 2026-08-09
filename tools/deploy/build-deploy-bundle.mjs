@@ -67,6 +67,10 @@ const sourceFiles = [
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",
+  "deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh",
+  "deploy/sidecar/scripts/xiaoman-weekly-preview-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh",
+  "deploy/sidecar/scripts/rollback-xiaoman-weekly-preview-production.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -144,6 +148,7 @@ const sourceFiles = [
 const sourceDirs = [
   "agents/xiaoman/profile-bundle",
   "workflows/xiaoman-daily-case-report",
+  "workflows/xiaoman-weekly-preview",
   "runtime/postgres/migrations",
   "skills/qintopia-tools/variants",
   "skills/qintopia-weather/tests",

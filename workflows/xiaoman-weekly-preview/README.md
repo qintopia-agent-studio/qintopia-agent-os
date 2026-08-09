@@ -70,14 +70,15 @@ Erhua for delivery.
 
 ## Production Activation
 
-This workflow replaces the legacy natural-language Monday cron task. Activation is a
-**separate, owner-approved cutover** and is not performed by merging the workflow
-package alone:
+This workflow replaces the legacy natural-language Monday cron task. The release bundle
+installs the systemd unit disabled by default; activation is still a separate,
+owner-approved production action:
 
 - Runbook:
   [`docs/operations/xiaoman-weekly-preview-cutover-runbook.md`](../operations/xiaoman-weekly-preview-cutover-runbook.md)
-- It registers a release-managed systemd timer (not a conversation-created cron), keeps
-  the human confirmation gate, and removes the old Monday task from the server
-  `jobs.json`.
-- Installing or enabling the timer requires the owner-approved runbook plus observation
-  and rollback smoke evidence. Do not hot-edit production units.
+- It registers `qintopia-agentos-xiaoman-weekly-preview.timer` as a release-managed
+  systemd timer (not a conversation-created cron) and keeps the human confirmation gate.
+- Activation fails if `xiaoman-legacy-cron-observation-smoke.sh` finds any runtime cron
+  declaration in the live Xiaoman Hermes `jobs.json`.
+- Enabling or rolling back the timer must use the release-local activation, observation,
+  and rollback scripts. Do not hot-edit production units.

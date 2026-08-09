@@ -708,6 +708,17 @@ render_all() {
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service" \
     "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TIMER_CALENDAR:-*-*-* 07:45:00}"
 
+  render_release_script_oneshot_service \
+    "qintopia-agentos-xiaoman-weekly-preview.service" \
+    "Qintopia AgentOS Xiaoman weekly activity preview draft worker" \
+    "${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh" \
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python"
+  render_calendar_timer \
+    "qintopia-agentos-xiaoman-weekly-preview.timer" \
+    "Run Qintopia AgentOS Xiaoman weekly activity preview draft worker" \
+    "qintopia-agentos-xiaoman-weekly-preview.service" \
+    "${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_TIMER_CALENDAR:-Mon *-*-* 09:30:00}"
+
   render_oneshot_service \
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
     "Qintopia AgentOS Xiaoman Activity Send Request Starter Worker" \
@@ -792,6 +803,8 @@ validate_output() {
     "qintopia-agentos-qiwe-image-send-worker.timer"
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service"
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
+    "qintopia-agentos-xiaoman-weekly-preview.service"
+    "qintopia-agentos-xiaoman-weekly-preview.timer"
     "qintopia-agentos-erhua-morning-brief.service"
     "qintopia-agentos-erhua-morning-brief.timer"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"

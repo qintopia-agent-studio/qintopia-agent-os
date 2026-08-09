@@ -2551,12 +2551,128 @@ for (const fragment of [
     fragment
   );
 }
+const xiaomanWeeklyPreviewWorkerPath =
+  "deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh";
+const xiaomanWeeklyPreviewObservationPath =
+  "deploy/sidecar/scripts/xiaoman-weekly-preview-timer-observation-smoke.sh";
+const xiaomanWeeklyPreviewActivationPath =
+  "deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh";
+const xiaomanWeeklyPreviewRollbackPath =
+  "deploy/sidecar/scripts/rollback-xiaoman-weekly-preview-production.sh";
+for (const scriptPath of [
+  xiaomanWeeklyPreviewWorkerPath,
+  xiaomanWeeklyPreviewObservationPath,
+  xiaomanWeeklyPreviewActivationPath,
+  xiaomanWeeklyPreviewRollbackPath,
+]) {
+  if (!exists(scriptPath)) {
+    addError(`${scriptPath}: missing Xiaoman weekly preview production script`);
+  }
+}
+if (exists(xiaomanWeeklyPreviewWorkerPath)) {
+  const worker = readText(xiaomanWeeklyPreviewWorkerPath);
+  for (const fragment of [
+    'DEFAULT_HERMES_PYTHON="/home/ubuntu/.hermes/hermes-agent/venv/bin/python"',
+    'PYTHON_VALIDATOR="${RELEASE_DIR}/runtime/hermes/validate_hermes_python.py"',
+    "workflows/xiaoman-weekly-preview/weekly_preview.py",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    '"external_send_executed": report.get("external_send_executed")',
+    '"database_writes": False',
+    '"send_request_created": False',
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewWorkerPath, worker, fragment);
+  }
+  for (const fragment of [
+    "operations-work-item-create",
+    "run-group-message-send-worker",
+    "operations-daily-case-report",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "source ",
+    "eval ",
+    "/usr/bin/env python3",
+  ]) {
+    forbidFragment(xiaomanWeeklyPreviewWorkerPath, worker, fragment);
+  }
+}
+if (exists(xiaomanWeeklyPreviewObservationPath)) {
+  const observation = readText(xiaomanWeeklyPreviewObservationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_TIMER_OBSERVATION_ENABLE",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_TIMER_EXPECTED_STATE",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    "qintopia-agentos-xiaoman-weekly-preview.service",
+    "qintopia-agentos-xiaoman-weekly-preview.timer",
+    "OnCalendar=${EXPECTED_CALENDAR}",
+    "xiaoman-weekly-preview-worker.sh",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewObservationPath, observation, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanWeeklyPreviewObservationPath, observation, fragment);
+  }
+}
+if (exists(xiaomanWeeklyPreviewActivationPath)) {
+  const activation = readText(xiaomanWeeklyPreviewActivationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ACTIVATION",
+    "approved-production-xiaoman-weekly-preview",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" enable "$TIMER_NAME"',
+    '"$SYSTEMCTL" restart "$TIMER_NAME"',
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_TIMER_EXPECTED_STATE=enabled",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewActivationPath, activation, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanWeeklyPreviewActivationPath, activation, fragment);
+  }
+}
+if (exists(xiaomanWeeklyPreviewRollbackPath)) {
+  const rollback = readText(xiaomanWeeklyPreviewRollbackPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ROLLBACK",
+    "approved-production-xiaoman-weekly-preview-rollback",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=0",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" disable --now "$TIMER_NAME"',
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewRollbackPath, rollback, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanWeeklyPreviewRollbackPath, rollback, fragment);
+  }
+}
+for (const fragment of [
+  xiaomanWeeklyPreviewWorkerPath,
+  xiaomanWeeklyPreviewObservationPath,
+  xiaomanWeeklyPreviewActivationPath,
+  xiaomanWeeklyPreviewRollbackPath,
+  "workflows/xiaoman-weekly-preview",
+]) {
+  requireFragment(
+    "tools/deploy/build-deploy-bundle.mjs",
+    deployBundleBuilderForDailyReport,
+    fragment
+  );
+}
 const releaseSystemdInstallerPath = "deploy/runner/install-release-systemd-units.sh";
 if (exists(releaseSystemdInstallerPath)) {
   const installer = readText(releaseSystemdInstallerPath);
   for (const fragment of [
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
+    "qintopia-agentos-xiaoman-weekly-preview.service",
+    "qintopia-agentos-xiaoman-weekly-preview.timer",
     "qintopia-agentos-erhua-morning-brief.service",
     "qintopia-agentos-erhua-morning-brief.timer",
   ]) {
@@ -2589,6 +2705,11 @@ if (exists(releaseSystemdInstallerPath)) {
   if (internalTimersBlock.includes("qintopia-agentos-erhua-morning-brief.timer")) {
     addError(
       `${releaseSystemdInstallerPath}: Erhua morning brief timer must not be default-enabled by release install`
+    );
+  }
+  if (internalTimersBlock.includes("qintopia-agentos-xiaoman-weekly-preview.timer")) {
+    addError(
+      `${releaseSystemdInstallerPath}: Xiaoman weekly preview timer must not be default-enabled by release install`
     );
   }
 }
@@ -2648,6 +2769,10 @@ if (!exists(renderSystemdUnitsPath)) {
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "xiaoman-daily-case-report-auto-publish-worker.sh",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
+    "qintopia-agentos-xiaoman-weekly-preview.service",
+    "xiaoman-weekly-preview-worker.sh",
+    "qintopia-agentos-xiaoman-weekly-preview.timer",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python",
     "OnCalendar=${calendar}",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope direct",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope group",
