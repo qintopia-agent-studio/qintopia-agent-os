@@ -28,6 +28,7 @@ require_env() {
 require_env "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL"
 require_env "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"
 require_env "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"
+require_env "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"
 
 if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL}" != "approved-production-xiaoman-weekly-preview" ]]; then
   echo "xiaoman weekly preview requires the reviewed production approval value" >&2
@@ -39,6 +40,10 @@ if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE}" != "1" ]]; then
 fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE}" != "1" ]]; then
   echo "xiaoman weekly preview requires Xiaoman activity read-through to be enabled" >&2
+  exit 1
+fi
+if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE}" != "1" ]]; then
+  echo "xiaoman weekly preview requires Xiaoman activity Feishu Base mode to be enabled" >&2
   exit 1
 fi
 if [[ ! -x "$PYTHON_BIN" ]]; then
@@ -55,6 +60,7 @@ if [[ ! -x "$SIDECAR_BIN" ]]; then
 fi
 
 export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"
+export QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE
 
 mkdir -p "$WORK_DIR"
 chmod 0700 "$WORK_DIR"

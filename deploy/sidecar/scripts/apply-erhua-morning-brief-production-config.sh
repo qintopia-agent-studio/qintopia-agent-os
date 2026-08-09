@@ -55,6 +55,7 @@ if mode == "--enable":
         {
             "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE": "1",
             "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE": "1",
+            "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE": "1",
         }
     )
 

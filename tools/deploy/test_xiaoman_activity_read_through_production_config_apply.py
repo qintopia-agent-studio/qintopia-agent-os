@@ -108,6 +108,7 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
 
         self.assertTrue(report["success"])
         self.assertEqual(report["copied_key_count"], 5)
+        self.assertTrue(report["feishu_base_mode_enabled"])
         self.assertTrue(report["sensitive_values_redacted"])
         self.assertFalse(report["external_calls_executed"])
         self.assertFalse(report["service_changes_executed"])
@@ -117,6 +118,7 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         self.assertIn(MODULE.MANAGED_COMMENT, text)
         for key in MODULE.READ_THROUGH_KEYS:
             self.assertIn(f"{key}=", text)
+        self.assertIn("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1", text)
         self.assertNotIn("EXTRA_PROFILE_ONLY", text)
         self.assertNotIn("profile-only-value", text)
         self.assertEqual(self.sidecar_env.stat().st_mode & 0o777, 0o640)
