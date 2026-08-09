@@ -434,6 +434,12 @@ struct DailyCaseReportImageIdentity {
     filename: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DailyCaseReportStorageIds {
+    artifact_id: Uuid,
+    source_work_item_id: Uuid,
+}
+
 #[derive(Debug, Clone)]
 struct DailyCaseReportUploadedMedia {
     storage_backend: DailyCaseReportStorageBackend,
@@ -1010,7 +1016,7 @@ pub async fn run_daily_case_report_auto_publish_create(
     Ok(())
 }
 
-pub fn run_daily_case_report_media_upload(
+pub async fn run_daily_case_report_media_upload(
     cli: &Cli,
     payload_json: String,
     apply: bool,
@@ -1023,14 +1029,22 @@ pub fn run_daily_case_report_media_upload(
         .context("parse daily case report media upload payload")?;
     let apply_requested = apply && !dry_run;
     let storage_backend = DailyCaseReportStorageBackend::from_env()?;
-    let database_url =
+    let (database_url, pool) =
         if apply_requested && storage_backend == DailyCaseReportStorageBackend::Feishu {
-            Some(cli.database_url_required()?)
+            let database_url = cli.database_url_required()?;
+            let pool = db::connect(database_url, cli.db_max_connections).await?;
+            (Some(database_url), Some(pool))
         } else {
-            None
+            (None, None)
         };
-    let report =
-        daily_case_report_media_upload(request, apply_requested, storage_backend, database_url)?;
+    let report = daily_case_report_media_upload(
+        request,
+        apply_requested,
+        storage_backend,
+        database_url,
+        pool.as_ref(),
+    )
+    .await?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
@@ -4101,11 +4115,12 @@ pub async fn create_text_announcement_artifact(
     ))
 }
 
-pub fn daily_case_report_media_upload(
+pub async fn daily_case_report_media_upload(
     request: DailyCaseReportMediaUploadRequest,
     apply: bool,
     storage_backend: DailyCaseReportStorageBackend,
     database_url: Option<&str>,
+    pool: Option<&PgPool>,
 ) -> Result<DailyCaseReportMediaUploadReport> {
     let identity =
         daily_case_report_image_identity(&request, daily_case_report_max_media_bytes()?)?;
@@ -4157,16 +4172,19 @@ pub fn daily_case_report_media_upload(
         DailyCaseReportStorageBackend::Feishu => {
             let database_url = database_url
                 .context("daily case report Feishu media upload requires a database URL")?;
-            let artifact_id = daily_case_report_artifact_id_from_upload(&request, &identity)?;
-            let source_work_item_id =
-                daily_case_report_source_work_item_id_from_upload(&request, &identity)?;
+            let ids = resolve_daily_case_report_storage_ids_for_upload(
+                pool.context("daily case report Feishu media upload requires a database pool")?,
+                &request,
+                &identity,
+            )
+            .await?;
             let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
             let result = huabaosi_feishu_artifact_mirror::store_daily_case_report_image(
                 &config,
                 &FeishuDailyCaseReportStorageImage {
-                    artifact_id,
-                    workflow_root_id: source_work_item_id,
-                    work_item_id: source_work_item_id,
+                    artifact_id: ids.artifact_id,
+                    workflow_root_id: ids.source_work_item_id,
+                    work_item_id: ids.source_work_item_id,
                     content_hash: &identity.content_hash,
                     file_md5: &identity.file_md5,
                     bytes: &identity.bytes,
@@ -4182,11 +4200,15 @@ pub fn daily_case_report_media_upload(
                     failure.code()
                 )
             })?;
-            let expected_uri = daily_case_report_feishu_artifact_uri(artifact_id);
+            let expected_uri = daily_case_report_feishu_artifact_uri(ids.artifact_id);
             if result.artifact_uri != expected_uri {
                 bail!("daily case report Feishu storage returned an unexpected artifact URI");
             }
-            (result.artifact_uri, artifact_id, source_work_item_id)
+            (
+                result.artifact_uri,
+                ids.artifact_id,
+                ids.source_work_item_id,
+            )
         }
     };
 
@@ -4239,6 +4261,7 @@ pub async fn create_daily_case_report_auto_publish(
             false,
         ));
     }
+    validate_daily_case_report_storage_backend_matches_env(&request)?;
     if daily_case_report_storage_backend(&request) == DAILY_CASE_REPORT_HTTP_STORAGE_BACKEND {
         revalidate_daily_case_report_uploaded_media(pool, database_url, &request).await?;
     }
@@ -4246,8 +4269,8 @@ pub async fn create_daily_case_report_auto_publish(
     let idempotency_key = daily_case_report_auto_publish_idempotency_key(&request);
     let source_idempotency_key = daily_case_report_source_idempotency_key(&request);
     let send_idempotency_key = format!("{idempotency_key}:send");
-    let source_work_item_id = daily_case_report_source_work_item_id(&request);
-    let requested_artifact_id = daily_case_report_artifact_id(&request);
+    let requested_source_work_item_id =
+        resolve_daily_case_report_source_work_item_id_for_create(pool, &request).await?;
     let mut tx = pool
         .begin()
         .await
@@ -4271,7 +4294,7 @@ pub async fn create_daily_case_report_auto_publish(
         RETURNING id
         "#,
     )
-    .bind(source_work_item_id)
+    .bind(requested_source_work_item_id)
     .bind(DAILY_CASE_REPORT_WORK_ITEM_TYPE)
     .bind(DAILY_CASE_REPORT_CAPABILITY_KEY)
     .bind(&request.priority)
@@ -4289,6 +4312,10 @@ pub async fn create_daily_case_report_auto_publish(
     .await
     .context("upsert daily case report source work item")?;
 
+    validate_daily_case_report_persisted_source_binding(&request, source_work_item_id)?;
+    let requested_artifact_id =
+        resolve_daily_case_report_artifact_id_for_create(&mut tx, &request, source_work_item_id)
+            .await?;
     let artifact_id = upsert_daily_case_report_generated_image_artifact(
         &mut tx,
         &request,
@@ -4296,6 +4323,8 @@ pub async fn create_daily_case_report_auto_publish(
         requested_artifact_id,
     )
     .await?;
+
+    validate_daily_case_report_persisted_media_binding(&request, artifact_id, source_work_item_id)?;
 
     append_event_once(
         &mut tx,
@@ -5521,16 +5550,24 @@ impl DailyCaseReportHttpMediaConfig {
 }
 
 impl DailyCaseReportStorageBackend {
-    fn from_env() -> Result<Self> {
-        let value = std::env::var(DAILY_CASE_REPORT_STORAGE_BACKEND_ENV)
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| DAILY_CASE_REPORT_HTTP_STORAGE_BACKEND.to_string());
+    fn parse(value: &str) -> Result<Self> {
         match value.trim() {
             DAILY_CASE_REPORT_HTTP_STORAGE_BACKEND => Ok(Self::HttpPublic),
             DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND => Ok(Self::Feishu),
             _ => bail!("daily case report storage backend is not reviewed"),
         }
+    }
+
+    fn from_env() -> Result<Self> {
+        let value = std::env::var(DAILY_CASE_REPORT_STORAGE_BACKEND_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DAILY_CASE_REPORT_HTTP_STORAGE_BACKEND.to_string());
+        Self::parse(&value)
+    }
+
+    fn from_request(request: &DailyCaseReportAutoPublishCreateRequest) -> Result<Self> {
+        Self::parse(&daily_case_report_storage_backend(request))
     }
 
     fn as_str(self) -> &'static str {
@@ -5918,20 +5955,8 @@ fn validate_daily_case_report_media_upload_boundary(
             DAILY_CASE_REPORT_FEISHU_MEDIA_UPLOAD_BOUNDARY_KEY,
             DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND,
         ) => {
-            let artifact_id = evidence
-                .artifact_id
-                .context("daily case report Feishu evidence is missing artifact_id")?;
-            let source_work_item_id = evidence
-                .source_work_item_id
-                .context("daily case report Feishu evidence is missing source_work_item_id")?;
-            if artifact_id != daily_case_report_artifact_id(request)
-                || source_work_item_id != daily_case_report_source_work_item_id(request)
-            {
-                bail!(
-                    "daily case report Feishu evidence identity does not match the report window"
-                );
-            }
-            let expected_uri = daily_case_report_feishu_artifact_uri(artifact_id);
+            let evidence_ids = daily_case_report_feishu_evidence_ids(request)?;
+            let expected_uri = daily_case_report_feishu_artifact_uri(evidence_ids.artifact_id);
             if evidence.artifact_uri != expected_uri || request.artifact_uri != expected_uri {
                 bail!("daily case report Feishu evidence artifact_uri does not match artifact_id");
             }
@@ -5939,6 +5964,17 @@ fn validate_daily_case_report_media_upload_boundary(
         }
         _ => bail!("daily case report media_upload_evidence boundary is not allowed"),
     }
+}
+
+fn validate_daily_case_report_storage_backend_matches_env(
+    request: &DailyCaseReportAutoPublishCreateRequest,
+) -> Result<()> {
+    let configured = DailyCaseReportStorageBackend::from_env()?;
+    let requested = DailyCaseReportStorageBackend::from_request(request)?;
+    if configured != requested {
+        bail!("daily case report storage backend does not match reviewed production config");
+    }
+    Ok(())
 }
 
 async fn revalidate_daily_case_report_uploaded_media(
@@ -6189,6 +6225,199 @@ fn daily_case_report_source_idempotency_key_from_parts(
         content_hash,
     ]);
     format!("xiaoman_daily_case_report_source:{}", &digest[7..31])
+}
+
+async fn resolve_daily_case_report_storage_ids_for_upload(
+    pool: &PgPool,
+    request: &DailyCaseReportMediaUploadRequest,
+    identity: &DailyCaseReportImageIdentity,
+) -> Result<DailyCaseReportStorageIds> {
+    let source_idempotency_key =
+        daily_case_report_source_idempotency_key_from_upload(request, identity)?;
+    let deterministic_source_work_item_id =
+        daily_case_report_source_work_item_id_from_upload(request, identity)?;
+    let source_work_item_id =
+        find_daily_case_report_source_work_item_id(pool, &source_idempotency_key)
+            .await?
+            .unwrap_or(deterministic_source_work_item_id);
+    let deterministic_artifact_id = daily_case_report_artifact_id_from_upload(request, identity)?;
+    let artifact_id =
+        find_daily_case_report_artifact_id(pool, source_work_item_id, &identity.content_hash)
+            .await?
+            .unwrap_or(deterministic_artifact_id);
+
+    Ok(DailyCaseReportStorageIds {
+        artifact_id,
+        source_work_item_id,
+    })
+}
+
+async fn resolve_daily_case_report_source_work_item_id_for_create(
+    pool: &PgPool,
+    request: &DailyCaseReportAutoPublishCreateRequest,
+) -> Result<Uuid> {
+    let deterministic_source_work_item_id = daily_case_report_source_work_item_id(request);
+    if daily_case_report_storage_backend(request) != DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND {
+        return Ok(deterministic_source_work_item_id);
+    }
+
+    let evidence_ids = daily_case_report_feishu_evidence_ids(request)?;
+    let existing_source_work_item_id = find_daily_case_report_source_work_item_id(
+        pool,
+        &daily_case_report_source_idempotency_key(request),
+    )
+    .await?;
+    let expected_source_work_item_id =
+        existing_source_work_item_id.unwrap_or(deterministic_source_work_item_id);
+    if evidence_ids.source_work_item_id != expected_source_work_item_id {
+        bail!("daily case report Feishu evidence source_work_item_id does not match the persisted source work item");
+    }
+    Ok(expected_source_work_item_id)
+}
+
+async fn resolve_daily_case_report_artifact_id_for_create(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    request: &DailyCaseReportAutoPublishCreateRequest,
+    source_work_item_id: Uuid,
+) -> Result<Uuid> {
+    let deterministic_artifact_id = daily_case_report_artifact_id(request);
+    if daily_case_report_storage_backend(request) != DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND {
+        return Ok(deterministic_artifact_id);
+    }
+
+    let evidence_ids = daily_case_report_feishu_evidence_ids(request)?;
+    let existing_artifact_id =
+        find_daily_case_report_artifact_id_tx(tx, source_work_item_id, &request.content_hash)
+            .await?;
+    let expected_artifact_id = existing_artifact_id.unwrap_or(deterministic_artifact_id);
+    if evidence_ids.artifact_id != expected_artifact_id {
+        bail!(
+            "daily case report Feishu evidence artifact_id does not match the persisted artifact"
+        );
+    }
+    Ok(expected_artifact_id)
+}
+
+async fn find_daily_case_report_source_work_item_id(
+    pool: &PgPool,
+    source_idempotency_key: &str,
+) -> Result<Option<Uuid>> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM qintopia_agent_os.work_items
+        WHERE idempotency_key = $1
+          AND work_item_type = $2
+          AND capability_key = $3
+          AND requester_agent = 'xiaoman'
+          AND target_agent = 'xiaoman'
+        LIMIT 1
+        "#,
+    )
+    .bind(source_idempotency_key)
+    .bind(DAILY_CASE_REPORT_WORK_ITEM_TYPE)
+    .bind(DAILY_CASE_REPORT_CAPABILITY_KEY)
+    .fetch_optional(pool)
+    .await
+    .context("find existing daily case report source work item")
+}
+
+async fn find_daily_case_report_artifact_id(
+    pool: &PgPool,
+    source_work_item_id: Uuid,
+    content_hash: &str,
+) -> Result<Option<Uuid>> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM qintopia_agent_os.artifacts
+        WHERE work_item_id = $1
+          AND content_hash = $2
+          AND artifact_type = 'generated_image'
+          AND created_by_agent = 'xiaoman'
+        LIMIT 1
+        "#,
+    )
+    .bind(source_work_item_id)
+    .bind(content_hash)
+    .fetch_optional(pool)
+    .await
+    .context("find existing daily case report generated-image artifact")
+}
+
+async fn find_daily_case_report_artifact_id_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    source_work_item_id: Uuid,
+    content_hash: &str,
+) -> Result<Option<Uuid>> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM qintopia_agent_os.artifacts
+        WHERE work_item_id = $1
+          AND content_hash = $2
+          AND artifact_type = 'generated_image'
+          AND created_by_agent = 'xiaoman'
+        LIMIT 1
+        "#,
+    )
+    .bind(source_work_item_id)
+    .bind(content_hash)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("find existing daily case report generated-image artifact")
+}
+
+fn daily_case_report_feishu_evidence_ids(
+    request: &DailyCaseReportAutoPublishCreateRequest,
+) -> Result<DailyCaseReportStorageIds> {
+    let evidence = request
+        .media_upload_evidence
+        .as_ref()
+        .context("daily case report Feishu evidence is missing")?;
+    Ok(DailyCaseReportStorageIds {
+        artifact_id: evidence
+            .artifact_id
+            .context("daily case report Feishu evidence is missing artifact_id")?,
+        source_work_item_id: evidence
+            .source_work_item_id
+            .context("daily case report Feishu evidence is missing source_work_item_id")?,
+    })
+}
+
+fn validate_daily_case_report_persisted_source_binding(
+    request: &DailyCaseReportAutoPublishCreateRequest,
+    source_work_item_id: Uuid,
+) -> Result<()> {
+    if daily_case_report_storage_backend(request) != DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND {
+        return Ok(());
+    }
+    let evidence_ids = daily_case_report_feishu_evidence_ids(request)?;
+    if evidence_ids.source_work_item_id != source_work_item_id {
+        bail!("daily case report Feishu evidence source_work_item_id does not match the persisted source work item");
+    }
+    Ok(())
+}
+
+fn validate_daily_case_report_persisted_media_binding(
+    request: &DailyCaseReportAutoPublishCreateRequest,
+    artifact_id: Uuid,
+    source_work_item_id: Uuid,
+) -> Result<()> {
+    if daily_case_report_storage_backend(request) != DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND {
+        return Ok(());
+    }
+    let evidence_ids = daily_case_report_feishu_evidence_ids(request)?;
+    if evidence_ids.artifact_id != artifact_id
+        || evidence_ids.source_work_item_id != source_work_item_id
+    {
+        bail!("daily case report Feishu evidence does not match the persisted artifact binding");
+    }
+    let expected_uri = daily_case_report_feishu_artifact_uri(artifact_id);
+    if request.artifact_uri != expected_uri {
+        bail!("daily case report Feishu artifact_uri does not match the persisted artifact id");
+    }
+    Ok(())
 }
 
 fn daily_case_report_source_work_item_id(
@@ -10208,8 +10437,8 @@ mod tests {
             .contains("text announcement payload contains disallowed sensitive"));
     }
 
-    #[test]
-    fn daily_case_report_media_upload_dry_run_validates_jpeg_identity() {
+    #[tokio::test]
+    async fn daily_case_report_media_upload_dry_run_validates_jpeg_identity() {
         set_daily_case_report_media_env();
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("xiaoman-2026-08-08.jpg");
@@ -10235,7 +10464,9 @@ mod tests {
             false,
             DailyCaseReportStorageBackend::HttpPublic,
             None,
+            None,
         )
+        .await
         .expect("media upload dry-run should validate");
 
         assert_eq!(report.action_status, "media_upload_validated");
@@ -10247,8 +10478,8 @@ mod tests {
         assert!(!report.external_send_executed);
     }
 
-    #[test]
-    fn daily_case_report_media_upload_rejects_hash_mismatch() {
+    #[tokio::test]
+    async fn daily_case_report_media_upload_rejects_hash_mismatch() {
         set_daily_case_report_media_env();
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("xiaoman-2026-08-08.jpg");
@@ -10263,7 +10494,9 @@ mod tests {
             false,
             DailyCaseReportStorageBackend::HttpPublic,
             None,
+            None,
         )
+        .await
         .expect_err("hash mismatch must fail");
 
         assert!(err
@@ -10383,6 +10616,108 @@ mod tests {
     }
 
     #[test]
+    fn daily_case_report_auto_publish_accepts_feishu_legacy_upload_evidence() {
+        let content_hash =
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let legacy_artifact_id = Uuid::new_v4();
+        let legacy_source_work_item_id = Uuid::new_v4();
+        let artifact_uri = daily_case_report_feishu_artifact_uri(legacy_artifact_id);
+        let mut payload = daily_case_report_auto_publish_request_json(
+            &artifact_uri,
+            content_hash,
+            "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            48300,
+            "xiaoman-2026-08-08.jpg",
+        );
+        payload["media_upload_evidence"]["boundary"] =
+            json!(DAILY_CASE_REPORT_FEISHU_MEDIA_UPLOAD_BOUNDARY_KEY);
+        payload["media_upload_evidence"]["storage_backend"] =
+            json!(DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND);
+        payload["media_upload_evidence"]["artifact_id"] = json!(legacy_artifact_id);
+        payload["media_upload_evidence"]["source_work_item_id"] = json!(legacy_source_work_item_id);
+
+        let report = create_daily_case_report_auto_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect("Feishu-backed legacy daily report ids should validate before DB binding");
+
+        assert_eq!(report.action_status, "dry_run_ok");
+        assert_eq!(report.artifact_type, "generated_image");
+    }
+
+    #[test]
+    fn daily_case_report_persisted_media_binding_rejects_feishu_id_drift() {
+        let artifact_id = Uuid::new_v4();
+        let source_work_item_id = Uuid::new_v4();
+        let artifact_uri = daily_case_report_feishu_artifact_uri(artifact_id);
+        let mut payload = daily_case_report_auto_publish_request_json(
+            &artifact_uri,
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            48300,
+            "xiaoman-2026-08-08.jpg",
+        );
+        payload["media_upload_evidence"]["boundary"] =
+            json!(DAILY_CASE_REPORT_FEISHU_MEDIA_UPLOAD_BOUNDARY_KEY);
+        payload["media_upload_evidence"]["storage_backend"] =
+            json!(DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND);
+        payload["media_upload_evidence"]["artifact_id"] = json!(artifact_id);
+        payload["media_upload_evidence"]["source_work_item_id"] = json!(source_work_item_id);
+        let request: DailyCaseReportAutoPublishCreateRequest =
+            serde_json::from_value(payload).expect("request parses");
+
+        validate_daily_case_report_persisted_media_binding(
+            &request,
+            artifact_id,
+            source_work_item_id,
+        )
+        .expect("matching persisted binding should validate");
+        let err = validate_daily_case_report_persisted_media_binding(
+            &request,
+            Uuid::new_v4(),
+            source_work_item_id,
+        )
+        .expect_err("persisted artifact drift must fail");
+
+        assert!(err
+            .to_string()
+            .contains("daily case report Feishu evidence does not match the persisted artifact"));
+    }
+
+    #[test]
+    fn daily_case_report_apply_rejects_storage_backend_env_drift() {
+        std::env::set_var(
+            DAILY_CASE_REPORT_STORAGE_BACKEND_ENV,
+            DAILY_CASE_REPORT_HTTP_STORAGE_BACKEND,
+        );
+        let artifact_id = Uuid::new_v4();
+        let source_work_item_id = Uuid::new_v4();
+        let artifact_uri = daily_case_report_feishu_artifact_uri(artifact_id);
+        let mut payload = daily_case_report_auto_publish_request_json(
+            &artifact_uri,
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            48300,
+            "xiaoman-2026-08-08.jpg",
+        );
+        payload["media_upload_evidence"]["boundary"] =
+            json!(DAILY_CASE_REPORT_FEISHU_MEDIA_UPLOAD_BOUNDARY_KEY);
+        payload["media_upload_evidence"]["storage_backend"] =
+            json!(DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND);
+        payload["media_upload_evidence"]["artifact_id"] = json!(artifact_id);
+        payload["media_upload_evidence"]["source_work_item_id"] = json!(source_work_item_id);
+        let request: DailyCaseReportAutoPublishCreateRequest =
+            serde_json::from_value(payload).expect("request parses");
+
+        let err = validate_daily_case_report_storage_backend_matches_env(&request)
+            .expect_err("backend drift must fail before DB writes");
+
+        assert!(err.to_string().contains(
+            "daily case report storage backend does not match reviewed production config"
+        ));
+    }
+
+    #[test]
     fn daily_case_report_auto_publish_rejects_feishu_artifact_id_drift() {
         let content_hash =
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -10420,7 +10755,7 @@ mod tests {
 
         assert!(err
             .to_string()
-            .contains("daily case report Feishu evidence identity does not match"));
+            .contains("daily case report Feishu evidence artifact_uri does not match"));
     }
 
     #[tokio::test]
@@ -10451,10 +10786,11 @@ mod tests {
             &source_key,
         ]);
         let legacy_artifact_id = Uuid::new_v4();
+        let legacy_artifact_uri = daily_case_report_feishu_artifact_uri(legacy_artifact_id);
         assert_ne!(legacy_artifact_id, requested_artifact_id);
 
         let mut payload = daily_case_report_auto_publish_request_json(
-            &daily_case_report_feishu_artifact_uri(requested_artifact_id),
+            &legacy_artifact_uri,
             &content_hash,
             "98e7c2acf4391f8b4a2bbd39e364c5e3",
             48300,
@@ -10464,7 +10800,7 @@ mod tests {
             json!(DAILY_CASE_REPORT_FEISHU_MEDIA_UPLOAD_BOUNDARY_KEY);
         payload["media_upload_evidence"]["storage_backend"] =
             json!(DAILY_CASE_REPORT_FEISHU_STORAGE_BACKEND);
-        payload["media_upload_evidence"]["artifact_id"] = json!(requested_artifact_id);
+        payload["media_upload_evidence"]["artifact_id"] = json!(legacy_artifact_id);
         payload["media_upload_evidence"]["source_work_item_id"] = json!(source_work_item_id);
 
         let mut request: DailyCaseReportAutoPublishCreateRequest =
@@ -10534,7 +10870,7 @@ mod tests {
             &mut tx,
             &request,
             source_work_item_id,
-            requested_artifact_id,
+            legacy_artifact_id,
         )
         .await
         .expect("legacy conflict should reuse existing artifact");
