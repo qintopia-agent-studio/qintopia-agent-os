@@ -55,6 +55,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
   "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+  "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
   "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
