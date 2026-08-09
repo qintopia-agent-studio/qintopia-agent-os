@@ -52,7 +52,8 @@
           "deploy-bundle",
           "hermes-plugins",
           "hermes-profile-erhua",
-          "production-activation"
+          "production-activation",
+          "production-legacy-cron-retirement"
         ]
       }
     },
@@ -140,6 +141,21 @@
           }
         }
       }
+    },
+    "legacy_cron_retirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets"],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["erhua-legacy-cron", "xiaoman-legacy-cron"]
+          }
+        }
+      }
     }
   },
   "allOf": [
@@ -201,6 +217,39 @@
       },
       "then": {
         "not": { "required": ["activation"] }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "contains": { "const": "production-legacy-cron-retirement" }
+          }
+        }
+      },
+      "then": {
+        "required": ["legacy_cron_retirement"],
+        "properties": {
+          "release_scope": { "const": ["production-legacy-cron-retirement"] },
+          "restart_targets": { "const": ["qintopia-system-services"] },
+          "dry_run": { "const": false },
+          "rollback_on_smoke_failure": { "const": false }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "not": { "contains": { "const": "production-legacy-cron-retirement" } }
+          }
+        },
+        "required": ["release_scope"]
+      },
+      "then": {
+        "not": { "required": ["legacy_cron_retirement"] }
       }
     }
   ]

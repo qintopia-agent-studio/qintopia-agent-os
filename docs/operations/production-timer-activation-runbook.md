@@ -46,7 +46,9 @@ scope and the fixed target enum above. It does not execute caller-provided shell
   replacement timer. `xiaoman-weekly-recruitment`, `xiaoman-weekly-plan-confirmation`,
   and `xiaoman-weekly-preview` observe only Xiaoman legacy Hermes cron state. If
   legacy-cron observation fails, the activation request fails closed; it does not
-  automatically retire legacy cron files.
+  automatically retire legacy cron files. Use the `Retire Production Legacy Crons`
+  workflow and require its `production-legacy-cron-retirement` evidence before retrying
+  activation.
 - The activation request sets `rollback_on_smoke_failure=false`. Use the dedicated
   target rollback runbooks/scripts for a separate reviewed rollback decision.
 - Every selected target requires the owner-approved production config to have already
