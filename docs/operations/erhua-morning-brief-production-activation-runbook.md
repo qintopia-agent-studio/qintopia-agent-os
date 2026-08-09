@@ -73,11 +73,9 @@ QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=disabled \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh
 ```
 
-If Xiaoman legacy cron observation finds runtime cron declarations, stop. Capture the
-non-secret hash/count evidence and replace that runtime ownership through another
-reviewed deploy/profile-bundle change before enabling this timer.
-
-For the observed Erhua legacy cron state with SHA-256
+If Erhua legacy cron observation finds runtime cron declarations, do not activate the
+new timer until those declarations are retired through a reviewed Erhua path. For the
+observed Erhua legacy cron state with SHA-256
 `052cd6617e241442539689f7fabb20606a375ca1341e7182193a6a5c294338ad`, retire it only
 through the promoted release-local script:
 
@@ -91,6 +89,10 @@ hash before writing, creates a same-directory `0600` backup, replaces the runtim
 file with an empty retired manifest, and emits only sanitized counts and hashes. Re-run
 the Erhua legacy cron observation after retirement; activation must still fail closed if
 any runtime cron declarations remain.
+
+If Xiaoman legacy cron observation finds runtime cron declarations during the same
+pre-activation sweep, stop and replace that runtime ownership through a separate
+reviewed deploy/profile-bundle change before enabling this timer.
 
 ## Activate
 
