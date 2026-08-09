@@ -52,7 +52,6 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
     def profile_text(
         self,
         *,
-        use_feishu_base: str = "1",
         token: str = "base-token-alpha",
         allowed_tokens: str = "base-token-alpha,base-token-beta",
         profile_path: str | None = None,
@@ -60,10 +59,6 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         profile_path = profile_path or str(self.profile_env)
         return "\n".join(
             [
-                self.env_line(
-                    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
-                    use_feishu_base,
-                ),
                 self.env_line("QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN", token),
                 self.env_line(
                     "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
@@ -119,7 +114,8 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         report = self.configure(apply=True, approval=MODULE.APPLY_APPROVAL)
 
         self.assertTrue(report["success"])
-        self.assertEqual(report["copied_key_count"], 6)
+        self.assertEqual(report["copied_key_count"], 5)
+        self.assertTrue(report["feishu_base_mode_enabled"])
         self.assertTrue(report["sensitive_values_redacted"])
         self.assertFalse(report["external_calls_executed"])
         self.assertFalse(report["service_changes_executed"])
@@ -129,6 +125,7 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         self.assertIn(MODULE.MANAGED_COMMENT, text)
         for key in MODULE.READ_THROUGH_KEYS:
             self.assertIn(f"{key}=", text)
+        self.assertIn("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1", text)
         self.assertNotIn("EXTRA_PROFILE_ONLY", text)
         self.assertNotIn("profile-only-value", text)
         self.assertEqual(self.sidecar_env.stat().st_mode & 0o777, 0o640)
@@ -188,15 +185,6 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         )
         self.profile_env.chmod(0o600)
         with self.assertRaisesRegex(MODULE.ConfigError, "unsafe"):
-            self.configure()
-
-    def test_rejects_disabled_feishu_base_mode(self) -> None:
-        self.profile_env.write_text(
-            self.profile_text(use_feishu_base="0"),
-            encoding="utf-8",
-        )
-        self.profile_env.chmod(0o600)
-        with self.assertRaisesRegex(MODULE.ConfigError, "Feishu Base mode"):
             self.configure()
 
     def test_rejects_unallowlisted_token_or_wrong_profile_path(self) -> None:

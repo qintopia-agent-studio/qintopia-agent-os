@@ -29,13 +29,15 @@ ASSIGNMENT_RE = re.compile(r"^(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.
 CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 READ_THROUGH_KEYS = (
-    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
     "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
 )
+FEISHU_BASE_MODE_KEY = "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"
+FEISHU_BASE_MODE_VALUE = "1"
+MANAGED_KEYS = READ_THROUGH_KEYS + (FEISHU_BASE_MODE_KEY,)
 
 
 class ConfigError(ValueError):
@@ -147,8 +149,6 @@ def validate_profile_values(values: dict[str, str], profile_env_path: Path) -> d
     missing = [key for key in READ_THROUGH_KEYS if not values.get(key)]
     if missing:
         raise ConfigError("Xiaoman profile env is missing required read-through keys")
-    if values["QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"] != "1":
-        raise ConfigError("Xiaoman activity Feishu Base mode must be enabled")
     if values["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH"] != str(profile_env_path):
         raise ConfigError("Xiaoman profile env path must be the fixed production path")
     token = values["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN"]
@@ -174,7 +174,7 @@ def render_env_text(text: str, replacements: dict[str, str]) -> str:
     while retained and not retained[-1].strip():
         retained.pop()
     managed = [MANAGED_COMMENT] + [
-        f"{key}={shlex.quote(replacements[key])}" for key in READ_THROUGH_KEYS
+        f"{key}={shlex.quote(replacements[key])}" for key in MANAGED_KEYS
     ]
     return "\n".join(retained + [""] + managed) + "\n"
 
@@ -254,6 +254,7 @@ def configure(
             expected_mode=0o600,
         )
         replacements = validate_profile_values(profile.values, profile_env_path)
+        replacements[FEISHU_BASE_MODE_KEY] = FEISHU_BASE_MODE_VALUE
         next_text = render_env_text(sidecar.text, replacements)
         change_required = next_text.encode("utf-8") != sidecar.text.encode("utf-8")
         if apply and change_required:
@@ -266,6 +267,7 @@ def configure(
             else "xiaoman_activity_read_through_config_ready",
             "release_sha_matched": True,
             "copied_key_count": len(READ_THROUGH_KEYS),
+            "feishu_base_mode_enabled": True,
             "sidecar_change_required": change_required,
             "deduped": not change_required,
             "sensitive_values_redacted": True,

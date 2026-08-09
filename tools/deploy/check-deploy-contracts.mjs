@@ -2848,6 +2848,7 @@ if (exists(xiaomanWeeklyPreviewConfigApplyPath)) {
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
     "os.chown(tmp_name, stat.st_uid, stat.st_gid)",
   ]) {
@@ -2873,6 +2874,7 @@ if (exists(xiaomanWeeklyPreviewWorkerPath)) {
     'PYTHON_BIN="/usr/bin/python3"',
     'SIDECAR_BIN="${RELEASE_DIR}/sidecar/qintopia-message-sidecar"',
     'WORK_DIR="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-preview"',
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "xiaoman weekly preview refuses runtime path overrides",
     "-v QINTOPIA_XIAOMAN_WRAPPER_PATH",
     'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
@@ -2919,6 +2921,7 @@ if (exists(xiaomanWeeklyPreviewObservationPath)) {
     "qintopia-agentos-xiaoman-weekly-preview.timer",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "OnCalendar=Mon *-*-* 09:30:00",
+    'require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
   ]) {
     requireFragment(xiaomanWeeklyPreviewObservationPath, observation, fragment);
   }
@@ -2936,6 +2939,7 @@ if (exists(xiaomanWeeklyPreviewActivationPath)) {
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
@@ -3225,10 +3229,10 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     'PYTHON_VALIDATOR="${RELEASE_DIR}/runtime/hermes/validate_hermes_python.py"',
     "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED",
     "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     'SIDECAR_BIN="${RELEASE_DIR}/sidecar/qintopia-message-sidecar"',
     "refuses Xiaoman wrapper path override",
     'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
-    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "reviewed primary sidecar binary is missing",
     "--prepare-artifact",
     "--execute-artifact-create",
@@ -3264,7 +3268,6 @@ if (!exists(xiaomanActivityReadThroughConfigPath)) {
 } else {
   const config = readText(xiaomanActivityReadThroughConfigPath);
   const expectedReadThroughKeys = [
-    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
     "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
@@ -3283,9 +3286,12 @@ if (!exists(xiaomanActivityReadThroughConfigPath)) {
     "expected_mode=0o640",
     "expected_mode=0o600",
     "Xiaoman profile env path must be the fixed production path",
-    "Xiaoman activity Feishu Base mode must be enabled",
     "Xiaoman activity Feishu Base token must be explicitly allowlisted",
+    'FEISHU_BASE_MODE_KEY = "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"',
+    'FEISHU_BASE_MODE_VALUE = "1"',
+    "MANAGED_KEYS = READ_THROUGH_KEYS + (FEISHU_BASE_MODE_KEY,)",
     "copied_key_count",
+    "feishu_base_mode_enabled",
     "sensitive_values_redacted",
     "external_calls_executed",
     "service_changes_executed",
@@ -3450,6 +3456,11 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.s
     timerObservation,
     'PYTHON_BIN="/usr/bin/python3"'
   );
+  requireFragment(
+    "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+    timerObservation,
+    'require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"'
+  );
   forbidFragment(
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     timerObservation,
@@ -3475,6 +3486,7 @@ if (exists("deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh"))
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"',
+    'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
   ]) {
     requireFragment(
       "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
@@ -3496,6 +3508,7 @@ if (exists("deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.s
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
   ]) {
     requireFragment(
