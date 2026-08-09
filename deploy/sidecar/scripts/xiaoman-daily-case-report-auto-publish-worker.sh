@@ -13,6 +13,7 @@ SIDECAR_BIN="${RELEASE_DIR}/sidecar-profiles/qiwe-production/qintopia-message-si
 PYTHON_BIN="/usr/bin/python3"
 PSQL_BIN="/usr/bin/psql"
 WORK_DIR="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_OUTPUT_DIR:-/home/ubuntu/.local/state/qintopia-agentos/xiaoman-daily-case-report}"
+BACKFILL_APPROVAL="approved-production-xiaoman-daily-case-report-auto-publish-backfill"
 
 required_env() {
   local key="$1"
@@ -79,6 +80,35 @@ PY
   exit 1
 fi
 
+report_date_args=()
+if [[ -n "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE:-}" ]]; then
+  if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL:-}" != "$BACKFILL_APPROVAL" ]]; then
+    echo "xiaoman daily case report date override requires explicit backfill approval" >&2
+    exit 1
+  fi
+  if [[ ! "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE must be YYYY-MM-DD" >&2
+    exit 1
+  fi
+  "$PYTHON_BIN" - "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE" <<'PY'
+from __future__ import annotations
+
+import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+try:
+    requested = datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
+except ValueError as exc:
+    raise SystemExit("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE is not a real calendar date") from exc
+
+today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+if requested > today:
+    raise SystemExit("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE must not be in the future")
+PY
+  report_date_args=(--date "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE")
+fi
+
 mkdir -p "$WORK_DIR"
 chmod 0700 "$WORK_DIR"
 tmp_dir="$(mktemp -d "${WORK_DIR}/run.XXXXXX")"
@@ -94,6 +124,7 @@ publish_report="${tmp_dir}/publish.json"
 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --render image \
   --image-format jpeg \
+  "${report_date_args[@]}" \
   --chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID" \
   --output-dir "$tmp_dir" \
   --json >"$render_report"
