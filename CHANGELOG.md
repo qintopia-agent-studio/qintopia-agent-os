@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.77](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.76...v0.2.77) (2026-08-09)
+
+
+### Features
+
+* **xiaoman:** add daily report production config apply ([#398](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/398)) ([bc66508](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bc665085dbe4dec7238a8c75f496adce97f4d788))
+
 ## [0.2.76](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.75...v0.2.76) (2026-08-09)
 
 
