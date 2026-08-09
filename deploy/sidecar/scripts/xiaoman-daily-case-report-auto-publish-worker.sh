@@ -11,6 +11,7 @@ RELEASE_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 WORKFLOW_PY="${RELEASE_DIR}/workflows/xiaoman-daily-case-report/daily_case_report.py"
 SIDECAR_BIN="${RELEASE_DIR}/sidecar-profiles/qiwe-production/qintopia-message-sidecar"
 PYTHON_BIN="/usr/bin/python3"
+PSQL_BIN="/usr/bin/psql"
 WORK_DIR="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_OUTPUT_DIR:-/home/ubuntu/.local/state/qintopia-agentos/xiaoman-daily-case-report}"
 
 required_env() {
@@ -65,6 +66,16 @@ fi
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "python3 is required for xiaoman daily case report rendering" >&2
+  exit 1
+fi
+if [[ ! -x "$PSQL_BIN" ]]; then
+  echo "psql is required for xiaoman daily case report database read-through" >&2
+  exit 1
+fi
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1; then
+from PIL import Image, ImageDraw, ImageFont
+PY
+  echo "Pillow is required for xiaoman daily case report local image rendering" >&2
   exit 1
 fi
 
