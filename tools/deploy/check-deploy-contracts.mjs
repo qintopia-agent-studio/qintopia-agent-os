@@ -3441,7 +3441,7 @@ if (exists("deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh")) {
     "approved-production-erhua-legacy-cron-retirement",
     'PYTHON_BIN="/usr/bin/python3"',
     "/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json",
-    "052cd6617e241442539689f7fabb20606a375ca1341e7182193a6a5c294338ad",
+    "59edf8abc1602a10a5ffb83120c631395d8c486df66343bfd1591a94da30412c",
     "legacy cron file sha256 does not match the reviewed production observation",
     "previous_decl_count",
     "new_decl_count",

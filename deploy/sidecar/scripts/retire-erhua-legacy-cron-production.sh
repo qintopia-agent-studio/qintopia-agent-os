@@ -9,7 +9,7 @@ fi
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 PYTHON_BIN="/usr/bin/python3"
 CRON_FILE="/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json"
-EXPECTED_PREVIOUS_SHA256="052cd6617e241442539689f7fabb20606a375ca1341e7182193a6a5c294338ad"
+EXPECTED_PREVIOUS_SHA256="59edf8abc1602a10a5ffb83120c631395d8c486df66343bfd1591a94da30412c"
 
 fail() {
   echo "Erhua legacy cron retirement failed: $1" >&2
