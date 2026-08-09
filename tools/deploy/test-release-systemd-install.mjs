@@ -170,6 +170,68 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       "release installer must install but not enable Erhua morning brief"
     );
   }
+  const xiaomanWeeklyRecruitmentUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-xiaoman-weekly-recruitment.service"),
+    "utf8"
+  );
+  for (const required of [
+    `WorkingDirectory=${resolvedReleaseDir}`,
+    `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh`,
+  ]) {
+    if (!xiaomanWeeklyRecruitmentUnit.includes(required)) {
+      throw new Error(`Xiaoman weekly recruitment unit is missing ${required}`);
+    }
+  }
+  const xiaomanWeeklyRecruitmentTimer = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-xiaoman-weekly-recruitment.timer"),
+    "utf8"
+  );
+  for (const required of [
+    "OnCalendar=Sat *-*-* 10:00:00",
+    "Persistent=true",
+    "Unit=qintopia-agentos-xiaoman-weekly-recruitment.service",
+  ]) {
+    if (!xiaomanWeeklyRecruitmentTimer.includes(required)) {
+      throw new Error(`Xiaoman weekly recruitment timer is missing ${required}`);
+    }
+  }
+  if (systemctlLogText.includes("qintopia-agentos-xiaoman-weekly-recruitment.timer")) {
+    throw new Error(
+      "release installer must install but not enable Xiaoman weekly recruitment"
+    );
+  }
+  const xiaomanWeeklyPlanConfirmationUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-xiaoman-weekly-plan-confirmation.service"),
+    "utf8"
+  );
+  for (const required of [
+    `WorkingDirectory=${resolvedReleaseDir}`,
+    `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh`,
+  ]) {
+    if (!xiaomanWeeklyPlanConfirmationUnit.includes(required)) {
+      throw new Error(`Xiaoman weekly plan confirmation unit is missing ${required}`);
+    }
+  }
+  const xiaomanWeeklyPlanConfirmationTimer = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-xiaoman-weekly-plan-confirmation.timer"),
+    "utf8"
+  );
+  for (const required of [
+    "OnCalendar=Sun *-*-* 20:00:00",
+    "Persistent=true",
+    "Unit=qintopia-agentos-xiaoman-weekly-plan-confirmation.service",
+  ]) {
+    if (!xiaomanWeeklyPlanConfirmationTimer.includes(required)) {
+      throw new Error(`Xiaoman weekly plan confirmation timer is missing ${required}`);
+    }
+  }
+  if (
+    systemctlLogText.includes("qintopia-agentos-xiaoman-weekly-plan-confirmation.timer")
+  ) {
+    throw new Error(
+      "release installer must install but not enable Xiaoman weekly plan confirmation"
+    );
+  }
   const xiaomanWeeklyPreviewUnit = fs.readFileSync(
     path.join(unitDir, "qintopia-agentos-xiaoman-weekly-preview.service"),
     "utf8"

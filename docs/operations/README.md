@@ -35,6 +35,9 @@ deployment docs.
 - [xiaoman-weekly-minimum-loop-runbook.md](xiaoman-weekly-minimum-loop-runbook.md):
   2026-08-01 Xiaoman three-step weekly operations loop status and action content for the
   Sunday 20:00 plan confirmation.
+- [xiaoman-weekly-loop-cutover-runbook.md](xiaoman-weekly-loop-cutover-runbook.md):
+  release-managed Saturday recruitment and Sunday plan-confirmation timer activation,
+  observation, and rollback for the Xiaoman weekly loop.
 - [xiaoman-weekly-preview-cutover-runbook.md](xiaoman-weekly-preview-cutover-runbook.md):
   release-managed Xiaoman weekly preview timer activation, observation, and rollback
   while preserving the human confirmation gate.

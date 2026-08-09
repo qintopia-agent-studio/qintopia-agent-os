@@ -324,7 +324,12 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     dry_run: false,
     rollback_on_smoke_failure: false,
     activation: {
-      targets: ["erhua-morning-brief", "xiaoman-weekly-preview"],
+      targets: [
+        "erhua-morning-brief",
+        "xiaoman-weekly-recruitment",
+        "xiaoman-weekly-plan-confirmation",
+        "xiaoman-weekly-preview",
+      ],
     },
   };
   if (!validateRequest(productionActivationRequest)) {
@@ -808,10 +813,11 @@ if (exists(".github/workflows/activate-production-timers.yml")) {
     );
   }
   if (
-    activationTargetsInput?.default !== "erhua-morning-brief,xiaoman-weekly-preview"
+    activationTargetsInput?.default !==
+    "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview"
   ) {
     addError(
-      ".github/workflows/activate-production-timers.yml: default activation targets must stay limited to Erhua and weekly preview"
+      ".github/workflows/activate-production-timers.yml: default activation targets must stay limited to Erhua and Xiaoman weekly loop timers"
     );
   }
   const uploadJobNames = Object.entries(workflow?.jobs || {})
@@ -841,7 +847,7 @@ if (exists(".github/workflows/activate-production-timers.yml")) {
     "normalize_csv_allowlist()",
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
-    "erhua-morning-brief,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish",
+    "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish",
     "pnpm deploy:runner:check",
     "DEPLOY_RELEASE_SCOPE: production-activation",
     "DEPLOY_RESTART_TARGETS: qintopia-system-services",
@@ -924,6 +930,8 @@ for (const fragment of [
   "run_production_activation",
   "production-timer-activation",
   "activate-erhua-morning-brief-production.sh",
+  "activate-xiaoman-weekly-recruitment-production.sh",
+  "activate-xiaoman-weekly-plan-confirmation-production.sh",
   "activate-xiaoman-weekly-preview-production.sh",
   "activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "validate_current_profile_release",
@@ -1558,6 +1566,16 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh",
     "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-production-config.sh",
+    "deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh",
+    "deploy/sidecar/scripts/xiaoman-weekly-recruitment-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-xiaoman-weekly-recruitment-production.sh",
+    "deploy/sidecar/scripts/rollback-xiaoman-weekly-recruitment-production.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-production-config.sh",
+    "deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh",
+    "deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-production-observation-smoke.sh",
+    "deploy/sidecar/scripts/activate-xiaoman-weekly-plan-confirmation-production.sh",
+    "deploy/sidecar/scripts/rollback-xiaoman-weekly-plan-confirmation-production.sh",
     "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
     "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
@@ -1574,6 +1592,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "agents/xiaoman/profile-bundle",
     "workflows/erhua-morning-brief",
     "workflows/xiaoman-daily-case-report",
+    "workflows/xiaoman-weekly-loop",
     "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py",
     "workflows/erhua-morning-brief",
   ]) {

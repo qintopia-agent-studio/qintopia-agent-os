@@ -709,6 +709,26 @@ render_all() {
     "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TIMER_CALENDAR:-*-*-* 07:45:00}"
 
   render_release_script_oneshot_service \
+    "qintopia-agentos-xiaoman-weekly-recruitment.service" \
+    "Qintopia AgentOS Xiaoman weekly activity recruitment worker" \
+    "${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh"
+  render_calendar_timer \
+    "qintopia-agentos-xiaoman-weekly-recruitment.timer" \
+    "Run Qintopia AgentOS Xiaoman weekly activity recruitment" \
+    "qintopia-agentos-xiaoman-weekly-recruitment.service" \
+    "Sat *-*-* 10:00:00"
+
+  render_release_script_oneshot_service \
+    "qintopia-agentos-xiaoman-weekly-plan-confirmation.service" \
+    "Qintopia AgentOS Xiaoman weekly activity plan confirmation worker" \
+    "${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh"
+  render_calendar_timer \
+    "qintopia-agentos-xiaoman-weekly-plan-confirmation.timer" \
+    "Run Qintopia AgentOS Xiaoman weekly activity plan confirmation" \
+    "qintopia-agentos-xiaoman-weekly-plan-confirmation.service" \
+    "Sun *-*-* 20:00:00"
+
+  render_release_script_oneshot_service \
     "qintopia-agentos-xiaoman-weekly-preview.service" \
     "Qintopia AgentOS Xiaoman weekly activity preview worker" \
     "${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh"
@@ -802,6 +822,10 @@ validate_output() {
     "qintopia-agentos-qiwe-image-send-worker.timer"
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service"
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
+    "qintopia-agentos-xiaoman-weekly-recruitment.service"
+    "qintopia-agentos-xiaoman-weekly-recruitment.timer"
+    "qintopia-agentos-xiaoman-weekly-plan-confirmation.service"
+    "qintopia-agentos-xiaoman-weekly-plan-confirmation.timer"
     "qintopia-agentos-xiaoman-weekly-preview.service"
     "qintopia-agentos-xiaoman-weekly-preview.timer"
     "qintopia-agentos-erhua-morning-brief.service"
@@ -830,6 +854,12 @@ validate_output() {
         ;;
       qintopia-agentos-xiaoman-daily-case-report-auto-publish.service)
         grep -F " ${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh" "$file" >/dev/null
+        ;;
+      qintopia-agentos-xiaoman-weekly-recruitment.service)
+        grep -F " ${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh" "$file" >/dev/null
+        ;;
+      qintopia-agentos-xiaoman-weekly-plan-confirmation.service)
+        grep -F " ${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh" "$file" >/dev/null
         ;;
       qintopia-agentos-xiaoman-weekly-preview.service)
         grep -F " ${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh" "$file" >/dev/null

@@ -4,11 +4,11 @@ Updated: 2026-08-02
 
 ## Current Setup
 
-| Step                        | Schedule       | Status                     | Next action                                               |
-| --------------------------- | -------------- | -------------------------- | --------------------------------------------------------- |
-| Resident recruitment form   | Saturday 10:00 | Built                      | Keep observed; no repository change needed.               |
-| Plan-sheet confirmation     | Sunday 20:00   | Timer built; link provided | Fill the scheduled action content below.                  |
-| Confirmed next-week preview | Monday 09:30   | Release timer ready        | Activate via `xiaoman-weekly-preview-cutover-runbook.md`. |
+| Step                        | Schedule       | Status              | Next action                                               |
+| --------------------------- | -------------- | ------------------- | --------------------------------------------------------- |
+| Resident recruitment form   | Saturday 10:00 | Release timer ready | Activate via `xiaoman-weekly-loop-cutover-runbook.md`.    |
+| Plan-sheet confirmation     | Sunday 20:00   | Release timer ready | Activate via `xiaoman-weekly-loop-cutover-runbook.md`.    |
+| Confirmed next-week preview | Monday 09:30   | Release timer ready | Activate via `xiaoman-weekly-preview-cutover-runbook.md`. |
 
 This runbook records the 2026-08-01 simplified Xiaoman loop. It is not Xiaoman
 production-completion evidence and must not be used to claim real QiWe group delivery.
@@ -111,8 +111,9 @@ Two standing constraints:
   carry it over, so these timers must be re-registered or recreated before the live
   profile symlink cutover.
 
-The durable timer path is `docs/operations/xiaoman-weekly-preview-cutover-runbook.md`.
-Do not hot-edit production units or recreate the Hermes cron after that cutover.
+The durable timer paths are `docs/operations/xiaoman-weekly-loop-cutover-runbook.md` and
+`docs/operations/xiaoman-weekly-preview-cutover-runbook.md`. Do not hot-edit production
+units or recreate the Hermes cron after that cutover.
 
 ## Local Verification
 

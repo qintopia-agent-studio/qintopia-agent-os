@@ -96,6 +96,7 @@ rules:
       - "skills/qintopia-tools/variants/xiaoman/**"
       - "workflows/xiaoman-activity-signal/**"
       - "workflows/activity-promotion/**"
+      - "workflows/xiaoman-weekly-loop/**"
       - "workflows/xiaoman-weekly-preview/**"
       - "workflows/xiaoman-daily-case-report/**"
 

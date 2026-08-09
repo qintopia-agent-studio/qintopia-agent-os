@@ -34,6 +34,13 @@ entries:
     notes:
       Daily Xiaoman community case-report generator targeting automatic QiWe publication
       after reviewed artifact, adapter, and timer gates land.
+  - id: workflows/xiaoman-weekly-loop
+    path: workflows/xiaoman-weekly-loop
+    manifest: workflows/xiaoman-weekly-loop/workflow.yaml
+    status: active
+    notes:
+      Deterministic Saturday recruitment and Sunday plan-confirmation draft generator;
+      production timers are release-managed and keep human confirmation before handoff.
   - id: workflows/xiaoman-weekly-preview
     path: workflows/xiaoman-weekly-preview
     manifest: workflows/xiaoman-weekly-preview/workflow.yaml
