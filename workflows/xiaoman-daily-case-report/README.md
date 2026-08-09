@@ -161,9 +161,11 @@ media upload values. The systemd timer is rendered as
 - Production JPEG/database runs use fixed local runtime tools only. Database
   read-through prefers `psycopg` when already present and otherwise falls back to the
   reviewed `/usr/bin/psql` boundary without placing the database URL in command
-  arguments. Image rendering prefers Python Playwright when available and otherwise uses
-  the system Pillow renderer plus system fonts. Hand-installed Python packages or
-  browsers remain outside the approved production boundary.
+  arguments, with a minimal `PATH`, `PG*` connection fields, and SQL on stdin so `psql`
+  variable substitution is applied. Image rendering prefers Python Playwright when
+  available and otherwise uses the system Pillow renderer plus system fonts.
+  Hand-installed Python packages or browsers remain outside the approved production
+  boundary.
 - The automatic publisher uses the dedicated `xiaoman.daily_case_report_auto_publish`
   capability and `review_policy=automatic_publish`; only
   `workflow_type=daily_case_report` may bypass per-day human final confirmation.
