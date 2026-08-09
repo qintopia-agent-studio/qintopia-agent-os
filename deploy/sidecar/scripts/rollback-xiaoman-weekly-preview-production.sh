@@ -21,10 +21,6 @@ if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   exit 1
 fi
 
-"$SYSTEMCTL" disable --now "$TIMER_NAME"
-"$SYSTEMCTL" stop "$SERVICE_NAME" || true
-"$SYSTEMCTL" reset-failed "$SERVICE_NAME" || true
-
 count="$(grep -Ec "^QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=" "$ENV_FILE" || true)"
 if [[ "$count" != "1" ]]; then
   echo "xiaoman weekly preview rollback requires exactly one persistent enablement flag" >&2
@@ -34,5 +30,9 @@ if ! grep -Fxq "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=0" "$ENV_FILE"; then
   echo "xiaoman weekly preview rollback requires QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=0" >&2
   exit 1
 fi
+
+"$SYSTEMCTL" disable --now "$TIMER_NAME"
+"$SYSTEMCTL" stop "$SERVICE_NAME" || true
+"$SYSTEMCTL" reset-failed "$SERVICE_NAME" || true
 
 echo "xiaoman weekly preview timer rolled back"

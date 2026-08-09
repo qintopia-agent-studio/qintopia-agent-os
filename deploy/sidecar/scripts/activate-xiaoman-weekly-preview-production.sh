@@ -54,11 +54,23 @@ require_env_line "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL" "approved
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
 
-env -i PATH="$PATH" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 "$LEGACY_CRON_OBSERVATION_SCRIPT" >/dev/null
+if ! env -i PATH="$PATH" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 "$LEGACY_CRON_OBSERVATION_SCRIPT" >/dev/null; then
+  cleanup_failed_activation
+  exit 1
+fi
 
-"$SYSTEMCTL" daemon-reload
-"$SYSTEMCTL" enable "$TIMER_NAME"
-"$SYSTEMCTL" restart "$TIMER_NAME"
+if ! "$SYSTEMCTL" daemon-reload; then
+  cleanup_failed_activation
+  exit 1
+fi
+if ! "$SYSTEMCTL" enable "$TIMER_NAME"; then
+  cleanup_failed_activation
+  exit 1
+fi
+if ! "$SYSTEMCTL" restart "$TIMER_NAME"; then
+  cleanup_failed_activation
+  exit 1
+fi
 if ! "$SYSTEMCTL" is-enabled --quiet "$TIMER_NAME"; then
   cleanup_failed_activation
   exit 1

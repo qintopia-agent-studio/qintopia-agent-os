@@ -2665,6 +2665,8 @@ if (exists(xiaomanWeeklyPreviewActivationPath)) {
     "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
     'SYSTEMCTL="/usr/bin/systemctl"',
+    'if ! "$SYSTEMCTL" enable "$TIMER_NAME"; then',
+    'if ! "$SYSTEMCTL" restart "$TIMER_NAME"; then',
     '"$SYSTEMCTL" enable "$TIMER_NAME"',
     '"$SYSTEMCTL" restart "$TIMER_NAME"',
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=enabled",
@@ -2689,6 +2691,19 @@ if (exists(xiaomanWeeklyPreviewRollbackPath)) {
   }
   for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
     forbidFragment(xiaomanWeeklyPreviewRollbackPath, rollback, fragment);
+  }
+  const envDisabledCheck = rollback.indexOf(
+    'grep -Fxq "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=0"'
+  );
+  const timerDisable = rollback.indexOf('"$SYSTEMCTL" disable --now "$TIMER_NAME"');
+  if (
+    envDisabledCheck === -1 ||
+    timerDisable === -1 ||
+    envDisabledCheck > timerDisable
+  ) {
+    addError(
+      `${xiaomanWeeklyPreviewRollbackPath}: must verify persistent disabled flag before mutating systemd`
+    );
   }
 }
 const deployBundleBuilderForWeeklyPreview = readText(
