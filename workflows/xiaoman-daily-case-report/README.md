@@ -27,7 +27,15 @@ observation, and rollback path from the immutable release.
   or synthetic fallback commentary.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
-- Render a mobile-friendly JPEG poster styled like an original community scoreboard.
+- Show a keyword hotlist only from repeated source-message tokens or repeated complete
+  Chinese phrases, together with the matching message and participant counts. A phrase
+  must occur in at least two distinct source messages; omit the hotlist when the report
+  window has no qualifying keyword.
+- Keep the battle-report body intact: headline metrics, 24H activity, source-message
+  highlight, "今日局势" case cards, and "今日 MVP" remain the primary sections. The
+  compact hotlist appears after the highlight and before the case cards as a supplement.
+- Render a mobile-friendly JPEG poster from the black-and-yellow community-scoreboard
+  template. The HTML preview and production image share the same battle-report layout.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
   downstream sendable artifact boundary.
 - Publish once per daily window to the reviewed QiWe target group after production
