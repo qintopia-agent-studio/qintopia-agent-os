@@ -398,6 +398,11 @@ Install scope for the M9 window:
   queue and one worker binary, but use separate scope-pinned services and timers.
   The internal-group timer is installed disabled and requires its dedicated owner-
   approved activation; enabling direct delivery must never schedule group delivery.
+- The Xiaoman daily case report auto-publish timer is installed disabled and requires
+  its dedicated owner-approved activation. Once enabled, each daily wakeup renders the
+  JPEG, uploads it through the reviewed media boundary, records an approved
+  daily_case_report generated_image artifact, and queues an automatic_publish QiWe
+  image send without per-day human confirmation.
 
 Apply shape during the approved window:
 1. Copy reviewed unit files into /etc/systemd/system.
@@ -693,6 +698,16 @@ render_all() {
     "13min" \
     "${QINTOPIA_QIWE_IMAGE_SEND_TIMER_INTERVAL:-1min}"
 
+  render_release_script_oneshot_service \
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service" \
+    "Qintopia AgentOS Xiaoman daily case report auto-publish worker" \
+    "${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
+  render_calendar_timer \
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer" \
+    "Run Qintopia AgentOS Xiaoman daily case report auto-publish" \
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service" \
+    "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TIMER_CALENDAR:-*-*-* 07:45:00}"
+
   render_oneshot_service \
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service" \
     "Qintopia AgentOS Xiaoman Activity Send Request Starter Worker" \
@@ -775,12 +790,14 @@ validate_output() {
     "qintopia-agentos-qiwe-image-send-preflight.service"
     "qintopia-agentos-qiwe-image-send-worker.service"
     "qintopia-agentos-qiwe-image-send-worker.timer"
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service"
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
+    "qintopia-agentos-erhua-morning-brief.service"
+    "qintopia-agentos-erhua-morning-brief.timer"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.service"
     "qintopia-agentos-xiaoman-activity-send-request-starter-worker.timer"
     "qintopia-agentos-xiaoman-activity-material-followup-worker.service"
     "qintopia-agentos-xiaoman-activity-material-followup-worker.timer"
-    "qintopia-agentos-erhua-morning-brief.service"
-    "qintopia-agentos-erhua-morning-brief.timer"
   )
 
   local file
@@ -798,6 +815,9 @@ validate_output() {
     case "$(basename "$file")" in
       qintopia-agentos-qiwe-image-send-preflight.service | qintopia-agentos-qiwe-image-send-worker.service)
         grep -F " ${QIWE_BIN} " "$file" >/dev/null
+        ;;
+      qintopia-agentos-xiaoman-daily-case-report-auto-publish.service)
+        grep -F " ${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh" "$file" >/dev/null
         ;;
       qintopia-agentos-erhua-morning-brief.service)
         grep -F " ${MONOREPO_DIR}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh" "$file" >/dev/null

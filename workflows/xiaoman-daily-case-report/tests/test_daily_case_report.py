@@ -245,6 +245,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 render="auto",
                 output_dir=tmpdir,
                 output_width=750,
+                image_format="jpeg",
                 json=True,
                 chat_id="chat-1",
             )
@@ -266,10 +267,10 @@ class DailyCaseReportTest(unittest.TestCase):
             )
             old_parse_args = daily_case_report._parse_args
             old_build_report = daily_case_report._build_report
-            old_render_png = daily_case_report._render_png
+            old_render_image = daily_case_report._render_image
             daily_case_report._parse_args = lambda: args
             daily_case_report._build_report = lambda _args: report
-            daily_case_report._render_png = lambda *_args: (_ for _ in ()).throw(
+            daily_case_report._render_image = lambda *_args: (_ for _ in ()).throw(
                 RuntimeError("missing browser")
             )
             try:
@@ -279,10 +280,10 @@ class DailyCaseReportTest(unittest.TestCase):
             finally:
                 daily_case_report._parse_args = old_parse_args
                 daily_case_report._build_report = old_build_report
-                daily_case_report._render_png = old_render_png
+                daily_case_report._render_image = old_render_image
 
             self.assertEqual(code, 2)
-            self.assertIn("PNG rendering skipped", stderr.getvalue())
+            self.assertIn("image rendering skipped", stderr.getvalue())
             self.assertEqual(list(Path(tmpdir).glob("*.html")), [])
 
     def test_clean_text_removes_mention_token_without_dropping_body(self) -> None:
@@ -357,7 +358,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("https://", rendered)
         self.assertNotIn("http://", rendered)
 
-    def test_render_png_uses_absolute_file_uri_for_relative_html_path(self) -> None:
+    def test_render_image_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
 
         class FakePage:
@@ -374,8 +375,8 @@ class DailyCaseReportTest(unittest.TestCase):
             def set_viewport_size(self, size):
                 captured["viewport"] = size
 
-            def screenshot(self, path, full_page):
-                captured["screenshot"] = (path, full_page)
+            def screenshot(self, **kwargs):
+                captured["screenshot"] = kwargs
 
         class FakeBrowser:
             def new_page(self, **_kwargs):
@@ -409,7 +410,12 @@ class DailyCaseReportTest(unittest.TestCase):
                 html_path.parent.mkdir()
                 html_path.write_text("<html></html>", encoding="utf-8")
 
-                daily_case_report._render_png(html_path, Path("reports") / "preview.png", 750)
+                daily_case_report._render_image(
+                    html_path,
+                    Path("reports") / "preview.jpg",
+                    750,
+                    "jpeg",
+                )
         finally:
             os.chdir(old_cwd)
             if old_playwright is None:
@@ -425,6 +431,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertTrue(str(captured["url"]).startswith("file:///"))
         self.assertIn("/reports/preview.html", str(captured["url"]))
         self.assertNotIn("file://reports", str(captured["url"]))
+        self.assertEqual(captured["screenshot"]["type"], "jpeg")
+        self.assertEqual(captured["screenshot"]["quality"], 92)
 
     def test_render_html_mode_returns_existing_html_deliverable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -455,7 +463,117 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(deliverable_path.is_file())
             self.assertEqual(result["html_path"], str(deliverable_path))
             self.assertIsNone(result["png_path"])
+            self.assertIsNone(result["image_path"])
+            self.assertIsNone(result["artifact_candidate"])
+            self.assertFalse(result["requires_human_confirmation"])
+            self.assertFalse(result["auto_publish_ready"])
+            self.assertNotIn("回复「发」", result["operator_review_message"])
             self.assertIn(str(deliverable_path), result["operator_review_message"])
+
+    def test_result_json_reports_image_artifact_candidate_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "daily-report.jpg"
+            image_path.write_bytes(b"fixture-jpeg-bytes")
+            report = daily_case_report.ReportData(
+                group_name="group",
+                report_title="case file",
+                report_date="2026-08-08",
+                time_range="00:00-23:59",
+                member_count=1,
+                message_count=0,
+                participant_count=0,
+                case_count=0,
+                suspect_count=0,
+                hourly_counts=[0] * 24,
+                cases=[],
+                suspects=[],
+                quote="done",
+                highlight="done",
+                window_start="2026-08-07T07:45:00+08:00",
+                window_end="2026-08-08T07:45:00+08:00",
+                timezone="Asia/Shanghai",
+            )
+
+            result = daily_case_report._result_json(
+                report,
+                image_path,
+                image_path,
+                "jpeg",
+                output_width=750,
+                source_chat_id="chat-1",
+            )
+
+            self.assertEqual(result["image_path"], str(image_path))
+            self.assertEqual(result["image_format"], "jpeg")
+            self.assertEqual(result["image_mime_type"], "image/jpeg")
+            self.assertIsNone(result["png_path"])
+            artifact = result["artifact_candidate"]
+            self.assertEqual(artifact["artifact_type"], "generated_image")
+            self.assertEqual(artifact["workflow_type"], "daily_case_report")
+            self.assertEqual(artifact["mime_type"], "image/jpeg")
+            self.assertEqual(artifact["filename"], "daily-report.jpg")
+            self.assertEqual(artifact["byte_size"], len(b"fixture-jpeg-bytes"))
+            self.assertEqual(artifact["template_version"], "xiaoman-daily-case-report-v1")
+            self.assertEqual(artifact["render"]["image_format"], "jpeg")
+            self.assertEqual(artifact["render"]["width"], 750)
+            self.assertEqual(artifact["render"]["jpeg_quality"], 92)
+            self.assertEqual(artifact["report_window"]["start"], "2026-08-07T07:45:00+08:00")
+            self.assertEqual(artifact["report_window"]["end"], "2026-08-08T07:45:00+08:00")
+            self.assertEqual(artifact["report_window"]["timezone"], "Asia/Shanghai")
+            self.assertEqual(artifact["source_chat_ref"]["kind"], "sha256")
+            self.assertRegex(artifact["source_chat_ref"]["value"], r"^sha256:[0-9a-f]{64}$")
+            self.assertRegex(artifact["content_hash"], r"^sha256:[0-9a-f]{64}$")
+            self.assertRegex(artifact["file_md5"], r"^[0-9a-f]{32}$")
+
+    def test_main_reports_jpeg_artifact_candidate_after_successful_render(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = argparse.Namespace(
+                dry_run=True,
+                fixture=None,
+                keep_html=False,
+                render="image",
+                output_dir=tmpdir,
+                output_width=750,
+                image_format="jpeg",
+                json=True,
+                chat_id="chat-1",
+                date="2026-08-08",
+                timezone="Asia/Shanghai",
+                group_name="group",
+                report_title="case file",
+            )
+            old_parse_args = daily_case_report._parse_args
+            old_render_image = daily_case_report._render_image
+
+            def fake_render_image(_html_path, output_path, _width, image_format):
+                self.assertEqual(image_format, "jpeg")
+                Path(output_path).write_bytes(b"main-fixture-jpeg")
+
+            daily_case_report._parse_args = lambda: args
+            daily_case_report._render_image = fake_render_image
+            try:
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    code = daily_case_report.main()
+            finally:
+                daily_case_report._parse_args = old_parse_args
+                daily_case_report._render_image = old_render_image
+
+            self.assertEqual(code, 0)
+            result = json.loads(stdout.getvalue())
+            self.assertEqual(result["image_format"], "jpeg")
+            self.assertEqual(result["image_mime_type"], "image/jpeg")
+            self.assertTrue(result["image_path"].endswith(".jpg"))
+            self.assertIsNone(result["png_path"])
+            self.assertFalse(result["requires_human_confirmation"])
+            self.assertFalse(result["auto_publish_ready"])
+            self.assertEqual(result["artifact_candidate"]["workflow_type"], "daily_case_report")
+            self.assertEqual(result["artifact_candidate"]["render"]["width"], 750)
+            self.assertEqual(
+                result["artifact_candidate"]["report_window"]["start"],
+                "2026-08-08T00:00:00+08:00",
+            )
+            self.assertNotIn("回复「发」", result["operator_review_message"])
 
 
 if __name__ == "__main__":

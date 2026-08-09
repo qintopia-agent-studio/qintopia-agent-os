@@ -55,12 +55,16 @@ const sourceFiles = [
   "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
   "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
-  "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
-  "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
-  "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
-  "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh",
   "deploy/sidecar/scripts/operations-group-send-ready-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+  "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
+  "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+  "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh",
+  "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
+  "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh",
+  "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
@@ -137,7 +141,7 @@ const sourceFiles = [
 ];
 const sourceDirs = [
   "agents/xiaoman/profile-bundle",
-  "workflows/erhua-morning-brief",
+  "workflows/xiaoman-daily-case-report",
   "runtime/postgres/migrations",
   "skills/qintopia-tools/variants",
   "skills/qintopia-weather/tests",
@@ -148,6 +152,7 @@ const sourceDirs = [
   "skills/qiwe/tests",
   "skills/feishu-base/docs",
   "skills/feishu-base/tests",
+  "workflows/erhua-morning-brief",
 ];
 const sourceDirExcludes = [
   /^agents\/xiaoman\/profile-bundle\/tests(\/|$)/,

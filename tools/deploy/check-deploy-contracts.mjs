@@ -2392,6 +2392,294 @@ if (!exists(qiweImageSendProductionRollbackPath)) {
   }
 }
 
+const xiaomanDailyCaseReportWorkerPath =
+  "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh";
+const xiaomanDailyCaseReportObservationPath =
+  "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh";
+const xiaomanDailyCaseReportActivationPath =
+  "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh";
+const xiaomanDailyCaseReportRollbackPath =
+  "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh";
+for (const scriptPath of [
+  xiaomanDailyCaseReportWorkerPath,
+  xiaomanDailyCaseReportObservationPath,
+  xiaomanDailyCaseReportActivationPath,
+  xiaomanDailyCaseReportRollbackPath,
+]) {
+  if (!exists(scriptPath)) {
+    addError(`${scriptPath}: missing Xiaoman daily case report production script`);
+  }
+}
+if (exists(xiaomanDailyCaseReportWorkerPath)) {
+  const worker = readText(xiaomanDailyCaseReportWorkerPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED",
+    "workflows/xiaoman-daily-case-report/daily_case_report.py",
+    "sidecar-profiles/qiwe-production/qintopia-message-sidecar",
+    "operations-daily-case-report-media-upload",
+    "operations-daily-case-report-auto-publish-create",
+    "--image-format jpeg",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT",
+    "artifact_uri",
+    "requires_human_final_confirmation",
+    "external_send_executed",
+  ]) {
+    requireFragment(xiaomanDailyCaseReportWorkerPath, worker, fragment);
+  }
+  for (const fragment of [
+    "run-qiwe-image-send-worker",
+    "reply",
+    '"human_final_confirmation"',
+    "'human_final_confirmation'",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "source ",
+    "eval ",
+  ]) {
+    forbidFragment(xiaomanDailyCaseReportWorkerPath, worker, fragment);
+  }
+}
+if (exists(xiaomanDailyCaseReportObservationPath)) {
+  const observation = readText(xiaomanDailyCaseReportObservationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_OBSERVATION_ENABLE",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
+    "OnCalendar=*-*-* 07:45:00",
+  ]) {
+    requireFragment(xiaomanDailyCaseReportObservationPath, observation, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanDailyCaseReportObservationPath, observation, fragment);
+  }
+}
+if (exists(xiaomanDailyCaseReportActivationPath)) {
+  const activation = readText(xiaomanDailyCaseReportActivationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_ACTIVATION",
+    "approved-production-xiaoman-daily-case-report-auto-publish",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" enable "$TIMER_NAME"',
+    '"$SYSTEMCTL" restart "$TIMER_NAME"',
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=enabled",
+  ]) {
+    requireFragment(xiaomanDailyCaseReportActivationPath, activation, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanDailyCaseReportActivationPath, activation, fragment);
+  }
+}
+if (exists(xiaomanDailyCaseReportRollbackPath)) {
+  const rollback = readText(xiaomanDailyCaseReportRollbackPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_ROLLBACK",
+    "approved-production-xiaoman-daily-case-report-auto-publish-rollback",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" disable --now "$TIMER_NAME"',
+  ]) {
+    requireFragment(xiaomanDailyCaseReportRollbackPath, rollback, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanDailyCaseReportRollbackPath, rollback, fragment);
+  }
+}
+const deployBundleBuilderForDailyReport = readText(
+  "tools/deploy/build-deploy-bundle.mjs"
+);
+for (const fragment of [
+  xiaomanDailyCaseReportWorkerPath,
+  xiaomanDailyCaseReportObservationPath,
+  xiaomanDailyCaseReportActivationPath,
+  xiaomanDailyCaseReportRollbackPath,
+  "workflows/xiaoman-daily-case-report",
+]) {
+  requireFragment(
+    "tools/deploy/build-deploy-bundle.mjs",
+    deployBundleBuilderForDailyReport,
+    fragment
+  );
+}
+const releaseSystemdInstallerPath = "deploy/runner/install-release-systemd-units.sh";
+if (exists(releaseSystemdInstallerPath)) {
+  const installer = readText(releaseSystemdInstallerPath);
+  for (const fragment of [
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
+    "qintopia-agentos-erhua-morning-brief.service",
+    "qintopia-agentos-erhua-morning-brief.timer",
+  ]) {
+    requireFragment(releaseSystemdInstallerPath, installer, fragment);
+  }
+  const internalTimersBlock =
+    installer.match(/internal_timers=\([\s\S]*?\n\)/)?.[0] ?? "";
+  if (
+    internalTimersBlock.includes(
+      "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
+    )
+  ) {
+    addError(
+      `${releaseSystemdInstallerPath}: daily case report timer must not be default-enabled by release install`
+    );
+  }
+  if (internalTimersBlock.includes("qintopia-agentos-erhua-morning-brief.timer")) {
+    addError(
+      `${releaseSystemdInstallerPath}: Erhua morning brief timer must not be default-enabled by release install`
+    );
+  }
+}
+
+const erhuaMorningBriefWorkerPath =
+  "deploy/sidecar/scripts/erhua-morning-brief-worker.sh";
+const erhuaMorningBriefObservationPath =
+  "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh";
+const erhuaMorningBriefActivationPath =
+  "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh";
+const erhuaMorningBriefRollbackPath =
+  "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh";
+for (const scriptPath of [
+  erhuaMorningBriefWorkerPath,
+  erhuaMorningBriefObservationPath,
+  erhuaMorningBriefActivationPath,
+  erhuaMorningBriefRollbackPath,
+]) {
+  if (!exists(scriptPath)) {
+    addError(`${scriptPath}: missing Erhua morning brief production script`);
+  }
+}
+if (exists(erhuaMorningBriefWorkerPath)) {
+  const worker = readText(erhuaMorningBriefWorkerPath);
+  for (const fragment of [
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED",
+    "workflows/erhua-morning-brief/morning_brief.py",
+    "sidecar/qintopia-message-sidecar",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG",
+    "--prepare-artifact",
+    "--execute-artifact-create",
+    "--apply-artifact-create",
+    "external_send_executed",
+    "send_request_created",
+  ]) {
+    requireFragment(erhuaMorningBriefWorkerPath, worker, fragment);
+  }
+  for (const fragment of [
+    "run-group-message-send-worker",
+    "operations-group-message-confirm",
+    "run-qiwe-image-send-worker",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "source ",
+    "eval ",
+  ]) {
+    forbidFragment(erhuaMorningBriefWorkerPath, worker, fragment);
+  }
+}
+if (exists(erhuaMorningBriefObservationPath)) {
+  const observation = readText(erhuaMorningBriefObservationPath);
+  for (const fragment of [
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE",
+    "qintopia-agentos-erhua-morning-brief.service",
+    "qintopia-agentos-erhua-morning-brief.timer",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG",
+    "OnCalendar=${EXPECTED_CALENDAR}",
+    "Persistent=true",
+    "NextElapseUSecMonotonic",
+  ]) {
+    requireFragment(erhuaMorningBriefObservationPath, observation, fragment);
+  }
+  for (const fragment of ["source ", "eval "]) {
+    forbidFragment(erhuaMorningBriefObservationPath, observation, fragment);
+  }
+}
+if (exists(erhuaMorningBriefActivationPath)) {
+  const activation = readText(erhuaMorningBriefActivationPath);
+  for (const fragment of [
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION",
+    "approved-production-erhua-morning-brief",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" enable "$TIMER_NAME"',
+    '"$SYSTEMCTL" restart "$TIMER_NAME"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=enabled",
+  ]) {
+    requireFragment(erhuaMorningBriefActivationPath, activation, fragment);
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+  ]) {
+    forbidFragment(erhuaMorningBriefActivationPath, activation, fragment);
+  }
+}
+if (exists(erhuaMorningBriefRollbackPath)) {
+  const rollback = readText(erhuaMorningBriefRollbackPath);
+  for (const fragment of [
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ROLLBACK",
+    "approved-production-erhua-morning-brief-rollback",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=0",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" disable --now "$WORKER_TIMER"',
+  ]) {
+    requireFragment(erhuaMorningBriefRollbackPath, rollback, fragment);
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+  ]) {
+    forbidFragment(erhuaMorningBriefRollbackPath, rollback, fragment);
+  }
+}
+const deployBundleBuilderForErhuaMorningBrief = readText(
+  "tools/deploy/build-deploy-bundle.mjs"
+);
+for (const fragment of [
+  erhuaMorningBriefWorkerPath,
+  erhuaMorningBriefObservationPath,
+  erhuaMorningBriefActivationPath,
+  erhuaMorningBriefRollbackPath,
+  "workflows/erhua-morning-brief",
+]) {
+  requireFragment(
+    "tools/deploy/build-deploy-bundle.mjs",
+    deployBundleBuilderForErhuaMorningBrief,
+    fragment
+  );
+}
+
 const huabaosiFeishuMirrorRollbackPath =
   "deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh";
 if (exists(huabaosiFeishuMirrorRollbackPath)) {
@@ -2444,6 +2732,10 @@ if (!exists(renderSystemdUnitsPath)) {
     "qintopia-agentos-qiwe-image-send-worker.service",
     "run-qiwe-image-send-worker --once --apply",
     "qintopia-agentos-qiwe-image-send-worker.timer",
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
+    "xiaoman-daily-case-report-auto-publish-worker.sh",
+    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
+    "OnCalendar=${calendar}",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope direct",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope group",
     "xiaoman-feishu-poster-preflight --conversation-scope direct",

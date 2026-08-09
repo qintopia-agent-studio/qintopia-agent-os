@@ -182,31 +182,61 @@ pub async fn claim_ready_work_item(
               ON artifact.id::text = request.payload->>'approved_artifact_id'
              AND artifact.artifact_type = 'generated_image'
              AND artifact.review_status = 'approved'
-             AND artifact.created_by_agent = 'huabaosi'
-            JOIN qintopia_agent_os.work_items image_request
-              ON image_request.id = artifact.work_item_id
-             AND image_request.work_item_type = 'image_generation_request'
-             AND image_request.capability_key = 'huabaosi.generate_image_asset'
-             AND image_request.target_agent = 'huabaosi'
-             AND image_request.status = 'completed'
+            JOIN qintopia_agent_os.work_items source_request
+              ON source_request.id = artifact.work_item_id
+             AND (
+                (
+                    artifact.created_by_agent = 'huabaosi'
+                    AND source_request.work_item_type = 'image_generation_request'
+                    AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                    AND source_request.target_agent = 'huabaosi'
+                    AND source_request.status = 'completed'
+                )
+                OR
+                (
+                    artifact.created_by_agent = 'xiaoman'
+                    AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                    AND source_request.work_item_type = 'daily_case_report_request'
+                    AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                    AND source_request.target_agent = 'xiaoman'
+                    AND source_request.status = 'completed'
+                )
+             )
             WHERE request.work_item_type = $1
               AND request.capability_key = $2
               AND request.requester_agent = 'xiaoman'
               AND request.target_agent = 'erhua'
-              AND request.review_policy = 'human_final_confirmation'
+              AND (
+                  request.review_policy = 'human_final_confirmation'
+                  OR (
+                      request.review_policy = 'automatic_publish'
+                      AND request.payload->>'workflow_type' = 'daily_case_report'
+                      AND request.payload->>'requires_human_final_confirmation' = 'false'
+                  )
+              )
               AND request.status = 'queued'
               AND request.available_at <= now()
               AND request.payload->>'target_channel' = 'qiwe'
               AND COALESCE(request.payload->>'target_group_id', '') <> ''
               AND ($3::uuid IS NULL OR request.id = $3)
-              AND EXISTS (
-                  SELECT 1
-                  FROM qintopia_agent_os.work_item_events confirmation
-                  WHERE confirmation.work_item_id = request.id
-                    AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                    AND confirmation.data->>'decision' = 'confirmed'
-                    AND confirmation.data->>'current_status' = 'queued'
-                    AND confirmation.data->>'send_executed' = 'false'
+              AND (
+                  (
+                      request.review_policy = 'human_final_confirmation'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM qintopia_agent_os.work_item_events confirmation
+                          WHERE confirmation.work_item_id = request.id
+                            AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                            AND confirmation.data->>'decision' = 'confirmed'
+                            AND confirmation.data->>'current_status' = 'queued'
+                            AND confirmation.data->>'send_executed' = 'false'
+                      )
+                  )
+                  OR (
+                      request.review_policy = 'automatic_publish'
+                      AND request.payload->>'workflow_type' = 'daily_case_report'
+                      AND request.payload->>'requires_human_final_confirmation' = 'false'
+                  )
               )
               AND EXISTS (
                   SELECT 1
@@ -232,7 +262,7 @@ pub async fn claim_ready_work_item(
               )
             ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
             LIMIT 1
-            FOR UPDATE OF request, artifact, image_request SKIP LOCKED
+            FOR UPDATE OF request, artifact, source_request SKIP LOCKED
         )
         UPDATE qintopia_agent_os.work_items request
         SET
@@ -414,31 +444,61 @@ pub async fn preview_ready_work_item(
           ON artifact.id::text = request.payload->>'approved_artifact_id'
          AND artifact.artifact_type = 'generated_image'
          AND artifact.review_status = 'approved'
-         AND artifact.created_by_agent = 'huabaosi'
-        JOIN qintopia_agent_os.work_items image_request
-          ON image_request.id = artifact.work_item_id
-         AND image_request.work_item_type = 'image_generation_request'
-         AND image_request.capability_key = 'huabaosi.generate_image_asset'
-         AND image_request.target_agent = 'huabaosi'
-         AND image_request.status = 'completed'
+        JOIN qintopia_agent_os.work_items source_request
+          ON source_request.id = artifact.work_item_id
+         AND (
+            (
+                artifact.created_by_agent = 'huabaosi'
+                AND source_request.work_item_type = 'image_generation_request'
+                AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                AND source_request.target_agent = 'huabaosi'
+                AND source_request.status = 'completed'
+            )
+            OR
+            (
+                artifact.created_by_agent = 'xiaoman'
+                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                AND source_request.work_item_type = 'daily_case_report_request'
+                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                AND source_request.target_agent = 'xiaoman'
+                AND source_request.status = 'completed'
+            )
+         )
         WHERE request.work_item_type = $1
           AND request.capability_key = $2
           AND request.requester_agent = 'xiaoman'
           AND request.target_agent = 'erhua'
-          AND request.review_policy = 'human_final_confirmation'
+          AND (
+              request.review_policy = 'human_final_confirmation'
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND request.status = 'queued'
           AND request.available_at <= now()
           AND request.payload->>'target_channel' = 'qiwe'
           AND COALESCE(request.payload->>'target_group_id', '') <> ''
           AND ($3::uuid IS NULL OR request.id = $3)
-          AND EXISTS (
-              SELECT 1
-              FROM qintopia_agent_os.work_item_events confirmation
-              WHERE confirmation.work_item_id = request.id
-                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                AND confirmation.data->>'decision' = 'confirmed'
-                AND confirmation.data->>'current_status' = 'queued'
-                AND confirmation.data->>'send_executed' = 'false'
+          AND (
+              (
+                  request.review_policy = 'human_final_confirmation'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.work_item_events confirmation
+                      WHERE confirmation.work_item_id = request.id
+                        AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                        AND confirmation.data->>'decision' = 'confirmed'
+                        AND confirmation.data->>'current_status' = 'queued'
+                        AND confirmation.data->>'send_executed' = 'false'
+                  )
+              )
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
           )
           AND EXISTS (
               SELECT 1
@@ -1608,12 +1668,26 @@ async fn lock_current_claim(
         JOIN qintopia_agent_os.artifacts artifact
           ON artifact.id = $3
          AND artifact.id::text = request.payload->>'approved_artifact_id'
-        JOIN qintopia_agent_os.work_items image_request
-          ON image_request.id = artifact.work_item_id
-         AND image_request.work_item_type = 'image_generation_request'
-         AND image_request.capability_key = 'huabaosi.generate_image_asset'
-         AND image_request.target_agent = 'huabaosi'
-         AND image_request.status = 'completed'
+        JOIN qintopia_agent_os.work_items source_request
+          ON source_request.id = artifact.work_item_id
+         AND (
+            (
+                artifact.created_by_agent = 'huabaosi'
+                AND source_request.work_item_type = 'image_generation_request'
+                AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                AND source_request.target_agent = 'huabaosi'
+                AND source_request.status = 'completed'
+            )
+            OR
+            (
+                artifact.created_by_agent = 'xiaoman'
+                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                AND source_request.work_item_type = 'daily_case_report_request'
+                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                AND source_request.target_agent = 'xiaoman'
+                AND source_request.status = 'completed'
+            )
+         )
         WHERE request.id = $1
           AND request.status = 'processing'
           AND request.claimed_by = $2
@@ -1621,18 +1695,36 @@ async fn lock_current_claim(
           AND request.payload->>'target_group_id' = $4
           AND artifact.artifact_type = 'generated_image'
           AND artifact.review_status = 'approved'
-          AND artifact.created_by_agent = 'huabaosi'
+          AND (
+              artifact.created_by_agent = 'huabaosi'
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND artifact.content_hash = $5
           AND artifact.artifact_uri = $6
           AND artifact.metadata->>'file_md5' = $7
           AND artifact.metadata->>'byte_size' = $8
-          AND EXISTS (
-              SELECT 1
-              FROM qintopia_agent_os.work_item_events confirmation
-              WHERE confirmation.work_item_id = request.id
-                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                AND confirmation.data->>'decision' = 'confirmed'
-                AND confirmation.data->>'send_executed' = 'false'
+          AND (
+              (
+                  request.review_policy = 'human_final_confirmation'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.work_item_events confirmation
+                      WHERE confirmation.work_item_id = request.id
+                        AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                        AND confirmation.data->>'decision' = 'confirmed'
+                        AND confirmation.data->>'send_executed' = 'false'
+                  )
+              )
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
           )
           AND EXISTS (
               SELECT 1
@@ -1650,7 +1742,7 @@ async fn lock_current_claim(
                 AND created.artifact_id = artifact.id
                 AND created.event_type = 'generated_image_created'
           )
-        FOR UPDATE OF request, artifact, image_request
+        FOR UPDATE OF request, artifact, source_request
         "#,
     )
     .bind(claim.work_item_id)
@@ -1686,12 +1778,26 @@ async fn lock_callback_policy(
         JOIN qintopia_agent_os.artifacts artifact
           ON artifact.id = $3
          AND artifact.id::text = request.payload->>'approved_artifact_id'
-        JOIN qintopia_agent_os.work_items image_request
-          ON image_request.id = artifact.work_item_id
-         AND image_request.work_item_type = 'image_generation_request'
-         AND image_request.capability_key = 'huabaosi.generate_image_asset'
-         AND image_request.target_agent = 'huabaosi'
-         AND image_request.status = 'completed'
+        JOIN qintopia_agent_os.work_items source_request
+          ON source_request.id = artifact.work_item_id
+         AND (
+            (
+                artifact.created_by_agent = 'huabaosi'
+                AND source_request.work_item_type = 'image_generation_request'
+                AND source_request.capability_key = 'huabaosi.generate_image_asset'
+                AND source_request.target_agent = 'huabaosi'
+                AND source_request.status = 'completed'
+            )
+            OR
+            (
+                artifact.created_by_agent = 'xiaoman'
+                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+                AND source_request.work_item_type = 'daily_case_report_request'
+                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
+                AND source_request.target_agent = 'xiaoman'
+                AND source_request.status = 'completed'
+            )
+         )
         WHERE request.id = $1
           AND request.status = 'processing'
           AND request.claimed_by = $2
@@ -1699,18 +1805,43 @@ async fn lock_callback_policy(
           AND request.capability_key = 'erhua.send_group_message'
           AND request.requester_agent = 'xiaoman'
           AND request.target_agent = 'erhua'
-          AND request.review_policy = 'human_final_confirmation'
+          AND (
+              request.review_policy = 'human_final_confirmation'
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND artifact.artifact_type = 'generated_image'
           AND artifact.review_status = 'approved'
-          AND artifact.created_by_agent = 'huabaosi'
+          AND (
+              artifact.created_by_agent = 'huabaosi'
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
+          )
           AND artifact.content_hash = $4
-          AND EXISTS (
-              SELECT 1
-              FROM qintopia_agent_os.work_item_events confirmation
-              WHERE confirmation.work_item_id = request.id
-                AND confirmation.event_type = 'group_message_final_confirmation_recorded'
-                AND confirmation.data->>'decision' = 'confirmed'
-                AND confirmation.data->>'send_executed' = 'false'
+          AND (
+              (
+                  request.review_policy = 'human_final_confirmation'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM qintopia_agent_os.work_item_events confirmation
+                      WHERE confirmation.work_item_id = request.id
+                        AND confirmation.event_type = 'group_message_final_confirmation_recorded'
+                        AND confirmation.data->>'decision' = 'confirmed'
+                        AND confirmation.data->>'send_executed' = 'false'
+                  )
+              )
+              OR (
+                  request.review_policy = 'automatic_publish'
+                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND request.payload->>'requires_human_final_confirmation' = 'false'
+              )
           )
           AND EXISTS (
               SELECT 1
@@ -1728,7 +1859,7 @@ async fn lock_callback_policy(
                 AND created.artifact_id = artifact.id
                 AND created.event_type = 'generated_image_created'
           )
-        FOR UPDATE OF request, artifact, image_request
+        FOR UPDATE OF request, artifact, source_request
         "#,
     )
     .bind(attempt.work_item_id)

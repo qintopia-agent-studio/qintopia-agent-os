@@ -3,8 +3,9 @@
 
 Reads the last 24 hours of QiWe group messages from the Qintopia message store,
 aggregates them into a playful "群聊案件档案" (group chat case file), renders a
-PNG poster, and prints a human-review draft. It never sends. A human must
-confirm before any group post.
+JPEG poster by default, and prints a local generation report. It does not send by
+itself: automatic publishing must be connected through the reviewed AgentOS artifact
+and QiWe image-send boundary.
 
 The script is deterministic for a given input window: the same chat/date always
 yields the same report (modulo rendering timestamps). It fails closed if the
@@ -13,6 +14,7 @@ message store is unreachable or the required runtime flags are not set.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -38,6 +40,9 @@ DEFAULT_HOURLY_BUCKETS = 24
 DEFAULT_WINDOW_HOURS = 24
 DEFAULT_MIN_CASE_MESSAGES = 3
 DEFAULT_TOP_KEYWORDS = 18
+DEFAULT_IMAGE_FORMAT = "jpeg"
+DEFAULT_JPEG_QUALITY = 92
+TEMPLATE_VERSION = "xiaoman-daily-case-report-v1"
 
 STOP_WORDS: set[str] = {
     "这个", "那个", "然后", "就是", "什么", "怎么", "还是", "可以", "今天",
@@ -108,6 +113,9 @@ class ReportData:
     suspects: list[Suspect]
     quote: str
     highlight: str
+    window_start: str = ""
+    window_end: str = ""
+    timezone: str = DEFAULT_TIMEZONE
 
 
 def _parse_args() -> argparse.Namespace:
@@ -132,14 +140,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture", help="Path to JSON fixture with pre-canned messages.")
     parser.add_argument(
         "--render",
-        choices=["auto", "png", "html"],
-        default="png",
-        help="Render mode. png (default) produces the shareable image; html keeps the raw page for debugging.",
+        choices=["auto", "image", "png", "html"],
+        default="image",
+        help="Render mode. image produces the poster; png is a legacy alias; html keeps the raw page for debugging.",
+    )
+    parser.add_argument(
+        "--image-format",
+        choices=["jpeg", "png"],
+        default=DEFAULT_IMAGE_FORMAT,
+        help="Image encoding for rendered output. Production auto-publish uses jpeg for QiWe.",
     )
     parser.add_argument(
         "--keep-html",
         action="store_true",
-        help="Keep the intermediate HTML file (debug only; the PNG is the deliverable).",
+        help="Keep the intermediate HTML file (debug only; the image is the deliverable).",
     )
     parser.add_argument(
         "--json",
@@ -642,6 +656,9 @@ def _build_report(args: argparse.Namespace) -> ReportData:
         suspects=suspects,
         quote=quote,
         highlight=_extract_highlight(messages),
+        window_start=start.isoformat(),
+        window_end=end.isoformat(),
+        timezone=args.timezone,
     )
 
 
@@ -851,7 +868,7 @@ def _render_html(report: ReportData, width: int) -> str:
 
   <div style="text-align:center;padding-top:14px;border-top:1px dashed #cbd5e1;">
     <div style="font-family:'Songti SC','STSong','Noto Serif CJK SC',serif;font-size:14px;color:#475569;line-height:1.7;font-style:italic;">"{html.escape(report.quote)}"</div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:8px;">本报告由小满自动整理群聊生成 · 仅草稿，未发送</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:8px;">本报告由小满自动整理群聊生成 · AgentOS 自动发布版</div>
   </div>
 </div>
 </body>
@@ -862,13 +879,26 @@ def _file_url(path: Path) -> str:
     return path.resolve().as_uri()
 
 
-def _render_png(html_path: Path, output_path: Path, width: int) -> None:
+def _render_image(
+    html_path: Path,
+    output_path: Path,
+    width: int,
+    image_format: str,
+) -> None:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
         raise RuntimeError(
-            "playwright is required for PNG rendering; install it or use --render html"
+            "playwright is required for image rendering; install it or use --render html"
         ) from exc
+
+    screenshot_options: dict[str, Any] = {
+        "path": str(output_path),
+        "full_page": True,
+        "type": image_format,
+    }
+    if image_format == "jpeg":
+        screenshot_options["quality"] = DEFAULT_JPEG_QUALITY
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -882,14 +912,67 @@ def _render_png(html_path: Path, output_path: Path, width: int) -> None:
         page.goto(_file_url(html_path), wait_until="load")
         height = page.evaluate("document.body.scrollHeight")
         page.set_viewport_size({"width": width, "height": height})
-        page.screenshot(path=str(output_path), full_page=True)
+        page.screenshot(**screenshot_options)
         browser.close()
+
+
+def _render_png(html_path: Path, output_path: Path, width: int) -> None:
+    _render_image(html_path, output_path, width, "png")
+
+
+def _image_mime_type(image_format: str) -> str:
+    return "image/jpeg" if image_format == "jpeg" else "image/png"
+
+
+def _image_extension(image_format: str) -> str:
+    return "jpg" if image_format == "jpeg" else "png"
+
+
+def _source_chat_ref(chat_id: str | None) -> dict[str, str] | None:
+    if not chat_id:
+        return None
+    digest = hashlib.sha256(chat_id.encode("utf-8")).hexdigest()
+    return {"kind": "sha256", "value": f"sha256:{digest}"}
+
+
+def _artifact_candidate(
+    path: Path,
+    image_format: str,
+    report: ReportData,
+    output_width: int | None = None,
+    source_chat_id: str | None = None,
+) -> dict[str, Any]:
+    data = path.read_bytes()
+    return {
+        "artifact_type": "generated_image",
+        "workflow_type": "daily_case_report",
+        "template_version": TEMPLATE_VERSION,
+        "mime_type": _image_mime_type(image_format),
+        "filename": path.name,
+        "content_hash": f"sha256:{hashlib.sha256(data).hexdigest()}",
+        "file_md5": hashlib.md5(data).hexdigest(),  # nosec: QiWe protocol requires MD5.
+        "byte_size": len(data),
+        "render": {
+            "image_format": image_format,
+            "width": output_width,
+            "jpeg_quality": DEFAULT_JPEG_QUALITY if image_format == "jpeg" else None,
+        },
+        "report_window": {
+            "start": report.window_start,
+            "end": report.window_end,
+            "display": report.report_date,
+            "time_range": report.time_range,
+            "timezone": report.timezone,
+        },
+        "source_chat_ref": _source_chat_ref(source_chat_id),
+        "retained_source_policy": "sanitized_metadata_only",
+    }
 
 
 def _operator_review_message(
     report: ReportData,
     html_path: Path,
-    png_path: Path | None,
+    image_path: Path | None,
     include_html: bool = False,
 ) -> str:
     lines = [
@@ -901,28 +984,37 @@ def _operator_review_message(
     for case in report.cases:
         lines.append(f"• {case.case_no}：{case.title}（{case.summary}）")
     lines.append("")
-    if png_path:
-        lines.append(f"图片（可直接发群）：{png_path}")
+    if image_path:
+        lines.append(f"图片文件：{image_path}")
     if include_html and html_path.exists():
-        label = "HTML 预览（仅调试用）" if png_path else "HTML 预览"
+        label = "HTML 预览（仅调试用）" if image_path else "HTML 预览"
         lines.append(f"{label}：{html_path}")
     lines.append("")
-    lines.append("本报告仅生成草稿，未发送到任何群聊。确认无误后请回复「发」再执行外发。")
+    lines.append("本报告仅生成本地文件，尚未自动发布；生产自动发布需接入 AgentOS artifact 与 QiWe image-send。")
     return "\n".join(lines)
 
 
 def _result_json(
     report: ReportData,
     deliverable_path: Path,
-    png_path: Path | None,
+    image_path: Path | None,
+    image_format: str | None = None,
     html_path: Path | None = None,
+    output_width: int | None = None,
+    source_chat_id: str | None = None,
 ) -> dict[str, Any]:
     html_exists = html_path is not None and html_path.exists()
+    artifact_candidate = (
+        _artifact_candidate(image_path, image_format, report, output_width, source_chat_id)
+        if image_path is not None and image_format is not None and image_path.exists()
+        else None
+    )
     return {
         "success": True,
         "skill": "xiaoman_daily_case_report",
         "external_send_executed": False,
-        "requires_human_confirmation": True,
+        "requires_human_confirmation": False,
+        "auto_publish_ready": False,
         "group_name": report.group_name,
         "report_date": report.report_date,
         "time_range": report.time_range,
@@ -931,10 +1023,14 @@ def _result_json(
         "case_count": report.case_count,
         "suspect_count": report.suspect_count,
         "deliverable_path": str(deliverable_path),
-        "png_path": str(png_path) if png_path else None,
+        "image_path": str(image_path) if image_path else None,
+        "image_format": image_format,
+        "image_mime_type": _image_mime_type(image_format) if image_format else None,
+        "png_path": str(image_path) if image_format == "png" and image_path else None,
         "html_path": str(html_path) if html_exists else None,
+        "artifact_candidate": artifact_candidate,
         "operator_review_message": _operator_review_message(
-            report, html_path or deliverable_path, png_path, html_exists
+            report, html_path or deliverable_path, image_path, html_exists
         ),
     }
 
@@ -946,7 +1042,7 @@ def main() -> int:
     if real_messages and (args.keep_html or args.render == "html"):
         print(
             "ERROR: production read-through cannot retain HTML because it contains real group content; "
-            "use --render png without --keep-html",
+            "use --render image without --keep-html",
             file=sys.stderr,
         )
         return 2
@@ -966,30 +1062,35 @@ def main() -> int:
     output_dir = _prepare_output_dir(args.output_dir)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     html_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.html"
-    png_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.png"
+    image_path = output_dir / (
+        f"xiaoman-daily-case-report-{timestamp}.{_image_extension(args.image_format)}"
+    )
 
     html_content = _render_html(report, args.output_width)
     _write_private_text(html_path, html_content)
 
-    png_generated = False
+    image_generated = False
     try:
-        if args.render in ("auto", "png"):
+        if args.render in ("auto", "image", "png"):
             try:
-                _render_png(html_path, png_path, args.output_width)
-                png_generated = True
+                _render_image(html_path, image_path, args.output_width, args.image_format)
+                image_generated = True
             except RuntimeError as exc:
-                print(f"WARN: PNG rendering skipped: {exc}", file=sys.stderr)
-                if args.render == "png" or real_messages:
+                print(f"WARN: image rendering skipped: {exc}", file=sys.stderr)
+                if args.render in ("image", "png") or real_messages:
                     return 2
 
-        html_is_deliverable = not png_generated
+        html_is_deliverable = not image_generated
 
-        deliverable = png_path if png_generated else html_path
+        deliverable = image_path if image_generated else html_path
         result = _result_json(
             report,
             deliverable,
-            png_path if png_generated else None,
+            image_path if image_generated else None,
+            args.image_format if image_generated else None,
             None if real_messages else html_path if html_path.exists() else None,
+            args.output_width if image_generated else None,
+            args.chat_id if image_generated else None,
         )
 
         if args.json:
@@ -998,7 +1099,7 @@ def main() -> int:
             print(result["operator_review_message"])
         return 0
     finally:
-        html_is_deliverable = not png_generated
+        html_is_deliverable = not image_generated
         should_remove_html = real_messages or (not args.keep_html and not html_is_deliverable)
         if should_remove_html and html_path.exists():
             try:

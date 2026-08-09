@@ -1,13 +1,5 @@
 mod activity_lifecycle;
-#[cfg(any(
-    test,
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter",
-    feature = "qiwe-production-adapter",
-    feature = "qiwe-staging-adapter",
-    feature = "xiaoman-feishu-poster-adapter"
-))]
+#[allow(dead_code)]
 mod bounded_http;
 mod collaboration;
 mod config;
@@ -541,6 +533,32 @@ async fn main() -> Result<()> {
             apply,
             dry_run,
         } => operations::run_create(&cli, payload_json, apply, dry_run).await,
+        Command::OperationsTextAnnouncementArtifactCreate {
+            payload_json,
+            apply,
+            dry_run,
+        } => {
+            operations::run_text_announcement_artifact_create(&cli, payload_json, apply, dry_run)
+                .await
+        }
+        Command::OperationsDailyCaseReportAutoPublishCreate {
+            payload_json,
+            apply,
+            dry_run,
+        } => {
+            operations::run_daily_case_report_auto_publish_create(
+                &cli,
+                payload_json,
+                apply,
+                dry_run,
+            )
+            .await
+        }
+        Command::OperationsDailyCaseReportMediaUpload {
+            payload_json,
+            apply,
+            dry_run,
+        } => operations::run_daily_case_report_media_upload(payload_json, apply, dry_run),
         Command::OperationsCapabilityList { use_db } => {
             operations::run_capability_list(&cli, use_db).await
         }
