@@ -10,6 +10,8 @@ to any chat channel.
 - `deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh`
 - `deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - `deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh`
+- `deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh`
+- `deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh`
 - `deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh`
 - `deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh`
 - `deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh`
@@ -90,9 +92,20 @@ file with an empty retired manifest, and emits only sanitized counts and hashes.
 the Erhua legacy cron observation after retirement; activation must still fail closed if
 any runtime cron declarations remain.
 
-If Xiaoman legacy cron observation finds runtime cron declarations during the same
-pre-activation sweep, stop and replace that runtime ownership through a separate
-reviewed deploy/profile-bundle change before enabling this timer.
+If Xiaoman legacy cron observation finds the reviewed production state with SHA-256
+`01b211896c85fcd36628993408cdb696c20baf92f07b2fa957520c5bbfa3bd21`, retire it only
+through the promoted release-local script:
+
+```bash
+QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-retirement \
+  /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh
+```
+
+The Xiaoman retirement script accepts no caller-provided cron path, checks the exact
+reviewed hash before writing, creates a same-directory `0600` backup, replaces the
+runtime cron file with an empty retired manifest, and normalizes the retired file mode
+to `0600`. Re-run the Xiaoman legacy cron observation after retirement; activation must
+still fail closed if any runtime cron declarations remain.
 
 ## Activate
 

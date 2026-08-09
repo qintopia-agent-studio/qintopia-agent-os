@@ -312,6 +312,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/rollback-qiwe-image-callback-bridge-production.sh",
     "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
     "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
+    "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
@@ -2552,12 +2553,169 @@ for (const fragment of [
     fragment
   );
 }
+
+const xiaomanWeeklyPreviewConfigApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-production-config.sh";
+const xiaomanWeeklyPreviewWorkerPath =
+  "deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh";
+const xiaomanWeeklyPreviewObservationPath =
+  "deploy/sidecar/scripts/xiaoman-weekly-preview-production-observation-smoke.sh";
+const xiaomanWeeklyPreviewActivationPath =
+  "deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh";
+const xiaomanWeeklyPreviewRollbackPath =
+  "deploy/sidecar/scripts/rollback-xiaoman-weekly-preview-production.sh";
+for (const scriptPath of [
+  xiaomanWeeklyPreviewConfigApplyPath,
+  xiaomanWeeklyPreviewWorkerPath,
+  xiaomanWeeklyPreviewObservationPath,
+  xiaomanWeeklyPreviewActivationPath,
+  xiaomanWeeklyPreviewRollbackPath,
+]) {
+  if (!exists(scriptPath)) {
+    addError(`${scriptPath}: missing Xiaoman weekly preview production script`);
+  }
+}
+if (exists(xiaomanWeeklyPreviewConfigApplyPath)) {
+  const config = readText(xiaomanWeeklyPreviewConfigApplyPath);
+  for (const fragment of [
+    "approved-production-xiaoman-weekly-preview-config",
+    'PYTHON_BIN="/usr/bin/python3"',
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
+    "os.chown(tmp_name, stat.st_uid, stat.st_gid)",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewConfigApplyPath, config, fragment);
+  }
+  for (const fragment of [
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    "source ",
+    ". /etc/qintopia",
+    "eval ",
+  ]) {
+    forbidFragment(xiaomanWeeklyPreviewConfigApplyPath, config, fragment);
+  }
+}
+if (exists(xiaomanWeeklyPreviewWorkerPath)) {
+  const worker = readText(xiaomanWeeklyPreviewWorkerPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL",
+    "approved-production-xiaoman-weekly-preview",
+    'RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'PYTHON_BIN="/usr/bin/python3"',
+    'WORK_DIR="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-preview"',
+    "xiaoman weekly preview refuses runtime path overrides",
+    "workflows/xiaoman-weekly-preview/weekly_preview.py",
+    "--json",
+    "operator_review_message_path",
+    "requires_human_confirmation",
+    "external_send_executed",
+    "safe_for_member_chat",
+    "latest-operator-review-message.txt",
+    "latest-summary.json",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewWorkerPath, worker, fragment);
+  }
+  for (const fragment of [
+    "run-group-message-send-worker",
+    "operations-group-message-confirm",
+    "operations-work-item-create",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_RELEASE_DIR:-",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PYTHON:-",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OUTPUT_DIR:-",
+    "source ",
+    "eval ",
+  ]) {
+    forbidFragment(xiaomanWeeklyPreviewWorkerPath, worker, fragment);
+  }
+}
+if (exists(xiaomanWeeklyPreviewObservationPath)) {
+  const observation = readText(xiaomanWeeklyPreviewObservationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    "qintopia-agentos-xiaoman-weekly-preview.service",
+    "qintopia-agentos-xiaoman-weekly-preview.timer",
+    "OnCalendar=Mon *-*-* 09:30:00",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewObservationPath, observation, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanWeeklyPreviewObservationPath, observation, fragment);
+  }
+}
+if (exists(xiaomanWeeklyPreviewActivationPath)) {
+  const activation = readText(xiaomanWeeklyPreviewActivationPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ACTIVATION",
+    "approved-production-xiaoman-weekly-preview",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" enable "$TIMER_NAME"',
+    '"$SYSTEMCTL" restart "$TIMER_NAME"',
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=enabled",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewActivationPath, activation, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanWeeklyPreviewActivationPath, activation, fragment);
+  }
+}
+if (exists(xiaomanWeeklyPreviewRollbackPath)) {
+  const rollback = readText(xiaomanWeeklyPreviewRollbackPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ROLLBACK",
+    "approved-production-xiaoman-weekly-preview-rollback",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=0",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" disable --now "$TIMER_NAME"',
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewRollbackPath, rollback, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "QIWE_GUID"]) {
+    forbidFragment(xiaomanWeeklyPreviewRollbackPath, rollback, fragment);
+  }
+}
+const deployBundleBuilderForWeeklyPreview = readText(
+  "tools/deploy/build-deploy-bundle.mjs"
+);
+for (const fragment of [
+  xiaomanWeeklyPreviewConfigApplyPath,
+  xiaomanWeeklyPreviewWorkerPath,
+  xiaomanWeeklyPreviewObservationPath,
+  xiaomanWeeklyPreviewActivationPath,
+  xiaomanWeeklyPreviewRollbackPath,
+  "workflows/xiaoman-weekly-preview",
+]) {
+  requireFragment(
+    "tools/deploy/build-deploy-bundle.mjs",
+    deployBundleBuilderForWeeklyPreview,
+    fragment
+  );
+}
 const releaseSystemdInstallerPath = "deploy/runner/install-release-systemd-units.sh";
 if (exists(releaseSystemdInstallerPath)) {
   const installer = readText(releaseSystemdInstallerPath);
   for (const fragment of [
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
+    "qintopia-agentos-xiaoman-weekly-preview.service",
+    "qintopia-agentos-xiaoman-weekly-preview.timer",
     "qintopia-agentos-erhua-morning-brief.service",
     "qintopia-agentos-erhua-morning-brief.timer",
   ]) {
@@ -2590,6 +2748,11 @@ if (exists(releaseSystemdInstallerPath)) {
   if (internalTimersBlock.includes("qintopia-agentos-erhua-morning-brief.timer")) {
     addError(
       `${releaseSystemdInstallerPath}: Erhua morning brief timer must not be default-enabled by release install`
+    );
+  }
+  if (internalTimersBlock.includes("qintopia-agentos-xiaoman-weekly-preview.timer")) {
+    addError(
+      `${releaseSystemdInstallerPath}: Xiaoman weekly preview timer must not be default-enabled by release install`
     );
   }
 }
@@ -2649,6 +2812,9 @@ if (!exists(renderSystemdUnitsPath)) {
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "xiaoman-daily-case-report-auto-publish-worker.sh",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
+    "qintopia-agentos-xiaoman-weekly-preview.service",
+    "xiaoman-weekly-preview-worker.sh",
+    "qintopia-agentos-xiaoman-weekly-preview.timer",
     "OnCalendar=${calendar}",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope direct",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope group",
@@ -2683,6 +2849,8 @@ const erhuaMorningBriefScripts = [
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
   "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
+  "deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh",
+  "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
 ];
 for (const scriptPath of erhuaMorningBriefScripts) {
   if (!exists(scriptPath)) {
@@ -2796,6 +2964,49 @@ if (exists("deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh")) {
   ]) {
     forbidFragment(
       "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
+      retirement,
+      fragment
+    );
+  }
+}
+if (exists("deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh")) {
+  const retirement = readText(
+    "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh"
+  );
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT",
+    "approved-production-xiaoman-legacy-cron-retirement",
+    'PYTHON_BIN="/usr/bin/python3"',
+    "/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json",
+    "01b211896c85fcd36628993408cdb696c20baf92f07b2fa957520c5bbfa3bd21",
+    "legacy cron file sha256 does not match the reviewed production observation",
+    "previous_decl_count",
+    "new_decl_count",
+    "previous_mode",
+    "new_mode",
+    "backup_created",
+    "external_calls_executed",
+    "safe_for_chat",
+  ]) {
+    requireFragment(
+      "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
+      retirement,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_PROFILE_DIR",
+    "QINTOPIA_XIAOMAN_LEGACY_CRON_FILE",
+    "source ",
+    ". /etc/qintopia",
+    "systemctl",
+    "journalctl",
+    "\npython3 -",
+    "curl ",
+    "psql ",
+  ]) {
+    forbidFragment(
+      "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
       retirement,
       fragment
     );

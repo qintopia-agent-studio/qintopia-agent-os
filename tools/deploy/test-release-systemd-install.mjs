@@ -170,6 +170,36 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       "release installer must install but not enable Erhua morning brief"
     );
   }
+  const xiaomanWeeklyPreviewUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-xiaoman-weekly-preview.service"),
+    "utf8"
+  );
+  for (const required of [
+    `WorkingDirectory=${resolvedReleaseDir}`,
+    `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh`,
+  ]) {
+    if (!xiaomanWeeklyPreviewUnit.includes(required)) {
+      throw new Error(`Xiaoman weekly preview unit is missing ${required}`);
+    }
+  }
+  const xiaomanWeeklyPreviewTimer = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-xiaoman-weekly-preview.timer"),
+    "utf8"
+  );
+  for (const required of [
+    "OnCalendar=Mon *-*-* 09:30:00",
+    "Persistent=true",
+    "Unit=qintopia-agentos-xiaoman-weekly-preview.service",
+  ]) {
+    if (!xiaomanWeeklyPreviewTimer.includes(required)) {
+      throw new Error(`Xiaoman weekly preview timer is missing ${required}`);
+    }
+  }
+  if (systemctlLogText.includes("qintopia-agentos-xiaoman-weekly-preview.timer")) {
+    throw new Error(
+      "release installer must install but not enable Xiaoman weekly preview"
+    );
+  }
   for (const unitName of [
     "qintopia-agentos-huabaosi-image-generation-preflight.service",
     "qintopia-agentos-huabaosi-image-generation-worker.service",

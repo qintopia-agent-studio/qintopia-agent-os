@@ -31,7 +31,10 @@ deployment docs.
   direct acceptance, one internal-group canary, and rollback sequence.
 - [xiaoman-weekly-minimum-loop-runbook.md](xiaoman-weekly-minimum-loop-runbook.md):
   2026-08-01 Xiaoman three-step weekly operations loop status and action content for the
-  Sunday 20:00 plan confirmation plus the pending next-week preview configuration.
+  Sunday 20:00 plan confirmation.
+- [xiaoman-weekly-preview-cutover-runbook.md](xiaoman-weekly-preview-cutover-runbook.md):
+  release-managed Xiaoman weekly preview timer activation, observation, and rollback
+  while preserving the human confirmation gate.
 - [erhua-morning-brief-production-activation-runbook.md](erhua-morning-brief-production-activation-runbook.md):
   release-managed Erhua morning brief timer activation, observation, and rollback for
   the reviewed 08:05 text artifact workflow.

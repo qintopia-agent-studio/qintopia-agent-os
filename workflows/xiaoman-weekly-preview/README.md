@@ -52,7 +52,7 @@ The script prints the `operator_review_message` (or the full JSON with `--json`)
 human reads it, replies "发" in the operations chat, and only then is the text handed to
 Erhua for delivery.
 
-## Acceptance
+## Acceptance Scenarios
 
 - Running with an empty week prints "下周暂无已确认活动，暂不生成预告" and exits 0.
 - Running with activities returns `publishable_count`, `skipped_count`,
@@ -62,6 +62,18 @@ Erhua for delivery.
 - The script fails closed (non-zero exit) if read-through is not enabled or the week
   cannot be read.
 
+## Validation
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s skills/qintopia-tools/variants/xiaoman/tests \
+  -p 'test_qintopia_tools.py' \
+  -k weekly_preview
+
+node tools/workflows/check-workflows.mjs
+node tools/deploy/check-deploy-contracts.mjs
+```
+
 ## Production Boundary
 
 - Reads Feishu activity tables; does not write them.
@@ -70,14 +82,15 @@ Erhua for delivery.
 
 ## Production Activation
 
-This workflow replaces the legacy natural-language Monday cron task. Activation is a
-**separate, owner-approved cutover** and is not performed by merging the workflow
-package alone:
+This workflow replaces the legacy natural-language Monday cron task. Activation is
+performed only through the reviewed release-local production scripts:
 
 - Runbook:
   [`docs/operations/xiaoman-weekly-preview-cutover-runbook.md`](../operations/xiaoman-weekly-preview-cutover-runbook.md)
-- It registers a release-managed systemd timer (not a conversation-created cron), keeps
-  the human confirmation gate, and removes the old Monday task from the server
-  `jobs.json`.
-- Installing or enabling the timer requires the owner-approved runbook plus observation
-  and rollback smoke evidence. Do not hot-edit production units.
+- Release unit: `qintopia-agentos-xiaoman-weekly-preview.timer`
+- Worker: `deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh`
+
+The timer keeps the human confirmation gate and refuses activation while the old Xiaoman
+Hermes cron observation finds runtime job declarations. Installing the unit is done by
+the normal Release deploy; enabling it requires the owner-approved config, activation,
+observation, and rollback scripts. Do not hot-edit production units.

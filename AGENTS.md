@@ -54,6 +54,8 @@
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:
   `QINTOPIA_ERHUA_LEGACY_CRON_RETIREMENT=approved-production-erhua-legacy-cron-retirement deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh`
+- Xiaoman legacy Hermes cron reviewed retirement:
+  `QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-retirement deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh`
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
@@ -220,6 +222,22 @@
   `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+- Xiaoman weekly preview production uses a release-managed timer, not Hermes
+  conversation cron or hand-copied unit files. Apply the persistent non-secret config
+  with:
+
+  ```bash
+  QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-preview-config \
+    deploy/sidecar/scripts/apply-xiaoman-weekly-preview-production-config.sh --enable
+  QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-preview \
+    deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh
+  ```
+
+  Observation and rollback are `xiaoman-weekly-preview-production-observation-smoke.sh`
+  and `rollback-xiaoman-weekly-preview-production.sh`. Activation must first pass
+  `xiaoman-legacy-cron-observation-smoke.sh`; do not manually edit
+  `/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json`.
+
 - Xiaoman QiWe group-arrival human confirmation evidence validation after a real
   activity send:
   `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`
