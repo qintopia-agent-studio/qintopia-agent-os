@@ -19,6 +19,10 @@ fail() {
   exit 1
 }
 
+if [[ -v QINTOPIA_XIAOMAN_WRAPPER_PATH ]]; then
+  fail "refuses Xiaoman wrapper path override"
+fi
+
 required_env() {
   local key="$1"
   local value="${!key:-}"
@@ -33,11 +37,13 @@ for key in \
   QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED \
   QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL \
   QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE \
+  QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE \
   QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE; do
   required_env "$key"
 done
 
 export QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE
+export QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE
 export QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE
 export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"
 
@@ -52,6 +58,9 @@ if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL}" != "approved-product
 fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE}" != "1" ]]; then
   fail "Xiaoman activity wrappers are not enabled"
+fi
+if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE}" != "1" ]]; then
+  fail "Xiaoman activity Feishu Base mode is not enabled"
 fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE}" != "1" ]]; then
   fail "Xiaoman activity read-through is not enabled"

@@ -29,6 +29,7 @@ ASSIGNMENT_RE = re.compile(r"^(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(.
 CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 READ_THROUGH_KEYS = (
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
     "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
@@ -146,6 +147,8 @@ def validate_profile_values(values: dict[str, str], profile_env_path: Path) -> d
     missing = [key for key in READ_THROUGH_KEYS if not values.get(key)]
     if missing:
         raise ConfigError("Xiaoman profile env is missing required read-through keys")
+    if values["QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"] != "1":
+        raise ConfigError("Xiaoman activity Feishu Base mode must be enabled")
     if values["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH"] != str(profile_env_path):
         raise ConfigError("Xiaoman profile env path must be the fixed production path")
     token = values["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN"]

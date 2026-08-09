@@ -52,6 +52,7 @@ else
   require_env_line "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED" "0"
 fi
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
+require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
 require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
 
 tmp_dir="$(mktemp -d)"

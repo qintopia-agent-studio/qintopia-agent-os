@@ -83,6 +83,7 @@ if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"
   require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"
   require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
+  require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
   require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
 else
   erhua_enabled="$(env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED")" || {

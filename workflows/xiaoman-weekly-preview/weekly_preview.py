@@ -19,13 +19,10 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Resolve the qintopia-tools xiaoman variant module without hardcoding a server path.
 _THIS = Path(__file__).resolve()
 _VARIANT = _THIS.parents[2] / "skills" / "qintopia-tools" / "variants" / "xiaoman" / "__init__.py"
 if not _VARIANT.exists():
-    _VARIANT = Path(os.environ.get("QINTOPIA_XIAOMAN_WRAPPER_PATH", _VARIANT))
-if not _VARIANT.exists():
-    print(f"ERROR: cannot locate xiaoman wrapper at {_VARIANT}", file=sys.stderr)
+    print(f"ERROR: cannot locate reviewed xiaoman wrapper at {_VARIANT}", file=sys.stderr)
     raise SystemExit(2)
 
 sys.path.insert(0, str(_VARIANT.parent))
@@ -62,6 +59,7 @@ def main() -> int:
     os.environ.setdefault("QINTOPIA_PROFILE_ID", "xiaoman")
     for env_key in (
         "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+        "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
         "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
     ):
         if not os.environ.get(env_key):

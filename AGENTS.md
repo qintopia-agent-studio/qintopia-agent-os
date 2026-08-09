@@ -278,9 +278,10 @@
 - Xiaoman activity read-through production config for release-managed Erhua/weekly
   workers must be applied through the reviewed release-local allowlist copier, not by
   sourcing the Xiaoman Hermes profile or hand-editing
-  `/etc/qintopia/message-sidecar.env`. It copies only the five reviewed Xiaoman activity
-  read-through keys from the fixed `0600 ubuntu:ubuntu` profile env into the fixed
-  `0640 root:ubuntu` sidecar env after verifying `release/current`:
+  `/etc/qintopia/message-sidecar.env`. It copies the reviewed Xiaoman activity
+  read-through keys, including `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`, from the
+  fixed `0600 ubuntu:ubuntu` profile env into the fixed `0640 root:ubuntu` sidecar env
+  after verifying `release/current`:
 
   ```bash
   sudo -n /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py \
@@ -614,11 +615,12 @@ Use `rg` and `rg --files` for search.
   `xiaoman.create_activity_request` through the operations control plane with
   `requester_agent=default` and `target_agent=xiaoman`; do not bypass capability policy
   by making Xiaoman call its own provider capability directly.
-- `qintopia_xiaoman_activity_list_by_date` may execute read-through only when
-  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. In that mode it may run the
-  configured sidecar for read-only, non-dry-run queries and return sanitized
-  `record_count`, `records`, and `summaries`; write wrappers must continue to return
-  bounded worker commands.
+- `qintopia_xiaoman_activity_list_by_date` may execute Feishu Base read-through only
+  when `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1` and
+  `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`. In that mode it may run the configured
+  sidecar for read-only, non-dry-run queries and return sanitized `record_count`,
+  `records`, and `summaries`; write wrappers must continue to return bounded worker
+  commands.
 - `qintopia_xiaoman_activity_promotion_review_draft` may only transform already-read
   sanitized Xiaoman activity records into a human-reviewable activity summary, promotion
   assessment, copy draft, poster brief, and dry-run controlled record-path payload. It

@@ -52,23 +52,35 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
     def profile_text(
         self,
         *,
+        use_feishu_base: str = "1",
         token: str = "base-token-alpha",
         allowed_tokens: str = "base-token-alpha,base-token-beta",
         profile_path: str | None = None,
     ) -> str:
         profile_path = profile_path or str(self.profile_env)
-        base_token_key = MODULE.READ_THROUGH_KEYS[0]
-        allowed_tokens_key = MODULE.READ_THROUGH_KEYS[1]
-        plan_table_key = MODULE.READ_THROUGH_KEYS[2]
-        occurrence_table_key = MODULE.READ_THROUGH_KEYS[3]
-        profile_path_key = MODULE.READ_THROUGH_KEYS[4]
         return "\n".join(
             [
-                self.env_line(base_token_key, token),
-                self.env_line(allowed_tokens_key, allowed_tokens),
-                self.env_line(plan_table_key, "plan-table-alpha"),
-                self.env_line(occurrence_table_key, "occurrence-table-alpha"),
-                self.env_line(profile_path_key, profile_path),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
+                    use_feishu_base,
+                ),
+                self.env_line("QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN", token),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_ALLOWED_FEISHU_BASE_TOKENS",
+                    allowed_tokens,
+                ),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
+                    "plan-table-alpha",
+                ),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_OCCURRENCE_TABLE_ID",
+                    "occurrence-table-alpha",
+                ),
+                self.env_line(
+                    "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PROFILE_ENV_PATH",
+                    profile_path,
+                ),
                 "EXTRA_PROFILE_ONLY=profile-only-value",
                 "",
             ]
@@ -107,7 +119,7 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         report = self.configure(apply=True, approval=MODULE.APPLY_APPROVAL)
 
         self.assertTrue(report["success"])
-        self.assertEqual(report["copied_key_count"], 5)
+        self.assertEqual(report["copied_key_count"], 6)
         self.assertTrue(report["sensitive_values_redacted"])
         self.assertFalse(report["external_calls_executed"])
         self.assertFalse(report["service_changes_executed"])
@@ -176,6 +188,15 @@ class XiaomanActivityReadThroughProductionConfigTests(unittest.TestCase):
         )
         self.profile_env.chmod(0o600)
         with self.assertRaisesRegex(MODULE.ConfigError, "unsafe"):
+            self.configure()
+
+    def test_rejects_disabled_feishu_base_mode(self) -> None:
+        self.profile_env.write_text(
+            self.profile_text(use_feishu_base="0"),
+            encoding="utf-8",
+        )
+        self.profile_env.chmod(0o600)
+        with self.assertRaisesRegex(MODULE.ConfigError, "Feishu Base mode"):
             self.configure()
 
     def test_rejects_unallowlisted_token_or_wrong_profile_path(self) -> None:

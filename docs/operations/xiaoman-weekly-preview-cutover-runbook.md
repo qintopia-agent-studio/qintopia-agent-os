@@ -30,6 +30,7 @@ Set only through the release-local config script:
 QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=1
 QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL=approved-production-xiaoman-weekly-preview
 QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1
+QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1
 QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1
 ```
 
@@ -42,6 +43,16 @@ QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_CONFIG=approved-production-xiaoman-we
 
 The script requires the production sidecar env file to already contain exactly one
 `QINTOPIA_SIDECAR_DATABASE_URL`, preserves file permissions, and does not print secrets.
+
+Apply the Xiaoman activity read-through Feishu Base values through the reviewed
+allowlist copier before activation:
+
+```bash
+sudo -n /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py \
+  --release-sha <published-production-release-sha> \
+  --apply \
+  --approval approved-production-xiaoman-activity-read-through-config-v1
+```
 
 ## Pre-activation Checks
 
