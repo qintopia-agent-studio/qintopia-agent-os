@@ -631,7 +631,10 @@ Use `rg` and `rg --files` for search.
   sender-derived `thread_id`, or a configured group allowlist match can be treated as a
   direct recipient and fail contact-guard lookup. Do not weaken direct-recipient contact
   guard to fix this; teach the delivery path to prove the target is a group through
-  typed metadata, a configured group allowlist, or QiWe room-detail proof.
+  typed metadata, a configured group allowlist, or QiWe room-detail proof. Cache
+  room-detail proof by `(guid, target)`, and count only response items whose
+  `roomId`/`chatId`/`id` matches the target as proof; `memberList` or `roomName` alone
+  is not enough to bypass the direct-recipient guard.
 - The production Hermes venv is uv-managed. Its `pyvenv.cfg` base home may use uv's
   stable `cpython-<major>.<minor>-<platform>` alias, which resolves to an exact patch
   version below `/home/ubuntu/.local/share/uv/python`. Interpreter validation may allow

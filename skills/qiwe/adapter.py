@@ -1521,7 +1521,7 @@ class QiWeAdapter(BasePlatformAdapter):
         self._seen_messages: Dict[str, float] = {}
         self._dispatch_tasks: set[asyncio.Task] = set()
         self._contact_guard_cache: Dict[str, Tuple[float, QiWeContactGuardDecision]] = {}
-        self._room_guard_cache: Dict[str, Tuple[float, bool]] = {}
+        self._room_guard_cache: Dict[Tuple[str, str], Tuple[float, bool]] = {}
         self._sender_display_names: Dict[Tuple[str, str], str] = {}
         self._identity_resolver = QiWeIdentityResolver(self)
         self._auditor = QiWeAuditor(self.qiwe.state_dir, self.qiwe.audit_enabled)
@@ -1875,15 +1875,17 @@ class QiWeAdapter(BasePlatformAdapter):
         if not target or not self.qiwe.token or not self.qiwe.send_enabled:
             return False
 
+        effective_guid = _text(guid or self.qiwe.guid)
         now = time.time()
         ttl = max(1, self.qiwe.contact_guard_cache_ttl_seconds)
-        cached = self._room_guard_cache.get(target)
+        cache_key = (effective_guid, target)
+        cached = self._room_guard_cache.get(cache_key)
         if cached and now - cached[0] <= ttl:
             return cached[1]
 
         result = await self._call_qiwe_api(
             "/room/batchGetRoomDetail",
-            {"guid": guid or self.qiwe.guid, "roomIdList": [target]},
+            {"guid": effective_guid, "roomIdList": [target]},
             require_send_enabled=False,
         )
         confirmed = False
@@ -1894,13 +1896,11 @@ class QiWeAdapter(BasePlatformAdapter):
                     if not isinstance(room, dict):
                         continue
                     room_id = _text(room.get("roomId") or room.get("room_id") or room.get("chatId") or room.get("id"))
-                    if room_id and room_id != target:
-                        continue
-                    if room_id == target or isinstance(room.get("memberList"), list) or _text(room.get("roomName") or room.get("name")):
+                    if room_id == target:
                         confirmed = True
                         break
 
-        self._room_guard_cache[target] = (now, confirmed)
+        self._room_guard_cache[cache_key] = (now, confirmed)
         return confirmed
 
     async def _handle_health(self, request: "web.Request") -> "web.Response":
