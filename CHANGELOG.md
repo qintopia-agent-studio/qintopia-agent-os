@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.95](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.94...v0.2.95) (2026-08-09)
+
+
+### Bug Fixes
+
+* add xiaoman plan table url probe ([#445](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/445)) ([8dd4f65](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8dd4f6514705ffc3ddf1fe6c4bfa0dbcb448f14c))
+
 ## [0.2.94](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.93...v0.2.94) (2026-08-09)
 
 
