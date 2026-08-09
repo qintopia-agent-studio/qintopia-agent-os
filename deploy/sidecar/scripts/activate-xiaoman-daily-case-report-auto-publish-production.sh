@@ -12,6 +12,8 @@ ENV_FILE="/etc/qintopia/message-sidecar.env"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 SYSTEMCTL="/usr/bin/systemctl"
 SHA256SUM="/usr/bin/sha256sum"
+PYTHON_BIN="/usr/bin/python3"
+PSQL_BIN="/usr/bin/psql"
 SERVICE_NAME="qintopia-agentos-xiaoman-daily-case-report-auto-publish.service"
 TIMER_NAME="qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
 
@@ -32,6 +34,20 @@ fi
 
 if [[ ! -x "$SHA256SUM" ]]; then
   echo "sha256sum is required for xiaoman daily case report activation" >&2
+  exit 1
+fi
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "python3 is required for xiaoman daily case report activation" >&2
+  exit 1
+fi
+if [[ ! -x "$PSQL_BIN" ]]; then
+  echo "psql is required for xiaoman daily case report activation" >&2
+  exit 1
+fi
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1; then
+from PIL import Image, ImageDraw, ImageFont
+PY
+  echo "Pillow is required for xiaoman daily case report activation" >&2
   exit 1
 fi
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import builtins
 import contextlib
 import importlib.util
 import io
@@ -133,6 +134,78 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("m.message_kind = 'text'", captured["sql"])
         self.assertIn("NULLIF(BTRIM(m.text), '') IS NOT NULL", captured["sql"])
         self.assertEqual(messages[0].sent_at, report_time)
+
+    def test_fetch_messages_psql_fallback_uses_pgdatabase_not_command_args(self) -> None:
+        report_time = datetime(2026, 8, 8, 9, 30, tzinfo=timezone.utc)
+        captured: dict[str, object] = {}
+        old_psql_override = os.environ.get("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL")
+        os.environ["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL"] = "/tmp/not-reviewed-psql"
+
+        def fake_run(args, *, env, **_kwargs):
+            captured["args"] = args
+            captured["env"] = env
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "m1",
+                            "sender_id": "u1",
+                            "sender_name": "张三",
+                            "text": "活动安排",
+                            "message_kind": "text",
+                            "report_time": report_time.isoformat(),
+                        }
+                    ]
+                ),
+                stderr="",
+            )
+
+        old_run = daily_case_report.subprocess.run
+        daily_case_report.subprocess.run = fake_run
+        try:
+            messages = daily_case_report._fetch_messages_with_psql(
+                "postgresql://user:pass@db.example/qintopia",
+                "chat-1",
+                report_time,
+                report_time + timedelta(hours=1),
+            )
+        finally:
+            daily_case_report.subprocess.run = old_run
+            if old_psql_override is None:
+                os.environ.pop("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL", None)
+            else:
+                os.environ["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL"] = old_psql_override
+
+        self.assertEqual(messages[0].sent_at, report_time)
+        self.assertEqual(captured["args"][0], "/usr/bin/psql")
+        self.assertEqual(
+            captured["env"]["PGDATABASE"],
+            "postgresql://user:pass@db.example/qintopia",
+        )
+        self.assertNotIn("postgresql://user:pass@db.example/qintopia", captured["args"])
+        self.assertIn("--set", captured["args"])
+
+    def test_fetch_messages_psql_failure_does_not_echo_database_url(self) -> None:
+        def fake_run(*_args, **_kwargs):
+            return types.SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="psql: error: postgresql://user:pass@db.example/qintopia failed",
+            )
+
+        old_run = daily_case_report.subprocess.run
+        daily_case_report.subprocess.run = fake_run
+        try:
+            with self.assertRaisesRegex(RuntimeError, "^message store query failed$"):
+                daily_case_report._fetch_messages_with_psql(
+                    "postgresql://user:pass@db.example/qintopia",
+                    "chat-1",
+                    datetime(2026, 8, 8, tzinfo=timezone.utc),
+                    datetime(2026, 8, 9, tzinfo=timezone.utc),
+                )
+        finally:
+            daily_case_report.subprocess.run = old_run
 
     def test_database_url_ignores_generic_database_url(self) -> None:
         old_message_store = os.environ.pop("QINTOPIA_MESSAGE_STORE_DATABASE_URL", None)
@@ -278,7 +351,7 @@ class DailyCaseReportTest(unittest.TestCase):
             old_parse_args = daily_case_report._parse_args
             old_render_image = daily_case_report._render_image
 
-            def fake_render_image(_html_path, output_path, _width, image_format):
+            def fake_render_image(_html_path, output_path, _width, image_format, *_args):
                 self.assertEqual(image_format, "png")
                 Path(output_path).write_bytes(b"main-fixture-png")
 
@@ -499,6 +572,112 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(captured["screenshot"]["type"], "jpeg")
         self.assertEqual(captured["screenshot"]["quality"], 92)
 
+    def test_render_image_falls_back_to_pillow_when_playwright_is_missing(self) -> None:
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="case file",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=1,
+            message_count=0,
+            participant_count=0,
+            case_count=0,
+            suspect_count=0,
+            hourly_counts=[0] * 24,
+            cases=[],
+            suspects=[],
+            quote="done",
+            highlight="done",
+        )
+        old_import = builtins.__import__
+        old_pillow = daily_case_report._render_image_with_pillow
+
+        def fake_import(name, *args, **kwargs):
+            if name.startswith("playwright"):
+                raise ImportError(name)
+            return old_import(name, *args, **kwargs)
+
+        def fake_pillow(_report, output_path, _width, image_format):
+            self.assertEqual(image_format, "jpeg")
+            Path(output_path).write_bytes(b"pillow-jpeg")
+
+        builtins.__import__ = fake_import
+        daily_case_report._render_image_with_pillow = fake_pillow
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                html_path = Path(tmpdir) / "preview.html"
+                output_path = Path(tmpdir) / "preview.jpg"
+                html_path.write_text("<html></html>", encoding="utf-8")
+
+                daily_case_report._render_image(html_path, output_path, 750, "jpeg", report)
+
+                self.assertEqual(output_path.read_bytes(), b"pillow-jpeg")
+        finally:
+            builtins.__import__ = old_import
+            daily_case_report._render_image_with_pillow = old_pillow
+
+    def test_render_image_falls_back_to_pillow_when_browser_is_missing(self) -> None:
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="case file",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=1,
+            message_count=0,
+            participant_count=0,
+            case_count=0,
+            suspect_count=0,
+            hourly_counts=[0] * 24,
+            cases=[],
+            suspects=[],
+            quote="done",
+            highlight="done",
+        )
+
+        class FakePlaywright:
+            chromium = types.SimpleNamespace(launch=lambda: (_ for _ in ()).throw(RuntimeError("no browser")))
+
+        class FakeSyncPlaywright:
+            def __enter__(self):
+                return FakePlaywright()
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        old_playwright = sys.modules.get("playwright")
+        old_sync_api = sys.modules.get("playwright.sync_api")
+        old_pillow = daily_case_report._render_image_with_pillow
+        fake_playwright = types.ModuleType("playwright")
+        fake_sync_api = types.ModuleType("playwright.sync_api")
+        fake_sync_api.sync_playwright = lambda: FakeSyncPlaywright()
+        sys.modules["playwright"] = fake_playwright
+        sys.modules["playwright.sync_api"] = fake_sync_api
+
+        def fake_pillow(_report, output_path, _width, image_format):
+            self.assertEqual(image_format, "jpeg")
+            Path(output_path).write_bytes(b"pillow-jpeg")
+
+        daily_case_report._render_image_with_pillow = fake_pillow
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                html_path = Path(tmpdir) / "preview.html"
+                output_path = Path(tmpdir) / "preview.jpg"
+                html_path.write_text("<html></html>", encoding="utf-8")
+
+                daily_case_report._render_image(html_path, output_path, 750, "jpeg", report)
+
+                self.assertEqual(output_path.read_bytes(), b"pillow-jpeg")
+        finally:
+            daily_case_report._render_image_with_pillow = old_pillow
+            if old_playwright is None:
+                sys.modules.pop("playwright", None)
+            else:
+                sys.modules["playwright"] = old_playwright
+            if old_sync_api is None:
+                sys.modules.pop("playwright.sync_api", None)
+            else:
+                sys.modules["playwright.sync_api"] = old_sync_api
+
     def test_render_html_mode_returns_existing_html_deliverable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             env = os.environ.copy()
@@ -610,7 +789,7 @@ class DailyCaseReportTest(unittest.TestCase):
             old_parse_args = daily_case_report._parse_args
             old_render_image = daily_case_report._render_image
 
-            def fake_render_image(_html_path, output_path, _width, image_format):
+            def fake_render_image(_html_path, output_path, _width, image_format, *_args):
                 self.assertEqual(image_format, "jpeg")
                 Path(output_path).write_bytes(b"main-fixture-jpeg")
 
