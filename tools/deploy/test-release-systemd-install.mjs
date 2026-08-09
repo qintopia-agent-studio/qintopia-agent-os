@@ -348,6 +348,36 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       }
     }
   }
+  const dailyCaseReportUnit = fs.readFileSync(
+    path.join(
+      unitDir,
+      "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service"
+    ),
+    "utf8"
+  );
+  const dailyCaseReportExecPrefix = `${releaseExecPrefix} QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha}`;
+  if (
+    !dailyCaseReportUnit.includes(
+      `ExecStart=${dailyCaseReportExecPrefix} ${resolvedReleaseDir}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh`
+    )
+  ) {
+    throw new Error(
+      "daily case report service must bind the reviewed Feishu release SHA at exec"
+    );
+  }
+  if (dailyCaseReportUnit.includes("QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA")) {
+    throw new Error(
+      "daily case report service must not inherit Huabaosi image release binding"
+    );
+  }
+  for (const forbidden of [
+    "Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=",
+    "Environment=QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=",
+  ]) {
+    if (dailyCaseReportUnit.includes(forbidden)) {
+      throw new Error(`daily case report service must not use vulnerable ${forbidden}`);
+    }
+  }
   const runnerUnit = fs.readFileSync(
     path.join(unitDir, "qintopia-agent-os-deploy-runner.service"),
     "utf8"

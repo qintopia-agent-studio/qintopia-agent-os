@@ -701,7 +701,8 @@ render_all() {
   render_release_script_oneshot_service \
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service" \
     "Qintopia AgentOS Xiaoman daily case report auto-publish worker" \
-    "${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
+    "${MONOREPO_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh" \
+    "$huabaosi_feishu_release_environment"
   render_calendar_timer \
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer" \
     "Run Qintopia AgentOS Xiaoman daily case report auto-publish" \
