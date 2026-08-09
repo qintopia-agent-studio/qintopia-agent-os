@@ -134,10 +134,26 @@ try {
   if (
     result.status === 0 ||
     !result.stderr.includes("sha256 does not match") ||
+    !result.stderr.includes(`actual_sha256=${legacySha}`) ||
+    !result.stderr.includes("current_decl_count=4") ||
+    !result.stderr.includes("external_calls_executed=false") ||
+    !result.stderr.includes("safe_for_chat=false") ||
     sha256(fs.readFileSync(cronFile)) !== legacySha ||
     listBackups(cronDir).length
   ) {
     throw new Error("retirement accepted an unexpected legacy cron hash");
+  }
+  for (const forbidden of [
+    "send real group content",
+    "raw prompt must not leak",
+    "private group message body",
+    "deprecated Hermes cron",
+  ]) {
+    if (result.stderr.includes(forbidden)) {
+      throw new Error(
+        `hash mismatch evidence leaked legacy cron content: ${forbidden}`
+      );
+    }
   }
 
   result = run(retirement, {

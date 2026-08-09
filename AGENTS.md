@@ -65,7 +65,10 @@
   failure. Xiaoman retirement depends on the deployed runner unit keeping
   `ProtectHome=read-only` while granting `ReadWritePaths` only to the fixed
   `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory; do not grant write access to
-  the whole Xiaoman profile.
+  the whole Xiaoman profile. Erhua retirement hash mismatches may emit only sanitized
+  `actual_sha256`, reviewed `expected_sha256`, and declaration-count evidence; use that
+  evidence for a follow-up reviewed expected-hash PR, never to bypass review or retire
+  an unreviewed cron file.
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
