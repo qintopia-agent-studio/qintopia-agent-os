@@ -73,9 +73,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ```
 
-The worker script renders the JPEG, uploads it to the reviewed HTTPS media boundary,
-then records the AgentOS artifact and automatic publish request. It does not call QiWe
-directly.
+The worker script renders the JPEG, uploads it to the reviewed Feishu-backed primary
+storage boundary, then records the AgentOS artifact and automatic publish request. It
+does not call QiWe directly.
 
 ## Production Configuration
 
@@ -92,13 +92,11 @@ sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/appl
 ```
 
 The JSON input carries only the reviewed release SHA, production database URL hash,
-daily report source chat id, target group id, media upload endpoint, media public base
-URL, media allowed-host list, and optional message text. The script validates
-`release/current`, the existing QiWe image-send production gate, the target-group
-allowlist, and the upload/public media host boundary before writing any persistent env
-value. The daily media allowed-host list must include both the upload endpoint host and
-the public base URL host, and it must remain inside the already reviewed generated-image
-media allowlist.
+`storage_backend: "feishu-base"`, daily report source chat id, target group id, and
+optional message text. The script validates `release/current`, the existing QiWe
+image-send production gate, the target-group allowlist, and the reviewed Huabaosi Feishu
+primary-storage boundary before writing any persistent env value. Do not invent or
+provide HTTPS media upload endpoint values for the current production path.
 
 ## Activation
 
@@ -110,8 +108,8 @@ QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_ACTIVATION=approved-p
 ```
 
 The activation script requires exactly one persistent value for the enablement flag,
-production approval phrase, read-through flag, chat id, target group id, media upload
-endpoint, media public base URL, and media allowed-host list.
+production approval phrase, read-through flag, storage backend, chat id, and target
+group id. For the current production path, the storage backend must be `feishu-base`.
 
 ## Observation
 
