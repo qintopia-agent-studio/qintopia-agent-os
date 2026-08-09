@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import importlib.util
 import json
 import os
 import re
+import shutil
 import shlex
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +31,13 @@ DEFAULT_OPERATOR_NAME = "刘珊"
 DEFAULT_AUDIENCE = "社区群成员"
 DEFAULT_QUNMIND_TIMEOUT_SECONDS = 180
 DEFAULT_NEWS_LIMIT = 3
+DEFAULT_NEWS_FEED_TIMEOUT_SECONDS = 12
+DEFAULT_NEWS_FEED_URLS = [
+    "https://openai.com/news/rss.xml",
+    "https://blog.google/technology/ai/rss/",
+    "https://deepmind.google/blog/rss.xml",
+]
+NEWS_FEED_ALLOWED_HOSTS = frozenset({"openai.com", "blog.google", "deepmind.google"})
 WORKFLOW_ID = "workflows/erhua-morning-brief"
 
 _THIS = Path(__file__).resolve()
@@ -35,6 +48,21 @@ _VARIANT = _THIS.parents[2] / "skills" / "qintopia-tools" / "variants" / "xiaoma
 class AiNewsItem:
     title: str
     summary: str
+
+
+class UnsafeNewsFeedXml(RuntimeError):
+    pass
+
+
+class NoNewsFeedRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            "news feed redirects are not allowed",
+            headers,
+            fp,
+        )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -58,6 +86,22 @@ def _parse_args() -> argparse.Namespace:
         default=os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_REPORT_NAME", ""),
     )
     parser.add_argument("--qunmind-timeout-seconds", type=int, default=DEFAULT_QUNMIND_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--news-feed-url",
+        action="append",
+        default=[],
+        help="Public RSS or Atom feed URL used when QunMind is unavailable.",
+    )
+    parser.add_argument(
+        "--news-feed-timeout-seconds",
+        type=int,
+        default=int(
+            os.environ.get(
+                "QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_TIMEOUT_SECONDS",
+                DEFAULT_NEWS_FEED_TIMEOUT_SECONDS,
+            )
+        ),
+    )
     parser.add_argument("--news-limit", type=int, default=DEFAULT_NEWS_LIMIT)
     parser.add_argument(
         "--allow-news-unavailable",
@@ -185,6 +229,8 @@ def _prepare_activity(date: str, args: argparse.Namespace) -> dict[str, Any]:
 def _run_qunmind_report(args: argparse.Namespace) -> str:
     if args.news_fixture:
         return Path(args.news_fixture).read_text(encoding="utf-8")
+    if not _qunmind_available(args):
+        raise RuntimeError("QunMind is not configured or installed")
     if args.qunmind_timeout_seconds <= 0:
         raise RuntimeError("qunmind timeout must be positive")
 
@@ -208,6 +254,128 @@ def _run_qunmind_report(args: argparse.Namespace) -> str:
         if not output_path.exists():
             raise RuntimeError("QunMind public daily report did not create output")
         return output_path.read_text(encoding="utf-8")
+
+
+def _qunmind_available(args: argparse.Namespace) -> bool:
+    if args.news_fixture:
+        return True
+    configured_bin = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN", "")
+    if configured_bin and Path(args.qunmind_bin).is_absolute():
+        return os.access(args.qunmind_bin, os.X_OK)
+    return shutil.which(args.qunmind_bin) is not None
+
+
+def _feed_urls(args: argparse.Namespace) -> list[str]:
+    if args.news_feed_url:
+        candidates = args.news_feed_url
+    else:
+        env_value = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS", "")
+        candidates = env_value.split(",") if env_value else DEFAULT_NEWS_FEED_URLS
+
+    urls: list[str] = []
+    for raw in candidates:
+        url = raw.strip()
+        if _is_allowed_news_feed_url(url):
+            urls.append(url)
+    return urls
+
+
+def _is_allowed_news_feed_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    return parsed.scheme == "https" and parsed.hostname in NEWS_FEED_ALLOWED_HOSTS
+
+
+def _plain_feed_text(value: str) -> str:
+    text = html.unescape(value)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return _sanitize_public_line(text, max_len=180)
+
+
+def _child_text(element: ET.Element, names: tuple[str, ...]) -> str:
+    for name in names:
+        child = element.find(name)
+        if child is not None and child.text:
+            return child.text
+    return ""
+
+
+def _extract_feed_news_items(xml_text: str, limit: int) -> list[AiNewsItem]:
+    if limit <= 0:
+        raise RuntimeError("news limit must be positive")
+    if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml_text, flags=re.IGNORECASE):
+        raise UnsafeNewsFeedXml(
+            "news feed XML must not contain DTD or entity declarations"
+        )
+    root = ET.fromstring(xml_text)
+    feed_items = [
+        *root.findall(".//channel/item"),
+        *root.findall(".//{http://www.w3.org/2005/Atom}entry"),
+    ]
+    items: list[AiNewsItem] = []
+    seen: set[str] = set()
+    for item in feed_items:
+        title = _plain_feed_text(
+            _child_text(item, ("title", "{http://www.w3.org/2005/Atom}title"))
+        )
+        summary = _plain_feed_text(
+            _child_text(
+                item,
+                (
+                    "description",
+                    "summary",
+                    "content",
+                    "{http://www.w3.org/2005/Atom}summary",
+                    "{http://www.w3.org/2005/Atom}content",
+                ),
+            )
+        )
+        if not summary:
+            summary = title
+        key = title.casefold()
+        if not title or key in seen:
+            continue
+        seen.add(key)
+        items.append(AiNewsItem(title=title[:90], summary=summary))
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
+    if args.news_feed_timeout_seconds <= 0:
+        raise RuntimeError("news feed timeout must be positive")
+    opener = urllib.request.build_opener(NoNewsFeedRedirect)
+    collected: list[AiNewsItem] = []
+    seen: set[str] = set()
+    for url in _feed_urls(args):
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": "qintopia-erhua-morning-brief/1.0"},
+        )
+        try:
+            with opener.open(request, timeout=args.news_feed_timeout_seconds) as response:
+                final_url = response.geturl() if hasattr(response, "geturl") else url
+                if not _is_allowed_news_feed_url(final_url):
+                    continue
+                xml_text = response.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
+            for item in _extract_feed_news_items(xml_text, args.news_limit):
+                key = item.title.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                collected.append(item)
+                if len(collected) >= args.news_limit:
+                    return collected
+        except (
+            OSError,
+            urllib.error.URLError,
+            ET.ParseError,
+            UnicodeError,
+            UnsafeNewsFeedXml,
+        ):
+            continue
+    return collected
 
 
 def _strip_markdown(value: str) -> str:
@@ -679,15 +847,20 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
 
     news_unavailable = False
     news_items: list[AiNewsItem] = []
+    ai_news_source = "qunmind_public_only"
     try:
         markdown = _run_qunmind_report(args)
         news_items = _extract_ai_news_items(markdown, args.news_limit)
         if not news_items:
             raise RuntimeError("QunMind report did not contain AI news items")
     except Exception:
-        if not args.allow_news_unavailable:
-            raise
-        news_unavailable = True
+        news_items = _fetch_feed_news_items(args)
+        ai_news_source = "public_rss_fallback"
+        if not news_items:
+            if not args.allow_news_unavailable:
+                raise
+            news_unavailable = True
+            ai_news_source = "unavailable"
 
     brief = _compose_brief(
         date=date,
@@ -703,7 +876,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         "activity_publishable_count": activity_count,
         "sunday_no_publishable_activity_followup": sunday_no_publishable_activity_followup,
         "ai_news_item_count": len(news_items),
-        "ai_news_source": "qunmind_public_only",
+        "ai_news_source": ai_news_source,
         "morning_brief_text": brief,
         "operator_review_message": (
             "二花早报草稿已生成，未发送。\n\n"
@@ -715,7 +888,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         "database_writes": False,
         "guardrails": [
             "reads Xiaoman activity preview only",
-            "uses QunMind public-only daily report for AI news",
+            "uses QunMind public-only daily report or public RSS fallback for AI news",
             "does not publish, call Erhua, call QiWe, create work items, or send by default",
         ],
     }

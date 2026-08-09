@@ -2640,6 +2640,7 @@ if (!exists(renderSystemdUnitsPath)) {
 const erhuaMorningBriefScripts = [
   "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
   "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+  "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
@@ -2680,15 +2681,25 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
   for (const fragment of [
     'DEFAULT_HERMES_PYTHON="/home/ubuntu/.hermes/hermes-agent/venv/bin/python"',
     'PYTHON_VALIDATOR="${RELEASE_DIR}/runtime/hermes/validate_hermes_python.py"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL",
     "--prepare-artifact",
     "--execute-artifact-create",
     "--apply-artifact-create",
     '"external_send_executed": False',
     '"send_request_created": False',
-    "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN",
-    "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG",
   ]) {
     requireFragment(
+      "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+      worker,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE:=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE:=1",
+  ]) {
+    forbidFragment(
       "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
       worker,
       fragment
@@ -2735,15 +2746,51 @@ if (exists("deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh"))
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
     'RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
     'HERMES_PYTHON="/home/ubuntu/.hermes/hermes-agent/venv/bin/python"',
-    'QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"',
     "QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1",
     "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
     "QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1",
     "show --property=NextElapseUSecRealtime --value",
+    'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"',
+    'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"',
+    'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"',
+    'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"',
   ]) {
     requireFragment(
       "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
       activation,
+      fragment
+    );
+  }
+}
+if (exists("deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh")) {
+  const config = readText(
+    "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh"
+  );
+  for (const fragment of [
+    "approved-production-erhua-morning-brief-config",
+    'PYTHON_BIN="/usr/bin/python3"',
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL",
+    "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
+    "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
+  ]) {
+    requireFragment(
+      "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh",
+      config,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    "source ",
+    ". /etc/qintopia",
+  ]) {
+    forbidFragment(
+      "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh",
+      config,
       fragment
     );
   }

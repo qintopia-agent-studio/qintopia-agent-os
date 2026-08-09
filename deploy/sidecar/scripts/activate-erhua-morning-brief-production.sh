@@ -60,29 +60,16 @@ PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$python_validator" \
   --venv-dir "$HERMES_VENV" \
   --release-dir "$release_dir" >/dev/null
 
-require_env_line() {
-  local key="$1"
-  local expected="$2"
-  local count
-  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
-  if [[ "$count" != "1" ]]; then
-    fail "requires exactly one ${key}"
-  fi
-  if ! grep -Fxq "${key}=${expected}" "$ENV_FILE"; then
-    fail "requires ${key}=${expected}"
-  fi
-}
-
 require_present_env_line() {
   local key="$1"
   local count
-  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
+  count="$(grep -Ec "^(export[[:space:]]+)?${key}[[:space:]]*=" "$ENV_FILE" || true)"
   if [[ "$count" != "1" ]]; then
     fail "requires exactly one ${key}"
   fi
 }
 
-read_env_value() {
+env_value() {
   local key="$1"
   "$PYTHON_BIN" - "$ENV_FILE" "$key" <<'PY'
 import re
@@ -115,7 +102,19 @@ with open(path, encoding="utf-8") as fh:
         if "$(" in value or "`" in value or any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
             raise SystemExit(1)
         print(value)
+if not seen:
+    raise SystemExit(1)
 PY
+}
+
+require_env_value() {
+  local key="$1"
+  local expected="$2"
+  local value
+  value="$(env_value "$key")" || fail "requires exactly one ${key}"
+  if [[ "$value" != "$expected" ]]; then
+    fail "${key} is not set to the reviewed production value"
+  fi
 }
 
 cleanup_failed_activation() {
@@ -124,33 +123,11 @@ cleanup_failed_activation() {
   "$SYSTEMCTL" reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
 }
 
-require_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"
-require_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"
-require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
-require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
 require_present_env_line "QINTOPIA_SIDECAR_DATABASE_URL"
-require_present_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN"
-require_present_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG"
-
-qunmind_bin="$(read_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN")" || fail "invalid QunMind binary env value"
-qunmind_config="$(read_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_CONFIG")" || fail "invalid QunMind config env value"
-if [[ -z "$qunmind_bin" || -z "$qunmind_config" ]]; then
-  fail "QunMind runtime values must be non-empty"
-fi
-case "$qunmind_bin" in
-  /*) ;;
-  *) fail "QunMind binary must be an absolute path" ;;
-esac
-if [[ ! -x "$qunmind_bin" ]]; then
-  fail "QunMind binary must be executable"
-fi
-case "$qunmind_config" in
-  /*) ;;
-  *) fail "QunMind config must be an absolute path" ;;
-esac
-if [[ ! -r "$qunmind_config" ]]; then
-  fail "QunMind config must be readable"
-fi
+require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"
+require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"
+require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
+require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
 
 env -i PATH="$PATH" QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 "$ERHUA_CRON_OBSERVATION_SCRIPT" >/dev/null
 env -i PATH="$PATH" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 "$XIAOMAN_CRON_OBSERVATION_SCRIPT" >/dev/null
