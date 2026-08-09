@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.79](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.78...v0.2.79) (2026-08-09)
+
+
+### Features
+
+* **xiaoman:** add weekly preview production cutover ([#402](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/402)) ([8254fc5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8254fc5fb34f51230067669f4d14693ba93eaae6))
+
 ## [0.2.78](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.77...v0.2.78) (2026-08-09)
 
 
