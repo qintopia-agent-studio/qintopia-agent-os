@@ -2526,13 +2526,15 @@ if (exists(releaseSystemdInstallerPath)) {
     requireFragment(releaseSystemdInstallerPath, installer, fragment);
   }
   const unitFilesBlock = installer.match(/unit_files=\([\s\S]*?\n\)/)?.[0] ?? "";
-  const unitFiles = [...unitFilesBlock.matchAll(/^\s+([^\s]+\.(?:service|timer))$/gm)].map(
-    (match) => match[1]
-  );
+  const unitFiles = [
+    ...unitFilesBlock.matchAll(/^\s+([^\s]+\.(?:service|timer))$/gm),
+  ].map((match) => match[1]);
   const seenUnitFiles = new Set();
   for (const unitFile of unitFiles) {
     if (seenUnitFiles.has(unitFile)) {
-      addError(`${releaseSystemdInstallerPath}: duplicate unit_files entry ${unitFile}`);
+      addError(
+        `${releaseSystemdInstallerPath}: duplicate unit_files entry ${unitFile}`
+      );
     }
     seenUnitFiles.add(unitFile);
   }
