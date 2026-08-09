@@ -51,7 +51,8 @@
           "sidecar-runtime",
           "deploy-bundle",
           "hermes-plugins",
-          "hermes-profile-erhua"
+          "hermes-profile-erhua",
+          "production-activation"
         ]
       }
     },
@@ -118,7 +119,26 @@
         "sha": { "type": "string" }
       }
     },
-    "notes": { "type": "string" }
+    "notes": { "type": "string" },
+    "activation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets"],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "erhua-morning-brief",
+              "xiaoman-weekly-preview",
+              "xiaoman-daily-case-report-auto-publish"
+            ]
+          }
+        }
+      }
+    }
   },
   "allOf": [
     {
@@ -147,6 +167,39 @@
         "required": ["release_scope", "dry_run"]
       },
       "then": { "required": ["profile_dry_run_request_id"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "contains": { "const": "production-activation" }
+          }
+        }
+      },
+      "then": {
+        "required": ["activation"],
+        "properties": {
+          "release_scope": { "const": ["production-activation"] },
+          "restart_targets": { "const": ["qintopia-system-services"] },
+          "dry_run": { "const": false },
+          "rollback_on_smoke_failure": { "const": false }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "not": { "contains": { "const": "production-activation" } }
+          }
+        },
+        "required": ["release_scope"]
+      },
+      "then": {
+        "not": { "required": ["activation"] }
+      }
     }
   ]
 }

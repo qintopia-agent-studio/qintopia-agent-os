@@ -21,6 +21,9 @@ deployment docs.
   `current`/`previous` symlink, promotion, rollback, and Hermes mount model.
 - [production-deploy-runner.md](production-deploy-runner.md): GitHub Release-triggered
   production deploy requests, COS pull runner, release promotion, and rollback model.
+- [production-timer-activation-runbook.md](production-timer-activation-runbook.md):
+  signed production timer activation requests for reviewed Erhua/Xiaoman timers through
+  the deploy runner.
 - [xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md):
   owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,
   and final completion-manifest sequence. The same runbook also includes the reviewed

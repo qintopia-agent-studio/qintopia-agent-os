@@ -163,6 +163,9 @@ const profileDryRunRequestId = argValue(
   "--profile-dry-run-request-id",
   process.env.DEPLOY_PROFILE_DRY_RUN_REQUEST_ID || ""
 );
+const activationTargets = splitList(
+  argValue("--activation-targets", process.env.DEPLOY_ACTIVATION_TARGETS || "")
+);
 const signingKey = requireValue(
   "DEPLOY_REQUEST_SIGNING_KEY",
   argValue("--signing-key", process.env.DEPLOY_REQUEST_SIGNING_KEY || "")
@@ -214,6 +217,9 @@ const request = {
 };
 if (profileDryRunRequestId) {
   request.profile_dry_run_request_id = profileDryRunRequestId;
+}
+if (activationTargets.length > 0) {
+  request.activation = { targets: activationTargets };
 }
 
 const signatureMetadata = {

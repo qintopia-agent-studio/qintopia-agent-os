@@ -222,6 +222,14 @@
   `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+- Production timer activation should use the `Activate Production Timers` GitHub
+  workflow after the reviewed release containing the runner support is deployed. It
+  creates a signed `production-activation` deploy-runner request and accepts only these
+  fixed targets: `erhua-morning-brief`, `xiaoman-weekly-preview`, and
+  `xiaoman-daily-case-report-auto-publish`. The activation request does not retire
+  legacy cron files, write persistent production config, or promise automatic rollback;
+  each selected target requires its owner-approved production config to have been
+  applied first.
 - Xiaoman weekly preview production uses a release-managed timer, not Hermes
   conversation cron or hand-copied unit files. Apply the persistent non-secret config
   with:
