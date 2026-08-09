@@ -253,7 +253,9 @@
   sourcing the Xiaoman Hermes profile or hand-editing
   `/etc/qintopia/message-sidecar.env`. It copies only the five reviewed Xiaoman activity
   read-through keys from the fixed `0600 ubuntu:ubuntu` profile env into the fixed
-  `0640 root:ubuntu` sidecar env after verifying `release/current`:
+  `0640 root:ubuntu` sidecar env after verifying `release/current`, and writes the
+  non-secret `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1` switch required by the Hermes
+  wrappers:
 
   ```bash
   sudo -n /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py \
@@ -588,8 +590,9 @@ Use `rg` and `rg --files` for search.
   `requester_agent=default` and `target_agent=xiaoman`; do not bypass capability policy
   by making Xiaoman call its own provider capability directly.
 - `qintopia_xiaoman_activity_list_by_date` may execute read-through only when
-  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. In that mode it may run the
-  configured sidecar for read-only, non-dry-run queries and return sanitized
+  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1` and Feishu Base mode is explicitly
+  selected with `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`. In that mode it may run
+  the configured sidecar for read-only, non-dry-run queries and return sanitized
   `record_count`, `records`, and `summaries`; write wrappers must continue to return
   bounded worker commands.
 - `qintopia_xiaoman_activity_promotion_review_draft` may only transform already-read
