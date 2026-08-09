@@ -179,9 +179,7 @@ def _date_for(args: argparse.Namespace) -> str:
 def _load_xiaoman_variant():
     variant = _VARIANT
     if not variant.exists():
-        variant = Path(os.environ.get("QINTOPIA_XIAOMAN_WRAPPER_PATH", str(variant)))
-    if not variant.exists():
-        raise RuntimeError(f"cannot locate xiaoman wrapper at {variant}")
+        raise RuntimeError(f"cannot locate reviewed xiaoman wrapper at {variant}")
     sys.path.insert(0, str(variant.parent))
     spec = importlib.util.spec_from_file_location("qintopia_xiaoman_wrapper", variant)
     if spec is None or spec.loader is None:
@@ -205,6 +203,7 @@ def _prepare_activity(date: str, args: argparse.Namespace) -> dict[str, Any]:
     os.environ.setdefault("QINTOPIA_PROFILE_ID", "xiaoman")
     for env_key in (
         "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+        "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
         "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
     ):
         if not os.environ.get(env_key):

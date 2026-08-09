@@ -2667,6 +2667,7 @@ for (const timer of xiaomanWeeklyLoopTimers) {
       'PYTHON_BIN="/usr/bin/python3"',
       timer.workDir,
       `${timer.label} refuses runtime path overrides`,
+      "-v QINTOPIA_XIAOMAN_WRAPPER_PATH",
       "workflows/xiaoman-weekly-loop/weekly_loop.py",
       timer.mode,
       "--json",
@@ -2686,6 +2687,7 @@ for (const timer of xiaomanWeeklyLoopTimers) {
       "QIWE_TOKEN",
       "QIWE_GUID",
       "QINTOPIA_RELEASE_DIR:-",
+      "QINTOPIA_XIAOMAN_WRAPPER_PATH:-",
       `${timer.envPrefix}_PYTHON:-`,
       `${timer.envPrefix}_OUTPUT_DIR:-`,
       "source ",
@@ -2788,9 +2790,25 @@ for (const fragment of [
     fragment
   );
 }
+const xiaomanWeeklyLoopWorkflowPath = "workflows/xiaoman-weekly-loop/weekly_loop.py";
+if (exists(xiaomanWeeklyLoopWorkflowPath)) {
+  const workflow = readText(xiaomanWeeklyLoopWorkflowPath);
+  requireFragment(
+    xiaomanWeeklyLoopWorkflowPath,
+    workflow,
+    "cannot locate reviewed xiaoman wrapper"
+  );
+  forbidFragment(
+    xiaomanWeeklyLoopWorkflowPath,
+    workflow,
+    "QINTOPIA_XIAOMAN_WRAPPER_PATH"
+  );
+}
 
 const xiaomanWeeklyPreviewConfigApplyPath =
   "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-production-config.sh";
+const xiaomanWeeklyPreviewWorkflowPath =
+  "workflows/xiaoman-weekly-preview/weekly_preview.py";
 const xiaomanWeeklyPreviewWorkerPath =
   "deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh";
 const xiaomanWeeklyPreviewObservationPath =
@@ -2810,6 +2828,20 @@ for (const scriptPath of [
     addError(`${scriptPath}: missing Xiaoman weekly preview production script`);
   }
 }
+if (exists(xiaomanWeeklyPreviewWorkflowPath)) {
+  const workflow = readText(xiaomanWeeklyPreviewWorkflowPath);
+  for (const fragment of [
+    "cannot locate reviewed xiaoman wrapper",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewWorkflowPath, workflow, fragment);
+  }
+  forbidFragment(
+    xiaomanWeeklyPreviewWorkflowPath,
+    workflow,
+    "QINTOPIA_XIAOMAN_WRAPPER_PATH"
+  );
+}
 if (exists(xiaomanWeeklyPreviewConfigApplyPath)) {
   const config = readText(xiaomanWeeklyPreviewConfigApplyPath);
   for (const fragment of [
@@ -2819,6 +2851,7 @@ if (exists(xiaomanWeeklyPreviewConfigApplyPath)) {
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED",
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL",
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
@@ -2848,7 +2881,9 @@ if (exists(xiaomanWeeklyPreviewWorkerPath)) {
     'WORK_DIR="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-preview"',
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "xiaoman weekly preview refuses runtime path overrides",
+    "-v QINTOPIA_XIAOMAN_WRAPPER_PATH",
     'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
+    "xiaoman weekly preview requires Xiaoman activity Feishu Base mode to be enabled",
     "xiaoman weekly preview requires the release-local sidecar binary",
     "workflows/xiaoman-weekly-preview/weekly_preview.py",
     "--json",
@@ -2868,6 +2903,7 @@ if (exists(xiaomanWeeklyPreviewWorkerPath)) {
     "QIWE_TOKEN",
     "QIWE_GUID",
     "QINTOPIA_RELEASE_DIR:-",
+    "QINTOPIA_XIAOMAN_WRAPPER_PATH:-",
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PYTHON:-",
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OUTPUT_DIR:-",
     "source ",
@@ -2888,6 +2924,7 @@ if (exists(xiaomanWeeklyPreviewObservationPath)) {
     "QINTOPIA_DEPLOYED_COMMIT_SHA=${EXPECTED_RELEASE_SHA}",
     "qintopia-agentos-xiaoman-weekly-preview.service",
     "qintopia-agentos-xiaoman-weekly-preview.timer",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "OnCalendar=Mon *-*-* 09:30:00",
     'require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
   ]) {
@@ -2905,6 +2942,7 @@ if (exists(xiaomanWeeklyPreviewActivationPath)) {
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED",
     "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL",
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
@@ -3143,6 +3181,21 @@ const erhuaMorningBriefScripts = [
   "deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh",
   "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
 ];
+const erhuaMorningBriefWorkflowPath = "workflows/erhua-morning-brief/morning_brief.py";
+if (exists(erhuaMorningBriefWorkflowPath)) {
+  const workflow = readText(erhuaMorningBriefWorkflowPath);
+  for (const fragment of [
+    "cannot locate reviewed xiaoman wrapper",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
+  ]) {
+    requireFragment(erhuaMorningBriefWorkflowPath, workflow, fragment);
+  }
+  forbidFragment(
+    erhuaMorningBriefWorkflowPath,
+    workflow,
+    "QINTOPIA_XIAOMAN_WRAPPER_PATH"
+  );
+}
 for (const scriptPath of erhuaMorningBriefScripts) {
   if (!exists(scriptPath)) {
     addError(`${scriptPath}: missing Erhua morning brief production script`);
@@ -3183,6 +3236,7 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     'SIDECAR_BIN="${RELEASE_DIR}/sidecar/qintopia-message-sidecar"',
+    "refuses Xiaoman wrapper path override",
     'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
     "reviewed primary sidecar binary is missing",
     "--prepare-artifact",
@@ -3198,9 +3252,10 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     );
   }
   for (const fragment of [
+    "QINTOPIA_XIAOMAN_WRAPPER_PATH:-",
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE:=1",
-    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE:=1",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE:=1",
+    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE:=1",
   ]) {
     forbidFragment(
       "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
@@ -3434,6 +3489,7 @@ if (exists("deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh"))
     'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"',
     'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"',
+    'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
   ]) {
@@ -3455,6 +3511,7 @@ if (exists("deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.s
     "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED",
     "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL",
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
     "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
     "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
