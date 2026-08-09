@@ -52,7 +52,7 @@ class XiaomanDailyCaseReportProductionConfigTests(unittest.TestCase):
                 "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY=1",
                 "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-image-send",
                 f"QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256={self.database_hash}",
-                "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test,assets.example.test",
+                "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS=media.example.test,upload.example.test",
                 "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=group-alpha,group-beta",
                 "QINTOPIA_XIAOMAN_ACTIVITY_TARGET_GROUP_ID=group-alpha",
                 "UNRELATED_KEY=preserved",
@@ -70,7 +70,7 @@ class XiaomanDailyCaseReportProductionConfigTests(unittest.TestCase):
             "target_group_id": "group-alpha",
             "media_upload_endpoint": "https://upload.example.test/daily",
             "media_public_base_url": "https://media.example.test/daily",
-            "media_allowed_hosts": "media.example.test",
+            "media_allowed_hosts": "media.example.test,upload.example.test",
             "message_text": "小满日报已自动生成。",
         }
 
@@ -136,6 +136,29 @@ class XiaomanDailyCaseReportProductionConfigTests(unittest.TestCase):
         )
         self.assertTrue(second["deduped"])
 
+    def test_shell_quoted_message_text_round_trips(self) -> None:
+        request = self.enabled_request()
+        request["message_text"] = "Bob's daily report"
+
+        first = self.configure(
+            request,
+            apply=True,
+            approval=MODULE.APPLY_APPROVAL,
+        )
+        second = self.configure(
+            request,
+            apply=True,
+            approval=MODULE.APPLY_APPROVAL,
+        )
+
+        self.assertTrue(first["success"])
+        self.assertTrue(second["deduped"])
+        values = MODULE.parse_env_text(self.env_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT"],
+            "Bob's daily report",
+        )
+
     def test_disable_apply_sets_only_persistent_enablement_to_zero(self) -> None:
         request = {
             "schema_version": 1,
@@ -168,9 +191,14 @@ class XiaomanDailyCaseReportProductionConfigTests(unittest.TestCase):
             self.configure(request)
 
     def test_rejects_unreviewed_media_host_or_group(self) -> None:
+        upload_request = self.enabled_request()
+        upload_request["media_allowed_hosts"] = "media.example.test"
+        with self.assertRaisesRegex(MODULE.ConfigError, "upload endpoint host"):
+            self.configure(upload_request)
+
         media_request = self.enabled_request()
         media_request["media_public_base_url"] = "https://unreviewed.example.test/daily"
-        media_request["media_allowed_hosts"] = "unreviewed.example.test"
+        media_request["media_allowed_hosts"] = "unreviewed.example.test,upload.example.test"
         with self.assertRaisesRegex(MODULE.ConfigError, "media hosts"):
             self.configure(media_request)
 

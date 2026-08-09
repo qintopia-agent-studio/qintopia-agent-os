@@ -139,6 +139,22 @@ def parse_exact_csv_set(value: str, label: str) -> set[str]:
     return items
 
 
+def parse_shell_env_value(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    lexer = shlex.shlex(value, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        parts = list(lexer)
+    except ValueError as exc:
+        raise ConfigError("sidecar env contains invalid tracked shell quoting") from exc
+    if len(parts) != 1:
+        raise ConfigError("sidecar env contains unsafe tracked values")
+    return parts[0]
+
+
 def validate_request(value: dict[str, Any]) -> dict[str, str]:
     allowed = {
         "schema_version",
@@ -184,6 +200,8 @@ def validate_request(value: dict[str, Any]) -> dict[str, str]:
         "media public base URL",
     )
     daily_hosts = parse_csv_set(require_string(value, "media_allowed_hosts"), "daily media allowed hosts")
+    if upload_host not in daily_hosts:
+        raise ConfigError("media upload endpoint host must be in the daily media allowlist")
     if public_host not in daily_hosts:
         raise ConfigError("media public base host must be in the daily media allowlist")
     chat_id = require_string(value, "chat_id")
@@ -233,11 +251,7 @@ def parse_env_text(text: str) -> dict[str, str]:
             continue
         if key in values:
             raise ConfigError("sidecar env contains duplicate tracked keys")
-        value = value.strip()
-        if (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        ):
-            value = value[1:-1]
+        value = parse_shell_env_value(value)
         if CONTROL_RE.search(value) or "$(" in value or "`" in value:
             raise ConfigError("sidecar env contains unsafe tracked values")
         values[key] = value

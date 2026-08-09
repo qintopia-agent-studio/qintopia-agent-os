@@ -95,7 +95,10 @@ The JSON input carries only the reviewed release SHA, production database URL ha
 daily report source chat id, target group id, media upload endpoint, media public base
 URL, media allowed-host list, and optional message text. The script validates
 `release/current`, the existing QiWe image-send production gate, the target-group
-allowlist, and the public media host boundary before writing any persistent env value.
+allowlist, and the upload/public media host boundary before writing any persistent env
+value. The daily media allowed-host list must include both the upload endpoint host and
+the public base URL host, and it must remain inside the already reviewed generated-image
+media allowlist.
 
 ## Activation
 
