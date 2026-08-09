@@ -558,7 +558,7 @@ async fn main() -> Result<()> {
             payload_json,
             apply,
             dry_run,
-        } => operations::run_daily_case_report_media_upload(payload_json, apply, dry_run),
+        } => operations::run_daily_case_report_media_upload(&cli, payload_json, apply, dry_run),
         Command::OperationsCapabilityList { use_db } => {
             operations::run_capability_list(&cli, use_db).await
         }
