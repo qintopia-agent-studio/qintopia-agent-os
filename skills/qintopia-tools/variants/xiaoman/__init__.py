@@ -3999,10 +3999,7 @@ def _xiaoman_activity_validate_read_through_worker(worker_bin: str) -> Path:
     protected_components = [release_root, worker_path.parent.parent, worker_path.parent, worker_path]
     for path in protected_components:
         info = path.lstat()
-        if info.st_mode & 0o222:
-            raise PermissionError("xiaoman activity read-through worker path must not be writable")
-        if info.st_uid not in {0, current_uid}:
-            raise PermissionError("xiaoman activity read-through worker path owner is not trusted")
+        _xiaoman_activity_validate_read_through_component(info, current_uid)
 
     resolved = worker_path.resolve(strict=True)
     if resolved != worker_path:
@@ -4014,6 +4011,15 @@ def _xiaoman_activity_validate_read_through_worker(worker_bin: str) -> Path:
     if not os.access(resolved, os.X_OK):
         raise PermissionError("xiaoman activity read-through worker must be executable")
     return resolved
+
+
+def _xiaoman_activity_validate_read_through_component(info: os.stat_result, current_uid: int) -> None:
+    if info.st_uid not in {0, current_uid}:
+        raise PermissionError("xiaoman activity read-through worker path owner is not trusted")
+    if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise PermissionError("xiaoman activity read-through worker path must not be group/world writable")
+    if info.st_uid == current_uid and info.st_mode & stat.S_IWUSR:
+        raise PermissionError("xiaoman activity read-through worker path must not be writable by the runtime user")
 
 
 def _xiaoman_activity_read_through_query_summary(operation: str, payload: dict[str, Any]) -> dict[str, str]:

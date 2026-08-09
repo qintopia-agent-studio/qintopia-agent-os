@@ -681,7 +681,10 @@ Use `rg` and `rg --files` for search.
   selected with `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`. In that mode it may run
   the configured sidecar for read-only, non-dry-run queries and return sanitized
   `record_count`, `records`, and `summaries`; write wrappers must continue to return
-  bounded worker commands.
+  bounded worker commands. The read-through worker path validator must follow the
+  release integrity model: root-owned `0755` release roots and sidecar binaries are
+  acceptable because the `ubuntu` runtime user cannot modify them; runtime-user-owned
+  writable paths and group/world-writable paths must still be rejected.
 - Xiaoman prompt rules for immediate Feishu/Base queries must require explicit requester
   authorization and current conversation visibility checks before inlining table names,
   counts, or record summaries. If either boundary is unclear, the reply must ask for
