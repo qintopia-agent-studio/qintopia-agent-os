@@ -19,6 +19,7 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -26,6 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -43,6 +45,8 @@ DEFAULT_TOP_KEYWORDS = 18
 DEFAULT_IMAGE_FORMAT = "jpeg"
 DEFAULT_JPEG_QUALITY = 92
 TEMPLATE_VERSION = "xiaoman-daily-case-report-v1"
+PSQL_BIN = Path("/usr/bin/psql")
+PSQL_PATH = "/usr/bin:/bin"
 
 STOP_WORDS: set[str] = {
     "这个", "那个", "然后", "就是", "什么", "怎么", "还是", "可以", "今天",
@@ -290,9 +294,7 @@ def _fetch_messages(
     try:
         import psycopg
     except ImportError as exc:
-        raise RuntimeError(
-            "psycopg is required for database reads; install it or use --fixture/--dry-run"
-        ) from exc
+        return _fetch_messages_with_psql(db_url, chat_id, start, end, exc)
 
     sql = """
         SELECT
@@ -332,6 +334,123 @@ def _fetch_messages(
                         message_kind=row[4] or "text",
                     )
                 )
+    return messages
+
+
+def _psql_env(db_url: str) -> dict[str, str]:
+    parsed = urlparse(db_url)
+    database = unquote(parsed.path.lstrip("/"))
+    if (
+        parsed.scheme not in {"postgres", "postgresql"}
+        or not parsed.hostname
+        or not parsed.username
+        or parsed.password is None
+        or not database
+    ):
+        raise RuntimeError("message store database URL shape is not supported by psql fallback")
+
+    env = {
+        "PATH": PSQL_PATH,
+        "PGCONNECT_TIMEOUT": "10",
+        "PGDATABASE": database,
+        "PGHOST": parsed.hostname,
+        "PGPASSWORD": unquote(parsed.password),
+        "PGUSER": unquote(parsed.username),
+    }
+    if parsed.port is not None:
+        env["PGPORT"] = str(parsed.port)
+    sslmode = parse_qs(parsed.query).get("sslmode", [""])[0]
+    if sslmode:
+        env["PGSSLMODE"] = sslmode
+    return env
+
+
+def _fetch_messages_with_psql(
+    db_url: str,
+    chat_id: str | None,
+    start: datetime,
+    end: datetime,
+    import_error: ImportError,
+) -> list[ReportMessage]:
+    if not PSQL_BIN.is_file() or not os.access(PSQL_BIN, os.X_OK):
+        raise RuntimeError(
+            "psycopg is required for database reads and psql fallback is unavailable; "
+            "install one of them or use --fixture/--dry-run"
+        ) from import_error
+
+    sql = """
+        SELECT COALESCE(json_agg(row_to_json(report_rows)), '[]'::json)
+        FROM (
+            SELECT
+                m.id::text AS id,
+                COALESCE(m.sender_id, '') AS sender_id,
+                COALESCE(m.sender_name, '匿名') AS sender_name,
+                COALESCE(m.text, '') AS text,
+                COALESCE(m.message_kind, 'text') AS message_kind,
+                COALESCE(m.sent_at, m.received_at) AS report_time
+            FROM qintopia_messages.messages m
+            WHERE m.platform = 'qiwe'
+              AND m.chat_type = 'group'
+              AND m.message_kind = 'text'
+              AND NULLIF(BTRIM(m.text), '') IS NOT NULL
+              AND COALESCE(m.sent_at, m.received_at) >= :'report_start'::timestamptz
+              AND COALESCE(m.sent_at, m.received_at) < :'report_end'::timestamptz
+    """
+    command = [
+        str(PSQL_BIN),
+        "--no-psqlrc",
+        "--no-align",
+        "--tuples-only",
+        "--quiet",
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--set",
+        f"report_start={start.isoformat()}",
+        "--set",
+        f"report_end={end.isoformat()}",
+    ]
+    if chat_id:
+        sql += " AND m.chat_id = :'chat_id'"
+        command.extend(["--set", f"chat_id={chat_id}"])
+    sql += """
+            ORDER BY COALESCE(m.sent_at, m.received_at) ASC
+        ) report_rows
+    """
+    command.extend(["--command", sql])
+
+    try:
+        completed = subprocess.run(
+            command,
+            env=_psql_env(db_url),
+            check=True,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("psql fallback failed to read daily report messages") from exc
+
+    try:
+        rows = json.loads(completed.stdout.strip() or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("psql fallback returned invalid daily report JSON") from exc
+
+    messages: list[ReportMessage] = []
+    for row in rows:
+        raw_report_time = row.get("report_time")
+        report_time = None
+        if raw_report_time:
+            report_time = datetime.fromisoformat(str(raw_report_time))
+        messages.append(
+            ReportMessage(
+                id=str(row.get("id", "")),
+                sender_id=str(row.get("sender_id", "")),
+                sender_name=str(row.get("sender_name") or "匿名"),
+                text=str(row.get("text") or ""),
+                sent_at=report_time,
+                message_kind=str(row.get("message_kind") or "text"),
+            )
+        )
     return messages
 
 

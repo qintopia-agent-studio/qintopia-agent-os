@@ -236,6 +236,10 @@
   `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+- The Xiaoman daily case-report production worker runs the release script with
+  `/usr/bin/python3`. Database read-through may fall back from `psycopg` only to fixed
+  `/usr/bin/psql` with a minimal `PATH`; the database URL must stay out of process
+  arguments, and connection fields must pass through `PG*` environment variables only.
 - Production timer activation should use the `Activate Production Timers` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-activation` deploy-runner request and accepts only these

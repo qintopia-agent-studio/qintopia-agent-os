@@ -158,8 +158,10 @@ media upload values. The systemd timer is rendered as
   can contain real member names and message excerpts, so it is written only into a
   `0700` output directory as a `0600` file and is removed after image rendering or
   failure.
-- Production JPEG/database runs require `psycopg`, Playwright, and Chromium to be added
-  through a reviewed runtime packaging path first. Hand-installed Python packages or
+- Production database read-through prefers `psycopg` and falls back only to fixed
+  `/usr/bin/psql` with a minimal `PATH`, without putting the database URL in process
+  arguments. Production JPEG rendering still requires Playwright and Chromium to be
+  present through a reviewed runtime packaging path; hand-installed Python packages or
   browsers are outside the approved production boundary for this draft.
 - The automatic publisher uses the dedicated `xiaoman.daily_case_report_auto_publish`
   capability and `review_policy=automatic_publish`; only

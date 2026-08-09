@@ -134,6 +134,69 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("NULLIF(BTRIM(m.text), '') IS NOT NULL", captured["sql"])
         self.assertEqual(messages[0].sent_at, report_time)
 
+    def test_fetch_messages_falls_back_to_psql_without_leaking_db_url(self) -> None:
+        report_time = datetime(2026, 8, 8, 9, 30, tzinfo=timezone.utc)
+        captured: dict[str, object] = {}
+
+        def fake_run(command, *, env, check, text, capture_output, timeout):
+            captured["command"] = command
+            captured["env"] = env
+            self.assertTrue(check)
+            self.assertTrue(text)
+            self.assertTrue(capture_output)
+            self.assertEqual(timeout, 30)
+            return types.SimpleNamespace(
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "m1",
+                            "sender_id": "u1",
+                            "sender_name": "张三",
+                            "text": "fallback message",
+                            "message_kind": "text",
+                            "report_time": report_time.isoformat(),
+                        }
+                    ]
+                )
+            )
+
+        old_database_url = daily_case_report._database_url
+        old_psycopg = sys.modules.get("psycopg")
+        old_psql_bin = daily_case_report.PSQL_BIN
+        old_run = daily_case_report.subprocess.run
+        daily_case_report._database_url = (
+            lambda: "postgresql://daily:p%40ss@db.example.test:5433/qintopia?sslmode=require"
+        )
+        sys.modules["psycopg"] = None
+        self.assertEqual(daily_case_report.PSQL_BIN, Path("/usr/bin/psql"))
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fake_psql = Path(tmpdir) / "psql"
+                fake_psql.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                fake_psql.chmod(0o700)
+                daily_case_report.PSQL_BIN = fake_psql
+                daily_case_report.subprocess.run = fake_run
+                messages = daily_case_report._fetch_messages("chat-1", report_time, report_time)
+        finally:
+            daily_case_report._database_url = old_database_url
+            daily_case_report.PSQL_BIN = old_psql_bin
+            daily_case_report.subprocess.run = old_run
+            if old_psycopg is None:
+                sys.modules.pop("psycopg", None)
+            else:
+                sys.modules["psycopg"] = old_psycopg
+
+        command = captured["command"]
+        env = captured["env"]
+        self.assertTrue(command[0].endswith("/psql"))
+        self.assertNotIn("p%40ss", " ".join(command))
+        self.assertNotIn("postgresql://", " ".join(command))
+        self.assertEqual(env["PATH"], "/usr/bin:/bin")
+        self.assertEqual(env["PGPASSWORD"], "p@ss")
+        self.assertEqual(env["PGSSLMODE"], "require")
+        self.assertIn("chat_id=chat-1", command)
+        self.assertEqual(messages[0].text, "fallback message")
+
     def test_database_url_ignores_generic_database_url(self) -> None:
         old_message_store = os.environ.pop("QINTOPIA_MESSAGE_STORE_DATABASE_URL", None)
         old_sidecar = os.environ.pop("QINTOPIA_SIDECAR_DATABASE_URL", None)
