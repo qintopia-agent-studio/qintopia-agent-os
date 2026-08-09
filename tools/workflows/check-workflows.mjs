@@ -14,6 +14,7 @@ const workflows = [
   "workflows/erhua-morning-brief",
   "workflows/xiaoman-activity-signal",
   "workflows/xiaoman-daily-case-report",
+  "workflows/xiaoman-weekly-loop",
   "workflows/xiaoman-weekly-preview",
   "workflows/visual-asset-request",
   "workflows/silaoshi-daily-ops",

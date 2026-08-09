@@ -132,6 +132,8 @@
           "items": {
             "enum": [
               "erhua-morning-brief",
+              "xiaoman-weekly-recruitment",
+              "xiaoman-weekly-plan-confirmation",
               "xiaoman-weekly-preview",
               "xiaoman-daily-case-report-auto-publish"
             ]

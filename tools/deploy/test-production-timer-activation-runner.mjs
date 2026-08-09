@@ -64,7 +64,12 @@ const buildRequest = (overrides = {}) => {
     rollback_on_smoke_failure: false,
     dry_run: false,
     activation: {
-      targets: ["erhua-morning-brief", "xiaoman-weekly-preview"],
+      targets: [
+        "erhua-morning-brief",
+        "xiaoman-weekly-recruitment",
+        "xiaoman-weekly-plan-confirmation",
+        "xiaoman-weekly-preview",
+      ],
     },
     cos: {
       bucket: "qintopia-agent-os-artifacts-1305166808",
@@ -153,6 +158,10 @@ fi
     "xiaoman-legacy-cron-observation-smoke.sh",
     "activate-erhua-morning-brief-production.sh",
     "erhua-morning-brief-timer-observation-smoke.sh",
+    "activate-xiaoman-weekly-recruitment-production.sh",
+    "xiaoman-weekly-recruitment-production-observation-smoke.sh",
+    "activate-xiaoman-weekly-plan-confirmation-production.sh",
+    "xiaoman-weekly-plan-confirmation-production-observation-smoke.sh",
     "activate-xiaoman-weekly-preview-production.sh",
     "xiaoman-weekly-preview-production-observation-smoke.sh",
   ];
@@ -223,6 +232,8 @@ exit 99
   ]);
   const expectedTargets = [
     ["erhua-morning-brief", "passed"],
+    ["xiaoman-weekly-recruitment", "passed"],
+    ["xiaoman-weekly-plan-confirmation", "passed"],
     ["xiaoman-weekly-preview", "passed"],
   ];
   if (JSON.stringify(passedTargets) !== JSON.stringify(expectedTargets)) {
@@ -231,12 +242,83 @@ exit 99
     );
   }
 
+  const failedPreviewRequestId = "deploy-20260809T000001Z-abcdef123456";
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "activate-xiaoman-weekly-preview-production.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+echo "xiaoman weekly preview activation requires QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=1" >&2
+exit 42
+`
+  );
+  const failedPreviewRequestPath = path.join(
+    tmpRoot,
+    "failed-preview-activation-request.json"
+  );
+  fs.writeFileSync(
+    failedPreviewRequestPath,
+    `${JSON.stringify(
+      buildRequest({
+        request_id: failedPreviewRequestId,
+        activation: {
+          targets: ["xiaoman-weekly-preview"],
+        },
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  const failedPreview = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", failedPreviewRequestPath],
+    {
+      cwd: stateDir,
+      env,
+      encoding: "utf8",
+    }
+  );
+  if (failedPreview.status !== 42) {
+    throw new Error(
+      `expected failed preview activation to exit 42, got ${failedPreview.status}\nstdout:\n${failedPreview.stdout}\nstderr:\n${failedPreview.stderr}`
+    );
+  }
+  const failedPreviewResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${failedPreviewRequestId}.json`),
+      "utf8"
+    )
+  );
+  const failedPreviewCheck = failedPreviewResult.checks.find(
+    (check) => check.name === "production-timer-activation"
+  );
+  if (!failedPreviewCheck || failedPreviewCheck.status !== "failed") {
+    throw new Error("failed preview activation check was not recorded");
+  }
+  const failedPreviewDetail = JSON.parse(failedPreviewCheck.detail);
+  const failedPreviewTarget = failedPreviewDetail.targets[0];
+  if (
+    failedPreviewTarget.status !== "failed" ||
+    !failedPreviewTarget.detail.includes(
+      "exit 42: xiaoman weekly preview activation requires QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=1"
+    )
+  ) {
+    throw new Error(
+      `expected failed preview detail to include target stderr, got ${JSON.stringify(
+        failedPreviewTarget
+      )}`
+    );
+  }
+
   const ordinaryRequestPath = path.join(tmpRoot, "ordinary-request.json");
   fs.writeFileSync(
     ordinaryRequestPath,
     `${JSON.stringify(
       buildRequest({
-        request_id: "deploy-20260809T000001Z-abcdef123456",
+        request_id: "deploy-20260809T000002Z-abcdef123456",
         release_scope: ["deploy-bundle"],
         dry_run: true,
       }),
