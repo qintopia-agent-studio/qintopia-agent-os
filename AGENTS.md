@@ -65,10 +65,10 @@
   failure. Xiaoman retirement depends on the deployed runner unit keeping
   `ProtectHome=read-only` while granting `ReadWritePaths` only to the fixed
   `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory; do not grant write access to
-  the whole Xiaoman profile. Erhua retirement hash mismatches may emit only sanitized
-  `actual_sha256`, reviewed `expected_sha256`, and declaration-count evidence; use that
-  evidence for a follow-up reviewed expected-hash PR, never to bypass review or retire
-  an unreviewed cron file.
+  the whole Xiaoman profile. Erhua and Xiaoman retirement hash mismatches may emit only
+  sanitized `actual_sha256`, reviewed `expected_sha256`, and declaration-count evidence;
+  use that evidence for a follow-up reviewed expected-hash PR, never to bypass review or
+  retire an unreviewed cron file.
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
@@ -690,6 +690,10 @@ Use `rg` and `rg --files` for search.
   counts, or record summaries. If either boundary is unclear, the reply must ask for
   authorization or move to a controlled private/review channel instead of exposing row
   summaries in the current conversation.
+- Xiaoman Feishu wiki/Base URL readability checks must use the dedicated
+  `qintopia_xiaoman_activity_plan_table_probe` wrapper. Do not infer readability from
+  cron output, Kanban state, session history, generic Feishu tools, or whether the URL
+  looks like a valid wiki link.
 - `qintopia_xiaoman_activity_promotion_review_draft` may only transform already-read
   sanitized Xiaoman activity records into a human-reviewable activity summary, promotion
   assessment, copy draft, poster brief, and dry-run controlled record-path payload. It
