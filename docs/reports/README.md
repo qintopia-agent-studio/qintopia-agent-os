@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-08-09 Xiaoman weekly activation legacy cron drift](2026-08-09-xiaoman-weekly-activation-legacy-cron-drift.md)
 - [2026-08-03 Xiaoman shared database rollover gap](2026-08-03-xiaoman-shared-database-rollover-gap.md)
 - [2026-08-03 Production sidecar env metadata repair](2026-08-03-production-sidecar-env-metadata-repair.md)
 - [2026-08-03 Xiaoman Release boundary contract mismatch](2026-08-03-xiaoman-release-boundary-contract-mismatch.md)
@@ -48,6 +49,7 @@ steps still block any `production-complete` claim.
 
 | Source                                                                             | Disposition | Notes                                                                  |
 | ---------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `2026-08-09-xiaoman-weekly-activation-legacy-cron-drift.md`                        | adopt-input | Weekly timer activation blocked by legacy cron hash drift              |
 | `2026-08-03-xiaoman-shared-database-rollover-gap.md`                               | adopt-input | Shared credential transaction and dual restart boundary                |
 | `2026-08-03-production-sidecar-env-metadata-repair.md`                             | adopt-input | Existing sidecar env owner repair through reviewed deploy runner       |
 | `2026-08-03-xiaoman-release-boundary-contract-mismatch.md`                         | adopt-input | Promotion and protected-entrypoint ownership contract                  |
