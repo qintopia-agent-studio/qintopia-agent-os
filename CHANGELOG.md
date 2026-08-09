@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.78](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.77...v0.2.78) (2026-08-09)
+
+
+### Bug Fixes
+
+* **erhua:** add reviewed legacy cron retirement ([#399](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/399)) ([865231e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/865231eb8621e3c15084ddb6ba816271348c94f2))
+
 ## [0.2.77](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.76...v0.2.77) (2026-08-09)
 
 
