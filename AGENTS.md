@@ -56,6 +56,13 @@
   `QINTOPIA_ERHUA_LEGACY_CRON_RETIREMENT=approved-production-erhua-legacy-cron-retirement deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh`
 - Xiaoman legacy Hermes cron reviewed retirement:
   `QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-retirement deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh`
+- Production legacy Hermes cron retirement should use the
+  `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
+  the runner support is deployed. It creates a signed
+  `production-legacy-cron-retirement` deploy-runner request and accepts only these fixed
+  targets: `erhua-legacy-cron` and `xiaoman-legacy-cron`. Retirement is explicit and
+  must not be triggered as an automatic side effect of timer activation or observation
+  failure.
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
@@ -218,6 +225,9 @@
   it back through the Feishu delivery bridge:
   `qintopia-message-sidecar operations-daily-case-report-media-upload --payload-json <local-jpeg-identity-json> --apply`,
   `qintopia-message-sidecar operations-daily-case-report-auto-publish-create --payload-json <sanitized-json> --apply`
+  Feishu-backed publish idempotency may reuse only an existing artifact whose id matches
+  the reviewed upload evidence; reject conflicting random-id artifacts instead of
+  writing an `artifact_uri` whose Feishu suffix no longer matches `artifacts.id`.
 - Xiaoman daily case-report production auto-publish uses a release-managed timer, not
   cron or hand-copied unit files. Production configuration must be applied before
   activation through the fixed release-local config entrypoint:
@@ -226,6 +236,11 @@
   `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
   `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+- The Xiaoman daily case-report production host does not provide Python `psycopg`,
+  Python Playwright, or a Playwright browser binary by default. The reviewed production
+  path must keep the `/usr/bin/psql` database fallback and system Pillow renderer
+  available through `/usr/bin/python3`; do not replace this with runtime package
+  installation or browser downloads on the server.
 - Production timer activation should use the `Activate Production Timers` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-activation` deploy-runner request and accepts only these
@@ -234,10 +249,12 @@
   `xiaoman-daily-case-report-auto-publish`. The activation request does not retire
   legacy cron files, write persistent production config, or promise automatic rollback;
   each selected target requires its owner-approved production config to have been
-  applied first. The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation`
-  target additions are a 2026-08-09 owner-approved fixed-boundary expansion for the
-  Xiaoman weekly minimum loop; they may enable only their own release-managed systemd
-  timers and must not send, publish, write Feishu, call Erhua, or call QiWe.
+  applied first. Legacy cron retirement must be handled through the explicit
+  `production-legacy-cron-retirement` request and evidenced before activation retries.
+  The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation` target
+  additions are a 2026-08-09 owner-approved fixed-boundary expansion for the Xiaoman
+  weekly minimum loop; they may enable only their own release-managed systemd timers and
+  must not send, publish, write Feishu, call Erhua, or call QiWe.
 - Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
   cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
   configured and activated with:
@@ -259,10 +276,12 @@
   Observation scripts are `xiaoman-weekly-recruitment-production-observation-smoke.sh`
   and `xiaoman-weekly-plan-confirmation-production-observation-smoke.sh`; rollback
   scripts are `rollback-xiaoman-weekly-recruitment-production.sh` and
-  `rollback-xiaoman-weekly-plan-confirmation-production.sh`. Activation and observation
-  must verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the
-  owner-reviewed release SHA and must first pass
-  `xiaoman-legacy-cron-observation-smoke.sh`.
+  `rollback-xiaoman-weekly-plan-confirmation-production.sh`. Config, activation,
+  observation, and workers must require `QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1`,
+  `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`, and
+  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. Activation and observation must
+  verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the owner-reviewed
+  release SHA and must first pass `xiaoman-legacy-cron-observation-smoke.sh`.
 
 - Xiaoman weekly preview production uses a release-managed timer, not Hermes
   conversation cron or hand-copied unit files. Apply the persistent non-secret config

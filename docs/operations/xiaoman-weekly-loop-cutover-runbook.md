@@ -26,6 +26,15 @@ rollback, direct sending, Feishu writes, Erhua handoff, or QiWe calls.
 The Monday confirmed preview remains covered by
 `xiaoman-weekly-preview-cutover-runbook.md`.
 
+Both weekly-loop timers use the Xiaoman activity wrapper boundary. Production config,
+activation, observation, and workers must require:
+
+```text
+QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1
+QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1
+QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1
+```
+
 ## Preconditions
 
 - A reviewed Release containing `workflows/xiaoman-weekly-loop` and the scripts below is

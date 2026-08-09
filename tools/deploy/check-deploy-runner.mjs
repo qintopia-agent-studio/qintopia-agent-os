@@ -50,6 +50,7 @@ const requiredFiles = [
   ".github/workflows/deploy-production.yml",
   ".github/workflows/rollback-production.yml",
   ".github/workflows/activate-production-timers.yml",
+  ".github/workflows/retire-production-legacy-crons.yml",
   "deploy/runner/README.md",
   "deploy/runner/manifest.yaml",
   "deploy/runner/deploy-request.schema.json",
@@ -83,6 +84,7 @@ const requiredFiles = [
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
   "tools/deploy/test-production-timer-activation-runner.mjs",
+  "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
   "tools/deploy/test-promote-release-tree.mjs",
@@ -95,6 +97,7 @@ const requiredFiles = [
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "docs/operations/production-timer-activation-runbook.md",
+  "docs/operations/production-legacy-cron-retirement-runbook.md",
 ];
 
 for (const file of requiredFiles) {
@@ -363,6 +366,53 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     if (validateRequest(badRequest)) {
       addError(
         "deploy request schema must reject unsafe production activation variants"
+      );
+      break;
+    }
+  }
+  const productionRetirementRequest = {
+    ...sampleRequest,
+    release_scope: ["production-legacy-cron-retirement"],
+    restart_targets: ["qintopia-system-services"],
+    dry_run: false,
+    rollback_on_smoke_failure: false,
+    legacy_cron_retirement: {
+      targets: ["erhua-legacy-cron", "xiaoman-legacy-cron"],
+    },
+  };
+  if (!validateRequest(productionRetirementRequest)) {
+    addError(
+      `deploy request schema must accept fixed production legacy cron retirement requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
+  for (const badRequest of [
+    { ...sampleRequest, legacy_cron_retirement: { targets: ["erhua-legacy-cron"] } },
+    {
+      ...productionRetirementRequest,
+      release_scope: ["production-legacy-cron-retirement", "deploy-bundle"],
+    },
+    {
+      ...productionRetirementRequest,
+      restart_targets: ["hermes-xiaoman"],
+    },
+    { ...productionRetirementRequest, dry_run: true },
+    { ...productionRetirementRequest, rollback_on_smoke_failure: true },
+    {
+      ...productionRetirementRequest,
+      legacy_cron_retirement: {
+        targets: ["erhua-legacy-cron", "erhua-legacy-cron"],
+      },
+    },
+    {
+      ...productionRetirementRequest,
+      legacy_cron_retirement: { targets: ["unknown-target"] },
+    },
+  ]) {
+    if (validateRequest(badRequest)) {
+      addError(
+        "deploy request schema must reject unsafe production legacy cron retirement variants"
       );
       break;
     }
@@ -867,6 +917,95 @@ if (exists(".github/workflows/activate-production-timers.yml")) {
   }
 }
 
+if (exists(".github/workflows/retire-production-legacy-crons.yml")) {
+  const workflow = YAML.parse(
+    readText(".github/workflows/retire-production-legacy-crons.yml")
+  );
+  const workflowText = readText(".github/workflows/retire-production-legacy-crons.yml");
+  const job = workflow?.jobs?.["request-retirement"];
+  const targetsInput =
+    workflow?.on?.workflow_dispatch?.inputs?.legacy_cron_retirement_targets;
+  const releaseShaInput = workflow?.on?.workflow_dispatch?.inputs?.release_sha;
+
+  if (!workflow?.on?.workflow_dispatch) {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: must use workflow_dispatch"
+    );
+  }
+  if (workflow?.concurrency?.group !== "production-deploy") {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: must share production-deploy concurrency"
+    );
+  }
+  if (job?.environment !== "production") {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: request-retirement must use production environment"
+    );
+  }
+  if (job?.permissions?.contents !== "read") {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: request-retirement must keep contents permission read-only"
+    );
+  }
+  if (releaseShaInput?.required !== true || releaseShaInput?.type !== "string") {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: release_sha must be a required string input"
+    );
+  }
+  if (targetsInput?.default !== "erhua-legacy-cron,xiaoman-legacy-cron") {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: default targets must stay limited to Erhua and Xiaoman legacy crons"
+    );
+  }
+  const uploadJobNames = Object.entries(workflow?.jobs || {})
+    .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
+    .map(([jobName]) => jobName);
+  if (uploadJobNames.length !== 0) {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: legacy cron retirement must not require contents: write"
+    );
+  }
+  if (hasDangerousInputInterpolationInRun(workflowText)) {
+    addError(
+      ".github/workflows/retire-production-legacy-crons.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
+    );
+  }
+  for (const forbidden of ["ssh ", "bash -c", "eval ", "gh release upload"]) {
+    if (workflowText.includes(forbidden)) {
+      addError(
+        `.github/workflows/retire-production-legacy-crons.yml: forbidden ${forbidden}`
+      );
+    }
+  }
+  for (const fragment of [
+    "Retire Production Legacy Crons",
+    "ref: master",
+    "require_single_line()",
+    "normalize_csv_allowlist()",
+    "release_sha must be a lowercase 40-character git SHA.",
+    "git merge-base --is-ancestor",
+    "erhua-legacy-cron,xiaoman-legacy-cron",
+    "pnpm deploy:runner:check",
+    "DEPLOY_RELEASE_SCOPE: production-legacy-cron-retirement",
+    "DEPLOY_RESTART_TARGETS: qintopia-system-services",
+    'DEPLOY_DRY_RUN: "false"',
+    'DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"',
+    "DEPLOY_LEGACY_CRON_RETIREMENT_TARGETS",
+    "DEPLOY_REQUEST_SIGNING_KEY",
+    "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "create-deploy-request.mjs",
+    "upload-deploy-request.sh",
+    "wait-deploy-result.sh",
+    "WAIT_FOR_SERVER_DEPLOY_RESULT",
+  ]) {
+    if (!workflowText.includes(fragment)) {
+      addError(
+        `.github/workflows/retire-production-legacy-crons.yml: missing ${fragment}`
+      );
+    }
+  }
+}
+
 const runnerText = exists("deploy/runner/qintopia-agent-os-deploy-runner")
   ? readText("deploy/runner/qintopia-agent-os-deploy-runner")
   : "";
@@ -924,12 +1063,21 @@ for (const fragment of [
   "production-activation requires exactly qintopia-system-services",
   "production-activation requires rollback_on_smoke_failure=false",
   "activation metadata is only allowed for production-activation",
+  "production-legacy-cron-retirement must be the only release scope",
+  "production-legacy-cron-retirement requires exactly qintopia-system-services",
+  "production-legacy-cron-retirement requires rollback_on_smoke_failure=false",
+  "legacy_cron_retirement metadata is only allowed for production-legacy-cron-retirement",
   "validate_current_activation_release",
+  "validate_current_retirement_release",
   "observe_erhua_legacy_cron",
   "observe_xiaoman_legacy_cron",
   "run_production_activation",
+  "run_production_legacy_cron_retirement",
   "production-timer-activation",
+  "production-legacy-cron-retirement",
   "activate-erhua-morning-brief-production.sh",
+  "retire-erhua-legacy-cron-production.sh",
+  "retire-xiaoman-legacy-cron-production.sh",
   "activate-xiaoman-weekly-recruitment-production.sh",
   "activate-xiaoman-weekly-plan-confirmation-production.sh",
   "activate-xiaoman-weekly-preview-production.sh",
@@ -1416,6 +1564,13 @@ try {
   execFileSync("node", ["tools/deploy/test-production-timer-activation-runner.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync(
+    "node",
+    ["tools/deploy/test-production-legacy-cron-retirement-runner.mjs"],
+    {
+      cwd: repoRoot,
+    }
+  );
   execFileSync("node", ["tools/deploy/test-promote-release-tree.mjs"], {
     cwd: repoRoot,
   });

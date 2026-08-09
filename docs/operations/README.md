@@ -24,6 +24,9 @@ deployment docs.
 - [production-timer-activation-runbook.md](production-timer-activation-runbook.md):
   signed production timer activation requests for reviewed Erhua/Xiaoman timers through
   the deploy runner.
+- [production-legacy-cron-retirement-runbook.md](production-legacy-cron-retirement-runbook.md):
+  signed production legacy Hermes cron retirement requests before release-managed timer
+  activation retries.
 - [xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md):
   owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,
   and final completion-manifest sequence. The same runbook also includes the reviewed

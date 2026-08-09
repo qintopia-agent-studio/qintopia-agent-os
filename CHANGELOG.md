@@ -6,6 +6,53 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.87](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.86...v0.2.87) (2026-08-09)
+
+
+### Bug Fixes
+
+* support daily report production runtime fallback ([#423](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/423)) ([2dd419f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2dd419f8b87e511762e2dccfab634cae375b7439))
+
+## [0.2.86](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.85...v0.2.86) (2026-08-09)
+
+
+### Features
+
+* **deploy:** add production legacy cron retirement requests ([29d4ad3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/29d4ad3253e85392aa280769cb98626ba13d637a))
+
+
+### Bug Fixes
+
+* update xiaoman legacy cron retirement hash ([#420](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/420)) ([c283e97](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c283e977312a49e742782592258905d80317319f))
+
+## [0.2.85](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.84...v0.2.85) (2026-08-09)
+
+
+### Bug Fixes
+
+* reject daily report Feishu artifact id drift ([5f80c26](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5f80c260ad460787d134edd4103840d2fac12fdc))
+
+## [0.2.84](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.83...v0.2.84) (2026-08-09)
+
+
+### Bug Fixes
+
+* **xiaoman:** gate instant query summaries ([#416](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/416)) ([d83f5af](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d83f5afd7dda28c9e9e3c2bb4a877f74a4baa97d))
+
+## [0.2.83](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.82...v0.2.83) (2026-08-09)
+
+
+### Features
+
+* **xiaoman:** reply with inline conclusion for instant queries ([#414](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/414)) ([e2bc7b5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e2bc7b579e67a75efca88e1c35fc21a6c4e22357))
+
+
+### Bug Fixes
+
+* enforce weekly loop read-through config ([#415](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/415)) ([aa5918b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/aa5918bac0cafecdb57ebc22555b4f773b85a103))
+* require xiaoman feishu read-through mode ([#412](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/412)) ([2f68b65](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2f68b65965094070e99ea72f16fbe0d11ec5d901))
+* support Feishu-backed daily report auto-publish ([#410](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/410)) ([254afb7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/254afb7f2cee1bf8c1dade66fc0723c4d7349b1a))
+
 ## [0.2.82](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.81...v0.2.82) (2026-08-09)
 
 

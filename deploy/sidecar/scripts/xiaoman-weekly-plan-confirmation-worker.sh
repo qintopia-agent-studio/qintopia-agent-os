@@ -26,6 +26,8 @@ require_env() {
 
 require_env "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_APPROVAL"
 require_env "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"
+require_env "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"
+require_env "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"
 
 if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_APPROVAL}" != "approved-production-xiaoman-weekly-plan-confirmation" ]]; then
   echo "xiaoman weekly plan confirmation requires the reviewed production approval value" >&2
@@ -33,6 +35,14 @@ if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_APPROVAL}" != "app
 fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE}" != "1" ]]; then
   echo "xiaoman weekly plan confirmation requires Xiaoman activity wrappers to be enabled" >&2
+  exit 1
+fi
+if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE}" != "1" ]]; then
+  echo "xiaoman weekly plan confirmation requires Xiaoman activity Feishu Base mode to be enabled" >&2
+  exit 1
+fi
+if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE}" != "1" ]]; then
+  echo "xiaoman weekly plan confirmation requires Xiaoman activity read-through to be enabled" >&2
   exit 1
 fi
 if [[ ! -x "$PYTHON_BIN" ]]; then
