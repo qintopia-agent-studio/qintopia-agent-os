@@ -200,8 +200,10 @@ The target server currently has:
 - Hermes plugin symlinks pointing into release directories
 - `/etc/qintopia/cos-artifacts.env`
 - root `python3` with PyYAML
-- runner `ReadWritePaths` access to `/home/ubuntu/.hermes/profiles/erhua` and
-  `/home/ubuntu/.hermes/profiles/xiaoman/cron`
+- runner `ReadWritePaths` access to `/home/ubuntu/.hermes/profiles/erhua`
+- runner `ReadWritePaths` access to the fixed
+  `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory for reviewed Xiaoman legacy
+  cron retirement only
 
 The COS env file was observed as `root:ubuntu 0600`, so the production runner should run
 as a root-owned system service and execute only the fixed runner scripts. If a dedicated

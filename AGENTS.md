@@ -62,7 +62,10 @@
   `production-legacy-cron-retirement` deploy-runner request and accepts only these fixed
   targets: `erhua-legacy-cron` and `xiaoman-legacy-cron`. Retirement is explicit and
   must not be triggered as an automatic side effect of timer activation or observation
-  failure.
+  failure. Xiaoman retirement depends on the deployed runner unit keeping
+  `ProtectHome=read-only` while granting `ReadWritePaths` only to the fixed
+  `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory; do not grant write access to
+  the whole Xiaoman profile.
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
