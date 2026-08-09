@@ -1331,6 +1331,22 @@ if (
   addError("deploy runner service must explicitly allow governed Erhua profile writes");
 }
 if (
+  runnerServiceText &&
+  !runnerServiceText.includes(" /home/ubuntu/.hermes/profiles/xiaoman/cron ")
+) {
+  addError(
+    "deploy runner service must explicitly allow fixed Xiaoman cron retirement writes"
+  );
+}
+if (
+  runnerServiceText &&
+  /ReadWritePaths=.*\/home\/ubuntu\/\.hermes\/profiles\/xiaoman(?:\s|$)/.test(
+    runnerServiceText
+  )
+) {
+  addError("deploy runner service must not allow whole Xiaoman profile writes");
+}
+if (
   smokeText.includes('echo "Smoke checks passed') &&
   !smokeText.includes("restart_hermes_service")
 ) {

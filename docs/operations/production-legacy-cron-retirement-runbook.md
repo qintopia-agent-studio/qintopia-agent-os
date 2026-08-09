@@ -35,6 +35,9 @@ caller-provided shell.
 - `release_sha` must match the production `release/current` manifest.
 - The release must contain the reviewed retirement and observation scripts for each
   selected target.
+- The installed deploy-runner unit must retain `ProtectHome=read-only` while granting
+  `ReadWritePaths` only to the fixed Xiaoman cron directory
+  `/home/ubuntu/.hermes/profiles/xiaoman/cron` for `xiaoman-legacy-cron` retirement.
 - Retirement is explicit. Timer activation requests do not retire legacy cron files, and
   observation failure does not trigger retirement as an automatic side effect.
 - The request sets `rollback_on_smoke_failure=false`. A retired legacy cron file is
