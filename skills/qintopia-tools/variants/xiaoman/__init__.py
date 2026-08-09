@@ -34,7 +34,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 
 DEFAULT_INDEX_DIR = Path("/home/ubuntu/.hermes/qintopia-knowledge/indexes")
@@ -120,6 +120,7 @@ DAILY_DIGEST_PUBLISH_TOOL = "qintopia_daily_digest_publish"
 XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_record_get",
     "qintopia_xiaoman_activity_list_by_date",
+    "qintopia_xiaoman_activity_plan_table_probe",
     "qintopia_xiaoman_activity_announcement_prepare",
     "qintopia_xiaoman_activity_text_group_message_request_prepare",
     "qintopia_xiaoman_activity_status_update",
@@ -913,6 +914,40 @@ QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA = {
             **_XIAOMAN_ACTIVITY_COMMON_PROPS,
         },
         "required": ["date"],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_PLAN_TABLE_PROBE_SCHEMA = {
+    "description": (
+        "Check whether Xiaoman can read a provided Feishu wiki/Base activity plan table URL. "
+        "Use this when a human pastes a Feishu table URL and asks whether Xiaoman can read it."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "Feishu wiki/Base URL containing a table query parameter.",
+            },
+            "start_date": {
+                "type": "string",
+                "description": "Optional local start date in YYYY-MM-DD format. Defaults to today.",
+            },
+            "probe_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31,
+                "description": "Number of calendar days to sample. Defaults to 14.",
+            },
+            "timezone": {
+                "type": "string",
+                "description": "IANA timezone. Defaults to Asia/Shanghai.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["url"],
         "additionalProperties": False,
     },
 }
@@ -4907,6 +4942,152 @@ def handle_qintopia_xiaoman_activity_list_by_date(args: dict[str, Any], **_: Any
     )
 
 
+def handle_qintopia_xiaoman_activity_plan_table_probe(args: dict[str, Any], **_: Any) -> str:
+    skill = "qintopia_xiaoman_activity_plan_table_probe"
+    actor_agent = _xiaoman_activity_actor(args)
+    if actor_agent != "xiaoman":
+        return _xiaoman_activity_error(skill, "actor_agent must be xiaoman", actor_agent=actor_agent)
+    if not _xiaoman_activity_wrappers_enabled():
+        return _xiaoman_activity_error(
+            skill,
+            "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1 is required",
+            actor_agent=actor_agent,
+        )
+
+    table_id = _xiaoman_activity_table_id_from_url(_clean_text(args.get("url"), max_len=1000))
+    if not table_id:
+        return _xiaoman_activity_error(skill, "Feishu table URL with table=... is required")
+
+    allowed_plan_table_id = _session_env("QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID")
+    if table_id != allowed_plan_table_id:
+        return _json(
+            {
+                "success": False,
+                "skill": skill,
+                "actor_agent": actor_agent,
+                "read_through": False,
+                "table_match": False,
+                "table_role": "unknown",
+                "error": "provided Feishu table is not the configured Xiaoman activity plan table",
+                "guardrails": [
+                    "only the configured Xiaoman activity plan table can be probed",
+                    "unmatched Feishu table ids are not read",
+                ],
+            }
+        )
+
+    timezone_name = _clean_text(args.get("timezone") or "Asia/Shanghai", max_len=80)
+    dates = _xiaoman_activity_probe_dates(args)
+    samples: list[dict[str, Any]] = []
+    total_count = 0
+    for date in dates:
+        result = json.loads(
+            handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": date,
+                    "table_role": "activity_plan",
+                    "timezone": timezone_name,
+                    "dry_run": False,
+                    "actor_agent": actor_agent,
+                }
+            )
+        )
+        if not result.get("success"):
+            return _xiaoman_activity_error(
+                skill,
+                _clean_text(result.get("error") or "read-through failed", max_len=200),
+                actor_agent=actor_agent,
+                table_role="activity_plan",
+            )
+        records = _xiaoman_activity_sanitize_records(result.get("records"))
+        total_count += len(records)
+        if records:
+            samples.append(
+                {
+                    "date": date,
+                    "record_count": len(records),
+                    "titles": [
+                        title
+                        for title in (
+                            _clean_text(record.get("title"), max_len=120)
+                            for record in records[:3]
+                        )
+                        if title
+                    ],
+                }
+            )
+
+    return _json(
+        {
+            "success": True,
+            "skill": skill,
+            "actor_agent": actor_agent,
+            "read_through": True,
+            "table_match": True,
+            "table_role": "activity_plan",
+            "probe_window": {
+                "start_date": dates[0],
+                "end_date": dates[-1],
+                "days": len(dates),
+                "timezone": timezone_name,
+            },
+            "record_count": total_count,
+            "sample_dates": samples,
+            "human_summary": _xiaoman_activity_plan_table_probe_summary(total_count, samples),
+            "guardrails": [
+                "probe reads only the configured activity_plan table",
+                "probe returns sanitized titles and counts only",
+                "no Feishu writes, database writes, external sends, or handoffs are performed",
+            ],
+            "action": {
+                "tool": "agentos_worker_read_through",
+                "executed": True,
+                "requires_local_execution": False,
+            },
+        }
+    )
+
+
+def _xiaoman_activity_table_id_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"https", "http"}:
+        return ""
+    if not parsed.netloc.endswith(".feishu.cn"):
+        return ""
+    values = parse_qs(parsed.query).get("table") or []
+    return _clean_text(values[0] if values else "", max_len=160)
+
+
+def _xiaoman_activity_probe_dates(args: dict[str, Any]) -> list[str]:
+    start_date = _clean_text(args.get("start_date"), max_len=40)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_date):
+        start_date = datetime.now(timezone(timedelta(hours=8))).date().isoformat()
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError:
+        start = datetime.now(timezone(timedelta(hours=8))).date()
+    probe_days = args.get("probe_days", 14)
+    if isinstance(probe_days, bool) or not isinstance(probe_days, int):
+        probe_days = 14
+    probe_days = min(max(probe_days, 1), 31)
+    return [(start + timedelta(days=offset)).isoformat() for offset in range(probe_days)]
+
+
+def _xiaoman_activity_plan_table_probe_summary(
+    total_count: int,
+    samples: list[dict[str, Any]],
+) -> str:
+    if total_count <= 0:
+        return "能读到这张小满活动计划表；这次采样窗口里没有活动记录。"
+    title_fragments = []
+    for sample in samples[:3]:
+        for title in sample.get("titles", [])[:2]:
+            title_fragments.append(str(title))
+    if not title_fragments:
+        return f"能读到这张小满活动计划表；这次采样窗口里共有 {total_count} 条记录。"
+    return f"能读到这张小满活动计划表；这次采样窗口里共有 {total_count} 条记录，例如：" + "、".join(title_fragments)
+
+
 def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], **_: Any) -> str:
     skill = "qintopia_xiaoman_activity_announcement_prepare"
     actor_agent = _xiaoman_activity_actor(args)
@@ -6721,6 +6902,15 @@ def register(ctx) -> None:
         handler=handle_qintopia_xiaoman_activity_list_by_date,
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_LIST_BY_DATE_SCHEMA["description"],
+        emoji="📅",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_activity_plan_table_probe",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_ACTIVITY_PLAN_TABLE_PROBE_SCHEMA,
+        handler=handle_qintopia_xiaoman_activity_plan_table_probe,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_ACTIVITY_PLAN_TABLE_PROBE_SCHEMA["description"],
         emoji="📅",
     )
     ctx.register_tool(

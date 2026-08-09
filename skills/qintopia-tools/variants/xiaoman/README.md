@@ -146,6 +146,12 @@ sidecar. Read-through is limited to read-only, non-dry-run operations and return
 worker's `record_count`, `records`, and `summaries`; write operations still return
 commands.
 
+When a human pastes a Feishu wiki/Base URL and asks whether Xiaoman can read that plan
+sheet, use `qintopia_xiaoman_activity_plan_table_probe`. It accepts only the configured
+`activity_plan` table id from the URL, samples a bounded date window through
+read-through, and returns a human-facing readable/not-readable summary. Do not answer
+from session history, cron output, Kanban state, or generic Feishu/wiki assumptions.
+
 `qintopia_xiaoman_activity_status_update` accepts only `待处理`, `处理中`, `已完成`, or
 `已关闭`. `qintopia_xiaoman_activity_gap_update` accepts one non-sensitive `gap_summary`
 of at most 500 characters. `qintopia_xiaoman_activity_phase_update` accepts only
