@@ -1,5 +1,14 @@
 # Data Design Changelog
 
+## `2026-08-08.001`
+
+Migration: `migrations/202608080001_xiaoman_daily_case_report_auto_publish.sql` Design note:
+`docs/data-design/2026-08-08-xiaoman-daily-case-report-auto-publish.md`
+
+Registers the Xiaoman daily case-report auto-publish capability. The apply path binds a
+durable reviewed JPEG identity to one automatic QiWe image-send request while rejecting
+local image paths, committed target group ids, and direct QiWe calls from the renderer.
+
 ## `2026-08-02.001`
 
 Migration: `migrations/202608020001_xiaoman_material_followup_capability.sql` Design note:

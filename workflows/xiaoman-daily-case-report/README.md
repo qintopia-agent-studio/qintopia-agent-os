@@ -164,6 +164,10 @@ media upload values. The systemd timer is rendered as
 - The automatic publisher uses the dedicated `xiaoman.daily_case_report_auto_publish`
   capability and `review_policy=automatic_publish`; only
   `workflow_type=daily_case_report` may bypass per-day human final confirmation.
+- Auto-publish creation must carry `media_upload_evidence` from the reviewed media
+  upload command. The create command rechecks the public media base, allowed host,
+  content hash, MD5, byte size, dimensions, MIME type, and filename before it can
+  approve the artifact or queue QiWe send-ready.
 - Daily scheduling must be installed by reviewed deploy/runner code with observation and
   rollback checks. A hand-copied systemd unit or conversation-created cron is not an
   acceptable production activation.

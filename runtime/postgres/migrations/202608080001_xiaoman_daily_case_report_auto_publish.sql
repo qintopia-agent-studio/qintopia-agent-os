@@ -1,4 +1,4 @@
--- Design: docs/plans/active/xiaoman-daily-case-report-auto-publish.md
+-- Design: docs/data-design/2026-08-08-xiaoman-daily-case-report-auto-publish.md
 INSERT INTO qintopia_agent_os.capabilities
     (
         capability_key,

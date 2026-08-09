@@ -236,6 +236,28 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("cannot retain HTML", completed.stderr)
         self.assertNotIn("database read-through is disabled", completed.stderr)
 
+    def test_render_png_defaults_to_png_image_format_without_overriding_explicit_format(
+        self,
+    ) -> None:
+        old_argv = sys.argv
+        try:
+            sys.argv = [str(SCRIPT), "--dry-run", "--render", "png"]
+            args = daily_case_report._parse_args()
+            self.assertEqual(args.image_format, "png")
+
+            sys.argv = [
+                str(SCRIPT),
+                "--dry-run",
+                "--render",
+                "png",
+                "--image-format",
+                "jpeg",
+            ]
+            args = daily_case_report._parse_args()
+            self.assertEqual(args.image_format, "jpeg")
+        finally:
+            sys.argv = old_argv
+
     def test_production_auto_render_failure_removes_intermediate_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             args = argparse.Namespace(

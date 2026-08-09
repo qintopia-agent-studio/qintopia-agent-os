@@ -76,6 +76,7 @@ const DAILY_CASE_REPORT_WORK_ITEM_TYPE: &str = "daily_case_report_request";
 const DAILY_CASE_REPORT_WORKFLOW_TYPE: &str = "daily_case_report";
 const DAILY_CASE_REPORT_ACTOR_ID: &str = "xiaoman-daily-case-report-auto-publisher";
 const DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE: &str = "image/jpeg";
+const DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY_KEY: &str = "daily_case_report_public_media_v1";
 const DAILY_CASE_REPORT_MEDIA_MAX_BYTES_ENV: &str =
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_MAX_BYTES";
 const DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT_ENV: &str =
@@ -282,6 +283,10 @@ pub struct DailyCaseReportAutoPublishCreateRequest {
     #[serde(default = "default_image_jpeg_mime")]
     pub mime_type: String,
     #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    #[serde(default)]
     pub filename: String,
     pub target_group_id: String,
     #[serde(default)]
@@ -298,6 +303,24 @@ pub struct DailyCaseReportAutoPublishCreateRequest {
     pub template_version: String,
     #[serde(default)]
     pub metadata: Value,
+    #[serde(default)]
+    pub media_upload_evidence: Option<DailyCaseReportMediaUploadEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyCaseReportMediaUploadEvidence {
+    pub boundary: String,
+    pub workflow_type: String,
+    pub action_status: String,
+    pub artifact_uri: String,
+    pub content_hash: String,
+    pub file_md5: String,
+    pub byte_size: i64,
+    pub mime_type: String,
+    pub filename: String,
+    pub width: u32,
+    pub height: u32,
+    pub upload_idempotency_key: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -347,6 +370,7 @@ pub struct DailyCaseReportMediaUploadReport {
     pub apply_requested: bool,
     pub action_status: String,
     pub artifact_uri: Option<String>,
+    pub media_upload_evidence: Option<DailyCaseReportMediaUploadEvidence>,
     pub content_hash: String,
     pub file_md5: String,
     pub byte_size: usize,
@@ -4089,7 +4113,9 @@ pub fn create_daily_case_report_auto_publish_dry_run(
     mut request: DailyCaseReportAutoPublishCreateRequest,
 ) -> Result<DailyCaseReportAutoPublishCreateReport> {
     normalize_daily_case_report_auto_publish_request(&mut request);
+    let media_config = DailyCaseReportHttpMediaConfig::from_env()?;
     validate_daily_case_report_auto_publish_request(&request)?;
+    validate_daily_case_report_auto_publish_media_boundary(&media_config, &request)?;
     Ok(daily_case_report_auto_publish_report(
         &request,
         false,
@@ -4107,7 +4133,9 @@ pub async fn create_daily_case_report_auto_publish(
     apply_requested: bool,
 ) -> Result<DailyCaseReportAutoPublishCreateReport> {
     normalize_daily_case_report_auto_publish_request(&mut request);
+    let media_config = DailyCaseReportHttpMediaConfig::from_env()?;
     validate_daily_case_report_auto_publish_request(&request)?;
+    validate_daily_case_report_auto_publish_media_boundary(&media_config, &request)?;
     if !apply_requested {
         return Ok(daily_case_report_auto_publish_report(
             &request,
@@ -4119,6 +4147,7 @@ pub async fn create_daily_case_report_auto_publish(
             false,
         ));
     }
+    revalidate_daily_case_report_public_media(&media_config, &request)?;
 
     let idempotency_key = daily_case_report_auto_publish_idempotency_key(&request);
     let source_idempotency_key = format!("{idempotency_key}:artifact");
@@ -4209,6 +4238,7 @@ pub async fn create_daily_case_report_auto_publish(
             "mime_type": request.mime_type,
             "file_md5": request.file_md5,
             "byte_size": request.byte_size,
+            "media_upload_boundary": DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY_KEY,
             "external_send_executed": false,
             "automatic_publish": true,
         }),
@@ -4263,6 +4293,7 @@ pub async fn create_daily_case_report_auto_publish(
             "approved_artifact_id": artifact_id,
             "approved_artifact_type": "generated_image",
             "artifact_content_hash": request.content_hash,
+            "media_upload_boundary": DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY_KEY,
             "workflow_type": DAILY_CASE_REPORT_WORKFLOW_TYPE,
             "requires_human_final_confirmation": false,
             "automatic_publish": true,
@@ -5427,20 +5458,11 @@ fn validate_daily_case_report_media_response(
     media: &DailyCaseReportMediaUploadResponse,
     identity: &DailyCaseReportImageIdentity,
 ) -> Result<String> {
-    let uri = daily_case_report_https_url(&media.uri, "daily case report media response URI")?;
-    if uri.query().is_some() || uri.fragment().is_some() {
-        bail!("daily case report media response URI must not contain a query or fragment");
-    }
-    let path = uri.path().to_ascii_lowercase();
-    if !path.ends_with(".jpg") && !path.ends_with(".jpeg") {
-        bail!("daily case report media response URI must reference a JPEG object");
-    }
-    let host = normalized_daily_case_report_url_host(&uri)?;
-    if !config.media_allowed_hosts.contains(&host)
-        || !same_daily_case_report_public_base(&config.media_public_base_url, &uri)
-    {
-        bail!("daily case report media response URI is outside the configured media boundary");
-    }
+    let artifact_uri = validate_daily_case_report_public_media_uri(
+        config,
+        &media.uri,
+        "daily case report media response URI",
+    )?;
     if media.content_hash != identity.content_hash
         || media.mime_type != DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE
         || media.byte_size != identity.byte_size
@@ -5449,7 +5471,7 @@ fn validate_daily_case_report_media_response(
     {
         bail!("daily case report media upload metadata did not match image bytes");
     }
-    Ok(uri.to_string())
+    Ok(artifact_uri)
 }
 
 fn daily_case_report_media_upload_report(
@@ -5458,6 +5480,9 @@ fn daily_case_report_media_upload_report(
     artifact_uri: Option<String>,
     identity: &DailyCaseReportImageIdentity,
 ) -> DailyCaseReportMediaUploadReport {
+    let media_upload_evidence = artifact_uri
+        .as_deref()
+        .map(|uri| daily_case_report_media_upload_evidence(uri, identity));
     DailyCaseReportMediaUploadReport {
         success: true,
         dry_run,
@@ -5468,6 +5493,7 @@ fn daily_case_report_media_upload_report(
             "media_upload_validated".to_string()
         },
         artifact_uri,
+        media_upload_evidence,
         content_hash: identity.content_hash.clone(),
         file_md5: identity.file_md5.clone(),
         byte_size: identity.byte_size,
@@ -5481,6 +5507,28 @@ fn daily_case_report_media_upload_report(
             "media upload endpoint and public URL must use allowlisted HTTPS hosts".to_string(),
             "upload response must echo the JPEG hash, byte identity, MIME type, width, and height".to_string(),
         ],
+    }
+}
+
+fn daily_case_report_media_upload_evidence(
+    artifact_uri: &str,
+    identity: &DailyCaseReportImageIdentity,
+) -> DailyCaseReportMediaUploadEvidence {
+    DailyCaseReportMediaUploadEvidence {
+        boundary: DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY_KEY.to_string(),
+        workflow_type: DAILY_CASE_REPORT_WORKFLOW_TYPE.to_string(),
+        action_status: "media_uploaded".to_string(),
+        artifact_uri: artifact_uri.to_string(),
+        content_hash: identity.content_hash.clone(),
+        file_md5: identity.file_md5.clone(),
+        byte_size: identity.byte_size as i64,
+        mime_type: DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE.to_string(),
+        filename: identity.filename.clone(),
+        width: identity.width,
+        height: identity.height,
+        upload_idempotency_key: daily_case_report_media_upload_idempotency_key(
+            &identity.content_hash,
+        ),
     }
 }
 
@@ -5514,6 +5562,23 @@ fn normalize_daily_case_report_auto_publish_request(
     if request.metadata.is_null() {
         request.metadata = json!({});
     }
+    if let Some(evidence) = &mut request.media_upload_evidence {
+        normalize_daily_case_report_media_upload_evidence(evidence);
+    }
+}
+
+fn normalize_daily_case_report_media_upload_evidence(
+    evidence: &mut DailyCaseReportMediaUploadEvidence,
+) {
+    evidence.boundary = evidence.boundary.trim().to_string();
+    evidence.workflow_type = evidence.workflow_type.trim().to_string();
+    evidence.action_status = evidence.action_status.trim().to_string();
+    evidence.artifact_uri = evidence.artifact_uri.trim().to_string();
+    evidence.content_hash = evidence.content_hash.trim().to_string();
+    evidence.file_md5 = evidence.file_md5.trim().to_ascii_lowercase();
+    evidence.mime_type = evidence.mime_type.trim().to_ascii_lowercase();
+    evidence.filename = evidence.filename.trim().to_string();
+    evidence.upload_idempotency_key = evidence.upload_idempotency_key.trim().to_string();
 }
 
 fn validate_daily_case_report_auto_publish_request(
@@ -5533,6 +5598,9 @@ fn validate_daily_case_report_auto_publish_request(
     }
     if request.byte_size <= 0 || request.byte_size > MAX_APPROVABLE_GENERATED_IMAGE_BYTES {
         bail!("daily case report byte_size is outside the allowed generated-image range");
+    }
+    if request.width == 0 || request.height == 0 || request.width > 4096 || request.height > 8192 {
+        bail!("daily case report image dimensions are outside the reviewed bounds");
     }
     if request.filename.contains('/') || request.filename.contains('\\') {
         bail!("daily case report filename must not contain path separators");
@@ -5564,6 +5632,150 @@ fn validate_daily_case_report_auto_publish_request(
         bail!("daily case report auto-publish payload contains disallowed sensitive or raw internal content");
     }
     validate_daily_case_report_source_chat_ref(&request.source_chat_ref)?;
+    validate_daily_case_report_auto_publish_media_upload_evidence(request)?;
+    Ok(())
+}
+
+fn validate_daily_case_report_auto_publish_media_upload_evidence(
+    request: &DailyCaseReportAutoPublishCreateRequest,
+) -> Result<()> {
+    let evidence = request.media_upload_evidence.as_ref().ok_or_else(|| {
+        anyhow!("daily case report auto-publish requires media_upload_evidence from reviewed media upload")
+    })?;
+    if evidence.boundary != DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY_KEY {
+        bail!("daily case report media_upload_evidence boundary is not allowed");
+    }
+    if evidence.workflow_type != DAILY_CASE_REPORT_WORKFLOW_TYPE {
+        bail!("daily case report media_upload_evidence workflow_type does not match");
+    }
+    if evidence.action_status != "media_uploaded" {
+        bail!("daily case report media_upload_evidence must come from an applied upload");
+    }
+
+    let config = DailyCaseReportHttpMediaConfig::from_env()?;
+    let boundary_uri = validate_daily_case_report_public_media_uri(
+        &config,
+        &evidence.artifact_uri,
+        "daily case report media upload evidence URI",
+    )?;
+    if boundary_uri != request.artifact_uri {
+        bail!("daily case report media_upload_evidence artifact_uri does not match request");
+    }
+
+    validate_canonical_sha256(
+        &evidence.content_hash,
+        "daily case report media_upload_evidence content_hash",
+    )?;
+    validate_canonical_md5(
+        &evidence.file_md5,
+        "daily case report media_upload_evidence file_md5",
+    )?;
+    if evidence.content_hash != request.content_hash
+        || evidence.file_md5 != request.file_md5
+        || evidence.byte_size != request.byte_size
+        || evidence.mime_type != request.mime_type
+        || evidence.filename != request.filename
+        || evidence.width != request.width
+        || evidence.height != request.height
+    {
+        bail!("daily case report media_upload_evidence identity does not match request");
+    }
+    if evidence.mime_type != DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE {
+        bail!("daily case report media_upload_evidence must be image/jpeg");
+    }
+    validate_daily_case_report_filename(&evidence.filename)?;
+    if evidence.width == 0
+        || evidence.height == 0
+        || evidence.width > 4096
+        || evidence.height > 8192
+    {
+        bail!("daily case report media_upload_evidence dimensions are outside the reviewed bounds");
+    }
+    if evidence.upload_idempotency_key
+        != daily_case_report_media_upload_idempotency_key(&request.content_hash)
+    {
+        bail!("daily case report media_upload_evidence upload idempotency key does not match");
+    }
+    Ok(())
+}
+
+fn validate_daily_case_report_auto_publish_media_boundary(
+    config: &DailyCaseReportHttpMediaConfig,
+    request: &DailyCaseReportAutoPublishCreateRequest,
+) -> Result<String> {
+    validate_daily_case_report_public_media_uri(
+        config,
+        &request.artifact_uri,
+        "daily case report artifact_uri",
+    )
+}
+
+fn revalidate_daily_case_report_public_media(
+    config: &DailyCaseReportHttpMediaConfig,
+    request: &DailyCaseReportAutoPublishCreateRequest,
+) -> Result<()> {
+    let artifact_uri = validate_daily_case_report_auto_publish_media_boundary(config, request)?;
+    let artifact_url =
+        Url::parse(&artifact_uri).context("parse daily case report public media URL")?;
+    let client = HttpClient::production_with_timeout(Duration::from_secs(60));
+    let response = client
+        .request(
+            "GET",
+            &artifact_url,
+            &[(
+                "Accept",
+                DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE.to_string(),
+            )],
+            &[],
+            config.max_media_bytes,
+        )
+        .map_err(|error| {
+            anyhow!(
+                "daily case report public media revalidation failed: {}",
+                error
+            )
+        })?;
+    validate_daily_case_report_public_media_response(&response, request)
+}
+
+fn validate_daily_case_report_public_media_response(
+    response: &HttpResponse,
+    request: &DailyCaseReportAutoPublishCreateRequest,
+) -> Result<()> {
+    if !(200..300).contains(&response.status) {
+        bail!("daily case report public media revalidation returned non-success status");
+    }
+    let content_type = response
+        .headers
+        .get("content-type")
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .unwrap_or_default();
+    if content_type != DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE {
+        bail!("daily case report public media MIME type did not match image/jpeg");
+    }
+    if response.body.len() != request.byte_size as usize {
+        bail!("daily case report public media byte_size did not match upload evidence");
+    }
+    if content_hash_bytes(&response.body) != request.content_hash {
+        bail!("daily case report public media content_hash did not match upload evidence");
+    }
+    if md5_hex_bytes(&response.body) != request.file_md5 {
+        bail!("daily case report public media file_md5 did not match upload evidence");
+    }
+    let image = ImageReader::with_format(Cursor::new(&response.body), ImageFormat::Jpeg)
+        .decode()
+        .context("decode daily case report public media JPEG")?;
+    let (width, height) = image.dimensions();
+    if width != request.width || height != request.height {
+        bail!("daily case report public media dimensions did not match upload evidence");
+    }
     Ok(())
 }
 
@@ -5624,6 +5836,7 @@ fn daily_case_report_payload(request: &DailyCaseReportAutoPublishCreateRequest) 
         "time_range": request.time_range,
         "content_hash": request.content_hash,
         "artifact_uri": request.artifact_uri,
+        "media_upload_evidence": request.media_upload_evidence,
         "source_chat_ref": request.source_chat_ref,
         "template_version": request.template_version,
     })
@@ -5636,6 +5849,8 @@ fn daily_case_report_artifact_metadata(request: &DailyCaseReportAutoPublishCreat
         "mime_type": request.mime_type,
         "file_md5": request.file_md5,
         "byte_size": request.byte_size,
+        "width": request.width,
+        "height": request.height,
         "filename": request.filename,
         "window_start": request.window_start,
         "window_end": request.window_end,
@@ -5643,6 +5858,7 @@ fn daily_case_report_artifact_metadata(request: &DailyCaseReportAutoPublishCreat
         "time_range": request.time_range,
         "source_chat_ref": request.source_chat_ref,
         "template_version": request.template_version,
+        "media_upload_evidence": request.media_upload_evidence,
         "retained_source_policy": "sanitized_metadata_only",
         "external_send_executed": false,
         "request_metadata": request.metadata,
@@ -6775,6 +6991,28 @@ fn daily_case_report_https_url(value: &str, label: &str) -> Result<Url> {
     Ok(url)
 }
 
+fn validate_daily_case_report_public_media_uri(
+    config: &DailyCaseReportHttpMediaConfig,
+    value: &str,
+    label: &str,
+) -> Result<String> {
+    let uri = daily_case_report_https_url(value, label)?;
+    if uri.query().is_some() || uri.fragment().is_some() {
+        bail!("{label} must not contain a query or fragment");
+    }
+    let path = uri.path().to_ascii_lowercase();
+    if !path.ends_with(".jpg") && !path.ends_with(".jpeg") {
+        bail!("{label} must reference a JPEG object");
+    }
+    let host = normalized_daily_case_report_url_host(&uri)?;
+    if !config.media_allowed_hosts.contains(&host)
+        || !same_daily_case_report_public_base(&config.media_public_base_url, &uri)
+    {
+        bail!("{label} is outside the configured media boundary");
+    }
+    Ok(uri.to_string())
+}
+
 fn parse_daily_case_report_allowed_hosts(value: &str) -> Result<BTreeSet<String>> {
     let mut hosts = BTreeSet::new();
     for raw in value.split(',') {
@@ -7690,8 +7928,9 @@ fn daily_case_report_auto_publish_report(
         send_ready_recorded,
         external_send_executed: false,
         guardrails: vec![
-            "requires a durable stable JPEG artifact URI; local image paths are rejected"
+            "requires reviewed media_upload_evidence bound to the durable JPEG artifact URI"
                 .to_string(),
+            "revalidates the artifact URI against the allowlisted public media boundary before send-ready".to_string(),
             "creates an automatic_publish group_message_request only for workflow_type=daily_case_report"
                 .to_string(),
             "does not call QiWe directly; the reviewed QiWe image-send adapter performs upload and send"
@@ -8316,6 +8555,64 @@ mod tests {
             .write_image(image.as_raw(), 16, 24, ExtendedColorType::Rgb8)
             .expect("fixture JPEG encodes");
         bytes
+    }
+
+    fn daily_case_report_media_upload_evidence_json(
+        artifact_uri: &str,
+        content_hash: &str,
+        file_md5: &str,
+        byte_size: i64,
+        filename: &str,
+    ) -> Value {
+        json!({
+            "boundary": DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY_KEY,
+            "workflow_type": DAILY_CASE_REPORT_WORKFLOW_TYPE,
+            "action_status": "media_uploaded",
+            "artifact_uri": artifact_uri,
+            "content_hash": content_hash,
+            "file_md5": file_md5,
+            "byte_size": byte_size,
+            "mime_type": DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE,
+            "filename": filename,
+            "width": 16,
+            "height": 24,
+            "upload_idempotency_key": daily_case_report_media_upload_idempotency_key(content_hash),
+        })
+    }
+
+    fn daily_case_report_auto_publish_request_json(
+        artifact_uri: &str,
+        content_hash: &str,
+        file_md5: &str,
+        byte_size: i64,
+        filename: &str,
+    ) -> Value {
+        json!({
+            "window_start": "2026-08-07T07:45:00+08:00",
+            "window_end": "2026-08-08T07:45:00+08:00",
+            "report_date": "过去24小时",
+            "time_range": "08/07 07:45-08/08 07:44",
+            "artifact_uri": artifact_uri,
+            "content_hash": content_hash,
+            "file_md5": file_md5,
+            "byte_size": byte_size,
+            "mime_type": "image/jpeg",
+            "width": 16,
+            "height": 24,
+            "filename": filename,
+            "target_group_id": "runtime-configured-group",
+            "source_chat_ref": {
+                "kind": "sha256",
+                "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "media_upload_evidence": daily_case_report_media_upload_evidence_json(
+                artifact_uri,
+                content_hash,
+                file_md5,
+                byte_size,
+                filename,
+            ),
+        })
     }
 
     #[cfg(feature = "postgres-integration-tests")]
@@ -9574,24 +9871,15 @@ mod tests {
 
     #[test]
     fn daily_case_report_auto_publish_create_dry_run_binds_send_ready_boundary() {
+        set_daily_case_report_media_env();
         let report = create_daily_case_report_auto_publish_dry_run(
-            serde_json::from_value(json!({
-                "window_start": "2026-08-07T07:45:00+08:00",
-                "window_end": "2026-08-08T07:45:00+08:00",
-                "report_date": "过去24小时",
-                "time_range": "08/07 07:45-08/08 07:44",
-                "artifact_uri": "https://media.example.test/daily/xiaoman-2026-08-08.jpg",
-                "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "file_md5": "98e7c2acf4391f8b4a2bbd39e364c5e3",
-                "byte_size": 48300,
-                "mime_type": "image/jpeg",
-                "filename": "xiaoman-2026-08-08.jpg",
-                "target_group_id": "runtime-configured-group",
-                "source_chat_ref": {
-                    "kind": "sha256",
-                    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-                }
-            }))
+            serde_json::from_value(daily_case_report_auto_publish_request_json(
+                "https://media.example.test/daily/xiaoman-2026-08-08.jpg",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                48300,
+                "xiaoman-2026-08-08.jpg",
+            ))
             .expect("request parses"),
         )
         .expect("daily case report auto-publish should validate");
@@ -9608,7 +9896,49 @@ mod tests {
     }
 
     #[test]
+    fn daily_case_report_auto_publish_rejects_unreviewed_public_media_boundary() {
+        set_daily_case_report_media_env();
+        let err = create_daily_case_report_auto_publish_dry_run(
+            serde_json::from_value(daily_case_report_auto_publish_request_json(
+                "https://evil.example.test/daily/xiaoman-2026-08-08.jpg",
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "98e7c2acf4391f8b4a2bbd39e364c5e3",
+                48300,
+                "xiaoman-2026-08-08.jpg",
+            ))
+            .expect("request parses"),
+        )
+        .expect_err("outside media boundary must fail");
+
+        assert!(err.to_string().contains(
+            "daily case report media upload evidence URI is outside the configured media boundary"
+        ));
+    }
+
+    #[test]
+    fn daily_case_report_auto_publish_rejects_mismatched_upload_evidence() {
+        set_daily_case_report_media_env();
+        let mut payload = daily_case_report_auto_publish_request_json(
+            "https://media.example.test/daily/xiaoman-2026-08-08.jpg",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "98e7c2acf4391f8b4a2bbd39e364c5e3",
+            48300,
+            "xiaoman-2026-08-08.jpg",
+        );
+        payload["media_upload_evidence"]["byte_size"] = json!(48301);
+        let err = create_daily_case_report_auto_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect_err("mismatched upload evidence must fail");
+
+        assert!(err
+            .to_string()
+            .contains("daily case report media_upload_evidence identity does not match request"));
+    }
+
+    #[test]
     fn daily_case_report_auto_publish_rejects_local_artifact_uri() {
+        set_daily_case_report_media_env();
         let err = create_daily_case_report_auto_publish_dry_run(
             serde_json::from_value(json!({
                 "window_start": "2026-08-07T07:45:00+08:00",
@@ -9626,6 +9956,47 @@ mod tests {
         assert!(err
             .to_string()
             .contains("generated_image artifact_uri must be a valid URL"));
+    }
+
+    #[test]
+    fn daily_case_report_public_media_revalidation_rejects_hash_drift() {
+        let bytes = daily_case_report_jpeg_fixture();
+        let request: DailyCaseReportAutoPublishCreateRequest =
+            serde_json::from_value(daily_case_report_auto_publish_request_json(
+                "https://media.example.test/daily/xiaoman-2026-08-08.jpg",
+                &content_hash_bytes(&bytes),
+                &md5_hex_bytes(&bytes),
+                bytes.len() as i64,
+                "xiaoman-2026-08-08.jpg",
+            ))
+            .expect("request parses");
+        let ok_response = HttpResponse {
+            status: 200,
+            headers: std::collections::BTreeMap::from([(
+                "content-type".to_string(),
+                "image/jpeg".to_string(),
+            )]),
+            body: bytes.clone(),
+        };
+        validate_daily_case_report_public_media_response(&ok_response, &request)
+            .expect("matching public media should validate");
+
+        let mut drifted = bytes;
+        drifted[10] = drifted[10].wrapping_add(1);
+        let drifted_response = HttpResponse {
+            status: 200,
+            headers: std::collections::BTreeMap::from([(
+                "content-type".to_string(),
+                "image/jpeg".to_string(),
+            )]),
+            body: drifted,
+        };
+        let err = validate_daily_case_report_public_media_response(&drifted_response, &request)
+            .expect_err("hash drift must fail");
+
+        assert!(err
+            .to_string()
+            .contains("daily case report public media content_hash did not match upload evidence"));
     }
 
     #[test]

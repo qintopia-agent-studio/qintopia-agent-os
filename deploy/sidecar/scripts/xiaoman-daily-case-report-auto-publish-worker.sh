@@ -68,6 +68,7 @@ publish_report="${tmp_dir}/publish.json"
 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --render image \
   --image-format jpeg \
+  --chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID" \
   --output-dir "$tmp_dir" \
   --json >"$render_report"
 
@@ -117,6 +118,9 @@ window = candidate.get("report_window") or {}
 artifact_uri = uploaded.get("artifact_uri")
 if not artifact_uri:
     raise SystemExit("media upload did not return artifact_uri")
+media_upload_evidence = uploaded.get("media_upload_evidence")
+if not isinstance(media_upload_evidence, dict):
+    raise SystemExit("media upload did not return media_upload_evidence")
 
 message_text = os.environ.get(
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT",
@@ -133,7 +137,10 @@ print(json.dumps({
     "file_md5": uploaded["file_md5"],
     "byte_size": uploaded["byte_size"],
     "mime_type": uploaded["mime_type"],
+    "width": uploaded["width"],
+    "height": uploaded["height"],
     "filename": uploaded["filename"],
+    "media_upload_evidence": media_upload_evidence,
     "target_group_id": os.environ["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID"],
     "message_text": message_text,
     "title": f"小满日报 {rendered.get('report_date', '')}".strip(),
