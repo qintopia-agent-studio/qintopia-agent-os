@@ -2394,6 +2394,8 @@ if (!exists(qiweImageSendProductionRollbackPath)) {
 
 const xiaomanDailyCaseReportWorkerPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh";
+const xiaomanDailyCaseReportConfigApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py";
 const xiaomanDailyCaseReportObservationPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh";
 const xiaomanDailyCaseReportActivationPath =
@@ -2401,6 +2403,7 @@ const xiaomanDailyCaseReportActivationPath =
 const xiaomanDailyCaseReportRollbackPath =
   "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh";
 for (const scriptPath of [
+  xiaomanDailyCaseReportConfigApplyPath,
   xiaomanDailyCaseReportWorkerPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
@@ -2408,6 +2411,39 @@ for (const scriptPath of [
 ]) {
   if (!exists(scriptPath)) {
     addError(`${scriptPath}: missing Xiaoman daily case report production script`);
+  }
+}
+if (exists(xiaomanDailyCaseReportConfigApplyPath)) {
+  const configApply = readText(xiaomanDailyCaseReportConfigApplyPath);
+  for (const fragment of [
+    'SIDECAR_ENV_PATH = Path("/etc/qintopia/message-sidecar.env")',
+    'RELEASE_CURRENT_PATH = RELEASE_ROOT_PATH / "current"',
+    'APPLY_APPROVAL = "approved-production-xiaoman-daily-case-report-config-v1"',
+    'PUBLISH_APPROVAL = "approved-production-xiaoman-daily-case-report-auto-publish"',
+    '"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED"',
+    '"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT"',
+    '"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL"',
+    '"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS"',
+    '"QINTOPIA_QIWE_IMAGE_SEND_ENABLED"',
+    '"QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS"',
+    '"QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS"',
+    "daily media hosts are outside the reviewed QiWe media boundary",
+    "daily report target group is not allowlisted for QiWe sends",
+    "database URL hash does not match the approved production hash",
+    "external_calls_executed",
+    "database_writes_executed",
+    "service_changes_executed",
+  ]) {
+    requireFragment(xiaomanDailyCaseReportConfigApplyPath, configApply, fragment);
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+  ]) {
+    forbidFragment(xiaomanDailyCaseReportConfigApplyPath, configApply, fragment);
   }
 }
 if (exists(xiaomanDailyCaseReportWorkerPath)) {
@@ -2502,6 +2538,7 @@ const deployBundleBuilderForDailyReport = readText(
   "tools/deploy/build-deploy-bundle.mjs"
 );
 for (const fragment of [
+  xiaomanDailyCaseReportConfigApplyPath,
   xiaomanDailyCaseReportWorkerPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,

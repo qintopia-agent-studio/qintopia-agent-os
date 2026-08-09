@@ -77,10 +77,32 @@ The worker script renders the JPEG, uploads it to the reviewed HTTPS media bound
 then records the AgentOS artifact and automatic publish request. It does not call QiWe
 directly.
 
+## Production Configuration
+
+After the release is deployed, apply the owner-approved production values through the
+release-local config entrypoint. Do not edit `/etc/qintopia/message-sidecar.env` by
+hand.
+
+```bash
+sudo /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py \
+  --stdin \
+  --apply \
+  --approval approved-production-xiaoman-daily-case-report-config-v1 \
+  < xiaoman-daily-case-report-production-config.json
+```
+
+The JSON input carries only the reviewed release SHA, production database URL hash,
+daily report source chat id, target group id, media upload endpoint, media public base
+URL, media allowed-host list, and optional message text. The script validates
+`release/current`, the existing QiWe image-send production gate, the target-group
+allowlist, and the upload/public media host boundary before writing any persistent env
+value. The daily media allowed-host list must include both the upload endpoint host and
+the public base URL host, and it must remain inside the already reviewed generated-image
+media allowlist.
+
 ## Activation
 
-After the release is deployed and `/etc/qintopia/message-sidecar.env` contains the
-owner-approved runtime values:
+After production configuration succeeds:
 
 ```bash
 QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_ACTIVATION=approved-production-xiaoman-daily-case-report-auto-publish \
@@ -106,6 +128,10 @@ automatic publish request, `requires_human_final_confirmation=false`, QiWe uploa
 callback completion, and no duplicate send on rerun.
 
 ## Rollback
+
+Use the production configuration entrypoint with `desired_state: "disabled"` to clear
+the managed daily report keys and leave only the persistent disabled flag. Then stop the
+timer through the reviewed rollback script.
 
 After the persistent env flag is set to
 `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0`:
