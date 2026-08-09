@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_CONFIG:-}" != "approved-production-xiaoman-weekly-preview-config" ]]; then
-  echo "xiaoman weekly preview production config requires explicit owner approval" >&2
+if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_CONFIG:-}" != "approved-production-xiaoman-weekly-plan-confirmation-config" ]]; then
+  echo "xiaoman weekly plan confirmation production config requires explicit owner approval" >&2
   exit 1
 fi
 
@@ -10,15 +10,15 @@ PYTHON_BIN="/usr/bin/python3"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 
 if [[ "${1:-}" != "--enable" && "${1:-}" != "--disable" ]]; then
-  echo "usage: apply-xiaoman-weekly-preview-production-config.sh --enable|--disable" >&2
+  echo "usage: apply-xiaoman-weekly-plan-confirmation-production-config.sh --enable|--disable" >&2
   exit 2
 fi
 if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "xiaoman weekly preview config requires /usr/bin/python3" >&2
+  echo "xiaoman weekly plan confirmation config requires /usr/bin/python3" >&2
   exit 1
 fi
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "xiaoman weekly preview config requires the persistent sidecar env file" >&2
+  echo "xiaoman weekly plan confirmation config requires the persistent sidecar env file" >&2
   exit 1
 fi
 
@@ -35,12 +35,13 @@ enabled = "1" if mode == "--enable" else "0"
 
 required_single = ["QINTOPIA_SIDECAR_DATABASE_URL"]
 managed = {
-    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED": enabled,
-    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL": "approved-production-xiaoman-weekly-preview",
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_ENABLED": enabled,
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_APPROVAL": "approved-production-xiaoman-weekly-plan-confirmation",
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_OPERATOR_NAME": "刘珊",
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_AUDIENCE": "营造司群",
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_OWNER_NAME": "张百忍",
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PLAN_SHEET_LABEL": "下周活动计划表",
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE": "1",
-    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE": "1",
-    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE": "1",
-    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE": "1",
 }
 
 assignment = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=")
@@ -63,7 +64,7 @@ for line in lines:
 
 if filtered and filtered[-1].strip():
     filtered.append("")
-filtered.append("# Managed by apply-xiaoman-weekly-preview-production-config.sh")
+filtered.append("# Managed by apply-xiaoman-weekly-plan-confirmation-production-config.sh")
 for key, value in managed.items():
     filtered.append(f"{key}={value}")
 
@@ -85,5 +86,5 @@ except Exception:
         pass
     raise
 
-print(f"xiaoman weekly preview production config applied: enabled={enabled}")
+print(f"xiaoman weekly plan confirmation production config applied: enabled={enabled}")
 PY

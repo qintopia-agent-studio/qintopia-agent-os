@@ -6,7 +6,7 @@ if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED:-0}" != "1" ]]; then
   exit 0
 fi
 
-if [[ -v QINTOPIA_RELEASE_DIR || -v QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PYTHON || -v QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OUTPUT_DIR ]]; then
+if [[ -v QINTOPIA_RELEASE_DIR || -v QINTOPIA_XIAOMAN_WRAPPER_PATH || -v QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PYTHON || -v QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OUTPUT_DIR ]]; then
   echo "xiaoman weekly preview refuses runtime path overrides" >&2
   exit 1
 fi
@@ -27,6 +27,7 @@ require_env() {
 
 require_env "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL"
 require_env "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE"
+require_env "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"
 require_env "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"
 require_env "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"
 
@@ -36,6 +37,10 @@ if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL}" != "approved-prod
 fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE}" != "1" ]]; then
   echo "xiaoman weekly preview requires Xiaoman activity wrappers to be enabled" >&2
+  exit 1
+fi
+if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE}" != "1" ]]; then
+  echo "xiaoman weekly preview requires Xiaoman activity Feishu Base mode to be enabled" >&2
   exit 1
 fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE}" != "1" ]]; then

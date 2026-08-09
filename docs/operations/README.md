@@ -35,6 +35,9 @@ deployment docs.
 - [xiaoman-weekly-minimum-loop-runbook.md](xiaoman-weekly-minimum-loop-runbook.md):
   2026-08-01 Xiaoman three-step weekly operations loop status and action content for the
   Sunday 20:00 plan confirmation.
+- [xiaoman-weekly-loop-cutover-runbook.md](xiaoman-weekly-loop-cutover-runbook.md):
+  release-managed Saturday recruitment and Sunday plan-confirmation timer activation,
+  observation, and rollback for the Xiaoman weekly loop.
 - [xiaoman-weekly-preview-cutover-runbook.md](xiaoman-weekly-preview-cutover-runbook.md):
   release-managed Xiaoman weekly preview timer activation, observation, and rollback
   while preserving the human confirmation gate.
@@ -44,7 +47,9 @@ deployment docs.
 - Xiaoman activity read-through production config is applied through the release-local
   `deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py`
   allowlist copier before release-managed Erhua or weekly-preview workers are manually
-  exercised in production.
+  exercised in production. Feishu Base mode must be enabled with
+  `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`; otherwise the read-through wrapper
+  omits `--use-feishu-base` and no live activity records are read.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):

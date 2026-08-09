@@ -1,0 +1,41 @@
+id: workflows/xiaoman-weekly-loop
+type: workflow
+name: Xiaoman Weekly Minimum Loop
+owner: PatrickLiveCool
+status: active
+risk_level: low
+description:
+  Deterministic Saturday recruitment and Sunday plan-confirmation draft generator for
+  the Xiaoman weekly activity loop. It prepares operations-review text only and never
+  sends.
+source:
+  path: skills/qintopia-tools/variants/xiaoman/__init__.py
+  reference:
+    qintopia_xiaoman_activity_announcement_prepare weekly_recruitment_form and
+    weekly_plan_confirmation modes
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm workflows:check
+    - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s
+      skills/qintopia-tools/variants/xiaoman/tests -p 'test_qintopia_tools.py' -k
+      weekly_minimum_loop
+dependencies:
+  - skills/qintopia-tools
+  - agents/xiaoman
+  - workflows/xiaoman-weekly-preview
+tags:
+  - workflow
+  - xiaoman
+  - activity
+  - weekly-loop
+next_actions:
+  - Activate Saturday recruitment and Sunday plan confirmation only through
+    release-local config, activation, observation, and rollback scripts.
+  - Keep Monday confirmed preview in workflows/xiaoman-weekly-preview.
+  - Keep the human confirmation gate; these timers generate review drafts only.

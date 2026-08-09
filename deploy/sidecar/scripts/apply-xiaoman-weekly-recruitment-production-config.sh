@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_CONFIG:-}" != "approved-production-xiaoman-weekly-preview-config" ]]; then
-  echo "xiaoman weekly preview production config requires explicit owner approval" >&2
+if [[ "${QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_CONFIG:-}" != "approved-production-xiaoman-weekly-recruitment-config" ]]; then
+  echo "xiaoman weekly recruitment production config requires explicit owner approval" >&2
   exit 1
 fi
 
@@ -10,15 +10,15 @@ PYTHON_BIN="/usr/bin/python3"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 
 if [[ "${1:-}" != "--enable" && "${1:-}" != "--disable" ]]; then
-  echo "usage: apply-xiaoman-weekly-preview-production-config.sh --enable|--disable" >&2
+  echo "usage: apply-xiaoman-weekly-recruitment-production-config.sh --enable|--disable" >&2
   exit 2
 fi
 if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "xiaoman weekly preview config requires /usr/bin/python3" >&2
+  echo "xiaoman weekly recruitment config requires /usr/bin/python3" >&2
   exit 1
 fi
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "xiaoman weekly preview config requires the persistent sidecar env file" >&2
+  echo "xiaoman weekly recruitment config requires the persistent sidecar env file" >&2
   exit 1
 fi
 
@@ -35,12 +35,12 @@ enabled = "1" if mode == "--enable" else "0"
 
 required_single = ["QINTOPIA_SIDECAR_DATABASE_URL"]
 managed = {
-    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED": enabled,
-    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_APPROVAL": "approved-production-xiaoman-weekly-preview",
+    "QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_ENABLED": enabled,
+    "QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_APPROVAL": "approved-production-xiaoman-weekly-recruitment",
+    "QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_OPERATOR_NAME": "刘珊",
+    "QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_AUDIENCE": "居民群",
+    "QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_FORM_LABEL": "活动招募表单",
     "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE": "1",
-    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE": "1",
-    "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE": "1",
-    "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE": "1",
 }
 
 assignment = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=")
@@ -63,7 +63,7 @@ for line in lines:
 
 if filtered and filtered[-1].strip():
     filtered.append("")
-filtered.append("# Managed by apply-xiaoman-weekly-preview-production-config.sh")
+filtered.append("# Managed by apply-xiaoman-weekly-recruitment-production-config.sh")
 for key, value in managed.items():
     filtered.append(f"{key}={value}")
 
@@ -85,5 +85,5 @@ except Exception:
         pass
     raise
 
-print(f"xiaoman weekly preview production config applied: enabled={enabled}")
+print(f"xiaoman weekly recruitment production config applied: enabled={enabled}")
 PY

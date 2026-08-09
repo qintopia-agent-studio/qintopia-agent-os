@@ -19,6 +19,10 @@ fail() {
   exit 1
 }
 
+if [[ -v QINTOPIA_XIAOMAN_WRAPPER_PATH ]]; then
+  fail "refuses Xiaoman wrapper path override"
+fi
+
 required_env() {
   local key="$1"
   local value="${!key:-}"
@@ -39,8 +43,8 @@ for key in \
 done
 
 export QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE
-export QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE
 export QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE
+export QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE
 export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"
 
 if [[ "$(basename "$RELEASE_DIR")" != "$QINTOPIA_DEPLOYED_COMMIT_SHA" ]]; then
@@ -55,11 +59,11 @@ fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE}" != "1" ]]; then
   fail "Xiaoman activity wrappers are not enabled"
 fi
-if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE}" != "1" ]]; then
-  fail "Xiaoman activity read-through is not enabled"
-fi
 if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE}" != "1" ]]; then
   fail "Xiaoman activity Feishu Base mode is not enabled"
+fi
+if [[ "${QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE}" != "1" ]]; then
+  fail "Xiaoman activity read-through is not enabled"
 fi
 if [[ ! -f "$WORKFLOW_PY" ]]; then
   fail "workflow is missing from release/current"

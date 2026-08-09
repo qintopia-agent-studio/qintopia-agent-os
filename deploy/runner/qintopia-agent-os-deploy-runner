@@ -97,6 +97,8 @@ allowed_scope = {
 allowed_runtime_artifact_profiles = {"huabaosi-production", "qiwe-production"}
 allowed_activation_targets = {
     "erhua-morning-brief",
+    "xiaoman-weekly-recruitment",
+    "xiaoman-weekly-plan-confirmation",
     "xiaoman-weekly-preview",
     "xiaoman-daily-case-report-auto-publish",
 }
@@ -525,6 +527,28 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 }
 
+activation_failure_detail() {
+  local status="$1"
+  local log_file="$2"
+  python3 - "$status" "$log_file" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+status, log_path = sys.argv[1:3]
+detail = f"exit {status}"
+path = Path(log_path)
+if path.is_file():
+    lines = [line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()]
+    lines = [line for line in lines if line]
+    if lines:
+        tail = " | ".join(lines[-12:])
+        tail = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", tail)
+        detail = f"{detail}: {tail[:1200]}"
+print(detail)
+PY
+}
+
 observe_erhua_legacy_cron() {
   local script_dir="${activation_release_dir}/deploy/sidecar/scripts"
   env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 \
@@ -542,29 +566,49 @@ run_activation_target() {
   local script_dir="${activation_release_dir}/deploy/sidecar/scripts"
   case "$target" in
     erhua-morning-brief)
-      observe_erhua_legacy_cron
+      observe_erhua_legacy_cron || return $?
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief \
-        "${script_dir}/activate-erhua-morning-brief-production.sh" >/dev/null
+        "${script_dir}/activate-erhua-morning-brief-production.sh" >/dev/null || return $?
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 \
         QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=enabled \
-        "${script_dir}/erhua-morning-brief-timer-observation-smoke.sh" >/dev/null
+        "${script_dir}/erhua-morning-brief-timer-observation-smoke.sh" >/dev/null || return $?
       ;;
     xiaoman-weekly-preview)
-      observe_xiaoman_legacy_cron
+      observe_xiaoman_legacy_cron || return $?
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-preview \
         QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA="$release_sha" \
-        "${script_dir}/activate-xiaoman-weekly-preview-production.sh" >/dev/null
+        "${script_dir}/activate-xiaoman-weekly-preview-production.sh" >/dev/null || return $?
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_OBSERVATION_ENABLE=1 \
         QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_EXPECTED_STATE=enabled \
         QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA="$release_sha" \
-        "${script_dir}/xiaoman-weekly-preview-production-observation-smoke.sh" >/dev/null
+        "${script_dir}/xiaoman-weekly-preview-production-observation-smoke.sh" >/dev/null || return $?
+      ;;
+    xiaoman-weekly-recruitment)
+      observe_xiaoman_legacy_cron || return $?
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-recruitment \
+        QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_RELEASE_SHA="$release_sha" \
+        "${script_dir}/activate-xiaoman-weekly-recruitment-production.sh" >/dev/null || return $?
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_OBSERVATION_ENABLE=1 \
+        QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_EXPECTED_STATE=enabled \
+        QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_RELEASE_SHA="$release_sha" \
+        "${script_dir}/xiaoman-weekly-recruitment-production-observation-smoke.sh" >/dev/null || return $?
+      ;;
+    xiaoman-weekly-plan-confirmation)
+      observe_xiaoman_legacy_cron || return $?
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-plan-confirmation \
+        QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_RELEASE_SHA="$release_sha" \
+        "${script_dir}/activate-xiaoman-weekly-plan-confirmation-production.sh" >/dev/null || return $?
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_OBSERVATION_ENABLE=1 \
+        QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_EXPECTED_STATE=enabled \
+        QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_RELEASE_SHA="$release_sha" \
+        "${script_dir}/xiaoman-weekly-plan-confirmation-production-observation-smoke.sh" >/dev/null || return $?
       ;;
     xiaoman-daily-case-report-auto-publish)
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_ACTIVATION=approved-production-xiaoman-daily-case-report-auto-publish \
-        "${script_dir}/activate-xiaoman-daily-case-report-auto-publish-production.sh" >/dev/null
+        "${script_dir}/activate-xiaoman-daily-case-report-auto-publish-production.sh" >/dev/null || return $?
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_OBSERVATION_ENABLE=1 \
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=enabled \
-        "${script_dir}/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh" >/dev/null
+        "${script_dir}/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh" >/dev/null || return $?
       ;;
     *)
       echo "unsupported production activation target: ${target}" >&2
@@ -577,18 +621,23 @@ run_production_activation() {
   deploy_stage="validate-current-activation-release"
   validate_current_activation_release || return $?
   rm -f "$activation_evidence_file"
+  local activation_log_dir
+  activation_log_dir="$(mktemp -d)"
   IFS=',' read -r -a activation_target_list <<< "$activation_targets"
   local target
   for target in "${activation_target_list[@]}"; do
     deploy_stage="activate-${target}"
-    if run_activation_target "$target"; then
+    local target_log="${activation_log_dir}/${target}.log"
+    if run_activation_target "$target" >"$target_log" 2>&1; then
       write_activation_evidence "$target" passed
     else
       local status=$?
-      write_activation_evidence "$target" failed "exit ${status}"
+      write_activation_evidence "$target" failed "$(activation_failure_detail "$status" "$target_log")"
+      rm -rf "$activation_log_dir"
       return "$status"
     fi
   done
+  rm -rf "$activation_log_dir"
   deploy_stage="write-activation-success-result"
   write_result succeeded
 }

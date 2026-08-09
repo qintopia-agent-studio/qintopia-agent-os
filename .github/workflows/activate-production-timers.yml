@@ -9,10 +9,11 @@ on:
         type: string
       activation_targets:
         description: >-
-          Comma-separated fixed targets:
-          erhua-morning-brief,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish.
+          Comma-separated fixed targets: erhua-morning-brief,xiaoman-weekly-recruitment,
+          xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,
+          xiaoman-daily-case-report-auto-publish.
         required: true
-        default: erhua-morning-brief,xiaoman-weekly-preview
+        default: erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview
         type: string
       notes:
         description: Operator notes for the activation request.
@@ -154,7 +155,7 @@ jobs:
           activation_targets="$(normalize_csv_allowlist \
             activation_targets \
             "$INPUT_ACTIVATION_TARGETS" \
-            "erhua-morning-brief,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish")"
+            "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish")"
 
           notes_delimiter="activation_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {

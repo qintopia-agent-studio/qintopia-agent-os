@@ -225,11 +225,41 @@
 - Production timer activation should use the `Activate Production Timers` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-activation` deploy-runner request and accepts only these
-  fixed targets: `erhua-morning-brief`, `xiaoman-weekly-preview`, and
+  fixed targets: `erhua-morning-brief`, `xiaoman-weekly-recruitment`,
+  `xiaoman-weekly-plan-confirmation`, `xiaoman-weekly-preview`, and
   `xiaoman-daily-case-report-auto-publish`. The activation request does not retire
   legacy cron files, write persistent production config, or promise automatic rollback;
   each selected target requires its owner-approved production config to have been
-  applied first.
+  applied first. The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation`
+  target additions are a 2026-08-09 owner-approved fixed-boundary expansion for the
+  Xiaoman weekly minimum loop; they may enable only their own release-managed systemd
+  timers and must not send, publish, write Feishu, call Erhua, or call QiWe.
+- Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
+  cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
+  configured and activated with:
+
+  ```bash
+  QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-recruitment-config \
+    deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-production-config.sh --enable
+  QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-recruitment \
+  QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
+    deploy/sidecar/scripts/activate-xiaoman-weekly-recruitment-production.sh
+
+  QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-plan-confirmation-config \
+    deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-production-config.sh --enable
+  QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-plan-confirmation \
+  QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
+    deploy/sidecar/scripts/activate-xiaoman-weekly-plan-confirmation-production.sh
+  ```
+
+  Observation scripts are `xiaoman-weekly-recruitment-production-observation-smoke.sh`
+  and `xiaoman-weekly-plan-confirmation-production-observation-smoke.sh`; rollback
+  scripts are `rollback-xiaoman-weekly-recruitment-production.sh` and
+  `rollback-xiaoman-weekly-plan-confirmation-production.sh`. Activation and observation
+  must verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the
+  owner-reviewed release SHA and must first pass
+  `xiaoman-legacy-cron-observation-smoke.sh`.
+
 - Xiaoman weekly preview production uses a release-managed timer, not Hermes
   conversation cron or hand-copied unit files. Apply the persistent non-secret config
   with:

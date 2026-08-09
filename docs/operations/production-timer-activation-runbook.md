@@ -21,9 +21,17 @@ Allowed targets:
 
 ```text
 erhua-morning-brief
+xiaoman-weekly-recruitment
+xiaoman-weekly-plan-confirmation
 xiaoman-weekly-preview
 xiaoman-daily-case-report-auto-publish
 ```
+
+The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation` targets are a
+2026-08-09 owner-approved expansion of the fixed production activation boundary for the
+Xiaoman weekly minimum loop. They may be selected only after the reviewed release
+containing their target-specific config, activation, observation, and rollback scripts
+has been published and deployed.
 
 The workflow creates a signed deploy request with
 `release_scope=["production-activation"]`. The production runner accepts only that fixed
@@ -35,14 +43,18 @@ scope and the fixed target enum above. It does not execute caller-provided shell
 - The release must contain the activation, observation, rollback, and config scripts for
   the selected target.
 - `erhua-morning-brief` observes only Erhua legacy Hermes cron state before enabling the
-  replacement timer. `xiaoman-weekly-preview` observes only Xiaoman legacy Hermes cron
-  state. If legacy-cron observation fails, the activation request fails closed; it does
-  not automatically retire legacy cron files.
+  replacement timer. `xiaoman-weekly-recruitment`, `xiaoman-weekly-plan-confirmation`,
+  and `xiaoman-weekly-preview` observe only Xiaoman legacy Hermes cron state. If
+  legacy-cron observation fails, the activation request fails closed; it does not
+  automatically retire legacy cron files.
 - The activation request sets `rollback_on_smoke_failure=false`. Use the dedicated
   target rollback runbooks/scripts for a separate reviewed rollback decision.
 - Every selected target requires the owner-approved production config to have already
   been applied. The activation request does not carry chat ids, media URLs, database
   URLs, or other runtime values, and it does not write persistent production config.
+- `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation` enable only their
+  own release-managed systemd timers. Their workers produce operator-review drafts and
+  must not send group messages, publish, write Feishu, call Erhua, or call QiWe.
 
 ## Evidence
 

@@ -33,6 +33,7 @@ QINTOPIA_SIDECAR_DATABASE_URL=<production-agentos-postgres-url>
 QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=1
 QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL=approved-production-erhua-morning-brief
 QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1
+QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1
 QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1
 ```
 
@@ -43,6 +44,16 @@ once, preserves the env file owner and mode, and does not print secrets:
 ```bash
 QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_CONFIG=approved-production-erhua-morning-brief-config \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh --enable
+```
+
+Apply the Xiaoman activity read-through Feishu Base values through the reviewed
+allowlist copier before activation:
+
+```bash
+sudo -n /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py \
+  --release-sha <published-production-release-sha> \
+  --apply \
+  --approval approved-production-xiaoman-activity-read-through-config-v1
 ```
 
 Optional QunMind values:
