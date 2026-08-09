@@ -2650,6 +2650,8 @@ for (const timer of xiaomanWeeklyLoopTimers) {
       `${timer.envPrefix}_ENABLED`,
       `${timer.envPrefix}_PRODUCTION_APPROVAL`,
       "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+      "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
+      "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
       "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
       "os.chown(tmp_name, stat.st_uid, stat.st_gid)",
     ]) {
@@ -2676,6 +2678,10 @@ for (const timer of xiaomanWeeklyLoopTimers) {
       timer.workDir,
       `${timer.label} refuses runtime path overrides`,
       "-v QINTOPIA_XIAOMAN_WRAPPER_PATH",
+      `require_env "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE"`,
+      `require_env "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"`,
+      `${timer.label} requires Xiaoman activity Feishu Base mode to be enabled`,
+      `${timer.label} requires Xiaoman activity read-through to be enabled`,
       "workflows/xiaoman-weekly-loop/weekly_loop.py",
       timer.mode,
       "--json",
@@ -2716,6 +2722,8 @@ for (const timer of xiaomanWeeklyLoopTimers) {
       "QINTOPIA_DEPLOYED_COMMIT_SHA=${EXPECTED_RELEASE_SHA}",
       timer.serviceName,
       timer.timerName,
+      'require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
+      'require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"',
       timer.calendar,
     ]) {
       requireFragment(timer.observationPath, observation, fragment);
@@ -2732,6 +2740,8 @@ for (const timer of xiaomanWeeklyLoopTimers) {
       `${timer.envPrefix}_ENABLED`,
       `${timer.envPrefix}_PRODUCTION_APPROVAL`,
       "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE",
+      "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
+      "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
       "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1",
       `${timer.envPrefix}_PRODUCTION_RELEASE_SHA`,
       'ENV_FILE="/etc/qintopia/message-sidecar.env"',
