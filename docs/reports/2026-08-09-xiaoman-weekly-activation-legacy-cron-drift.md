@@ -13,6 +13,12 @@ live Xiaoman Hermes cron file.
 A release-local retirement attempt also failed closed because the live cron file hash no
 longer matched the hash baked into `retire-xiaoman-legacy-cron-production.sh`.
 
+After `v0.2.86` deployed the reviewed hash update and signed retirement workflow, the
+server-side retirement request failed closed again because the deploy-runner unit kept
+`ProtectHome=read-only` and did not grant `ReadWritePaths` to the fixed Xiaoman cron
+directory. The retirement script attempted to create the reviewed backup and received
+`EROFS` before replacing the live cron file.
+
 Read-only production metadata observed after the failed activation:
 
 ```json
@@ -33,12 +39,20 @@ The script correctly refused to retire an unreviewed hash, and the activation wo
 correctly refused to enable a replacement systemd timer while the legacy cron still had
 a runnable declaration.
 
+The follow-up retirement request also showed that the deployed runner sandbox allowed
+Erhua profile writes but not the fixed Xiaoman cron directory, so the reviewed
+retirement script could not create its backup or replacement file.
+
 ## Resolution
 
 Update the retirement script's expected previous SHA-256 to the newly observed
 production hash:
 
 `41347af48cbb62010be3f530f0fa7d4dfa28f0e661f4fd48fbc0a5467b484c08`
+
+Update the deploy-runner service to retain `ProtectHome=read-only` while adding only
+`/home/ubuntu/.hermes/profiles/xiaoman/cron` to `ReadWritePaths`. Do not grant whole
+Xiaoman profile write access.
 
 After the patched release is deployed, run the release-local Xiaoman legacy cron
 retirement script and re-run the weekly timer activation workflow for:
