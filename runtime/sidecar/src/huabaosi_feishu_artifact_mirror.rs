@@ -49,6 +49,19 @@ const REQUIRED_JPEG_QUALITY: i64 = 92;
 const REQUIRED_ALPHA_BACKGROUND: &str = "#ffffff";
 const REQUIRED_WIDTH: i64 = 1254;
 const REQUIRED_HEIGHT: i64 = 1254;
+#[allow(dead_code)]
+const DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION: &str =
+    "xiaoman-daily-case-report-feishu-storage-v1";
+#[allow(dead_code)]
+const DAILY_CASE_REPORT_WORKFLOW_TYPE: &str = "daily_case_report";
+#[allow(dead_code)]
+const DAILY_CASE_REPORT_GENERATED_BY: &str = "xiaoman-daily-case-report-auto-publish-worker";
+#[allow(dead_code)]
+const DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY: &str = "daily_case_report_feishu_primary_storage_v1";
+#[allow(dead_code)]
+const DAILY_CASE_REPORT_STORAGE_BACKEND: &str = "feishu-base";
+#[allow(dead_code)]
+const DAILY_CASE_REPORT_MEDIA_TRANSFORM: &str = "xiaoman_daily_case_report_jpeg_render_v1";
 const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 const MAX_FEISHU_RESPONSE_BYTES: usize = 1024 * 1024;
 const OFFICIAL_FEISHU_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
@@ -162,6 +175,8 @@ struct PrimaryStorageRevalidationReport {
 struct MirrorArtifact {
     id: Uuid,
     work_item_id: Uuid,
+    #[allow(dead_code)]
+    created_by_agent: String,
     review_status: String,
     title: String,
     artifact_uri: String,
@@ -314,6 +329,26 @@ pub(crate) struct FeishuPrimaryStorageImage<'a> {
     pub bytes: &'a [u8],
     pub width: u32,
     pub height: u32,
+}
+
+#[cfg_attr(
+    not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )),
+    allow(dead_code)
+)]
+pub(crate) struct FeishuDailyCaseReportStorageImage<'a> {
+    pub artifact_id: Uuid,
+    pub workflow_root_id: Uuid,
+    pub work_item_id: Uuid,
+    pub content_hash: &'a str,
+    pub file_md5: &'a str,
+    pub bytes: &'a [u8],
+    pub width: u32,
+    pub height: u32,
+    pub filename: &'a str,
 }
 
 pub(crate) struct FeishuPrimaryStorageResult {
@@ -584,6 +619,50 @@ pub(crate) async fn revalidate_primary_storage_for_approval(
 }
 
 #[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+pub(crate) async fn revalidate_daily_case_report_storage_for_publish(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    artifact_id: Uuid,
+    database_url: &str,
+) -> Result<()> {
+    let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
+    let artifact = peek_primary_storage_artifact_tx(tx, artifact_id)
+        .await?
+        .context("daily case report Feishu-backed generated image artifact was not found")?;
+    if !is_daily_case_report_storage_artifact(&artifact) {
+        bail!("Feishu-backed publish revalidation requires a daily case report artifact");
+    }
+    validate_daily_case_report_delivery_approval(&artifact)?;
+    let workflow_root_id = artifact.work_item_id;
+    let validated = validate_daily_case_report_storage_artifact(&artifact)?;
+    let bytes = read_revalidated_daily_case_report_storage_bytes(
+        &artifact,
+        &validated,
+        workflow_root_id,
+        &config,
+    )
+    .map_err(primary_storage_error)?;
+    drop(bytes);
+    Ok(())
+}
+
+#[cfg(not(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+)))]
+pub(crate) async fn revalidate_daily_case_report_storage_for_publish(
+    _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    _artifact_id: Uuid,
+    _database_url: &str,
+) -> Result<()> {
+    bail!("daily case report Feishu storage adapter is not compiled");
+}
+
+#[cfg(any(
     all(feature = "huabaosi-staging-adapter", feature = "qiwe-staging-adapter"),
     all(
         feature = "huabaosi-feishu-mirror-adapter",
@@ -598,21 +677,39 @@ pub(crate) async fn revalidate_primary_storage_for_delivery(
     let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
     let artifact = peek_primary_storage_artifact(pool, artifact_id)
         .await?
-        .context("Huabaosi generated image artifact was not found")?;
-    if artifact.review_status != "approved"
-        || artifact.reviewed_at.is_none()
-        || artifact
-            .reviewed_by
-            .as_deref()
-            .is_none_or(|reviewer| reviewer.trim().is_empty())
-    {
-        bail!("Huabaosi Feishu-backed delivery artifact is not human-approved");
-    }
+        .context("Feishu-backed generated image artifact was not found")?;
     let workflow_root_id = resolve_workflow_root_pool(pool, artifact.work_item_id).await?;
-    let validated = validate_primary_storage_artifact(&artifact)?;
-    let bytes =
-        read_revalidated_primary_storage_bytes(&artifact, &validated, workflow_root_id, &config)
-            .map_err(primary_storage_error)?;
+    let (validated, bytes) = if is_daily_case_report_storage_artifact(&artifact) {
+        validate_daily_case_report_delivery_approval(&artifact)?;
+        let validated = validate_daily_case_report_storage_artifact(&artifact)?;
+        let bytes = read_revalidated_daily_case_report_storage_bytes(
+            &artifact,
+            &validated,
+            workflow_root_id,
+            &config,
+        )
+        .map_err(primary_storage_error)?;
+        (validated, bytes)
+    } else {
+        if artifact.review_status != "approved"
+            || artifact.reviewed_at.is_none()
+            || artifact
+                .reviewed_by
+                .as_deref()
+                .is_none_or(|reviewer| reviewer.trim().is_empty())
+        {
+            bail!("Huabaosi Feishu-backed delivery artifact is not human-approved");
+        }
+        let validated = validate_primary_storage_artifact(&artifact)?;
+        let bytes = read_revalidated_primary_storage_bytes(
+            &artifact,
+            &validated,
+            workflow_root_id,
+            &config,
+        )
+        .map_err(primary_storage_error)?;
+        (validated, bytes)
+    };
 
     Ok(FeishuPrimaryStorageDeliveryArtifact {
         artifact_id: artifact.id,
@@ -1542,6 +1639,7 @@ const CANDIDATE_SELECT: &str = r#"
     SELECT
         artifact.id,
         artifact.work_item_id,
+        artifact.created_by_agent,
         artifact.review_status,
         artifact.title,
         artifact.artifact_uri,
@@ -1606,6 +1704,7 @@ const PRIMARY_STORAGE_ARTIFACT_SELECT: &str = r#"
     SELECT
         artifact.id,
         artifact.work_item_id,
+        artifact.created_by_agent,
         artifact.review_status,
         artifact.title,
         artifact.artifact_uri,
@@ -1633,17 +1732,38 @@ const PRIMARY_STORAGE_ARTIFACT_SELECT: &str = r#"
         WHERE event.artifact_id = artifact.id
           AND event.event_type = 'generated_image_created'
           AND event.actor_type = 'worker'
-          AND event.actor_id = 'huabaosi-image-generation-worker'
+          AND (
+              (
+                  artifact.created_by_agent = 'huabaosi'
+                  AND event.actor_id = 'huabaosi-image-generation-worker'
+              )
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND event.actor_id = 'xiaoman-daily-case-report-auto-publisher'
+              )
+          )
         ORDER BY event.created_at DESC, event.id DESC
         LIMIT 1
     ) creation ON true
     WHERE artifact.id = $1
       AND artifact.artifact_type = 'generated_image'
-      AND artifact.created_by_agent = 'huabaosi'
       AND artifact.artifact_uri = $2
-      AND item.work_item_type = 'image_generation_request'
-      AND item.capability_key = 'huabaosi.generate_image_asset'
-      AND item.target_agent = 'huabaosi'
+      AND (
+          (
+              artifact.created_by_agent = 'huabaosi'
+              AND item.work_item_type = 'image_generation_request'
+              AND item.capability_key = 'huabaosi.generate_image_asset'
+              AND item.target_agent = 'huabaosi'
+          )
+          OR (
+              artifact.created_by_agent = 'xiaoman'
+              AND artifact.metadata->>'workflow_type' = 'daily_case_report'
+              AND item.work_item_type = 'daily_case_report_request'
+              AND item.capability_key = 'xiaoman.daily_case_report_auto_publish'
+              AND item.target_agent = 'xiaoman'
+              AND item.status = 'completed'
+          )
+      )
     LIMIT 1
 "#;
 
@@ -1678,6 +1798,24 @@ async fn peek_primary_storage_artifact(
     row.map(artifact_from_row).transpose()
 }
 
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+async fn peek_primary_storage_artifact_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    artifact_id: Uuid,
+) -> Result<Option<MirrorArtifact>> {
+    let row = sqlx::query(PRIMARY_STORAGE_ARTIFACT_SELECT)
+        .bind(artifact_id)
+        .bind(primary_storage_artifact_uri(artifact_id))
+        .fetch_optional(&mut **tx)
+        .await
+        .context("peek Feishu-backed generated image from primary storage")?;
+    row.map(artifact_from_row).transpose()
+}
+
 async fn peek_candidate(
     pool: &PgPool,
     artifact_id: Option<Uuid>,
@@ -1707,6 +1845,7 @@ fn artifact_from_row(row: sqlx::postgres::PgRow) -> Result<MirrorArtifact> {
     Ok(MirrorArtifact {
         id: row.try_get("id")?,
         work_item_id: row.try_get("work_item_id")?,
+        created_by_agent: row.try_get("created_by_agent")?,
         review_status: row.try_get("review_status")?,
         title: row.try_get("title")?,
         artifact_uri: row
@@ -2052,6 +2191,74 @@ pub(crate) fn store_primary_generated_image(
     }
 }
 
+pub(crate) fn store_daily_case_report_image(
+    config: &FeishuPrimaryStorageConfig,
+    image: &FeishuDailyCaseReportStorageImage<'_>,
+) -> std::result::Result<FeishuPrimaryStorageResult, MirrorFailure> {
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )))]
+    {
+        let _ = (config, image);
+        Err(MirrorFailure::policy("adapter_not_compiled"))
+    }
+
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    {
+        validate_daily_case_report_storage_image(image, config.max_media_bytes)
+            .map_err(|_| MirrorFailure::policy("image_validation_failed"))?;
+        let credentials = read_feishu_credentials(&config.profile_env_path)?;
+        let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+        let existing =
+            client.search_record(&config.base_token, &config.table_id, image.artifact_id)?;
+        let file_token = client.upload_media(&config.base_token, image.artifact_id, image.bytes)?;
+        let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
+        if readback.as_slice() != image.bytes {
+            readback.zeroize();
+            return Err(MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            ));
+        }
+        validate_daily_case_report_storage_bytes(image, &readback).map_err(|_| {
+            MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            )
+        })?;
+        readback.zeroize();
+
+        let fields = build_daily_case_report_storage_fields(image, file_token.as_str());
+        let record = match existing {
+            Some(record) => {
+                client.update_record(
+                    &config.base_token,
+                    &config.table_id,
+                    &record.record_id,
+                    &fields,
+                )?;
+                record
+            }
+            None => client.create_record(&config.base_token, &config.table_id, &fields)?,
+        };
+
+        Ok(FeishuPrimaryStorageResult {
+            artifact_uri: primary_storage_artifact_uri(image.artifact_id),
+            record_id: record.record_id,
+        })
+    }
+}
+
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
@@ -2074,6 +2281,56 @@ fn validate_primary_storage_image(
         bail!("Huabaosi Feishu storage image identity is not canonical");
     }
     validate_primary_storage_bytes(image, image.bytes)
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_daily_case_report_storage_image(
+    image: &FeishuDailyCaseReportStorageImage<'_>,
+    max_media_bytes: usize,
+) -> Result<()> {
+    if image.bytes.is_empty() || image.bytes.len() > max_media_bytes {
+        bail!("daily case report Feishu storage image bytes are outside the reviewed bound");
+    }
+    if image.width == 0 || image.height == 0 || image.width > 4096 || image.height > 8192 {
+        bail!("daily case report Feishu storage image dimensions are invalid");
+    }
+    if !is_canonical_sha256(image.content_hash) || !is_lower_hex(image.file_md5, 32) {
+        bail!("daily case report Feishu storage image identity is not canonical");
+    }
+    if image.filename.contains('/') || image.filename.contains('\\') {
+        bail!("daily case report Feishu storage filename is invalid");
+    }
+    let filename = image.filename.to_ascii_lowercase();
+    if !filename.ends_with(".jpg") && !filename.ends_with(".jpeg") {
+        bail!("daily case report Feishu storage filename must reference a JPEG");
+    }
+    validate_daily_case_report_storage_bytes(image, image.bytes)
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_daily_case_report_storage_bytes(
+    image: &FeishuDailyCaseReportStorageImage<'_>,
+    bytes: &[u8],
+) -> Result<()> {
+    if format!("sha256:{}", sha256_hex(bytes)) != image.content_hash
+        || md5_hex(bytes) != image.file_md5
+    {
+        bail!("daily case report Feishu storage image digest does not match JPEG bytes");
+    }
+    let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
+        .context("decode daily case report Feishu storage JPEG")?;
+    if decoded.dimensions() != (image.width, image.height) {
+        bail!("daily case report Feishu storage JPEG dimensions do not match");
+    }
+    Ok(())
 }
 
 #[cfg(any(
@@ -2121,6 +2378,38 @@ fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_toke
         "源PNG SHA-256": image.source_content_hash,
         "转换规则": REQUIRED_TRANSFORM,
         "审核状态": "待审核",
+        "生成时间": now,
+    })
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn build_daily_case_report_storage_fields(
+    image: &FeishuDailyCaseReportStorageImage<'_>,
+    file_token: &str,
+) -> Value {
+    let now = Utc::now().timestamp_millis();
+    json!({
+        "产物标题": "小满日报图片（自动发布）",
+        "AgentOS产物ID": image.artifact_id.to_string(),
+        "Schema版本": DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION,
+        "AgentOS工作项ID": image.workflow_root_id.to_string(),
+        "图片请求ID": image.work_item_id.to_string(),
+        "最终JPEG": [{"file_token": file_token}],
+        "JPEG SHA-256": image.content_hash,
+        "文件MD5": image.file_md5,
+        "字节数": image.bytes.len(),
+        "宽度": image.width,
+        "高度": image.height,
+        "MIME类型": REQUIRED_MIME_TYPE,
+        "源PNG SHA-256": image.content_hash,
+        "转换规则": DAILY_CASE_REPORT_MEDIA_TRANSFORM,
+        "审核状态": "已通过",
+        "审核人": DAILY_CASE_REPORT_GENERATED_BY,
+        "审核意见": "approved by reviewed daily case report automatic publish boundary",
         "生成时间": now,
     })
 }
@@ -2212,6 +2501,132 @@ fn validate_primary_storage_artifact(
     })
 }
 
+#[allow(dead_code)]
+fn is_daily_case_report_storage_artifact(artifact: &MirrorArtifact) -> bool {
+    artifact.created_by_agent == "xiaoman"
+        && artifact
+            .metadata
+            .get("workflow_type")
+            .and_then(Value::as_str)
+            == Some(DAILY_CASE_REPORT_WORKFLOW_TYPE)
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_daily_case_report_delivery_approval(artifact: &MirrorArtifact) -> Result<()> {
+    if artifact.review_status != "approved" || artifact.reviewed_at.is_none() {
+        bail!("daily case report Feishu-backed delivery artifact is not boundary-approved");
+    }
+    let metadata = artifact
+        .metadata
+        .as_object()
+        .context("daily case report Feishu-backed metadata must be an object")?;
+    if metadata.get("requires_human_final_confirmation").is_some() {
+        bail!("daily case report artifact metadata must not redefine confirmation policy");
+    }
+    if metadata_text(metadata, "storage_backend")? != DAILY_CASE_REPORT_STORAGE_BACKEND
+        || metadata_text(metadata, "media_upload_boundary")?
+            != DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY
+    {
+        bail!("daily case report Feishu-backed delivery metadata is not boundary-bound");
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_daily_case_report_storage_artifact(
+    artifact: &MirrorArtifact,
+) -> Result<ValidatedPrimaryStorageArtifact> {
+    let expected_uri = primary_storage_artifact_uri(artifact.id);
+    if artifact.artifact_uri != expected_uri {
+        bail!("daily case report Feishu-backed artifact URI does not match artifact id");
+    }
+    if !is_canonical_sha256(&artifact.content_hash) {
+        bail!("daily case report Feishu-backed content hash is not canonical");
+    }
+    let metadata = artifact
+        .metadata
+        .as_object()
+        .context("daily case report Feishu-backed metadata must be an object")?;
+    if metadata_text(metadata, "workflow_type")? != DAILY_CASE_REPORT_WORKFLOW_TYPE
+        || metadata_text(metadata, "generated_by")? != DAILY_CASE_REPORT_GENERATED_BY
+        || metadata_text(metadata, "storage_backend")? != DAILY_CASE_REPORT_STORAGE_BACKEND
+        || metadata_text(metadata, "media_upload_boundary")?
+            != DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY
+        || metadata_text(metadata, "mime_type")? != REQUIRED_MIME_TYPE
+    {
+        bail!("daily case report Feishu-backed metadata does not match the reviewed contract");
+    }
+    let file_md5 = metadata_text(metadata, "file_md5")?;
+    if !is_lower_hex(&file_md5, 32) {
+        bail!("daily case report Feishu-backed file MD5 is not canonical");
+    }
+    let width = metadata_i64(metadata, "width")?;
+    let height = metadata_i64(metadata, "height")?;
+    let byte_size = metadata_i64(metadata, "byte_size")?;
+    if width <= 0 || height <= 0 || width > 4096 || height > 8192 {
+        bail!("daily case report Feishu-backed dimensions are outside the reviewed bounds");
+    }
+    let byte_size = usize::try_from(byte_size)
+        .ok()
+        .filter(|size| *size > 0 && *size <= DEFAULT_MAX_MEDIA_BYTES)
+        .context("daily case report Feishu-backed byte size is outside the reviewed bound")?;
+    validate_daily_case_report_creation_event(artifact, metadata)?;
+    Ok(ValidatedPrimaryStorageArtifact {
+        file_md5,
+        source_content_hash: artifact.content_hash.clone(),
+        byte_size,
+        width: u32::try_from(width).context("daily case report Feishu-backed width is invalid")?,
+        height: u32::try_from(height)
+            .context("daily case report Feishu-backed height is invalid")?,
+    })
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_daily_case_report_creation_event(
+    artifact: &MirrorArtifact,
+    metadata: &Map<String, Value>,
+) -> Result<()> {
+    let event = artifact
+        .creation_event_data
+        .as_object()
+        .context("daily case report creation audit is missing")?;
+    for key in [
+        "mime_type",
+        "file_md5",
+        "byte_size",
+        "width",
+        "height",
+        "storage_backend",
+        "media_upload_boundary",
+    ] {
+        if event.get(key) != metadata.get(key) {
+            bail!("daily case report creation audit does not match artifact metadata");
+        }
+    }
+    if event.get("content_hash").and_then(Value::as_str) != Some(&artifact.content_hash) {
+        bail!("daily case report creation audit does not match artifact content hash");
+    }
+    if event.get("external_send_executed").and_then(Value::as_bool) != Some(false) {
+        bail!("daily case report creation audit does not prove pre-send state");
+    }
+    if event.get("automatic_publish").and_then(Value::as_bool) != Some(true) {
+        bail!("daily case report creation audit does not prove automatic publish");
+    }
+    Ok(())
+}
+
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
@@ -2276,6 +2691,39 @@ fn read_revalidated_primary_storage_bytes(
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn read_revalidated_daily_case_report_storage_bytes(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    workflow_root_id: Uuid,
+    config: &FeishuPrimaryStorageConfig,
+) -> std::result::Result<Zeroizing<Vec<u8>>, MirrorFailure> {
+    let credentials = read_feishu_credentials(&config.profile_env_path)?;
+    let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+    let record = client
+        .search_record(&config.base_token, &config.table_id, artifact.id)?
+        .ok_or_else(|| {
+            MirrorFailure::external("record_search", "record_missing", Some(false), false)
+        })?;
+    let fields = record.fields.as_object().ok_or_else(|| {
+        MirrorFailure::external("record_search", "record_fields_missing", Some(false), false)
+    })?;
+    validate_daily_case_report_storage_record_fields(
+        artifact,
+        validated,
+        workflow_root_id,
+        fields,
+    )?;
+    let file_token = primary_storage_attachment_token(fields)?;
+    let readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
+    validate_primary_storage_readback(artifact, validated, &readback)?;
+    Ok(readback)
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
     feature = "huabaosi-feishu-mirror-adapter",
     feature = "xiaoman-feishu-poster-adapter"
 ))]
@@ -2295,6 +2743,60 @@ fn validate_primary_storage_record_fields(
         ("MIME类型", REQUIRED_MIME_TYPE.to_string()),
         ("源PNG SHA-256", validated.source_content_hash.clone()),
         ("转换规则", REQUIRED_TRANSFORM.to_string()),
+    ] {
+        if field_text(fields, field).as_deref() != Some(expected.as_str()) {
+            return Err(MirrorFailure::external(
+                "record_search",
+                "record_identity_mismatch",
+                Some(false),
+                false,
+            ));
+        }
+    }
+    for (field, expected) in [
+        (
+            "字节数",
+            i64::try_from(validated.byte_size).unwrap_or(i64::MAX),
+        ),
+        ("宽度", i64::from(validated.width)),
+        ("高度", i64::from(validated.height)),
+    ] {
+        if field_i64(fields, field) != Some(expected) {
+            return Err(MirrorFailure::external(
+                "record_search",
+                "record_identity_mismatch",
+                Some(false),
+                false,
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_daily_case_report_storage_record_fields(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    workflow_root_id: Uuid,
+    fields: &Map<String, Value>,
+) -> std::result::Result<(), MirrorFailure> {
+    for (field, expected) in [
+        ("AgentOS产物ID", artifact.id.to_string()),
+        (
+            "Schema版本",
+            DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION.to_string(),
+        ),
+        ("AgentOS工作项ID", workflow_root_id.to_string()),
+        ("图片请求ID", artifact.work_item_id.to_string()),
+        ("JPEG SHA-256", artifact.content_hash.clone()),
+        ("文件MD5", validated.file_md5.clone()),
+        ("MIME类型", REQUIRED_MIME_TYPE.to_string()),
+        ("源PNG SHA-256", artifact.content_hash.clone()),
+        ("转换规则", DAILY_CASE_REPORT_MEDIA_TRANSFORM.to_string()),
     ] {
         if field_text(fields, field).as_deref() != Some(expected.as_str()) {
             return Err(MirrorFailure::external(
@@ -3834,6 +4336,96 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn daily_case_report_feishu_storage_accepts_reviewed_long_jpeg_identity() {
+        let image = RgbImage::from_pixel(16, 24, Rgb([242, 244, 248]));
+        let mut bytes = Vec::new();
+        JpegEncoder::new_with_quality(&mut bytes, 92)
+            .encode_image(&DynamicImage::ImageRgb8(image))
+            .expect("encode daily fixture JPEG");
+        let artifact_id = Uuid::new_v4();
+        let work_item_id = Uuid::new_v4();
+        let content_hash = format!("sha256:{}", sha256_hex(&bytes));
+        let file_md5 = md5_hex(&bytes);
+        let storage_image = FeishuDailyCaseReportStorageImage {
+            artifact_id,
+            workflow_root_id: work_item_id,
+            work_item_id,
+            content_hash: &content_hash,
+            file_md5: &file_md5,
+            bytes: &bytes,
+            width: 16,
+            height: 24,
+            filename: "xiaoman-2026-08-08.jpg",
+        };
+        validate_daily_case_report_storage_image(&storage_image, DEFAULT_MAX_MEDIA_BYTES)
+            .expect("daily long JPEG should satisfy storage identity");
+        let fields = build_daily_case_report_storage_fields(&storage_image, "fileFixture");
+        let created_at = Utc
+            .with_ymd_and_hms(2026, 8, 8, 8, 0, 0)
+            .single()
+            .expect("fixture timestamp");
+        let artifact = MirrorArtifact {
+            id: artifact_id,
+            work_item_id,
+            created_by_agent: "xiaoman".to_string(),
+            review_status: "approved".to_string(),
+            title: "小满日报图片（自动发布）".to_string(),
+            artifact_uri: primary_storage_artifact_uri(artifact_id),
+            content_hash: content_hash.clone(),
+            source_ids: Value::Null,
+            metadata: json!({
+                "workflow_type": DAILY_CASE_REPORT_WORKFLOW_TYPE,
+                "generated_by": DAILY_CASE_REPORT_GENERATED_BY,
+                "storage_backend": DAILY_CASE_REPORT_STORAGE_BACKEND,
+                "media_upload_boundary": DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY,
+                "mime_type": REQUIRED_MIME_TYPE,
+                "file_md5": file_md5,
+                "byte_size": bytes.len(),
+                "width": 16,
+                "height": 24,
+            }),
+            creation_event_data: json!({
+                "content_hash": content_hash,
+                "mime_type": REQUIRED_MIME_TYPE,
+                "file_md5": file_md5,
+                "byte_size": bytes.len(),
+                "width": 16,
+                "height": 24,
+                "storage_backend": DAILY_CASE_REPORT_STORAGE_BACKEND,
+                "media_upload_boundary": DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY,
+                "external_send_executed": false,
+                "automatic_publish": true,
+            }),
+            reviewed_at: Some(created_at),
+            reviewed_by: None,
+            review_decision_reason: None,
+            created_at,
+            updated_at: created_at,
+            last_synced_at: None,
+            workbench_status: None,
+        };
+        validate_daily_case_report_delivery_approval(&artifact)
+            .expect("daily automatic-publish approval boundary validates");
+        let validated = validate_daily_case_report_storage_artifact(&artifact)
+            .expect("daily artifact metadata validates");
+
+        assert_eq!(validated.width, 16);
+        assert_eq!(validated.height, 24);
+        validate_daily_case_report_storage_record_fields(
+            &artifact,
+            &validated,
+            work_item_id,
+            fields.as_object().expect("daily fields are an object"),
+        )
+        .expect("daily Feishu record identity validates");
+    }
+
+    #[test]
     #[cfg(not(any(
         feature = "huabaosi-production-adapter",
         feature = "huabaosi-staging-adapter",
@@ -4120,6 +4712,7 @@ mod tests {
         MirrorArtifact {
             id: Uuid::new_v4(),
             work_item_id: Uuid::new_v4(),
+            created_by_agent: "huabaosi".to_string(),
             review_status: "pending".to_string(),
             title: "活动海报图片（待审核）".to_string(),
             artifact_uri: uri.to_string(),

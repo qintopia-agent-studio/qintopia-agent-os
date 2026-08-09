@@ -53,16 +53,34 @@ require_present_env_line() {
   fi
 }
 
+env_value() {
+  local key="$1"
+  grep -E "^${key}=" "$ENV_FILE" | cut -d= -f2-
+}
+
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "1"
+  require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL" "approved-production-xiaoman-daily-case-report-auto-publish"
+  require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE" "1"
+  require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"
+  require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID"
+  require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND"
+  case "$(env_value "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND")" in
+    feishu-base)
+      ;;
+    https-public)
+      require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT"
+      require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL"
+      require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS"
+      ;;
+    *)
+      echo "xiaoman daily case report observation requires a reviewed storage backend" >&2
+      exit 1
+      ;;
+  esac
 else
   require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "0"
 fi
-require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"
-require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID"
-require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT"
-require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL"
-require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT

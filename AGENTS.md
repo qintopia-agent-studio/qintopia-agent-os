@@ -210,8 +210,12 @@
   `generated_image` artifact and one automatic `group_message_request`; it does not
   upload the local file, call QiWe directly, trust a bare caller-provided media URL, or
   accept a committed target group id. The create payload must include
-  `media_upload_evidence` from the reviewed upload step and revalidate the public media
-  boundary plus JPEG identity before send-ready:
+  `media_upload_evidence` from the reviewed upload step and revalidate the reviewed
+  media boundary plus JPEG identity before send-ready. Current production has no
+  reviewed public HTTPS media upload endpoint for this workflow; use
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND=feishu-base` so the upload step
+  stores the JPEG in the existing Huabaosi Feishu primary-storage table and QiWe reads
+  it back through the Feishu delivery bridge:
   `qintopia-message-sidecar operations-daily-case-report-media-upload --payload-json <local-jpeg-identity-json> --apply`,
   `qintopia-message-sidecar operations-daily-case-report-auto-publish-create --payload-json <sanitized-json> --apply`
 - Xiaoman daily case-report production auto-publish uses a release-managed timer, not

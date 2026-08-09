@@ -25,6 +25,11 @@ LOCK_PATH = Path("/run/qintopia-xiaoman-daily-case-report-config.lock")
 APPLY_APPROVAL = "approved-production-xiaoman-daily-case-report-config-v1"
 PUBLISH_APPROVAL = "approved-production-xiaoman-daily-case-report-auto-publish"
 QIWE_SEND_APPROVAL = "approved-production-qiwe-image-send"
+FEISHU_MIRROR_APPROVAL = "approved-huabaosi-feishu-artifact-mirror"
+FEISHU_SCHEMA_VERSION = "huabaosi-generated-image-v1"
+HUABAOSI_PROFILE_ENV_PATH = "/home/ubuntu/.hermes/profiles/huabaosi/.env"
+HTTP_STORAGE_BACKEND = "https-public"
+FEISHU_STORAGE_BACKEND = "feishu-base"
 MANAGED_COMMENT = "# Managed by apply-xiaoman-daily-case-report-production-config.py"
 MAX_INPUT_BYTES = 64 * 1024
 MAX_ENV_BYTES = 1024 * 1024
@@ -40,6 +45,7 @@ ACTIVE_KEYS = {
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT",
@@ -47,17 +53,35 @@ ACTIVE_KEYS = {
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT",
 }
-REQUIRED_BOUNDARY_KEYS = {
+REQUIRED_SHARED_BOUNDARY_KEYS = {
     "QINTOPIA_SIDECAR_DATABASE_URL",
     "QINTOPIA_QIWE_IMAGE_SEND_ENABLED",
     "QINTOPIA_QIWE_IMAGE_SEND_WEBHOOK_READY",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL",
     "QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256",
-    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
     "QINTOPIA_XIAOMAN_ACTIVITY_TARGET_GROUP_ID",
 }
-TRACKED_KEYS = ACTIVE_KEYS | REQUIRED_BOUNDARY_KEYS
+REQUIRED_HTTP_BOUNDARY_KEYS = {
+    "QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS",
+}
+REQUIRED_FEISHU_BOUNDARY_KEYS = {
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED",
+    "QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL",
+    "QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256",
+    "QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS",
+    "QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID",
+    "QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS",
+    "QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH",
+    "QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION",
+}
+TRACKED_KEYS = (
+    ACTIVE_KEYS
+    | REQUIRED_SHARED_BOUNDARY_KEYS
+    | REQUIRED_HTTP_BOUNDARY_KEYS
+    | REQUIRED_FEISHU_BOUNDARY_KEYS
+)
 
 
 class ConfigError(ValueError):
@@ -161,6 +185,7 @@ def validate_request(value: dict[str, Any]) -> dict[str, str]:
         "desired_state",
         "release_sha",
         "database_url_sha256",
+        "storage_backend",
         "chat_id",
         "target_group_id",
         "media_upload_endpoint",
@@ -191,19 +216,12 @@ def validate_request(value: dict[str, Any]) -> dict[str, str]:
     database_hash = require_string(value, "database_url_sha256")
     if not SHA256_RE.fullmatch(database_hash):
         raise ConfigError("database_url_sha256 must be a lowercase SHA-256")
-    upload_endpoint, upload_host = strict_https_url(
-        require_string(value, "media_upload_endpoint"),
-        "media upload endpoint",
-    )
-    public_base, public_host = strict_https_url(
-        require_string(value, "media_public_base_url"),
-        "media public base URL",
-    )
-    daily_hosts = parse_csv_set(require_string(value, "media_allowed_hosts"), "daily media allowed hosts")
-    if upload_host not in daily_hosts:
-        raise ConfigError("media upload endpoint host must be in the daily media allowlist")
-    if public_host not in daily_hosts:
-        raise ConfigError("media public base host must be in the daily media allowlist")
+    storage_backend = value.get("storage_backend", HTTP_STORAGE_BACKEND)
+    if not isinstance(storage_backend, str):
+        raise ConfigError("storage_backend must be a string")
+    storage_backend = storage_backend.strip()
+    if storage_backend not in {HTTP_STORAGE_BACKEND, FEISHU_STORAGE_BACKEND}:
+        raise ConfigError("storage_backend must be https-public or feishu-base")
     chat_id = require_string(value, "chat_id")
     target_group_id = require_string(value, "target_group_id")
     message_text = value.get("message_text")
@@ -223,15 +241,44 @@ def validate_request(value: dict[str, Any]) -> dict[str, str]:
     normalized.update(
         {
             "database_url_sha256": database_hash,
+            "storage_backend": storage_backend,
             "chat_id": chat_id,
             "target_group_id": target_group_id,
-            "media_upload_endpoint": upload_endpoint,
-            "media_upload_host": upload_host,
-            "media_public_base_url": public_base,
-            "media_public_host": public_host,
-            "media_allowed_hosts": ",".join(sorted(daily_hosts)),
         }
     )
+    if storage_backend == HTTP_STORAGE_BACKEND:
+        upload_endpoint, upload_host = strict_https_url(
+            require_string(value, "media_upload_endpoint"),
+            "media upload endpoint",
+        )
+        public_base, public_host = strict_https_url(
+            require_string(value, "media_public_base_url"),
+            "media public base URL",
+        )
+        daily_hosts = parse_csv_set(
+            require_string(value, "media_allowed_hosts"), "daily media allowed hosts"
+        )
+        if upload_host not in daily_hosts:
+            raise ConfigError("media upload endpoint host must be in the daily media allowlist")
+        if public_host not in daily_hosts:
+            raise ConfigError("media public base host must be in the daily media allowlist")
+        normalized.update(
+            {
+                "media_upload_endpoint": upload_endpoint,
+                "media_upload_host": upload_host,
+                "media_public_base_url": public_base,
+                "media_public_host": public_host,
+                "media_allowed_hosts": ",".join(sorted(daily_hosts)),
+            }
+        )
+    else:
+        forbidden = {
+            "media_upload_endpoint",
+            "media_public_base_url",
+            "media_allowed_hosts",
+        } & set(value)
+        if forbidden:
+            raise ConfigError("feishu-base storage must not carry HTTPS media fields")
     if message_text is not None:
         normalized["message_text"] = message_text
     return normalized
@@ -326,7 +373,9 @@ def validate_database_url(value: str, expected_hash: str) -> None:
 
 
 def require_enabled_boundaries(values: dict[str, str], request: dict[str, str]) -> None:
-    missing = sorted(key for key in REQUIRED_BOUNDARY_KEYS if not values.get(key, "").strip())
+    missing = sorted(
+        key for key in REQUIRED_SHARED_BOUNDARY_KEYS if not values.get(key, "").strip()
+    )
     if missing:
         raise ConfigError("sidecar env is missing required daily report boundaries")
     validate_database_url(values["QINTOPIA_SIDECAR_DATABASE_URL"], request["database_url_sha256"])
@@ -338,16 +387,24 @@ def require_enabled_boundaries(values: dict[str, str], request: dict[str, str]) 
         raise ConfigError("QiWe image-send production approval is not present")
     if values["QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256"] != request["database_url_sha256"]:
         raise ConfigError("QiWe image-send database hash does not match daily report approval")
-    existing_media_hosts = parse_csv_set(
-        values["QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS"],
-        "existing generated-image media allowed hosts",
-    )
-    daily_media_hosts = parse_csv_set(
-        request["media_allowed_hosts"],
-        "daily media allowed hosts",
-    )
-    if not daily_media_hosts.issubset(existing_media_hosts):
-        raise ConfigError("daily media hosts are outside the reviewed QiWe media boundary")
+    if request["storage_backend"] == HTTP_STORAGE_BACKEND:
+        missing = sorted(
+            key for key in REQUIRED_HTTP_BOUNDARY_KEYS if not values.get(key, "").strip()
+        )
+        if missing:
+            raise ConfigError("sidecar env is missing required daily HTTPS media boundaries")
+        existing_media_hosts = parse_csv_set(
+            values["QINTOPIA_HUABAOSI_MEDIA_ALLOWED_HOSTS"],
+            "existing generated-image media allowed hosts",
+        )
+        daily_media_hosts = parse_csv_set(
+            request["media_allowed_hosts"],
+            "daily media allowed hosts",
+        )
+        if not daily_media_hosts.issubset(existing_media_hosts):
+            raise ConfigError("daily media hosts are outside the reviewed QiWe media boundary")
+    else:
+        require_feishu_storage_boundaries(values, request["database_url_sha256"])
     allowed_groups = parse_exact_csv_set(
         values["QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS"],
         "operations allowed group ids",
@@ -358,6 +415,40 @@ def require_enabled_boundaries(values: dict[str, str], request: dict[str, str]) 
         raise ConfigError("daily report target group does not match the reviewed Xiaoman target")
 
 
+def require_singleton_allowlist(value: str, expected: str, label: str) -> None:
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    if items != [expected]:
+        raise ConfigError(f"{label} allowlist is not exact")
+
+
+def require_feishu_storage_boundaries(values: dict[str, str], database_hash: str) -> None:
+    missing = sorted(
+        key for key in REQUIRED_FEISHU_BOUNDARY_KEYS if not values.get(key, "").strip()
+    )
+    if missing:
+        raise ConfigError("sidecar env is missing required Feishu storage boundaries")
+    if values["QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED"] != "1":
+        raise ConfigError("Feishu primary-storage delivery is not enabled")
+    if values["QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL"] != FEISHU_MIRROR_APPROVAL:
+        raise ConfigError("Feishu primary-storage approval is not approved")
+    if values["QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256"] != database_hash:
+        raise ConfigError("Feishu primary-storage database hash is not approved")
+    if values["QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH"] != HUABAOSI_PROFILE_ENV_PATH:
+        raise ConfigError("Feishu primary-storage profile path is not approved")
+    if values["QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION"] != FEISHU_SCHEMA_VERSION:
+        raise ConfigError("Feishu primary-storage schema is not approved")
+    require_singleton_allowlist(
+        values["QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS"],
+        values["QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN"],
+        "Feishu Base token",
+    )
+    require_singleton_allowlist(
+        values["QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS"],
+        values["QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID"],
+        "Feishu artifact table",
+    )
+
+
 def desired_values(request: dict[str, str]) -> dict[str, str]:
     if request["desired_state"] == "disabled":
         return {"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED": "0"}
@@ -365,12 +456,24 @@ def desired_values(request: dict[str, str]) -> dict[str, str]:
         "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED": "1",
         "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL": PUBLISH_APPROVAL,
         "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE": "1",
+        "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND": request["storage_backend"],
         "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID": request["chat_id"],
         "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID": request["target_group_id"],
-        "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT": request["media_upload_endpoint"],
-        "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL": request["media_public_base_url"],
-        "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS": request["media_allowed_hosts"],
     }
+    if request["storage_backend"] == HTTP_STORAGE_BACKEND:
+        values.update(
+            {
+                "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_UPLOAD_ENDPOINT": request[
+                    "media_upload_endpoint"
+                ],
+                "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL": request[
+                    "media_public_base_url"
+                ],
+                "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS": request[
+                    "media_allowed_hosts"
+                ],
+            }
+        )
     if "message_text" in request:
         values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT"] = request["message_text"]
     return values
@@ -475,6 +578,7 @@ def configure(
             if apply
             else "xiaoman_daily_case_report_config_ready",
             "desired_state": normalized["desired_state"],
+            "storage_backend": normalized.get("storage_backend"),
             "auto_publish_enabled": normalized["desired_state"] == "enabled",
             "release_sha_matched": True,
             "database_url_sha256_matched": normalized["desired_state"] == "enabled",
