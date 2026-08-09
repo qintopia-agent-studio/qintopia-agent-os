@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.80](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.79...v0.2.80) (2026-08-09)
+
+
+### Bug Fixes
+
+* add xiaoman activity read-through production config ([51148c7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/51148c7cbf94de557376e5113b89fbf9aa6aba2a))
+
 ## [0.2.79](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.78...v0.2.79) (2026-08-09)
 
 
