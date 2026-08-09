@@ -1002,6 +1002,89 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(result.success, True)
         self.assertEqual(adapter.calls, ["/msg/sendHyperText"])
 
+    def test_configured_activity_reminder_group_send_does_not_check_contact_guard(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(
+                    type(
+                        "Config",
+                        (),
+                        {
+                            "extra": {
+                                "token": "test-token",
+                                "guid": "guid-1",
+                                "activity_reminder_allowed_groups": "10733506388826175",
+                            }
+                        },
+                    )()
+                )
+                self.calls = []
+
+            async def _call_qiwe_api(self, method, params, *, require_send_enabled=True):
+                self.calls.append(method)
+                if method == "/msg/sendHyperText":
+                    return SendResult(success=True, raw_response={"code": 0, "data": {"isSendSuccess": 1}})
+                raise AssertionError(f"configured group send should not call {method}")
+
+        adapter = RecordingAdapter()
+        result = asyncio.run(adapter.send("10733506388826175", "hello"))
+
+        self.assertIs(result.success, True)
+        self.assertEqual(adapter.calls, ["/msg/sendHyperText"])
+
+    def test_existing_room_send_without_metadata_does_not_check_contact_guard(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(type("Config", (), {"extra": {"token": "test-token", "guid": "guid-1"}})())
+                self.calls = []
+
+            async def _call_qiwe_api(self, method, params, *, require_send_enabled=True):
+                self.calls.append(method)
+                if method == "/room/batchGetRoomDetail":
+                    return SendResult(
+                        success=True,
+                        raw_response={
+                            "code": 0,
+                            "data": {
+                                "roomList": [
+                                    {
+                                        "roomId": "10733506388826175",
+                                        "memberList": [],
+                                    }
+                                ]
+                            },
+                        },
+                    )
+                if method == "/msg/sendHyperText":
+                    return SendResult(success=True, raw_response={"code": 0, "data": {"isSendSuccess": 1}})
+                raise AssertionError(f"existing room send should not call {method}")
+
+        adapter = RecordingAdapter()
+        result = asyncio.run(adapter.send("10733506388826175", "hello"))
+
+        self.assertIs(result.success, True)
+        self.assertEqual(adapter.calls, ["/room/batchGetRoomDetail", "/msg/sendHyperText"])
+
+    def test_unconfigured_explicit_send_still_uses_direct_contact_guard(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(type("Config", (), {"extra": {"token": "test-token", "guid": "guid-1"}})())
+                self.calls = []
+
+            async def _call_qiwe_api(self, method, params, *, require_send_enabled=True):
+                self.calls.append(method)
+                if method == "/room/batchGetRoomDetail":
+                    return SendResult(success=True, raw_response={"code": 0, "data": {"roomList": []}})
+                if method == "/contact/getWxContactList":
+                    return SendResult(success=False, error="QiWe HTTP 502", retryable=True)
+                raise AssertionError(f"send should be blocked before {method}")
+
+        adapter = RecordingAdapter()
+        result = asyncio.run(adapter.send("10733506388826175", "hello"))
+
+        self.assertIs(result.success, False)
+        self.assertEqual(adapter.calls, ["/room/batchGetRoomDetail", "/contact/getWxContactList"])
+
     def test_location_message_is_metadata_only_and_does_not_trigger(self) -> None:
         payload = copy.deepcopy(load_fixture("group_mention.json"))
         raw_event = json.loads(payload["data"])

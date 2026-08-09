@@ -516,6 +516,12 @@ Use `rg` and `rg --files` for search.
   workflows on Hermes Kanban.
 - Postgres/AgentOS is the system fact source. Feishu is a human workbench and mirror,
   not the source of truth.
+- Erhua member recognition depends on `qintopia_identity.channel_identities.person_id`
+  and active `member_profile_snapshots`, not display-name guessing. The identity worker
+  must not skip QiWe messages that already have `sender_channel_identity_id` and
+  `sender_name` but still have `sender_person_id IS NULL`; otherwise Erhua will call
+  `qintopia_answer_context_prepare` and correctly return `speaker_unresolved` even when
+  the display name uniquely matches an existing person/profile.
 - For the Huabaosi production image canary, the owner-selected first storage boundary is
   the fixed Feishu Base `huabaosi-generated-image-v1` table. The image worker may upload
   the exact final JPEG attachment and idempotently upsert one row by
@@ -598,6 +604,12 @@ Use `rg` and `rg --files` for search.
   hash, timeout, and media bound needed by the real production preflight. Do not repair
   release binding by editing `/etc/qintopia/message-sidecar.env` during a deployment.
 - Hermes remains the Agent runtime. It should not become the business database.
+- QiWe cron delivery to an explicit group must preserve group semantics. A bare
+  `deliver=qiwe:<id>` without `conversation_type=group`, `chat_type=group`, a
+  sender-derived `thread_id`, or a configured group allowlist match can be treated as a
+  direct recipient and fail contact-guard lookup. Do not weaken direct-recipient contact
+  guard to fix this; teach the delivery path to prove the target is a group through
+  typed metadata, a configured group allowlist, or QiWe room-detail proof.
 - The production Hermes venv is uv-managed. Its `pyvenv.cfg` base home may use uv's
   stable `cpython-<major>.<minor>-<platform>` alias, which resolves to an exact patch
   version below `/home/ubuntu/.local/share/uv/python`. Interpreter validation may allow
@@ -937,6 +949,11 @@ Use `rg` and `rg --files` for search.
   conversation-created cron, Python QiWe sender, deprecated synchronous upload shortcut,
   caller-provided HTTPS image URL without `media_upload_evidence`, or committed group id
   as an acceptable automatic publication path.
+- Xiaoman daily case-report backfill must start the reviewed release-local
+  `xiaoman-daily-case-report-auto-publish-backfill.sh` entrypoint with the exact owner
+  approval, reviewed release SHA, and `YYYY-MM-DD` date. The worker may honor
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE` only when paired with the matching backfill
+  approval; do not send missed reports by local image path or ad-hoc QiWe calls.
 - The staging-only sidecar artifact `qintopia-message-sidecar-staging-linux-x86_64-gnu`
   may be built only by manual artifact workflow dispatch or
   `pnpm artifact:sidecar:staging`. It must compile exactly `huabaosi-staging-adapter`
