@@ -186,6 +186,10 @@ unit_files=(
   qintopia-agentos-qiwe-image-send-worker.timer
   qintopia-agentos-xiaoman-daily-case-report-auto-publish.service
   qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer
+  qintopia-agentos-xiaoman-weekly-recruitment.service
+  qintopia-agentos-xiaoman-weekly-recruitment.timer
+  qintopia-agentos-xiaoman-weekly-plan-confirmation.service
+  qintopia-agentos-xiaoman-weekly-plan-confirmation.timer
   qintopia-agentos-xiaoman-weekly-preview.service
   qintopia-agentos-xiaoman-weekly-preview.timer
   qintopia-agentos-xiaoman-activity-send-request-starter-worker.service

@@ -21,6 +21,8 @@ Allowed targets:
 
 ```text
 erhua-morning-brief
+xiaoman-weekly-recruitment
+xiaoman-weekly-plan-confirmation
 xiaoman-weekly-preview
 xiaoman-daily-case-report-auto-publish
 ```
@@ -35,9 +37,10 @@ scope and the fixed target enum above. It does not execute caller-provided shell
 - The release must contain the activation, observation, rollback, and config scripts for
   the selected target.
 - `erhua-morning-brief` observes only Erhua legacy Hermes cron state before enabling the
-  replacement timer. `xiaoman-weekly-preview` observes only Xiaoman legacy Hermes cron
-  state. If legacy-cron observation fails, the activation request fails closed; it does
-  not automatically retire legacy cron files.
+  replacement timer. `xiaoman-weekly-recruitment`, `xiaoman-weekly-plan-confirmation`,
+  and `xiaoman-weekly-preview` observe only Xiaoman legacy Hermes cron state. If
+  legacy-cron observation fails, the activation request fails closed; it does not
+  automatically retire legacy cron files.
 - The activation request sets `rollback_on_smoke_failure=false`. Use the dedicated
   target rollback runbooks/scripts for a separate reviewed rollback decision.
 - Every selected target requires the owner-approved production config to have already
