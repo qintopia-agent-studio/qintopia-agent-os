@@ -451,6 +451,105 @@ class DailyCaseReportTest(unittest.TestCase):
             "@张三今天活动几点开始",
         )
 
+    def test_promotional_noise_is_excluded_from_digest_surfaces(self) -> None:
+        promo = daily_case_report.ReportMessage(
+            id="promo",
+            sender_id="seller",
+            sender_name="促销号",
+            text=(
+                "5L:/ 03/03 :9pm 我在抖音挑了喜欢的宝贝，订单在30分钟内有效，"
+                "快帮我付个款吧～长按复制此条消息，打开抖音查看详情"
+            ),
+            sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+            message_kind="text",
+        )
+        discussion = [
+            daily_case_report.ReportMessage(
+                id=f"m{idx}",
+                sender_id=f"u{idx}",
+                sender_name=f"成员{idx}",
+                text=f"套利策略复盘：资金分配和风险控制要先讲清楚，避免因为短线波动影响判断 {idx}",
+                sent_at=datetime(2026, 8, 8, 10, idx, tzinfo=timezone.utc),
+                message_kind="text",
+            )
+            for idx in range(3)
+        ]
+
+        messages = [promo, *discussion]
+        filtered = daily_case_report._discussion_messages(messages)
+        cases = daily_case_report._cluster_cases(filtered)
+        suspects = daily_case_report._compute_suspects(filtered)
+        highlight = daily_case_report._extract_highlight(filtered)
+
+        self.assertNotIn(promo, filtered)
+        self.assertNotIn("订单在30分钟内有效", highlight)
+        self.assertTrue(cases)
+        self.assertNotIn("促销号", {suspect.name for suspect in suspects})
+
+    def test_weak_colon_sentence_does_not_capture_later_messages(self) -> None:
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="张三",
+                text="活动讨论：今天报名节奏先对齐一下",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u2",
+                sender_name="李四",
+                text="我可以负责统计人数",
+                sent_at=datetime(2026, 8, 8, 9, 1, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+            daily_case_report.ReportMessage(
+                id="m3",
+                sender_id="u3",
+                sender_name="王五",
+                text="国家现在规定叫：词元，哇喔，这把名字好帅",
+                sent_at=datetime(2026, 8, 8, 9, 2, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+            daily_case_report.ReportMessage(
+                id="m4",
+                sender_id="u4",
+                sender_name="赵六",
+                text="后面这句不应该继续算进活动讨论",
+                sent_at=datetime(2026, 8, 8, 9, 3, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+        ]
+
+        clusters = daily_case_report._detect_topic_markers(messages)
+
+        self.assertEqual(list(clusters), ["活动讨论"])
+        self.assertEqual([msg.id for msg in clusters["活动讨论"]], ["m1", "m2"])
+
+    def test_weak_keywords_do_not_block_time_bucket_cards(self) -> None:
+        messages = []
+        for hour in (13, 19):
+            for idx in range(3):
+                messages.append(
+                    daily_case_report.ReportMessage(
+                        id=f"{hour}-{idx}",
+                        sender_id=f"u{idx}",
+                        sender_name=f"成员{idx}",
+                        text=f"呲牙 哈哈哈 收到 好的 {hour}-{idx}",
+                        sent_at=datetime(2026, 8, 8, hour, idx, tzinfo=timezone.utc),
+                        message_kind="text",
+                    )
+                )
+
+        cases = daily_case_report._cluster_cases(messages)
+
+        self.assertEqual(len(cases), 2)
+        self.assertTrue(all("呲牙" not in case.title for case in cases))
+        self.assertTrue(all("哈哈" not in case.title for case in cases))
+        self.assertTrue(all("呲牙" not in " ".join(case.bullets) for case in cases))
+        self.assertTrue(all("哈哈" not in " ".join(case.bullets) for case in cases))
+
     def test_cluster_cases_sorts_missing_and_aware_times_without_crashing(self) -> None:
         messages = [
             daily_case_report.ReportMessage(

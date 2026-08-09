@@ -1,6 +1,6 @@
-# Workflow: Xiaoman Daily Community Case-File Report
+# Workflow: Xiaoman Daily Community Scoreboard Report
 
-`workflows/xiaoman-daily-case-report` generates a playful daily "group chat case file"
+`workflows/xiaoman-daily-case-report` generates a playful daily community scoreboard
 poster for Xiaoman community groups. The production target is a release-managed daily
 timer that reads the latest rolling 24 hours of QiWe group messages, renders a JPEG
 poster, and publishes it automatically to the reviewed target group through the governed
@@ -18,9 +18,12 @@ observation, and rollback path from the immutable release.
   24-hour window.
 - Count only text messages with non-empty `text`; image, emoji-only, system, and blank
   messages are excluded from activity statistics.
+- Keep raw text-message counts as the top-line activity metric, but filter obvious
+  payment prompts, copy-token promotions, and external-platform shopping redirects out
+  of highlights, topic cards, and MVP ranking.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
-- Render a mobile-friendly JPEG poster styled like a detective case file.
+- Render a mobile-friendly JPEG poster styled like an original community scoreboard.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
   downstream sendable artifact boundary.
 - Publish once per daily window to the reviewed QiWe target group after production
@@ -52,9 +55,14 @@ obtain a durable HTTPS URI, then calls
 `operations-daily-case-report-auto-publish-create` so retries, allowlists, storage
 identity, callback correlation, and send evidence stay in Postgres.
 
-Topic clustering is heuristic by default: messages are grouped around top keywords
-extracted from the text. This keeps the workflow deterministic and free of LLM costs. A
-future iteration can add an optional LLM-based case title step behind an explicit flag.
+Topic clustering is heuristic by default: explicit colon markers are honored only when
+they look like real thread labels such as topics, recaps, shares, asks, or activity
+discussion markers; weak chatty colon sentences are treated as normal messages. Messages
+are otherwise grouped around top keywords extracted from discussion-quality text.
+Promotional payment/copy-token redirects remain counted in raw activity totals, but they
+are not allowed to become the daily highlight, topic cards, or MVP entries. This keeps
+the workflow deterministic and free of LLM costs. A future iteration can add an optional
+LLM-based case title step behind an explicit flag.
 
 ## Running it
 

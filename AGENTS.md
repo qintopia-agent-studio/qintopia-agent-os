@@ -993,6 +993,14 @@ Use `rg` and `rg --files` for search.
   conversation-created cron, Python QiWe sender, deprecated synchronous upload shortcut,
   caller-provided HTTPS image URL without `media_upload_evidence`, or committed group id
   as an acceptable automatic publication path.
+- Xiaoman daily case-report top-line message totals stay raw, but highlights, topic
+  cards, and MVP ranking must filter obvious payment prompts, copy-token promotions, and
+  external-platform shopping redirects so a long spam-like message cannot become the
+  day's featured quote.
+- Xiaoman daily case-report colon-based topic markers must be strong labels such as
+  topics, recaps, shares, asks, or activity discussions. Ordinary chatty colon sentences
+  must break marker carry-over instead of capturing later messages into a fake topic
+  card.
 - Xiaoman daily case-report backfill must start the reviewed release-local
   `xiaoman-daily-case-report-auto-publish-backfill.sh` entrypoint with the exact owner
   approval, reviewed release SHA, and `YYYY-MM-DD` date. The worker may honor
