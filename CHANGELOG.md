@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.90](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.89...v0.2.90) (2026-08-09)
+
+
+### Bug Fixes
+
+* bind daily report Feishu release env ([fbb9862](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/fbb9862cab70c7cfd57f0a4eaf9a0c0a46f79aed))
+
 ## [0.2.89](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.88...v0.2.89) (2026-08-09)
 
 
