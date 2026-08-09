@@ -261,6 +261,7 @@ esac
     journalctl,
     `#!/usr/bin/env bash
 set -euo pipefail
+printf 'journalctl %s\\n' "$*" >>${shellDoubleQuoted(logPath)}
 printf '%s\\n' "no sensitive Erhua morning brief journal entries"
 `
   );
@@ -358,6 +359,8 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
     "is-enabled --quiet qintopia-agentos-erhua-morning-brief.timer",
     "is-active --quiet qintopia-agentos-erhua-morning-brief.timer",
     "show --property=NextElapseUSecRealtime --value qintopia-agentos-erhua-morning-brief.timer",
+    "show --property=ActiveEnterTimestamp --value qintopia-agentos-erhua-morning-brief.timer",
+    "journalctl -u qintopia-agentos-erhua-morning-brief.service --since Sun 2026-08-09 08:05:00 CST -n 80 --no-pager",
   ]) {
     if (!activationLog.includes(command)) {
       throw new Error(`activation is missing systemctl command: ${command}`);

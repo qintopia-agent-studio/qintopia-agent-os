@@ -3530,6 +3530,16 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.s
     timerObservation,
     'require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"'
   );
+  requireFragment(
+    "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+    timerObservation,
+    "show --property=ActiveEnterTimestamp --value"
+  );
+  requireFragment(
+    "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+    timerObservation,
+    '--since "$timer_active_since" -n "$JOURNAL_LINES"'
+  );
   forbidFragment(
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     timerObservation,
