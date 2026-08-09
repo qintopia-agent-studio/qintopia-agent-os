@@ -240,6 +240,20 @@
   release SHA. Activation must first pass `xiaoman-legacy-cron-observation-smoke.sh`; do
   not manually edit `/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json`.
 
+- Xiaoman activity read-through production config for release-managed Erhua/weekly
+  workers must be applied through the reviewed release-local allowlist copier, not by
+  sourcing the Xiaoman Hermes profile or hand-editing
+  `/etc/qintopia/message-sidecar.env`. It copies only the five reviewed Xiaoman activity
+  read-through keys from the fixed `0600 ubuntu:ubuntu` profile env into the fixed
+  `0640 root:ubuntu` sidecar env after verifying `release/current`:
+
+  ```bash
+  sudo -n /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py \
+    --release-sha <published-production-release-sha> \
+    --apply \
+    --approval approved-production-xiaoman-activity-read-through-config-v1
+  ```
+
 - Xiaoman QiWe group-arrival human confirmation evidence validation after a real
   activity send:
   `node tools/deploy/check-xiaoman-qiwe-group-arrival-confirmation-evidence.mjs <production-evidence-output.txt> <qiwe-group-arrival-confirmation-output.txt>`

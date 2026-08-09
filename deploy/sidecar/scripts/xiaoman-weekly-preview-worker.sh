@@ -14,6 +14,7 @@ fi
 RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
 PYTHON_BIN="/usr/bin/python3"
 WORKFLOW_PY="${RELEASE_DIR}/workflows/xiaoman-weekly-preview/weekly_preview.py"
+SIDECAR_BIN="${RELEASE_DIR}/sidecar/qintopia-message-sidecar"
 WORK_DIR="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-preview"
 
 require_env() {
@@ -48,6 +49,12 @@ if [[ ! -f "$WORKFLOW_PY" ]]; then
   echo "xiaoman weekly preview workflow is missing from release/current" >&2
   exit 1
 fi
+if [[ ! -x "$SIDECAR_BIN" ]]; then
+  echo "xiaoman weekly preview requires the release-local sidecar binary" >&2
+  exit 1
+fi
+
+export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"
 
 mkdir -p "$WORK_DIR"
 chmod 0700 "$WORK_DIR"

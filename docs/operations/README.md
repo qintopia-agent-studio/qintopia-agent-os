@@ -38,6 +38,10 @@ deployment docs.
 - [erhua-morning-brief-production-activation-runbook.md](erhua-morning-brief-production-activation-runbook.md):
   release-managed Erhua morning brief timer activation, observation, and rollback for
   the reviewed 08:05 text artifact workflow.
+- Xiaoman activity read-through production config is applied through the release-local
+  `deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py`
+  allowlist copier before release-managed Erhua or weekly-preview workers are manually
+  exercised in production.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):
   M10-F profile template and future `SOUL.md` / `config.yaml` symlink boundary.
 - [archive-readiness/m11-legacy-path-readiness.md](archive-readiness/m11-legacy-path-readiness.md):
