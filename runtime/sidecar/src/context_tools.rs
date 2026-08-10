@@ -2002,6 +2002,45 @@ async fn qintopia_wenyuange_lookup(
             }
         }));
     }
+    if intent.requires_public_source_check {
+        return Ok(json!({
+            "success": true,
+            "tool": WENYUANGE_LOOKUP_TOOL,
+            "query": query,
+            "purpose": purpose,
+            "audience": clean_text(&request.audience, 80),
+            "can_answer": false,
+            "answer_basis": {
+                "kind": "public_source_check_required",
+                "summary": "这个问题依赖当前公开信息、当期排期和可核验口碑；不能只用群聊记忆、人格口癖或泛化印象给出“最好”“公认”这类结论。",
+                "evidence_snippets": []
+            },
+            "sources": [],
+            "scope_used": [],
+            "confidence": "low",
+            "risk_flags": ["public_source_check_required"],
+            "safe_reply_guidance": {
+                "frontline_agent": "先说明需要按公开来源核验；可给出查找顺序：官方场地账号/公众号或小红书、票务平台排期、地图/点评和本地乐迷评论。没有已核验来源时，不要说“公认最棒”“错不了”，也不要装作自己听过。",
+                "external_customer": "可以给查找路径和待核验候选；已核验前不要承诺“最好”、营业/演出可用性、价格或实时排期。"
+            },
+            "not_accessed": ["current public web sources", "venue official accounts", "ticketing schedules", "map/review platforms", "QiWe group messages as authority"],
+            "retrieval_trace": [{
+                "search_method": "intent_router",
+                "success": true,
+                "skipped": true,
+                "detail": {
+                    "reason": "current local recommendation requires public-source verification outside the static context store"
+                }
+            }],
+            "intent": {
+                "kind": intent.kind,
+                "requires_authoritative_source": intent.requires_authoritative_source,
+                "requires_live_operations": intent.requires_live_operations,
+                "requires_public_source_check": intent.requires_public_source_check,
+                "required_terms": intent.required_terms
+            }
+        }));
+    }
     if intent.requires_authoritative_source {
         let knowledge = knowledge::search_knowledge(
             pool,
@@ -2087,45 +2126,6 @@ async fn qintopia_wenyuange_lookup(
             },
             "not_accessed": ["QiWe group messages as authority", "raw Dify chunks", "member profiles", "graph projections"],
             "retrieval_trace": [knowledge.trace],
-            "intent": {
-                "kind": intent.kind,
-                "requires_authoritative_source": intent.requires_authoritative_source,
-                "requires_live_operations": intent.requires_live_operations,
-                "requires_public_source_check": intent.requires_public_source_check,
-                "required_terms": intent.required_terms
-            }
-        }));
-    }
-    if intent.requires_public_source_check {
-        return Ok(json!({
-            "success": true,
-            "tool": WENYUANGE_LOOKUP_TOOL,
-            "query": query,
-            "purpose": purpose,
-            "audience": clean_text(&request.audience, 80),
-            "can_answer": false,
-            "answer_basis": {
-                "kind": "public_source_check_required",
-                "summary": "这个问题依赖当前公开信息、当期排期和可核验口碑；不能只用群聊记忆、人格口癖或泛化印象给出“最好”“公认”这类结论。",
-                "evidence_snippets": []
-            },
-            "sources": [],
-            "scope_used": [],
-            "confidence": "low",
-            "risk_flags": ["public_source_check_required"],
-            "safe_reply_guidance": {
-                "frontline_agent": "先说明需要按公开来源核验；可给出查找顺序：官方场地账号/公众号或小红书、票务平台排期、地图/点评和本地乐迷评论。没有已核验来源时，不要说“公认最棒”“错不了”，也不要装作自己听过。",
-                "external_customer": "可以给查找路径和待核验候选；已核验前不要承诺“最好”、营业/演出可用性、价格或实时排期。"
-            },
-            "not_accessed": ["current public web sources", "venue official accounts", "ticketing schedules", "map/review platforms", "QiWe group messages as authority"],
-            "retrieval_trace": [{
-                "search_method": "intent_router",
-                "success": true,
-                "skipped": true,
-                "detail": {
-                    "reason": "current local recommendation requires public-source verification outside the static context store"
-                }
-            }],
             "intent": {
                 "kind": intent.kind,
                 "requires_authoritative_source": intent.requires_authoritative_source,
@@ -2282,16 +2282,15 @@ fn classify_lookup_intent(query: &str, purpose: &str) -> LookupIntent {
         .iter()
         .any(|marker| text.contains(&marker.to_lowercase()))
         && !asks_discussion;
-    let requires_public_source_check =
-        public_source_recommendation_markers_match(&text) && !asks_discussion;
+    let requires_public_source_check = public_source_recommendation_markers_match(&text);
     let required_terms = required_authoritative_terms(&text);
     LookupIntent {
         kind: if requires_live_operations {
             "live_operations_status"
-        } else if requires_authoritative_source {
-            "authoritative_public_fact"
         } else if requires_public_source_check {
             "public_source_recommendation"
+        } else if requires_authoritative_source {
+            "authoritative_public_fact"
         } else if asks_discussion {
             "message_discussion_history"
         } else {
@@ -2310,10 +2309,11 @@ fn public_source_recommendation_markers_match(text: &str) -> bool {
         "最棒",
         "推荐",
         "值得",
+        "哪家",
         "哪家好",
+        "哪场",
         "哪场好",
         "哪一个好",
-        "哪",
         "哪里好",
         "去哪",
         "去哪里",
@@ -2322,41 +2322,30 @@ fn public_source_recommendation_markers_match(text: &str) -> bool {
         "recommend",
     ];
     let local_or_current_markers = [
-        "西安",
-        "北京",
-        "上海",
-        "深圳",
-        "广州",
-        "成都",
-        "杭州",
-        "南京",
-        "重庆",
-        "附近",
-        "本地",
-        "今天",
-        "今晚",
-        "明天",
-        "周末",
-        "这周",
-        "本周",
-        "最近",
+        "西安", "北京", "上海", "深圳", "广州", "成都", "杭州", "南京", "重庆", "附近", "本地",
+        "今天", "今晚", "明天", "周末", "这周", "本周", "最近",
+    ];
+    let activity_markers = [
         "演出",
         "展览",
         "live",
         "livehouse",
         "爵士",
-        "咖啡",
-        "餐厅",
-        "酒吧",
         "活动",
-        "票",
+        "餐厅",
+        "咖啡",
+        "酒吧",
     ];
-    recommendation_markers
+    let has_recommendation = recommendation_markers
         .iter()
-        .any(|marker| text.contains(&marker.to_lowercase()))
-        && local_or_current_markers
-            .iter()
-            .any(|marker| text.contains(&marker.to_lowercase()))
+        .any(|marker| text.contains(&marker.to_lowercase()));
+    let has_local_or_current = local_or_current_markers
+        .iter()
+        .any(|marker| text.contains(&marker.to_lowercase()));
+    let has_activity_domain = activity_markers
+        .iter()
+        .any(|marker| text.contains(&marker.to_lowercase()));
+    has_recommendation && (has_local_or_current || has_activity_domain)
 }
 
 fn required_authoritative_terms(text: &str) -> Vec<&'static str> {
@@ -2819,10 +2808,10 @@ fn classify_answer_route(message_text: &str) -> AnswerRouteKind {
     let lookup = classify_lookup_intent(message_text, "erhua answer context route");
     if lookup.requires_live_operations {
         AnswerRouteKind::LiveOperations
-    } else if lookup.requires_authoritative_source {
-        AnswerRouteKind::AuthoritativePublicFact
     } else if lookup.requires_public_source_check {
         AnswerRouteKind::PublicSourceRecommendation
+    } else if lookup.requires_authoritative_source {
+        AnswerRouteKind::AuthoritativePublicFact
     } else if lookup.kind == "message_discussion_history" {
         AnswerRouteKind::DiscussionHistory
     } else {
@@ -3906,6 +3895,10 @@ mod tests {
             classify_answer_route("@二花 西安最好的爵士乐演出是哪"),
             AnswerRouteKind::PublicSourceRecommendation
         );
+        assert_eq!(
+            classify_answer_route("西安最好的爵士演出开放时间"),
+            AnswerRouteKind::PublicSourceRecommendation
+        );
     }
 
     #[test]
@@ -4050,6 +4043,55 @@ mod tests {
         let group_framed_intent = classify_lookup_intent("群里问西安哪场爵士演出好", "reply");
         assert_eq!(group_framed_intent.kind, "public_source_recommendation");
         assert!(group_framed_intent.requires_public_source_check);
+
+        let event_time_intent = classify_lookup_intent("西安最好的爵士演出开放时间", "reply");
+        assert_eq!(event_time_intent.kind, "public_source_recommendation");
+        assert!(event_time_intent.requires_public_source_check);
+        assert!(event_time_intent.requires_authoritative_source);
+
+        let event_ticket_price_intent =
+            classify_lookup_intent("西安最好的爵士演出门票多少钱", "reply");
+        assert_eq!(
+            event_ticket_price_intent.kind,
+            "public_source_recommendation"
+        );
+        assert!(event_ticket_price_intent.requires_public_source_check);
+
+        let province_fact_intent = classify_lookup_intent("西安在哪个省", "reply");
+        assert_eq!(province_fact_intent.kind, "general_context");
+        assert!(!province_fact_intent.requires_public_source_check);
+
+        let ticket_purchase_intent = classify_lookup_intent("西安咖啡节门票在哪买", "reply");
+        assert_eq!(ticket_purchase_intent.kind, "general_context");
+        assert!(!ticket_purchase_intent.requires_public_source_check);
+
+        let invoice_intent = classify_lookup_intent("推荐哪个发票抬头", "reply");
+        assert_eq!(invoice_intent.kind, "general_context");
+        assert!(!invoice_intent.requires_public_source_check);
+
+        let nearby_cafe_intent = classify_lookup_intent("附近咖啡推荐", "reply");
+        assert_eq!(nearby_cafe_intent.kind, "public_source_recommendation");
+        assert!(nearby_cafe_intent.requires_public_source_check);
+
+        let cafe_quality_intent = classify_lookup_intent("哪家咖啡好", "reply");
+        assert_eq!(cafe_quality_intent.kind, "public_source_recommendation");
+        assert!(cafe_quality_intent.requires_public_source_check);
+
+        let restaurant_intent = classify_lookup_intent("餐厅推荐", "reply");
+        assert_eq!(restaurant_intent.kind, "public_source_recommendation");
+        assert!(restaurant_intent.requires_public_source_check);
+
+        let bar_intent = classify_lookup_intent("酒吧推荐", "reply");
+        assert_eq!(bar_intent.kind, "public_source_recommendation");
+        assert!(bar_intent.requires_public_source_check);
+
+        let discussed_recommendation_intent =
+            classify_lookup_intent("有人问西安最好的爵士乐演出是哪", "reply");
+        assert_eq!(
+            discussed_recommendation_intent.kind,
+            "public_source_recommendation"
+        );
+        assert!(discussed_recommendation_intent.requires_public_source_check);
     }
 
     #[test]

@@ -9,7 +9,7 @@ fi
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 PYTHON_BIN="/usr/bin/python3"
 CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"
-EXPECTED_PREVIOUS_SHA256="f91d56d58a17feba3498929919b71b4f3e4222899d571dcf5f1b3505eacc9969"
+EXPECTED_PREVIOUS_SHA256="2a1619eeabc82bc71e0364eff829877b1fe51be06da13e287b7753f34687eed6"
 
 fail() {
   echo "Xiaoman legacy cron retirement failed: $1" >&2
