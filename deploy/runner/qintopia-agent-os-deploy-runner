@@ -95,6 +95,7 @@ allowed_scope = {
     "production-activation",
     "production-observation",
     "production-legacy-cron-retirement",
+    "production-runtime-one-shot",
 }
 allowed_runtime_artifact_profiles = {"huabaosi-production", "qiwe-production"}
 allowed_activation_targets = {
@@ -111,6 +112,10 @@ allowed_legacy_cron_retirement_targets = {
 allowed_observation_targets = {
     "qiwe-image-send",
     "xiaoman-daily-case-report-auto-publish",
+}
+allowed_runtime_one_shot_targets = {
+    "erhua-morning-brief",
+    "xiaoman-daily-case-report-auto-publish-backfill",
 }
 allowed_targets = {
     "qintopia-system-services",
@@ -269,6 +274,42 @@ if "production-legacy-cron-retirement" in release_scope:
 elif data.get("legacy_cron_retirement") is not None:
     fail("legacy_cron_retirement metadata is only allowed for production-legacy-cron-retirement")
 
+if "production-runtime-one-shot" in release_scope:
+    if release_scope != ["production-runtime-one-shot"]:
+        fail("production-runtime-one-shot must be the only release scope")
+    if restart_targets != ["qintopia-system-services"]:
+        fail("production-runtime-one-shot requires exactly qintopia-system-services")
+    if data.get("rollback_on_smoke_failure") is not False:
+        fail("production-runtime-one-shot requires rollback_on_smoke_failure=false")
+    if data.get("dry_run") is not False:
+        fail("production-runtime-one-shot does not support dry_run")
+    runtime_one_shot = data.get("runtime_one_shot")
+    if not isinstance(runtime_one_shot, dict):
+        fail("production-runtime-one-shot requires runtime_one_shot metadata")
+    targets = runtime_one_shot.get("targets")
+    if not isinstance(targets, list) or len(targets) != 1:
+        fail("runtime_one_shot.targets must contain exactly one fixed target")
+    if set(targets) - allowed_runtime_one_shot_targets or len(set(targets)) != len(targets):
+        fail("runtime_one_shot.targets contains unsupported or duplicate entries")
+    approval = runtime_one_shot.get("approval")
+    target = targets[0]
+    expected_approvals = {
+        "erhua-morning-brief": "approved-production-erhua-morning-brief-one-shot",
+        "xiaoman-daily-case-report-auto-publish-backfill": "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+    }
+    if approval != expected_approvals[target]:
+        fail("runtime_one_shot.approval does not match the fixed target approval")
+    backfill_date = runtime_one_shot.get("backfill_date")
+    if target == "xiaoman-daily-case-report-auto-publish-backfill":
+        if not isinstance(backfill_date, str) or not re.fullmatch(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", backfill_date):
+            fail("runtime_one_shot.backfill_date is required for Xiaoman daily report backfill")
+    elif backfill_date is not None:
+        fail("runtime_one_shot.backfill_date is only allowed for Xiaoman daily report backfill")
+    if data.get("profile_dry_run_request_id") is not None:
+        fail("production-runtime-one-shot must not set profile_dry_run_request_id")
+elif data.get("runtime_one_shot") is not None:
+    fail("runtime_one_shot metadata is only allowed for production-runtime-one-shot")
+
 for key in ("rollback_on_smoke_failure", "dry_run"):
     if not isinstance(data.get(key), bool):
         fail(f"{key} must be boolean")
@@ -345,6 +386,9 @@ profile_dry_run_request_id="$(json_get profile_dry_run_request_id)"
 activation_targets="$(json_get activation.targets)"
 observation_targets="$(json_get observation.targets)"
 legacy_cron_retirement_targets="$(json_get legacy_cron_retirement.targets)"
+runtime_one_shot_targets="$(json_get runtime_one_shot.targets)"
+runtime_one_shot_backfill_date="$(json_get runtime_one_shot.backfill_date)"
+runtime_one_shot_approval="$(json_get runtime_one_shot.approval)"
 if [[ "$force_dry_run" == true ]]; then
   dry_run=true
 fi
@@ -380,7 +424,8 @@ write_result() {
     "$promoted_current" "$profile_activation_attempted" \
     "${RESULT_DIR}/${request_id}.activation.json" \
     "${RESULT_DIR}/${request_id}.observation.json" \
-    "${RESULT_DIR}/${request_id}.legacy-cron-retirement.json" <<'PY'
+    "${RESULT_DIR}/${request_id}.legacy-cron-retirement.json" \
+    "${RESULT_DIR}/${request_id}.runtime-one-shot.json" <<'PY'
 import json
 import os
 import sys
@@ -414,7 +459,8 @@ import sys
     activation_evidence_path,
     observation_evidence_path,
     legacy_cron_retirement_evidence_path,
-) = sys.argv[1:29]
+    runtime_one_shot_evidence_path,
+) = sys.argv[1:30]
 
 runner_check = {
     "name": "deploy-runner",
@@ -500,6 +546,14 @@ if os.path.isfile(legacy_cron_retirement_evidence_path):
         "status": "passed" if status == "succeeded" else "failed",
         "detail": json.dumps(legacy_cron_retirement_evidence, separators=(",", ":")),
     })
+if os.path.isfile(runtime_one_shot_evidence_path):
+    with open(runtime_one_shot_evidence_path, encoding="utf-8") as fh:
+        runtime_one_shot_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "production-runtime-one-shot",
+        "status": "passed" if status == "succeeded" else "failed",
+        "detail": json.dumps(runtime_one_shot_evidence, separators=(",", ":")),
+    })
 if rollback_target:
     result["rollback"]["target"] = rollback_target
 if error:
@@ -552,6 +606,8 @@ observation_release_dir=""
 observation_evidence_file="${RESULT_DIR}/${request_id}.observation.json"
 legacy_cron_retirement_release_dir=""
 legacy_cron_retirement_evidence_file="${RESULT_DIR}/${request_id}.legacy-cron-retirement.json"
+runtime_one_shot_release_dir=""
+runtime_one_shot_evidence_file="${RESULT_DIR}/${request_id}.runtime-one-shot.json"
 validate_current_activation_release() {
   local current_release=""
   current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
@@ -630,11 +686,66 @@ PY
   legacy_cron_retirement_release_dir="$current_release"
 }
 
+validate_current_runtime_one_shot_release() {
+  local current_release=""
+  current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -z "$current_release" || ! -d "$current_release" ]]; then
+    echo "current release is unavailable for production runtime one-shot" >&2
+    return 1
+  fi
+  python3 - "$request_file" "${current_release}/manifest.json" "$current_release" <<'PY'
+import json
+import os
+import sys
+
+request_path, manifest_path, current_release = sys.argv[1:4]
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if os.path.basename(current_release) != request["release_sha"]:
+    raise SystemExit("production runtime one-shot request must target the current release SHA")
+for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
+    if manifest.get(key) != request.get(key):
+        raise SystemExit(f"current release manifest {key} mismatch")
+PY
+  runtime_one_shot_release_dir="$current_release"
+}
+
 write_legacy_cron_retirement_evidence() {
   local target="$1"
   local status="$2"
   local detail="${3:-}"
   python3 - "$legacy_cron_retirement_evidence_file" "$target" "$status" "$detail" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+path, target, status, detail = sys.argv[1:5]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+if os.path.isfile(path):
+    with open(path, encoding="utf-8") as fh:
+        evidence = json.load(fh)
+else:
+    evidence = {"schema_version": 1, "targets": []}
+evidence["targets"].append({
+    "target": target,
+    "status": status,
+    "detail": detail,
+    "recorded_at": now,
+})
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(evidence, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
+
+write_runtime_one_shot_evidence() {
+  local target="$1"
+  local status="$2"
+  local detail="${3:-}"
+  python3 - "$runtime_one_shot_evidence_file" "$target" "$status" "$detail" <<'PY'
 import json
 import os
 import sys
@@ -737,6 +848,27 @@ if path.is_file():
         detail = f"{detail}: {tail[:1200]}"
 print(detail)
 PY
+}
+
+runtime_one_shot_failure_detail() {
+  local status="$1"
+  printf 'exit %s' "$status"
+}
+
+runtime_one_shot_success_detail() {
+  local target="$1"
+  case "$target" in
+    erhua-morning-brief)
+      printf 'erhua_morning_brief_one_shot=completed'
+      ;;
+    xiaoman-daily-case-report-auto-publish-backfill)
+      printf 'xiaoman_daily_case_report_backfill_date=%s; xiaoman_daily_case_report_backfill=completed' \
+        "$runtime_one_shot_backfill_date"
+      ;;
+    *)
+      printf 'runtime_one_shot=completed'
+      ;;
+  esac
 }
 
 observation_success_detail() {
@@ -900,6 +1032,48 @@ run_activation_target() {
   esac
 }
 
+observe_enabled_erhua_morning_brief_timer_for_one_shot() {
+  local script_dir="${runtime_one_shot_release_dir}/deploy/sidecar/scripts"
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+    QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 \
+    QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=enabled \
+    "${script_dir}/erhua-morning-brief-timer-observation-smoke.sh" >/dev/null
+}
+
+observe_enabled_xiaoman_daily_case_report_timer_for_one_shot() {
+  local script_dir="${runtime_one_shot_release_dir}/deploy/sidecar/scripts"
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_OBSERVATION_ENABLE=1 \
+    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=enabled \
+    "${script_dir}/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh" >/dev/null
+}
+
+run_runtime_one_shot_target() {
+  local target="$1"
+  local script_dir="${runtime_one_shot_release_dir}/deploy/sidecar/scripts"
+  case "$target" in
+    erhua-morning-brief)
+      observe_enabled_erhua_morning_brief_timer_for_one_shot || return $?
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_ERHUA_MORNING_BRIEF_ONE_SHOT=approved-production-erhua-morning-brief-one-shot \
+        QINTOPIA_ERHUA_MORNING_BRIEF_ONE_SHOT_RELEASE_SHA="$release_sha" \
+        "${script_dir}/erhua-morning-brief-one-shot-production.sh" >/dev/null || return $?
+      ;;
+    xiaoman-daily-case-report-auto-publish-backfill)
+      observe_enabled_xiaoman_daily_case_report_timer_for_one_shot || return $?
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_BACKFILL=approved-production-xiaoman-daily-case-report-auto-publish-backfill \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA="$release_sha" \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE="$runtime_one_shot_backfill_date" \
+        "${script_dir}/xiaoman-daily-case-report-auto-publish-backfill.sh" >/dev/null || return $?
+      ;;
+    *)
+      echo "unsupported production runtime one-shot target: ${target}" >&2
+      return 2
+      ;;
+  esac
+}
+
 run_qiwe_image_send_observation() {
   local script_dir="${observation_release_dir}/deploy/sidecar/scripts"
   env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
@@ -1026,7 +1200,37 @@ run_production_legacy_cron_retirement() {
   write_result succeeded
 }
 
+run_production_runtime_one_shot() {
+  deploy_stage="validate-current-runtime-one-shot-release"
+  validate_current_runtime_one_shot_release || return $?
+  rm -f "$runtime_one_shot_evidence_file"
+  local runtime_one_shot_log_dir
+  runtime_one_shot_log_dir="$(mktemp -d)"
+  IFS=',' read -r -a runtime_one_shot_target_list <<< "$runtime_one_shot_targets"
+  local target
+  for target in "${runtime_one_shot_target_list[@]}"; do
+    deploy_stage="runtime-one-shot-${target}"
+    local target_log="${runtime_one_shot_log_dir}/${target}.log"
+    if run_runtime_one_shot_target "$target" >"$target_log" 2>&1; then
+      write_runtime_one_shot_evidence "$target" passed "$(runtime_one_shot_success_detail "$target")"
+    else
+      local status=$?
+      write_runtime_one_shot_evidence "$target" failed "$(runtime_one_shot_failure_detail "$status")"
+      rm -rf "$runtime_one_shot_log_dir"
+      return "$status"
+    fi
+  done
+  rm -rf "$runtime_one_shot_log_dir"
+  deploy_stage="write-runtime-one-shot-success-result"
+  write_result succeeded
+}
+
 run_promotion() {
+  if [[ "$release_scope" == "production-runtime-one-shot" ]]; then
+    run_production_runtime_one_shot
+    return
+  fi
+
   if [[ "$release_scope" == "production-legacy-cron-retirement" ]]; then
     run_production_legacy_cron_retirement
     return

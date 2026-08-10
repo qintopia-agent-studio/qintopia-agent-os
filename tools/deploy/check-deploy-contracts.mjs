@@ -317,6 +317,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+    "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh",
@@ -3328,6 +3329,7 @@ const deployBundleBuilderForDailyReport = readText(
 for (const fragment of [
   xiaomanDailyCaseReportConfigApplyPath,
   xiaomanDailyCaseReportWorkerPath,
+  xiaomanDailyCaseReportBackfillPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
   xiaomanDailyCaseReportRollbackPath,
@@ -3950,6 +3952,7 @@ const erhuaMorningBriefScripts = [
   "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
   "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
   "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh",
+  "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
@@ -4045,6 +4048,54 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     forbidFragment(
       "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
       worker,
+      fragment
+    );
+  }
+}
+if (exists("deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh")) {
+  const oneShot = readText(
+    "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh"
+  );
+  for (const fragment of [
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ONE_SHOT",
+    "approved-production-erhua-morning-brief-one-shot",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_ONE_SHOT_RELEASE_SHA",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    "qintopia-agentos-erhua-morning-brief.service",
+    "qintopia-agentos-erhua-morning-brief.timer",
+    'require_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"',
+    'require_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED" "1"',
+    'require_env_line "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL" "approved-production-erhua-morning-brief-auto-publish"',
+    'require_env_line "QINTOPIA_QIWE_TEXT_SEND_ENABLED" "1"',
+    'require_env_line "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-text-send"',
+    'require_env_line "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+    '"$SYSTEMCTL" is-enabled "$TIMER_NAME"',
+    '"$SYSTEMCTL" is-active "$TIMER_NAME"',
+    '"$SYSTEMCTL" start "$SERVICE_NAME"',
+  ]) {
+    requireFragment(
+      "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
+      oneShot,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "operations-group-message-confirm",
+    "run-group-message-send-worker",
+    "run-qiwe-text-send-worker",
+    "source ",
+    "eval ",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+  ]) {
+    forbidFragment(
+      "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
+      oneShot,
       fragment
     );
   }

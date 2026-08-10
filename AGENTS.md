@@ -335,6 +335,19 @@
   Observation is read-only: it may run only fixed release-local observation scripts,
   must not enable or disable timers, write persistent config, retire legacy cron files,
   call QiWe/Feishu/Postgres mutation commands, or run activation/rollback scripts.
+- Production immediate worker/backfill runs should use the
+  `Run Production Runtime One-Shot` GitHub workflow after the reviewed release
+  containing the runner support is deployed and the corresponding release-managed timer
+  is already enabled. It creates a signed `production-runtime-one-shot` deploy-runner
+  request and accepts exactly one fixed target per request: `erhua-morning-brief` with
+  `approved-production-erhua-morning-brief-one-shot`, or
+  `xiaoman-daily-case-report-auto-publish-backfill` with
+  `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`
+  backfill date. This path may create real production publish/send side effects through
+  the reviewed worker boundaries, but it must not write persistent config,
+  enable/disable timers, retire cron files, accept multiple targets, or record raw
+  worker output, group ids, database URLs, tokens, Feishu payloads, QiWe payloads,
+  message content, or journal logs.
 - Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
   cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
   configured and activated with:

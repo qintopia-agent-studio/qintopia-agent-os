@@ -30,6 +30,9 @@ deployment docs.
 - [production-legacy-cron-retirement-runbook.md](production-legacy-cron-retirement-runbook.md):
   signed production legacy Hermes cron retirement requests before release-managed timer
   activation retries.
+- [production-runtime-one-shot-runbook.md](production-runtime-one-shot-runbook.md):
+  signed, owner-approved immediate production worker/backfill requests for fixed targets
+  after the corresponding release-managed timer is already enabled.
 - [xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md):
   owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,
   and final completion-manifest sequence. The same runbook also includes the reviewed
