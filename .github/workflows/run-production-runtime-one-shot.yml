@@ -1,0 +1,240 @@
+name: Run Production Runtime One-Shot
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Current production release SHA to bind the one-shot to.
+        required: true
+        type: string
+      runtime_one_shot_target:
+        description: Fixed one-shot target to run.
+        required: true
+        default: xiaoman-daily-case-report-auto-publish-backfill
+        type: choice
+        options:
+          - xiaoman-daily-case-report-auto-publish-backfill
+          - erhua-morning-brief
+      backfill_date:
+        description: YYYY-MM-DD, required only for Xiaoman daily report backfill.
+        required: false
+        type: string
+      approval:
+        description: Target-specific owner approval phrase.
+        required: true
+        type: string
+      notes:
+        description: Operator notes for the production one-shot request.
+        required: false
+        type: string
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.29.2"
+  TENCENT_COS_BUCKET:
+    ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
+  TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
+  TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
+  WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
+
+jobs:
+  request-runtime-one-shot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve runtime one-shot inputs
+        id: resolve
+        shell: bash
+        env:
+          INPUT_RELEASE_SHA: ${{ github.event.inputs.release_sha || '' }}
+          INPUT_RUNTIME_ONE_SHOT_TARGET:
+            ${{ github.event.inputs.runtime_one_shot_target || '' }}
+          INPUT_BACKFILL_DATE: ${{ github.event.inputs.backfill_date || '' }}
+          INPUT_APPROVAL: ${{ github.event.inputs.approval || '' }}
+          INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
+        run: |
+          set -euo pipefail
+
+          require_single_line() {
+            local name="$1"
+            local value="$2"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "${name} must be a single-line value." >&2
+              exit 2
+            fi
+          }
+
+          require_allowed_value() {
+            local name="$1"
+            local value="$2"
+            local allowed_csv="$3"
+            local -a allowed
+            local candidate
+            require_single_line "$name" "$value"
+            IFS=',' read -r -a allowed <<< "$allowed_csv"
+            for candidate in "${allowed[@]}"; do
+              if [[ "$value" == "$candidate" ]]; then
+                printf '%s' "$value"
+                return
+              fi
+            done
+            echo "${name} contains unsupported entry: ${value}" >&2
+            exit 2
+          }
+
+          release_sha="$INPUT_RELEASE_SHA"
+          require_single_line release_sha "$release_sha"
+          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release_sha must be a lowercase 40-character git SHA." >&2
+            exit 2
+          fi
+          git fetch --no-tags origin master
+          git cat-file -e "${release_sha}^{commit}"
+          git merge-base --is-ancestor "$release_sha" origin/master
+
+          runtime_one_shot_target="$(require_allowed_value \
+            runtime_one_shot_target \
+            "$INPUT_RUNTIME_ONE_SHOT_TARGET" \
+            "xiaoman-daily-case-report-auto-publish-backfill,erhua-morning-brief")"
+
+          require_single_line backfill_date "$INPUT_BACKFILL_DATE"
+          require_single_line approval "$INPUT_APPROVAL"
+
+          case "$runtime_one_shot_target" in
+            xiaoman-daily-case-report-auto-publish-backfill)
+              if [[ ! "$INPUT_BACKFILL_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                echo "backfill_date must be YYYY-MM-DD for Xiaoman daily report backfill." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-xiaoman-daily-case-report-auto-publish-backfill" ]]; then
+                echo "approval does not match Xiaoman daily report backfill." >&2
+                exit 2
+              fi
+              ;;
+            erhua-morning-brief)
+              if [[ -n "$INPUT_BACKFILL_DATE" ]]; then
+                echo "backfill_date must be empty for Erhua morning brief one-shot." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-erhua-morning-brief-one-shot" ]]; then
+                echo "approval does not match Erhua morning brief one-shot." >&2
+                exit 2
+              fi
+              ;;
+          esac
+
+          notes_delimiter="runtime_one_shot_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "release-sha=${release_sha}"
+            echo "runtime-one-shot-target=${runtime_one_shot_target}"
+            echo "backfill-date=${INPUT_BACKFILL_DATE}"
+            echo "approval=${INPUT_APPROVAL}"
+            echo "notes<<${notes_delimiter}"
+            echo "$INPUT_NOTES"
+            echo "${notes_delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate deploy runner contracts
+        run: pnpm deploy:runner:check
+
+      - name: Validate Tencent COS upload configuration
+        shell: bash
+        env:
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TENCENT_COS_SECRET_ID" || -z "$TENCENT_COS_SECRET_KEY" || -z "$DEPLOY_REQUEST_SIGNING_KEY" ]]; then
+            echo "TENCENT_COS_SECRET_ID, TENCENT_COS_SECRET_KEY, and DEPLOY_REQUEST_SIGNING_KEY are required in the production environment." >&2
+            exit 2
+          fi
+
+      - name: Create runtime one-shot request
+        run:
+          node tools/deploy/create-deploy-request.mjs --output
+          dist/deploy-requests/request.json
+        env:
+          DEPLOY_COMMIT_SHA: ${{ steps.resolve.outputs.release-sha }}
+          DEPLOY_RUNTIME_SHA: ${{ steps.resolve.outputs.release-sha }}
+          DEPLOY_RUNTIME_ARTIFACT_PROFILE: huabaosi-production
+          DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.release-sha }}
+          DEPLOY_RELEASE_SHA: ${{ steps.resolve.outputs.release-sha }}
+          DEPLOY_RELEASE_SCOPE: production-runtime-one-shot
+          DEPLOY_RESTART_TARGETS: qintopia-system-services
+          DEPLOY_DRY_RUN: "false"
+          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"
+          DEPLOY_RUNTIME_ONE_SHOT_TARGETS:
+            ${{ steps.resolve.outputs.runtime-one-shot-target }}
+          DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE:
+            ${{ steps.resolve.outputs.backfill-date }}
+          DEPLOY_RUNTIME_ONE_SHOT_APPROVAL: ${{ steps.resolve.outputs.approval }}
+          DEPLOY_NOTES: ${{ steps.resolve.outputs.notes }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
+
+      - name: Upload runtime one-shot request to Tencent COS
+        run:
+          deploy/runner/upload-deploy-request.sh --request-file
+          dist/deploy-requests/request.json
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+
+      - name: Wait for server runtime one-shot result
+        if: ${{ env.WAIT_FOR_SERVER_DEPLOY_RESULT == 'true' }}
+        run:
+          deploy/runner/wait-deploy-result.sh --request-file
+          dist/deploy-requests/request.json
+        env:
+          TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
+          TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
+          TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
+          TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
+          TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          DEPLOY_RESULT_TIMEOUT_SECONDS:
+            ${{ vars.DEPLOY_RESULT_TIMEOUT_SECONDS || '900' }}
+          DEPLOY_RESULT_POLL_SECONDS: ${{ vars.DEPLOY_RESULT_POLL_SECONDS || '15' }}
+
+      - name: Upload runtime one-shot request audit artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qintopia-agent-os-runtime-one-shot-request
+          path: dist/deploy-requests/request.json
+          retention-days: 30
+          if-no-files-found: error

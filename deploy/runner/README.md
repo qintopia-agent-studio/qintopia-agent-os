@@ -114,6 +114,12 @@ Important fields:
 - `release_scope`: one or more of `sidecar-runtime`, `deploy-bundle`, and
   `hermes-plugins`. The fixed `hermes-profile-erhua` scope is exclusive and requires
   exactly the `hermes-erhua` restart target.
+- `production-runtime-one-shot`: exclusive scope for owner-approved immediate production
+  runs after the matching timer is already enabled. It accepts exactly one fixed target,
+  either `erhua-morning-brief` or `xiaoman-daily-case-report-auto-publish-backfill`,
+  requires target-specific approval metadata, records sanitized evidence only, and does
+  not promote releases, retire cron files, write persistent config, or enable/disable
+  timers.
 - `restart_targets`: fixed restart groups. The runner must not accept arbitrary service
   names.
 - `dry_run`: validate and assemble without switching `current` or restarting services.

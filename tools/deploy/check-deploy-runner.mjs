@@ -52,6 +52,7 @@ const requiredFiles = [
   ".github/workflows/activate-production-timers.yml",
   ".github/workflows/observe-production-runtime.yml",
   ".github/workflows/retire-production-legacy-crons.yml",
+  ".github/workflows/run-production-runtime-one-shot.yml",
   "deploy/runner/README.md",
   "deploy/runner/manifest.yaml",
   "deploy/runner/deploy-request.schema.json",
@@ -87,6 +88,7 @@ const requiredFiles = [
   "tools/deploy/test-production-timer-activation-runner.mjs",
   "tools/deploy/test-production-observation-runner.mjs",
   "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
+  "tools/deploy/test-production-runtime-one-shot-runner.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
   "tools/deploy/test-promote-release-tree.mjs",
@@ -101,6 +103,7 @@ const requiredFiles = [
   "docs/operations/production-timer-activation-runbook.md",
   "docs/operations/production-runtime-observation-runbook.md",
   "docs/operations/production-legacy-cron-retirement-runbook.md",
+  "docs/operations/production-runtime-one-shot-runbook.md",
 ];
 
 for (const file of requiredFiles) {
@@ -461,6 +464,98 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     if (validateRequest(badRequest)) {
       addError(
         "deploy request schema must reject unsafe production legacy cron retirement variants"
+      );
+      break;
+    }
+  }
+  const productionRuntimeOneShotRequest = {
+    ...sampleRequest,
+    release_scope: ["production-runtime-one-shot"],
+    restart_targets: ["qintopia-system-services"],
+    dry_run: false,
+    rollback_on_smoke_failure: false,
+    runtime_one_shot: {
+      targets: ["xiaoman-daily-case-report-auto-publish-backfill"],
+      backfill_date: "2026-08-10",
+      approval: "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+    },
+  };
+  if (!validateRequest(productionRuntimeOneShotRequest)) {
+    addError(
+      `deploy request schema must accept fixed production runtime one-shot requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
+  const productionErhuaOneShotRequest = {
+    ...productionRuntimeOneShotRequest,
+    runtime_one_shot: {
+      targets: ["erhua-morning-brief"],
+      approval: "approved-production-erhua-morning-brief-one-shot",
+    },
+  };
+  if (!validateRequest(productionErhuaOneShotRequest)) {
+    addError(
+      `deploy request schema must accept fixed Erhua production runtime one-shot requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
+  for (const badRequest of [
+    {
+      ...sampleRequest,
+      runtime_one_shot: {
+        targets: ["erhua-morning-brief"],
+        approval: "approved-production-erhua-morning-brief-one-shot",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      release_scope: ["production-runtime-one-shot", "deploy-bundle"],
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      restart_targets: ["hermes-xiaoman"],
+    },
+    { ...productionRuntimeOneShotRequest, dry_run: true },
+    { ...productionRuntimeOneShotRequest, rollback_on_smoke_failure: true },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: [
+          "erhua-morning-brief",
+          "xiaoman-daily-case-report-auto-publish-backfill",
+        ],
+        backfill_date: "2026-08-10",
+        approval: "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["xiaoman-daily-case-report-auto-publish-backfill"],
+        approval: "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["erhua-morning-brief"],
+        backfill_date: "2026-08-10",
+        approval: "approved-production-erhua-morning-brief-one-shot",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["unknown-target"],
+        approval: "approved-production-erhua-morning-brief-one-shot",
+      },
+    },
+  ]) {
+    if (validateRequest(badRequest)) {
+      addError(
+        "deploy request schema must reject unsafe production runtime one-shot variants"
       );
       break;
     }
@@ -1144,6 +1239,117 @@ if (exists(".github/workflows/retire-production-legacy-crons.yml")) {
   }
 }
 
+if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
+  const workflow = YAML.parse(
+    readText(".github/workflows/run-production-runtime-one-shot.yml")
+  );
+  const workflowText = readText(
+    ".github/workflows/run-production-runtime-one-shot.yml"
+  );
+  const job = workflow?.jobs?.["request-runtime-one-shot"];
+  const targetInput = workflow?.on?.workflow_dispatch?.inputs?.runtime_one_shot_target;
+  const releaseShaInput = workflow?.on?.workflow_dispatch?.inputs?.release_sha;
+  const approvalInput = workflow?.on?.workflow_dispatch?.inputs?.approval;
+
+  if (!workflow?.on?.workflow_dispatch) {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: must use workflow_dispatch"
+    );
+  }
+  if (workflow?.concurrency?.group !== "production-deploy") {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: must share production-deploy concurrency"
+    );
+  }
+  if (job?.environment !== "production") {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: request-runtime-one-shot must use production environment"
+    );
+  }
+  if (job?.permissions?.contents !== "read") {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: request-runtime-one-shot must keep contents permission read-only"
+    );
+  }
+  if (releaseShaInput?.required !== true || releaseShaInput?.type !== "string") {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: release_sha must be a required string input"
+    );
+  }
+  if (approvalInput?.required !== true || approvalInput?.type !== "string") {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: approval must be a required string input"
+    );
+  }
+  if (targetInput?.default !== "xiaoman-daily-case-report-auto-publish-backfill") {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: default target must stay limited to Xiaoman daily report backfill"
+    );
+  }
+  const targetOptions = targetInput?.options || [];
+  for (const expectedTarget of [
+    "xiaoman-daily-case-report-auto-publish-backfill",
+    "erhua-morning-brief",
+  ]) {
+    if (!targetOptions.includes(expectedTarget)) {
+      addError(
+        `.github/workflows/run-production-runtime-one-shot.yml: missing target option ${expectedTarget}`
+      );
+    }
+  }
+  const uploadJobNames = Object.entries(workflow?.jobs || {})
+    .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
+    .map(([jobName]) => jobName);
+  if (uploadJobNames.length !== 0) {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: runtime one-shot must not require contents: write"
+    );
+  }
+  if (hasDangerousInputInterpolationInRun(workflowText)) {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
+    );
+  }
+  for (const forbidden of ["ssh ", "bash -c", "eval ", "gh release upload"]) {
+    if (workflowText.includes(forbidden)) {
+      addError(
+        `.github/workflows/run-production-runtime-one-shot.yml: forbidden ${forbidden}`
+      );
+    }
+  }
+  for (const fragment of [
+    "Run Production Runtime One-Shot",
+    "ref: master",
+    "require_single_line()",
+    "require_allowed_value()",
+    "release_sha must be a lowercase 40-character git SHA.",
+    "git merge-base --is-ancestor",
+    "xiaoman-daily-case-report-auto-publish-backfill,erhua-morning-brief",
+    "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+    "approved-production-erhua-morning-brief-one-shot",
+    "pnpm deploy:runner:check",
+    "DEPLOY_RELEASE_SCOPE: production-runtime-one-shot",
+    "DEPLOY_RESTART_TARGETS: qintopia-system-services",
+    'DEPLOY_DRY_RUN: "false"',
+    'DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"',
+    "DEPLOY_RUNTIME_ONE_SHOT_TARGETS",
+    "DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE",
+    "DEPLOY_RUNTIME_ONE_SHOT_APPROVAL",
+    "DEPLOY_REQUEST_SIGNING_KEY",
+    "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "create-deploy-request.mjs",
+    "upload-deploy-request.sh",
+    "wait-deploy-result.sh",
+    "WAIT_FOR_SERVER_DEPLOY_RESULT",
+  ]) {
+    if (!workflowText.includes(fragment)) {
+      addError(
+        `.github/workflows/run-production-runtime-one-shot.yml: missing ${fragment}`
+      );
+    }
+  }
+}
+
 const runnerText = exists("deploy/runner/qintopia-agent-os-deploy-runner")
   ? readText("deploy/runner/qintopia-agent-os-deploy-runner")
   : "";
@@ -1209,23 +1415,35 @@ for (const fragment of [
   "production-legacy-cron-retirement requires exactly qintopia-system-services",
   "production-legacy-cron-retirement requires rollback_on_smoke_failure=false",
   "legacy_cron_retirement metadata is only allowed for production-legacy-cron-retirement",
+  "production-runtime-one-shot must be the only release scope",
+  "production-runtime-one-shot requires exactly qintopia-system-services",
+  "production-runtime-one-shot requires rollback_on_smoke_failure=false",
+  "runtime_one_shot metadata is only allowed for production-runtime-one-shot",
   "validate_current_activation_release",
   "validate_current_observation_release",
   "validate_current_retirement_release",
+  "validate_current_runtime_one_shot_release",
   "observe_erhua_legacy_cron",
   "observe_xiaoman_legacy_cron",
+  "observe_enabled_erhua_morning_brief_timer_for_one_shot",
+  "observe_enabled_xiaoman_daily_case_report_timer_for_one_shot",
   "run_production_activation",
   "run_production_observation",
   "run_production_legacy_cron_retirement",
+  "run_production_runtime_one_shot",
   "production-timer-activation",
   "production-observation",
   "production-legacy-cron-retirement",
+  "production-runtime-one-shot",
+  "runtime_one_shot.backfill_date",
   "activate-erhua-morning-brief-production.sh",
+  "erhua-morning-brief-one-shot-production.sh",
   "retire-erhua-legacy-cron-production.sh",
   "retire-xiaoman-legacy-cron-production.sh",
   "activate-xiaoman-weekly-recruitment-production.sh",
   "activate-xiaoman-weekly-plan-confirmation-production.sh",
   "activate-xiaoman-weekly-preview-production.sh",
+  "xiaoman-daily-case-report-auto-publish-backfill.sh",
   "activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "qiwe-image-send-production-observation-smoke.sh",
   "xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
@@ -1388,6 +1606,10 @@ for (const fragment of [
   "DEPLOY_REQUEST_SIGNING_KEY_ID",
   "DEPLOY_OBSERVATION_TARGETS",
   "request.observation",
+  "DEPLOY_RUNTIME_ONE_SHOT_TARGETS",
+  "DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE",
+  "DEPLOY_RUNTIME_ONE_SHOT_APPROVAL",
+  "request.runtime_one_shot",
   "requireSha",
   "forbidCosPrefixOverride",
 ]) {
@@ -1699,6 +1921,7 @@ try {
     "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+    "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   ]) {
@@ -1744,6 +1967,9 @@ try {
       cwd: repoRoot,
     }
   );
+  execFileSync("node", ["tools/deploy/test-production-runtime-one-shot-runner.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync("node", ["tools/deploy/test-promote-release-tree.mjs"], {
     cwd: repoRoot,
   });
@@ -1884,6 +2110,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+    "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",

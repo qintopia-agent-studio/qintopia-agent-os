@@ -63,6 +63,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh",
   "deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh",
   "deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh",
+  "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",

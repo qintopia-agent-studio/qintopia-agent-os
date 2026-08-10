@@ -175,6 +175,20 @@ const legacyCronRetirementTargets = splitList(
     process.env.DEPLOY_LEGACY_CRON_RETIREMENT_TARGETS || ""
   )
 );
+const runtimeOneShotTargets = splitList(
+  argValue(
+    "--runtime-one-shot-targets",
+    process.env.DEPLOY_RUNTIME_ONE_SHOT_TARGETS || ""
+  )
+);
+const runtimeOneShotBackfillDate = argValue(
+  "--runtime-one-shot-backfill-date",
+  process.env.DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE || ""
+);
+const runtimeOneShotApproval = argValue(
+  "--runtime-one-shot-approval",
+  process.env.DEPLOY_RUNTIME_ONE_SHOT_APPROVAL || ""
+);
 const signingKey = requireValue(
   "DEPLOY_REQUEST_SIGNING_KEY",
   argValue("--signing-key", process.env.DEPLOY_REQUEST_SIGNING_KEY || "")
@@ -235,6 +249,15 @@ if (observationTargets.length > 0) {
 }
 if (legacyCronRetirementTargets.length > 0) {
   request.legacy_cron_retirement = { targets: legacyCronRetirementTargets };
+}
+if (runtimeOneShotTargets.length > 0) {
+  request.runtime_one_shot = {
+    targets: runtimeOneShotTargets,
+    approval: runtimeOneShotApproval,
+  };
+  if (runtimeOneShotBackfillDate) {
+    request.runtime_one_shot.backfill_date = runtimeOneShotBackfillDate;
+  }
 }
 
 const signatureMetadata = {
