@@ -73,7 +73,8 @@ fi
 
 start_usec="$("$SYSTEMCTL" show --property=ExecMainStartTimestampUSec --value "$service_name")"
 if [[ -z "$start_usec" || "$start_usec" == "0" || "$start_usec" == "n/a" ]]; then
-  fail_evidence "service_never_started"
+  echo "${evidence_key}_worker_run_result=not_started"
+  exit 0
 fi
 if ! [[ "$start_usec" =~ ^[0-9]+$ ]]; then
   fail_evidence "worker_failed"

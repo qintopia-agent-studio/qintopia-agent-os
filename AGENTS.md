@@ -337,8 +337,11 @@
   `xiaoman-weekly-plan-confirmation-worker-run`, and
   `xiaoman-weekly-preview-worker-run`. Worker-run targets prove the paired timer fired
   and the worker exited successfully (weekly targets also validate the worker's
-  `latest-summary.json` draft invariants); `service_never_started` before the first
-  scheduled trigger means the timer has not fired yet, not a regression. Observation is
+  `latest-summary.json` draft invariants). When the paired timer is enabled and active
+  but the worker has not started yet, the observation passes with
+  `<key>_worker_run_result=not_started`; before the first scheduled trigger this means
+  the timer has not fired yet, not a regression, while `not_started` after the scheduled
+  time means the timer did not fire and needs reviewed investigation. Observation is
   read-only: it may run only fixed release-local observation scripts, must not enable or
   disable timers, write persistent config, retire legacy cron files, call
   QiWe/Feishu/Postgres mutation commands, or run activation/rollback scripts.

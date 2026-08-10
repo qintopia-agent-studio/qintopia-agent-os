@@ -68,6 +68,7 @@ const buildRequest = (overrides = {}) => {
         "qiwe-image-send",
         "xiaoman-daily-case-report-auto-publish",
         "erhua-morning-brief-worker-run",
+        "xiaoman-weekly-recruitment-worker-run",
       ],
     },
     cos: {
@@ -224,8 +225,11 @@ case "\${1:-}" in
     echo "erhua_morning_brief_worker_run_epoch=1786320600"
     echo "DATABASE_URL=postgres://secret@example.invalid/qintopia"
     ;;
+  xiaoman-weekly-recruitment-worker-run)
+    echo "xiaoman_weekly_recruitment_worker_run_result=not_started"
+    ;;
   xiaoman-weekly-preview-worker-run)
-    echo "xiaoman_weekly_preview_worker_run_error=service_never_started"
+    echo "xiaoman_weekly_preview_worker_run_error=worker_failed"
     echo "QIWE_TOKEN=secret-token" >&2
     exit 1
     ;;
@@ -325,6 +329,15 @@ exit 99
       `unexpected worker-run observation evidence ${JSON.stringify(passedTargets[2])}`
     );
   }
+  if (
+    passedTargets[3][0] !== "xiaoman-weekly-recruitment-worker-run" ||
+    passedTargets[3][1] !== "passed" ||
+    passedTargets[3][2] !== "xiaoman_weekly_recruitment_worker_run_result=not_started"
+  ) {
+    throw new Error(
+      `unexpected not-started worker-run evidence ${JSON.stringify(passedTargets[3])}`
+    );
+  }
   const serializedDeployResult = JSON.stringify(deployResult);
   for (const forbidden of [
     "postgres://secret@example.invalid/qintopia",
@@ -346,6 +359,7 @@ exit 99
       "daily:enabled",
       "daily:disabled",
       "worker:erhua-morning-brief-worker-run",
+      "worker:xiaoman-weekly-recruitment-worker-run",
     ].join("\n")
   ) {
     throw new Error(`unexpected observation log ${JSON.stringify(actualLog)}`);
@@ -467,7 +481,7 @@ exit 42
   if (
     workerFailedTarget.status !== "failed" ||
     workerFailedTarget.detail !==
-      "exit 1: xiaoman_weekly_preview_worker_run_error=service_never_started"
+      "exit 1: xiaoman_weekly_preview_worker_run_error=worker_failed"
   ) {
     throw new Error(
       `unexpected failed worker-run observation detail ${JSON.stringify(workerFailedTarget)}`
