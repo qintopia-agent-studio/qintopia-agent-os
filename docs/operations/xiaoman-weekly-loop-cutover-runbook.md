@@ -2,10 +2,16 @@
 
 Updated: 2026-08-09
 
-This runbook activates the release-managed Saturday recruitment and Sunday
-plan-confirmation timers for the Xiaoman weekly activity loop. Both timers produce
-operations-review drafts only; they do not send, publish, write Feishu, call Erhua, or
-call QiWe.
+This runbook activates the release-managed Saturday recruitment timer for the Xiaoman
+weekly activity loop. The timer produces an operations-review draft only; it does not
+send, publish, write Feishu, call Erhua, or call QiWe.
+
+Migration note (2026-08-10): the Sunday plan-confirmation timer has moved back to a
+Xiaoman Hermes cron job through
+[`xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`](xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md).
+The steps below now apply to the Saturday recruitment timer only; the plan-confirmation
+sections remain only as historical/rollback reference until task 2 and the systemd
+retirement land.
 
 ## Production Boundary
 
@@ -18,10 +24,10 @@ rollback, direct sending, Feishu writes, Erhua handoff, or QiWe calls.
 
 ## Timers
 
-| Step                 | Unit                                                      | Schedule       |
-| -------------------- | --------------------------------------------------------- | -------------- |
-| Resident recruitment | `qintopia-agentos-xiaoman-weekly-recruitment.timer`       | Saturday 10:00 |
-| Plan confirmation    | `qintopia-agentos-xiaoman-weekly-plan-confirmation.timer` | Sunday 20:00   |
+| Step                 | Unit                                                | Schedule       |
+| -------------------- | --------------------------------------------------- | -------------- |
+| Resident recruitment | `qintopia-agentos-xiaoman-weekly-recruitment.timer` | Saturday 10:00 |
+| Plan confirmation    | Hermes cron (see migration runbook)                 | Sunday 20:00   |
 
 The Monday confirmed preview remains covered by
 `xiaoman-weekly-preview-cutover-runbook.md`.
@@ -40,8 +46,9 @@ QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1
 - A reviewed Release containing `workflows/xiaoman-weekly-loop` and the scripts below is
   published and deployed to production.
 - `release/current` points at the reviewed production release SHA.
-- `deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh` passes. Do not
-  recreate Hermes `cron/jobs.json` timers after cutover.
+- `deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh` passes with only
+  reviewed declarations. Do not hand-edit Hermes `cron/jobs.json`; use the reviewed
+  apply scripts.
 - Live form URLs, Feishu table IDs, chat IDs, and secrets remain in runtime state; do
   not commit or paste them into git.
 
@@ -50,17 +57,16 @@ QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1
 ```bash
 QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-recruitment-config \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-production-config.sh --enable
-
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-plan-confirmation-config \
-  /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-production-config.sh --enable
 ```
+
+Plan confirmation config now follows the Hermes cron runbook, not this section.
 
 ## Activate
 
-Prefer the `Activate Production Timers` GitHub workflow with targets:
+Prefer the `Activate Production Timers` GitHub workflow with the recruitment target:
 
 ```text
-xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview
+xiaoman-weekly-recruitment
 ```
 
 Manual release-local activation, if needed after owner review:
@@ -69,10 +75,6 @@ Manual release-local activation, if needed after owner review:
 QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-recruitment \
 QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/activate-xiaoman-weekly-recruitment-production.sh
-
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-plan-confirmation \
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
-  /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/activate-xiaoman-weekly-plan-confirmation-production.sh
 ```
 
 ## Observe
@@ -82,11 +84,6 @@ QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_OBSERVATION_ENABLE=1 \
 QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_EXPECTED_STATE=enabled \
 QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-weekly-recruitment-production-observation-smoke.sh
-
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_OBSERVATION_ENABLE=1 \
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_EXPECTED_STATE=enabled \
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
-  /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-production-observation-smoke.sh
 ```
 
 The worker output is local operator state:
@@ -108,10 +105,6 @@ QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_CONFIG=approved-production-xiaoma
 
 QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_ROLLBACK=approved-production-xiaoman-weekly-recruitment-rollback \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/rollback-xiaoman-weekly-recruitment-production.sh
-
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-plan-confirmation-config \
-  /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-production-config.sh --disable
-
-QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_ROLLBACK=approved-production-xiaoman-weekly-plan-confirmation-rollback \
-  /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/rollback-xiaoman-weekly-plan-confirmation-production.sh
 ```
+
+Plan confirmation rollback now follows the Hermes cron runbook.
