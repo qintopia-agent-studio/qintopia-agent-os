@@ -74,6 +74,15 @@ for (const field of [
 ]) {
   values[field] = readNonNegativeInteger(coverage, field, errors);
 }
+if (
+  profileStats.currentRoomLinkedPeople !== undefined &&
+  values.linked_people_total !== undefined &&
+  profileStats.currentRoomLinkedPeople !== values.linked_people_total
+) {
+  errors.push(
+    "member profile current-room linked people must match coverage linked_people_total"
+  );
+}
 const coverageMentionCanarySpecs = readCoverageCanarySpecs(
   coverage,
   "answer_context_canary_specs",
@@ -278,10 +287,11 @@ if (errors.length === 0) {
   }
   if (
     values.linked_people_with_active_profile > 0 &&
-    profileStats.valuableMessages <= 0
+    profileStats.valuableMessages <= 0 &&
+    profileStats.baselineProfileTargets <= 0
   ) {
     errors.push(
-      "member profile evidence must include valuable messages when active profiles are claimed"
+      "member profile evidence must include valuable messages or baseline profile targets when active profiles are claimed"
     );
   }
 }
@@ -473,8 +483,11 @@ function buildCompletionSummary({
     profile_repair: {
       dry_run: false,
       requested_message_limit: profileStats.requestedMessageLimit,
+      current_room_linked_people: profileStats.currentRoomLinkedPeople,
+      baseline_profile_targets: profileStats.baselineProfileTargets,
       messages_scanned: profileStats.messagesScanned,
       valuable_messages: profileStats.valuableMessages,
+      baseline_profiles_inserted: profileStats.baselineProfilesInserted,
     },
     running_profile_hints: {
       linked_people_with_running_facts: values.linked_people_with_running_facts,
@@ -568,6 +581,16 @@ function checkProfile(record, errors) {
     "requested_message_limit",
     errors
   );
+  const currentRoomLinkedPeople = readNonNegativeInteger(
+    record,
+    "current_room_linked_people",
+    errors
+  );
+  const baselineProfileTargets = readNonNegativeInteger(
+    record,
+    "baseline_profile_targets",
+    errors
+  );
   const messagesScanned = readNonNegativeInteger(record, "messages_scanned", errors);
   readNonNegativeInteger(record, "messages_skipped_without_person", errors);
   readNonNegativeInteger(record, "messages_skipped_excluded_identity", errors);
@@ -576,6 +599,11 @@ function checkProfile(record, errors) {
   readNonNegativeInteger(record, "facts_inserted", errors);
   readNonNegativeInteger(record, "summaries_inserted", errors);
   readNonNegativeInteger(record, "snapshots_inserted", errors);
+  const baselineProfilesInserted = readNonNegativeInteger(
+    record,
+    "baseline_profiles_inserted",
+    errors
+  );
   const scopeFingerprints = readScopeFingerprintArray(
     record,
     "member profile scope_fingerprints",
@@ -598,11 +626,28 @@ function checkProfile(record, errors) {
       `member profile evidence must be generated with --limit ${MIN_PROFILE_REPAIR_MESSAGE_LIMIT} or higher for one-shot recognition repair`
     );
   }
+  if (
+    baselineProfileTargets !== undefined &&
+    currentRoomLinkedPeople !== undefined &&
+    baselineProfileTargets > currentRoomLinkedPeople
+  ) {
+    errors.push("baseline profile targets exceed current-room linked people");
+  }
+  if (
+    baselineProfilesInserted !== undefined &&
+    baselineProfileTargets !== undefined &&
+    baselineProfilesInserted > baselineProfileTargets
+  ) {
+    errors.push("baseline profiles inserted exceed baseline profile targets");
+  }
   return {
     scopeFingerprint: scopeFingerprints?.[0],
     requestedMessageLimit,
     messagesScanned,
     valuableMessages,
+    currentRoomLinkedPeople,
+    baselineProfileTargets,
+    baselineProfilesInserted,
   };
 }
 

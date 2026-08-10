@@ -372,12 +372,30 @@ const profileRepair = objectField(summary, "profile_repair", errors);
 checkAllowedKeys(
   profileRepair,
   "profile_repair",
-  ["dry_run", "requested_message_limit", "messages_scanned", "valuable_messages"],
+  [
+    "dry_run",
+    "requested_message_limit",
+    "current_room_linked_people",
+    "baseline_profile_targets",
+    "messages_scanned",
+    "valuable_messages",
+    "baseline_profiles_inserted",
+  ],
   errors
 );
 const requestedMessageLimit = readNonNegativeInteger(
   profileRepair,
   "requested_message_limit",
+  errors
+);
+const profileCurrentRoomLinkedPeople = readNonNegativeInteger(
+  profileRepair,
+  "current_room_linked_people",
+  errors
+);
+const baselineProfileTargets = readNonNegativeInteger(
+  profileRepair,
+  "baseline_profile_targets",
   errors
 );
 const messagesScanned = readNonNegativeInteger(
@@ -386,6 +404,11 @@ const messagesScanned = readNonNegativeInteger(
   errors
 );
 readNonNegativeInteger(profileRepair, "valuable_messages", errors);
+const baselineProfilesInserted = readNonNegativeInteger(
+  profileRepair,
+  "baseline_profiles_inserted",
+  errors
+);
 if (profileRepair?.dry_run !== false) {
   errors.push("profile_repair.dry_run must be false");
 }
@@ -394,6 +417,31 @@ if (requestedMessageLimit !== undefined && requestedMessageLimit < 5000) {
 }
 if (messagesScanned !== undefined && messagesScanned <= 0) {
   errors.push("profile_repair.messages_scanned must be greater than zero");
+}
+if (
+  profileCurrentRoomLinkedPeople !== undefined &&
+  linkedPeopleTotal !== undefined &&
+  profileCurrentRoomLinkedPeople !== linkedPeopleTotal
+) {
+  errors.push(
+    "profile_repair.current_room_linked_people must match linked_people.total"
+  );
+}
+if (
+  baselineProfileTargets !== undefined &&
+  profileCurrentRoomLinkedPeople !== undefined &&
+  baselineProfileTargets > profileCurrentRoomLinkedPeople
+) {
+  errors.push("profile_repair.baseline_profile_targets exceeds linked people");
+}
+if (
+  baselineProfilesInserted !== undefined &&
+  baselineProfileTargets !== undefined &&
+  baselineProfilesInserted > baselineProfileTargets
+) {
+  errors.push(
+    "profile_repair.baseline_profiles_inserted exceeds baseline profile targets"
+  );
 }
 
 const runningProfileHints = objectField(summary, "running_profile_hints", errors);

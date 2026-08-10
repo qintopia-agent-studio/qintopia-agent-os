@@ -183,6 +183,8 @@ function profile(overrides = {}) {
     dry_run: false,
     scope_fingerprints: [ROOM_SCOPE],
     requested_message_limit: 5000,
+    current_room_linked_people: 1,
+    baseline_profile_targets: 0,
     messages_scanned: 1,
     messages_skipped_without_person: 0,
     messages_skipped_excluded_identity: 0,
@@ -191,6 +193,7 @@ function profile(overrides = {}) {
     facts_inserted: 0,
     summaries_inserted: 0,
     snapshots_inserted: 0,
+    baseline_profiles_inserted: 0,
     ...overrides,
   };
 }

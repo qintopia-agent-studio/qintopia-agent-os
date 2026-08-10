@@ -49,6 +49,9 @@ try {
   assert.equal(summary.qiwe_speaker_identities.platform_identities_missing, 0);
   assert.equal(summary.qiwe_speaker_identities.ambiguous_users, 0);
   assert.equal(summary.profile_repair.requested_message_limit, 5000);
+  assert.equal(summary.profile_repair.current_room_linked_people, 2);
+  assert.equal(summary.profile_repair.baseline_profile_targets, 0);
+  assert.equal(summary.profile_repair.baseline_profiles_inserted, 0);
   assert.equal(summary.answer_context_canaries.mentioned_records, 3);
   assert.equal(summary.answer_context_canaries.speaker_records, 2);
   assert.equal(summary.answer_context_canaries.referenced_records, 2);
@@ -72,6 +75,48 @@ try {
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /completion check passed/);
+
+  files = writeEvidence(
+    "valid-no-stable-profile-strict",
+    coverage({
+      linked_people_total: 1,
+      linked_people_with_active_profile: 1,
+      linked_people_without_active_profile: 0,
+      qiwe_platform_identity_materializable_users: 1,
+      linked_people_with_running_facts: 0,
+      running_people_with_profile_running_hint: 0,
+      answer_context_canary_specs_total: 1,
+      answer_context_canary_people_total: 1,
+      answer_context_speaker_canary_specs_total: 1,
+      answer_context_speaker_canary_people_total: 1,
+      answer_context_referenced_canary_specs_total: 1,
+      answer_context_referenced_canary_people_total: 1,
+      answer_context_canary_specs: [newFriendMentionCanarySpec()],
+      answer_context_speaker_canary_specs: [newFriendSpeakerCanarySpec()],
+      answer_context_referenced_canary_specs: [newFriendReferencedCanarySpec()],
+    }),
+    [
+      noStableProfileCanary("新朋友", PERSON_NEW_FRIEND),
+      noStableProfileSpeakerCanary("新朋友", "person:new-friend", PERSON_NEW_FRIEND),
+      noStableProfileReferencedCanary("新朋友", "person:new-friend", PERSON_NEW_FRIEND),
+    ],
+    roomSync(),
+    profile({
+      current_room_linked_people: 1,
+      baseline_profile_targets: 1,
+      valuable_messages: 0,
+      candidate_fact_count: 0,
+      facts_inserted: 0,
+      summaries_inserted: 0,
+      snapshots_inserted: 1,
+      baseline_profiles_inserted: 1,
+    })
+  );
+  result = runChecker(files.roomSync, files.profile, files.coverage, files.canary, {
+    requireActiveProfiles: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /1\/1 linked people resolved/);
 
   result = runCheckerWithoutRoomSync(files.profile, files.coverage, files.canary);
   assert.notEqual(result.status, 0);
@@ -150,6 +195,7 @@ try {
     ],
     roomSync(),
     profile({
+      current_room_linked_people: 1,
       valuable_messages: 0,
       candidate_fact_count: 0,
       facts_inserted: 0,
@@ -484,6 +530,17 @@ try {
   assert.match(result.stderr, /--limit 5000/);
 
   files = writeEvidence(
+    "profile-linked-people-mismatch",
+    coverage(),
+    canaries(),
+    roomSync(),
+    profile({ current_room_linked_people: 1 })
+  );
+  result = runChecker(files.roomSync, files.profile, files.coverage, files.canary);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /current-room linked people/);
+
+  files = writeEvidence(
     "profile-no-valuable-messages",
     coverage(),
     canaries(),
@@ -498,7 +555,7 @@ try {
   );
   result = runChecker(files.roomSync, files.profile, files.coverage, files.canary);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /must include valuable messages/);
+  assert.match(result.stderr, /valuable messages or baseline profile targets/);
 
   files = writeEvidence(
     "scope-mismatch",
@@ -660,8 +717,17 @@ function writeEvidence(
   coverageContent,
   canaryContent,
   roomSyncContent = roomSync(),
-  profileContent = profile()
+  profileContent = undefined
 ) {
+  if (profileContent === undefined) {
+    const linkedPeopleTotal =
+      coverageContent && typeof coverageContent === "object"
+        ? coverageContent.linked_people_total
+        : undefined;
+    profileContent = profile({
+      current_room_linked_people: linkedPeopleTotal ?? 2,
+    });
+  }
   const dir = path.join(tmpRoot, name);
   fs.mkdirSync(dir, { recursive: true });
   const roomSyncPath = path.join(dir, "room-sync.json");
@@ -728,6 +794,8 @@ function profile(overrides = {}) {
     dry_run: false,
     scope_fingerprints: [ROOM_SCOPE],
     requested_message_limit: 5000,
+    current_room_linked_people: 2,
+    baseline_profile_targets: 0,
     messages_scanned: 20,
     messages_skipped_without_person: 0,
     messages_skipped_excluded_identity: 0,
@@ -737,6 +805,7 @@ function profile(overrides = {}) {
     facts_inserted: 2,
     summaries_inserted: 2,
     snapshots_inserted: 2,
+    baseline_profiles_inserted: 0,
     ...overrides,
   };
 }
@@ -1027,6 +1096,41 @@ function identityOnlyReferencedCanary(expectedLabel, canonicalKey, personId) {
       do_not_infer_missing_profile: true,
     },
   });
+}
+
+function noStableProfileCanary(
+  expectedMention,
+  personId,
+  canonicalKey = "person:new-friend"
+) {
+  return canary(expectedMention, personId, {
+    canonical_key: canonicalKey,
+    ...noStableProfile(expectedMention),
+  });
+}
+
+function noStableProfileSpeakerCanary(expectedLabel, canonicalKey, personId) {
+  return speakerCanary(expectedLabel, canonicalKey, personId, {
+    ...noStableProfile(expectedLabel),
+  });
+}
+
+function noStableProfileReferencedCanary(expectedLabel, canonicalKey, personId) {
+  return referencedCanary(expectedLabel, canonicalKey, personId, {
+    ...noStableProfile(expectedLabel),
+  });
+}
+
+function noStableProfile(label) {
+  return {
+    safe_summary: `${label} 暂无足够稳定的安全画像。`,
+    safe_reply_hints: {
+      profile_status: "no_stable_profile",
+      topics: [],
+      stable_profile_notes: ["暂无稳定画像信号，不要推断个人偏好"],
+      do_not_infer_missing_profile: true,
+    },
+  };
 }
 
 function canary(expectedMention, personId, overrides = {}) {

@@ -87,7 +87,11 @@
   names cannot disappear into `excluded`. It must also retain
   `qiwe_speaker_identities.platform_identities_missing = 0` and
   `qiwe_speaker_identities.ambiguous_users = 0`, proving current-room QiWe users are
-  speaker-ready for "我是谁" lookup.
+  speaker-ready for "我是谁" lookup. Profile repair evidence must also retain
+  `profile_repair.current_room_linked_people = linked_people.total`; linked current-room
+  people without useful profile signals should receive an active no-stable-profile
+  `reply_context` snapshot with `do_not_infer_missing_profile=true`, not remain
+  identity-only.
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:
@@ -605,7 +609,10 @@ Use `rg` and `rg --files` for search.
   must not skip QiWe messages that already have `sender_channel_identity_id` and
   `sender_name` but still have `sender_person_id IS NULL`; otherwise Erhua will call
   `qintopia_answer_context_prepare` and correctly return `speaker_unresolved` even when
-  the display name uniquely matches an existing person/profile.
+  the display name uniquely matches an existing person/profile. The member-profile
+  repair must seed active no-stable-profile `reply_context` snapshots for linked
+  current-room people that have no useful profile facts yet, so "known member but no
+  stable profile" is a database-backed state rather than an identity-only fallback.
 - Erhua public local recommendations such as performances, restaurants, cafes, or
   exhibitions must use current public-source checks before claiming "best", consensus,
   availability, price, or firsthand experience. Without verified venue/organizer,
