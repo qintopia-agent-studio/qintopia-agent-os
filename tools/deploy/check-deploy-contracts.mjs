@@ -3482,7 +3482,7 @@ if (exists("deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh")) {
     "approved-production-xiaoman-legacy-cron-retirement",
     'PYTHON_BIN="/usr/bin/python3"',
     "/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json",
-    "41347af48cbb62010be3f530f0fa7d4dfa28f0e661f4fd48fbc0a5467b484c08",
+    "f91d56d58a17feba3498929919b71b4f3e4222899d571dcf5f1b3505eacc9969",
     "legacy cron file sha256 does not match the reviewed production observation",
     "previous_decl_count",
     "new_decl_count",
