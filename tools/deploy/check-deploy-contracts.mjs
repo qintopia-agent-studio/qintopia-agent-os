@@ -317,6 +317,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
+    "deploy/sidecar/scripts/production-worker-run-evidence-smoke.sh",
     "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",

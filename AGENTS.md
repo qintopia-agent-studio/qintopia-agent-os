@@ -331,10 +331,17 @@
 - Production runtime observation should use the `Observe Production Runtime` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-observation` deploy-runner request and accepts only these
-  fixed targets: `qiwe-image-send` and `xiaoman-daily-case-report-auto-publish`.
-  Observation is read-only: it may run only fixed release-local observation scripts,
-  must not enable or disable timers, write persistent config, retire legacy cron files,
-  call QiWe/Feishu/Postgres mutation commands, or run activation/rollback scripts.
+  fixed targets: `qiwe-image-send`, `xiaoman-daily-case-report-auto-publish`, and the
+  worker-run evidence targets `erhua-morning-brief-worker-run`,
+  `xiaoman-daily-case-report-worker-run`, `xiaoman-weekly-recruitment-worker-run`,
+  `xiaoman-weekly-plan-confirmation-worker-run`, and
+  `xiaoman-weekly-preview-worker-run`. Worker-run targets prove the paired timer fired
+  and the worker exited successfully (weekly targets also validate the worker's
+  `latest-summary.json` draft invariants); `service_never_started` before the first
+  scheduled trigger means the timer has not fired yet, not a regression. Observation is
+  read-only: it may run only fixed release-local observation scripts, must not enable or
+  disable timers, write persistent config, retire legacy cron files, call
+  QiWe/Feishu/Postgres mutation commands, or run activation/rollback scripts.
 - Production immediate worker/backfill runs should use the
   `Run Production Runtime One-Shot` GitHub workflow after the reviewed release
   containing the runner support is deployed and the corresponding release-managed timer

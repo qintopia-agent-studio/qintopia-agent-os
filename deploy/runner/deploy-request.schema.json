@@ -154,7 +154,15 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "enum": ["qiwe-image-send", "xiaoman-daily-case-report-auto-publish"]
+            "enum": [
+              "qiwe-image-send",
+              "xiaoman-daily-case-report-auto-publish",
+              "erhua-morning-brief-worker-run",
+              "xiaoman-daily-case-report-worker-run",
+              "xiaoman-weekly-recruitment-worker-run",
+              "xiaoman-weekly-plan-confirmation-worker-run",
+              "xiaoman-weekly-preview-worker-run"
+            ]
           }
         }
       }
