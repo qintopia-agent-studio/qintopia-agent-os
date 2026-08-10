@@ -2325,7 +2325,17 @@ fn public_source_recommendation_markers_match(text: &str) -> bool {
         "西安", "北京", "上海", "深圳", "广州", "成都", "杭州", "南京", "重庆", "附近", "本地",
         "今天", "今晚", "明天", "周末", "这周", "本周", "最近",
     ];
-    let activity_markers = ["演出", "展览", "live", "livehouse", "爵士", "活动"];
+    let activity_markers = [
+        "演出",
+        "展览",
+        "live",
+        "livehouse",
+        "爵士",
+        "活动",
+        "餐厅",
+        "咖啡",
+        "酒吧",
+    ];
     let has_recommendation = recommendation_markers
         .iter()
         .any(|marker| text.contains(&marker.to_lowercase()));
@@ -4062,6 +4072,18 @@ mod tests {
         let nearby_cafe_intent = classify_lookup_intent("附近咖啡推荐", "reply");
         assert_eq!(nearby_cafe_intent.kind, "public_source_recommendation");
         assert!(nearby_cafe_intent.requires_public_source_check);
+
+        let cafe_quality_intent = classify_lookup_intent("哪家咖啡好", "reply");
+        assert_eq!(cafe_quality_intent.kind, "public_source_recommendation");
+        assert!(cafe_quality_intent.requires_public_source_check);
+
+        let restaurant_intent = classify_lookup_intent("餐厅推荐", "reply");
+        assert_eq!(restaurant_intent.kind, "public_source_recommendation");
+        assert!(restaurant_intent.requires_public_source_check);
+
+        let bar_intent = classify_lookup_intent("酒吧推荐", "reply");
+        assert_eq!(bar_intent.kind, "public_source_recommendation");
+        assert!(bar_intent.requires_public_source_check);
 
         let discussed_recommendation_intent =
             classify_lookup_intent("有人问西安最好的爵士乐演出是哪", "reply");
