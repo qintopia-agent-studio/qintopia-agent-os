@@ -107,6 +107,15 @@
   `QINTOPIA_ERHUA_LEGACY_CRON_RETIREMENT=approved-production-erhua-legacy-cron-retirement deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh`
 - Xiaoman legacy Hermes cron reviewed retirement:
   `QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-retirement deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh`
+- Hermes cron snapshot sync (version history for the conversation-editable source of
+  truth): `deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh` mirrors live `jobs.json`
+  files and `/home/ubuntu/.hermes/scripts/` into the server-local git repo at
+  `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; first init requires
+  `QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot`. Timer
+  install:
+  `QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot deploy/sidecar/scripts/install-hermes-cron-snapshot-timer.sh`.
+  The snapshot repo holds real chat ids and prompts; it has no remote, stays `0700`, and
+  only sanitized counts may leave the server.
 - Production legacy Hermes cron retirement should use the
   `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
   the runner support is deployed. It creates a signed
@@ -176,6 +185,17 @@
   `canonical_record` aliases), and
   `deploy/sidecar/scripts/xiaoman-activity-production-parity-capture.sh`
   (`canonical_legacy_record`), or production parity reports false drift.
+- Xiaoman activity Feishu writes exist only as the bounded `feishu-field-update` worker
+  operation behind `qintopia_xiaoman_activity_feishu_field_update`. It writes only the
+  four Xiaoman-owned plan-table columns (`status`→小满运营状态,
+  `promotion_status`→宣发判断, `notes`→小满备注, `reminder_status`→活动前提醒状态) on
+  the single record resolved server-side by exact 活动主题+date; SingleSelect values
+  must exactly match a live option fetched at write time (production options verified
+  2026-08-10). Every attempt writes a `qintopia_agent_os.tool_invocation_audit` row and
+  the report carries only the hashed `record_ref`. Widening the writable column set
+  means an owner-reviewed PR updating `FEISHU_WRITE_FIELD_COLUMNS` (Rust) and
+  `XIAOMAN_ACTIVITY_FEISHU_WRITE_FIELDS` (Python) together; never expose a generic
+  Feishu write primitive to chat tools.
 - The official Feishu OpenAPI MCP (`@larksuiteoapi/lark-mcp`) exists but is not mounted
   on group-facing profiles: it is beta, unmaintained since 2025-08, takes app secrets as
   process arguments, and exposes generic Base access without the read-through output
@@ -385,6 +405,18 @@
   enable/disable timers, retire cron files, accept multiple targets, or record raw
   worker output, group ids, database URLs, tokens, Feishu payloads, QiWe payloads,
   message content, or journal logs.
+- Recurring Agent timers are moving back to Hermes cron as the source of truth (owner
+  decision, 2026-08-10): live `jobs.json` under
+  `/home/ubuntu/.hermes/profiles/<profile>/cron/` is conversation-editable and wins; the
+  repository keeps sanitized declaration templates under `runtime/hermes/cron/`, wrapper
+  templates under `runtime/hermes/scripts/`, and the
+  `runtime/hermes/cron/reviewed-cron-jobs.json` allowlist registry. Version history is
+  copy-based via `deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh` into a
+  server-local git repo; `jobs.json` must never be a symlink or hardlink because the
+  daemon atomically replaces it after every run. New recurring Agent tasks must follow
+  `docs/operations/hermes-cron-source-of-truth.md` and the migration shape in
+  `docs/plans/active/hermes-cron-migration/`. Until each per-timer migration task lands,
+  the existing release-managed timer rules below still apply to that timer.
 - Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
   cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
   configured and activated with:

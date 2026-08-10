@@ -477,6 +477,62 @@ class QintopiaToolsTest(unittest.TestCase):
             },
         )
 
+    def test_xiaoman_feishu_field_update_builds_bounded_worker_command(self):
+        self.enable_xiaoman_activity_wrappers()
+        schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA["parameters"]
+
+        self.assertEqual(
+            schema["required"],
+            ["activity_title", "date", "field", "value", "mutation_id"],
+        )
+        self.assertEqual(
+            schema["properties"]["field"]["enum"],
+            ["status", "promotion_status", "notes", "reminder_status"],
+        )
+        self.assertNotIn("record_id", schema["properties"])
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_feishu_field_update(
+                {
+                    "activity_title": "周六晨跑",
+                    "date": "2026-08-15",
+                    "field": "status",
+                    "value": "已发布",
+                    "mutation_id": "77777777-7777-4777-8777-777777777777",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["action"]["command"][-1], "--dry-run")
+        command = report["action"]["command"]
+        worker_payload = json.loads(command[command.index("--payload-json") + 1])
+        self.assertEqual(worker_payload["operation"], "feishu-field-update")
+        self.assertEqual(worker_payload["table_role"], "activity_plan")
+        self.assertEqual(worker_payload["activity_title"], "周六晨跑")
+        self.assertEqual(worker_payload["date"], "2026-08-15")
+        self.assertEqual(worker_payload["field"], "status")
+        self.assertEqual(worker_payload["value"], "已发布")
+        self.assertNotIn("record_id", worker_payload)
+
+    def test_xiaoman_feishu_field_update_rejects_non_xiaoman_column(self):
+        self.enable_xiaoman_activity_wrappers()
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_feishu_field_update(
+                {
+                    "activity_title": "周六晨跑",
+                    "date": "2026-08-15",
+                    "field": "participants",
+                    "value": "12",
+                    "mutation_id": "77777777-7777-4777-8777-777777777777",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertIn("status, promotion_status, notes, reminder_status", report["error"])
+
     def test_xiaoman_gap_update_matches_event_signal_worker_contract(self):
         self.enable_xiaoman_activity_wrappers()
         schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA["parameters"]
