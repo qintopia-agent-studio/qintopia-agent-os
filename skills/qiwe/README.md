@@ -84,6 +84,9 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
 - Keeps Feishu activity writes and reminders behind explicit scoped configuration.
 - Treats Erhua trainer memory as a controlled context-MCP path, not free-form prompt
   editing.
+- Promotes `public_source_check_required` answer context into explicit reply directives,
+  including the Xiaohongshu search path. The raw answer-context JSON alone is not a
+  reliable final-reply constraint.
 - Suppresses narrowly recognized Hermes approval, progress, interruption, formatting
   failure, and traceback messages before QiWe delivery. Ordinary answers that discuss
   plain-text formatting are not suppressed.
