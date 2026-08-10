@@ -4,11 +4,11 @@ Updated: 2026-08-02
 
 ## Current Setup
 
-| Step                        | Schedule       | Status               | Next action                                                    |
-| --------------------------- | -------------- | -------------------- | -------------------------------------------------------------- |
-| Resident recruitment form   | Saturday 10:00 | Release timer ready  | Activate via `xiaoman-weekly-loop-cutover-runbook.md`.         |
-| Plan-sheet confirmation     | Sunday 20:00   | Hermes cron migrated | Run `xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`. |
-| Confirmed next-week preview | Monday 09:30   | Release timer ready  | Activate via `xiaoman-weekly-preview-cutover-runbook.md`.      |
+| Step                        | Schedule       | Status               | Next action                                                       |
+| --------------------------- | -------------- | -------------------- | ----------------------------------------------------------------- |
+| Resident recruitment form   | Saturday 10:00 | Hermes cron ready    | Activate via `xiaoman-weekly-recruitment-hermes-cron-runbook.md`. |
+| Plan-sheet confirmation     | Sunday 20:00   | Hermes cron migrated | Run `xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`.    |
+| Confirmed next-week preview | Monday 09:30   | Release timer ready  | Activate via `xiaoman-weekly-preview-cutover-runbook.md`.         |
 
 This runbook records the 2026-08-01 simplified Xiaoman loop. It is not Xiaoman
 production-completion evidence and must not be used to claim real QiWe group delivery.
@@ -117,12 +117,15 @@ Two standing constraints:
   carry it over, so these timers must be re-registered or recreated before the live
   profile symlink cutover.
 
-The durable timer paths are `docs/operations/xiaoman-weekly-loop-cutover-runbook.md`
-(Saturday recruitment),
-`docs/operations/xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md` (Sunday plan
-confirmation), and `docs/operations/xiaoman-weekly-preview-cutover-runbook.md` (Monday
-preview). Hermes cron is the source of truth for plan confirmation; do not hot-edit
-production units or hand-edit `jobs.json`; use the reviewed apply scripts.
+The durable timer paths are
+`docs/operations/xiaoman-weekly-recruitment-hermes-cron-runbook.md` (Saturday
+recruitment), `docs/operations/xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`
+(Sunday plan confirmation), and
+`docs/operations/xiaoman-weekly-preview-cutover-runbook.md` (Monday preview). Hermes
+cron is the source of truth for both weekly jobs;
+`docs/operations/xiaoman-weekly-loop-cutover-runbook.md` is kept only as the systemd
+rollback target. Do not hot-edit production units, hand-edit `jobs.json`, or recreate
+the Hermes crons after cutover; use the reviewed apply scripts.
 
 ## Local Verification
 

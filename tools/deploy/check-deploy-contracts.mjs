@@ -345,6 +345,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/xiaoman-weekly-recruitment-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-xiaoman-weekly-recruitment-production.sh",
     "deploy/sidecar/scripts/rollback-xiaoman-weekly-recruitment-production.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh",
     "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-production-config.sh",
     "deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh",
     "deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-production-observation-smoke.sh",
@@ -358,6 +359,8 @@ if (!exists(deployBundleBuilderPath)) {
     "workflows/erhua-morning-brief",
     "workflows/xiaoman-weekly-loop",
     "runtime/hermes/validate_hermes_python.py",
+    "runtime/hermes/cron",
+    "runtime/hermes/scripts",
   ]) {
     requireFragment(deployBundleBuilderPath, builder, fragment);
   }

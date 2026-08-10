@@ -80,6 +80,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/xiaoman-weekly-recruitment-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-xiaoman-weekly-recruitment-production.sh",
   "deploy/sidecar/scripts/rollback-xiaoman-weekly-recruitment-production.sh",
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-production-config.sh",
   "deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh",
   "deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-production-observation-smoke.sh",
@@ -206,6 +207,8 @@ const sourceDirs = [
   "skills/feishu-base/docs",
   "skills/feishu-base/tests",
   "workflows/erhua-morning-brief",
+  "runtime/hermes/cron",
+  "runtime/hermes/scripts",
 ];
 const sourceDirExcludes = [
   /^agents\/xiaoman\/profile-bundle\/tests(\/|$)/,

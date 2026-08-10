@@ -418,28 +418,59 @@
   `docs/operations/hermes-cron-source-of-truth.md` and the migration shape in
   `docs/plans/active/hermes-cron-migration/`. Until each per-timer migration task lands,
   the existing release-managed timer rules below still apply to that timer.
-- Xiaoman weekly recruitment still uses the release-managed Saturday timer until task 2
-  lands. Apply config with
-  `apply-xiaoman-weekly-recruitment-production-config.sh --enable`, activate with
-  `activate-xiaoman-weekly-recruitment-production.sh`, observe with
-  `xiaoman-weekly-recruitment-production-observation-smoke.sh`, and roll back with
-  `rollback-xiaoman-weekly-recruitment-production.sh`. Config, activation, observation,
-  and the worker must require `QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1`,
+- Xiaoman weekly loop production:
+  - Saturday recruitment recurrence lives in Xiaoman Hermes cron, not in a
+    release-managed systemd timer.
+    `/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json` owns the schedule, the
+    enablement, and the delivery target, while the business logic stays release-managed
+    in `xiaoman-weekly-recruitment-worker.sh`. The reviewed declaration is
+    `runtime/hermes/cron/xiaoman/weekly-recruitment.job.json`, the wrapper is
+    `runtime/hermes/scripts/qintopia_xiaoman_weekly_recruitment.sh`, and the allowlist
+    entry lives in `runtime/hermes/cron/reviewed-cron-jobs.json`. Apply it only with:
+
+    ```bash
+    QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_HERMES_CRON=approved-production-xiaoman-weekly-recruitment-hermes-cron \
+      deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh --install
+    QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_HERMES_CRON=approved-production-xiaoman-weekly-recruitment-hermes-cron \
+      deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh --enable
+    ```
+
+    Because the rollback script requires `QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_ENABLED=0`
+    in the sidecar env while the worker requires `1`, the wrapper exports that flag
+    itself and the env file keeps `0` for the retired systemd path. Health signals after
+    cutover are `xiaoman-legacy-cron-observation-smoke.sh` reporting reviewed
+    declarations only plus the `sync-hermes-cron-snapshot.sh` history. The full
+    procedure is `docs/operations/xiaoman-weekly-recruitment-hermes-cron-runbook.md`;
+    the legacy systemd activation path in
+    `docs/operations/xiaoman-weekly-loop-cutover-runbook.md` is kept only as the
+    rollback target.
+
+  - Xiaoman weekly plan confirmation now uses a Hermes cron job (task 3), not the
+    release-managed Sunday timer. The reviewed declaration is
+    `runtime/hermes/cron/xiaoman/weekly-plan-confirmation.job.json`, the wrapper is
+    `runtime/hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh`, and the
+    registry entry pins expr `0 20 * * 0`. Persistent config still goes through
+    `apply-xiaoman-weekly-plan-confirmation-production-config.sh`; install and enable
+    the Hermes job with
+    `QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON=approved-production-xiaoman-weekly-plan-confirmation-hermes-cron`
+    plus `apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh --install` then
+    `--enable`. Disable the old timer with
+    `rollback-xiaoman-weekly-plan-confirmation-production.sh` before enabling the job;
+    health is the allowlist observation smoke plus the snapshot git history. Follow
+    `docs/operations/xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`.
+
+  The recruitment and plan-confirmation Hermes crons both keep using the Xiaoman
+  activity wrapper boundary. Config, activation, observation, and workers must require
+  `QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1`,
   `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`, and
-  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`.
-- Xiaoman weekly plan confirmation now uses a Hermes cron job (task 3), not the
-  release-managed Sunday timer. The reviewed declaration is
-  `runtime/hermes/cron/xiaoman/weekly-plan-confirmation.job.json`, the wrapper is
-  `runtime/hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh`, and the
-  registry entry pins expr `0 20 * * 0`. Persistent config still goes through
-  `apply-xiaoman-weekly-plan-confirmation-production-config.sh`; install and enable the
-  Hermes job with
-  `QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON=approved-production-xiaoman-weekly-plan-confirmation-hermes-cron`
-  plus `apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh --install` then
-  `--enable`. Disable the old timer with
-  `rollback-xiaoman-weekly-plan-confirmation-production.sh` before enabling the job;
-  health is the allowlist observation smoke plus the snapshot git history. Follow
-  `docs/operations/xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`.
+  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. Activation and observation for both
+  jobs must verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the
+  owner-reviewed release SHA and must first pass
+  `xiaoman-legacy-cron-observation-smoke.sh`. The recruitment Hermes cron's allowlist
+  coverage is proven by that same smoke after cutover, so its health no longer depends
+  on a live systemd unit. Rollback scripts are
+  `rollback-xiaoman-weekly-recruitment-production.sh` and
+  `rollback-xiaoman-weekly-plan-confirmation-production.sh`.
 
 - Erhua morning brief now uses a Hermes cron job (task 5), not the release-managed daily
   timer. The reviewed declaration is `runtime/hermes/cron/erhua/morning-brief.job.json`,

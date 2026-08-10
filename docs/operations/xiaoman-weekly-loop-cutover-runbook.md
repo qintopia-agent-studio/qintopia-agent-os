@@ -2,16 +2,18 @@
 
 Updated: 2026-08-09
 
-This runbook activates the release-managed Saturday recruitment timer for the Xiaoman
-weekly activity loop. The timer produces an operations-review draft only; it does not
-send, publish, write Feishu, call Erhua, or call QiWe.
+> **Status: rollback-only.** Since 2026-08-10 both weekly recurrences live in Xiaoman
+> Hermes cron jobs: Saturday recruitment is governed by
+> `docs/operations/xiaoman-weekly-recruitment-hermes-cron-runbook.md` and Sunday plan
+> confirmation by
+> [`xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`](xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md).
+> Use this document only to restore the systemd timers during a rollback.
 
-Migration note (2026-08-10): the Sunday plan-confirmation timer has moved back to a
-Xiaoman Hermes cron job through
-[`xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`](xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md).
-The steps below now apply to the Saturday recruitment timer only; the plan-confirmation
-sections remain only as historical/rollback reference until task 2 and the systemd
-retirement land.
+This runbook activated the Saturday recruitment and Sunday plan-confirmation systemd
+timers for the Xiaoman weekly activity loop. Both systemd activations below are now
+rollback paths; the Hermes cron jobs are the live paths. Both timers produced
+operations-review drafts only; they did not send, publish, write Feishu, call Erhua, or
+call QiWe.
 
 ## Production Boundary
 
