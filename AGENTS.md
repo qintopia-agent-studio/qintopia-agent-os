@@ -606,6 +606,11 @@ Use `rg` and `rg --files` for search.
   `sender_name` but still have `sender_person_id IS NULL`; otherwise Erhua will call
   `qintopia_answer_context_prepare` and correctly return `speaker_unresolved` even when
   the display name uniquely matches an existing person/profile.
+- Erhua public local recommendations such as performances, restaurants, cafes, or
+  exhibitions must use current public-source checks before claiming "best", consensus,
+  availability, price, or firsthand experience. Without verified venue/organizer,
+  ticketing, map/review, or local audience evidence, route them as
+  `public_source_recommendation` and answer with the lookup path plus uncertainty.
 - For the Huabaosi production image canary, the owner-selected first storage boundary is
   the fixed Feishu Base `huabaosi-generated-image-v1` table. The image worker may upload
   the exact final JPEG attachment and idempotently upsert one row by
