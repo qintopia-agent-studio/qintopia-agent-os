@@ -1774,6 +1774,8 @@ if (!exists(xiaomanLegacyCronObservationPath)) {
     "cron_decl_count",
     "live_profile_modified",
     "external_calls_executed",
+    "origin_platform",
+    'entry.get("deliver")',
     "Xiaoman legacy cron observation found unreviewed cron job declarations",
   ]) {
     requireFragment(xiaomanLegacyCronObservationPath, smoke, fragment);
@@ -3668,6 +3670,28 @@ for (const fragment of [
     fragment
   );
 }
+const erhuaMorningBriefWrapperPath =
+  "runtime/hermes/scripts/qintopia_erhua_morning_brief.sh";
+if (!exists(erhuaMorningBriefWrapperPath)) {
+  addError(`${erhuaMorningBriefWrapperPath}: missing morning brief Hermes wrapper`);
+} else {
+  const wrapper = readText(erhuaMorningBriefWrapperPath);
+  for (const fragment of [
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'RELEASE_LINK="/home/ubuntu/qintopia-agent-os-releases/current"',
+    "erhua-morning-brief-worker.sh",
+    'export QINTOPIA_DEPLOYED_COMMIT_SHA="$(basename "$(readlink -f "$RELEASE_LINK")")"',
+  ]) {
+    requireFragment(erhuaMorningBriefWrapperPath, wrapper, fragment);
+  }
+  const envSource = wrapper.indexOf('. "$ENV_FILE"');
+  const shaExport = wrapper.indexOf("export QINTOPIA_DEPLOYED_COMMIT_SHA");
+  if (envSource === -1 || shaExport === -1 || envSource > shaExport) {
+    addError(
+      `${erhuaMorningBriefWrapperPath}: must export QINTOPIA_DEPLOYED_COMMIT_SHA after sourcing the persistent env`
+    );
+  }
+}
 const xiaomanWeeklyLoopWorkflowPath = "workflows/xiaoman-weekly-loop/weekly_loop.py";
 if (exists(xiaomanWeeklyLoopWorkflowPath)) {
   const workflow = readText(xiaomanWeeklyLoopWorkflowPath);
@@ -4304,6 +4328,8 @@ if (exists("deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh")) {
     "cron_decl_count",
     "live_profile_modified",
     "external_calls_executed",
+    "origin_platform",
+    'entry.get("deliver")',
     "Erhua legacy cron observation found unreviewed cron job declarations",
   ]) {
     requireFragment(

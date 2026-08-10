@@ -28,6 +28,12 @@ const REVIEWED_JOB = {
   no_agent: true,
   script: "qintopia_xiaoman_weekly_preview.sh",
   deliver: "origin",
+  origin: {
+    platform: "wecom",
+    chat_id: "FixtureChat",
+    chat_name: null,
+    thread_id: null,
+  },
   enabled: true,
 };
 
@@ -42,6 +48,8 @@ const REVIEWED_ENTRY = {
   schedule_expr: "30 9 * * 1",
   script: "qintopia_xiaoman_weekly_preview.sh",
   no_agent: true,
+  deliver: "origin",
+  origin_platform: "wecom",
   approved_at: "2026-08-10",
 };
 
@@ -207,6 +215,31 @@ try {
   });
   if (wrongScriptRun.status === 0) {
     throw new Error("legacy cron observation accepted a drifted script name");
+  }
+
+  const wrongDeliver = writeCron(profileDir, {
+    jobs: [{ ...REVIEWED_JOB, deliver: "none" }],
+  });
+  const wrongDeliverRun = run({
+    QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: wrongDeliver,
+  });
+  if (wrongDeliverRun.status === 0) {
+    throw new Error("legacy cron observation accepted a drifted deliver mode");
+  }
+
+  const wrongPlatform = writeCron(profileDir, {
+    jobs: [
+      {
+        ...REVIEWED_JOB,
+        origin: { platform: "telegram", chat_id: "FixtureChat" },
+      },
+    ],
+  });
+  const wrongPlatformRun = run({
+    QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: wrongPlatform,
+  });
+  if (wrongPlatformRun.status === 0) {
+    throw new Error("legacy cron observation accepted a drifted origin platform");
   }
 
   fs.writeFileSync(legacyCron, "{not-json", "utf8");

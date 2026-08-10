@@ -85,6 +85,11 @@ def schedule_expr(job):
     return schedule if isinstance(schedule, str) else None
 
 
+def origin_platform(job):
+    origin = job.get("origin")
+    return origin.get("platform") if isinstance(origin, dict) else None
+
+
 def is_reviewed(job) -> bool:
     for entry in reviewed_jobs:
         if not isinstance(entry, dict) or entry.get("profile") != "erhua":
@@ -94,6 +99,8 @@ def is_reviewed(job) -> bool:
             and entry.get("schedule_expr") == schedule_expr(job)
             and entry.get("script") == job.get("script")
             and bool(entry.get("no_agent")) == bool(job.get("no_agent"))
+            and entry.get("deliver") == job.get("deliver")
+            and entry.get("origin_platform") == origin_platform(job)
         ):
             return True
     return False
@@ -172,6 +179,8 @@ if unreviewed:
             "schedule_expr": schedule_expr(job),
             "script": job.get("script"),
             "no_agent": bool(job.get("no_agent")),
+            "deliver": job.get("deliver"),
+            "origin_platform": origin_platform(job),
         }
         for job in unreviewed
     ]
