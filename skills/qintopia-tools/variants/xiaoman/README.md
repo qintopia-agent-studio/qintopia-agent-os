@@ -103,6 +103,13 @@ or a direct conversation.
   reply for an activity promotion brief (owner, location, pre-announcement decision,
   channels, and reviewer) in the AgentOS event signal. It is idempotent, defaults to
   dry-run, and does not write Feishu, call an external provider, or send.
+- `qintopia_xiaoman_activity_feishu_field_update`: bounded write-back to one
+  Xiaoman-owned plan-table column (`status`→小满运营状态, `promotion_status`→宣发判断,
+  `notes`→小满备注, `reminder_status`→活动前提醒状态). The worker resolves the single
+  plan record server-side by exact 活动主题+date, validates SingleSelect values against
+  live options, writes Feishu, and records a `tool_invocation_audit` row. It defaults to
+  dry-run, never exposes Feishu record ids to chat, and reports only the hashed
+  `record_ref`.
 - `qintopia_xiaoman_activity_announcement_prepare`: prepares the text-only community
   activity announcement MVP for operations review. It turns sanitized activity records
   into a draft for 刘珊, missing-field follow-ups, and an Erhua handoff draft that still

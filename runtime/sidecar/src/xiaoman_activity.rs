@@ -38,6 +38,7 @@ const WRITE_OPERATIONS: &[&str] = &[
     "gap-update",
     "phase-update",
     "promotion-details-update",
+    "feishu-field-update",
     "handoff-create",
     "signal-ingest",
 ];
@@ -54,6 +55,16 @@ const FEISHU_READ_LIMITATION: &str = "Feishu Base read is allowlisted to the con
 const FEISHU_READ_DENIED_FIELDS: &[&str] = &["群ID", "最后接龙消息ID", "素材照片", "关联活动发生"];
 const PASSTHROUGH_FIELD_MAX_ENTRIES: usize = 30;
 const PASSTHROUGH_FIELD_VALUE_MAX_CHARS: usize = 300;
+// feishu-field-update may write only these Xiaoman-owned plan-table columns.
+// SingleSelect values must exactly match a live option fetched at write time;
+// anything else means an owner-reviewed PR here plus a Feishu option update.
+const FEISHU_WRITE_FIELD_COLUMNS: &[(&str, &str)] = &[
+    ("status", "小满运营状态"),
+    ("promotion_status", "宣发判断"),
+    ("notes", "小满备注"),
+    ("reminder_status", "活动前提醒状态"),
+];
+const FEISHU_WRITE_VALUE_MAX_CHARS: usize = 500;
 
 #[derive(Debug, Clone)]
 pub struct ActivityRuntimeConfig {
@@ -136,6 +147,10 @@ struct ActivityPayload {
     preannounce_channels: Vec<String>,
     #[serde(default)]
     human_reviewer: String,
+    #[serde(default)]
+    field: String,
+    #[serde(default)]
+    value: String,
 }
 
 #[derive(Debug, Clone)]
@@ -415,6 +430,8 @@ async fn run_material_followup_worker_batch(
         preannounce_decision: String::new(),
         preannounce_channels: Vec::new(),
         human_reviewer: String::new(),
+        field: String::new(),
+        value: String::new(),
     };
     let config = ActivityRuntimeConfig {
         fixture_path: None,
@@ -489,6 +506,8 @@ async fn execute_with_config(
         "status-update" | "gap-update" | "phase-update" | "promotion-details-update"
     ) {
         execute_event_signal_mutation(cli, &mut report, &payload, apply_requested).await?;
+    } else if operation == "feishu-field-update" {
+        execute_feishu_field_update(cli, &mut report, &payload, apply_requested, config).await?;
     } else if operation == "handoff-create" {
         execute_handoff_create(cli, &mut report, &payload, apply_requested).await?;
     } else if operation == "signal-ingest" {
@@ -877,6 +896,236 @@ fn promotion_review_value(payload: &ActivityPayload) -> Result<Value> {
         "preannounce_channels": channels,
         "human_reviewer": normalize_activity_detail(&payload.human_reviewer, "human_reviewer", 120)?,
     }))
+}
+
+fn feishu_write_column(field: &str) -> Option<&'static str> {
+    FEISHU_WRITE_FIELD_COLUMNS
+        .iter()
+        .find(|(key, _)| *key == field.trim())
+        .map(|(_, column)| *column)
+}
+
+fn validate_feishu_write_value(value: &str) -> Result<String> {
+    normalize_activity_detail(value, "value", FEISHU_WRITE_VALUE_MAX_CHARS)
+}
+
+enum WriteBackResolution<'a> {
+    Unique(&'a ActivityRecord),
+    NoMatch,
+    Ambiguous,
+}
+
+fn resolve_plan_record<'a>(
+    records: &'a [ActivityRecord],
+    title: &str,
+    date: &str,
+) -> WriteBackResolution<'a> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.title == title && record.matches_date(date));
+    let Some(first) = matches.next() else {
+        return WriteBackResolution::NoMatch;
+    };
+    if matches.next().is_some() {
+        return WriteBackResolution::Ambiguous;
+    }
+    WriteBackResolution::Unique(first)
+}
+
+fn select_option_names(field_meta: &Value) -> Vec<String> {
+    field_meta
+        .get("property")
+        .and_then(|property| property.get("options"))
+        .and_then(Value::as_array)
+        .map(|options| {
+            options
+                .iter()
+                .filter_map(|option| option.get("name").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn execute_feishu_field_update(
+    cli: &Cli,
+    report: &mut ActivityWorkerReport,
+    payload: &ActivityPayload,
+    apply_requested: bool,
+    config: &ActivityRuntimeConfig,
+) -> Result<()> {
+    report.source = "feishu_base_bounded_write".to_string();
+    report.safe_for_chat = false;
+    report.record_count = 1;
+    report.mutation_applied = Some(false);
+    report.guardrails.push(
+        "feishu-field-update writes only Xiaoman-owned plan-table columns after single-record resolution, live option validation, and audit".to_string(),
+    );
+    let column = feishu_write_column(&payload.field).context("writable column validated")?;
+    let value = validate_feishu_write_value(&payload.value)?;
+    if !apply_requested {
+        report.action_status = "feishu_field_update_preview".to_string();
+        report
+            .summaries
+            .push("Feishu field update validated without network or database writes".to_string());
+        return Ok(());
+    }
+
+    let Some(base_config) = config.feishu_base.as_ref() else {
+        report.action_status = "feishu_base_not_configured".to_string();
+        report.limitations.push(
+            "enable QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE with an allowlisted Base config"
+                .to_string(),
+        );
+        return Ok(());
+    };
+    let database_url = cli.database_url_required()?;
+    let pool = crate::db::connect(database_url, cli.db_max_connections).await?;
+    let client = FeishuClient::from_profile_env(&base_config.profile_env_path)?;
+    let table_id = base_config.table_id_for_role("activity_plan")?;
+
+    let fields_meta = client.list_fields(&base_config.base_token, table_id)?;
+    let Some(field_meta) = fields_meta
+        .iter()
+        .find(|meta| meta.get("field_name").and_then(Value::as_str) == Some(column))
+    else {
+        audit_feishu_field_update(&pool, payload, None, "feishu_field_column_missing", false)
+            .await?;
+        report.action_status = "feishu_field_column_missing".to_string();
+        return Ok(());
+    };
+    let ui_type = field_meta
+        .get("ui_type")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if ui_type != "Text" && ui_type != "SingleSelect" {
+        audit_feishu_field_update(
+            &pool,
+            payload,
+            None,
+            "feishu_field_type_not_writable",
+            false,
+        )
+        .await?;
+        report.action_status = "feishu_field_type_not_writable".to_string();
+        return Ok(());
+    }
+    if ui_type == "SingleSelect" {
+        let options = select_option_names(field_meta);
+        if !options.iter().any(|option| option == &value) {
+            audit_feishu_field_update(
+                &pool,
+                payload,
+                None,
+                "feishu_field_option_not_allowed",
+                false,
+            )
+            .await?;
+            report.action_status = "feishu_field_option_not_allowed".to_string();
+            report.limitations.push(
+                "value must exactly match an existing SingleSelect option; add the option in Feishu first".to_string(),
+            );
+            return Ok(());
+        }
+    }
+
+    let records = load_feishu_records(base_config, "activity_plan")?;
+    let record =
+        match resolve_plan_record(&records, payload.activity_title.trim(), payload.date.trim()) {
+            WriteBackResolution::Unique(record) => record,
+            WriteBackResolution::NoMatch => {
+                audit_feishu_field_update(
+                    &pool,
+                    payload,
+                    None,
+                    "feishu_field_record_not_found",
+                    false,
+                )
+                .await?;
+                report.action_status = "feishu_field_record_not_found".to_string();
+                return Ok(());
+            }
+            WriteBackResolution::Ambiguous => {
+                audit_feishu_field_update(
+                    &pool,
+                    payload,
+                    None,
+                    "feishu_field_record_ambiguous",
+                    false,
+                )
+                .await?;
+                report.action_status = "feishu_field_record_ambiguous".to_string();
+                return Ok(());
+            }
+        };
+    let record_ref = record.record_ref();
+    if record.raw_fields.get(column).map(String::as_str) == Some(value.as_str()) {
+        audit_feishu_field_update(
+            &pool,
+            payload,
+            Some(record_ref),
+            "feishu_field_already_in_sync",
+            false,
+        )
+        .await?;
+        report.action_status = "feishu_field_already_in_sync".to_string();
+        return Ok(());
+    }
+
+    let write_result = client.update_record(
+        &base_config.base_token,
+        table_id,
+        &record.record_id,
+        &json!({column: value}),
+    );
+    let (action_status, applied) = match &write_result {
+        Ok(()) => ("feishu_field_updated", true),
+        Err(_) => ("feishu_field_update_failed", false),
+    };
+    audit_feishu_field_update(&pool, payload, Some(record_ref), action_status, applied).await?;
+    write_result?;
+    report.action_status = action_status.to_string();
+    report.mutation_applied = Some(applied);
+    report
+        .summaries
+        .push("Feishu plan-table field update committed and audited".to_string());
+    Ok(())
+}
+
+async fn audit_feishu_field_update(
+    pool: &PgPool,
+    payload: &ActivityPayload,
+    record_ref: Option<String>,
+    action_status: &str,
+    mutation_applied: bool,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO qintopia_agent_os.tool_invocation_audit
+            (profile_id, tool_name, purpose, input_summary, output_summary, risk_level, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+    )
+    .bind("xiaoman")
+    .bind("xiaoman-activity/feishu-field-update")
+    .bind("bounded Xiaoman-owned plan-table column write-back")
+    .bind(json!({
+        "table_role": payload.table_role,
+        "field": payload.field,
+        "activity_date": payload.date,
+        "value": payload.value,
+        "record_ref": record_ref,
+    }))
+    .bind(json!({
+        "action_status": action_status,
+        "mutation_applied": mutation_applied,
+    }))
+    .bind("bounded_feishu_write")
+    .bind(json!({"mutation_id": payload.mutation_id}))
+    .execute(pool)
+    .await
+    .context("write Feishu field update audit row")?;
+    Ok(())
 }
 
 fn validate_status_transition(previous: &str, next: &str) -> Result<()> {
@@ -2140,6 +2389,8 @@ impl EventSignalIngestCandidate {
             preannounce_decision: String::new(),
             preannounce_channels: Vec::new(),
             human_reviewer: String::new(),
+            field: String::new(),
+            value: String::new(),
         }
     }
 }
@@ -2508,6 +2759,48 @@ impl FeishuClient {
         Ok(out)
     }
 
+    fn list_fields(&self, base_token: &str, table_id: &str) -> Result<Vec<Value>> {
+        let mut page_token = String::new();
+        let mut out = Vec::new();
+        loop {
+            let mut url =
+                format!("{FEISHU_BASE_API}/{base_token}/tables/{table_id}/fields?page_size=100");
+            if !page_token.is_empty() {
+                url.push_str("&page_token=");
+                url.push_str(&page_token);
+            }
+            let parsed = self.request_json("GET", &url, None)?;
+            let data = parsed.get("data").cloned().unwrap_or_else(|| json!({}));
+            if let Some(items) = data.get("items").and_then(Value::as_array) {
+                out.extend(items.iter().cloned());
+            }
+            if data.get("has_more").and_then(Value::as_bool) != Some(true) {
+                break;
+            }
+            page_token = data
+                .get("page_token")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            if page_token.is_empty() {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    fn update_record(
+        &self,
+        base_token: &str,
+        table_id: &str,
+        record_id: &str,
+        fields: &Value,
+    ) -> Result<()> {
+        let url = format!("{FEISHU_BASE_API}/{base_token}/tables/{table_id}/records/{record_id}");
+        self.request_json("PUT", &url, Some(&json!({"fields": fields})))?;
+        Ok(())
+    }
+
     fn request_json(&self, method: &str, url: &str, body: Option<&Value>) -> Result<Value> {
         let response = request_json(
             method,
@@ -2816,6 +3109,24 @@ fn validate(operation: &str, payload: &ActivityPayload) -> Result<()> {
                 ("human_reviewer", &payload.human_reviewer),
             ])?;
             validate_event_signal_mutation_payload(payload)?;
+        }
+        "feishu-field-update" => {
+            require_fields(&[
+                ("table_role", &payload.table_role),
+                ("activity_title", &payload.activity_title),
+                ("date", &payload.date),
+                ("field", &payload.field),
+                ("value", &payload.value),
+                ("mutation_id", &payload.mutation_id),
+            ])?;
+            if payload.table_role != "activity_plan" {
+                bail!("feishu-field-update writes only the activity plan table");
+            }
+            if feishu_write_column(&payload.field).is_none() {
+                bail!("field is not a Xiaoman-owned writable column");
+            }
+            validate_feishu_write_value(&payload.value)?;
+            Uuid::parse_str(payload.mutation_id.trim()).context("mutation_id must be a UUID")?;
         }
         "handoff-create" => {
             require_fields(&[
@@ -3484,6 +3795,87 @@ mod tests {
         assert!(!serialized.contains("internal_group_id"));
         assert!(!serialized.contains("boxcn_internal"));
         assert!(!serialized.contains("rec_internal"));
+    }
+
+    #[test]
+    fn feishu_field_update_validation_accepts_only_xiaoman_columns() {
+        for (field, column) in FEISHU_WRITE_FIELD_COLUMNS {
+            assert_eq!(feishu_write_column(field), Some(*column));
+        }
+        assert_eq!(feishu_write_column("participants"), None);
+        assert_eq!(feishu_write_column("群ID"), None);
+        assert_eq!(feishu_write_column(""), None);
+    }
+
+    #[test]
+    fn feishu_field_update_value_hygiene_rejects_sensitive_or_long_values() {
+        assert!(validate_feishu_write_value("已发布").is_ok());
+        assert!(validate_feishu_write_value("   ").is_err());
+        assert!(
+            validate_feishu_write_value(&"长".repeat(FEISHU_WRITE_VALUE_MAX_CHARS + 1)).is_err()
+        );
+        assert!(validate_feishu_write_value("see https://example.com").is_err());
+        assert!(validate_feishu_write_value("contact me@example.com").is_err());
+        assert!(validate_feishu_write_value("call 13800138000").is_err());
+    }
+
+    #[test]
+    fn resolve_plan_record_requires_unique_title_and_date_match() {
+        let plan_record = |record_id: &str| {
+            ActivityRecord::from_feishu_value(
+                &json!({
+                    "record_id": record_id,
+                    "fields": {
+                        "活动主题": "周六晨跑",
+                        "计划时间": "2026-08-15 07:00:00"
+                    }
+                }),
+                "activity_plan",
+            )
+            .expect("plan record should map")
+        };
+        let one = plan_record("rec_one");
+        let two = plan_record("rec_two");
+
+        let records = vec![one.clone()];
+        match resolve_plan_record(&records, "周六晨跑", "2026-08-15") {
+            WriteBackResolution::Unique(record) => assert_eq!(record.record_id, "rec_one"),
+            _ => panic!("single match should resolve"),
+        }
+        assert!(matches!(
+            resolve_plan_record(&records, "周六晨跑", "2026-08-16"),
+            WriteBackResolution::NoMatch
+        ));
+        assert!(matches!(
+            resolve_plan_record(&records, "别的活动", "2026-08-15"),
+            WriteBackResolution::NoMatch
+        ));
+
+        let records = vec![one, two];
+        assert!(matches!(
+            resolve_plan_record(&records, "周六晨跑", "2026-08-15"),
+            WriteBackResolution::Ambiguous
+        ));
+    }
+
+    #[test]
+    fn select_option_names_reads_live_field_metadata() {
+        let meta = json!({
+            "field_name": "小满运营状态",
+            "ui_type": "SingleSelect",
+            "property": {"options": [{"name": "待宣发判断"}, {"name": "已发布"}, {"name": "不发布"}]}
+        });
+        assert_eq!(
+            select_option_names(&meta),
+            vec![
+                "待宣发判断".to_string(),
+                "已发布".to_string(),
+                "不发布".to_string()
+            ]
+        );
+        assert!(
+            select_option_names(&json!({"field_name": "小满备注", "ui_type": "Text"})).is_empty()
+        );
     }
 
     #[test]

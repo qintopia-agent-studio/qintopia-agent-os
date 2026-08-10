@@ -127,6 +127,7 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_phase_update",
+    "qintopia_xiaoman_activity_feishu_field_update",
     "qintopia_xiaoman_activity_handoff_create",
     "qintopia_xiaoman_activity_promotion_review_draft",
     "qintopia_xiaoman_activity_material_summary",
@@ -177,6 +178,15 @@ XIAOMAN_ACTIVITY_READ_DENIED_FIELDS = {"群ID", "最后接龙消息ID", "素材�
 XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_MAX_ENTRIES = 30
 XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_KEY_MAX_LEN = 80
 XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_VALUE_MAX_LEN = 300
+# feishu-field-update may write only these Xiaoman-owned plan-table columns.
+# Keep in sync with FEISHU_WRITE_FIELD_COLUMNS in
+# runtime/sidecar/src/xiaoman_activity.rs.
+XIAOMAN_ACTIVITY_FEISHU_WRITE_FIELDS = {
+    "status": "小满运营状态",
+    "promotion_status": "宣发判断",
+    "notes": "小满备注",
+    "reminder_status": "活动前提醒状态",
+}
 XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS = {
     "PATH",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
@@ -1277,6 +1287,48 @@ QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA = {
             "preannounce_decision",
             "human_reviewer",
         ],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA = {
+    "description": (
+        "Bounded write-back to one Xiaoman-owned column of the activity plan table "
+        "(status=小满运营状态, promotion_status=宣发判断, notes=小满备注, "
+        "reminder_status=活动前提醒状态). The worker resolves the single plan record "
+        "matching activity_title+date server-side, validates SingleSelect values "
+        "against live options, writes Feishu, and records an audit row. Dry-run by "
+        "default; apply only after human confirmation."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "activity_title": {
+                "type": "string",
+                "description": "Exact plan-table 活动主题 of the record to update.",
+            },
+            "date": {
+                "type": "string",
+                "description": "Activity date in YYYY-MM-DD used with the title to resolve one record.",
+            },
+            "field": {
+                "type": "string",
+                "enum": ["status", "promotion_status", "notes", "reminder_status"],
+                "description": "Xiaoman-owned column key to write.",
+            },
+            "value": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "New column value; SingleSelect targets require an exact existing option.",
+            },
+            "mutation_id": {
+                "type": "string",
+                "description": "Caller-supplied UUID retained across exact retries.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["activity_title", "date", "field", "value", "mutation_id"],
         "additionalProperties": False,
     },
 }
@@ -5082,6 +5134,33 @@ def handle_qintopia_xiaoman_activity_promotion_details_update(args: dict[str, An
     )
 
 
+def handle_qintopia_xiaoman_activity_feishu_field_update(args: dict[str, Any], **_: Any) -> str:
+    skill = "qintopia_xiaoman_activity_feishu_field_update"
+    field = _clean_text(args.get("field"), max_len=40)
+    if field not in XIAOMAN_ACTIVITY_FEISHU_WRITE_FIELDS:
+        return _xiaoman_activity_error(
+            skill,
+            "field must be one of status, promotion_status, notes, reminder_status",
+            actor_agent=_xiaoman_activity_actor(args),
+        )
+    payload = {
+        "table_role": "activity_plan",
+        "activity_title": _clean_text(args.get("activity_title"), max_len=240),
+        "date": _clean_text(args.get("date"), max_len=40),
+        "field": field,
+        "value": _body_text(args.get("value"), max_len=500),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=64),
+    }
+    return _xiaoman_activity_command(
+        skill=skill,
+        operation="feishu-field-update",
+        args=args,
+        payload=payload,
+        required=["activity_title", "date", "field", "value", "mutation_id"],
+        writes_business_state=True,
+    )
+
+
 def handle_qintopia_xiaoman_activity_record_get(args: dict[str, Any], **_: Any) -> str:
     payload = {
         "record_id": _clean_text(args.get("record_id"), max_len=160),
@@ -7330,6 +7409,15 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA["description"],
         emoji="🧾",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_activity_feishu_field_update",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA,
+        handler=handle_qintopia_xiaoman_activity_feishu_field_update,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA["description"],
+        emoji="✍️",
     )
     ctx.register_tool(
         name="qintopia_xiaoman_activity_handoff_create",
