@@ -143,6 +143,7 @@ struct ActivityRecord {
     location: Option<String>,
     status: Option<String>,
     promotion_status: Option<String>,
+    schedule_confirmation: Option<String>,
     owner_name: Option<String>,
     initiator_name: Option<String>,
     material_summary: Option<String>,
@@ -162,6 +163,7 @@ struct ActivityRecordView {
     location: Option<String>,
     status: Option<String>,
     promotion_status: Option<String>,
+    schedule_confirmation: Option<String>,
     owner_name: Option<String>,
     initiator_name: Option<String>,
     material_summary: Option<String>,
@@ -2234,6 +2236,10 @@ impl ActivityRecord {
             location: field_string(fields, &["计划地点", "地点", "活动地点", "location"]),
             status: field_string(fields, &["小满运营状态", "活动状态", "状态", "status"]),
             promotion_status: field_string(fields, &["宣发判断", "宣发状态", "promotion_status"]),
+            schedule_confirmation: field_string(
+                fields,
+                &["下周排期确认", "排期确认", "schedule_confirmation"],
+            ),
             owner_name: field_string(fields, &["负责人", "负责同学", "owner", "owner_name"]),
             initiator_name: field_string(fields, &["发起人", "组织者", "initiator"]),
             material_summary: field_string(
@@ -2272,6 +2278,7 @@ impl ActivityRecord {
             location: self.location.clone(),
             status: self.status.clone(),
             promotion_status: self.promotion_status.clone(),
+            schedule_confirmation: self.schedule_confirmation.clone(),
             owner_name: self.owner_name.clone(),
             initiator_name: self.initiator_name.clone(),
             material_summary: self.material_summary.clone(),
@@ -3365,7 +3372,8 @@ mod tests {
                 "计划时间": "2026-08-01 15:00:00",
                 "计划地点": "秦托邦社区公区一楼",
                 "小满运营状态": "待宣发判断",
-                "宣发判断": "需要前宣"
+                "宣发判断": "需要前宣",
+                "下周排期确认": "已确认-排入下周"
             }
         });
 
@@ -3377,6 +3385,10 @@ mod tests {
         assert_eq!(record.location.as_deref(), Some("秦托邦社区公区一楼"));
         assert_eq!(record.status.as_deref(), Some("待宣发判断"));
         assert_eq!(record.promotion_status.as_deref(), Some("需要前宣"));
+        assert_eq!(
+            record.schedule_confirmation.as_deref(),
+            Some("已确认-排入下周")
+        );
     }
 
     #[test]
@@ -3422,6 +3434,7 @@ mod tests {
                 location: None,
                 status: None,
                 promotion_status: None,
+                schedule_confirmation: None,
                 owner_name: None,
                 initiator_name: None,
                 material_summary: None,
@@ -3439,6 +3452,7 @@ mod tests {
                 location: None,
                 status: None,
                 promotion_status: None,
+                schedule_confirmation: None,
                 owner_name: None,
                 initiator_name: None,
                 material_summary: None,
@@ -3519,6 +3533,7 @@ mod tests {
             location: None,
             status: None,
             promotion_status: None,
+            schedule_confirmation: None,
             owner_name: None,
             initiator_name: None,
             material_summary: None,

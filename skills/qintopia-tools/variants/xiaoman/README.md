@@ -126,6 +126,12 @@ or a direct conversation.
   create one internal visual work item; the collaboration worker creates a pending
   `poster_brief`, while image generation and publication remain separate human-gated
   steps.
+- `qintopia_xiaoman_weekly_poster_workflow_prepare`: turns the weekly preview
+  `weekly_poster_brief` into a bounded `operations-workflow-start` command for one
+  `activity_promotion` parent plus evidence and visual children. It defaults to dry-run,
+  keys idempotency by week and content, and does not call image providers, write Feishu,
+  queue, publish, or send. Poster brief approval, generated-image review, and final
+  group-send confirmation remain human gates.
 - `qintopia_xiaoman_activity_promotion_review_draft`: turns already-read sanitized
   activity records into a human-reviewable summary, promotion assessment, copy draft,
   poster brief, and controlled record-path payload. It does not read Feishu, write
