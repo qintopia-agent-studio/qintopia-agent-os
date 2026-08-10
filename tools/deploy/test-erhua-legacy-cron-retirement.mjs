@@ -57,6 +57,13 @@ try {
   const cronDir = path.join(profileDir, "cron");
   const cronFile = path.join(cronDir, "jobs.json");
   fs.mkdirSync(cronDir, { recursive: true });
+  const registryFile = path.join(tmpRoot, "registry", "reviewed-cron-jobs.json");
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  fs.writeFileSync(
+    registryFile,
+    JSON.stringify({ schema_version: 1, reviewed_jobs: [] }, null, 2),
+    "utf8"
+  );
 
   const legacyCron = {
     jobs: [
@@ -216,6 +223,7 @@ try {
       QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_TEST_ROOT: tmpRoot,
       QINTOPIA_ERHUA_PROFILE_DIR: profileDir,
       QINTOPIA_ERHUA_LEGACY_CRON_FILE: cronFile,
+      QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_REGISTRY: registryFile,
     },
     encoding: "utf8",
   });

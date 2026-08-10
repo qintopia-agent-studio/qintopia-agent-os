@@ -1,0 +1,15 @@
+{
+  "name": "二花·每日早报",
+  "schedule": { "kind": "cron", "expr": "10 8 * * *", "display": "10 8 * * *" },
+  "no_agent": true,
+  "script": "qintopia_erhua_morning_brief.sh",
+  "deliver": "origin",
+  "origin": {
+    "platform": "wecom",
+    "chat_id": "{{QINTOPIA_ERHUA_TECHNICAL_HOME_CHANNEL}}",
+    "chat_name": null,
+    "thread_id": null
+  },
+  "enabled": false,
+  "skills": []
+}

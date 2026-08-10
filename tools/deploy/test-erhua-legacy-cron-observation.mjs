@@ -21,6 +21,25 @@ const writeCron = (profileDir, value) => {
   return cronFile;
 };
 
+const REVIEWED_JOB = {
+  id: "abc123def456",
+  name: "二花·每日早报",
+  schedule: { kind: "cron", expr: "10 8 * * *", display: "10 8 * * *" },
+  no_agent: true,
+  script: "qintopia_erhua_morning_brief.sh",
+  deliver: "origin",
+  enabled: true,
+};
+
+const REVIEWED_ENTRY = {
+  profile: "erhua",
+  name: REVIEWED_JOB.name,
+  schedule_expr: "10 8 * * *",
+  script: "qintopia_erhua_morning_brief.sh",
+  no_agent: true,
+  approved_at: "2026-08-10",
+};
+
 try {
   const profileDir = path.join(
     tmpRoot,
@@ -32,6 +51,12 @@ try {
   );
   fs.mkdirSync(profileDir, { recursive: true });
   const missingCron = path.join(profileDir, "cron", "jobs.json");
+  const registryFile = path.join(tmpRoot, "registry", "reviewed-cron-jobs.json");
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  const writeRegistry = (value) => {
+    fs.writeFileSync(registryFile, JSON.stringify(value, null, 2), "utf8");
+    return registryFile;
+  };
 
   const run = (extraEnv = {}) =>
     spawnSync("bash", [script], {
@@ -43,6 +68,7 @@ try {
         QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_TEST_ROOT: tmpRoot,
         QINTOPIA_ERHUA_PROFILE_DIR: profileDir,
         QINTOPIA_ERHUA_LEGACY_CRON_FILE: missingCron,
+        QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_REGISTRY: registryFile,
         ...extraEnv,
       },
       encoding: "utf8",
@@ -62,6 +88,18 @@ try {
     throw new Error("Erhua legacy cron observation accepted production path overrides");
   }
 
+  const missingRegistry = run();
+  if (
+    missingRegistry.status === 0 ||
+    !missingRegistry.stderr.includes("registry is missing")
+  ) {
+    throw new Error(
+      "Erhua legacy cron observation accepted a missing reviewed registry"
+    );
+  }
+
+  writeRegistry({ schema_version: 1, reviewed_jobs: [] });
+
   const missing = run();
   if (missing.status !== 0 || !missing.stdout.includes('"cron_file_present":false')) {
     throw new Error(
@@ -76,7 +114,11 @@ try {
   const empty = run({
     QINTOPIA_ERHUA_LEGACY_CRON_FILE: emptyCron,
   });
-  if (empty.status !== 0 || !empty.stdout.includes('"no_legacy_cron_jobs"')) {
+  if (
+    empty.status !== 0 ||
+    !empty.stdout.includes('"reviewed_declarations_only"') ||
+    !empty.stdout.includes('"reviewed_decl_count":0')
+  ) {
     throw new Error(`empty cron observation failed\n${empty.stdout}\n${empty.stderr}`);
   }
 
@@ -93,11 +135,68 @@ try {
   const legacy = run({
     QINTOPIA_ERHUA_LEGACY_CRON_FILE: legacyCron,
   });
-  if (legacy.status === 0 || !legacy.stderr.includes("runtime cron job declarations")) {
-    throw new Error("Erhua legacy cron observation accepted a job declaration");
+  if (
+    legacy.status === 0 ||
+    !legacy.stderr.includes("unreviewed cron job declarations")
+  ) {
+    throw new Error(
+      "Erhua legacy cron observation accepted an unreviewed job declaration"
+    );
   }
   if (`${legacy.stdout}\n${legacy.stderr}`.includes("send real group content")) {
     throw new Error("Erhua legacy cron observation leaked cron command text");
+  }
+
+  writeRegistry({ schema_version: 1, reviewed_jobs: [REVIEWED_ENTRY] });
+
+  const reviewedCron = writeCron(profileDir, {
+    updated_at: "2026-08-09T00:00:00Z",
+    jobs: [REVIEWED_JOB],
+  });
+  const reviewed = run({
+    QINTOPIA_ERHUA_LEGACY_CRON_FILE: reviewedCron,
+  });
+  if (
+    reviewed.status !== 0 ||
+    !reviewed.stdout.includes('"reviewed_declarations_only"') ||
+    !reviewed.stdout.includes('"cron_decl_count":1') ||
+    !reviewed.stdout.includes('"reviewed_decl_count":1')
+  ) {
+    throw new Error(
+      `Erhua reviewed cron observation failed\n${reviewed.stdout}\n${reviewed.stderr}`
+    );
+  }
+
+  const withRuntimeFields = writeCron(profileDir, {
+    updated_at: "2026-08-09T00:00:00Z",
+    jobs: [
+      {
+        ...REVIEWED_JOB,
+        last_run_at: "2026-08-10T08:10:00+08:00",
+        next_run_at: "2026-08-11T08:10:00+08:00",
+        state: "scheduled",
+        last_status: "ok",
+        repeat: { times: null, completed: 1 },
+      },
+    ],
+  });
+  const runtimeFields = run({
+    QINTOPIA_ERHUA_LEGACY_CRON_FILE: withRuntimeFields,
+  });
+  if (runtimeFields.status !== 0) {
+    throw new Error(
+      `Erhua daemon runtime fields broke observation\n${runtimeFields.stdout}\n${runtimeFields.stderr}`
+    );
+  }
+
+  const wrongExpr = writeCron(profileDir, {
+    jobs: [{ ...REVIEWED_JOB, schedule: { kind: "cron", expr: "10 9 * * *" } }],
+  });
+  const wrongExprRun = run({
+    QINTOPIA_ERHUA_LEGACY_CRON_FILE: wrongExpr,
+  });
+  if (wrongExprRun.status === 0) {
+    throw new Error("Erhua legacy cron observation accepted a drifted schedule expr");
   }
 
   fs.writeFileSync(legacyCron, "{not-json", "utf8");

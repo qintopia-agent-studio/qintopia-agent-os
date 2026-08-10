@@ -48,10 +48,11 @@
 - Local PR auto tier: `pnpm check:pr:auto`
 - Erhua morning brief fixture test:
   `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/erhua-morning-brief/tests -v`
-- Erhua morning brief production timer observation:
+- Erhua morning brief systemd timer observation (rollback-to-timer path only):
   `QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh`
-- Erhua morning brief reviewed production schedule is `08:10 Asia/Shanghai`
-  (`OnCalendar=*-*-* 08:10:00`).
+- Erhua morning brief reviewed production schedule is `08:10 Asia/Shanghai`, pinned by
+  the Hermes cron registry expr `10 8 * * *` in
+  `runtime/hermes/cron/reviewed-cron-jobs.json`.
 - Erhua morning brief AI news defaults to five items. English items must carry explicit
   Chinese title and summary translations before they can appear in the brief; do not
   send English-only RSS fallback items as-is.
@@ -138,10 +139,10 @@
     deploy/sidecar/scripts/apply-erhua-morning-brief-production-config.sh --disable
   ```
 
-- Erhua morning brief production activation after Release promotion and reviewed
-  persistent env approval:
+- Erhua morning brief systemd timer activation (rollback-to-timer path only) after
+  Release promotion and reviewed persistent env approval:
   `QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh`
-- Erhua morning brief production rollback after persistent env disables the timer:
+- Erhua morning brief systemd timer rollback after persistent env disables the timer:
   `QINTOPIA_ERHUA_MORNING_BRIEF_ROLLBACK=approved-production-erhua-morning-brief-rollback deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh`
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
 - Release Please PR manual CI validation:
@@ -470,6 +471,18 @@
   on a live systemd unit. Rollback scripts are
   `rollback-xiaoman-weekly-recruitment-production.sh` and
   `rollback-xiaoman-weekly-plan-confirmation-production.sh`.
+
+- Erhua morning brief now uses a Hermes cron job (task 5), not the release-managed daily
+  timer. The reviewed declaration is `runtime/hermes/cron/erhua/morning-brief.job.json`,
+  the wrapper is `runtime/hermes/scripts/qintopia_erhua_morning_brief.sh`, and the
+  registry entry pins expr `10 8 * * *`. Install and enable the Hermes job with
+  `QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON=approved-production-erhua-morning-brief-hermes-cron`
+  plus `apply-erhua-morning-brief-hermes-cron.sh --install` then `--enable`. Disable the
+  old timer with `rollback-erhua-morning-brief-production.sh` before enabling the job;
+  the auto-publish approvals `approved-production-erhua-morning-brief-auto-publish` and
+  `approved-production-qiwe-text-send` are unchanged. Health is the allowlist
+  observation smoke plus the snapshot git history. Follow
+  `docs/operations/erhua-morning-brief-hermes-cron-runbook.md`.
 
 - Xiaoman weekly preview production uses a release-managed timer, not Hermes
   conversation cron or hand-copied unit files. Apply the persistent non-secret config
