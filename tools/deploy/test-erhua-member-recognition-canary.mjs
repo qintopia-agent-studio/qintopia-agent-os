@@ -32,6 +32,13 @@ try {
   assert.equal(result.status, 0, result.stderr);
 
   evidence = writeCase(
+    "valid-person-ref-phone-like-hash.json",
+    JSON.stringify(validRecords().map(withPhoneLikePersonRef), null, 2)
+  );
+  result = runChecker(evidence);
+  assert.equal(result.status, 0, result.stderr);
+
+  evidence = writeCase(
     "valid-identity-only.json",
     JSON.stringify([
       ...validRecords(),
@@ -490,4 +497,19 @@ function personRef(personId) {
   return `sha256:${createHash("sha256")
     .update(`erhua-member-recognition-person-ref-v1:${personId.toLowerCase()}`)
     .digest("hex")}`;
+}
+
+function withPhoneLikePersonRef(record) {
+  const next = JSON.parse(JSON.stringify(record));
+  const replacement = "sha256:17336786728" + "a".repeat(53);
+  if (next.answer_context?.speaker) {
+    next.answer_context.speaker.person_ref = replacement;
+  }
+  if (next.answer_context?.referenced_member) {
+    next.answer_context.referenced_member.person_ref = replacement;
+  }
+  for (const member of next.answer_context?.mentioned_members ?? []) {
+    member.person_ref = replacement;
+  }
+  return next;
 }

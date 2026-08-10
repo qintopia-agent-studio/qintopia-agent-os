@@ -30,7 +30,6 @@ for (const pattern of [
   /"raw_messages"\s*:/,
   /"hidden_profile_details"\s*:/,
   /"raw"\s*:/,
-  /1[3-9]\d{9}/,
 ]) {
   if (pattern.test(evidenceText)) {
     fail(`canary evidence contains forbidden sensitive fragment: ${pattern}`);
@@ -40,6 +39,10 @@ for (const pattern of [
 const records = parseCanaryRecords(evidenceText);
 if (records.length === 0) {
   fail("expected at least one Erhua member recognition canary record");
+}
+const visibleText = records.flatMap(visibleTextFields).join("\n");
+if (/1[3-9]\d{9}/.test(visibleText)) {
+  fail("canary evidence contains forbidden sensitive fragment: /1[3-9]\\d{9}/");
 }
 
 const errors = [];
@@ -380,6 +383,24 @@ function textField(record, fields) {
     }
   }
   return "";
+}
+
+function visibleTextFields(value, key = "") {
+  if (key === "person_ref" || key === "canonical_key") {
+    return [];
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => visibleTextFields(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([entryKey, entryValue]) =>
+      visibleTextFields(entryValue, entryKey)
+    );
+  }
+  return [];
 }
 
 function asText(value) {
