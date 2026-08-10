@@ -3274,7 +3274,6 @@ for (const scriptPath of erhuaMorningBriefScripts) {
   }
 }
 for (const scriptPath of [
-  "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
 ]) {
@@ -3303,9 +3302,18 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     "refuses Xiaoman wrapper path override",
     'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
     "reviewed primary sidecar binary is missing",
+    'QIWE_BIN="${RELEASE_DIR}/sidecar-profiles/qiwe-production/qintopia-message-sidecar"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED",
+    "approved-production-erhua-morning-brief-auto-publish",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID",
+    "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL",
     "--prepare-artifact",
     "--execute-artifact-create",
     "--apply-artifact-create",
+    "operations-artifact-review-decision",
+    "operations-group-message-confirm",
+    "run-group-message-send-worker",
+    "run-qiwe-text-send-worker",
     '"external_send_executed": False',
     '"send_request_created": False',
   ]) {
@@ -3550,6 +3558,23 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.s
     timerObservation,
     '--since "$JOURNAL_DISABLED_SINCE" -n "$JOURNAL_LINES"'
   );
+  for (const fragment of [
+    "require_observed_auto_publish_boundary",
+    'require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED" "1"',
+    'require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL" "approved-production-erhua-morning-brief-auto-publish"',
+    'require_observed_env_value "QINTOPIA_QIWE_TEXT_SEND_ENABLED" "1"',
+    'require_observed_env_value "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-text-send"',
+    'require_observed_env_sha256 "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
+  ]) {
+    requireFragment(
+      "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+      timerObservation,
+      fragment
+    );
+  }
   forbidFragment(
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     timerObservation,
@@ -3576,6 +3601,15 @@ if (exists("deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh"))
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
+    "require_auto_publish_boundary",
+    'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED" "1"',
+    'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL" "approved-production-erhua-morning-brief-auto-publish"',
+    'require_env_value "QINTOPIA_QIWE_TEXT_SEND_ENABLED" "1"',
+    'require_env_value "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-text-send"',
+    'require_env_sha256 "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
   ]) {
     requireFragment(
       "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",

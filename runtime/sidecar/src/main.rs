@@ -61,6 +61,7 @@ mod poster_delivery;
 mod poster_notification;
 mod qiwe_image_send;
 pub mod qiwe_image_send_state;
+mod qiwe_text_send;
 mod raw_archive;
 mod smoke;
 mod url_policy;
@@ -694,6 +695,13 @@ async fn main() -> Result<()> {
         Command::ProcessQiweImageSendCallback { apply, dry_run } => {
             qiwe_image_send::run_callback_processor(&cli, apply, dry_run).await
         }
+        Command::RunQiweTextSendWorker {
+            once,
+            work_item_id,
+            apply,
+            dry_run,
+            fixture_mode,
+        } => qiwe_text_send::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
         Command::XiaomanRealActivityProductionEvidence {
             workflow_root_id,
             source_event_signal_id,

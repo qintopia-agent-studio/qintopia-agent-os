@@ -173,6 +173,15 @@ From the monorepo root, prefer:
   Before selecting new work, the claim transaction must expire and requeue a stale
   `awaiting_callback` attempt even when no callback ever arrives; never apply that
   timeout retry path to `sending`.
+- `run-qiwe-text-send-worker` is only for the Erhua morning-brief text send path. It may
+  process only `text_activity_announcement` work items backed by approved
+  `text_announcement` artifacts, final confirmation, send-ready evidence, exact
+  artifact/content-hash binding, and an allowlisted QiWe target group. Apply must use
+  the `qiwe-production` companion runtime, `QINTOPIA_QIWE_TEXT_SEND_ENABLED=1`, the
+  exact `approved-production-qiwe-text-send` phrase, and the reviewed production
+  database URL hash before Postgres or QiWe network access. Do not reuse it as a generic
+  text sender, do not bypass `run-group-message-send-worker` send-ready evidence, and
+  record ambiguous QiWe outcomes with `external_send_executed=null`.
 - Persist an `uploading` attempt in the same transaction that claims the work item,
   before any external socket can open. Expired `uploading` attempts and legacy claims
   with no attempt row are unknown external outcomes: terminalize them as `ambiguous`
