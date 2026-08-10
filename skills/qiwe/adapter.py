@@ -1038,6 +1038,32 @@ def _answer_context_reply_directives(answer_context: Dict[str, Any]) -> str:
         "- 不要暴露工具名、字段名、画像来源、raw history、内部标签或日报内容。",
         "- 如果用户要求“记住”“以后你要”“这个人喜欢”等长期训练，只有训练员授权路径返回成功时才可以说已经记住；否则只能按当前对话临时回应。",
     ]
+    answer_basis = answer_context.get("answer_basis")
+    if isinstance(answer_basis, dict) and answer_basis.get("kind") == "public_source_check_required":
+        lines.append("- 当前是本地公开推荐问题；不要直接判“最好”“公认最棒”，不要声称自己听过、查过或已确认实时状态。")
+        lines.append("- 回复必须明确提到小红书，说明它用于看近期真实体验和口碑线索，并给出可复制的小红书搜索词。")
+        lines.append("- 小红书不能单独当权威事实；演出类问题再用票务和官方渠道核对档期、阵容、票价，餐饮/咖啡馆类问题再用点评/地图核对近期评价、地址和营业状态。")
+        lookup_plan = answer_context.get("public_source_lookup_plan")
+        if isinstance(lookup_plan, dict):
+            source_order = lookup_plan.get("source_order")
+            if isinstance(source_order, list):
+                xiaohongshu = next(
+                    (
+                        source for source in source_order
+                        if isinstance(source, dict) and source.get("source") == "小红书"
+                    ),
+                    None,
+                )
+                if isinstance(xiaohongshu, dict):
+                    queries = xiaohongshu.get("search_queries")
+                    if isinstance(queries, list):
+                        compact_queries = [
+                            _display_text(query)[:120]
+                            for query in queries[:3]
+                            if _display_text(query)
+                        ]
+                        if compact_queries:
+                            lines.append(f"  - 小红书搜索词：{'；'.join(compact_queries)}")
     training_guidance = answer_context.get("training_guidance")
     if isinstance(training_guidance, dict):
         persona_overlays = training_guidance.get("persona_overlays")

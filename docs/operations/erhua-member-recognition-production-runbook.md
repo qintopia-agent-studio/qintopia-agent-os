@@ -545,6 +545,13 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    and must not retain raw group ids, sender ids, QiWe user ids, person UUIDs, raw
    messages, or raw profile text.
 
+   The coverage input may contain repair gap samples with `person_id` fields because the
+   upstream coverage checker uses them while repairing production identity/profile gaps.
+   The roster audit builder strips only those sample `person_id` fields before reading
+   coverage evidence and still fails the run if the final roster output contains any
+   UUID-like fragment. Canary and completion-summary evidence remain strict and must not
+   contain `person_id` fields at all.
+
 ## Hold Conditions
 
 - Do not apply if dry-run reports ambiguous identity samples.

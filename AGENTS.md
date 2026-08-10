@@ -659,7 +659,10 @@ Use `rg` and `rg --files` for search.
   `public_source_recommendation` and answer with the lookup path plus uncertainty.
   Xiaohongshu may be used as local audience evidence and search-discovery input, but
   must be cross-checked against ticketing schedules or official venue/organizer accounts
-  before claiming availability, lineup, price, or "best".
+  before claiming availability, lineup, price, or "best". The QiWe adapter must promote
+  `public_source_check_required` and its lookup plan into explicit reply directives;
+  embedding the raw answer-context JSON alone is not sufficient to keep Xiaohongshu in
+  the final reply.
 - For the Huabaosi production image canary, the owner-selected first storage boundary is
   the fixed Feishu Base `huabaosi-generated-image-v1` table. The image worker may upload
   the exact final JPEG attachment and idempotently upsert one row by
