@@ -32,6 +32,8 @@ try {
   assert.equal(summary.passed, true);
   assert.equal(summary.current_room_qiwe_identities.unsafe_display_unlinked, 0);
   assert.equal(summary.linked_people.total, 1);
+  assert.equal(summary.qiwe_speaker_identities.platform_identities_missing, 0);
+  assert.equal(summary.qiwe_speaker_identities.ambiguous_users, 0);
   assert.doesNotMatch(JSON.stringify(summary), new RegExp(PERSON_PAXON, "i"));
 
   result = runFinalizer(

@@ -84,7 +84,10 @@
   `scope_fingerprint`; never retain real group ids, QiWe user ids, sender ids, person
   ids, DB URLs, tokens, raw messages, or raw profile text. Final completion must retain
   `unsafe_display_unlinked = 0` so numeric or otherwise unsafe current-room display
-  names cannot disappear into `excluded`.
+  names cannot disappear into `excluded`. It must also retain
+  `qiwe_speaker_identities.platform_identities_missing = 0` and
+  `qiwe_speaker_identities.ambiguous_users = 0`, proving current-room QiWe users are
+  speaker-ready for "我是谁" lookup.
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:

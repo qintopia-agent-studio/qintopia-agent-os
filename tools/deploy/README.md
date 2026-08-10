@@ -276,6 +276,9 @@ recognition. It also requires room-scoped `linked_people_total` and
 plus `answer_context_speaker_canary_specs` resolving every linked current-room person
 through sanitized `speaker` output, plus `answer_context_referenced_canary_specs`
 resolving every linked current-room person through sanitized `referenced_member` output.
+The retained completion summary also records `qiwe_speaker_identities` and requires
+`platform_identities_missing = 0` plus `ambiguous_users = 0`, so self-identification is
+proven at the QiWe user lookup boundary rather than only at the person aggregate.
 Retained canary records must exactly match the coverage report's `expected_mention` /
 `expected_speaker_label` / `expected_referenced_label`, `canonical_key`, and
 `required_profile_terms`, so a stale or manually shortened canary list cannot satisfy

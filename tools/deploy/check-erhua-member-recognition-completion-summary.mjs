@@ -51,6 +51,7 @@ checkAllowedKeys(
     "room_sync",
     "current_room_qiwe_identities",
     "linked_people",
+    "qiwe_speaker_identities",
     "profile_repair",
     "running_profile_hints",
     "answer_context_canaries",
@@ -283,6 +284,72 @@ if (
   linkedPeopleTotal > potentialMemberLinked
 ) {
   errors.push("linked_people.total exceeds linked potential member identities");
+}
+
+const speakerIdentities = objectField(summary, "qiwe_speaker_identities", errors);
+checkAllowedKeys(
+  speakerIdentities,
+  "qiwe_speaker_identities",
+  [
+    "materializable_users",
+    "platform_identities_missing",
+    "ambiguous_users",
+    "linked_people_without_platform_identity",
+  ],
+  errors
+);
+const speakerMaterializableUsers = readNonNegativeInteger(
+  speakerIdentities,
+  "materializable_users",
+  errors
+);
+const speakerPlatformIdentitiesMissing = readNonNegativeInteger(
+  speakerIdentities,
+  "platform_identities_missing",
+  errors
+);
+const speakerAmbiguousUsers = readNonNegativeInteger(
+  speakerIdentities,
+  "ambiguous_users",
+  errors
+);
+const speakerLinkedPeopleWithoutPlatformIdentity = readNonNegativeInteger(
+  speakerIdentities,
+  "linked_people_without_platform_identity",
+  errors
+);
+if (
+  speakerPlatformIdentitiesMissing !== undefined &&
+  speakerPlatformIdentitiesMissing !== 0
+) {
+  errors.push("QiWe speaker identities must not miss platform identities");
+}
+if (speakerAmbiguousUsers !== undefined && speakerAmbiguousUsers !== 0) {
+  errors.push("QiWe speaker identities must not have ambiguous users");
+}
+if (
+  speakerLinkedPeopleWithoutPlatformIdentity !== undefined &&
+  speakerLinkedPeopleWithoutPlatformIdentity !== 0
+) {
+  errors.push(
+    "linked people must all be speaker-ready through QiWe platform identities"
+  );
+}
+if (
+  speakerMaterializableUsers !== undefined &&
+  linkedIdentities !== undefined &&
+  speakerMaterializableUsers < linkedIdentities
+) {
+  errors.push("QiWe speaker materializable users must cover every linked identity");
+}
+if (
+  speakerLinkedPeopleWithoutPlatformIdentity !== undefined &&
+  peopleWithoutPlatformIdentity !== undefined &&
+  speakerLinkedPeopleWithoutPlatformIdentity !== peopleWithoutPlatformIdentity
+) {
+  errors.push(
+    "speaker linked_people_without_platform_identity must match linked_people.without_qiwe_platform_identity"
+  );
 }
 if (args.requireActiveProfiles) {
   if (peopleWithoutProfile !== undefined && peopleWithoutProfile !== 0) {
