@@ -169,6 +169,14 @@ XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
     "notes": 500,
     "updated_at": 120,
 }
+# New activity-table columns are chat-visible by default. Only internal
+# identifiers, attachment payloads, and record links may be added here after
+# owner review; keep in sync with FEISHU_READ_DENIED_FIELDS in
+# runtime/sidecar/src/xiaoman_activity.rs.
+XIAOMAN_ACTIVITY_READ_DENIED_FIELDS = {"群ID", "最后接龙消息ID", "素材照片", "关联活动发生"}
+XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_MAX_ENTRIES = 30
+XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_KEY_MAX_LEN = 80
+XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_VALUE_MAX_LEN = 300
 XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS = {
     "PATH",
     "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_BASE_TOKEN",
@@ -3853,7 +3861,7 @@ def _xiaoman_activity_command(
             },
             "guardrails": [
                 "xiaoman activity wrapper only; no generic Base access",
-                "worker must enforce approved table/field allowlists",
+                "worker must enforce approved table allowlists and the reviewed field denylist",
                 "worker must write audit rows for success, failure, or denial",
                 "write operations default to dry-run",
                 "do not expose Base internals, record ids, commands, or traces to WeCom users",
@@ -3935,7 +3943,7 @@ def _xiaoman_activity_run_read_through(
     ]
     sanitized["guardrails"] = [
         "read-through runs with a minimal environment allowlist",
-        "records use a fixed field allowlist and length limits",
+        "records pass through activity table fields except the reviewed denylist, with length limits",
         "human confirmation is required before handoff, queueing, publishing, or sending",
     ]
     sanitized.update(
@@ -4137,9 +4145,31 @@ def _xiaoman_activity_sanitize_records(raw_records: Any) -> list[dict[str, str]]
             value = _xiaoman_activity_sanitize_record_value(key, raw_record.get(key), max_len)
             if value:
                 record[key] = value
+        passthrough = _xiaoman_activity_sanitize_passthrough_fields(raw_record.get("fields"))
+        if passthrough:
+            record["fields"] = passthrough
         if record:
             records.append(record)
     return records
+
+
+def _xiaoman_activity_sanitize_passthrough_fields(raw_fields: Any) -> dict[str, str]:
+    if not isinstance(raw_fields, dict):
+        return {}
+    fields: dict[str, str] = {}
+    for raw_key, raw_value in raw_fields.items():
+        if len(fields) >= XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_MAX_ENTRIES:
+            break
+        key = _clean_text(raw_key, max_len=XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_KEY_MAX_LEN)
+        if not key or key in XIAOMAN_ACTIVITY_READ_DENIED_FIELDS:
+            continue
+        value = _xiaoman_activity_sanitize_record_value(
+            key, raw_value, XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_VALUE_MAX_LEN
+        )
+        if not value:
+            continue
+        fields[key] = value
+    return fields
 
 
 def _xiaoman_activity_summaries_from_records(records: list[dict[str, str]]) -> list[str]:

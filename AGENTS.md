@@ -158,16 +158,29 @@
   `QINTOPIA_XIAOMAN_ACTIVITY_SEND_REQUEST_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-send-request-starter-observation-smoke.sh`
 - Xiaoman activity image generation starter observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_IMAGE_GENERATION_STARTER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh`
-- Xiaoman activity Feishu read-through is not a generic Base browser. New activity
-  business fields must be added to both `runtime/sidecar/src/xiaoman_activity.rs`
-  `ActivityRecord`/`ActivityRecordView` normalization and
-  `skills/qintopia-tools/variants/xiaoman/__init__.py`
-  `XIAOMAN_ACTIVITY_RECORD_READ_FIELDS`; otherwise Xiaoman can read the table but cannot
-  see that field in chat-safe outputs. The same field must also be added to
+- Xiaoman activity Feishu read-through is not a generic Base browser: it stays
+  read-only, bound to the two configured tables, and output-capped. Record columns pass
+  through to chat-safe outputs by default (`ActivityRecordView.fields` from
+  `runtime/sidecar/src/xiaoman_activity.rs` `passthrough_fields`, sanitized under the
+  `fields` key by `skills/qintopia-tools/variants/xiaoman/__init__.py`), so a new
+  activity-table column needs no code change to become chat-visible. Only internal
+  identifiers, attachment payloads, and record links are blocked: the reviewed denylist
+  lives in both `FEISHU_READ_DENIED_FIELDS` (Rust) and
+  `XIAOMAN_ACTIVITY_READ_DENIED_FIELDS` (Python) and must stay in sync; adding a new
+  sensitive column means an owner-reviewed denylist PR in both places, nothing else. A
+  field still needs canonical treatment only when it drives workflow logic (parity
+  comparison, weekly workers, schedule confirmation): then add it to
+  `ActivityRecord`/`ActivityRecordView` normalization,
+  `XIAOMAN_ACTIVITY_RECORD_READ_FIELDS`,
   `deploy/sidecar/scripts/xiaoman-activity-parity-check.py` (`COMPARABLE_FIELDS` and
-  `canonical_record` aliases) and
+  `canonical_record` aliases), and
   `deploy/sidecar/scripts/xiaoman-activity-production-parity-capture.sh`
   (`canonical_legacy_record`), or production parity reports false drift.
+- The official Feishu OpenAPI MCP (`@larksuiteoapi/lark-mcp`) exists but is not mounted
+  on group-facing profiles: it is beta, unmaintained since 2025-08, takes app secrets as
+  process arguments, and exposes generic Base access without the read-through output
+  sanitization. There is no official Feishu CLI; the audited read-through worker remains
+  the Xiaoman read channel.
 - The production activity plan table column `下周排期确认` is a single-select with
   options `待确认（居民提交表单后默认）`, `已确认-排入下周`, `暂缓` (verified against
   the Feishu fields API on 2026-08-10). Consumers must substring-match these values, not

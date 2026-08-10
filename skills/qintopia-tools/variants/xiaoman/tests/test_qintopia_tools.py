@@ -1432,6 +1432,65 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertNotIn("tbl_secret", rendered)
         self.assertNotIn("postgres://secret", rendered)
 
+    def test_xiaoman_activity_read_through_passes_fields_with_denylist_and_caps(self):
+        self.enable_xiaoman_activity_wrappers()
+        long_participants = "甲" * 320
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_plan",
+                        "record_ref": "activity_plan:abc123def456",
+                        "title": "周六晨跑",
+                        "activity_date": "2026-08-15",
+                        "fields": {
+                            "参与人名单": long_participants,
+                            "参与人数": "12",
+                            "群ID": "internal_group_id",
+                            "最后接龙消息ID": "om_internal",
+                            "素材照片": "photo.jpg",
+                            "关联活动发生": "rec_internal",
+                            "活动介绍": "postgres://secret",
+                            "空字段": "   ",
+                        },
+                    }
+                ],
+                "summaries": [],
+                "limitations": [],
+                "guardrails": [],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-08-15",
+                    "table_role": "activity_plan",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        fields = report["records"][0]["fields"]
+        self.assertEqual(fields["参与人数"], "12")
+        self.assertEqual(len(fields["参与人名单"]), 300)
+        self.assertNotIn("群ID", fields)
+        self.assertNotIn("最后接龙消息ID", fields)
+        self.assertNotIn("素材照片", fields)
+        self.assertNotIn("关联活动发生", fields)
+        self.assertNotIn("活动介绍", fields)
+        self.assertNotIn("空字段", fields)
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("internal_group_id", rendered)
+        self.assertNotIn("om_internal", rendered)
+        self.assertNotIn("postgres://secret", rendered)
+
     def test_xiaoman_activity_read_through_filters_actual_sensitive_env_values(self):
         self.enable_xiaoman_activity_wrappers()
         sensitive_token = "plain-random-token-value"

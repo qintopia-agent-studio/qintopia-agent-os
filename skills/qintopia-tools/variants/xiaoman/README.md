@@ -150,7 +150,9 @@ for local execution. Set `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1` only 
 runtime that should let the tool directly receive sanitized read results from the
 sidecar. Read-through is limited to read-only, non-dry-run operations and returns the
 worker's `record_count`, `records`, and `summaries`; write operations still return
-commands.
+commands. Each record carries the canonical keys plus a `fields` map that passes through
+every activity-table column except the reviewed denylist (internal ids, attachments,
+record links), so new columns are chat-visible without code changes.
 
 When a human pastes a Feishu wiki/Base URL and asks whether Xiaoman can read that plan
 sheet, use `qintopia_xiaoman_activity_plan_table_probe`. It accepts only the configured

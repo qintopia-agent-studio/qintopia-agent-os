@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     io::{Read, Write},
     net::TcpStream,
@@ -47,7 +48,12 @@ const FEISHU_AUTH_API: &str =
     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
 const HANDOFF_TYPES: &[&str] = &["visual_asset_request"];
 const HANDOFF_TARGETS: &[&str] = &["huabaosi"];
-const FEISHU_READ_LIMITATION: &str = "Feishu Base read is allowlisted and read-only; write parity, audit, and webhook shadow validation are still required before removing the legacy raw Base read path";
+const FEISHU_READ_LIMITATION: &str = "Feishu Base read is allowlisted to the configured tables and read-only; record fields pass through to chat-safe outputs except the reviewed denylist of internal ids, attachments, and record links";
+// New plan-table columns are chat-visible by default; only internal identifiers,
+// attachment payloads, and record links may be added here after owner review.
+const FEISHU_READ_DENIED_FIELDS: &[&str] = &["群ID", "最后接龙消息ID", "素材照片", "关联活动发生"];
+const PASSTHROUGH_FIELD_MAX_ENTRIES: usize = 30;
+const PASSTHROUGH_FIELD_VALUE_MAX_CHARS: usize = 300;
 
 #[derive(Debug, Clone)]
 pub struct ActivityRuntimeConfig {
@@ -137,6 +143,7 @@ struct ActivityRecord {
     record_id: String,
     table_role: String,
     title: String,
+    raw_fields: BTreeMap<String, String>,
     activity_date: Option<String>,
     start_time: Option<String>,
     end_time: Option<String>,
@@ -157,6 +164,7 @@ struct ActivityRecordView {
     table_role: String,
     record_ref: String,
     title: String,
+    fields: BTreeMap<String, String>,
     activity_date: Option<String>,
     start_time: Option<String>,
     end_time: Option<String>,
@@ -2210,6 +2218,7 @@ impl ActivityRecord {
             record_id,
             table_role,
             title,
+            raw_fields: passthrough_fields(fields),
             activity_date: field_string(
                 fields,
                 &[
@@ -2272,6 +2281,7 @@ impl ActivityRecord {
             table_role: self.table_role.clone(),
             record_ref: self.record_ref(),
             title: self.title.clone(),
+            fields: self.raw_fields.clone(),
             activity_date: self.activity_date.clone(),
             start_time: self.start_time.clone(),
             end_time: self.end_time.clone(),
@@ -2323,6 +2333,40 @@ fn field_string(fields: &Value, names: &[&str]) -> Option<String> {
             .map(|item| item.trim().to_string())
             .filter(|item| !item.is_empty())
     })
+}
+
+fn passthrough_fields(fields: &Value) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Some(map) = fields.as_object() else {
+        return out;
+    };
+    for (name, value) in map {
+        if out.len() >= PASSTHROUGH_FIELD_MAX_ENTRIES {
+            break;
+        }
+        if FEISHU_READ_DENIED_FIELDS.contains(&name.as_str()) {
+            continue;
+        }
+        let Some(text) = field_cell_as_string(name, value) else {
+            continue;
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        out.insert(
+            name.clone(),
+            truncate_chars(text, PASSTHROUGH_FIELD_VALUE_MAX_CHARS),
+        );
+    }
+    out
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    text.chars().take(max_chars).collect()
 }
 
 fn string_at(value: &Value, names: &[&str]) -> Option<String> {
@@ -3392,6 +3436,57 @@ mod tests {
     }
 
     #[test]
+    fn passthrough_fields_pass_columns_and_apply_denylist_and_caps() {
+        let long_text = "参".repeat(PASSTHROUGH_FIELD_VALUE_MAX_CHARS + 20);
+        let value = json!({
+            "record_id": "rec_feishu_passthrough_1",
+            "fields": {
+                "活动主题": "晨跑活动",
+                "参与人名单": long_text,
+                "参与人数": 12,
+                "群ID": "internal_group_id",
+                "最后接龙消息ID": "om_internal",
+                "素材照片": [{"file_token": "boxcn_internal", "name": "photo.jpg"}],
+                "关联活动发生": {"record_ids": ["rec_internal"], "table_id": "tbl_internal"},
+                "空备注": "   "
+            }
+        });
+
+        let record = ActivityRecord::from_feishu_value(&value, "activity_plan")
+            .expect("Feishu plan record should map");
+
+        assert_eq!(
+            record.raw_fields.get("活动主题").map(String::as_str),
+            Some("晨跑活动")
+        );
+        assert_eq!(
+            record.raw_fields.get("参与人数").map(String::as_str),
+            Some("12")
+        );
+        let participants = record
+            .raw_fields
+            .get("参与人名单")
+            .expect("participants should pass through");
+        assert_eq!(
+            participants.chars().count(),
+            PASSTHROUGH_FIELD_VALUE_MAX_CHARS
+        );
+        for denied in FEISHU_READ_DENIED_FIELDS {
+            assert!(
+                !record.raw_fields.contains_key(*denied),
+                "denied field must not pass through: {denied}"
+            );
+        }
+        assert!(!record.raw_fields.contains_key("空备注"));
+
+        let view = record.view();
+        let serialized = serde_json::to_string(&view).expect("view should serialize");
+        assert!(!serialized.contains("internal_group_id"));
+        assert!(!serialized.contains("boxcn_internal"));
+        assert!(!serialized.contains("rec_internal"));
+    }
+
+    #[test]
     fn feishu_record_mapping_normalizes_timestamp_activity_time() {
         let value = json!({
             "record_id": "rec_feishu_occurrence_1",
@@ -3428,6 +3523,7 @@ mod tests {
                 record_id: "rec_plan_shadow_1".to_string(),
                 table_role: "activity_plan".to_string(),
                 title: "周日共创晚餐".to_string(),
+                raw_fields: BTreeMap::new(),
                 activity_date: Some("2026-06-28".to_string()),
                 start_time: None,
                 end_time: None,
@@ -3446,6 +3542,7 @@ mod tests {
                 record_id: "rec_occurrence_shadow_1".to_string(),
                 table_role: "activity_occurrence".to_string(),
                 title: "社区共学".to_string(),
+                raw_fields: BTreeMap::new(),
                 activity_date: None,
                 start_time: Some("2026-06-28 15:00".to_string()),
                 end_time: None,
@@ -3527,6 +3624,7 @@ mod tests {
             record_id: "rec_sensitive_shadow".to_string(),
             table_role: "activity_plan".to_string(),
             title: "安全输出活动".to_string(),
+            raw_fields: BTreeMap::new(),
             activity_date: Some("2026-06-28".to_string()),
             start_time: None,
             end_time: None,
