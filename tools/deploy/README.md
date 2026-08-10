@@ -321,7 +321,10 @@ The roster audit is per-person retained evidence derived only from sanitized cov
 canary JSONL, and completion summary. It may keep safe names such as `Paxon`/`小乔`,
 canonical keys, `person_ref` hashes, profile status, required profile-term matches, and
 mentioned/speaker/referenced canary booleans; it must not contain raw group ids, sender
-ids, QiWe user ids, person UUIDs, raw messages, or raw profile text.
+ids, QiWe user ids, person UUIDs, raw messages, or raw profile text. Coverage repair gap
+samples may contain `person_id` fields from `identity-bootstrap-persons`; the roster
+audit builder strips only those sample fields before parsing coverage and still fails if
+the final output contains any UUID-like fragment.
 
 Use it before any owner-operated Huabaosi production canary, QiWe companion
 verification, real-activity evidence export, or final completion-manifest capture.

@@ -18,7 +18,9 @@ if (!args.coverage || !args.canary || !args.completionSummary) {
   );
 }
 
-const coverageText = readEvidence(args.coverage, "coverage evidence");
+const coverageText = readEvidence(args.coverage, "coverage evidence", {
+  sanitizeCoverageSamples: true,
+});
 const canaryText = readEvidence(args.canary, "canary evidence");
 const completionSummaryText = readEvidence(
   args.completionSummary,
@@ -750,14 +752,40 @@ function requireSummaryCount(actual, expected, label, errors) {
   }
 }
 
-function readEvidence(file, label) {
-  const text = fs.readFileSync(path.resolve(file), "utf8");
+function readEvidence(file, label, options = {}) {
+  let text = fs.readFileSync(path.resolve(file), "utf8");
+  if (options.sanitizeCoverageSamples) {
+    text = sanitizeCoverageGapSamples(text, label);
+  }
   for (const pattern of forbiddenInputPatterns()) {
     if (pattern.test(text)) {
       fail(`${label} contains forbidden sensitive fragment: ${pattern}`);
     }
   }
   return text;
+}
+
+function sanitizeCoverageGapSamples(text, label) {
+  let changed = false;
+  const sanitized = text.replace(
+    /("(?:linked_people_with_active_profile_samples|linked_people_without_active_profile_samples|linked_messages_missing_sender_person_samples|messages_missing_sender_person_samples|running_people_profile_missing_running_hint_samples|running_profile_missing_samples)"\s*:\s*\[)([\s\S]*?)(\n\s*\])/g,
+    (match, prefix, body, suffix) => {
+      if (!body.includes('"person_id"')) {
+        return match;
+      }
+      changed = true;
+      const sanitizedBody = body.replace(
+        /^[ \t]*"person_id"\s*:\s*"(?:\\.|[^"\\])*"(?:[ \t]*,[ \t]*\r?\n[ \t]*|[ \t]*,?[ \t]*(?=\r?\n))/gm,
+        ""
+      );
+      return `${prefix}${sanitizedBody}${suffix}`;
+    }
+  );
+  if (!changed) {
+    return text;
+  }
+  parseJson(sanitized, `${label} sanitized coverage JSON`);
+  return sanitized;
 }
 
 function forbiddenInputPatterns() {
