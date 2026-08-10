@@ -21,6 +21,30 @@ const writeCron = (profileDir, value) => {
   return cronFile;
 };
 
+const REVIEWED_JOB = {
+  id: "abc123def456",
+  name: "小满·周一活动预告（文字稿+海报简报）",
+  schedule: { kind: "cron", expr: "30 9 * * 1", display: "30 9 * * 1" },
+  no_agent: true,
+  script: "qintopia_xiaoman_weekly_preview.sh",
+  deliver: "origin",
+  enabled: true,
+};
+
+const registryWith = (jobs) => ({
+  schema_version: 1,
+  reviewed_jobs: jobs,
+});
+
+const REVIEWED_ENTRY = {
+  profile: "xiaoman",
+  name: REVIEWED_JOB.name,
+  schedule_expr: "30 9 * * 1",
+  script: "qintopia_xiaoman_weekly_preview.sh",
+  no_agent: true,
+  approved_at: "2026-08-10",
+};
+
 try {
   const profileDir = path.join(
     tmpRoot,
@@ -32,6 +56,12 @@ try {
   );
   fs.mkdirSync(profileDir, { recursive: true });
   const missingCron = path.join(profileDir, "cron", "jobs.json");
+  const registryFile = path.join(tmpRoot, "registry", "reviewed-cron-jobs.json");
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  const writeRegistry = (value) => {
+    fs.writeFileSync(registryFile, JSON.stringify(value, null, 2), "utf8");
+    return registryFile;
+  };
 
   const run = (extraEnv = {}) =>
     spawnSync("bash", [script], {
@@ -43,6 +73,7 @@ try {
         QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_TEST_ROOT: tmpRoot,
         QINTOPIA_XIAOMAN_PROFILE_DIR: profileDir,
         QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: missingCron,
+        QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_REGISTRY: registryFile,
         ...extraEnv,
       },
       encoding: "utf8",
@@ -62,6 +93,16 @@ try {
     throw new Error("legacy cron observation accepted production path overrides");
   }
 
+  const missingRegistry = run();
+  if (
+    missingRegistry.status === 0 ||
+    !missingRegistry.stderr.includes("registry is missing")
+  ) {
+    throw new Error("legacy cron observation accepted a missing reviewed registry");
+  }
+
+  writeRegistry(registryWith([]));
+
   const missing = run();
   if (missing.status !== 0 || !missing.stdout.includes('"cron_file_present":false')) {
     throw new Error(
@@ -76,7 +117,11 @@ try {
   const empty = run({
     QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: emptyCron,
   });
-  if (empty.status !== 0 || !empty.stdout.includes('"no_legacy_cron_jobs"')) {
+  if (
+    empty.status !== 0 ||
+    !empty.stdout.includes('"reviewed_declarations_only"') ||
+    !empty.stdout.includes('"reviewed_decl_count":0')
+  ) {
     throw new Error(`empty cron observation failed\n${empty.stdout}\n${empty.stderr}`);
   }
 
@@ -93,11 +138,75 @@ try {
   const legacy = run({
     QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: legacyCron,
   });
-  if (legacy.status === 0 || !legacy.stderr.includes("runtime cron job declarations")) {
-    throw new Error("legacy cron observation accepted a job declaration");
+  if (
+    legacy.status === 0 ||
+    !legacy.stderr.includes("unreviewed cron job declarations")
+  ) {
+    throw new Error("legacy cron observation accepted an unreviewed job declaration");
   }
   if (`${legacy.stdout}\n${legacy.stderr}`.includes("ask-for-approval")) {
     throw new Error("legacy cron observation leaked cron command text");
+  }
+
+  writeRegistry(registryWith([REVIEWED_ENTRY]));
+
+  const reviewedCron = writeCron(profileDir, {
+    schema_version: 1,
+    jobs: [REVIEWED_JOB],
+  });
+  const reviewed = run({
+    QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: reviewedCron,
+  });
+  if (
+    reviewed.status !== 0 ||
+    !reviewed.stdout.includes('"reviewed_declarations_only"') ||
+    !reviewed.stdout.includes('"cron_decl_count":1') ||
+    !reviewed.stdout.includes('"reviewed_decl_count":1')
+  ) {
+    throw new Error(
+      `reviewed cron observation failed\n${reviewed.stdout}\n${reviewed.stderr}`
+    );
+  }
+
+  const withRuntimeFields = writeCron(profileDir, {
+    jobs: [
+      {
+        ...REVIEWED_JOB,
+        last_run_at: "2026-08-10T09:30:00+08:00",
+        next_run_at: "2026-08-17T09:30:00+08:00",
+        state: "scheduled",
+        last_status: "ok",
+        repeat: { times: null, completed: 1 },
+      },
+    ],
+  });
+  const runtimeFields = run({
+    QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: withRuntimeFields,
+  });
+  if (runtimeFields.status !== 0) {
+    throw new Error(
+      `daemon runtime fields broke observation\n${runtimeFields.stdout}\n${runtimeFields.stderr}`
+    );
+  }
+
+  const wrongExpr = writeCron(profileDir, {
+    jobs: [{ ...REVIEWED_JOB, schedule: { kind: "cron", expr: "0 10 * * 1" } }],
+  });
+  const wrongExprRun = run({
+    QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: wrongExpr,
+  });
+  if (wrongExprRun.status === 0) {
+    throw new Error("legacy cron observation accepted a drifted schedule expr");
+  }
+
+  const wrongScript = writeCron(profileDir, {
+    jobs: [{ ...REVIEWED_JOB, script: "other.sh" }],
+  });
+  const wrongScriptRun = run({
+    QINTOPIA_XIAOMAN_LEGACY_CRON_FILE: wrongScript,
+  });
+  if (wrongScriptRun.status === 0) {
+    throw new Error("legacy cron observation accepted a drifted script name");
   }
 
   fs.writeFileSync(legacyCron, "{not-json", "utf8");
