@@ -1,0 +1,15 @@
+{
+  "name": "小满·周日活动计划确认",
+  "schedule": { "kind": "cron", "expr": "0 20 * * 0", "display": "0 20 * * 0" },
+  "no_agent": true,
+  "script": "qintopia_xiaoman_weekly_plan_confirmation.sh",
+  "deliver": "origin",
+  "origin": {
+    "platform": "wecom",
+    "chat_id": "{{QINTOPIA_XIAOMAN_TECHNICAL_HOME_CHANNEL}}",
+    "chat_name": null,
+    "thread_id": null
+  },
+  "enabled": false,
+  "skills": []
+}

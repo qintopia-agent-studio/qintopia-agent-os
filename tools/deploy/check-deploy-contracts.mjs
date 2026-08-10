@@ -351,6 +351,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-xiaoman-weekly-plan-confirmation-production.sh",
     "deploy/sidecar/scripts/rollback-xiaoman-weekly-plan-confirmation-production.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
     "docs/operations/staging-runtime-provisioning-runbook.md",
@@ -3556,6 +3557,43 @@ for (const timer of xiaomanWeeklyLoopTimers) {
     }
   }
 }
+const xiaomanPlanConfirmationHermesCronApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh";
+if (!exists(xiaomanPlanConfirmationHermesCronApplyPath)) {
+  addError(
+    `${xiaomanPlanConfirmationHermesCronApplyPath}: missing plan confirmation Hermes cron apply`
+  );
+} else {
+  const apply = readText(xiaomanPlanConfirmationHermesCronApplyPath);
+  for (const fragment of [
+    "approved-production-xiaoman-weekly-plan-confirmation-hermes-cron",
+    "usage: apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh --install|--enable",
+    'RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"',
+    'PROFILE_ENV="/home/ubuntu/.hermes/profiles/xiaoman/.env"',
+    'WRAPPER_DEST="/home/ubuntu/.hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh"',
+    'SNAPSHOT_SYNC="${RELEASE_DIR}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
+    "WECOM_HOME_CHANNEL",
+    "origin_chat_id_sha256",
+    "os.replace(temp_name, cron_file)",
+    "external_calls_executed",
+    "safe_for_chat",
+    'chmod 0700 "$WRAPPER_DEST"',
+  ]) {
+    requireFragment(xiaomanPlanConfirmationHermesCronApplyPath, apply, fragment);
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON_FILE",
+    "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON_PROFILE_DIR",
+    "QIWE_TOKEN",
+    "tenant_access_token",
+    "print(chat_id)",
+  ]) {
+    forbidFragment(xiaomanPlanConfirmationHermesCronApplyPath, apply, fragment);
+  }
+}
 const deployBundleBuilderForWeeklyLoop = readText(
   "tools/deploy/build-deploy-bundle.mjs"
 );
@@ -3567,6 +3605,9 @@ for (const fragment of [
     timer.activationPath,
     timer.rollbackPath,
   ]),
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
+  "runtime/hermes/cron/xiaoman/weekly-plan-confirmation.job.json",
+  "runtime/hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh",
   "workflows/xiaoman-weekly-loop",
 ]) {
   requireFragment(

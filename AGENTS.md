@@ -444,24 +444,27 @@
     `docs/operations/xiaoman-weekly-loop-cutover-runbook.md` is kept only as the
     rollback target.
 
-  - Sunday plan confirmation stays a release-managed timer (a later task migrates it).
-    Apply the persistent non-secret config with:
+  - Xiaoman weekly plan confirmation now uses a Hermes cron job (task 3), not the
+    release-managed Sunday timer. The reviewed declaration is
+    `runtime/hermes/cron/xiaoman/weekly-plan-confirmation.job.json`, the wrapper is
+    `runtime/hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh`, and the
+    registry entry pins expr `0 20 * * 0`. Persistent config still goes through
+    `apply-xiaoman-weekly-plan-confirmation-production-config.sh`; install and enable
+    the Hermes job with
+    `QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON=approved-production-xiaoman-weekly-plan-confirmation-hermes-cron`
+    plus `apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh --install` then
+    `--enable`. Disable the old timer with
+    `rollback-xiaoman-weekly-plan-confirmation-production.sh` before enabling the job;
+    health is the allowlist observation smoke plus the snapshot git history. Follow
+    `docs/operations/xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`.
 
-    ```bash
-    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-plan-confirmation-config \
-      deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-production-config.sh --enable
-    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-plan-confirmation \
-    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
-      deploy/sidecar/scripts/activate-xiaoman-weekly-plan-confirmation-production.sh
-    ```
-
-  The recruitment Hermes cron and the plan-confirmation timer both keep using the
-  Xiaoman activity wrapper boundary. Config, activation, observation, and workers must
-  require `QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1`,
+  The recruitment and plan-confirmation Hermes crons both keep using the Xiaoman
+  activity wrapper boundary. Config, activation, observation, and workers must require
+  `QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1`,
   `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`, and
-  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. Plan-confirmation activation and
-  observation must verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against
-  the owner-reviewed release SHA and must first pass
+  `QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1`. Activation and observation for both
+  jobs must verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the
+  owner-reviewed release SHA and must first pass
   `xiaoman-legacy-cron-observation-smoke.sh`. The recruitment Hermes cron's allowlist
   coverage is proven by that same smoke after cutover, so its health no longer depends
   on a live systemd unit. Rollback scripts are
