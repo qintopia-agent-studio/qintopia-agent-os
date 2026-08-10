@@ -15,7 +15,9 @@ auto-publish gates are enabled.
 - On Sunday morning, if there are still no publishable activities after the Saturday
   collection reminder, generate a second gentle collection prompt.
 - Run QunMind in `daily-report --public-only` mode when configured; otherwise fetch up
-  to three public RSS/Atom items from the built-in AI news feeds.
+  to five public RSS/Atom items from the built-in AI news feeds.
+- Keep English AI news bilingual: an English item must include a Chinese title and
+  summary translation before it can appear in the morning brief.
 - Produce a single Erhua-style morning text draft and an operator-review envelope.
 - After a reviewed `text_announcement` artifact exists, prepare an AgentOS
   `group_message_request` payload for Erhua/QiWe delivery.
@@ -40,7 +42,8 @@ using a small public RSS fallback.
 2. It asks QunMind to generate a public-only daily report into a temporary markdown file
    if QunMind is configured or available on `PATH`.
 3. If QunMind is unavailable, it fetches the configured public RSS/Atom feeds, strips
-   URLs and internal markers, and composes the final morning brief.
+   URLs and internal markers, rejects English-only items without Chinese translations,
+   and composes the final morning brief.
 
 When the run date is Sunday and the activity preview returns zero publishable
 activities, the activity section switches from the generic "no confirmed activity today"
@@ -61,10 +64,12 @@ hash, records final confirmation, records send-ready, and then calls
 companion. If any gate is missing or QiWe returns an ambiguous outcome, the worker exits
 non-zero instead of silently retrying or sending a fallback.
 
-The default behavior fails closed only if neither QunMind nor the public feed fallback
-can produce AI news. Operators may use `--allow-news-unavailable` for an explicit
-degraded preview, but production scheduling should not silently send a "news missing"
-fallback.
+The default behavior fails closed if neither QunMind nor the public feed fallback can
+produce usable AI news. English QunMind items must carry explicit Chinese title and
+summary translations; otherwise the run fails instead of sending untranslated English.
+RSS fallback items without Chinese text are skipped. Operators may use
+`--allow-news-unavailable` for an explicit degraded preview, but production scheduling
+should not silently send a "news missing" fallback.
 
 ## Running it
 
@@ -194,7 +199,9 @@ QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256=<approved-production-data
 ## Acceptance Scenarios
 
 - With confirmed same-day activities, the brief includes the activity announcement and
-  up to three AI news items.
+  up to five AI news items.
+- English AI news appears with both the English original and a Chinese title/summary
+  translation; English-only QunMind items fail closed.
 - With no confirmed activity, the brief says there is no confirmed activity today and
   invites members to start one.
 - On Sunday morning, with no publishable activity yet, the brief explicitly says the

@@ -52,6 +52,9 @@
   `QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh`
 - Erhua morning brief reviewed production schedule is `08:10 Asia/Shanghai`
   (`OnCalendar=*-*-* 08:10:00`).
+- Erhua morning brief AI news defaults to five items. English items must carry explicit
+  Chinese title and summary translations before they can appear in the brief; do not
+  send English-only RSS fallback items as-is.
 - Erhua morning brief QiWe text-send fixture:
   `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
 - Erhua member recognition local release-current readiness check:

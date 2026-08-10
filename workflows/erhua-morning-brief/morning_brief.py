@@ -30,7 +30,7 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_OPERATOR_NAME = "刘珊"
 DEFAULT_AUDIENCE = "社区群成员"
 DEFAULT_QUNMIND_TIMEOUT_SECONDS = 180
-DEFAULT_NEWS_LIMIT = 3
+DEFAULT_NEWS_LIMIT = 5
 DEFAULT_NEWS_FEED_TIMEOUT_SECONDS = 12
 DEFAULT_NEWS_FEED_URLS = [
     "https://openai.com/news/rss.xml",
@@ -48,6 +48,8 @@ _VARIANT = _THIS.parents[2] / "skills" / "qintopia-tools" / "variants" / "xiaoma
 class AiNewsItem:
     title: str
     summary: str
+    title_zh: str = ""
+    summary_zh: str = ""
 
 
 class UnsafeNewsFeedXml(RuntimeError):
@@ -335,7 +337,14 @@ def _extract_feed_news_items(xml_text: str, limit: int) -> list[AiNewsItem]:
         if not title or key in seen:
             continue
         seen.add(key)
-        items.append(AiNewsItem(title=title[:90], summary=summary))
+        item = _news_item_or_none(
+            title=title[:90],
+            summary=summary,
+            strict_translation=False,
+        )
+        if item is None:
+            continue
+        items.append(item)
         if len(items) >= limit:
             break
     return items
@@ -418,6 +427,102 @@ def _sanitize_public_text(value: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _contains_cjk(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", value))
+
+
+def _looks_english_public_text(value: str) -> bool:
+    if _contains_cjk(value):
+        return False
+    return len(re.findall(r"[A-Za-z]", value)) >= 8
+
+
+def _needs_chinese_translation(item: AiNewsItem) -> bool:
+    return _looks_english_public_text(item.title) or _looks_english_public_text(item.summary)
+
+
+def _chinese_title_for(item: AiNewsItem) -> str:
+    if item.title_zh:
+        return item.title_zh
+    return item.title if _contains_cjk(item.title) else ""
+
+
+def _chinese_summary_for(item: AiNewsItem) -> str:
+    if item.summary_zh:
+        return item.summary_zh
+    return item.summary if _contains_cjk(item.summary) else ""
+
+
+def _news_item_or_none(
+    *,
+    title: str,
+    summary: str,
+    title_zh: str = "",
+    summary_zh: str = "",
+    strict_translation: bool,
+) -> AiNewsItem | None:
+    item = AiNewsItem(
+        title=title,
+        summary=summary,
+        title_zh=title_zh,
+        summary_zh=summary_zh,
+    )
+    if not _needs_chinese_translation(item):
+        return item
+    if _chinese_title_for(item) and _chinese_summary_for(item):
+        return item
+    if strict_translation:
+        raise RuntimeError("English AI news item requires Chinese title and summary translation")
+    return None
+
+
+def _translation_line(raw_line: str) -> tuple[str, str]:
+    line = _sanitize_public_line(raw_line, max_len=220)
+    match = re.match(
+        r"^(中文标题|标题翻译|译后标题|中文摘要|摘要翻译|译后摘要|中文要点|要点翻译|中文译文|译文|翻译|中文)[：:]\s*(.+)$",
+        line,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return "", ""
+    return match.group(1), match.group(2).strip()
+
+
+def _split_translated_title_summary(value: str) -> tuple[str, str]:
+    for separator in ("：", ":"):
+        if separator not in value:
+            continue
+        title, summary = value.split(separator, 1)
+        title = title.strip()
+        summary = summary.strip()
+        if title and summary and len(title) <= 90:
+            return title, summary
+    return "", ""
+
+
+def _translation_from_block(block: str) -> tuple[str, str]:
+    title_zh = ""
+    summary_zh = ""
+    for raw_line in block.splitlines():
+        label, value = _translation_line(raw_line)
+        if not label or not value or not _contains_cjk(value):
+            continue
+        if label in {"中文标题", "标题翻译", "译后标题"}:
+            title_zh = title_zh or _sanitize_public_line(value, max_len=90)
+            continue
+        if label in {"中文摘要", "摘要翻译", "译后摘要", "中文要点", "要点翻译", "中文译文", "译文", "翻译"}:
+            summary_zh = summary_zh or _sanitize_public_line(value, max_len=180)
+            continue
+        if label == "中文":
+            translated_title, translated_summary = _split_translated_title_summary(value)
+            if translated_title and translated_summary:
+                title_zh = title_zh or _sanitize_public_line(translated_title, max_len=90)
+                summary_zh = summary_zh or _sanitize_public_line(translated_summary, max_len=180)
+            else:
+                summary_zh = summary_zh or _sanitize_public_line(value, max_len=180)
+    return title_zh, summary_zh
+
+
 def _extract_ai_section(markdown: str) -> str:
     lines = markdown.splitlines()
     start: int | None = None
@@ -449,11 +554,18 @@ def _summary_from_block(block: str) -> str:
             continue
         if "原文入口" in stripped or "source index" in stripped.lower():
             continue
+        if _translation_line(stripped)[0]:
+            continue
         line = _sanitize_public_line(stripped)
         if not line:
             continue
-        if re.search(r"(值得关注|为什么值得看|摘要|要点|一句话)", stripped):
-            return re.sub(r"^(值得关注|为什么值得看|摘要|要点|一句话)[：:]\s*", "", line)
+        if re.search(r"(值得关注|为什么值得看|摘要|要点|一句话|summary|why it matters|key point)", stripped, flags=re.IGNORECASE):
+            return re.sub(
+                r"^(值得关注|为什么值得看|摘要|要点|一句话|summary|why it matters|key point)[：:]\s*",
+                "",
+                line,
+                flags=re.IGNORECASE,
+            )
         if not fallback:
             fallback = line
     return fallback
@@ -474,9 +586,19 @@ def _extract_ai_news_items(markdown: str, limit: int) -> list[AiNewsItem]:
             title = title.split("｜", 1)[1].strip()
         block_start = match.end()
         block_end = heading_matches[index + 1].start() if index + 1 < len(heading_matches) else len(section)
-        summary = _summary_from_block(section[block_start:block_end])
+        block = section[block_start:block_end]
+        summary = _summary_from_block(block)
+        title_zh, summary_zh = _translation_from_block(block)
         if title and summary:
-            items.append(AiNewsItem(title=title, summary=summary))
+            item = _news_item_or_none(
+                title=title,
+                summary=summary,
+                title_zh=title_zh,
+                summary_zh=summary_zh,
+                strict_translation=True,
+            )
+            if item is not None:
+                items.append(item)
         if len(items) >= limit:
             return items
 
@@ -496,7 +618,13 @@ def _extract_ai_news_items(markdown: str, limit: int) -> list[AiNewsItem]:
         title = title.strip(" -0123456789.")
         summary = summary.strip()
         if title and summary:
-            items.append(AiNewsItem(title=title[:90], summary=summary))
+            item = _news_item_or_none(
+                title=title[:90],
+                summary=summary,
+                strict_translation=True,
+            )
+            if item is not None:
+                items.append(item)
         if len(items) >= limit:
             break
     return items
@@ -535,6 +663,15 @@ def _activity_section(date: str, activity_result: dict[str, Any]) -> tuple[str, 
     return announcement, count, False
 
 
+def _news_item_lines(index: int, item: AiNewsItem) -> list[str]:
+    if not _needs_chinese_translation(item):
+        return [f"{index}. {item.title}：{item.summary}"]
+    return [
+        f"{index}. 英文：{item.title}：{item.summary}",
+        f"   中文：{_chinese_title_for(item)}：{_chinese_summary_for(item)}",
+    ]
+
+
 def _compose_brief(
     *,
     date: str,
@@ -555,7 +692,7 @@ def _compose_brief(
         lines.append("今天 QunMind 的公开新闻源暂时没读到，二花先不硬编。")
     else:
         for index, item in enumerate(news_items, start=1):
-            lines.append(f"{index}. {item.title}：{item.summary}")
+            lines.extend(_news_item_lines(index, item))
     lines.extend(
         [
             "",
