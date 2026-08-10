@@ -59,6 +59,13 @@ try {
   assert.equal(summary.retained_evidence_boundary.includes_person_id, false);
   assert.doesNotMatch(JSON.stringify(summary), new RegExp(PERSON_PAXON, "i"));
 
+  files = writeEvidence("valid-person-ref-phone-like-hash", coverage(), [
+    ...withPhoneLikePersonRefs(canaries()),
+  ]);
+  result = runChecker(files.roomSync, files.profile, files.coverage, files.canary);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /completion check passed/);
+
   result = runChecker(files.roomSync, files.profile, files.coverage, files.canary, {
     requireActiveProfiles: true,
   });
@@ -655,6 +662,28 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /current-room safe QiWe channel identities/);
 
+  files = writeEvidence("visible-phone-like-canary-leak", coverage(), [
+    canary("小乔", PERSON_PAXON, {
+      canonical_key: "person:paxon",
+      display_name: "13812345678",
+    }),
+    canary("Paxon", PERSON_PAXON, { canonical_key: "person:paxon" }),
+    canary("Cici", PERSON_CICI, {
+      canonical_key: "person:cici",
+      required_profile_terms: ["跑步"],
+      safe_summary: "Cici 最近的安全上下文与跑步活动有关。",
+      safe_reply_hints: {
+        topics: ["跑步活动"],
+        stable_profile_notes: ["多次参与跑步活动"],
+      },
+    }),
+    ...speakerCanaries(),
+    ...referencedCanaries(),
+  ]);
+  result = runChecker(files.roomSync, files.profile, files.coverage, files.canary);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /forbidden sensitive fragment/);
+
   files = writeEvidence(
     "secret-leak",
     `${JSON.stringify(coverage())}\nDATABASE_URL=postgresql://example`,
@@ -1224,4 +1253,24 @@ function personRef(personId) {
   return `sha256:${createHash("sha256")
     .update(`erhua-member-recognition-person-ref-v1:${personId.toLowerCase()}`)
     .digest("hex")}`;
+}
+
+function withPhoneLikePersonRefs(records) {
+  return records.map((record) => {
+    const next = JSON.parse(JSON.stringify(record));
+    const replacement = "sha256:17336786728" + "a".repeat(53);
+    const target = personRef(PERSON_PAXON);
+    if (next.answer_context?.speaker?.person_ref === target) {
+      next.answer_context.speaker.person_ref = replacement;
+    }
+    if (next.answer_context?.referenced_member?.person_ref === target) {
+      next.answer_context.referenced_member.person_ref = replacement;
+    }
+    for (const member of next.answer_context?.mentioned_members ?? []) {
+      if (member.person_ref === target) {
+        member.person_ref = replacement;
+      }
+    }
+    return next;
+  });
 }
