@@ -325,6 +325,13 @@
   additions are a 2026-08-09 owner-approved fixed-boundary expansion for the Xiaoman
   weekly minimum loop; they may enable only their own release-managed systemd timers and
   must not send, publish, write Feishu, call Erhua, or call QiWe.
+- Production runtime observation should use the `Observe Production Runtime` GitHub
+  workflow after the reviewed release containing the runner support is deployed. It
+  creates a signed `production-observation` deploy-runner request and accepts only these
+  fixed targets: `qiwe-image-send` and `xiaoman-daily-case-report-auto-publish`.
+  Observation is read-only: it may run only fixed release-local observation scripts,
+  must not enable or disable timers, write persistent config, retire legacy cron files,
+  call QiWe/Feishu/Postgres mutation commands, or run activation/rollback scripts.
 - Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
   cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
   configured and activated with:

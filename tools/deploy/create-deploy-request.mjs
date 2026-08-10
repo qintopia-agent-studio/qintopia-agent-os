@@ -166,6 +166,9 @@ const profileDryRunRequestId = argValue(
 const activationTargets = splitList(
   argValue("--activation-targets", process.env.DEPLOY_ACTIVATION_TARGETS || "")
 );
+const observationTargets = splitList(
+  argValue("--observation-targets", process.env.DEPLOY_OBSERVATION_TARGETS || "")
+);
 const legacyCronRetirementTargets = splitList(
   argValue(
     "--legacy-cron-retirement-targets",
@@ -226,6 +229,9 @@ if (profileDryRunRequestId) {
 }
 if (activationTargets.length > 0) {
   request.activation = { targets: activationTargets };
+}
+if (observationTargets.length > 0) {
+  request.observation = { targets: observationTargets };
 }
 if (legacyCronRetirementTargets.length > 0) {
   request.legacy_cron_retirement = { targets: legacyCronRetirementTargets };
