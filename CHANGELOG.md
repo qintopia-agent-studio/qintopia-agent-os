@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.102](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.101...v0.2.102) (2026-08-10)
+
+
+### Bug Fixes
+
+* avoid canary person ref false positives ([427aa6a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/427aa6ada027b27fa8ded48586f236f186e627ba))
+* **context:** require public sources for Erhua recommendations ([#452](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/452)) ([839ae04](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/839ae04e1ebf5e60abeedb70794a4e1e66bc5365))
+* repair QiWe text send claim ([275f295](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/275f29538753a61f880b7404d9388cf4d468a1af))
+* repair QiWe text send claim ([24b5d6f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/24b5d6fff75bb9858029e1fb985f484417799ce4))
+* satisfy Erhua profile clippy baseline ([d3f7486](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d3f7486c88d72e7b34c06fe0c67cc5bbc403504d))
+* seed erhua member baseline profiles ([c734a30](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c734a304bec7adef3cf6c31c0dadc93775ffff72))
+* seed erhua member baseline profiles ([407141d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/407141d4b7143efc3a0610a008e2f002251d6e3b))
+
 ## [0.2.101](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.100...v0.2.101) (2026-08-10)
 
 
