@@ -2003,6 +2003,7 @@ async fn qintopia_wenyuange_lookup(
         }));
     }
     if intent.requires_public_source_check {
+        let public_source_lookup_plan = public_source_recommendation_lookup_plan(&query);
         return Ok(json!({
             "success": true,
             "tool": WENYUANGE_LOOKUP_TOOL,
@@ -2020,10 +2021,11 @@ async fn qintopia_wenyuange_lookup(
             "confidence": "low",
             "risk_flags": ["public_source_check_required"],
             "safe_reply_guidance": {
-                "frontline_agent": "先说明需要按公开来源核验；可给出查找顺序：官方场地账号/公众号或小红书、票务平台排期、地图/点评和本地乐迷评论。没有已核验来源时，不要说“公认最棒”“错不了”，也不要装作自己听过。",
-                "external_customer": "可以给查找路径和待核验候选；已核验前不要承诺“最好”、营业/演出可用性、价格或实时排期。"
+                "frontline_agent": "不要只把问题甩给用户。先说不能直接判“最好”，再主动给公开检索路径：如果当前环境能搜公开平台，先用小红书搜近期口碑和真实体验，再用大麦/秀动/猫眼或场地官方账号确认档期、阵容、票价和是否还可去，最后用地图/点评复核地址和近期评价；如果当前环境不能搜，就给可复制的搜索词和判断标准。没有完成交叉验证前，不要说“公认最棒”“错不了”，也不要装作自己听过。",
+                "external_customer": "可以给小红书/票务/官方/地图点评的查找路径、搜索词和待核验候选；有搜索能力时先查公开源再筛选，已核验前不要承诺“最好”、营业/演出可用性、价格或实时排期。"
             },
-            "not_accessed": ["current public web sources", "venue official accounts", "ticketing schedules", "map/review platforms", "QiWe group messages as authority"],
+            "public_source_lookup_plan": public_source_lookup_plan,
+            "not_accessed": ["current public web sources", "Xiaohongshu notes/search", "venue official accounts", "ticketing schedules", "map/review platforms", "QiWe group messages as authority"],
             "retrieval_trace": [{
                 "search_method": "intent_router",
                 "success": true,
@@ -2301,6 +2303,83 @@ fn classify_lookup_intent(query: &str, purpose: &str) -> LookupIntent {
         requires_public_source_check,
         required_terms,
     }
+}
+
+fn public_source_recommendation_lookup_plan(query: &str) -> Value {
+    let clean_query = clean_text(query, 120);
+    let search_topic = {
+        let topic = clean_query.replace("@二花", "").replace('@', "");
+        let topic = [
+            "最好的",
+            "最好",
+            "最棒的",
+            "最棒",
+            "是哪",
+            "是什么",
+            "有哪些",
+            "哪里好",
+            "哪家好",
+            "哪场好",
+            "推荐一下",
+            "推荐",
+            "？",
+            "?",
+        ]
+        .iter()
+        .fold(topic, |acc, marker| acc.replace(marker, " "));
+        let topic = topic.split_whitespace().collect::<Vec<_>>().join(" ");
+        if topic.is_empty() {
+            "本地 推荐".to_string()
+        } else {
+            topic
+        }
+    };
+    json!({
+        "reply_posture": "先给检索路径和判断标准，不要直接下“最好”结论。",
+        "suggested_reply": "我不直接说哪场“最好”，这个要看近期阵容和口碑。要查的话我会先用小红书搜近期真实体验，再到大麦/秀动/猫眼和场地官方账号核对档期、票价、阵容和是否还可去；如果当前不能实时搜，就先给你搜索词和筛选标准。",
+        "source_order": [
+            {
+                "source": "小红书",
+                "role": "本地体验和口碑线索",
+                "search_queries": [
+                    format!("{} 小红书", search_topic),
+                    format!("{} 近期 真实体验", search_topic),
+                    format!("{} 口碑", search_topic),
+                    format!("{} 避雷", search_topic)
+                ],
+                "check": "看发布日期、评论新旧、是否多篇笔记交叉提到同一场地或演出；小红书只能当口碑线索，不能单独当权威事实。"
+            },
+            {
+                "source": "大麦/秀动/猫眼",
+                "role": "档期、票价、阵容和可购状态",
+                "search_queries": [
+                    format!("{} 大麦", search_topic),
+                    format!("{} 秀动", search_topic),
+                    format!("{} 猫眼", search_topic)
+                ],
+                "check": "确认最近开票、演出时间、场地、阵容、价格和余票；这些实时信息优先于旧笔记。"
+            },
+            {
+                "source": "场地或主办官方账号",
+                "role": "官方排期和变更确认",
+                "search_queries": [
+                    format!("{} 官方账号", search_topic),
+                    format!("{} 主办方", search_topic)
+                ],
+                "check": "用官方公众号、视频号、小红书官方号或海报确认演出是否仍有效。"
+            },
+            {
+                "source": "地图/点评平台",
+                "role": "地址、营业状态和近期评价",
+                "search_queries": [
+                    format!("{} 地址", search_topic),
+                    format!("{} 评价", search_topic)
+                ],
+                "check": "复核地址、营业状态、交通和近期评价，避免推荐已停业或体验明显变差的场地。"
+            }
+        ],
+        "do_not_claim": ["公认最好", "错不了", "我听过", "一定有票", "价格不变"]
+    })
 }
 
 fn public_source_recommendation_markers_match(text: &str) -> bool {
@@ -3264,14 +3343,15 @@ mod tests {
         classify_answer_route, classify_lookup_intent, classify_training_note, disclosure_hits,
         identity_only_safe_reply_hints, identity_only_safe_summary, is_erhua_trainer,
         knowledge_excerpt, member_context_json, parse_allowed_callers,
-        qintopia_gis_location_lookup, sanitize_training_summary,
-        select_answer_context_identity_candidate, select_member_name_resolution,
-        select_member_safe_identity_candidate, select_scoped_member_name_resolution,
-        speaker_context_json, tool_definitions, training_source_kind, validate_context_caller,
-        AnswerContextIdentityResolution, AnswerRouteKind, ChannelIdentityCandidate, ContextConfig,
-        GisLocationLookupRequest, IdentityResolutionScope, MemberNameCandidate,
-        MemberNameResolution, MemberNameResolutionStatus, MemberSafeContext,
-        MemberSafeIdentityRowScope, TrainingSourceKind,
+        public_source_recommendation_lookup_plan, qintopia_gis_location_lookup,
+        sanitize_training_summary, select_answer_context_identity_candidate,
+        select_member_name_resolution, select_member_safe_identity_candidate,
+        select_scoped_member_name_resolution, speaker_context_json, tool_definitions,
+        training_source_kind, validate_context_caller, AnswerContextIdentityResolution,
+        AnswerRouteKind, ChannelIdentityCandidate, ContextConfig, GisLocationLookupRequest,
+        IdentityResolutionScope, MemberNameCandidate, MemberNameResolution,
+        MemberNameResolutionStatus, MemberSafeContext, MemberSafeIdentityRowScope,
+        TrainingSourceKind,
     };
     use crate::message_search::SearchConfig;
     use chrono::{TimeZone, Utc};
@@ -4092,6 +4172,61 @@ mod tests {
             "public_source_recommendation"
         );
         assert!(discussed_recommendation_intent.requires_public_source_check);
+    }
+
+    #[test]
+    fn public_source_recommendation_lookup_plan_uses_xiaohongshu_as_audience_evidence() {
+        let plan = public_source_recommendation_lookup_plan("@二花 西安最好的爵士乐演出是哪");
+
+        assert_eq!(
+            plan["reply_posture"],
+            "先给检索路径和判断标准，不要直接下“最好”结论。"
+        );
+        assert!(plan["suggested_reply"]
+            .as_str()
+            .unwrap()
+            .contains("小红书搜"));
+        assert_eq!(plan["source_order"][0]["source"], "小红书");
+        assert_eq!(plan["source_order"][0]["role"], "本地体验和口碑线索");
+        assert!(plan["source_order"][0]["search_queries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|query| {
+                let query = query.as_str().unwrap();
+                query.contains("西安") && query.contains("爵士乐演出") && query.contains("小红书")
+            }));
+        assert!(plan["source_order"][1]["search_queries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|query| {
+                let query = query.as_str().unwrap();
+                query.contains("西安") && query.contains("爵士乐演出") && query.contains("大麦")
+            }));
+        assert!(plan["do_not_claim"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|claim| claim.as_str().unwrap() == "我听过"));
+    }
+
+    #[test]
+    fn public_source_recommendation_lookup_plan_does_not_hardcode_xian_jazz() {
+        let plan = public_source_recommendation_lookup_plan("上海最好的咖啡馆是哪");
+        let queries = plan["source_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|source| source["search_queries"].as_array().unwrap())
+            .map(|query| query.as_str().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(queries
+            .iter()
+            .any(|query| query.contains("上海") && query.contains("咖啡馆")));
+        assert!(queries.iter().all(|query| !query.contains("西安")));
+        assert!(queries.iter().all(|query| !query.contains("爵士")));
     }
 
     #[test]

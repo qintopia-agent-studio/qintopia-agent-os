@@ -634,6 +634,9 @@ Use `rg` and `rg --files` for search.
   availability, price, or firsthand experience. Without verified venue/organizer,
   ticketing, map/review, or local audience evidence, route them as
   `public_source_recommendation` and answer with the lookup path plus uncertainty.
+  Xiaohongshu may be used as local audience evidence and search-discovery input, but
+  must be cross-checked against ticketing schedules or official venue/organizer accounts
+  before claiming availability, lineup, price, or "best".
 - For the Huabaosi production image canary, the owner-selected first storage boundary is
   the fixed Feishu Base `huabaosi-generated-image-v1` table. The image worker may upload
   the exact final JPEG attachment and idempotently upsert one row by
