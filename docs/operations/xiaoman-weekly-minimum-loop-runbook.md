@@ -73,11 +73,17 @@ Expected draft boundary:
 
 ## Deferred Scope
 
-Do not add these to this first loop unless the owner explicitly reopens scope:
+On 2026-08-10 the owner reopened weekly poster generation for the Monday preview. The
+Monday `weekly_preview` output now includes a `weekly_poster_brief` review artifact next
+to the text draft, and the reviewed intake is
+`qintopia_xiaoman_weekly_poster_workflow_prepare`: it starts one AgentOS
+`activity_promotion` workflow (parent plus evidence and visual children) from the
+approved brief. Downstream poster brief approval, image generation, generated-image
+review, and final group-send confirmation still follow the existing AgentOS human gates.
+Automatic final confirmation and direct QiWe send remain deferred:
 
 - feedback tables or feedback forms;
 - material recap automation;
-- poster generation or broader publicity;
 - automatic final confirmation;
 - direct QiWe send.
 
