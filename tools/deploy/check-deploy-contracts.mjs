@@ -3937,6 +3937,9 @@ if (!exists(xiaomanWeeklyPreviewHermesCronApplyPath)) {
     "weekly_preview_hermes_cron_installed",
     "weekly_preview_hermes_cron_enabled",
     "weekly_preview_hermes_cron_already_enabled",
+    "reviewed weekly preview job deliver mode does not match the reviewed declaration",
+    "reviewed weekly preview job origin platform does not match the reviewed declaration",
+    "reviewed weekly preview job origin chat id drifted from the Xiaoman profile env",
   ]) {
     requireFragment(xiaomanWeeklyPreviewHermesCronApplyPath, apply, fragment);
   }
