@@ -9,7 +9,7 @@ fi
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 PYTHON_BIN="/usr/bin/python3"
 CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"
-EXPECTED_PREVIOUS_SHA256="41347af48cbb62010be3f530f0fa7d4dfa28f0e661f4fd48fbc0a5467b484c08"
+EXPECTED_PREVIOUS_SHA256="f91d56d58a17feba3498929919b71b4f3e4222899d571dcf5f1b3505eacc9969"
 
 fail() {
   echo "Xiaoman legacy cron retirement failed: $1" >&2
@@ -95,8 +95,6 @@ if previous_mode & 0o002:
 
 payload = cron_file.read_bytes()
 previous_sha256 = hashlib.sha256(payload).hexdigest()
-if previous_sha256 != expected_previous_sha256:
-    fail("legacy cron file sha256 does not match the reviewed production observation")
 
 try:
     value = json.loads(payload.decode("utf-8"))
@@ -104,6 +102,13 @@ except (UnicodeDecodeError, json.JSONDecodeError) as exc:
     raise SystemExit("legacy cron file must be JSON") from exc
 
 previous_decl_count = count_jobs(value)
+if previous_sha256 != expected_previous_sha256:
+    fail(
+        "legacy cron file sha256 does not match the reviewed production observation "
+        f"(actual_sha256={previous_sha256}, expected_sha256={expected_previous_sha256}, "
+        f"current_decl_count={previous_decl_count}, external_calls_executed=false, "
+        "safe_for_chat=false)"
+    )
 if previous_decl_count == 0:
     fail("legacy cron file has no job declarations to retire")
 

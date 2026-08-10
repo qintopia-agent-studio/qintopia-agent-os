@@ -143,8 +143,13 @@ QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-
 The Xiaoman retirement script accepts no caller-provided cron path, checks the exact
 reviewed hash before writing, creates a same-directory `0600` backup, replaces the
 runtime cron file with an empty retired manifest, and normalizes the retired file mode
-to `0600`. Re-run the Xiaoman legacy cron observation after retirement; activation must
-still fail closed if any runtime cron declarations remain.
+to `0600`. If the reviewed hash does not match the live cron file, the failure evidence
+may include only the live `actual_sha256`, reviewed `expected_sha256`, declaration
+count, and safe-for-chat/external-call booleans. Use that evidence to update the
+reviewed expected hash in a follow-up PR and Release before retrying retirement; do not
+bypass the hash gate or retire from an unreviewed script. Re-run the Xiaoman legacy cron
+observation after retirement; activation must still fail closed if any runtime cron
+declarations remain.
 
 ## Activate
 

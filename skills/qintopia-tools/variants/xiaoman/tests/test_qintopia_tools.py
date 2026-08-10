@@ -83,6 +83,7 @@ class QintopiaToolsTest(unittest.TestCase):
                 "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE",
                 "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE",
                 "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS",
+                "QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID",
                 "QINTOPIA_OPERATIONS_INTAKE_SOCKET",
                 "QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE",
                 "QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY",
@@ -109,6 +110,7 @@ class QintopiaToolsTest(unittest.TestCase):
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_TIMEOUT_SECONDS", None)
+        os.environ.pop("QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID", None)
         os.environ.pop("QINTOPIA_OPERATIONS_INTAKE_SOCKET", None)
         os.environ.pop("QINTOPIA_XIAOMAN_POSTER_REVIEW_HOOK_ENABLE", None)
         os.environ.pop("QINTOPIA_XIAOMAN_FEISHU_CALLBACK_ENCRYPT_KEY", None)
@@ -1113,6 +1115,94 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
         self.assertNotIn("command", report["action"])
 
+    def test_xiaoman_activity_plan_table_probe_reads_allowlisted_url(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_plan",
+                        "record_ref": "activity_plan:abc123def456",
+                        "title": "周末共创晚餐",
+                        "activity_date": "2026-08-11",
+                    }
+                ],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID"] = "tblRfkR6vmwiynbu"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_plan_table_probe(
+                {
+                    "url": "https://ranuox3qst4.feishu.cn/wiki/VvAmw?table=tblRfkR6vmwiynbu&view=vew5C6T2FF",
+                    "start_date": "2026-08-11",
+                    "probe_days": 2,
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["read_through"])
+        self.assertTrue(report["table_match"])
+        self.assertEqual(report["record_count"], 2)
+        self.assertEqual(report["sample_dates"][0]["titles"], ["周末共创晚餐"])
+        self.assertIn("能读到这张小满活动计划表", report["human_summary"])
+        self.assertFalse(report["action"]["requires_local_execution"])
+
+    def test_xiaoman_activity_plan_table_probe_falls_back_for_invalid_start_date(self):
+        self.enable_xiaoman_activity_wrappers()
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "record_count": 0,
+                "records": [],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID"] = "tblRfkR6vmwiynbu"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_plan_table_probe(
+                {
+                    "url": "https://ranuox3qst4.feishu.cn/wiki/VvAmw?table=tblRfkR6vmwiynbu",
+                    "start_date": "2026-99-99",
+                    "probe_days": 1,
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["probe_window"]["days"], 1)
+
+    def test_xiaoman_activity_plan_table_probe_rejects_unmatched_table_without_reading(self):
+        self.enable_xiaoman_activity_wrappers()
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_PLAN_TABLE_ID"] = "tblAllowed"
+        self.module.handle_qintopia_xiaoman_activity_list_by_date = lambda _args: self.fail(
+            "unmatched Feishu table must not be read"
+        )
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_plan_table_probe(
+                {
+                    "url": "https://ranuox3qst4.feishu.cn/wiki/VvAmw?table=tblOther&view=vew5C6T2FF",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertFalse(report["read_through"])
+        self.assertFalse(report["table_match"])
+        self.assertEqual(report["table_role"], "unknown")
+
     def test_xiaoman_activity_read_through_uses_minimal_environment(self):
         self.enable_xiaoman_activity_wrappers()
         fake_sidecar = self.write_env_echo_xiaoman_sidecar()
@@ -2089,6 +2179,7 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertIn("qintopia_external_disclosure_filter", ctx.names)
         self.assertIn("qintopia_conversation_summary", ctx.names)
         self.assertIn("qintopia_xiaoman_activity_promotion_details_update", ctx.names)
+        self.assertIn("qintopia_xiaoman_activity_plan_table_probe", ctx.names)
         self.assertIn("qintopia_xiaoman_poster_production_request", ctx.names)
         self.assertIn("qintopia_xiaoman_poster_workflow_status", ctx.names)
         self.assertIs(

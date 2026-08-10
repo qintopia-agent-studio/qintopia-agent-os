@@ -1,6 +1,6 @@
 # Xiaoman Weekly Activation Legacy Cron Drift
 
-Date: 2026-08-09
+Date: 2026-08-09 Last updated: 2026-08-10
 
 ## Evidence
 
@@ -32,6 +32,22 @@ Read-only production metadata observed after the failed activation:
 
 The cron content was not copied into git or logs.
 
+After `v0.2.97` deployed the hash-mismatch evidence patch, the explicit
+`xiaoman-legacy-cron` retirement request failed closed again with sanitized production
+evidence:
+
+```json
+{
+  "actual_sha256": "f91d56d58a17feba3498929919b71b4f3e4222899d571dcf5f1b3505eacc9969",
+  "expected_sha256": "41347af48cbb62010be3f530f0fa7d4dfa28f0e661f4fd48fbc0a5467b484c08",
+  "current_decl_count": 1,
+  "external_calls_executed": false,
+  "safe_for_chat": false
+}
+```
+
+The cron content still was not copied into git or logs.
+
 ## Root Cause
 
 The Xiaoman legacy Hermes cron file drifted after the retirement script was reviewed.
@@ -45,10 +61,10 @@ retirement script could not create its backup or replacement file.
 
 ## Resolution
 
-Update the retirement script's expected previous SHA-256 to the newly observed
+Update the retirement script's expected previous SHA-256 to the latest sanitized
 production hash:
 
-`41347af48cbb62010be3f530f0fa7d4dfa28f0e661f4fd48fbc0a5467b484c08`
+`f91d56d58a17feba3498929919b71b4f3e4222899d571dcf5f1b3505eacc9969`
 
 Update the deploy-runner service to retain `ProtectHome=read-only` while adding only
 `/home/ubuntu/.hermes/profiles/xiaoman/cron` to `ReadWritePaths`. Do not grant whole

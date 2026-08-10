@@ -93,7 +93,7 @@ grep -F "EnvironmentFile=${ENV_FILE}" "$service_unit" >/dev/null
 
 timer_unit="$tmp_dir/timer-unit.txt"
 "$SYSTEMCTL" cat "$TIMER_NAME" >"$timer_unit"
-grep -F "OnCalendar=*-*-* 07:45:00" "$timer_unit" >/dev/null
+grep -F "OnCalendar=*-*-* 08:00:00" "$timer_unit" >/dev/null
 grep -F "Unit=${SERVICE_NAME}" "$timer_unit" >/dev/null
 
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then

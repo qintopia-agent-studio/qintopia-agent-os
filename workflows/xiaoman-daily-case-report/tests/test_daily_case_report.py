@@ -413,7 +413,6 @@ class DailyCaseReportTest(unittest.TestCase):
                 hourly_counts=[0] * 24,
                 cases=[],
                 suspects=[],
-                quote="done",
                 highlight="done",
             )
             old_parse_args = daily_case_report._parse_args
@@ -485,6 +484,69 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("订单在30分钟内有效", highlight)
         self.assertTrue(cases)
         self.assertNotIn("促销号", {suspect.name for suspect in suspects})
+
+    def test_missing_highlight_is_omitted_instead_of_synthesized(self) -> None:
+        self.assertIsNone(
+            daily_case_report._extract_highlight([
+                daily_case_report.ReportMessage(
+                    id="short",
+                    sender_id="u1",
+                    sender_name="成员",
+                    text="收到",
+                    sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                    message_kind="text",
+                )
+            ])
+        )
+
+    def test_hot_topics_are_ranked_from_repeated_source_tokens(self) -> None:
+        messages = [
+            daily_case_report.ReportMessage(
+                id=f"m{index}",
+                sender_id=f"u{index}",
+                sender_name=f"成员{index}",
+                text=text,
+                sent_at=datetime(2026, 8, 8, 9, index, tzinfo=timezone.utc),
+                message_kind="text",
+            )
+            for index, text in enumerate([
+                "我在整理自动化工作流的步骤。",
+                "自动化工作流怎么做更稳定？",
+                "先复盘自动化工作流，再补充模板。",
+                "内容创作遇到卡点时，先做最小版本。",
+                "我也想聊内容创作的实际用法。",
+            ])
+        ]
+
+        topics = daily_case_report._hot_topics(messages)
+
+        self.assertTrue(topics)
+        self.assertEqual(topics[0].keyword, "自动化工作流")
+        self.assertEqual(topics[0].message_count, 3)
+        self.assertEqual(topics[0].participant_count, 3)
+        content_topic = next(topic for topic in topics if topic.keyword == "内容创作")
+        self.assertEqual(content_topic.message_count, 2)
+        self.assertEqual(content_topic.participant_count, 2)
+
+    def test_hot_topics_exclude_repeated_sentence_fragments(self) -> None:
+        messages = [
+            daily_case_report.ReportMessage(
+                id=f"m{index}",
+                sender_id=f"u{index}",
+                sender_name=f"成员{index}",
+                text=text,
+                sent_at=datetime(2026, 8, 8, 9, index, tzinfo=timezone.utc),
+                message_kind="text",
+            )
+            for index, text in enumerate([
+                "资料发群里了，大家按需查看。",
+                "问题表发群里了，欢迎补充。",
+            ])
+        ]
+
+        topics = daily_case_report._hot_topics(messages)
+
+        self.assertFalse(any("群里" in topic.keyword for topic in topics))
 
     def test_weak_colon_sentence_does_not_capture_later_messages(self) -> None:
         messages = [
@@ -597,8 +659,7 @@ class DailyCaseReportTest(unittest.TestCase):
             hourly_counts=[0] * 24,
             cases=[],
             suspects=[],
-            quote="done",
-            highlight="done",
+            highlight=None,
         )
 
         rendered = daily_case_report._render_html(report, 750)
@@ -607,6 +668,59 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("@import", rendered)
         self.assertNotIn("https://", rendered)
         self.assertNotIn("http://", rendered)
+        self.assertNotIn("今日高亮", rendered)
+        self.assertNotIn("COACH'S TIMEOUT", rendered)
+        self.assertNotIn("群聊热榜", rendered)
+
+    def test_render_html_keeps_hotlist_secondary_to_battle_report_sections(self) -> None:
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="群聊战报",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=2,
+            message_count=3,
+            participant_count=2,
+            case_count=1,
+            suspect_count=1,
+            hourly_counts=[0] * 24,
+            cases=[daily_case_report.CaseCard(
+                case_no="CASE 01",
+                title="讨论主题",
+                time_label="10:00-11:00",
+                summary="2 条消息，2 人参与",
+                bullets=["原始群消息"],
+                message_count=2,
+                participant_count=2,
+                color_bg="#fff0a6",
+                color_text="#111111",
+                top_speaker="成员",
+            )],
+            suspects=[daily_case_report.Suspect(
+                rank=1,
+                name="成员",
+                message_count=2,
+                word_count=12,
+                avatar_emoji="*",
+            )],
+            highlight="原始群消息",
+            hot_topics=[daily_case_report.HotTopic(
+                rank=1,
+                keyword="讨论主题",
+                message_count=2,
+                participant_count=2,
+            )],
+        )
+
+        rendered = daily_case_report._render_html(report, 750)
+
+        self.assertIn("XIAOMAN COMMUNITY SCOREBOARD", rendered)
+        self.assertIn("background: #ffd92e", rendered)
+        self.assertNotIn("DAILY COMMUNITY REPORT", rendered)
+        self.assertLess(rendered.index("24H 活跃节奏"), rendered.index("今日高亮"))
+        self.assertLess(rendered.index("今日高亮"), rendered.index("群聊热榜"))
+        self.assertLess(rendered.index("群聊热榜"), rendered.index("今日局势"))
+        self.assertLess(rendered.index("今日局势"), rendered.index("今日 MVP"))
 
     def test_render_image_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
@@ -698,7 +812,6 @@ class DailyCaseReportTest(unittest.TestCase):
             hourly_counts=[0] * 24,
             cases=[],
             suspects=[],
-            quote="done",
             highlight="done",
         )
         old_import = builtins.__import__
@@ -742,7 +855,6 @@ class DailyCaseReportTest(unittest.TestCase):
             hourly_counts=[0] * 24,
             cases=[],
             suspects=[],
-            quote="done",
             highlight="done",
         )
 
@@ -843,7 +955,6 @@ class DailyCaseReportTest(unittest.TestCase):
                 hourly_counts=[0] * 24,
                 cases=[],
                 suspects=[],
-                quote="done",
                 highlight="done",
                 window_start="2026-08-07T07:45:00+08:00",
                 window_end="2026-08-08T07:45:00+08:00",
@@ -869,7 +980,7 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertEqual(artifact["mime_type"], "image/jpeg")
             self.assertEqual(artifact["filename"], "daily-report.jpg")
             self.assertEqual(artifact["byte_size"], len(b"fixture-jpeg-bytes"))
-            self.assertEqual(artifact["template_version"], "xiaoman-daily-case-report-v1")
+            self.assertEqual(artifact["template_version"], "xiaoman-daily-case-report-v2")
             self.assertEqual(artifact["render"]["image_format"], "jpeg")
             self.assertEqual(artifact["render"]["width"], 750)
             self.assertEqual(artifact["render"]["jpeg_quality"], 92)

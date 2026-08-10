@@ -6,6 +6,53 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.98](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.97...v0.2.98) (2026-08-10)
+
+
+### Features
+
+* enable erhua morning brief auto publish ([dcffa65](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/dcffa6562b407e40d5fe4a47f4384805cf28fba9))
+
+## [0.2.97](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.96...v0.2.97) (2026-08-09)
+
+
+### Bug Fixes
+
+* **workflow:** require sourced daily report content ([7248455](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7248455cd1ec55fc19a6bc4823b3f2454071b1ac))
+
+## [0.2.96](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.95...v0.2.96) (2026-08-09)
+
+
+### Bug Fixes
+
+* emit xiaoman legacy cron hash mismatch evidence ([22793f2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/22793f2cf048af3615f86cf2f6ecf67fc518e3c2))
+
+## [0.2.95](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.94...v0.2.95) (2026-08-09)
+
+
+### Bug Fixes
+
+* add xiaoman plan table url probe ([#445](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/445)) ([8dd4f65](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8dd4f6514705ffc3ddf1fe6c4bfa0dbcb448f14c))
+
+## [0.2.94](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.93...v0.2.94) (2026-08-09)
+
+
+### Features
+
+* **xiaoman:** refresh daily report and schedule ([#442](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/442)) ([02df3ac](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/02df3ac82b9b8f28e9f47e1c8fbd79e176e46c78))
+
+
+### Bug Fixes
+
+* allow Xiaoman read-through on root-owned releases ([#441](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/441)) ([1256c45](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1256c45392a80e48810798f568f7365cee58fd8e))
+
+## [0.2.93](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.92...v0.2.93) (2026-08-09)
+
+
+### Bug Fixes
+
+* **deploy:** bound erhua journal observation window ([9d17af6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9d17af6986f77a70da3e67cd2501109ab255f14d))
+
 ## [0.2.92](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.91...v0.2.92) (2026-08-09)
 
 

@@ -268,7 +268,7 @@ async fn run_apply(cli: &Cli, work_item_id: Option<Uuid>) -> Result<QiweTextSend
     #[cfg(not(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter")))]
     {
         let _ = (cli, work_item_id);
-        return Ok(empty_report(false, true, "qiwe_text_adapter_not_compiled"));
+        Ok(empty_report(false, true, "qiwe_text_adapter_not_compiled"))
     }
 
     #[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]

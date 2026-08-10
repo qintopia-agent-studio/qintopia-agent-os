@@ -11,8 +11,6 @@
 - Agent OS design: `docs/agent-os/README.md`
 - Runtime baseline: `docs/operations/runtime-baseline.md`
 - Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`
-- Erhua member recognition production runbook:
-  `docs/operations/erhua-member-recognition-production-runbook.md`
 - Xiaoman weekly minimum loop runbook:
   `docs/operations/xiaoman-weekly-minimum-loop-runbook.md`
 - Collaboration model: `docs/engineering/collaboration-model.md`
@@ -43,8 +41,6 @@
 - Markdown lint: `pnpm lint:md`
 - Xiaoman production evidence chain local repository verification:
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
-- Erhua member recognition completion finalizer:
-  `node tools/deploy/finalize-erhua-member-recognition-completion.mjs`
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - Local PR quick tier: `pnpm check:pr:quick`
@@ -58,188 +54,10 @@
   (`OnCalendar=*-*-* 08:10:00`).
 - Erhua morning brief QiWe text-send fixture:
   `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
-- Erhua member recognition room roster sync evidence:
-  `qintopia-message-sidecar identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --apply`
-  then
-  `node tools/deploy/check-erhua-room-member-sync.mjs <identity-backfill-room-member-sync-output.json>`.
-  This captures the current QiWe room member roster into `channel_identities` before
-  person bootstrap, so recognition coverage is about current group members rather than
-  only members who have already sent captured messages. Retained evidence must keep only
-  counts, sanitized status, and `scope_fingerprint`; do not include the real group id,
-  QiWe user ids, DB URLs, tokens, or raw room-detail payloads.
-- Erhua member recognition coverage evidence:
-  `node tools/deploy/check-erhua-member-recognition-coverage.mjs <identity-bootstrap-dry-run-output.json>`
-  The checker must fail on linked QiWe display names missing aliases, linked messages
-  missing `sender_person_id`, missing materializable QiWe platform identities, and
-  linked people without a safe answer-context canary name. It must also fail on profile
-  snapshots that omit running hints while active member facts already contain running
-  signals. Use `--require-active-profiles` after the `member-profile --limit 5000`
-  repair when claiming every linked current-room person has a profile, so missing active
-  `reply_context` snapshots fail during coverage rather than only at final completion.
-  Use `finalize-erhua-member-recognition-coverage.mjs --summary-output` to write and
-  revalidate count-only retained evidence even when coverage fails; the summary must not
-  include member names, raw ids, profile text, or database identifiers. Use
-  `--expect-pass --require-active-profiles` only for the final full-profile coverage
-  claim. `qiwe_channel_identities_excluded` is for bot/system/test identities and
-  display names with phone-like digit runs or control characters; these must not be
-  auto-created as people. In identity-bootstrap dry-run evidence,
-  `qiwe_channel_identities_total` means the room-scoped safe-processable subset; raw
-  room-scoped count is `qiwe_channel_identities_raw_total` and must equal safe plus
-  excluded. `chat_id=''` platform identities are checked through the separate
-  `qiwe_platform_*` and `linked_people_without_qiwe_platform_identity` fields, not
-  counted in the current-room person denominator.
-- Erhua member recognition scoped profile refresh:
-  `qintopia-message-sidecar member-profile --chat-id <reviewed-erhua-qiwe-group-id> --limit 5000 --apply --quiet`.
-  Use the larger one-shot repair window to pick up older self-introductions, interests,
-  and recurring activity signals; do not change the worker default merely to run this
-  repair. Retained profile evidence may keep only aggregate counts and the single
-  `scope_fingerprints` entry; do not retain raw `target_chat_ids`, candidate facts, raw
-  messages, profile text, or database URLs.
-- Erhua member recognition answer-context canary evidence:
-
-  ```bash
-  qintopia-message-sidecar erhua-member-speaker-canary-sender-map \
-    --chat-id <reviewed-erhua-qiwe-group-id> \
-    > <private-speaker-sender-map.json>
-  node tools/deploy/build-erhua-member-recognition-canary-mcp-input.mjs \
-    --spec <identity-bootstrap-dry-run-output.json> \
-    --chat-id-env <canary-chat-id-env> \
-    --sender-id-env <canary-sender-id-env> \
-    --speaker-sender-map <private-speaker-sender-map.json> \
-    --output <context-mcp-input.jsonl>
-  node tools/deploy/build-erhua-member-recognition-canary-evidence.mjs \
-    --spec <canary-spec.json> \
-    --mcp-output <context-mcp-output.jsonl> \
-    --output <answer-context-canary-output.jsonl>
-  node tools/deploy/check-erhua-member-recognition-canary.mjs \
-    <answer-context-canary-output.jsonl>
-  node tools/deploy/finalize-erhua-member-recognition-completion.mjs \
-    --room-sync <identity-backfill-room-member-sync-apply-output.json> \
-    --profile <member-profile-quiet-apply-output.json> \
-    --coverage <identity-bootstrap-dry-run-output.json> \
-    --canary <answer-context-canary-output.jsonl> \
-    --summary-output <sanitized-completion-summary.json> \
-    --require-active-profiles
-  ```
-
-  Use them after production identity/profile repair to prove expected member names and
-  aliases resolve to safe `qintopia_answer_context_prepare` output.
-  `identity-bootstrap-persons --dry-run --chat-id <reviewed-erhua-qiwe-group-id>` emits
-  `answer_context_canary_specs`, `answer_context_speaker_canary_specs`, and
-  `answer_context_referenced_canary_specs`, which should be used as the current-room
-  linked-member canary spec after the coverage checker passes. The coverage checker must
-  require all three arrays to be present and to match their total and unique-person
-  counts. The specs include `required_profile_terms` for safe concrete profile signals
-  such as `跑步`, `摄影`, `AI`, and `写作`; the answer-context canary MCP input and
-  evidence builders must also reject coverage JSON that is missing any of the three
-  mentioned-member, speaker self-canary, or referenced-member spec arrays, or whose spec
-  arrays do not match the corresponding `*_total` and unique-person counts, so a
-  hand-trimmed current-room canary list cannot be run as full coverage.
-  Mentioned-member, speaker self-canary, and referenced-member specs, plus their
-  retained resolved evidence, must cover the same canonical people; equal counts alone
-  are not enough. The canary checker must prove those terms appear in the safe summary
-  or hints. Keep the safe profile-term allowlist in
-  `runtime/sidecar/src/member_profile.rs` and the canary `required_profile_terms` query
-  in `runtime/sidecar/src/identity_bootstrap.rs` in sync. Completion must compare
-  room-sync against `qiwe_room_channel_identities_*`; `qiwe_channel_identities_*`,
-  `linked_people_total`, and `answer_context_canary_specs` are also room-scoped and must
-  not be inflated by `chat_id=''` platform identities. Coverage must also keep
-  `linked_people_without_qiwe_platform_identity = 0`; this proves every linked
-  current-room person has a materialized QiWe platform identity for speaker recognition
-  when that member asks "我是谁" or speaks without being mentioned by name. The final
-  completion checker requires the applied room-sync evidence, quiet single-scope
-  member-profile evidence, and matching scope fingerprints so a message-sender-only,
-  wrong-room, or multi-room backfill cannot be claimed as current-group coverage. The
-  evidence builder must retain only sanitized `mentioned_members`, `speaker`, and
-  `referenced_member` fields from MCP responses, and canary checking must require
-  `mentioned_members[].mention_text` to exactly match `expected_mention` rather than
-  accepting a merely similar display name. Resolved mentioned-member canaries must also
-  have `match_count = 1`; non-unique member-name matches are not full recognition. The
-  canary evidence builder must reject duplicate canary spec ids and duplicate MCP
-  answer-context response ids so a later JSONL line cannot overwrite an earlier result.
-  The private speaker sender map and generated MCP input contain raw QiWe sender ids for
-  speaker and referenced canaries; keep them as server-local `/tmp` files only and never
-  retain, paste, commit, or use them as evidence. The MCP input builder must compare the
-  private sender map `scope_fingerprint` against the coverage report `scope_fingerprint`
-  and require the sender-map canonical keys to exactly match the speaker/referenced
-  canary canonical people before emitting raw sender-id MCP input. Retained canary
-  evidence must contain only the sanitized `speaker`, `referenced_member`, and
-  `mentioned_members` output. Do not put phone-like digit runs or system/test display
-  names into retained canary evidence; link unbound current-room human identities
-  through a reviewed safe identity payload first, then add a reviewed safe alias when a
-  linked person still lacks a canary-safe name.
-  `finalize-erhua-member-recognition-completion.mjs --summary-output --require-active-profiles`
-  wraps `check-erhua-member-recognition-completion.mjs` and
-  `check-erhua-member-recognition-completion-summary.mjs` so the retained completion
-  summary is written and independently validated in one fixed step. The active-profile
-  requirement fails when any linked current-room person still has no active
-  `reply_context` profile or any canary resolves only as `identity_only`; that state is
-  a safe fallback, not full member-profile completion. Strict completion also requires
-  every resolved non-identity-only canary to expose non-empty safe profile hints
-  (`topics`, `stable_profile_notes`, or `temporary_communication_notes`) so an empty
-  active profile cannot be claimed as useful recognition. The retained summary records
-  only route-level hint coverage counts such as `linked_profile_hint_people`, not
-  profile text, and mentioned-member, speaker self, and referenced-member hint coverage
-  must agree. It must contain only non-sensitive scope/count fields and no-secret
-  boundary flags, never person ids, sender ids, chat ids, raw messages, database URLs,
-  or tokens.
-
-- Erhua member recognition reviewed safe identity apply:
-
-  ```bash
-  node tools/deploy/build-erhua-member-safe-identity-payload-template.mjs \
-    --coverage <identity-bootstrap-dry-run-output.json> \
-    --output <safe-identity-template.json>
-  node tools/deploy/check-erhua-member-safe-identity-payload.mjs \
-    <safe-identity.json>
-  qintopia-message-sidecar erhua-member-safe-identity \
-    --payload-file <safe-identity.json>
-  QINTOPIA_ERHUA_MEMBER_SAFE_IDENTITY_APPROVAL=approved-production-erhua-member-safe-identity \
-    qintopia-message-sidecar erhua-member-safe-identity \
-      --payload-file <safe-identity.json> \
-      --apply
-  ```
-
-  Use this only for `qiwe_room_potential_member_identities_unlinked_samples` from
-  sanitized coverage evidence. The generated `safe_display_name` fields are
-  intentionally blank and must be filled by owner review; `person_key` stays `null`
-  unless the owner-reviewed identity must link to an existing person. Payloads must not
-  include raw display names, QiWe user ids, `chat_id`, `sender_id`, raw messages, raw
-  profile text, secrets, or database URLs. The release-local command must reject
-  ambiguous identity/person keys, unsafe names, cross-person QiWe user conflicts, and
-  missing production approval for `--apply`.
-
-- Erhua member recognition reviewed safe alias apply:
-
-  ```bash
-  node tools/deploy/build-erhua-member-safe-alias-payload-template.mjs \
-    --coverage <identity-bootstrap-dry-run-output.json> \
-    --output <safe-alias-template.json>
-  node tools/deploy/check-erhua-member-safe-alias-payload.mjs \
-    <safe-alias.json>
-  qintopia-message-sidecar erhua-member-safe-alias \
-    --payload-file <safe-alias.json>
-  QINTOPIA_ERHUA_MEMBER_SAFE_ALIAS_APPROVAL=approved-production-erhua-member-safe-alias \
-    qintopia-message-sidecar erhua-member-safe-alias \
-      --payload-file <safe-alias.json> \
-      --apply
-  ```
-
-  can create a template from `linked_people_without_answer_context_canary_spec_samples`;
-  the generated `alias` fields are intentionally blank and must be filled by owner
-  review before validation. Run the checker before any database-backed dry-run or apply.
-  The payload may use only the sanitized `person_key` from retained evidence plus a
-  reviewed human-readable alias. Do not include QiWe user ids, `chat_id`, `sender_id`,
-  raw messages, raw profile text, or database URLs. The command must reject unsafe,
-  numeric-only, phone-like, system/test, ambiguous, or cross-person aliases.
-
 - Erhua member recognition local release-current readiness check:
-  `node tools/deploy/check-erhua-member-recognition-local.mjs`. This runs the sidecar
-  compile check, focused Rust recognition/profile/context tests, Erhua
-  member-recognition fixture/checker suite, deploy contract check, deploy bundle build,
-  and manifest presence check for the release-current runbook and evidence tools. It
-  does not prove production DB completion; production still requires the owner-approved
-  runbook on the reviewed release.
+  `node tools/deploy/check-erhua-member-recognition-local.mjs`. This proves the
+  release-current runbook, deploy bundle files, focused Rust tests, fixture checkers,
+  and completion finalizers are present; it does not prove production DB completion.
 - Erhua member recognition reviewed production config apply:
 
   ```bash
@@ -247,23 +65,24 @@
     deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh --apply
   ```
 
-  Pass `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CHAT_ID` only from the reviewed server
-  environment or one-shot shell when the persistent `QINTOPIA_PROFILE_TARGET_CHAT_IDS`
-  is not already exactly one reviewed Erhua group. Pass
-  `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CANARY_SENDER_ID` from the reviewed
-  server-local value before canary runs. Do not print, retain, paste, or commit the real
-  group id or sender id. The script rejects symlinked or group/world-writable persistent
-  env files and rejects a canary sender id equal to the reviewed group id. The script
-  only updates the persistent env; it does not call QiWe, run SQL, repair identities, or
-  prove recognition coverage.
+  Pass `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CHAT_ID` and
+  `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CANARY_SENDER_ID` only from reviewed
+  server-local values. Do not print, retain, paste, or commit the real group id or
+  sender id.
 
-- Erhua member recognition read-only production config observation:
+- Erhua member recognition production config observation:
   `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh`.
-  Run it after the reviewed config apply and before room roster sync. Retain only the
-  sanitized JSONL line; it reports booleans, counts, and `scope_fingerprint`, never the
-  real group id, sender id, or database URL, and performs no QiWe, Postgres, MCP,
-  systemctl, or network action.
-
+  Continue only when it reports `action_status=ready_for_member_recognition_runbook`.
+- Erhua member recognition room roster sync evidence:
+  `qintopia-message-sidecar identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --apply`
+  then
+  `node tools/deploy/check-erhua-room-member-sync.mjs <identity-backfill-room-member-sync-output.json>`.
+- Erhua member recognition coverage and completion evidence:
+  `node tools/deploy/finalize-erhua-member-recognition-coverage.mjs` and
+  `node tools/deploy/finalize-erhua-member-recognition-completion.mjs`. Retained
+  evidence must keep only sanitized counts, route-level hint coverage, and
+  `scope_fingerprint`; never retain real group ids, QiWe user ids, sender ids, person
+  ids, DB URLs, tokens, raw messages, or raw profile text.
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:
@@ -279,10 +98,10 @@
   failure. Xiaoman retirement depends on the deployed runner unit keeping
   `ProtectHome=read-only` while granting `ReadWritePaths` only to the fixed
   `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory; do not grant write access to
-  the whole Xiaoman profile. Erhua retirement hash mismatches may emit only sanitized
-  `actual_sha256`, reviewed `expected_sha256`, and declaration-count evidence; use that
-  evidence for a follow-up reviewed expected-hash PR, never to bypass review or retire
-  an unreviewed cron file.
+  the whole Xiaoman profile. Erhua and Xiaoman retirement hash mismatches may emit only
+  sanitized `actual_sha256`, reviewed `expected_sha256`, and declaration-count evidence;
+  use that evidence for a follow-up reviewed expected-hash PR, never to bypass review or
+  retire an unreviewed cron file.
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
@@ -487,13 +306,10 @@
   each selected target requires its owner-approved production config to have been
   applied first. Legacy cron retirement must be handled through the explicit
   `production-legacy-cron-retirement` request and evidenced before activation retries.
-  There is no separate deploy-runner production observation-only scope for these timers;
-  use the activation run's target observation evidence, target-specific release-local
-  observation scripts, or retained worker output/evidence instead. The
-  `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation` target additions
-  are a 2026-08-09 owner-approved fixed-boundary expansion for the Xiaoman weekly
-  minimum loop; they may enable only their own release-managed systemd timers and must
-  not send, publish, write Feishu, call Erhua, or call QiWe.
+  The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation` target
+  additions are a 2026-08-09 owner-approved fixed-boundary expansion for the Xiaoman
+  weekly minimum loop; they may enable only their own release-managed systemd timers and
+  must not send, publish, write Feishu, call Erhua, or call QiWe.
 - Xiaoman weekly loop production uses release-managed timers, not Hermes conversation
   cron or hand-copied unit files. Saturday recruitment and Sunday plan confirmation are
   configured and activated with:
@@ -785,48 +601,6 @@ Use `rg` and `rg --files` for search.
   `sender_name` but still have `sender_person_id IS NULL`; otherwise Erhua will call
   `qintopia_answer_context_prepare` and correctly return `speaker_unresolved` even when
   the display name uniquely matches an existing person/profile.
-- Current-group "full member recognition" must start by syncing the reviewed QiWe room
-  roster through `identity-backfill --sync-room-members --chat-id ... --apply`; message
-  sender backfill alone proves only people who have spoken in captured messages, not the
-  current room membership. Applied room sync marks current roster identities with
-  `metadata.current_qiwe_room_member=true` and same-room historical identities that are
-  no longer in the roster as stale metadata; same-chat bootstrap and completion must
-  count only current-marked identities for the current-room denominator.
-- Erhua member-recognition production evidence runs from `release/current`; when adding
-  or changing its runbook, checkers, or canary builders, include the required
-  `tools/deploy/check-erhua-*`, `tools/deploy/build-erhua-*`, and
-  `docs/operations/erhua-member-recognition-production-runbook.md` files in
-  `tools/deploy/build-deploy-bundle.mjs` in the same change.
-- Cross-chat member recognition also depends on keeping all display names from already
-  linked QiWe channel identities in `qintopia_identity.person_aliases`; do not limit
-  alias writes to newly bootstrapped people. It also depends on a materialized
-  `chat_id = ''` QiWe platform identity for every globally unique linked
-  `channel_user_id`; do not limit platform identity writes to identities linked in the
-  current run. Safe profile generation must preserve recurring concrete signals such as
-  running activities instead of collapsing them only into the generic "活动" topic, or
-  Erhua will recognize the person but answer with a thin profile. Answer-context and
-  profile-safe output must redact phone-like digit runs from display names, summaries,
-  and hints before prompting Erhua. If a linked person has no active reply-context
-  profile, answer-context must return an `identity_only` safe summary rather than an
-  empty summary, and Erhua must not infer missing profile details. Member-name matching
-  for QiWe display names, person names, and aliases must be case-insensitive for ASCII
-  aliases such as `Paxon`/`paxon`, while retained evidence should keep the original safe
-  display text. The two coverage fields that feed reviewed all-member repair payloads,
-  `qiwe_room_potential_member_identities_unlinked_samples` and
-  `linked_people_without_answer_context_canary_spec_samples`, must contain the complete
-  current-room candidate set, not only the first diagnostic sample window; the payload
-  template builders fail when their deduplicated candidate count does not match the
-  corresponding coverage count. Pronoun-only identity questions such as "他是谁" depend
-  on the channel adapter passing the replied-to sender as `referenced_sender_id`; Erhua
-  must ask for clarification when that reference is missing and must not use vectors or
-  recent-message proximity to guess the person. Retained Erhua member-recognition canary
-  JSONL must not contain database `person_id` values; the evidence builder should keep
-  only irreversible `person_ref` SHA-256 markers for same-evidence person consistency.
-- Erhua public local recommendations such as performances, restaurants, cafes, or
-  exhibitions must use current public-source checks before claiming "best", consensus,
-  availability, price, or firsthand experience. Without verified venue/organizer,
-  ticketing, map/review, or local audience evidence, route them as
-  `public_source_recommendation` and answer with the lookup path plus uncertainty.
 - For the Huabaosi production image canary, the owner-selected first storage boundary is
   the fixed Feishu Base `huabaosi-generated-image-v1` table. The image worker may upload
   the exact final JPEG attachment and idempotently upsert one row by
@@ -957,6 +731,10 @@ Use `rg` and `rg --files` for search.
   counts, or record summaries. If either boundary is unclear, the reply must ask for
   authorization or move to a controlled private/review channel instead of exposing row
   summaries in the current conversation.
+- Xiaoman Feishu wiki/Base URL readability checks must use the dedicated
+  `qintopia_xiaoman_activity_plan_table_probe` wrapper. Do not infer readability from
+  cron output, Kanban state, session history, generic Feishu tools, or whether the URL
+  looks like a valid wiki link.
 - `qintopia_xiaoman_activity_promotion_review_draft` may only transform already-read
   sanitized Xiaoman activity records into a human-reviewable activity summary, promotion
   assessment, copy draft, poster brief, and dry-run controlled record-path payload. It

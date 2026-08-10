@@ -707,7 +707,7 @@ render_all() {
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer" \
     "Run Qintopia AgentOS Xiaoman daily case report auto-publish" \
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service" \
-    "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TIMER_CALENDAR:-*-*-* 07:45:00}"
+    "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TIMER_CALENDAR:-*-*-* 08:00:00}"
 
   render_release_script_oneshot_service \
     "qintopia-agentos-xiaoman-weekly-recruitment.service" \
