@@ -1,7 +1,7 @@
 # Task 3: Xiaoman Weekly Plan Confirmation (Sun 20:00)
 
-Updated: 2026-08-10 Status: ready for implementation after task 0 merges Profile:
-`xiaoman`
+Updated: 2026-08-10 Status: PR phase implemented 2026-08-10 (uncommitted); server phase
+pending release + owner approval Profile: `xiaoman`
 
 ## Goal
 

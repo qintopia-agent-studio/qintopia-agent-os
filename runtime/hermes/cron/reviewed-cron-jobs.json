@@ -1,4 +1,15 @@
 {
   "schema_version": 1,
-  "reviewed_jobs": []
+  "reviewed_jobs": [
+    {
+      "profile": "xiaoman",
+      "name": "小满·周日活动计划确认",
+      "schedule_expr": "0 20 * * 0",
+      "script": "qintopia_xiaoman_weekly_plan_confirmation.sh",
+      "no_agent": true,
+      "deliver": "origin",
+      "approved_at": "2026-08-10",
+      "plan": "docs/plans/active/hermes-cron-migration/task-3-xiaoman-weekly-plan-confirmation.md"
+    }
+  ]
 }
