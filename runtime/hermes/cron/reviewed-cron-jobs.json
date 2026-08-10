@@ -8,6 +8,7 @@
       "script": "qintopia_xiaoman_weekly_recruitment.sh",
       "no_agent": true,
       "deliver": "origin",
+      "origin_platform": "wecom",
       "approved_at": "2026-08-10",
       "plan": "docs/plans/active/hermes-cron-migration/task-2-xiaoman-weekly-recruitment.md"
     },
