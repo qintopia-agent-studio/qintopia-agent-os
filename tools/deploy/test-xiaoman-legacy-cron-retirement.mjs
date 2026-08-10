@@ -21,7 +21,7 @@ const sourceObservation = path.join(
 );
 const fixedCronFile = "/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json";
 const fixedObservedSha =
-  "41347af48cbb62010be3f530f0fa7d4dfa28f0e661f4fd48fbc0a5467b484c08";
+  "f91d56d58a17feba3498929919b71b4f3e4222899d571dcf5f1b3505eacc9969";
 
 const writeExecutable = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
