@@ -2309,6 +2309,24 @@ fn public_source_recommendation_lookup_plan(query: &str) -> Value {
     let clean_query = clean_text(query, 120);
     let search_topic = {
         let topic = clean_query.replace("@二花", "").replace('@', "");
+        let topic = [
+            "最好的",
+            "最好",
+            "最棒的",
+            "最棒",
+            "是哪",
+            "是什么",
+            "有哪些",
+            "哪里好",
+            "哪家好",
+            "哪场好",
+            "推荐一下",
+            "推荐",
+            "？",
+            "?",
+        ]
+        .iter()
+        .fold(topic, |acc, marker| acc.replace(marker, " "));
         let topic = topic.split_whitespace().collect::<Vec<_>>().join(" ");
         if topic.is_empty() {
             "本地 推荐".to_string()
@@ -2325,28 +2343,38 @@ fn public_source_recommendation_lookup_plan(query: &str) -> Value {
                 "role": "本地体验和口碑线索",
                 "search_queries": [
                     format!("{} 小红书", search_topic),
-                    format!("{} 近期 推荐", search_topic),
-                    "西安 爵士 演出 推荐",
-                    "西安 jazz livehouse"
+                    format!("{} 近期 真实体验", search_topic),
+                    format!("{} 口碑", search_topic),
+                    format!("{} 避雷", search_topic)
                 ],
                 "check": "看发布日期、评论新旧、是否多篇笔记交叉提到同一场地或演出；小红书只能当口碑线索，不能单独当权威事实。"
             },
             {
                 "source": "大麦/秀动/猫眼",
                 "role": "档期、票价、阵容和可购状态",
-                "search_queries": ["西安 爵士", "西安 jazz", "西安 livehouse"],
+                "search_queries": [
+                    format!("{} 大麦", search_topic),
+                    format!("{} 秀动", search_topic),
+                    format!("{} 猫眼", search_topic)
+                ],
                 "check": "确认最近开票、演出时间、场地、阵容、价格和余票；这些实时信息优先于旧笔记。"
             },
             {
                 "source": "场地或主办官方账号",
                 "role": "官方排期和变更确认",
-                "search_queries": ["场地名 官方账号", "演出名 主办方"],
+                "search_queries": [
+                    format!("{} 官方账号", search_topic),
+                    format!("{} 主办方", search_topic)
+                ],
                 "check": "用官方公众号、视频号、小红书官方号或海报确认演出是否仍有效。"
             },
             {
                 "source": "地图/点评平台",
                 "role": "地址、营业状态和近期评价",
-                "search_queries": ["场地名 地址", "场地名 评价"],
+                "search_queries": [
+                    format!("{} 地址", search_topic),
+                    format!("{} 评价", search_topic)
+                ],
                 "check": "复核地址、营业状态、交通和近期评价，避免推荐已停业或体验明显变差的场地。"
             }
         ],
@@ -4164,17 +4192,41 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .any(|query| query.as_str().unwrap().contains("西安 爵士")));
+            .any(|query| {
+                let query = query.as_str().unwrap();
+                query.contains("西安") && query.contains("爵士乐演出") && query.contains("小红书")
+            }));
         assert!(plan["source_order"][1]["search_queries"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|query| query.as_str().unwrap() == "西安 爵士"));
+            .any(|query| {
+                let query = query.as_str().unwrap();
+                query.contains("西安") && query.contains("爵士乐演出") && query.contains("大麦")
+            }));
         assert!(plan["do_not_claim"]
             .as_array()
             .unwrap()
             .iter()
             .any(|claim| claim.as_str().unwrap() == "我听过"));
+    }
+
+    #[test]
+    fn public_source_recommendation_lookup_plan_does_not_hardcode_xian_jazz() {
+        let plan = public_source_recommendation_lookup_plan("上海最好的咖啡馆是哪");
+        let queries = plan["source_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|source| source["search_queries"].as_array().unwrap())
+            .map(|query| query.as_str().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(queries
+            .iter()
+            .any(|query| query.contains("上海") && query.contains("咖啡馆")));
+        assert!(queries.iter().all(|query| !query.contains("西安")));
+        assert!(queries.iter().all(|query| !query.contains("爵士")));
     }
 
     #[test]
