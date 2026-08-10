@@ -95,8 +95,11 @@ The graph has two intentional choke points. `channel_identities.person_id` is th
 identity choke point: without it, Erhua cannot safely map a QiWe sender to a person.
 `member_profile_snapshots(status='active', profile_kind='reply_context')` is the profile
 choke point: without it, Erhua may recognize the identity but must not infer a stable
-profile. Completion is claimed only after the count-only coverage and answer-context
-canaries prove both choke points for the same current-room scope.
+profile. `member-profile` seeds an active no-stable-profile snapshot for linked
+current-room people that have no useful profile signals yet; that lets Erhua answer
+"known member, no stable profile" instead of falling back to identity-only context or
+inventing details. Completion is claimed only after the count-only coverage and
+answer-context canaries prove both choke points for the same current-room scope.
 
 ## Sequence
 
@@ -218,13 +221,18 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
 
    Use the larger one-shot `--limit 5000` window for member-recognition repair so older
    self-introductions, interests, and recurring activity signals are considered. The
-   quiet profile report must emit `requested_message_limit >= 5000` and exactly one
-   `scope_fingerprints` entry; retain that sanitized fingerprint with the count report,
-   not the raw group id or raw candidate facts. If the final coverage report claims any
-   active reply-context profiles, this same applied profile evidence must have
-   `valuable_messages > 0`; otherwise the completion gate treats the profile claim as
-   stale or wrong-scope evidence. An idempotent rerun may insert zero new snapshots when
-   the existing active snapshot already has the same input hash.
+   quiet profile report must emit `requested_message_limit >= 5000`, exactly one
+   `scope_fingerprints` entry, and `current_room_linked_people` matching the final
+   coverage `linked_people_total`; retain that sanitized fingerprint/count report, not
+   the raw group id or raw candidate facts. If a linked current-room person has no
+   useful profile signals and no active snapshot yet, the profile repair writes an
+   active no-stable-profile snapshot with `do_not_infer_missing_profile=true` so Erhua
+   can acknowledge the known member without inventing interests or history. If the final
+   coverage report claims any active reply-context profiles with useful signals, this
+   same applied profile evidence must have `valuable_messages > 0`; otherwise the
+   completion gate treats the profile claim as stale or wrong-scope evidence. An
+   idempotent rerun may insert zero new snapshots when the existing active snapshot
+   already has the same input hash.
 
 6. Re-run the same-scoped dry-run and checker:
 
@@ -266,6 +274,8 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    - `linked_people_without_qiwe_platform_identity = 0`;
    - `linked_people_without_answer_context_canary_spec = 0`;
    - `linked_people_without_active_profile = 0`;
+   - retained completion
+     `profile_repair.current_room_linked_people = linked_people.total`;
    - `running_people_profile_missing_running_hint = 0`.
 
    A failure on `linked_people_without_answer_context_canary_spec` means at least one
@@ -485,13 +495,16 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    The final completion checker requires the room-sync `scope_fingerprint`, the single
    quiet member-profile `scope_fingerprints` entry, and bootstrap coverage
    `scope_fingerprint` to match, so a message-sender-only, wrong-room, multi-room, or
-   stale-profile run cannot be claimed as current-group recognition. It uses
-   `--require-active-profiles` so any linked current-room person without an active
-   `reply_context` profile, or any canary that resolves only as `identity_only`, blocks
-   the production completion claim instead of being treated as full profile coverage. It
-   also requires resolved non-identity-only canaries to include non-empty safe profile
-   hints, so an empty active profile cannot be claimed as useful recognition. The
-   retained summary records only route-level hint coverage counts such as
+   stale-profile run cannot be claimed as current-group recognition. It also requires
+   the quiet member-profile `current_room_linked_people` count to match the coverage
+   `linked_people_total`, so a profile run over a narrower person set cannot be claimed
+   as full member recognition. It uses `--require-active-profiles` so any linked
+   current-room person without an active `reply_context` profile, or any canary that
+   resolves only as `identity_only`, blocks the production completion claim instead of
+   being treated as full profile coverage. It also requires resolved non-identity-only
+   canaries to include non-empty safe profile hints; no-stable-profile members carry the
+   explicit safe hint "暂无稳定画像信号，不要推断个人偏好" rather than an empty profile.
+   The retained summary records only route-level hint coverage counts such as
    `linked_profile_hint_people`, not profile text, and the mentioned-member, speaker
    self, and referenced-member hint coverage counts must agree. The checker uses
    `qiwe_room_channel_identities_*` for the roster-count gate so `chat_id=''` platform

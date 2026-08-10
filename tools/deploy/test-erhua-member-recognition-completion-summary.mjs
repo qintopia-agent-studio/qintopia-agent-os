@@ -165,6 +165,28 @@ try {
   assert.match(result.stderr, /speaker_profile_hint_people/);
   assert.match(result.stderr, /mentioned_profile_hint_people/);
 
+  summaryPath = writeSummary("profile-linked-people-mismatch", {
+    ...validSummary(),
+    profile_repair: {
+      ...validSummary().profile_repair,
+      current_room_linked_people: 1,
+    },
+  });
+  result = runChecker(summaryPath);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /current_room_linked_people/);
+
+  summaryPath = writeSummary("baseline-profile-overcount", {
+    ...validSummary(),
+    profile_repair: {
+      ...validSummary().profile_repair,
+      baseline_profiles_inserted: 2,
+    },
+  });
+  result = runChecker(summaryPath);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /baseline_profiles_inserted/);
+
   summaryPath = writeSummary("unsafe-boundary", {
     ...validSummary(),
     retained_evidence_boundary: {
@@ -237,8 +259,11 @@ function validSummary() {
     profile_repair: {
       dry_run: false,
       requested_message_limit: 5000,
+      current_room_linked_people: 2,
+      baseline_profile_targets: 1,
       messages_scanned: 20,
       valuable_messages: 2,
+      baseline_profiles_inserted: 1,
     },
     running_profile_hints: {
       linked_people_with_running_facts: 1,

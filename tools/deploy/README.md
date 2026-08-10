@@ -253,12 +253,15 @@ cannot be treated as current-group recognition. The finalizer runs
 used, the written summary contains only non-sensitive scope/count fields and the
 `explicit no-secret` boundary flags. Use `--require-active-profiles` for the reviewed
 production completion claim; it fails when any linked current-room person is still
-missing an active `reply_context` profile or any canary resolves only as
-`identity_only`, or when a resolved non-identity-only canary has empty safe profile
-hints. The retained summary records only route-level hint coverage counts such as
-`linked_profile_hint_people`, not profile text, and the mentioned-member, speaker self,
-and referenced-member hint coverage counts must agree. The checker also requires
-`qiwe_room_channel_identities_raw_total` to equal the applied room-sync
+missing an active `reply_context` profile, when the quiet member-profile
+`current_room_linked_people` count does not match coverage `linked_people_total`, or
+when any canary resolves only as `identity_only`. Resolved non-identity-only canaries
+must have non-empty safe profile hints; members without useful profile signals are
+represented by active no-stable-profile snapshots with an explicit do-not-infer hint
+instead of empty profiles. The retained summary records only route-level hint coverage
+counts such as `linked_profile_hint_people`, not profile text, and the mentioned-member,
+speaker self, and referenced-member hint coverage counts must agree. The checker also
+requires `qiwe_room_channel_identities_raw_total` to equal the applied room-sync
 `room_members_discovered`, so the current-room roster denominator cannot be understated
 or overstated by stale rows. The applied sync marks current roster identities with
 `current_qiwe_room_member=true` and same-room historical identities that are no longer
@@ -294,8 +297,11 @@ repair, capture the profile evidence from
 `member-profile --chat-id <reviewed-erhua-qiwe-group-id> --limit 5000 --apply --quiet`
 so older self-introductions, interests, and recurring activity signals are considered;
 the completion checker requires the quiet report's `requested_message_limit` to be at
-least `5000`. Canary specs may include `required_profile_terms` for safe concrete
-profile signals such as `跑步`, `摄影`, `AI`, and `写作`; those terms must appear in the
+least `5000` and its `current_room_linked_people` to match the current-room linked
+person denominator. The quiet report also records `baseline_profile_targets` and
+`baseline_profiles_inserted` for linked members that needed a safe no-stable-profile
+snapshot. Canary specs may include `required_profile_terms` for safe concrete profile
+signals such as `跑步`, `摄影`, `AI`, and `写作`; those terms must appear in the
 sanitized answer-context summary or hints. The canary checker also requires returned
 `mentioned_members[].mention_text` to exactly match each `expected_mention`, so a
 similar display name cannot satisfy the evidence. Resolved canaries must have

@@ -107,6 +107,8 @@ pub struct ProfileReport {
     target_chat_ids: Vec<String>,
     scope_fingerprints: Vec<String>,
     requested_message_limit: i64,
+    current_room_linked_people: i64,
+    baseline_profile_targets: i64,
     messages_scanned: i64,
     messages_skipped_without_person: i64,
     messages_skipped_excluded_identity: i64,
@@ -116,6 +118,7 @@ pub struct ProfileReport {
     facts_inserted: i64,
     summaries_inserted: i64,
     snapshots_inserted: i64,
+    baseline_profiles_inserted: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -186,6 +189,8 @@ struct ProfileSummaryReport {
     dry_run: bool,
     scope_fingerprints: Vec<String>,
     requested_message_limit: i64,
+    current_room_linked_people: i64,
+    baseline_profile_targets: i64,
     messages_scanned: i64,
     messages_skipped_without_person: i64,
     messages_skipped_excluded_identity: i64,
@@ -195,6 +200,7 @@ struct ProfileSummaryReport {
     facts_inserted: i64,
     summaries_inserted: i64,
     snapshots_inserted: i64,
+    baseline_profiles_inserted: i64,
 }
 
 impl From<&ProfileReport> for ProfileSummaryReport {
@@ -203,6 +209,8 @@ impl From<&ProfileReport> for ProfileSummaryReport {
             dry_run: report.dry_run,
             scope_fingerprints: report.scope_fingerprints.clone(),
             requested_message_limit: report.requested_message_limit,
+            current_room_linked_people: report.current_room_linked_people,
+            baseline_profile_targets: report.baseline_profile_targets,
             messages_scanned: report.messages_scanned,
             messages_skipped_without_person: report.messages_skipped_without_person,
             messages_skipped_excluded_identity: report.messages_skipped_excluded_identity,
@@ -212,6 +220,7 @@ impl From<&ProfileReport> for ProfileSummaryReport {
             facts_inserted: report.facts_inserted,
             summaries_inserted: report.summaries_inserted,
             snapshots_inserted: report.snapshots_inserted,
+            baseline_profiles_inserted: report.baseline_profiles_inserted,
         }
     }
 }
@@ -255,6 +264,7 @@ struct PersonAggregate {
     fact_ids: Vec<Uuid>,
     topics: BTreeSet<String>,
     facts: Vec<CandidateFact>,
+    baseline_only: bool,
 }
 
 pub async fn run_profile(cli: &Cli, options: ProfileOptions) -> Result<()> {
@@ -403,6 +413,8 @@ async fn run_profile_inner(
         target_chat_ids,
         scope_fingerprints,
         requested_message_limit,
+        current_room_linked_people: 0,
+        baseline_profile_targets: 0,
         messages_scanned: rows.len() as i64,
         messages_skipped_without_person: 0,
         messages_skipped_excluded_identity: 0,
@@ -412,6 +424,7 @@ async fn run_profile_inner(
         facts_inserted: 0,
         summaries_inserted: 0,
         snapshots_inserted: 0,
+        baseline_profiles_inserted: 0,
     };
     let mut aggregates = BTreeMap::<Uuid, PersonAggregate>::new();
     for row in rows {
@@ -457,6 +470,9 @@ async fn run_profile_inner(
             }
         }
     }
+    let target_chat_ids = report.target_chat_ids.clone();
+    seed_current_room_profile_targets(pool, cli, &target_chat_ids, &mut aggregates, &mut report)
+        .await?;
     if apply {
         apply_profile(pool, &mut aggregates, &mut report).await?;
     }
@@ -656,7 +672,11 @@ async fn apply_profile(
             }
         }
         if aggregate.message_ids.is_empty() {
-            continue;
+            if !aggregate.baseline_only
+                || has_active_reply_context_snapshot(&mut tx, aggregate.person_id).await?
+            {
+                continue;
+            }
         }
         let input_hash = input_hash(aggregate);
         let existing_snapshot =
@@ -665,8 +685,11 @@ async fn apply_profile(
             aggregate.fact_ids = load_existing_fact_ids(&mut tx, aggregate).await?;
             let summary_text = build_summary_text(aggregate);
             let topics = aggregate.topics.iter().cloned().collect::<Vec<_>>();
-            let summary_id: (Uuid,) = sqlx::query_as(
-                r#"
+            let summary_ids = if aggregate.message_ids.is_empty() {
+                Vec::new()
+            } else {
+                let summary_id: (Uuid,) = sqlx::query_as(
+                    r#"
             INSERT INTO qintopia_identity.person_interaction_summaries
                 (
                     person_id,
@@ -684,31 +707,32 @@ async fn apply_profile(
             VALUES ($1, $2, 'qiwe', $3, $4, $5, $6, 'Internal', 0.72, $7, $8)
             RETURNING id
             "#,
-            )
-            .bind(aggregate.person_id)
-            .bind(aggregate.channel_identity_id)
-            .bind(
-                report
-                    .target_chat_ids
-                    .first()
-                    .map(String::as_str)
-                    .unwrap_or(""),
-            )
-            .bind(&summary_text)
-            .bind(&topics)
-            .bind(&aggregate.message_ids)
-            .bind(GENERATED_BY)
-            .bind(json!({
-                "summary_kind": "rule_based_v1",
-                "message_count": aggregate.message_ids.len(),
-                "fact_count": aggregate.facts.len(),
-                "input_hash": input_hash
-            }))
-            .fetch_one(&mut *tx)
-            .await
-            .context("insert interaction summary")?;
-            let summary_ids = vec![summary_id.0];
-            report.summaries_inserted += 1;
+                )
+                .bind(aggregate.person_id)
+                .bind(aggregate.channel_identity_id)
+                .bind(
+                    report
+                        .target_chat_ids
+                        .first()
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                )
+                .bind(&summary_text)
+                .bind(&topics)
+                .bind(&aggregate.message_ids)
+                .bind(GENERATED_BY)
+                .bind(json!({
+                    "summary_kind": "rule_based_v1",
+                    "message_count": aggregate.message_ids.len(),
+                    "fact_count": aggregate.facts.len(),
+                    "input_hash": input_hash
+                }))
+                .fetch_one(&mut *tx)
+                .await
+                .context("insert interaction summary")?;
+                report.summaries_inserted += 1;
+                vec![summary_id.0]
+            };
 
             sqlx::query(
                 r#"
@@ -765,11 +789,70 @@ async fn apply_profile(
             .await
             .context("insert member profile snapshot")?;
             report.snapshots_inserted += 1;
+            if aggregate.baseline_only && aggregate.message_ids.is_empty() {
+                report.baseline_profiles_inserted += 1;
+            }
         }
     }
     tx.commit()
         .await
         .context("commit member profile transaction")?;
+    Ok(())
+}
+
+async fn seed_current_room_profile_targets(
+    pool: &PgPool,
+    cli: &Cli,
+    chat_ids: &[String],
+    aggregates: &mut BTreeMap<Uuid, PersonAggregate>,
+    report: &mut ProfileReport,
+) -> Result<()> {
+    let excluded_user_ids = cli.profile_excluded_channel_user_ids();
+    let excluded_display_names = cli.profile_excluded_display_names();
+    let rows = sqlx::query_as::<_, (Uuid, Uuid, Option<String>)>(
+        r#"
+        SELECT DISTINCT ON (ci.person_id)
+            ci.person_id,
+            ci.id AS channel_identity_id,
+            COALESCE(NULLIF(ci.display_name, ''), NULLIF(p.display_name, '')) AS display_name
+        FROM qintopia_identity.channel_identities ci
+        JOIN qintopia_identity.persons p ON p.id = ci.person_id
+        WHERE ci.platform = 'qiwe'
+          AND ci.chat_id = ANY($1)
+          AND ci.metadata->>'current_qiwe_room_member' = 'true'
+          AND ci.person_id IS NOT NULL
+          AND COALESCE(ci.is_bot, false) = false
+          AND NOT (ci.channel_user_id = ANY($2))
+          AND NOT (COALESCE(ci.display_name, '') = ANY($3))
+          AND btrim(COALESCE(ci.display_name, '')) NOT IN ('企业微信团队', '秦托邦小客服', '二花')
+          AND lower(btrim(COALESCE(ci.display_name, ''))) <> 'sidecar smoke'
+        ORDER BY ci.person_id, ci.last_seen_at DESC, ci.updated_at DESC
+        "#,
+    )
+    .bind(chat_ids)
+    .bind(&excluded_user_ids)
+    .bind(&excluded_display_names)
+    .fetch_all(pool)
+    .await
+    .context("load current-room linked people for baseline profiles")?;
+
+    report.current_room_linked_people = rows.len() as i64;
+    for (person_id, channel_identity_id, display_name) in rows {
+        if aggregates.contains_key(&person_id) {
+            continue;
+        }
+        aggregates.insert(
+            person_id,
+            PersonAggregate {
+                person_id,
+                channel_identity_id: Some(channel_identity_id),
+                sender_name: display_name,
+                baseline_only: true,
+                ..PersonAggregate::default()
+            },
+        );
+        report.baseline_profile_targets += 1;
+    }
     Ok(())
 }
 
@@ -783,6 +866,9 @@ fn log_profile_report(report: &ProfileReport, message: &str) {
         facts_inserted = report.facts_inserted,
         summaries_inserted = report.summaries_inserted,
         snapshots_inserted = report.snapshots_inserted,
+        current_room_linked_people = report.current_room_linked_people,
+        baseline_profile_targets = report.baseline_profile_targets,
+        baseline_profiles_inserted = report.baseline_profiles_inserted,
         requested_message_limit = report.requested_message_limit,
         scope_fingerprints = ?report.scope_fingerprints,
         target_chat_ids = ?report.target_chat_ids,
@@ -816,6 +902,7 @@ async fn find_active_snapshot_by_hash(
           AND profile_version = $2
           AND status = 'active'
           AND input_hash = $3
+          AND (valid_until IS NULL OR valid_until > now())
         ORDER BY generated_at DESC
         LIMIT 1
         "#,
@@ -826,6 +913,29 @@ async fn find_active_snapshot_by_hash(
     .fetch_optional(&mut **tx)
     .await
     .context("lookup active member profile snapshot by input hash")?;
+    Ok(row.is_some())
+}
+
+async fn has_active_reply_context_snapshot(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    person_id: Uuid,
+) -> Result<bool> {
+    let row = sqlx::query(
+        r#"
+        SELECT 1
+        FROM qintopia_identity.member_profile_snapshots
+        WHERE person_id = $1
+          AND profile_kind = 'reply_context'
+          AND status = 'active'
+          AND (valid_until IS NULL OR valid_until > now())
+        ORDER BY generated_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(person_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("lookup active member profile snapshot")?;
     Ok(row.is_some())
 }
 
@@ -1589,12 +1699,23 @@ fn safe_reply_hints(aggregate: &PersonAggregate) -> Value {
         .filter(|fact| fact.fact_type == "temporary_communication_state")
         .map(|fact| redact_sensitive_text(&fact.fact_text))
         .collect::<Vec<_>>();
-    let stable_profile_notes = stable_profile_notes(aggregate);
+    let mut stable_profile_notes = stable_profile_notes(aggregate);
+    let has_stable_context = !aggregate.topics.is_empty()
+        || !stable_profile_notes.is_empty()
+        || !temporary_communication_notes.is_empty();
+    let profile_status = if has_stable_context {
+        "profile_available"
+    } else {
+        stable_profile_notes.push("暂无稳定画像信号，不要推断个人偏好".to_string());
+        "no_stable_profile"
+    };
     json!({
+        "profile_status": profile_status,
         "use_display_name_only_if_natural": true,
         "topics": aggregate.topics.iter().cloned().collect::<Vec<_>>(),
         "stable_profile_notes": stable_profile_notes,
         "temporary_communication_notes": temporary_communication_notes,
+        "do_not_infer_missing_profile": !has_stable_context,
         "do_not_quote_raw_history": true
     })
 }
@@ -2093,6 +2214,27 @@ mod tests {
     }
 
     #[test]
+    fn empty_member_profile_keeps_no_stable_profile_guard() {
+        let aggregate = PersonAggregate {
+            person_id: Uuid::new_v4(),
+            sender_name: Some("小乔".to_string()),
+            baseline_only: true,
+            ..PersonAggregate::default()
+        };
+
+        let summary = build_safe_profile_summary(&aggregate);
+        let hints = safe_reply_hints(&aggregate);
+
+        assert!(summary.contains("暂无足够稳定的安全画像"));
+        assert_eq!(hints["profile_status"], "no_stable_profile");
+        assert_eq!(hints["do_not_infer_missing_profile"], true);
+        assert_eq!(
+            hints["stable_profile_notes"][0],
+            "暂无稳定画像信号，不要推断个人偏好"
+        );
+    }
+
+    #[test]
     fn profile_scope_fingerprint_is_stable_and_non_raw() {
         let fingerprint = scope_fingerprint("room-1");
 
@@ -2110,6 +2252,8 @@ mod tests {
             target_chat_ids: vec!["room-1".to_string()],
             scope_fingerprints: vec![scope_fingerprint("room-1")],
             requested_message_limit: 5000,
+            current_room_linked_people: 1,
+            baseline_profile_targets: 0,
             messages_scanned: 1,
             messages_skipped_without_person: 0,
             messages_skipped_excluded_identity: 0,
@@ -2130,6 +2274,7 @@ mod tests {
             facts_inserted: 1,
             summaries_inserted: 1,
             snapshots_inserted: 1,
+            baseline_profiles_inserted: 0,
         };
 
         let rendered = serde_json::to_string(&ProfileSummaryReport::from(&report)).unwrap();
