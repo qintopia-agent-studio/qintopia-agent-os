@@ -393,6 +393,25 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       )}`
     );
   }
+  const productionWorkerRunObservationRequest = {
+    ...productionObservationRequest,
+    observation: {
+      targets: [
+        "erhua-morning-brief-worker-run",
+        "xiaoman-daily-case-report-worker-run",
+        "xiaoman-weekly-recruitment-worker-run",
+        "xiaoman-weekly-plan-confirmation-worker-run",
+        "xiaoman-weekly-preview-worker-run",
+      ],
+    },
+  };
+  if (!validateRequest(productionWorkerRunObservationRequest)) {
+    addError(
+      `deploy request schema must accept fixed worker-run observation requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
   for (const badRequest of [
     { ...sampleRequest, observation: { targets: ["qiwe-image-send"] } },
     {
@@ -1131,6 +1150,7 @@ if (exists(".github/workflows/observe-production-runtime.yml")) {
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
     "qiwe-image-send,xiaoman-daily-case-report-auto-publish",
+    "erhua-morning-brief-worker-run",
     "pnpm deploy:runner:check",
     "DEPLOY_RELEASE_SCOPE: production-observation",
     "DEPLOY_RESTART_TARGETS: qintopia-system-services",
@@ -1447,6 +1467,9 @@ for (const fragment of [
   "activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "qiwe-image-send-production-observation-smoke.sh",
   "xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
+  "production-worker-run-evidence-smoke.sh",
+  "run_worker_run_evidence_observation",
+  "QINTOPIA_PRODUCTION_WORKER_RUN_EVIDENCE_ENABLE",
   "validate_current_profile_release",
   "activate-erhua-profile.sh",
   "rollback-erhua-profile.sh",
@@ -2122,6 +2145,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh",
     "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",
+    "deploy/sidecar/scripts/production-worker-run-evidence-smoke.sh",
     "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-production-config.sh",
     "deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh",
     "deploy/sidecar/scripts/xiaoman-weekly-recruitment-production-observation-smoke.sh",

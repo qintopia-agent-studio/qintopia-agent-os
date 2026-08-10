@@ -10,7 +10,10 @@ on:
       observation_targets:
         description: >-
           Comma-separated fixed targets: qiwe-image-send,
-          xiaoman-daily-case-report-auto-publish.
+          xiaoman-daily-case-report-auto-publish, erhua-morning-brief-worker-run,
+          xiaoman-daily-case-report-worker-run, xiaoman-weekly-recruitment-worker-run,
+          xiaoman-weekly-plan-confirmation-worker-run,
+          xiaoman-weekly-preview-worker-run.
         required: true
         default: qiwe-image-send,xiaoman-daily-case-report-auto-publish
         type: string
@@ -155,7 +158,7 @@ jobs:
           observation_targets="$(normalize_csv_allowlist \
             observation_targets \
             "$INPUT_OBSERVATION_TARGETS" \
-            "qiwe-image-send,xiaoman-daily-case-report-auto-publish")"
+            "qiwe-image-send,xiaoman-daily-case-report-auto-publish,erhua-morning-brief-worker-run,xiaoman-daily-case-report-worker-run,xiaoman-weekly-recruitment-worker-run,xiaoman-weekly-plan-confirmation-worker-run,xiaoman-weekly-preview-worker-run")"
 
           notes_delimiter="observation_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {

@@ -4,7 +4,8 @@ Updated: 2026-08-10
 
 This runbook sends signed, read-only production observation requests through the
 deploy-runner. It is for checking the current QiWe image-send and Xiaoman daily
-case-report runtime state before a reviewed activation decision.
+case-report runtime state before a reviewed activation decision, and for collecting
+worker-run evidence after a release-managed timer should have fired.
 
 ## Workflow
 
@@ -22,6 +23,11 @@ Allowed targets:
 ```text
 qiwe-image-send
 xiaoman-daily-case-report-auto-publish
+erhua-morning-brief-worker-run
+xiaoman-daily-case-report-worker-run
+xiaoman-weekly-recruitment-worker-run
+xiaoman-weekly-plan-confirmation-worker-run
+xiaoman-weekly-preview-worker-run
 ```
 
 The workflow creates a signed deploy request with
@@ -49,10 +55,41 @@ without exposing raw secrets. Successful evidence includes
 `xiaoman_daily_case_report_auto_publish_observation_state=enabled` or
 `xiaoman_daily_case_report_auto_publish_observation_state=disabled`.
 
+## Worker-Run Evidence
+
+The `*-worker-run` targets prove a timer actually fired and its worker finished
+successfully; the timer-state targets above only prove a timer is armed. Each worker-run
+target checks, through the fixed release-local
+`production-worker-run-evidence-smoke.sh`:
+
+- The paired timer is enabled and active.
+- The worker service has a non-empty `ExecMainStartTimestampUSec` (it started at least
+  once), `ExecMainStatus=0`, and `Result=success`.
+- For the three Xiaoman weekly loop targets, the worker's fixed `latest-summary.json`
+  exists and keeps the reviewed draft invariants (`requires_human_confirmation=true`,
+  `external_send_executed=false`, `safe_for_member_chat=false`) plus a valid
+  `date`/`week_start`.
+
+Successful evidence records only sanitized fields such as
+`erhua_morning_brief_worker_run_result=success`,
+`erhua_morning_brief_worker_run_epoch=<unix>`, and for weekly targets
+`xiaoman_weekly_preview_worker_summary_present=true` and
+`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. Failure evidence records only
+the fixed reason token, one of `systemctl_unavailable`, `timer_not_enabled`,
+`timer_not_active`, `service_never_started`, `worker_failed`, `summary_missing`,
+`summary_invalid`, or `python_unavailable`. `service_never_started` before the first
+scheduled trigger means the timer has not fired yet; rerun the observation after the
+scheduled time instead of treating it as a regression. The script echoes no journal
+output, env values, group ids, or summary text.
+
+Worker-run evidence is read-only: it inspects systemd state and reads the worker's
+summary JSON only. It does not start or stop services, write state, or call QiWe,
+Feishu, or Postgres.
+
 ## Preconditions
 
 - `release_sha` must match production `release/current`.
-- The release must include both observation scripts.
+- The release must include the observation scripts for the selected targets.
 - The request uses `restart_targets=["qintopia-system-services"]`, `dry_run=false`, and
   `rollback_on_smoke_failure=false`.
 

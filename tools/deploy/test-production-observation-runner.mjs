@@ -64,7 +64,11 @@ const buildRequest = (overrides = {}) => {
     rollback_on_smoke_failure: false,
     dry_run: false,
     observation: {
-      targets: ["qiwe-image-send", "xiaoman-daily-case-report-auto-publish"],
+      targets: [
+        "qiwe-image-send",
+        "xiaoman-daily-case-report-auto-publish",
+        "erhua-morning-brief-worker-run",
+      ],
     },
     cos: {
       bucket: "qintopia-agent-os-artifacts-1305166808",
@@ -202,6 +206,36 @@ case "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE:-}" in
 esac
 `
   );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "production-worker-run-evidence-smoke.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'worker:%s\\n' "\${1:-}" >> ${JSON.stringify(observationLog)}
+if [[ "\${QINTOPIA_PRODUCTION_WORKER_RUN_EVIDENCE_ENABLE:-}" != "1" ]]; then
+  echo "worker-run evidence not enabled" >&2
+  exit 5
+fi
+case "\${1:-}" in
+  erhua-morning-brief-worker-run)
+    echo "erhua_morning_brief_worker_run_result=success"
+    echo "erhua_morning_brief_worker_run_epoch=1786320600"
+    echo "DATABASE_URL=postgres://secret@example.invalid/qintopia"
+    ;;
+  xiaoman-weekly-preview-worker-run)
+    echo "xiaoman_weekly_preview_worker_run_error=service_never_started"
+    echo "QIWE_TOKEN=secret-token" >&2
+    exit 1
+    ;;
+  *)
+    echo "unexpected worker-run evidence target: \${1:-}" >&2
+    exit 6
+    ;;
+esac
+`
+  );
 
   for (const scriptName of [
     "activate-qiwe-image-send-production.sh",
@@ -281,6 +315,16 @@ exit 99
       `unexpected daily report observation evidence ${JSON.stringify(passedTargets[1])}`
     );
   }
+  if (
+    passedTargets[2][0] !== "erhua-morning-brief-worker-run" ||
+    passedTargets[2][1] !== "passed" ||
+    passedTargets[2][2] !==
+      "erhua_morning_brief_worker_run_result=success; erhua_morning_brief_worker_run_epoch=1786320600"
+  ) {
+    throw new Error(
+      `unexpected worker-run observation evidence ${JSON.stringify(passedTargets[2])}`
+    );
+  }
   const serializedDeployResult = JSON.stringify(deployResult);
   for (const forbidden of [
     "postgres://secret@example.invalid/qintopia",
@@ -295,7 +339,15 @@ exit 99
     }
   }
   const actualLog = fs.readFileSync(observationLog, "utf8").trim();
-  if (actualLog !== ["qiwe:auto", "daily:enabled", "daily:disabled"].join("\n")) {
+  if (
+    actualLog !==
+    [
+      "qiwe:auto",
+      "daily:enabled",
+      "daily:disabled",
+      "worker:erhua-morning-brief-worker-run",
+    ].join("\n")
+  ) {
     throw new Error(`unexpected observation log ${JSON.stringify(actualLog)}`);
   }
 
@@ -363,6 +415,66 @@ exit 42
     JSON.stringify(failedResult).includes("postgres://failure-secret@example.invalid")
   ) {
     throw new Error("failed production observation leaked raw stderr");
+  }
+
+  const workerFailedRequestId = "deploy-20260810T000003Z-abcdef123456";
+  const workerFailedRequestFile = path.join(
+    tmpRoot,
+    "failed-worker-run-observation-request.json"
+  );
+  fs.writeFileSync(
+    workerFailedRequestFile,
+    `${JSON.stringify(
+      buildRequest({
+        request_id: workerFailedRequestId,
+        observation: {
+          targets: ["xiaoman-weekly-preview-worker-run"],
+        },
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  const workerFailed = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", workerFailedRequestFile],
+    {
+      cwd: stateDir,
+      env,
+      encoding: "utf8",
+    }
+  );
+  if (workerFailed.status !== 1) {
+    throw new Error(
+      `expected failed worker-run observation to exit 1, got ${workerFailed.status}\nstdout:\n${workerFailed.stdout}\nstderr:\n${workerFailed.stderr}`
+    );
+  }
+  const workerFailedResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${workerFailedRequestId}.json`),
+      "utf8"
+    )
+  );
+  const workerFailedCheck = workerFailedResult.checks.find(
+    (check) => check.name === "production-observation"
+  );
+  if (!workerFailedCheck || workerFailedCheck.status !== "failed") {
+    throw new Error("failed worker-run observation check was not recorded");
+  }
+  const workerFailedDetail = JSON.parse(workerFailedCheck.detail);
+  const workerFailedTarget = workerFailedDetail.targets[0];
+  if (
+    workerFailedTarget.status !== "failed" ||
+    workerFailedTarget.detail !==
+      "exit 1: xiaoman_weekly_preview_worker_run_error=service_never_started"
+  ) {
+    throw new Error(
+      `unexpected failed worker-run observation detail ${JSON.stringify(workerFailedTarget)}`
+    );
+  }
+  if (JSON.stringify(workerFailedResult).includes("secret-token")) {
+    throw new Error("failed worker-run observation leaked raw stderr");
   }
 
   const ordinaryRequestPath = path.join(tmpRoot, "ordinary-request.json");
