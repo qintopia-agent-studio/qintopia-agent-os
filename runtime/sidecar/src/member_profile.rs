@@ -671,12 +671,11 @@ async fn apply_profile(
                 report.facts_inserted += 1;
             }
         }
-        if aggregate.message_ids.is_empty() {
-            if !aggregate.baseline_only
-                || has_active_reply_context_snapshot(&mut tx, aggregate.person_id).await?
-            {
-                continue;
-            }
+        if aggregate.message_ids.is_empty()
+            && (!aggregate.baseline_only
+                || has_active_reply_context_snapshot(&mut tx, aggregate.person_id).await?)
+        {
+            continue;
         }
         let input_hash = input_hash(aggregate);
         let existing_snapshot =
