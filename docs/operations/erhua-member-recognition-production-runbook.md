@@ -526,7 +526,10 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    as `小乔` and `Paxon`. Use `required_profile_terms` for concrete stable signals that
    must appear in safe profile hints, such as `跑步`, `摄影`, `AI`, and `写作`. These
    terms come from the safe profile-term allowlist and must not include raw messages or
-   sensitive identifiers.
+   sensitive identifiers. For `跑步`, member-profile repair should count repeated
+   community running-event language such as `跑步局`, `约跑`, route, pace, or `km`
+   context as a safe running activity signal, while still ignoring object-only chatter
+   such as running shoes.
 
 ## Hold Conditions
 
