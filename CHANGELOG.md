@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.106](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.105...v0.2.106) (2026-08-10)
+
+
+### Features
+
+* add Erhua member roster audit evidence ([#469](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/469)) ([8c40302](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8c40302cb4deffa8060081711211800e241b1c85))
+* add production runtime observation ([#471](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/471)) ([ec7ad2b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ec7ad2b89ae903020e856da188d27e84645684fb))
+
+
+### Bug Fixes
+
+* **context:** improve Erhua public recommendation guidance ([2872751](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/287275166ba6b92c6f8a8378e2522e21a35ae7d6))
+* require bilingual AI news in Erhua brief ([#474](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/474)) ([8c756ab](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8c756ab601d1bd104e573e542caa7fa339f054fa))
+* sanitize production observation evidence ([#473](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/473)) ([1b63943](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1b63943fef35438f1a59245094d6ccbe2b71e2c1))
+
 ## [0.2.105](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.104...v0.2.105) (2026-08-10)
 
 
