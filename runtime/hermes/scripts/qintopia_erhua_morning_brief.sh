@@ -11,12 +11,13 @@ RELEASE_LINK="/home/ubuntu/qintopia-agent-os-releases/current"
 umask 077
 mkdir -p "$STATE_DIR"
 
-export QINTOPIA_DEPLOYED_COMMIT_SHA="$(basename "$(readlink -f "$RELEASE_LINK")")"
-
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
+
+# The release binding must win over any stale persistent env value.
+export QINTOPIA_DEPLOYED_COMMIT_SHA="$(basename "$(readlink -f "$RELEASE_LINK")")"
 
 if output="$("$WORKER" 2>&1)"; then
   printf '%s\n' "$output" >>"$LOG_FILE"

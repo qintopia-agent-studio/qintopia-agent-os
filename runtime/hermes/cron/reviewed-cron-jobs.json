@@ -8,6 +8,7 @@
       "script": "qintopia_xiaoman_weekly_recruitment.sh",
       "no_agent": true,
       "deliver": "origin",
+      "origin_platform": "wecom",
       "approved_at": "2026-08-10",
       "plan": "docs/plans/active/hermes-cron-migration/task-2-xiaoman-weekly-recruitment.md"
     },
@@ -18,6 +19,7 @@
       "script": "qintopia_xiaoman_weekly_plan_confirmation.sh",
       "no_agent": true,
       "deliver": "origin",
+      "origin_platform": "wecom",
       "approved_at": "2026-08-10",
       "plan": "docs/plans/active/hermes-cron-migration/task-3-xiaoman-weekly-plan-confirmation.md"
     },
@@ -28,6 +30,7 @@
       "script": "qintopia_erhua_morning_brief.sh",
       "no_agent": true,
       "deliver": "origin",
+      "origin_platform": "wecom",
       "approved_at": "2026-08-10",
       "plan": "docs/plans/active/hermes-cron-migration/task-5-erhua-morning-brief.md"
     }

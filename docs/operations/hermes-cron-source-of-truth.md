@@ -37,8 +37,8 @@ Git-managed (sanitized, reviewed through PR):
 
 - `runtime/hermes/cron/reviewed-cron-jobs.json` - the allowlist registry. Observation
   smokes fail on any live declaration that does not match an entry exactly (profile +
-  name + schedule expr + script + no_agent). Adding or changing a recurring task means
-  appending an entry here.
+  name + schedule expr + script + no_agent + deliver + origin platform). Adding or
+  changing a recurring task means appending an entry here.
 - `runtime/hermes/cron/<profile>/<task>.job.json` - declaration templates with
   `{{PLACEHOLDER}}` chat ids.
 - `runtime/hermes/scripts/` - wrapper templates that bridge Hermes script jobs to the

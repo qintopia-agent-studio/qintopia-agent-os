@@ -275,6 +275,67 @@ try {
   if (result.status === 0 || !result.stderr.includes("definition drifts")) {
     throw new Error("Erhua morning brief apply accepted a drifted declaration");
   }
+
+  const staleSha = "9".repeat(40);
+  const sidecarEnvFile = path.join(tmpRoot, "message-sidecar.env");
+  fs.writeFileSync(
+    sidecarEnvFile,
+    `QINTOPIA_DEPLOYED_COMMIT_SHA=${staleSha}\n`,
+    "utf8"
+  );
+  fs.chmodSync(sidecarEnvFile, 0o600);
+  const stateRoot = path.join(tmpRoot, "state");
+  const fakeWorker = path.join(
+    releaseDir,
+    "deploy",
+    "sidecar",
+    "scripts",
+    "erhua-morning-brief-worker.sh"
+  );
+  writeExecutable(
+    fakeWorker,
+    '#!/usr/bin/env bash\nprintf "worker_sha=%s\\n" "${QINTOPIA_DEPLOYED_COMMIT_SHA:-unset}"\n'
+  );
+  const wrapperFixture = fs
+    .readFileSync(
+      path.join(
+        repoRoot,
+        "runtime",
+        "hermes",
+        "scripts",
+        "qintopia_erhua_morning_brief.sh"
+      ),
+      "utf8"
+    )
+    .replaceAll(fixedReleaseDir, releaseCurrent)
+    .replaceAll("/etc/qintopia/message-sidecar.env", sidecarEnvFile)
+    .replaceAll("/home/ubuntu/.local/state/qintopia-agentos/", `${stateRoot}/`);
+  const wrapperPath = path.join(scriptsDir, "qintopia_erhua_morning_brief.sh");
+  writeExecutable(wrapperPath, wrapperFixture);
+  const wrapperRun = spawnSync("bash", [wrapperPath], {
+    cwd: repoRoot,
+    env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
+    encoding: "utf8",
+  });
+  if (wrapperRun.status !== 0) {
+    throw new Error(
+      `morning brief wrapper failed\n${wrapperRun.stdout}\n${wrapperRun.stderr}`
+    );
+  }
+  const wrapperLog = fs.readFileSync(
+    path.join(stateRoot, "erhua-morning-brief", "hermes-cron.log"),
+    "utf8"
+  );
+  if (!wrapperLog.includes(`worker_sha=${releaseSha}`)) {
+    throw new Error(
+      "morning brief wrapper did not bind the release SHA for the worker"
+    );
+  }
+  if (wrapperLog.includes(`worker_sha=${staleSha}`)) {
+    throw new Error(
+      "morning brief wrapper let a stale persistent env value override the release SHA"
+    );
+  }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
