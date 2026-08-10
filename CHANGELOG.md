@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.111](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.110...v0.2.111) (2026-08-10)
+
+
+### Features
+
+* add bounded xiaoman feishu field write-back ([#486](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/486)) ([025369d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/025369d043aa268ff8be3857481164dfa42b399c))
+* pass through xiaoman activity table fields behind reviewed denylist ([#483](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/483)) ([a23c6ce](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a23c6ceae487d1d9c08d375d2257e58c2564613c))
+* restore Hermes cron as timer source of truth (task 0) ([#487](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/487)) ([53347c6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/53347c69c915f25b843069a4be8f0606ed946f6e))
+
+
+### Bug Fixes
+
+* **context:** answer public source recommendations with candidates first ([#489](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/489)) ([652864e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/652864ead1abdbc788612bac825de2e59a746b88))
+
 ## [0.2.110](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.109...v0.2.110) (2026-08-10)
 
 
