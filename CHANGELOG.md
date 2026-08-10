@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.108](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.107...v0.2.108) (2026-08-10)
+
+
+### Features
+
+* add production worker-run evidence observation targets ([#480](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/480)) ([20374d3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/20374d327b05387b9896b21e3a2651288030fb08))
+
+
+### Bug Fixes
+
+* **qiwe:** enforce public source reply directives ([dfa5df0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/dfa5df0fa055f1d658cfced6968937135910944b))
+* sanitize Erhua roster audit coverage samples ([#479](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/479)) ([938e40f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/938e40f1cf8dc9199d171b591177fb878f9e885e))
+
 ## [0.2.107](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.106...v0.2.107) (2026-08-10)
 
 
