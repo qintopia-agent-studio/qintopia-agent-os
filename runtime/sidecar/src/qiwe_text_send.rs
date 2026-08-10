@@ -1025,8 +1025,8 @@ fn content_hash_for_text(value: &str) -> String {
 
 fn message_preview(value: &str) -> String {
     let mut preview = value.trim().replace('\n', " ");
-    if preview.len() > 80 {
-        preview.truncate(79);
+    if preview.chars().count() > 80 {
+        preview = preview.chars().take(79).collect();
         preview.push('…');
     }
     preview
@@ -1034,8 +1034,8 @@ fn message_preview(value: &str) -> String {
 
 fn trim_error(value: &str) -> String {
     let mut text = value.replace('\n', " ");
-    if text.len() > 220 {
-        text.truncate(220);
+    if text.chars().count() > 220 {
+        text = text.chars().take(220).collect();
     }
     text
 }
@@ -1211,5 +1211,16 @@ mod tests {
             database_url,
             "0".repeat(64).as_str()
         ));
+    }
+
+    #[test]
+    fn previews_truncate_at_utf8_character_boundaries() {
+        let long_message = "二花早报".repeat(40);
+        let preview = message_preview(&long_message);
+        assert!(preview.ends_with('…'));
+        assert_eq!(preview.chars().count(), 80);
+
+        let long_error = "发送失败".repeat(80);
+        assert_eq!(trim_error(&long_error).chars().count(), 220);
     }
 }
