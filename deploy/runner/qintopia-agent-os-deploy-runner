@@ -747,15 +747,25 @@ import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
-detail = ""
+safe_patterns = [
+    re.compile(r"^(qiwe_image_send_production_observation_state)=(enabled|disabled)$"),
+    re.compile(r"^(xiaoman_daily_case_report_auto_publish_observation_state)=(enabled|disabled)$"),
+]
+details = []
+seen = set()
 if path.is_file():
     lines = [line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()]
     lines = [line for line in lines if line]
-    if lines:
-        detail = " | ".join(lines[-8:])
-        detail = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", detail)
-        detail = detail[:800]
-print(detail)
+    for line in lines:
+        for pattern in safe_patterns:
+            match = pattern.fullmatch(line)
+            if not match:
+                continue
+            item = f"{match.group(1)}={match.group(2)}"
+            if item not in seen:
+                seen.add(item)
+                details.append(item)
+print("; ".join(details) if details else "observation_passed")
 PY
 }
 
@@ -770,28 +780,22 @@ from pathlib import Path
 
 status, primary_path, secondary_path = sys.argv[1:4]
 
-def tail(path):
+def has_output(path):
     file_path = Path(path)
     if not file_path.is_file():
-        return ""
-    lines = [line.strip() for line in file_path.read_text(encoding="utf-8", errors="replace").splitlines()]
-    lines = [line for line in lines if line]
-    if not lines:
-        return ""
-    return " | ".join(lines[-8:])
+        return False
+    return bool(file_path.read_text(encoding="utf-8", errors="replace").strip())
 
 parts = []
-primary = tail(primary_path)
-secondary = tail(secondary_path)
-if primary:
-    parts.append(f"enabled: {primary}")
-if secondary:
-    parts.append(f"disabled: {secondary}")
+if has_output(primary_path):
+    parts.append("enabled_attempt=failed")
+if has_output(secondary_path):
+    parts.append("disabled_attempt=failed")
 detail = f"exit {status}"
 if parts:
-    detail = f"{detail}: " + " || ".join(parts)
+    detail = f"{detail}: " + "; ".join(parts)
 detail = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", detail)
-print(detail[:1200])
+print(detail[:300])
 PY
 }
 
