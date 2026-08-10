@@ -164,6 +164,40 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /identity_only_profile/);
 
+  files = writeEvidence(
+    "coverage-sample-person-id",
+    coverage({
+      linked_messages_missing_sender_person_samples: [
+        {
+          display_name: "Paxon",
+          person_id: PERSON_PAXON,
+          reason: "linked_messages_missing_sender_person",
+        },
+        {
+          person_id: PERSON_CICI,
+          display_name: "Cici",
+          reason: "linked_messages_missing_sender_person",
+        },
+      ],
+      running_people_profile_missing_running_hint_samples: [
+        {
+          display_name: "Paxon",
+          person_id: PERSON_PAXON,
+          reason: "running_facts_missing_profile_hint",
+        },
+      ],
+    }),
+    canaries(),
+    completionSummary()
+  );
+  outputPath = path.join(tmpRoot, "coverage-sample-person-id", "audit.json");
+  result = runBuilder(files, outputPath);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /roster audit passed/);
+  audit = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+  assert.equal(audit.passed, true);
+  assert.doesNotMatch(JSON.stringify(audit), new RegExp(PERSON_PAXON, "i"));
+
   files = writeEvidence("person-id-leak", coverage(), canaries(), completionSummary());
   const leakedCanaryPath = path.join(tmpRoot, "person-id-leak", "canary-leak.jsonl");
   fs.writeFileSync(
