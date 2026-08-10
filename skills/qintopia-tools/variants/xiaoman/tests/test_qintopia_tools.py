@@ -477,6 +477,62 @@ class QintopiaToolsTest(unittest.TestCase):
             },
         )
 
+    def test_xiaoman_feishu_field_update_builds_bounded_worker_command(self):
+        self.enable_xiaoman_activity_wrappers()
+        schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA["parameters"]
+
+        self.assertEqual(
+            schema["required"],
+            ["activity_title", "date", "field", "value", "mutation_id"],
+        )
+        self.assertEqual(
+            schema["properties"]["field"]["enum"],
+            ["status", "promotion_status", "notes", "reminder_status"],
+        )
+        self.assertNotIn("record_id", schema["properties"])
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_feishu_field_update(
+                {
+                    "activity_title": "周六晨跑",
+                    "date": "2026-08-15",
+                    "field": "status",
+                    "value": "已发布",
+                    "mutation_id": "77777777-7777-4777-8777-777777777777",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["action"]["command"][-1], "--dry-run")
+        command = report["action"]["command"]
+        worker_payload = json.loads(command[command.index("--payload-json") + 1])
+        self.assertEqual(worker_payload["operation"], "feishu-field-update")
+        self.assertEqual(worker_payload["table_role"], "activity_plan")
+        self.assertEqual(worker_payload["activity_title"], "周六晨跑")
+        self.assertEqual(worker_payload["date"], "2026-08-15")
+        self.assertEqual(worker_payload["field"], "status")
+        self.assertEqual(worker_payload["value"], "已发布")
+        self.assertNotIn("record_id", worker_payload)
+
+    def test_xiaoman_feishu_field_update_rejects_non_xiaoman_column(self):
+        self.enable_xiaoman_activity_wrappers()
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_feishu_field_update(
+                {
+                    "activity_title": "周六晨跑",
+                    "date": "2026-08-15",
+                    "field": "participants",
+                    "value": "12",
+                    "mutation_id": "77777777-7777-4777-8777-777777777777",
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertIn("status, promotion_status, notes, reminder_status", report["error"])
+
     def test_xiaoman_gap_update_matches_event_signal_worker_contract(self):
         self.enable_xiaoman_activity_wrappers()
         schema = self.module.QINTOPIA_XIAOMAN_ACTIVITY_GAP_UPDATE_SCHEMA["parameters"]
@@ -1000,6 +1056,7 @@ class QintopiaToolsTest(unittest.TestCase):
                             "location": "秦托邦工坊",
                             "owner_name": "阿成",
                             "promotion_status": "待确认",
+                            "schedule_confirmation": "已确认",
                         },
                         {
                             "table_role": "activity_plan",
@@ -1009,12 +1066,24 @@ class QintopiaToolsTest(unittest.TestCase):
                             "start_time": "12:30",
                             "location": "共享厨房",
                             "owner_name": "刘珊",
+                            "schedule_confirmation": "已确认",
                         },
                         {
                             "table_role": "activity_plan",
                             "record_ref": "activity_plan:eeeeeeeeffff",
                             "title": "周四晚间共创会",
                             "activity_date": "2026-07-23",
+                            "schedule_confirmation": "已确认",
+                        },
+                        {
+                            "table_role": "activity_plan",
+                            "record_ref": "activity_plan:99999999aaaa",
+                            "title": "周五待定围炉",
+                            "activity_date": "2026-07-24",
+                            "start_time": "20:00",
+                            "location": "共享客厅",
+                            "owner_name": "阿满",
+                            "schedule_confirmation": "待确认",
                         },
                         {
                             "table_role": "activity_occurrence",
@@ -1025,6 +1094,7 @@ class QintopiaToolsTest(unittest.TestCase):
                             "end_time": "10:30",
                             "location": "山居草坪",
                             "owner_name": "小雨",
+                            "schedule_confirmation": "已确认",
                         },
                     ],
                 }
@@ -1036,14 +1106,21 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["week_start"], "2026-07-20")
         self.assertEqual(report["week_end"], "2026-07-26")
         self.assertEqual(report["publishable_count"], 3)
-        self.assertEqual(report["skipped_count"], 1)
+        self.assertEqual(report["skipped_count"], 2)
         self.assertIn("下周活动预告", report["announcement_text"])
         self.assertIn("7/20–7/26", report["announcement_text"])
         self.assertIn("周一木作体验课", report["announcement_text"])
         self.assertIn("周六户外瑜伽", report["announcement_text"])
         self.assertNotIn("周二临时约饭", report["announcement_text"])
+        self.assertNotIn("周五待定围炉", report["announcement_text"])
         self.assertIn("地点", report["missing_followups"][0]["missing_fields"])
         self.assertIn("负责人", report["missing_followups"][0]["missing_fields"])
+        self.assertEqual(report["weekly_poster_brief"]["status"], "ready_for_human_confirmation")
+        self.assertEqual(report["weekly_poster_brief"]["activity_count"], 2)
+        self.assertIn("周一木作体验课", report["weekly_poster_brief"]["brief_summary"])
+        self.assertIn("周六户外瑜伽", report["weekly_poster_brief"]["brief_summary"])
+        self.assertNotIn("周四晚间共创会", report["weekly_poster_brief"]["brief_summary"])
+        self.assertIn("海报 brief 已同步准备", report["operator_review_message"])
         self.assertTrue(report["requires_human_confirmation"])
         self.assertFalse(report["external_send_executed"])
         self.assertFalse(report["safe_for_member_chat"])
@@ -1065,7 +1142,140 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertTrue(report["success"])
         self.assertEqual(report["publishable_count"], 0)
         self.assertIn("下周暂无已确认活动，暂不生成预告", report["announcement_text"])
+        self.assertEqual(report["weekly_poster_brief"]["status"], "not_ready")
+        self.assertEqual(report["weekly_poster_brief"]["activity_count"], 0)
         self.assertTrue(report["requires_human_confirmation"])
+
+    def _weekly_poster_brief_fixture(self, activities=None):
+        if activities is None:
+            activities = [
+                {"index": "1", "title": "周一木作体验课", "time": "15:00-17:00", "location": "秦托邦工坊"},
+                {"index": "2", "title": "周六户外瑜伽", "time": "09:00-10:30", "location": "山居草坪"},
+            ]
+        return {
+            "status": "ready_for_human_confirmation",
+            "artifact_type": "weekly_poster_brief",
+            "title": "8/10–8/16 下周活动预告海报",
+            "activity_count": len(activities),
+            "activities": activities,
+        }
+
+    def test_xiaoman_weekly_poster_workflow_prepare_returns_dry_run_command(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_weekly_poster_workflow_prepare(
+                {
+                    "week_start": "2026-08-10",
+                    "weekly_poster_brief": self._weekly_poster_brief_fixture(),
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertTrue(report["dry_run"])
+        self.assertFalse(report["writes_business_state"])
+        self.assertFalse(report["external_send_executed"])
+        payload = report["payload"]
+        self.assertEqual(payload["workflow_type"], "activity_promotion")
+        self.assertEqual(payload["source_type"], "manual_request")
+        self.assertEqual(payload["source_refs"]["source_record_ref"], "weekly_preview:2026-08-10")
+        self.assertIn("周一木作体验课", payload["request_text"])
+        self.assertIn("周六户外瑜伽", payload["request_text"])
+        self.assertLessEqual(len(payload["request_text"]), 500)
+        self.assertTrue(
+            payload["idempotency_key"].startswith("weekly-poster-workflow:2026-08-10:sha256:")
+        )
+        command = report["action"]["command"]
+        self.assertEqual(command[1], "operations-workflow-start")
+        self.assertEqual(command[-1], "--dry-run")
+        self.assertTrue(report["action"]["requires_local_execution"])
+
+    def test_xiaoman_weekly_poster_workflow_prepare_apply_flips_command(self):
+        self.enable_xiaoman_activity_wrappers()
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_weekly_poster_workflow_prepare(
+                {
+                    "week_start": "2026-08-10",
+                    "weekly_poster_brief": self._weekly_poster_brief_fixture(),
+                    "dry_run": False,
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        self.assertFalse(report["dry_run"])
+        self.assertTrue(report["writes_business_state"])
+        self.assertEqual(report["action"]["command"][-1], "--apply")
+        self.assertFalse(report["external_send_executed"])
+
+    def test_xiaoman_weekly_poster_workflow_prepare_rejects_not_ready_brief(self):
+        self.enable_xiaoman_activity_wrappers()
+        brief = self._weekly_poster_brief_fixture(activities=[])
+        brief["status"] = "not_ready"
+        brief["reason"] = "no_complete_confirmed_weekly_activity"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_weekly_poster_workflow_prepare(
+                {
+                    "week_start": "2026-08-10",
+                    "weekly_poster_brief": brief,
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertEqual(report["weekly_poster_brief_status"], "not_ready")
+        self.assertEqual(report["weekly_poster_brief_reason"], "no_complete_confirmed_weekly_activity")
+        self.assertNotIn("action", report)
+
+    def test_xiaoman_weekly_poster_workflow_prepare_rejects_internal_content(self):
+        self.enable_xiaoman_activity_wrappers()
+        brief = self._weekly_poster_brief_fixture(
+            activities=[
+                {"index": "1", "title": "周六活动 rec123456789", "time": "15:00", "location": "工坊"},
+            ]
+        )
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_weekly_poster_workflow_prepare(
+                {
+                    "week_start": "2026-08-10",
+                    "weekly_poster_brief": brief,
+                }
+            )
+        )
+
+        self.assertFalse(report["success"])
+        self.assertTrue(report["hidden_original"])
+        self.assertNotIn("action", report)
+
+    def test_xiaoman_weekly_poster_workflow_prepare_bounds_request_text(self):
+        self.enable_xiaoman_activity_wrappers()
+        activities = [
+            {
+                "index": str(index),
+                "title": f"第{index}场超长标题的社区共创活动名称需要被截断处理否则放不下一整周的合集海报",
+                "time": "15:00-17:00",
+                "location": "秦托邦社区公共活动空间一楼大厅",
+            }
+            for index in range(1, 9)
+        ]
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_weekly_poster_workflow_prepare(
+                {
+                    "week_start": "2026-08-10",
+                    "weekly_poster_brief": self._weekly_poster_brief_fixture(activities=activities),
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        request_text = report["payload"]["request_text"]
+        self.assertLessEqual(len(request_text), 500)
+        self.assertIn("另有", request_text)
 
     def test_xiaoman_activity_list_by_date_read_through_returns_records(self):
         self.enable_xiaoman_activity_wrappers()
@@ -1087,6 +1297,7 @@ class QintopiaToolsTest(unittest.TestCase):
                         "activity_date": "2026-07-16",
                         "location": "秦托邦共享厨房",
                         "status": "待宣传",
+                        "schedule_confirmation": "已确认-排入下周",
                     }
                 ],
                 "summaries": ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"],
@@ -1112,6 +1323,7 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertFalse(report["action"]["requires_local_execution"])
         self.assertEqual(report["record_count"], 1)
         self.assertEqual(report["records"][0]["title"], "今日共创晚餐")
+        self.assertEqual(report["records"][0]["schedule_confirmation"], "已确认-排入下周")
         self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
         self.assertNotIn("command", report["action"])
 
@@ -1274,6 +1486,65 @@ class QintopiaToolsTest(unittest.TestCase):
         })
         self.assertEqual(report["summaries"], ["今日共创晚餐｜2026-07-16｜秦托邦共享厨房｜待宣传"])
         self.assertNotIn("tbl_secret", rendered)
+        self.assertNotIn("postgres://secret", rendered)
+
+    def test_xiaoman_activity_read_through_passes_fields_with_denylist_and_caps(self):
+        self.enable_xiaoman_activity_wrappers()
+        long_participants = "甲" * 320
+        fake_sidecar = self.write_fake_xiaoman_sidecar(
+            {
+                "success": True,
+                "worker": "xiaoman-activity",
+                "source": "fixture",
+                "record_count": 1,
+                "records": [
+                    {
+                        "table_role": "activity_plan",
+                        "record_ref": "activity_plan:abc123def456",
+                        "title": "周六晨跑",
+                        "activity_date": "2026-08-15",
+                        "fields": {
+                            "参与人名单": long_participants,
+                            "参与人数": "12",
+                            "群ID": "internal_group_id",
+                            "最后接龙消息ID": "om_internal",
+                            "素材照片": "photo.jpg",
+                            "关联活动发生": "rec_internal",
+                            "活动介绍": "postgres://secret",
+                            "空字段": "   ",
+                        },
+                    }
+                ],
+                "summaries": [],
+                "limitations": [],
+                "guardrails": [],
+            }
+        )
+        os.environ["QINTOPIA_SIDECAR_BIN"] = str(fake_sidecar)
+        os.environ["QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE"] = "1"
+
+        report = json.loads(
+            self.module.handle_qintopia_xiaoman_activity_list_by_date(
+                {
+                    "date": "2026-08-15",
+                    "table_role": "activity_plan",
+                }
+            )
+        )
+
+        self.assertTrue(report["success"])
+        fields = report["records"][0]["fields"]
+        self.assertEqual(fields["参与人数"], "12")
+        self.assertEqual(len(fields["参与人名单"]), 300)
+        self.assertNotIn("群ID", fields)
+        self.assertNotIn("最后接龙消息ID", fields)
+        self.assertNotIn("素材照片", fields)
+        self.assertNotIn("关联活动发生", fields)
+        self.assertNotIn("活动介绍", fields)
+        self.assertNotIn("空字段", fields)
+        rendered = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn("internal_group_id", rendered)
+        self.assertNotIn("om_internal", rendered)
         self.assertNotIn("postgres://secret", rendered)
 
     def test_xiaoman_activity_read_through_filters_actual_sensitive_env_values(self):

@@ -123,9 +123,11 @@ XIAOMAN_ACTIVITY_TOOL_NAMES = [
     "qintopia_xiaoman_activity_plan_table_probe",
     "qintopia_xiaoman_activity_announcement_prepare",
     "qintopia_xiaoman_activity_text_group_message_request_prepare",
+    "qintopia_xiaoman_weekly_poster_workflow_prepare",
     "qintopia_xiaoman_activity_status_update",
     "qintopia_xiaoman_activity_gap_update",
     "qintopia_xiaoman_activity_phase_update",
+    "qintopia_xiaoman_activity_feishu_field_update",
     "qintopia_xiaoman_activity_handoff_create",
     "qintopia_xiaoman_activity_promotion_review_draft",
     "qintopia_xiaoman_activity_material_summary",
@@ -157,6 +159,7 @@ XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
     "location": 240,
     "status": 120,
     "promotion_status": 120,
+    "schedule_confirmation": 120,
     "owner_name": 120,
     "preannounce_decision": 40,
     "preannounce_channels": 120,
@@ -166,6 +169,23 @@ XIAOMAN_ACTIVITY_RECORD_READ_FIELDS = {
     "gap_summary": 500,
     "notes": 500,
     "updated_at": 120,
+}
+# New activity-table columns are chat-visible by default. Only internal
+# identifiers, attachment payloads, and record links may be added here after
+# owner review; keep in sync with FEISHU_READ_DENIED_FIELDS in
+# runtime/sidecar/src/xiaoman_activity.rs.
+XIAOMAN_ACTIVITY_READ_DENIED_FIELDS = {"群ID", "最后接龙消息ID", "素材照片", "关联活动发生"}
+XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_MAX_ENTRIES = 30
+XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_KEY_MAX_LEN = 80
+XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_VALUE_MAX_LEN = 300
+# feishu-field-update may write only these Xiaoman-owned plan-table columns.
+# Keep in sync with FEISHU_WRITE_FIELD_COLUMNS in
+# runtime/sidecar/src/xiaoman_activity.rs.
+XIAOMAN_ACTIVITY_FEISHU_WRITE_FIELDS = {
+    "status": "小满运营状态",
+    "promotion_status": "宣发判断",
+    "notes": "小满备注",
+    "reminder_status": "活动前提醒状态",
 }
 XIAOMAN_ACTIVITY_READ_THROUGH_ENV_KEYS = {
     "PATH",
@@ -1069,6 +1089,37 @@ QINTOPIA_XIAOMAN_ACTIVITY_TEXT_GROUP_MESSAGE_REQUEST_PREPARE_SCHEMA = {
 }
 
 
+QINTOPIA_XIAOMAN_WEEKLY_POSTER_WORKFLOW_PREPARE_SCHEMA = {
+    "description": (
+        "Prepare a controlled AgentOS activity_promotion workflow-start command from the "
+        "weekly preview weekly_poster_brief. It creates control-plane work items only "
+        "and never generates images, approves artifacts, calls providers, writes Feishu, "
+        "queues, publishes, or sends."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "week_start": {
+                "type": "string",
+                "description": "Monday date in YYYY-MM-DD format that starts the poster week.",
+            },
+            "weekly_poster_brief": {
+                "type": "object",
+                "description": "The weekly_poster_brief object returned by weekly_preview mode.",
+            },
+            "human_owner": {
+                "type": "string",
+                "description": "Human owner for review follow-up. Defaults to 刘珊.",
+            },
+            "priority": {"type": "string", "enum": ["low", "normal", "high", "urgent"]},
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["week_start", "weekly_poster_brief"],
+        "additionalProperties": False,
+    },
+}
+
+
 QINTOPIA_XIAOMAN_PUBLIC_REPLY_REWRITE_SCHEMA = {
     "description": (
         "Rewrite a blocked Xiaoman reply into public-safe human language. It never returns "
@@ -1236,6 +1287,48 @@ QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA = {
             "preannounce_decision",
             "human_reviewer",
         ],
+        "additionalProperties": False,
+    },
+}
+
+
+QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA = {
+    "description": (
+        "Bounded write-back to one Xiaoman-owned column of the activity plan table "
+        "(status=小满运营状态, promotion_status=宣发判断, notes=小满备注, "
+        "reminder_status=活动前提醒状态). The worker resolves the single plan record "
+        "matching activity_title+date server-side, validates SingleSelect values "
+        "against live options, writes Feishu, and records an audit row. Dry-run by "
+        "default; apply only after human confirmation."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "activity_title": {
+                "type": "string",
+                "description": "Exact plan-table 活动主题 of the record to update.",
+            },
+            "date": {
+                "type": "string",
+                "description": "Activity date in YYYY-MM-DD used with the title to resolve one record.",
+            },
+            "field": {
+                "type": "string",
+                "enum": ["status", "promotion_status", "notes", "reminder_status"],
+                "description": "Xiaoman-owned column key to write.",
+            },
+            "value": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "New column value; SingleSelect targets require an exact existing option.",
+            },
+            "mutation_id": {
+                "type": "string",
+                "description": "Caller-supplied UUID retained across exact retries.",
+            },
+            **_XIAOMAN_ACTIVITY_COMMON_PROPS,
+        },
+        "required": ["activity_title", "date", "field", "value", "mutation_id"],
         "additionalProperties": False,
     },
 }
@@ -3820,7 +3913,7 @@ def _xiaoman_activity_command(
             },
             "guardrails": [
                 "xiaoman activity wrapper only; no generic Base access",
-                "worker must enforce approved table/field allowlists",
+                "worker must enforce approved table allowlists and the reviewed field denylist",
                 "worker must write audit rows for success, failure, or denial",
                 "write operations default to dry-run",
                 "do not expose Base internals, record ids, commands, or traces to WeCom users",
@@ -3902,7 +3995,7 @@ def _xiaoman_activity_run_read_through(
     ]
     sanitized["guardrails"] = [
         "read-through runs with a minimal environment allowlist",
-        "records use a fixed field allowlist and length limits",
+        "records pass through activity table fields except the reviewed denylist, with length limits",
         "human confirmation is required before handoff, queueing, publishing, or sending",
     ]
     sanitized.update(
@@ -4104,9 +4197,31 @@ def _xiaoman_activity_sanitize_records(raw_records: Any) -> list[dict[str, str]]
             value = _xiaoman_activity_sanitize_record_value(key, raw_record.get(key), max_len)
             if value:
                 record[key] = value
+        passthrough = _xiaoman_activity_sanitize_passthrough_fields(raw_record.get("fields"))
+        if passthrough:
+            record["fields"] = passthrough
         if record:
             records.append(record)
     return records
+
+
+def _xiaoman_activity_sanitize_passthrough_fields(raw_fields: Any) -> dict[str, str]:
+    if not isinstance(raw_fields, dict):
+        return {}
+    fields: dict[str, str] = {}
+    for raw_key, raw_value in raw_fields.items():
+        if len(fields) >= XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_MAX_ENTRIES:
+            break
+        key = _clean_text(raw_key, max_len=XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_KEY_MAX_LEN)
+        if not key or key in XIAOMAN_ACTIVITY_READ_DENIED_FIELDS:
+            continue
+        value = _xiaoman_activity_sanitize_record_value(
+            key, raw_value, XIAOMAN_ACTIVITY_PASSTHROUGH_FIELD_VALUE_MAX_LEN
+        )
+        if not value:
+            continue
+        fields[key] = value
+    return fields
 
 
 def _xiaoman_activity_summaries_from_records(records: list[dict[str, str]]) -> list[str]:
@@ -4224,6 +4339,21 @@ def _xiaoman_activity_is_temporary_meal(record: dict[str, str]) -> bool:
         for key in ["title", "notes", "gap_summary", "material_summary"]
     )
     return bool(re.search(r"临时.{0,6}(约饭|吃饭|聚餐|晚餐|午餐)", text))
+
+
+def _xiaoman_activity_weekly_schedule_skip_reason(record: dict[str, str], mode: str) -> str:
+    if mode != "weekly_preview":
+        return ""
+    confirmation = _clean_text(record.get("schedule_confirmation"), max_len=120)
+    if not confirmation:
+        return ""
+    negative_tokens = ["待确认", "未确认", "不确认", "暂不", "不排", "取消", "不发", "延后", "待定"]
+    if any(token in confirmation for token in negative_tokens):
+        return "schedule_not_confirmed"
+    positive_tokens = ["已确认", "确认排入", "排入下周", "确认发布", "确定"]
+    if any(token in confirmation for token in positive_tokens):
+        return ""
+    return "schedule_not_confirmed"
 
 
 def _xiaoman_activity_display_title(record: dict[str, str], index: int) -> str:
@@ -4460,6 +4590,68 @@ def _xiaoman_activity_weekly_plan_confirmation_draft(
     }
 
 
+def _xiaoman_activity_weekly_poster_activity(record: dict[str, str], index: int) -> dict[str, str]:
+    return {
+        "index": str(index),
+        "title": _xiaoman_activity_display_title(record, index),
+        "time": _xiaoman_activity_time_text(record),
+        "location": record.get("location") or "待确认",
+        "owner": _xiaoman_activity_owner_text(record),
+        "status": record.get("promotion_status") or record.get("status") or "",
+    }
+
+
+def _xiaoman_activity_weekly_poster_brief(
+    *,
+    display_date: str,
+    community_audience: str,
+    records: list[dict[str, str]],
+) -> dict[str, Any]:
+    activities = [
+        _xiaoman_activity_weekly_poster_activity(record, index)
+        for index, record in enumerate(records[:8], start=1)
+    ]
+    if not activities:
+        return {
+            "status": "not_ready",
+            "reason": "no_complete_confirmed_weekly_activity",
+            "activity_count": 0,
+            "activities": [],
+            "human_review_required": True,
+            "external_send_executed": False,
+        }
+
+    title = f"{display_date} 下周活动预告海报"
+    activity_lines = [
+        f"{item['index']}. {item['title']}｜{item['time']}｜{item['location']}｜{item['owner']}"
+        for item in activities
+    ]
+    return {
+        "status": "ready_for_human_confirmation",
+        "artifact_type": "weekly_poster_brief",
+        "title": title,
+        "subtitle": f"面向{community_audience}的下周活动合集",
+        "purpose": "把下周已确认活动整理成一张群公告配图，方便成员快速决定参加哪些活动。",
+        "visual_direction": "真实、清楚、信息优先；用一张合集海报呈现活动名称、时间、地点和负责人，不夸大、不虚构。",
+        "activity_count": len(activities),
+        "activities": activities,
+        "brief_summary": f"{title}\n" + "\n".join(activity_lines),
+        "required_human_checks": [
+            "活动均已排入下周",
+            "时间、地点、负责人准确",
+            "图片生成后仍需人工审核，审核前不得发群",
+        ],
+        "next_controlled_step": {
+            "status": "requires_agentos_artifact_review",
+            "prepare_tool": "qintopia_xiaoman_weekly_poster_workflow_prepare",
+            "artifact_type": "poster_brief",
+            "after_approval": "image_generation_request",
+        },
+        "human_review_required": True,
+        "external_send_executed": False,
+    }
+
+
 def _xiaoman_activity_build_announcement(
     *,
     display_date: str,
@@ -4485,6 +4677,15 @@ def _xiaoman_activity_build_announcement(
                 {
                     "title": _xiaoman_activity_display_title(record, len(skipped) + 1),
                     "reason": "temporary_meal_no_promotion",
+                }
+            )
+            continue
+        schedule_skip_reason = _xiaoman_activity_weekly_schedule_skip_reason(record, mode)
+        if schedule_skip_reason:
+            skipped.append(
+                {
+                    "title": _xiaoman_activity_display_title(record, len(skipped) + 1),
+                    "reason": schedule_skip_reason,
                 }
             )
             continue
@@ -4560,17 +4761,36 @@ def _xiaoman_activity_build_announcement(
         issue_lines = "\n".join(f"- {issue}" for issue in read_issues)
         gap_text = f"{gap_text}\n\n部分日期读取异常（已跳过，建议重跑）：\n{issue_lines}"
 
+    complete_publishable = [
+        record for record in publishable if not _xiaoman_activity_missing_fields(record, mode)
+    ]
+    weekly_poster_brief = None
+    poster_text = ""
+    if mode == "weekly_preview":
+        weekly_poster_brief = _xiaoman_activity_weekly_poster_brief(
+            display_date=display_date,
+            community_audience=community_audience,
+            records=complete_publishable,
+        )
+        if weekly_poster_brief["status"] == "ready_for_human_confirmation":
+            poster_text = (
+                f"\n\n海报 brief 已同步准备：{weekly_poster_brief['activity_count']} 个完整活动，"
+                "可以进入 AgentOS 海报工单；图片生成和发群仍需后续审核。"
+            )
+        else:
+            poster_text = "\n\n海报 brief 暂不生成：还没有完整且已确认的下周活动。"
+
     operator_review_message = (
         f"{operator_name}，我先把 {display_date} 的活动文字预告整理好了。"
         "可以发就回复“发”，要改就直接说改哪里；我不会自动发群。"
-        f"\n\n{announcement_text}{gap_text}"
+        f"\n\n{announcement_text}{gap_text}{poster_text}"
     )
     erhua_handoff_draft = (
         f"给{community_audience}的待确认文案如下。只有在{operator_name}确认“发”之后，"
         f"才交给二花执行：\n\n{announcement_text}"
     )
 
-    return {
+    draft = {
         "workflow_step": mode,
         "announcement_text": announcement_text,
         "operator_review_message": operator_review_message,
@@ -4586,6 +4806,9 @@ def _xiaoman_activity_build_announcement(
         "publishable_count": len(publishable),
         "skipped_count": len(skipped),
     }
+    if weekly_poster_brief is not None:
+        draft["weekly_poster_brief"] = weekly_poster_brief
+    return draft
 
 
 def _xiaoman_activity_sanitize_record_value(key: str, raw_value: Any, max_len: int) -> str:
@@ -4911,6 +5134,33 @@ def handle_qintopia_xiaoman_activity_promotion_details_update(args: dict[str, An
     )
 
 
+def handle_qintopia_xiaoman_activity_feishu_field_update(args: dict[str, Any], **_: Any) -> str:
+    skill = "qintopia_xiaoman_activity_feishu_field_update"
+    field = _clean_text(args.get("field"), max_len=40)
+    if field not in XIAOMAN_ACTIVITY_FEISHU_WRITE_FIELDS:
+        return _xiaoman_activity_error(
+            skill,
+            "field must be one of status, promotion_status, notes, reminder_status",
+            actor_agent=_xiaoman_activity_actor(args),
+        )
+    payload = {
+        "table_role": "activity_plan",
+        "activity_title": _clean_text(args.get("activity_title"), max_len=240),
+        "date": _clean_text(args.get("date"), max_len=40),
+        "field": field,
+        "value": _body_text(args.get("value"), max_len=500),
+        "mutation_id": _clean_text(args.get("mutation_id"), max_len=64),
+    }
+    return _xiaoman_activity_command(
+        skill=skill,
+        operation="feishu-field-update",
+        args=args,
+        payload=payload,
+        required=["activity_title", "date", "field", "value", "mutation_id"],
+        writes_business_state=True,
+    )
+
+
 def handle_qintopia_xiaoman_activity_record_get(args: dict[str, Any], **_: Any) -> str:
     payload = {
         "record_id": _clean_text(args.get("record_id"), max_len=160),
@@ -5231,13 +5481,13 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
             "actions": [
                 {
                     "tool": "none",
-                    "reason": "MVP prepares text only; Liu Shan must confirm before any Erhua handoff or group send",
+                    "reason": "MVP prepares review artifacts only; Liu Shan must confirm before any Erhua handoff or group send",
                     "requires_human_confirmation": True,
                     "external_send_executed": False,
                 }
             ],
             "guardrails": [
-                "text-only MVP for operations review",
+                "review-artifact MVP for operations review",
                 "temporary meal records are skipped unless explicitly included",
                 "paid planned activities remain in the scheduling pool",
                 "does not create work items, write Feishu, call Huabaosi, call Erhua, call QiWe, publish, or send",
@@ -5583,6 +5833,182 @@ def handle_qintopia_xiaoman_activity_text_group_message_request_prepare(
                 "approved text announcement artifact is required before creating the group_message_request",
                 "created group_message_request remains awaiting_publish until human final confirmation",
                 "this wrapper does not queue, run send-ready, call Erhua, call QiWe, publish, or send",
+            ],
+        }
+    )
+
+
+def _xiaoman_weekly_poster_workflow_request_text(
+    title: str,
+    activities: list[dict[str, str]],
+) -> str:
+    lines = [title]
+    for index, activity in enumerate(activities, start=1):
+        line = f"{index}. {activity['title']}｜{activity['time']}｜{activity['location']}"
+        if len("\n".join([*lines, line])) > 480:
+            break
+        lines.append(line)
+    text = "\n".join(lines)
+    omitted = len(activities) - (len(lines) - 1)
+    if omitted:
+        suffix = f"\n另有 {omitted} 场活动见周预告文字稿"
+        if len(text) + len(suffix) <= 500:
+            text += suffix
+    return text[:500]
+
+
+def handle_qintopia_xiaoman_weekly_poster_workflow_prepare(args: dict[str, Any], **_: Any) -> str:
+    skill = "qintopia_xiaoman_weekly_poster_workflow_prepare"
+    actor_agent = _xiaoman_activity_actor(args)
+    if actor_agent != "xiaoman":
+        return _xiaoman_activity_error(
+            skill,
+            "actor_agent must be xiaoman",
+            actor_agent=actor_agent,
+        )
+    if not _xiaoman_activity_wrappers_enabled():
+        return _xiaoman_activity_error(
+            skill,
+            "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1 is required",
+            actor_agent=actor_agent,
+        )
+
+    week_start = _clean_text(args.get("week_start"), max_len=40)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", week_start or ""):
+        return _xiaoman_activity_error(
+            skill,
+            "week_start must be YYYY-MM-DD",
+            actor_agent=actor_agent,
+        )
+
+    brief = args.get("weekly_poster_brief")
+    if isinstance(brief, str):
+        try:
+            brief = json.loads(brief)
+        except (TypeError, ValueError):
+            brief = None
+    if not isinstance(brief, dict):
+        return _xiaoman_activity_error(
+            skill,
+            "weekly_poster_brief object is required",
+            actor_agent=actor_agent,
+        )
+    brief_status = _clean_text(brief.get("status"), max_len=80)
+    if brief_status != "ready_for_human_confirmation":
+        return _xiaoman_activity_error(
+            skill,
+            "weekly_poster_brief is not ready for workflow intake",
+            actor_agent=actor_agent,
+            weekly_poster_brief_status=brief_status or "missing",
+            weekly_poster_brief_reason=_clean_text(brief.get("reason"), max_len=200),
+        )
+
+    raw_activities = brief.get("activities")
+    if not isinstance(raw_activities, list) or not raw_activities:
+        return _xiaoman_activity_error(
+            skill,
+            "weekly_poster_brief.activities must be a non-empty array",
+            actor_agent=actor_agent,
+        )
+    activities: list[dict[str, str]] = []
+    for item in raw_activities[:8]:
+        if not isinstance(item, dict):
+            return _xiaoman_activity_error(
+                skill,
+                "weekly_poster_brief.activities items must be objects",
+                actor_agent=actor_agent,
+            )
+        title = _clean_text(item.get("title"), max_len=120)
+        if not title:
+            return _xiaoman_activity_error(
+                skill,
+                "weekly_poster_brief activity title is required",
+                actor_agent=actor_agent,
+            )
+        activities.append(
+            {
+                "title": title,
+                "time": _clean_text(item.get("time"), max_len=120) or "时间待确认",
+                "location": _clean_text(item.get("location"), max_len=120) or "地点待确认",
+            }
+        )
+
+    brief_title = _body_text(brief.get("title"), max_len=200) or f"{week_start} 下周活动预告海报"
+    request_text = _xiaoman_weekly_poster_workflow_request_text(brief_title, activities)
+    if _xiaoman_activity_message_text_is_sensitive(request_text):
+        return _xiaoman_activity_error(
+            skill,
+            "weekly_poster_brief contains disallowed sensitive or raw internal content",
+            actor_agent=actor_agent,
+            hidden_original=True,
+        )
+
+    human_owner = _clean_text(args.get("human_owner") or "刘珊", max_len=120)
+    priority = _clean_text(args.get("priority") or "normal", max_len=20)
+    if priority not in {"low", "normal", "high", "urgent"}:
+        return _xiaoman_activity_error(
+            skill,
+            "priority is not allowed",
+            actor_agent=actor_agent,
+        )
+    dry_run = args.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        return _xiaoman_activity_error(
+            skill,
+            "dry_run must be a boolean",
+            actor_agent=actor_agent,
+        )
+
+    idempotency_key = _clean_text(args.get("idempotency_key"), max_len=200)
+    if not idempotency_key:
+        digest = hashlib.sha256(
+            f"weekly-poster:{week_start}:{request_text}".encode("utf-8")
+        ).hexdigest()[:24]
+        idempotency_key = f"weekly-poster-workflow:{week_start}:sha256:{digest}"
+
+    request = {
+        "actor_agent": "xiaoman",
+        "workflow_type": "activity_promotion",
+        "request_text": request_text,
+        "human_owner": human_owner,
+        "priority": priority,
+        "source_type": "manual_request",
+        "source_refs": {"source_record_ref": f"weekly_preview:{week_start}"},
+        "metadata": {
+            "weekly_poster": True,
+            "week_start": week_start,
+            "activity_count": len(activities),
+        },
+        "idempotency_key": idempotency_key,
+    }
+    payload_json = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
+    command = [
+        _xiaoman_activity_worker_bin(),
+        "operations-workflow-start",
+        "--payload-json",
+        payload_json,
+        "--dry-run" if dry_run else "--apply",
+    ]
+    return _json(
+        {
+            "success": True,
+            "skill": skill,
+            "actor_agent": actor_agent,
+            "operation": "weekly-poster-workflow-prepare",
+            "dry_run": dry_run,
+            "writes_business_state": not dry_run,
+            "external_send_executed": False,
+            "payload": request,
+            "action": {
+                "tool": "agentos_worker_command",
+                "command": command,
+                "shell_preview": " ".join(shlex.quote(part) for part in command),
+                "requires_local_execution": True,
+            },
+            "guardrails": [
+                "creates AgentOS control-plane work items only: one activity_promotion parent plus evidence and visual children",
+                "poster_brief approval, generated_image review, and final group-send confirmation remain human gates",
+                "does not call image providers, write Feishu, queue or run send-ready, call QiWe, publish, or send",
             ],
         }
     )
@@ -6932,6 +7358,15 @@ def register(ctx) -> None:
         emoji="📣",
     )
     ctx.register_tool(
+        name="qintopia_xiaoman_weekly_poster_workflow_prepare",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_WEEKLY_POSTER_WORKFLOW_PREPARE_SCHEMA,
+        handler=handle_qintopia_xiaoman_weekly_poster_workflow_prepare,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_WEEKLY_POSTER_WORKFLOW_PREPARE_SCHEMA["description"],
+        emoji="🖼️",
+    )
+    ctx.register_tool(
         name="qintopia_xiaoman_public_reply_rewrite",
         toolset="qintopia",
         schema=QINTOPIA_XIAOMAN_PUBLIC_REPLY_REWRITE_SCHEMA,
@@ -6974,6 +7409,15 @@ def register(ctx) -> None:
         check_fn=check_xiaoman_activity_requirements,
         description=QINTOPIA_XIAOMAN_ACTIVITY_PROMOTION_DETAILS_UPDATE_SCHEMA["description"],
         emoji="🧾",
+    )
+    ctx.register_tool(
+        name="qintopia_xiaoman_activity_feishu_field_update",
+        toolset="qintopia",
+        schema=QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA,
+        handler=handle_qintopia_xiaoman_activity_feishu_field_update,
+        check_fn=check_xiaoman_activity_requirements,
+        description=QINTOPIA_XIAOMAN_ACTIVITY_FEISHU_FIELD_UPDATE_SCHEMA["description"],
+        emoji="✍️",
     )
     ctx.register_tool(
         name="qintopia_xiaoman_activity_handoff_create",
