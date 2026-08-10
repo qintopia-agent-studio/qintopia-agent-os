@@ -352,6 +352,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/activate-xiaoman-weekly-plan-confirmation-production.sh",
     "deploy/sidecar/scripts/rollback-xiaoman-weekly-plan-confirmation-production.sh",
     "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
+    "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh",
     "docs/operations/message-sidecar-staging-values.template.json",
     "docs/operations/release-acceptance-checklist.md",
     "docs/operations/staging-runtime-provisioning-runbook.md",
@@ -3902,6 +3903,7 @@ for (const fragment of [
   xiaomanWeeklyPreviewObservationPath,
   xiaomanWeeklyPreviewActivationPath,
   xiaomanWeeklyPreviewRollbackPath,
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh",
   "workflows/xiaoman-weekly-preview",
 ]) {
   requireFragment(
@@ -3909,6 +3911,45 @@ for (const fragment of [
     deployBundleBuilderForWeeklyPreview,
     fragment
   );
+}
+const xiaomanWeeklyPreviewHermesCronApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh";
+if (!exists(xiaomanWeeklyPreviewHermesCronApplyPath)) {
+  addError(
+    `${xiaomanWeeklyPreviewHermesCronApplyPath}: missing weekly preview Hermes cron apply`
+  );
+} else {
+  const apply = readText(xiaomanWeeklyPreviewHermesCronApplyPath);
+  for (const fragment of [
+    "approved-production-xiaoman-weekly-preview-hermes-cron",
+    "usage: apply-xiaoman-weekly-preview-hermes-cron.sh [--install|--enable]",
+    'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"',
+    'PROFILE_ENV_FILE="/home/ubuntu/.hermes/profiles/xiaoman/.env"',
+    'WRAPPER_TARGET="${HERMES_SCRIPTS_DIR}/qintopia_xiaoman_weekly_preview.sh"',
+    'SNAPSHOT_SYNC="${RELEASE_CURRENT}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
+    "WECOM_HOME_CHANNEL",
+    "origin_chat_id_resolved",
+    "verify_installed_wrapper",
+    "atomic_replace",
+    "external_calls_executed",
+    "safe_for_chat",
+    "weekly_preview_hermes_cron_installed",
+    "weekly_preview_hermes_cron_enabled",
+    "weekly_preview_hermes_cron_already_enabled",
+  ]) {
+    requireFragment(xiaomanWeeklyPreviewHermesCronApplyPath, apply, fragment);
+  }
+  for (const fragment of [
+    "eval ",
+    "QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_HERMES_CRON_FILE",
+    "QINTOPIA_XIAOMAN_PROFILE_DIR",
+    "QIWE_TOKEN",
+    "tenant_access_token",
+    "print(chat_id)",
+  ]) {
+    forbidFragment(xiaomanWeeklyPreviewHermesCronApplyPath, apply, fragment);
+  }
 }
 const releaseSystemdInstallerPath = "deploy/runner/install-release-systemd-units.sh";
 if (exists(releaseSystemdInstallerPath)) {

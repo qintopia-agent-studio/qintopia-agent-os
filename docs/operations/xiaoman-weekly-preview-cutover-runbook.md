@@ -1,6 +1,12 @@
 # Xiaoman Weekly Preview Production Cutover Runbook
 
-Updated: 2026-08-09
+Updated: 2026-08-11
+
+> Deprecated as the forward activation path. The Monday 09:30 weekly preview is
+> migrating to a Hermes cron job (task 1); use
+> `docs/operations/xiaoman-weekly-preview-hermes-cron-runbook.md` for cutover. This
+> systemd runbook is kept only as the rollback target until the Hermes cron is observed
+> healthy in production.
 
 This runbook activates the reviewed Xiaoman weekly activity-preview timer. It reads the
 next Monday-Sunday activity window through the Xiaoman read-through path, writes the

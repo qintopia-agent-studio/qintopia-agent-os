@@ -484,28 +484,28 @@
   observation smoke plus the snapshot git history. Follow
   `docs/operations/erhua-morning-brief-hermes-cron-runbook.md`.
 
-- Xiaoman weekly preview production uses a release-managed timer, not Hermes
-  conversation cron or hand-copied unit files. Apply the persistent non-secret config
-  with:
-
-  ```bash
-  QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_CONFIG=approved-production-xiaoman-weekly-preview-config \
-    deploy/sidecar/scripts/apply-xiaoman-weekly-preview-production-config.sh --enable
-  QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-preview \
-  QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA=<published-production-release-sha> \
-    deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh
-  ```
-
-  Observation and rollback are `xiaoman-weekly-preview-production-observation-smoke.sh`
-  and `rollback-xiaoman-weekly-preview-production.sh`. Activation and observation must
-  verify the installed unit's `QINTOPIA_DEPLOYED_COMMIT_SHA` against the owner-reviewed
-  release SHA. Activation must first pass `xiaoman-legacy-cron-observation-smoke.sh`; do
-  not manually edit `/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json`. The weekly
-  preview worker now writes both `latest-operator-review-message.txt` and
-  `latest-weekly-poster-brief.json`. The poster brief is a review artifact only: it must
-  not call the image provider, approve a generated image, queue QiWe, or send to a group
-  unless a later reviewed AgentOS image-generation and auto-publish policy gate
-  explicitly does that work. The reviewed intake for a ready weekly poster brief is
+- Xiaoman weekly preview now uses a Hermes cron job (task 1), not the release-managed
+  Monday timer. The reviewed declaration is
+  `runtime/hermes/cron/xiaoman/weekly-preview.job.json`, the wrapper is
+  `runtime/hermes/scripts/qintopia_xiaoman_weekly_preview.sh`, and the registry entry
+  pins expr `30 9 * * 1`. Install and enable the Hermes job with
+  `QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_HERMES_CRON=approved-production-xiaoman-weekly-preview-hermes-cron`
+  plus `apply-xiaoman-weekly-preview-hermes-cron.sh --install` then `--enable`. Disable
+  the old timer with `rollback-xiaoman-weekly-preview-production.sh` before enabling the
+  job; the rollback script requires `QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=0` in the
+  sidecar env while the worker requires `1`, so the wrapper exports that flag itself and
+  the env file keeps `0` for the retired systemd path. The wrapper also re-exports
+  `QINTOPIA_DEPLOYED_COMMIT_SHA` from `release/current` after sourcing the persistent
+  env, so a stale env value cannot override the release binding. Health is the allowlist
+  observation smoke plus the snapshot git history. Follow
+  `docs/operations/xiaoman-weekly-preview-hermes-cron-runbook.md`; the legacy systemd
+  activation path in `docs/operations/xiaoman-weekly-preview-cutover-runbook.md` is kept
+  only as the rollback target. The weekly preview worker now writes both
+  `latest-operator-review-message.txt` and `latest-weekly-poster-brief.json`. The poster
+  brief is a review artifact only: it must not call the image provider, approve a
+  generated image, queue QiWe, or send to a group unless a later reviewed AgentOS
+  image-generation and auto-publish policy gate explicitly does that work. The reviewed
+  intake for a ready weekly poster brief is
   `qintopia_xiaoman_weekly_poster_workflow_prepare`. It emits a bounded
   `operations-workflow-start` command (dry-run by default, week-plus-content idempotency
   key, `source_record_ref=weekly_preview:<monday>`) that creates one
