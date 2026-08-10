@@ -1306,6 +1306,7 @@ fn is_running_activity_signal(text: &str) -> bool {
     contains_any(text, &["跑步", "慢跑", "晨跑", "夜跑"])
         && (is_solitaire_message(text)
             || is_first_person_interest_or_skill(text)
+            || is_running_event_context(text)
             || contains_any(
                 text,
                 &[
@@ -1322,6 +1323,24 @@ fn is_running_activity_signal(text: &str) -> bool {
             ))
 }
 
+fn is_running_event_context(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    contains_any(
+        text,
+        &[
+            "跑步局",
+            "夜跑局",
+            "晨跑局",
+            "跑团",
+            "约跑",
+            "跑一圈",
+            "配速",
+            "路线",
+            "拉伸",
+        ],
+    ) || lower.contains("km")
+}
+
 fn is_activity_organizer_signal(text: &str) -> bool {
     !is_solitaire_message(text)
         && contains_any(
@@ -1334,6 +1353,10 @@ fn is_activity_organizer_signal(text: &str) -> bool {
                 "我想在社区里发起",
                 "我来发起",
                 "我来带",
+                "跑步局",
+                "夜跑局",
+                "晨跑局",
+                "约跑",
             ],
         )
 }
@@ -2116,6 +2139,21 @@ mod tests {
 
         assert!(!labels.contains(&"interest".to_string()));
         assert!(labels.contains(&"running_activity".to_string()));
+    }
+
+    #[test]
+    fn classifies_running_group_event_language_as_profile_signal() {
+        let labels = classify_profile_fact_message("明晚夜跑局，8点社区门口集合，5km 配速随意");
+
+        assert!(labels.contains(&"running_activity".to_string()));
+        assert!(labels.contains(&"activity_organizer".to_string()));
+    }
+
+    #[test]
+    fn running_item_chat_does_not_become_profile_signal() {
+        let labels = classify_profile_fact_message("这双跑步鞋有没有人要");
+
+        assert!(!labels.contains(&"running_activity".to_string()));
     }
 
     #[test]

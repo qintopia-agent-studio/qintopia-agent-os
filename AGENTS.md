@@ -613,6 +613,9 @@ Use `rg` and `rg --files` for search.
   repair must seed active no-stable-profile `reply_context` snapshots for linked
   current-room people that have no useful profile facts yet, so "known member but no
   stable profile" is a database-backed state rather than an identity-only fallback.
+  Running profile hints must cover community event language such as `跑步局`, `约跑`,
+  route, pace, or `km` context, while avoiding object-only chatter such as running
+  shoes.
 - Erhua public local recommendations such as performances, restaurants, cafes, or
   exhibitions must use current public-source checks before claiming "best", consensus,
   availability, price, or firsthand experience. Without verified venue/organizer,
