@@ -1041,6 +1041,7 @@ def _answer_context_reply_directives(answer_context: Dict[str, Any]) -> str:
     answer_basis = answer_context.get("answer_basis")
     if isinstance(answer_basis, dict) and answer_basis.get("kind") == "public_source_check_required":
         lines.append("- 当前是本地公开推荐问题；不要直接判“最好”“公认最棒”，不要声称自己听过、查过或已确认实时状态。")
+        lines.append("- 必须先给具体候选答案：挑你最确信的 1-2 个，说清推荐理由和你对信息的把握程度（比如“这家口碑一直稳”还是“我只听过名字”）；不要只给查找方法、一个候选都不给。")
         lines.append("- 回复必须明确提到小红书，说明它用于看近期真实体验和口碑线索，并给出可复制的小红书搜索词。")
         lines.append("- 小红书不能单独当权威事实；演出类问题再用票务和官方渠道核对档期、阵容、票价，餐饮/咖啡馆类问题再用点评/地图核对近期评价、地址和营业状态。")
         lookup_plan = answer_context.get("public_source_lookup_plan")
