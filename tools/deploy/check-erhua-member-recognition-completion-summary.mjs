@@ -120,6 +120,7 @@ checkAllowedKeys(
     "potential_member_total",
     "potential_member_linked",
     "potential_member_unlinked",
+    "unsafe_display_unlinked",
   ],
   errors
 );
@@ -140,6 +141,11 @@ const potentialMemberLinked = readNonNegativeInteger(
 const potentialMemberUnlinked = readNonNegativeInteger(
   identities,
   "potential_member_unlinked",
+  errors
+);
+const unsafeDisplayUnlinked = readNonNegativeInteger(
+  identities,
+  "unsafe_display_unlinked",
   errors
 );
 if (
@@ -185,6 +191,20 @@ if (
 }
 if (potentialMemberUnlinked !== undefined && potentialMemberUnlinked !== 0) {
   errors.push("current-room potential member identities must all be linked");
+}
+if (
+  unsafeDisplayUnlinked !== undefined &&
+  potentialMemberUnlinked !== undefined &&
+  unsafeDisplayUnlinked > potentialMemberUnlinked
+) {
+  errors.push(
+    "current-room unsafe-display unlinked identities exceed potential member unlinked count"
+  );
+}
+if (unsafeDisplayUnlinked !== undefined && unsafeDisplayUnlinked !== 0) {
+  errors.push(
+    "current-room unsafe-display potential member identities must all be linked"
+  );
 }
 if (
   potentialMemberLinked !== undefined &&

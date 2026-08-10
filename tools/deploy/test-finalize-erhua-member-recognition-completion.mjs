@@ -30,6 +30,7 @@ try {
   const summary = JSON.parse(fs.readFileSync(summaryOutput, "utf8"));
   assert.equal(summary.schema_version, "erhua_member_recognition_completion_v1");
   assert.equal(summary.passed, true);
+  assert.equal(summary.current_room_qiwe_identities.unsafe_display_unlinked, 0);
   assert.equal(summary.linked_people.total, 1);
   assert.doesNotMatch(JSON.stringify(summary), new RegExp(PERSON_PAXON, "i"));
 

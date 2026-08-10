@@ -268,7 +268,8 @@ marker. The room-scoped safe/excluded/linked identity counts must not be inflate
 `qiwe_room_potential_member_identities_*`; that denominator excludes only
 bot/system/test identities, so current-room people with unsafe display names such as
 phone-like digit runs cannot disappear into `excluded`. Completion requires
-`qiwe_room_potential_member_identities_unlinked = 0`; resolve any redacted
+`qiwe_room_potential_member_identities_unlinked = 0`, and the retained completion
+summary must also show `unsafe_display_unlinked = 0`; resolve any redacted
 `identity_key` samples through an owner-reviewed identity path before claiming full
 recognition. It also requires room-scoped `linked_people_total` and
 `answer_context_canary_specs`, plus `linked_people_without_qiwe_platform_identity = 0`,

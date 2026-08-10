@@ -106,6 +106,20 @@ try {
     /linked_people\.total exceeds linked potential member identities/
   );
 
+  summaryPath = writeSummary("unsafe-display-unlinked", {
+    ...validSummary(),
+    current_room_qiwe_identities: {
+      ...validSummary().current_room_qiwe_identities,
+      potential_member_total: 10,
+      potential_member_linked: 9,
+      potential_member_unlinked: 1,
+      unsafe_display_unlinked: 1,
+    },
+  });
+  result = runChecker(summaryPath);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unsafe-display potential member identities/);
+
   summaryPath = writeSummary("missing-speaker-route", {
     ...validSummary(),
     answer_context_canaries: {
@@ -183,6 +197,7 @@ function validSummary() {
       potential_member_total: 10,
       potential_member_linked: 10,
       potential_member_unlinked: 0,
+      unsafe_display_unlinked: 0,
     },
     linked_people: {
       total: 2,

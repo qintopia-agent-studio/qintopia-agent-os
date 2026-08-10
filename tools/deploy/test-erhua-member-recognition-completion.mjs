@@ -43,6 +43,7 @@ try {
   assert.equal(summary.scope_fingerprint, ROOM_SCOPE);
   assert.equal(summary.room_sync.room_members_discovered, 12);
   assert.equal(summary.current_room_qiwe_identities.safe_total, 10);
+  assert.equal(summary.current_room_qiwe_identities.unsafe_display_unlinked, 0);
   assert.equal(summary.linked_people.total, 2);
   assert.equal(summary.profile_repair.requested_message_limit, 5000);
   assert.equal(summary.answer_context_canaries.mentioned_records, 3);

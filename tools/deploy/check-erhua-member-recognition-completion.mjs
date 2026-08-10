@@ -449,6 +449,10 @@ function buildCompletionSummary({
       potential_member_total: values.qiwe_room_potential_member_identities_total,
       potential_member_linked: values.qiwe_room_potential_member_identities_linked,
       potential_member_unlinked: values.qiwe_room_potential_member_identities_unlinked,
+      unsafe_display_unlinked: nonNegativeDifference(
+        values.qiwe_room_potential_member_identities_unlinked,
+        values.total_channel_identities
+      ),
     },
     linked_people: {
       total: values.linked_people_total,
@@ -1300,6 +1304,13 @@ function canaryTypeOf(record, errors) {
     return "mentioned_member";
   }
   return type;
+}
+
+function nonNegativeDifference(left, right) {
+  if (!Number.isInteger(left) || !Number.isInteger(right)) {
+    return null;
+  }
+  return Math.max(0, left - right);
 }
 
 function parseArgs(argv) {

@@ -82,7 +82,9 @@
   `node tools/deploy/finalize-erhua-member-recognition-completion.mjs`. Retained
   evidence must keep only sanitized counts, route-level hint coverage, and
   `scope_fingerprint`; never retain real group ids, QiWe user ids, sender ids, person
-  ids, DB URLs, tokens, raw messages, or raw profile text.
+  ids, DB URLs, tokens, raw messages, or raw profile text. Final completion must retain
+  `unsafe_display_unlinked = 0` so numeric or otherwise unsafe current-room display
+  names cannot disappear into `excluded`.
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:

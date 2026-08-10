@@ -257,6 +257,7 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
      `room_members_discovered`;
    - `qiwe_room_channel_identities_linked = qiwe_room_channel_identities_total`;
    - `qiwe_room_potential_member_identities_unlinked = 0`;
+   - retained completion `unsafe_display_unlinked = 0`;
    - `linked_aliases_missing = 0`;
    - `linked_messages_missing_sender_person = 0`;
    - `qiwe_platform_identities_missing = 0`;
@@ -280,6 +281,11 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    the owner fill only a human-readable safe name, then apply it through the
    release-local sidecar. Do not include raw display names, QiWe user ids, chat ids,
    sender ids, raw messages, raw profile text, or database URLs.
+
+   The finalized completion summary must also keep `unsafe_display_unlinked = 0`. This
+   count is derived from potential-member gaps that are not normal safe bootstrap
+   candidates, so numeric or otherwise unsafe display names cannot be hidden by the
+   `excluded` current-room identity count.
 
    ```bash
    node tools/deploy/build-erhua-member-safe-identity-payload-template.mjs \
@@ -493,7 +499,9 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    through sanitized `speaker` output and `answer_context_referenced_canary_specs` to
    resolve every linked current-room person through sanitized `referenced_member`
    output, while separately requiring every linked current-room person to have a
-   materialized QiWe platform identity.
+   materialized QiWe platform identity. The retained completion summary includes
+   `unsafe_display_unlinked`, which must be `0`, so members with numeric or otherwise
+   unsafe display names cannot be mistaken for non-member exclusions.
 
    Use the same `canonical_key` for aliases that must resolve to the same person, such
    as `小乔` and `Paxon`. Use `required_profile_terms` for concrete stable signals that
