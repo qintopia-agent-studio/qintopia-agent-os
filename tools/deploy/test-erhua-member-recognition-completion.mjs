@@ -45,6 +45,9 @@ try {
   assert.equal(summary.current_room_qiwe_identities.safe_total, 10);
   assert.equal(summary.current_room_qiwe_identities.unsafe_display_unlinked, 0);
   assert.equal(summary.linked_people.total, 2);
+  assert.equal(summary.qiwe_speaker_identities.materializable_users, 2);
+  assert.equal(summary.qiwe_speaker_identities.platform_identities_missing, 0);
+  assert.equal(summary.qiwe_speaker_identities.ambiguous_users, 0);
   assert.equal(summary.profile_repair.requested_message_limit, 5000);
   assert.equal(summary.answer_context_canaries.mentioned_records, 3);
   assert.equal(summary.answer_context_canaries.speaker_records, 2);

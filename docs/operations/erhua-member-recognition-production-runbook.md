@@ -261,6 +261,8 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    - `linked_aliases_missing = 0`;
    - `linked_messages_missing_sender_person = 0`;
    - `qiwe_platform_identities_missing = 0`;
+   - retained completion `qiwe_speaker_identities.platform_identities_missing = 0`;
+   - retained completion `qiwe_speaker_identities.ambiguous_users = 0`;
    - `linked_people_without_qiwe_platform_identity = 0`;
    - `linked_people_without_answer_context_canary_spec = 0`;
    - `linked_people_without_active_profile = 0`;
@@ -501,7 +503,11 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    output, while separately requiring every linked current-room person to have a
    materialized QiWe platform identity. The retained completion summary includes
    `unsafe_display_unlinked`, which must be `0`, so members with numeric or otherwise
-   unsafe display names cannot be mistaken for non-member exclusions.
+   unsafe display names cannot be mistaken for non-member exclusions. It also includes
+   `qiwe_speaker_identities.platform_identities_missing = 0` and
+   `qiwe_speaker_identities.ambiguous_users = 0`, so "我是谁" evidence proves the
+   current-room QiWe users are materialized for speaker lookup, not only that each
+   person has at least one platform identity.
 
    Use the same `canonical_key` for aliases that must resolve to the same person, such
    as `小乔` and `Paxon`. Use `required_profile_terms` for concrete stable signals that

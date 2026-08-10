@@ -131,6 +131,28 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /speaker_people_resolved/);
 
+  summaryPath = writeSummary("speaker-platform-identity-missing", {
+    ...validSummary(),
+    qiwe_speaker_identities: {
+      ...validSummary().qiwe_speaker_identities,
+      platform_identities_missing: 1,
+    },
+  });
+  result = runChecker(summaryPath);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /speaker identities must not miss platform identities/);
+
+  summaryPath = writeSummary("speaker-user-ambiguous", {
+    ...validSummary(),
+    qiwe_speaker_identities: {
+      ...validSummary().qiwe_speaker_identities,
+      ambiguous_users: 1,
+    },
+  });
+  result = runChecker(summaryPath);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /speaker identities must not have ambiguous users/);
+
   summaryPath = writeSummary("profile-hint-route-mismatch", {
     ...validSummary(),
     answer_context_canaries: {
@@ -205,6 +227,12 @@ function validSummary() {
       without_active_profile: 0,
       without_qiwe_platform_identity: 0,
       without_answer_context_canary_spec: 0,
+    },
+    qiwe_speaker_identities: {
+      materializable_users: 10,
+      platform_identities_missing: 0,
+      ambiguous_users: 0,
+      linked_people_without_platform_identity: 0,
     },
     profile_repair: {
       dry_run: false,
