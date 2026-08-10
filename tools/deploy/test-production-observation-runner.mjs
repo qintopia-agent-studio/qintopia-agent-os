@@ -167,6 +167,8 @@ if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE:-}" != "auto" ]]; then
   exit 4
 fi
 echo "qiwe_image_send_production_observation_state=disabled"
+echo "DATABASE_URL=postgres://secret@example.invalid/qintopia"
+echo "QIWE_TOKEN=secret-token"
 echo "QiWe image-send production observation passed"
 `
   );
@@ -186,10 +188,12 @@ printf 'daily:%s\\n' "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTE
 case "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE:-}" in
   enabled)
     echo "xiaoman daily case report observation requires QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1" >&2
+    echo "target_group_id=wx-secret-group" >&2
     exit 42
     ;;
   disabled)
     echo "xiaoman daily case report auto-publish observation passed"
+    echo "QINTOPIA_SIDECAR_DATABASE_URL=postgres://secret@example.invalid/qintopia"
     ;;
   *)
     echo "unexpected daily expected state" >&2
@@ -261,9 +265,7 @@ exit 99
   if (
     passedTargets[0][0] !== "qiwe-image-send" ||
     passedTargets[0][1] !== "passed" ||
-    !passedTargets[0][2].includes(
-      "qiwe_image_send_production_observation_state=disabled"
-    )
+    passedTargets[0][2] !== "qiwe_image_send_production_observation_state=disabled"
   ) {
     throw new Error(
       `unexpected QiWe observation evidence ${JSON.stringify(passedTargets[0])}`
@@ -272,16 +274,25 @@ exit 99
   if (
     passedTargets[1][0] !== "xiaoman-daily-case-report-auto-publish" ||
     passedTargets[1][1] !== "passed" ||
-    !passedTargets[1][2].includes(
-      "xiaoman daily case report auto-publish observation passed"
-    ) ||
-    !passedTargets[1][2].includes(
+    passedTargets[1][2] !==
       "xiaoman_daily_case_report_auto_publish_observation_state=disabled"
-    )
   ) {
     throw new Error(
       `unexpected daily report observation evidence ${JSON.stringify(passedTargets[1])}`
     );
+  }
+  const serializedDeployResult = JSON.stringify(deployResult);
+  for (const forbidden of [
+    "postgres://secret@example.invalid/qintopia",
+    "secret-token",
+    "wx-secret-group",
+    "QINTOPIA_SIDECAR_DATABASE_URL",
+    "DATABASE_URL",
+    "QIWE_TOKEN",
+  ]) {
+    if (serializedDeployResult.includes(forbidden)) {
+      throw new Error(`production observation leaked ${forbidden}`);
+    }
   }
   const actualLog = fs.readFileSync(observationLog, "utf8").trim();
   if (actualLog !== ["qiwe:auto", "daily:enabled", "daily:disabled"].join("\n")) {
@@ -299,6 +310,7 @@ exit 99
     `#!/usr/bin/env bash
 set -euo pipefail
 echo "daily observation ${"${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE:-}"} failed" >&2
+echo "DATABASE_URL=postgres://failure-secret@example.invalid/qintopia" >&2
 exit 42
 `
   );
@@ -341,12 +353,16 @@ exit 42
   const failedTarget = failedDetail.targets[0];
   if (
     failedTarget.status !== "failed" ||
-    !failedTarget.detail.includes("enabled: daily observation enabled failed") ||
-    !failedTarget.detail.includes("disabled: daily observation disabled failed")
+    failedTarget.detail !== "exit 1: enabled_attempt=failed; disabled_attempt=failed"
   ) {
     throw new Error(
       `unexpected failed observation detail ${JSON.stringify(failedTarget)}`
     );
+  }
+  if (
+    JSON.stringify(failedResult).includes("postgres://failure-secret@example.invalid")
+  ) {
+    throw new Error("failed production observation leaked raw stderr");
   }
 
   const ordinaryRequestPath = path.join(tmpRoot, "ordinary-request.json");
