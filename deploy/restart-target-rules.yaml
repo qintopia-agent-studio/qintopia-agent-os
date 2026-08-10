@@ -43,6 +43,8 @@ no_restart_paths:
   - "agents/xiaoman/profile-bundle/**"
   - "runtime/hermes/manifest.yaml"
   - "runtime/hermes/tests/**"
+  - "runtime/hermes/cron/**"
+  - "runtime/hermes/scripts/**"
 
 production_adjacent_paths:
   - "agents/**"

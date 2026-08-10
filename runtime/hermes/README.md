@@ -17,6 +17,12 @@ Allowed git-managed profile bundle inputs:
 - cron or scheduled-job declarations
 - non-secret channel directory templates
 
+Cron declarations live in `cron/` (per-profile `*.job.json` templates plus the
+`cron/reviewed-cron-jobs.json` allowlist registry) and cron wrapper script templates
+live in `scripts/`. Hermes cron is the source of truth for recurring Agent tasks; the
+repository keeps only sanitized declarations and drives version history through the
+server-local snapshot sync. See `docs/operations/hermes-cron-source-of-truth.md`.
+
 Runtime-local files that must not enter git:
 
 - `.env`
@@ -24,6 +30,8 @@ Runtime-local files that must not enter git:
 - generated memory and state databases
 - private chat logs and raw member profile data
 - server-local config overrides
+- live `cron/jobs.json` files and deployed `scripts/` (snapshot-synced server-side
+  instead)
 
 ## Release Model
 

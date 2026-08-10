@@ -47,7 +47,17 @@ unless correcting historical evidence.
 
 ## Active Directions
 
-1. Profile distribution and bundle design
+1. Hermes cron source of truth
+   - Recurring Agent timers live in Hermes cron, conversation-editable; the repository
+     keeps sanitized declarations plus a copy-based snapshot sync for version history.
+   - Execute the migration through the task breakdown in
+     [hermes-cron-migration](hermes-cron-migration/README.md): task 0 builds the shared
+     registry, wrapper template, snapshot sync, and smoke redesign; tasks 1-5 migrate
+     the five production timers in parallel.
+   - Operator contract:
+     [Hermes cron as source of truth](../../operations/hermes-cron-source-of-truth.md).
+
+2. Profile distribution and bundle design
    - Align with Hermes profile distribution behavior.
    - Treat `SOUL.md`, skills, cron, and MCP declarations as reviewed distribution-owned
      files.
@@ -64,7 +74,7 @@ unless correcting historical evidence.
    - PR #140 and PR #141 completed Xiaoman profile bundle and values migration work, but
      the live profile symlink cutover still requires a separate reviewed PR.
 
-2. External adapter allowlists
+3. External adapter allowlists
    - Keep real external send paths disabled until allowlists, runtime config, smoke, and
      rollback are reviewed. Feishu-backed Huabaosi image storage and artifact mirroring
      are production canary workbench paths, not approval or send paths.
@@ -179,7 +189,7 @@ unless correcting historical evidence.
      one-shot helper `tools/deploy/finalize-xiaoman-production-completion-evidence.mjs`
      may be used for that last retained-evidence step after all sanitized files exist.
 
-3. Product feature packages
+4. Product feature packages
    - New Agent behavior belongs in `agents/`, `skills/`, `workflows/`, `mcp/`,
      `runtime/`, or `deploy/` according to ownership.
    - Every new package needs documentation, manifest metadata, validation, and a
@@ -198,11 +208,11 @@ unless correcting historical evidence.
      package-level tests, replay fixtures, reviewed manifests, and owner approval before
      any server repoint or external adapter change.
 
-4. Archive retention cleanup
+5. Archive retention cleanup
    - Permanent deletion of M12 archives is not approved.
    - Retention cleanup requires a separate owner-approved window and a new plan.
 
-5. Documentation system hygiene
+6. Documentation system hygiene
    - Keep current-state docs aligned with the release/current runtime model.
    - Keep M9/M10/M12 execution records as historical evidence rather than active plans.
    - Do not delete required deploy evidence docs while `pnpm deploy:preflight` and

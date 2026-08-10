@@ -1764,11 +1764,13 @@ if (!exists(xiaomanLegacyCronObservationPath)) {
     "QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE",
     "/home/ubuntu/.hermes/profiles/xiaoman",
     "/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json",
-    "no_legacy_cron_jobs",
+    "runtime/hermes/cron/reviewed-cron-jobs.json",
+    "reviewed_declarations_only",
+    "reviewed_decl_count",
     "cron_decl_count",
     "live_profile_modified",
     "external_calls_executed",
-    "Xiaoman legacy cron observation found runtime cron job declarations",
+    "Xiaoman legacy cron observation found unreviewed cron job declarations",
   ]) {
     requireFragment(xiaomanLegacyCronObservationPath, smoke, fragment);
   }

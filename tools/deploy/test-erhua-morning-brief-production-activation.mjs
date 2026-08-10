@@ -108,6 +108,19 @@ try {
     "import sys\nsys.exit(0)\n",
     "utf8"
   );
+  const registryFixture = path.join(
+    releaseDir,
+    "runtime",
+    "hermes",
+    "cron",
+    "reviewed-cron-jobs.json"
+  );
+  fs.mkdirSync(path.dirname(registryFixture), { recursive: true });
+  fs.writeFileSync(
+    registryFixture,
+    JSON.stringify({ schema_version: 1, reviewed_jobs: [] }, null, 2),
+    "utf8"
+  );
   fs.mkdirSync(releaseRoot, { recursive: true });
   fs.symlinkSync(releaseDir, releaseCurrent);
   fs.mkdirSync(erhuaProfile, { recursive: true });
@@ -164,6 +177,10 @@ try {
     xiaomanCron,
     replaceAll(fs.readFileSync(sourceXiaomanCron, "utf8"), [
       ["/home/ubuntu/.hermes/profiles/xiaoman", xiaomanProfile],
+      [
+        "/home/ubuntu/qintopia-agent-os-releases/current/runtime/hermes/cron/reviewed-cron-jobs.json",
+        registryFixture,
+      ],
     ])
   );
 
