@@ -50,6 +50,10 @@
   `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/erhua-morning-brief/tests -v`
 - Erhua morning brief production timer observation:
   `QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh`
+- Erhua morning brief reviewed production schedule is `08:10 Asia/Shanghai`
+  (`OnCalendar=*-*-* 08:10:00`).
+- Erhua morning brief QiWe text-send fixture:
+  `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:
@@ -207,6 +211,14 @@
   `qiwe-production-adapter` plus `huabaosi-feishu-mirror-adapter` in both disabled and
   enabled states. They must reject the primary Huabaosi binary. Never restore QiWe by
   mixing it into or replacing the Huabaosi artifact.
+- Erhua morning brief text auto-publish must keep external sending in the separate
+  `run-qiwe-text-send-worker` path. It may send only the reviewed
+  `text_activity_announcement` / `text_announcement` work item after artifact approval,
+  final confirmation, send-ready evidence, exact content hash binding, target group
+  allowlist, `approved-production-erhua-morning-brief-auto-publish`, and
+  `approved-production-qiwe-text-send`. Do not make `run-group-message-send-worker`
+  perform a real QiWe send, and do not generalize the text worker into arbitrary group
+  messaging.
 - Real Xiaoman activity production evidence export after owner-confirmed completion:
 
   ```bash

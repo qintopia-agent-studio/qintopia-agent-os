@@ -770,7 +770,7 @@ render_all() {
     "qintopia-agentos-erhua-morning-brief.timer" \
     "Run Qintopia AgentOS Erhua morning brief draft artifact worker" \
     "qintopia-agentos-erhua-morning-brief.service" \
-    "*-*-* 08:05:00" \
+    "*-*-* 08:10:00" \
     "1min"
 }
 

@@ -117,6 +117,95 @@ require_env_value() {
   fi
 }
 
+require_env_present() {
+  local key="$1"
+  local value
+  value="$(env_value "$key")" || fail "requires exactly one ${key}"
+  if [[ -z "$value" ]]; then
+    fail "${key} is required"
+  fi
+}
+
+require_env_sha256() {
+  local key="$1"
+  local value
+  value="$(env_value "$key")" || fail "requires exactly one ${key}"
+  if [[ ! "$value" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "${key} must be a canonical SHA-256"
+  fi
+}
+
+require_auto_publish_boundary() {
+  require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED" "1"
+  require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL" "approved-production-erhua-morning-brief-auto-publish"
+  require_env_value "QINTOPIA_QIWE_TEXT_SEND_ENABLED" "1"
+  require_env_value "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-text-send"
+  require_env_sha256 "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256"
+  for key in \
+    QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID \
+    QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_REVIEWER_ID \
+    QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_CONFIRMER_ID \
+    QIWE_API_URL \
+    QIWE_TOKEN \
+    QIWE_GUID \
+    QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS \
+    QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS; do
+    require_env_present "$key"
+  done
+  "$PYTHON_BIN" - "$ENV_FILE" <<'PY'
+from urllib.parse import urlparse
+import re
+import sys
+
+path = sys.argv[1]
+assignment = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=[ \t]*(.*?)[ \t]*(?:#[^\"']*)?$")
+values = {}
+with open(path, encoding="utf-8") as fh:
+    for raw in fh:
+        line = raw.rstrip("\r\n")
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = assignment.fullmatch(line)
+        if not match:
+            continue
+        key, value = match.groups()
+        value = value.strip()
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        values.setdefault(key, value)
+
+target = values["QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID"]
+allowed_groups = {
+    item.strip()
+    for item in values["QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS"].split(",")
+    if item.strip()
+}
+if target not in allowed_groups:
+    raise SystemExit("Erhua morning brief target group id is not allowlisted")
+
+url = urlparse(values["QIWE_API_URL"])
+allowed_hosts = {
+    item.strip().lower()
+    for item in values["QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS"].split(",")
+    if item.strip()
+}
+if (
+    url.scheme != "https"
+    or url.hostname is None
+    or url.username
+    or url.password
+    or url.path != "/qiwe/api/qw/doApi"
+    or url.query
+    or url.fragment
+    or url.hostname.lower() not in allowed_hosts
+):
+    raise SystemExit("QiWe API URL is outside the reviewed host/path allowlist")
+PY
+}
+
 cleanup_failed_activation() {
   "$SYSTEMCTL" disable --now "$TIMER_NAME" >/dev/null 2>&1 || true
   "$SYSTEMCTL" stop "$SERVICE_NAME" >/dev/null 2>&1 || true
@@ -130,6 +219,7 @@ require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE" "1"
 require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
 require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
 require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
+require_auto_publish_boundary
 
 env -i PATH="$PATH" QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 "$ERHUA_CRON_OBSERVATION_SCRIPT" >/dev/null
 env -i PATH="$PATH" QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 "$XIAOMAN_CRON_OBSERVATION_SCRIPT" >/dev/null

@@ -10,7 +10,7 @@ ENV_FILE="/etc/qintopia/message-sidecar.env"
 SERVICE_NAME="qintopia-agentos-erhua-morning-brief.service"
 TIMER_NAME="qintopia-agentos-erhua-morning-brief.timer"
 EXPECTED_STATE="${QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE:-disabled}"
-EXPECTED_CALENDAR="*-*-* 08:05:00"
+EXPECTED_CALENDAR="*-*-* 08:10:00"
 JOURNAL_LINES="80"
 JOURNAL_DISABLED_SINCE="30 minutes ago"
 SYSTEMCTL="/usr/bin/systemctl"
@@ -80,6 +80,103 @@ require_observed_env_value() {
   fi
 }
 
+require_observed_env_present() {
+  local key="$1"
+  local value
+  value="$(env_value "$key")" || {
+    echo "erhua morning brief timer observation requires exactly one ${key}" >&2
+    exit 1
+  }
+  if [[ -z "$value" ]]; then
+    echo "erhua morning brief timer observation requires ${key}" >&2
+    exit 1
+  fi
+}
+
+require_observed_env_sha256() {
+  local key="$1"
+  local value
+  value="$(env_value "$key")" || {
+    echo "erhua morning brief timer observation requires exactly one ${key}" >&2
+    exit 1
+  }
+  if [[ ! "$value" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "erhua morning brief timer observation requires canonical ${key}" >&2
+    exit 1
+  fi
+}
+
+require_observed_auto_publish_boundary() {
+  require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED" "1"
+  require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL" "approved-production-erhua-morning-brief-auto-publish"
+  require_observed_env_value "QINTOPIA_QIWE_TEXT_SEND_ENABLED" "1"
+  require_observed_env_value "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-text-send"
+  require_observed_env_sha256 "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256"
+  for key in \
+    QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID \
+    QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_REVIEWER_ID \
+    QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_CONFIRMER_ID \
+    QIWE_API_URL \
+    QIWE_TOKEN \
+    QIWE_GUID \
+    QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS \
+    QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS; do
+    require_observed_env_present "$key"
+  done
+  "$PYTHON_BIN" - "$ENV_FILE" <<'PY'
+from urllib.parse import urlparse
+import re
+import sys
+
+path = sys.argv[1]
+assignment = re.compile(r"^(?:export[ \t]+)?([A-Z0-9_]+)[ \t]*=[ \t]*(.*?)[ \t]*(?:#[^\"']*)?$")
+values = {}
+with open(path, encoding="utf-8") as fh:
+    for raw in fh:
+        line = raw.rstrip("\r\n")
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = assignment.fullmatch(line)
+        if not match:
+            continue
+        key, value = match.groups()
+        value = value.strip()
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        values.setdefault(key, value)
+
+target = values["QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID"]
+allowed_groups = {
+    item.strip()
+    for item in values["QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS"].split(",")
+    if item.strip()
+}
+if target not in allowed_groups:
+    raise SystemExit("Erhua morning brief target group id is not allowlisted")
+
+url = urlparse(values["QIWE_API_URL"])
+allowed_hosts = {
+    item.strip().lower()
+    for item in values["QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS"].split(",")
+    if item.strip()
+}
+if (
+    url.scheme != "https"
+    or url.hostname is None
+    or url.username
+    or url.password
+    or url.path != "/qiwe/api/qw/doApi"
+    or url.query
+    or url.fragment
+    or url.hostname.lower() not in allowed_hosts
+):
+    raise SystemExit("QiWe API URL is outside the reviewed host/path allowlist")
+PY
+}
+
 if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" "1"
   require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_PRODUCTION_APPROVAL" "approved-production-erhua-morning-brief"
@@ -87,6 +184,7 @@ if [[ "$EXPECTED_STATE" == "enabled" ]]; then
   require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
   require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"
   require_observed_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"
+  require_observed_auto_publish_boundary
 else
   erhua_enabled="$(env_value "QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED")" || {
     echo "erhua morning brief timer observation requires at most one QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED" >&2

@@ -46,7 +46,7 @@ deployment docs.
   while preserving the human confirmation gate.
 - [erhua-morning-brief-production-activation-runbook.md](erhua-morning-brief-production-activation-runbook.md):
   release-managed Erhua morning brief timer activation, observation, and rollback for
-  the reviewed 08:05 text artifact workflow.
+  the reviewed 08:10 text artifact workflow.
 - Xiaoman activity read-through production config is applied through the release-local
   `deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py`
   allowlist copier before release-managed Erhua or weekly-preview workers are manually
