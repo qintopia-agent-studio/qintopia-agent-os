@@ -270,6 +270,15 @@ def find_reviewed_job(jobs: list[dict]) -> tuple[int, dict]:
         fail("reviewed daily case report job schedule does not match the reviewed declaration")
     if job.get("script") != JOB_SCRIPT or job.get("no_agent") is not True:
         fail("reviewed daily case report job script contract does not match the declaration")
+    if job.get("deliver") != "origin":
+        fail("reviewed daily case report job deliver mode does not match the reviewed declaration")
+    origin = job.get("origin")
+    if not isinstance(origin, dict) or origin.get("platform") != "wecom":
+        fail("reviewed daily case report job origin platform does not match the reviewed declaration")
+    if origin.get("chat_name") is not None or origin.get("thread_id") is not None:
+        fail("reviewed daily case report job origin routing fields do not match the reviewed declaration")
+    if origin.get("chat_id") != resolve_chat_id():
+        fail("reviewed daily case report job origin chat id drifted from the Xiaoman profile env")
     return index, job
 
 

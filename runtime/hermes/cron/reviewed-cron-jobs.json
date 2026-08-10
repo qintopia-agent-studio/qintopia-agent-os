@@ -42,7 +42,7 @@
       "no_agent": true,
       "deliver": "origin",
       "origin_platform": "wecom",
-      "approved_at": "2026-08-11",
+      "approved_at": "2026-08-10",
       "plan": "docs/plans/active/hermes-cron-migration/task-4-xiaoman-daily-case-report.md"
     },
     {

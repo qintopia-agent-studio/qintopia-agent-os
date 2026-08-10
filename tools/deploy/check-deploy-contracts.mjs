@@ -3377,6 +3377,9 @@ if (!exists(xiaomanDailyCaseReportHermesCronApplyPath)) {
     "daily_case_report_hermes_cron_installed",
     "daily_case_report_hermes_cron_enabled",
     "daily_case_report_hermes_cron_already_enabled",
+    "reviewed daily case report job deliver mode does not match the reviewed declaration",
+    "reviewed daily case report job origin platform does not match the reviewed declaration",
+    "reviewed daily case report job origin chat id drifted from the Xiaoman profile env",
   ]) {
     requireFragment(xiaomanDailyCaseReportHermesCronApplyPath, apply, fragment);
   }
