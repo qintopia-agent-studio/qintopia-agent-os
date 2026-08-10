@@ -8,13 +8,15 @@ fi
 
 DEFAULT_PROFILE_DIR="/home/ubuntu/.hermes/profiles/xiaoman"
 DEFAULT_CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"
+DEFAULT_REGISTRY_FILE="/home/ubuntu/qintopia-agent-os-releases/current/runtime/hermes/cron/reviewed-cron-jobs.json"
 PROFILE_DIR="${QINTOPIA_XIAOMAN_PROFILE_DIR:-$DEFAULT_PROFILE_DIR}"
 CRON_FILE="${QINTOPIA_XIAOMAN_LEGACY_CRON_FILE:-$DEFAULT_CRON_FILE}"
+REGISTRY_FILE="${QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_REGISTRY:-$DEFAULT_REGISTRY_FILE}"
 TEST_MODE="${QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_TEST_MODE:-0}"
 TEST_ROOT="${QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_TEST_ROOT:-}"
 
 if [[ "$TEST_MODE" != "1" ]]; then
-  if [[ "$PROFILE_DIR" != "$DEFAULT_PROFILE_DIR" || "$CRON_FILE" != "$DEFAULT_CRON_FILE" ]]; then
+  if [[ "$PROFILE_DIR" != "$DEFAULT_PROFILE_DIR" || "$CRON_FILE" != "$DEFAULT_CRON_FILE" || "$REGISTRY_FILE" != "$DEFAULT_REGISTRY_FILE" ]]; then
     echo "Xiaoman legacy cron observation requires the fixed production Xiaoman profile path" >&2
     exit 1
   fi
@@ -23,10 +25,10 @@ else
     echo "Xiaoman legacy cron observation test mode requires a /tmp test root" >&2
     exit 1
   fi
-  for test_path in "$PROFILE_DIR" "$CRON_FILE"; do
+  for test_path in "$PROFILE_DIR" "$CRON_FILE" "$REGISTRY_FILE"; do
     case "$test_path" in
       "$TEST_ROOT"/*) ;;
-      *)
+        *)
         echo "Xiaoman legacy cron observation test paths must stay under the test root" >&2
         exit 1
         ;;
@@ -34,14 +36,14 @@ else
   done
 fi
 
-python3 - "$PROFILE_DIR" "$CRON_FILE" <<'PY'
+python3 - "$PROFILE_DIR" "$CRON_FILE" "$REGISTRY_FILE" <<'PY'
 import hashlib
 import json
 import os
 import stat
 import sys
 
-profile_dir, cron_file = sys.argv[1:3]
+profile_dir, cron_file, registry_file = sys.argv[1:4]
 
 def fail(message: str) -> None:
     raise SystemExit(message)
@@ -52,13 +54,51 @@ if not os.path.isabs(profile_dir) or not os.path.isabs(cron_file):
 if os.path.realpath(cron_file) != os.path.join(os.path.realpath(profile_dir), "cron", "jobs.json"):
     fail("Xiaoman legacy cron file must stay under the Xiaoman profile cron directory")
 
+try:
+    with open(registry_file, "rb") as handle:
+        registry = json.loads(handle.read().decode("utf-8"))
+except FileNotFoundError:
+    fail("Xiaoman reviewed cron registry is missing from release/current")
+except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    raise SystemExit("Xiaoman reviewed cron registry must be JSON") from exc
+
+if not isinstance(registry, dict) or registry.get("schema_version") != 1:
+    fail("Xiaoman reviewed cron registry has an unsupported schema")
+reviewed_jobs = registry.get("reviewed_jobs")
+if not isinstance(reviewed_jobs, list):
+    fail("Xiaoman reviewed cron registry must list reviewed_jobs")
+
+
+def schedule_expr(job):
+    schedule = job.get("schedule")
+    if isinstance(schedule, dict):
+        expr = schedule.get("expr")
+        return expr if isinstance(expr, str) else None
+    return schedule if isinstance(schedule, str) else None
+
+
+def is_reviewed(job) -> bool:
+    for entry in reviewed_jobs:
+        if not isinstance(entry, dict) or entry.get("profile") != "xiaoman":
+            continue
+        if (
+            entry.get("name") == job.get("name")
+            and entry.get("schedule_expr") == schedule_expr(job)
+            and entry.get("script") == job.get("script")
+            and bool(entry.get("no_agent")) == bool(job.get("no_agent"))
+        ):
+            return True
+    return False
+
+
 if not os.path.exists(cron_file):
     print(json.dumps({
         "schema_version": 1,
-        "status": "no_legacy_cron_jobs",
+        "status": "reviewed_declarations_only",
         "profile": "xiaoman",
         "cron_file_present": False,
         "cron_decl_count": 0,
+        "reviewed_decl_count": 0,
         "cron_file_sha256": None,
         "live_profile_modified": False,
         "external_calls_executed": False,
@@ -97,30 +137,48 @@ JOB_KEYS = {
     "tool",
 }
 
-def looks_like_job(item) -> bool:
-    if not isinstance(item, dict):
-        return False
-    keys = {str(key).lower() for key in item}
-    return bool(keys & JOB_KEYS)
-
-def count_jobs(item) -> int:
+def collect_jobs(item, sink) -> None:
     if isinstance(item, list):
-        return sum(count_jobs(child) for child in item)
-    if isinstance(item, dict):
-        own = 1 if looks_like_job(item) else 0
-        return own + sum(count_jobs(child) for child in item.values())
-    return 0
+        for child in item:
+            collect_jobs(child, sink)
+        return
+    if not isinstance(item, dict):
+        return
+    keys = {str(key).lower() for key in item}
+    if keys & JOB_KEYS:
+        sink.append(item)
+    for child in item.values():
+        collect_jobs(child, sink)
 
-cron_decl_count = count_jobs(value)
-if cron_decl_count != 0:
-    fail("Xiaoman legacy cron observation found runtime cron job declarations")
+declarations = []
+collect_jobs(value, declarations)
+cron_decl_count = len(declarations)
+
+unreviewed = [job for job in declarations if not is_reviewed(job)]
+if unreviewed:
+    offenders = [
+        {
+            "name": job.get("name"),
+            "schedule_expr": schedule_expr(job),
+            "script": job.get("script"),
+            "no_agent": bool(job.get("no_agent")),
+        }
+        for job in unreviewed
+    ]
+    fail(
+        "Xiaoman legacy cron observation found unreviewed cron job declarations "
+        f"(offenders={json.dumps(offenders, ensure_ascii=False)}, "
+        f"cron_file_sha256={cron_hash}, external_calls_executed=false, "
+        "safe_for_chat=false)"
+    )
 
 print(json.dumps({
     "schema_version": 1,
-    "status": "no_legacy_cron_jobs",
+    "status": "reviewed_declarations_only",
     "profile": "xiaoman",
     "cron_file_present": True,
-    "cron_decl_count": 0,
+    "cron_decl_count": cron_decl_count,
+    "reviewed_decl_count": cron_decl_count,
     "cron_file_sha256": cron_hash,
     "live_profile_modified": False,
     "external_calls_executed": False,
