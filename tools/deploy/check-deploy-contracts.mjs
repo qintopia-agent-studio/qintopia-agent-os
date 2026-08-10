@@ -323,6 +323,7 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh",
     "tools/deploy/build-erhua-member-recognition-canary-evidence.mjs",
     "tools/deploy/build-erhua-member-recognition-canary-mcp-input.mjs",
+    "tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
     "tools/deploy/build-erhua-member-safe-alias-payload-template.mjs",
     "tools/deploy/build-erhua-member-safe-identity-payload-template.mjs",
     "tools/deploy/check-erhua-member-recognition-canary.mjs",
@@ -559,6 +560,15 @@ if (!exists(packageJsonPath)) {
       "package.json: deploy:xiaoman-production-evidence:finalize must run node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs"
     );
   }
+  if (
+    !scripts["deploy:contracts:check"]?.includes(
+      "node tools/deploy/test-erhua-member-recognition-roster-audit.mjs"
+    )
+  ) {
+    addError(
+      "package.json: deploy:contracts:check must run node tools/deploy/test-erhua-member-recognition-roster-audit.mjs"
+    );
+  }
 }
 
 const erhuaMemberRecognitionLocalCheckPath =
@@ -589,6 +599,7 @@ if (!exists(erhuaMemberRecognitionLocalCheckPath)) {
     '["node", ["tools/deploy/test-erhua-member-recognition-canary.mjs"]]',
     '["node", ["tools/deploy/test-erhua-member-recognition-canary-builder.mjs"]]',
     '["node", ["tools/deploy/test-erhua-member-recognition-canary-mcp-input.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-roster-audit.mjs"]]',
     '["node", ["tools/deploy/test-erhua-member-recognition-completion.mjs"]]',
     '["node", ["tools/deploy/test-erhua-member-recognition-completion-summary.mjs"]]',
     '["node", ["tools/deploy/test-finalize-erhua-member-recognition-completion.mjs"]]',
@@ -597,6 +608,7 @@ if (!exists(erhuaMemberRecognitionLocalCheckPath)) {
     "payload/tools/deploy/check-erhua-member-recognition-completion.mjs",
     "payload/tools/deploy/check-erhua-member-recognition-completion-summary.mjs",
     "payload/tools/deploy/check-erhua-member-recognition-coverage-summary.mjs",
+    "payload/tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
     "payload/tools/deploy/finalize-erhua-member-recognition-coverage.mjs",
     "payload/tools/deploy/finalize-erhua-member-recognition-completion.mjs",
     "payload/tools/deploy/build-erhua-member-safe-identity-payload-template.mjs",
@@ -1181,12 +1193,16 @@ if (!exists(deployToolsReadmePath)) {
     "node tools/deploy/build-erhua-member-recognition-canary-evidence.mjs",
     "node tools/deploy/check-erhua-member-recognition-canary.mjs",
     "node tools/deploy/finalize-erhua-member-recognition-completion.mjs",
+    "node tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
     "--summary-output <sanitized-coverage-summary.json>",
     "--expect-pass",
     "coverage summary is count-only retained evidence",
     "`check-erhua-member-recognition-completion.mjs`",
     "`check-erhua-member-recognition-completion-summary.mjs`",
     "--summary-output <sanitized-completion-summary.json>",
+    "node tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
+    "--output <sanitized-roster-audit.json>",
+    "The roster audit is per-person retained evidence",
     "--require-active-profiles",
     "active `reply_context` profile",
     "`identity_only`",
@@ -1238,7 +1254,10 @@ if (!exists(erhuaMemberRecognitionRunbookPath)) {
     "node tools/deploy/check-erhua-member-recognition-coverage-summary.mjs",
     "--expect-pass",
     "sanitized count-only evidence",
-    "JSONL, checker output, completion summary, and finalizer output",
+    "JSONL, checker output, completion summary, finalizer output, and roster audit",
+    "node tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
+    "--output /tmp/erhua-member-recognition-roster-audit.json",
+    "The roster audit is the retained per-person proof",
     "wrong-room, incomplete, or extra sender",
     "map must fail before raw MCP input is emitted",
     "materialized QiWe platform identity",

@@ -242,6 +242,13 @@ node tools/deploy/finalize-erhua-member-recognition-completion.mjs \
   --canary <answer-context-canary-output.jsonl> \
   --summary-output <sanitized-completion-summary.json> \
   --require-active-profiles
+
+node tools/deploy/build-erhua-member-recognition-roster-audit.mjs \
+  --coverage <identity-bootstrap-dry-run-output.json> \
+  --canary <answer-context-canary-output.jsonl> \
+  --completion-summary <sanitized-completion-summary.json> \
+  --output <sanitized-roster-audit.json> \
+  --require-active-profiles
 ```
 
 The completion checker requires applied room-sync evidence, quiet single-scope
@@ -309,6 +316,12 @@ similar display name cannot satisfy the evidence. Resolved canaries must have
 questions such as "他是谁" require the channel adapter to pass `referenced_sender_id`
 from the replied-to message and are not satisfied by vector search or recent-message
 proximity guesses.
+
+The roster audit is per-person retained evidence derived only from sanitized coverage,
+canary JSONL, and completion summary. It may keep safe names such as `Paxon`/`小乔`,
+canonical keys, `person_ref` hashes, profile status, required profile-term matches, and
+mentioned/speaker/referenced canary booleans; it must not contain raw group ids, sender
+ids, QiWe user ids, person UUIDs, raw messages, or raw profile text.
 
 Use it before any owner-operated Huabaosi production canary, QiWe companion
 verification, real-activity evidence export, or final completion-manifest capture.
