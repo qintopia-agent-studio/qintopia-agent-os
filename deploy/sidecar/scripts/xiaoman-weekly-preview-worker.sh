@@ -74,6 +74,7 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 report_json="${tmp_dir}/weekly-preview.json"
 review_message="${WORK_DIR}/latest-operator-review-message.txt"
+poster_brief_json="${WORK_DIR}/latest-weekly-poster-brief.json"
 summary_json="${WORK_DIR}/latest-summary.json"
 
 args=("--json")
@@ -89,13 +90,13 @@ fi
 
 PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" "${args[@]}" >"$report_json"
 
-"$PYTHON_BIN" - "$report_json" "$review_message" "$summary_json" <<'PY'
+"$PYTHON_BIN" - "$report_json" "$review_message" "$poster_brief_json" "$summary_json" <<'PY'
 import json
 import os
 import sys
 from pathlib import Path
 
-report_path, message_path, summary_path = map(Path, sys.argv[1:4])
+report_path, message_path, poster_path, summary_path = map(Path, sys.argv[1:5])
 report = json.loads(report_path.read_text(encoding="utf-8"))
 
 if report.get("success") is not True:
@@ -116,6 +117,10 @@ if not message:
 message_path.write_text(message + "\n", encoding="utf-8")
 os.chmod(message_path, 0o600)
 
+poster_brief = report.get("weekly_poster_brief") or {}
+poster_path.write_text(json.dumps(poster_brief, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+os.chmod(poster_path, 0o600)
+
 summary = {
     "schema_version": 1,
     "worker": "xiaoman-weekly-preview-worker",
@@ -128,7 +133,10 @@ summary = {
     "requires_human_confirmation": report.get("requires_human_confirmation"),
     "external_send_executed": report.get("external_send_executed"),
     "safe_for_member_chat": report.get("safe_for_member_chat"),
+    "weekly_poster_brief_status": poster_brief.get("status") or "",
+    "weekly_poster_activity_count": poster_brief.get("activity_count", 0),
     "operator_review_message_path": str(message_path),
+    "weekly_poster_brief_path": str(poster_path),
 }
 summary_path.write_text(json.dumps(summary, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
 os.chmod(summary_path, 0o600)

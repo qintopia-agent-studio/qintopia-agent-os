@@ -8,8 +8,10 @@ with a deterministic, reviewable script.
 - Read the next 7 days of Xiaoman activity records (Monday through Sunday).
 - Filter out temporary meals and activities missing required fields (title / time /
   location / owner).
-- Produce a single "下周活动预告" draft plus a human-review message.
-- Never send, publish, write Feishu, or call Erhua/QiWe. A human confirms first.
+- Produce a single "下周活动预告" draft, a matching weekly poster brief, and a
+  human-review message.
+- Never generate the image, send, publish, write Feishu, or call Erhua/QiWe. A human or
+  separately reviewed auto-publish policy confirms first.
 
 ## Why this exists
 
@@ -28,8 +30,11 @@ and the only human decision left is "发 / 改".
    the read-through path, then deduplicates by `record_ref`.
 3. `_xiaoman_activity_missing_fields` drops activities without title / time / location /
    owner; temporary meals are skipped.
-4. The draft and an `operator_review_message` are returned. If the week is empty, the
-   output clearly says "下周暂无已确认活动，暂不生成预告" instead of sending stale text.
+4. The text draft, `weekly_poster_brief`, and an `operator_review_message` are returned.
+   If the week is empty, the output clearly says "下周暂无已确认活动，暂不生成预告"
+   instead of sending stale text.
+5. The poster brief includes only complete weekly activities. Records with an explicit
+   unconfirmed schedule state stay out of the poster brief.
 
 ## Running it
 
@@ -48,15 +53,31 @@ python workflows/xiaoman-weekly-preview/weekly_preview.py
 python workflows/xiaoman-weekly-preview/weekly_preview.py --date 2026-08-10 --json
 ```
 
-The script prints the `operator_review_message` (or the full JSON with `--json`). A
-human reads it, replies "发" in the operations chat, and only then is the text handed to
-Erhua for delivery.
+The script prints the `operator_review_message` (or the full JSON with `--json`). The
+release worker also writes `latest-weekly-poster-brief.json` next to the operator
+message. A human reads it, replies "发" in the operations chat, and only then can the
+text and poster brief move into the existing AgentOS image-generation and group-send
+gates.
+
+## Weekly Poster Intake
+
+When `weekly_poster_brief.status` is `ready_for_human_confirmation`, the reviewed intake
+is `qintopia_xiaoman_weekly_poster_workflow_prepare`. It converts the brief into a
+bounded `operations-workflow-start` command (dry-run by default) that creates one
+`activity_promotion` parent plus evidence and visual children. From there the existing
+release-managed workers take over: the evidence and visual workers produce the
+`evidence_summary` and pending `poster_brief`, the image-generation starter consumes an
+approved `poster_brief`, and the send-request starter consumes an approved
+`generated_image`. Every artifact review and the final group-send confirmation remain
+human gates; this workflow never calls the image provider or QiWe by itself.
 
 ## Acceptance Scenarios
 
 - Running with an empty week prints "下周暂无已确认活动，暂不生成预告" and exits 0.
 - Running with activities returns `publishable_count`, `skipped_count`,
-  `missing_followups`, and `operator_review_message`.
+  `missing_followups`, `weekly_poster_brief`, and `operator_review_message`.
+- The weekly poster brief is `ready_for_human_confirmation` only when at least one
+  complete confirmed activity is available.
 - `external_send_executed` is always `false`; `requires_human_confirmation` is always
   `true`.
 - The script fails closed (non-zero exit) if read-through is not enabled or the week
@@ -77,7 +98,10 @@ node tools/deploy/check-deploy-contracts.mjs
 ## Production Boundary
 
 - Reads Feishu activity tables; does not write them.
-- Produces a draft only; never sends externally.
+- Produces review artifacts only; never sends externally.
+- Does not call the image-generation provider. The weekly poster brief must still become
+  an approved AgentOS `poster_brief` before any `image_generation_request` or group
+  send.
 - Requires the same secrets as the Xiaoman read-through path.
 
 ## Production Activation

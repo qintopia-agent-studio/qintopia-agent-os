@@ -228,6 +228,10 @@ def canonical_legacy_record(record: dict[str, Any], table_role: str) -> dict[str
         "location": field_text(fields, ["地点", "活动地点", "location"]),
         "status": field_text(fields, ["小满运营状态", "活动状态", "状态", "status"]),
         "promotion_status": field_text(fields, ["宣发判断", "宣发状态", "promotion_status"]),
+        "schedule_confirmation": field_text(
+            fields,
+            ["下周排期确认", "排期确认", "schedule_confirmation"],
+        ),
         "owner_name": field_text(fields, ["负责人", "负责同学", "owner", "owner_name"]),
         "initiator_name": field_text(fields, ["发起人", "组织者", "initiator"]),
         "material_summary": field_text(
