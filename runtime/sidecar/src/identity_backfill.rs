@@ -11,6 +11,7 @@ use chrono::Utc;
 use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore, Stream};
 use serde::Serialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPool;
 use tracing::{info, warn};
 
@@ -25,6 +26,7 @@ pub struct BackfillOptions {
     pub chat_id: Option<String>,
     pub sender_id: Option<String>,
     pub request_delay_ms: u64,
+    pub sync_room_members: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +68,7 @@ pub async fn run_worker(cli: &Cli, options: IdentityWorkerOptions) -> Result<()>
         chat_id: options.chat_id.clone(),
         sender_id: None,
         request_delay_ms: 0,
+        sync_room_members: false,
     };
 
     let report = run_batch(&pool, &resolver, &backfill_options, !options.check_only).await?;
@@ -99,6 +102,24 @@ async fn run_batch(
     options: &BackfillOptions,
     apply: bool,
 ) -> Result<BackfillReport> {
+    if options.sync_room_members {
+        let chat_id = room_member_sync_chat_id(options)?;
+        let room_members = resolver.qiwe.lookup_verified_room_member_map(chat_id)?;
+        let mut report = BackfillReport {
+            room_members_discovered: room_members.len(),
+            source: "current_qiwe_room_member_roster".to_string(),
+            scope_fingerprint: Some(scope_fingerprint(chat_id)),
+            dry_run: !apply,
+            ..BackfillReport::default()
+        };
+        if apply {
+            let applied = apply_room_member_identities(pool, chat_id, &room_members).await?;
+            report.room_member_identities_upserted = applied.upserted;
+            report.stale_room_member_identities_marked = applied.stale_marked;
+        }
+        return Ok(report);
+    }
+
     let keys = load_identity_keys(pool, options).await?;
     let mut report = BackfillReport {
         total_identity_keys: keys.len(),
@@ -184,6 +205,95 @@ async fn run_batch(
     }
 
     Ok(report)
+}
+
+fn room_member_sync_chat_id(options: &BackfillOptions) -> Result<&str> {
+    if options.sender_id.is_some() {
+        bail!("--sync-room-members cannot be combined with --sender-id");
+    }
+    options
+        .chat_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow!("--sync-room-members requires --chat-id"))
+}
+
+async fn apply_room_member_identities(
+    pool: &PgPool,
+    chat_id: &str,
+    room_members: &HashMap<String, ResolvedIdentity>,
+) -> Result<RoomMemberSyncResult> {
+    if room_members.is_empty() {
+        anyhow::bail!("room member sync returned no members; refusing to mark roster");
+    }
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin room member identity sync transaction")?;
+    let mut members = room_members.iter().collect::<Vec<_>>();
+    members.sort_by(|left, right| left.0.cmp(right.0));
+    let mut upserted = 0_i64;
+    let current_user_ids = members
+        .iter()
+        .map(|(channel_user_id, _)| (*channel_user_id).clone())
+        .collect::<Vec<_>>();
+    let synced_at = Utc::now().to_rfc3339();
+    for (channel_user_id, resolved) in members {
+        let identity = SenderIdentityEvent {
+            platform: "qiwe".to_string(),
+            chat_id: chat_id.to_string(),
+            channel_user_id: channel_user_id.clone(),
+            display_name: resolved.display_name.clone(),
+            identity_source: resolved.source.clone(),
+            resolved_at: Some(Utc::now()),
+            metadata: json!({
+                "backfill": true,
+                "backfill_source": "current_qiwe_room_member_roster",
+                "current_qiwe_room_member": true,
+                "current_qiwe_room_member_synced_at": synced_at,
+            }),
+        };
+        db::upsert_channel_identity(
+            &mut tx,
+            &identity,
+            "qiwe",
+            chat_id,
+            channel_user_id,
+            None,
+            None,
+        )
+        .await?;
+        upserted += 1;
+    }
+    let stale_marked = sqlx::query(
+        r#"
+        UPDATE qintopia_identity.channel_identities
+        SET metadata = metadata || jsonb_build_object(
+                'current_qiwe_room_member', false,
+                'current_qiwe_room_member_synced_at', $3::text,
+                'current_qiwe_room_member_stale_marked_at', now()
+            ),
+            updated_at = now()
+        WHERE platform = 'qiwe'
+          AND chat_id = $1
+          AND NOT (channel_user_id = ANY($2::text[]))
+          AND metadata->>'current_qiwe_room_member' IS DISTINCT FROM 'false'
+        "#,
+    )
+    .bind(chat_id)
+    .bind(&current_user_ids)
+    .bind(&synced_at)
+    .execute(&mut *tx)
+    .await
+    .context("mark stale room member identities")?
+    .rows_affected() as i64;
+    tx.commit()
+        .await
+        .context("commit room member identity sync transaction")?;
+    Ok(RoomMemberSyncResult {
+        upserted,
+        stale_marked,
+    })
 }
 
 async fn load_identity_keys(pool: &PgPool, options: &BackfillOptions) -> Result<Vec<IdentityKey>> {
@@ -607,6 +717,15 @@ impl QiWeBackfillClient {
         Ok(parse_room_member_map(&response))
     }
 
+    fn lookup_verified_room_member_map(
+        &self,
+        chat_id: &str,
+    ) -> Result<HashMap<String, ResolvedIdentity>> {
+        let response =
+            self.call_qiwe_api("/room/batchGetRoomDetail", json!({"roomIdList": [chat_id]}))?;
+        Ok(parse_room_member_map_for_chat(&response, chat_id))
+    }
+
     fn lookup_contacts(
         &self,
         wanted: &HashSet<String>,
@@ -816,6 +935,20 @@ fn first_mapping(value: &Value) -> Option<&serde_json::Map<String, Value>> {
 }
 
 fn parse_room_member_map(response: &Value) -> HashMap<String, ResolvedIdentity> {
+    parse_room_member_map_for_chat_optional(response, None)
+}
+
+fn parse_room_member_map_for_chat(
+    response: &Value,
+    chat_id: &str,
+) -> HashMap<String, ResolvedIdentity> {
+    parse_room_member_map_for_chat_optional(response, Some(chat_id))
+}
+
+fn parse_room_member_map_for_chat_optional(
+    response: &Value,
+    expected_chat_id: Option<&str>,
+) -> HashMap<String, ResolvedIdentity> {
     let mut resolved = HashMap::new();
     let room_list = response
         .get("data")
@@ -826,6 +959,11 @@ fn parse_room_member_map(response: &Value) -> HashMap<String, ResolvedIdentity> 
         return resolved;
     };
     for room in room_list {
+        if let Some(expected) = expected_chat_id {
+            if room_identifier(room).as_deref() != Some(expected) {
+                continue;
+            }
+        }
         let Some(members) = room.get("memberList").and_then(Value::as_array) else {
             continue;
         };
@@ -851,6 +989,13 @@ fn parse_room_member_map(response: &Value) -> HashMap<String, ResolvedIdentity> 
         }
     }
     resolved
+}
+
+fn room_identifier(room: &Value) -> Option<String> {
+    value_text(room.get("roomId"))
+        .or_else(|| value_text(room.get("room_id")))
+        .or_else(|| value_text(room.get("chatId")))
+        .or_else(|| value_text(room.get("id")))
 }
 
 fn parse_contact_identities(
@@ -938,16 +1083,34 @@ struct AppliedIdentity {
     platform_identities_materialized: i64,
 }
 
+#[derive(Debug, Default)]
+struct RoomMemberSyncResult {
+    upserted: i64,
+    stale_marked: i64,
+}
+
 #[derive(Debug, Default, Serialize)]
 struct BackfillReport {
     total_identity_keys: usize,
     resolved: usize,
     unresolved: usize,
+    room_members_discovered: usize,
+    room_member_identities_upserted: i64,
+    stale_room_member_identities_marked: i64,
     messages_updated: i64,
     platform_identities_materialized: i64,
     source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scope_fingerprint: Option<String>,
     dry_run: bool,
     unresolved_keys: Vec<IdentityKey>,
+}
+
+fn scope_fingerprint(chat_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"qintopia-erhua-member-recognition-scope-v1\0");
+    hasher.update(chat_id.as_bytes());
+    format!("sha256:{:x}", hasher.finalize())
 }
 
 #[cfg(test)]
@@ -958,7 +1121,9 @@ mod tests {
 
     use super::{
         can_materialize_platform_identity, decode_chunked_body, parse_contact_identities,
-        parse_http_response, parse_room_member_map, IdentityResolver, QiWeBackfillClient,
+        parse_http_response, parse_room_member_map, parse_room_member_map_for_chat,
+        room_member_sync_chat_id, scope_fingerprint, BackfillOptions, IdentityResolver,
+        QiWeBackfillClient,
     };
     use uuid::Uuid;
 
@@ -1017,6 +1182,75 @@ mod tests {
         assert_eq!(resolved["u2"].display_name, "群备注名");
         assert_eq!(resolved["u4"].display_name, "ignored");
         assert!(!resolved.contains_key("u3"));
+    }
+
+    #[test]
+    fn verified_room_member_map_requires_target_room_id() {
+        let response = json!({
+            "code": 0,
+            "data": {
+                "roomList": [
+                    {
+                        "roomId": "other-room",
+                        "memberList": [{"userId": "u1", "name": "错群成员"}]
+                    },
+                    {
+                        "chatId": "target-room",
+                        "memberList": [{"userId": "u2", "name": "目标成员"}]
+                    },
+                    {
+                        "memberList": [{"userId": "u3", "name": "无群ID成员"}]
+                    }
+                ]
+            }
+        });
+
+        let resolved = parse_room_member_map_for_chat(&response, "target-room");
+
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved["u2"].display_name, "目标成员");
+        assert!(!resolved.contains_key("u1"));
+        assert!(!resolved.contains_key("u3"));
+    }
+
+    #[test]
+    fn room_member_sync_requires_dedicated_chat_scope() {
+        let mut options = BackfillOptions {
+            apply: false,
+            dry_run: true,
+            refresh: false,
+            limit: Some(10),
+            chat_id: Some("room-1".to_string()),
+            sender_id: None,
+            request_delay_ms: 0,
+            sync_room_members: true,
+        };
+
+        assert_eq!(room_member_sync_chat_id(&options).unwrap(), "room-1");
+
+        options.chat_id = None;
+        assert!(room_member_sync_chat_id(&options)
+            .unwrap_err()
+            .to_string()
+            .contains("--chat-id"));
+
+        options.chat_id = Some("room-1".to_string());
+        options.sender_id = Some("u1".to_string());
+        assert!(room_member_sync_chat_id(&options)
+            .unwrap_err()
+            .to_string()
+            .contains("--sender-id"));
+    }
+
+    #[test]
+    fn room_member_scope_fingerprint_is_stable_and_non_raw() {
+        let fingerprint = scope_fingerprint("room-1");
+
+        assert_eq!(
+            fingerprint,
+            "sha256:c5c4e70d823efa23b83de70ce5008d746e76bdce54e37605b967b4bfd4036356"
+        );
+        assert!(!fingerprint.contains("room-1"));
     }
 
     #[test]

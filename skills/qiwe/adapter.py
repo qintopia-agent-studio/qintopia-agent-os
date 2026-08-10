@@ -774,6 +774,7 @@ def _message_context_from_parsed(parsed: ParsedQiWeMessage) -> Dict[str, Any]:
         "message_id": parsed.message_id,
         "message_kind": parsed.message_kind,
         "text": _text(parsed.content or parsed.text),
+        "sender_id": parsed.sender_id,
     }
     if parsed.attachments:
         context["attachments"] = parsed.attachments[:3]
@@ -834,6 +835,7 @@ def _reply_reference(raw_event: Dict[str, Any]) -> Dict[str, Any]:
         "message_id": msg_id,
         "message_kind": _message_kind({"msgType": reply.get("msgType")}, {"msgType": reply.get("msgType"), "msgData": reply}),
         "text": _text(reply.get("content") or reply.get("title")),
+        "sender_id": _text(reply.get("userId") or reply.get("senderId") or reply.get("fromUserId")),
     }
     if isinstance(reply.get("reply"), dict):
         ref["nested_reply"] = True
@@ -880,6 +882,17 @@ def _referenced_message_text(reference: Dict[str, Any]) -> str:
     if source:
         lines.append(f"- 来源：{source}")
     return "\n".join(lines)
+
+
+def _referenced_sender_id_from_message(reference: Dict[str, Any]) -> str:
+    if not isinstance(reference, dict):
+        return ""
+    return _text(
+        reference.get("sender_id")
+        or reference.get("senderId")
+        or reference.get("user_id")
+        or reference.get("userId")
+    )
 
 
 def _is_text_message(payload: Dict[str, Any], raw_event: Dict[str, Any]) -> bool:
@@ -1050,6 +1063,35 @@ def _answer_context_reply_directives(answer_context: Dict[str, Any]) -> str:
                 example_text = _display_text(example)
                 if example_text:
                     lines.append(f"  - {example_text[:180]}")
+    speaker = answer_context.get("speaker")
+    if isinstance(speaker, dict) and speaker.get("resolved") is True:
+        display_name = _display_text(speaker.get("display_name"))
+        safe_summary = _display_text(speaker.get("safe_summary"))
+        hints = speaker.get("safe_reply_hints") if isinstance(speaker.get("safe_reply_hints"), dict) else {}
+        label = display_name or "当前说话人"
+        lines.append("- 当前说话人已解析；当用户问“我是谁”“你知道我是谁吗”时，必须优先使用 speaker 安全上下文。")
+        lines.append(f"  - 当前说话人 => {label}")
+        if safe_summary:
+            lines.append(f"    安全摘要：{safe_summary}")
+        topics = hints.get("topics") if isinstance(hints, dict) else []
+        if isinstance(topics, list) and topics:
+            lines.append(f"    相关主题：{', '.join(_display_text(topic) for topic in topics if _display_text(topic))}")
+        stable_notes = hints.get("stable_profile_notes") if isinstance(hints, dict) else []
+        if isinstance(stable_notes, list) and stable_notes:
+            compact_stable_notes = []
+            for note in stable_notes[:3]:
+                note_text = _display_text(note)
+                if note_text:
+                    compact_stable_notes.append(note_text[:180])
+            if compact_stable_notes:
+                lines.append("    稳定画像提示：")
+                for note_text in compact_stable_notes:
+                    lines.append(f"    * {note_text}")
+        profile_status = _display_text(hints.get("profile_status")) if isinstance(hints, dict) else ""
+        if profile_status == "identity_only":
+            lines.append("    当前说话人仅完成身份解析，暂无稳定画像；可以说明已识别为群内成员，但不要推断其偏好、状态或背景。")
+    elif isinstance(speaker, dict) and speaker:
+        lines.append("- 当前说话人未能稳定解析；如果用户问“我是谁”，必须先说明当前不能确认，不要用显示名或历史消息猜。")
     mentioned = answer_context.get("mentioned_members")
     if isinstance(mentioned, list):
         resolved_members = [
@@ -1068,7 +1110,9 @@ def _answer_context_reply_directives(answer_context: Dict[str, Any]) -> str:
                 safe_summary = _display_text(member.get("safe_summary"))
                 hints = member.get("safe_reply_hints") if isinstance(member.get("safe_reply_hints"), dict) else {}
                 notes = hints.get("temporary_communication_notes") if isinstance(hints, dict) else []
+                stable_notes = hints.get("stable_profile_notes") if isinstance(hints, dict) else []
                 topics = hints.get("topics") if isinstance(hints, dict) else []
+                profile_status = _display_text(hints.get("profile_status")) if isinstance(hints, dict) else ""
                 label = display_name or mention_text or "已解析成员"
                 raw_mention = _text(member.get("mention_text"))
                 mention_label = raw_mention or mention_text or label
@@ -1077,6 +1121,18 @@ def _answer_context_reply_directives(answer_context: Dict[str, Any]) -> str:
                     lines.append(f"    安全摘要：{safe_summary}")
                 if isinstance(topics, list) and topics:
                     lines.append(f"    相关主题：{', '.join(_display_text(topic) for topic in topics if _display_text(topic))}")
+                if isinstance(stable_notes, list) and stable_notes:
+                    compact_stable_notes = []
+                    for note in stable_notes[:3]:
+                        note_text = _display_text(note)
+                        if note_text:
+                            compact_stable_notes.append(note_text[:180])
+                    if compact_stable_notes:
+                        lines.append("    稳定画像提示：")
+                        for note_text in compact_stable_notes:
+                            lines.append(f"    * {note_text}")
+                if profile_status == "identity_only":
+                    lines.append("    该成员仅完成身份解析，暂无稳定画像；可以说明已识别为群内成员，但不要推断其偏好、状态或背景。")
                 lines.append("    如果用户询问该成员的状态、原因、偏好或参与情况，应基于该成员的安全上下文直接回答；不要在已有安全上下文时回答“不知道”。")
                 if isinstance(notes, list) and notes:
                     compact_notes = []
@@ -1090,6 +1146,36 @@ def _answer_context_reply_directives(answer_context: Dict[str, Any]) -> str:
                             lines.append(f"    * {note_text}")
         if ambiguous_members and not resolved_members:
             lines.append("- 用户问题中提到的成员未能稳定解析；必须先反问确认，不要把相似名字硬猜成某个人。")
+    referenced_member = answer_context.get("referenced_member")
+    if isinstance(referenced_member, dict) and referenced_member.get("resolved") is True:
+        display_name = _display_text(referenced_member.get("display_name"))
+        safe_summary = _display_text(referenced_member.get("safe_summary"))
+        hints = referenced_member.get("safe_reply_hints") if isinstance(referenced_member.get("safe_reply_hints"), dict) else {}
+        label = display_name or "被回复成员"
+        lines.append("- 当前回复/引用的消息发送者已解析；当用户问“他是谁”“她是谁”“这个人是谁”时，必须优先使用该 referenced_member 安全上下文。")
+        lines.append("  - 若同时存在当前说话人或被 @ 成员，上述代词默认指被回复对象；不要改用 speaker 或 mentioned_members。")
+        lines.append(f"  - 被回复对象 => {label}")
+        if safe_summary:
+            lines.append(f"    安全摘要：{safe_summary}")
+        topics = hints.get("topics") if isinstance(hints, dict) else []
+        if isinstance(topics, list) and topics:
+            lines.append(f"    相关主题：{', '.join(_display_text(topic) for topic in topics if _display_text(topic))}")
+        stable_notes = hints.get("stable_profile_notes") if isinstance(hints, dict) else []
+        if isinstance(stable_notes, list) and stable_notes:
+            compact_stable_notes = []
+            for note in stable_notes[:3]:
+                note_text = _display_text(note)
+                if note_text:
+                    compact_stable_notes.append(note_text[:180])
+            if compact_stable_notes:
+                lines.append("    稳定画像提示：")
+                for note_text in compact_stable_notes:
+                    lines.append(f"    * {note_text}")
+        profile_status = _display_text(hints.get("profile_status")) if isinstance(hints, dict) else ""
+        if profile_status == "identity_only":
+            lines.append("    该成员仅完成身份解析，暂无稳定画像；可以说明已识别为群内成员，但不要推断其偏好、状态或背景。")
+    elif isinstance(referenced_member, dict) and referenced_member:
+        lines.append("- 当前回复/引用的消息发送者未能稳定解析；如果用户问“他是谁”，必须先反问确认，不要从最近消息或语气猜。")
     return "\n".join(lines)
 
 
@@ -1097,6 +1183,7 @@ def _answer_context_mcp_request(
     *,
     chat_id: str,
     sender_id: str,
+    referenced_sender_id: str = "",
     message_text: str,
     mentioned_member_names: Optional[Iterable[str]] = None,
 ) -> str:
@@ -1108,6 +1195,9 @@ def _answer_context_mcp_request(
         "message_text": message_text,
         "purpose": "prepare QiWe reply context",
     }
+    referenced_sender = _text(referenced_sender_id)
+    if referenced_sender:
+        arguments["referenced_sender_id"] = referenced_sender
     names = _dedupe_texts(mentioned_member_names or [])
     if names:
         arguments["mentioned_member_names"] = names
@@ -2174,6 +2264,7 @@ class QiWeAdapter(BasePlatformAdapter):
             request = _answer_context_mcp_request(
                 chat_id=parsed.chat_id,
                 sender_id=parsed.sender_id,
+                referenced_sender_id=_referenced_sender_id_from_message(parsed.referenced_message),
                 message_text=_text(parsed.text)[:1000],
                 mentioned_member_names=_mentioned_member_names_from_at_list(
                     parsed.at_list,

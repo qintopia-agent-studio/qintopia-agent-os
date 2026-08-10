@@ -156,7 +156,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
     "utf8"
   );
   for (const required of [
-    "OnCalendar=*-*-* 08:05:00",
+    "OnCalendar=*-*-* 08:10:00",
     "Persistent=true",
     "Unit=qintopia-agentos-erhua-morning-brief.service",
   ]) {

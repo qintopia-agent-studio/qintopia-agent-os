@@ -45,6 +45,23 @@ by nickname text.
 `identity-backfill --refresh` intentionally bypasses existing `channel_identities` rows
 and asks QiWe again. Use it when improving resolver logic or source ranking so
 previously captured identities can be reclassified without hard-editing production data.
+For current-group member recognition,
+`identity-backfill --sync-room-members --chat-id ...` may also upsert the verified QiWe
+room roster into `channel_identities` before person bootstrap. This proves the
+recognition scope includes current room members, not only senders that already have
+captured messages. Applied room sync stores `current_qiwe_room_member=true` in metadata
+for roster identities and marks same-room historical identities not present in the
+latest roster as stale metadata; it does not delete rows or unlink people. Same-chat
+bootstrap coverage counts only identities marked current, so old members can remain
+available as history without inflating the current-room denominator. Room-sync and
+same-chat bootstrap reports emit a sanitized `scope_fingerprint` derived from the
+reviewed `chat_id`; retained evidence uses that fingerprint to prove both reports came
+from the same room without retaining the raw group id.
+
+`member-profile --chat-id ...` should use the same reviewed room scope when refreshing
+safe member profiles for Erhua recognition. Its retained evidence may keep aggregate
+counts and `scope_fingerprints`; raw chat ids, candidate facts, raw message text, and
+profile text must stay out of git and chat.
 
 Full-chat refreshes resolve identities in batches: one room-detail request per chat,
 then one contact batch request for any remaining unresolved sender ids. Use
@@ -69,8 +86,10 @@ enabled later, it should be fetched in batches from QiWe's `Userid转Openid` API
 stored as metadata on the platform-level identity. Missing or failed enrichment must not
 block webhook ACKs or 二花 replies.
 
-`identity-bootstrap-persons` creates one `persons` row per unresolved
-`channel_identities.person_id`, links the identity to that person, writes a real
-nickname alias, and backfills `messages.sender_person_id`. This is intentionally
-one-to-one in v1; cross-chat or cross-platform person merges must be handled by a later
-reviewed merge workflow.
+`identity-bootstrap-persons` creates one `persons` row for a previously unseen QiWe
+`channel_user_id`, reuses the single existing `person_id` when the same QiWe user is
+already linked in another chat, materializes missing QiWe platform-level identities for
+all globally unambiguous linked users in scope, writes every linked QiWe display name
+into `person_aliases`, and backfills `messages.sender_person_id`. If the same QiWe
+`channel_user_id` points to multiple people, bootstrap must skip it and report samples
+for a later reviewed merge workflow instead of guessing.

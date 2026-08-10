@@ -29,10 +29,12 @@ OS 的文档入口，用来串联当前 monorepo 结构、已完成迁移证据�
     runbook：[operations/qiwe-image-send-staging-runbook.md](operations/qiwe-image-send-staging-runbook.md)
 20. 小满生产证据 runbook：
     [operations/xiaoman-production-evidence-runbook.md](operations/xiaoman-production-evidence-runbook.md)
-21. 小满每周最小闭环 runbook：
+21. 二花成员识别生产 runbook：
+    [operations/erhua-member-recognition-production-runbook.md](operations/erhua-member-recognition-production-runbook.md)
+22. 小满每周最小闭环 runbook：
     [operations/xiaoman-weekly-minimum-loop-runbook.md](operations/xiaoman-weekly-minimum-loop-runbook.md)
-22. 报告索引：[reports/README.md](reports/README.md)
-23. 已完成迁移归档：[plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
+23. 报告索引：[reports/README.md](reports/README.md)
+24. 已完成迁移归档：[plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
 
 ## Package 入口
 

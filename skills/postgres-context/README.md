@@ -50,6 +50,12 @@ the materialized QiWe platform identity
 cross-chat row. Cross-chat continuity is produced asynchronously by identity workers,
 which materialize `chat_id=''` only when the linked person is unambiguous.
 
+For reply/reference identity questions such as "他是谁", channel adapters may pass
+`referenced_sender_id` from the replied-to message. The tool returns it as
+`referenced_member` through the same safe member-context boundary. If the adapter does
+not provide a referenced sender id, Erhua must ask for clarification instead of using
+vector search, recent messages, or pronouns to guess the person.
+
 Mentioned-member resolution must be deterministic and safe:
 
 - display names, Chinese aliases, and channel mention text may be used as lookup inputs;
@@ -60,8 +66,9 @@ Mentioned-member resolution must be deterministic and safe:
 
 `qintopia_answer_context_prepare` should also return routing guidance for the current
 message. Member/self-identity questions use member context, public facts use approved
-knowledge, discussion-history questions may use message evidence, and live operations
-questions require human/live-ops handoff.
+knowledge, public local recommendations require current public-source checks,
+discussion-history questions may use message evidence, and live operations questions
+require human/live-ops handoff.
 
 Read tools must not return:
 

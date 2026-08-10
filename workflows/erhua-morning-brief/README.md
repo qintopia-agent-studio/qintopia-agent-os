@@ -2,7 +2,9 @@
 
 `workflows/erhua-morning-brief` generates a daily morning text draft for 二花. The draft
 combines today's Xiaoman activity preview with AI news from QunMind when available, or
-from public RSS/Atom feeds when QunMind is not installed in production.
+from public RSS/Atom feeds when QunMind is not installed in production. In production it
+can also publish the reviewed text to the allowlisted QiWe group when the explicit
+auto-publish gates are enabled.
 
 ## Responsibility
 
@@ -17,7 +19,10 @@ from public RSS/Atom feeds when QunMind is not installed in production.
 - Produce a single Erhua-style morning text draft and an operator-review envelope.
 - After a reviewed `text_announcement` artifact exists, prepare an AgentOS
   `group_message_request` payload for Erhua/QiWe delivery.
-- Never send, publish, or bypass the final confirmation gate.
+- In the release-managed worker only, auto-approve and send the early brief when
+  `QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1`, the owner approval phrase is
+  present, the target group id is allowlisted, and the QiWe text-send production
+  boundary is valid.
 
 ## Why this exists
 
@@ -47,6 +52,14 @@ payload for an approved `text_announcement` artifact. Without `--execute-send-re
 this is only a command preview. With `--execute-send-request --apply-send-request`, the
 sidecar creates an `awaiting_publish` `group_message_request`; that still does not send
 to QiWe until a human final-confirmation step queues it.
+
+The release-managed `erhua-morning-brief-worker.sh` owns the production auto-publish
+mode. It generates the text once, creates the pending artifact, records an explicit
+auto-review decision, creates the group-message request from the same text and content
+hash, records final confirmation, records send-ready, and then calls
+`run-qiwe-text-send-worker --once --apply` from the reviewed QiWe production sidecar
+companion. If any gate is missing or QiWe returns an ambiguous outcome, the worker exits
+non-zero instead of silently retrying or sending a fallback.
 
 The default behavior fails closed only if neither QunMind nor the public feed fallback
 can produce AI news. Operators may use `--allow-news-unavailable` for an explicit
@@ -165,6 +178,19 @@ to record send-ready state. This worker does not call QiWe. If no reviewed QiWe 
 sender is active tomorrow morning, paste `morning_brief_text` into the approved group
 channel manually after the AgentOS evidence steps.
 
+For production auto-publish, set the reviewed runtime gates before activating the timer:
+
+```bash
+QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1
+QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL=approved-production-erhua-morning-brief-auto-publish
+QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID=<allowlisted-qiwe-group-id>
+QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_REVIEWER_ID=<allowlisted-reviewer-id>
+QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_CONFIRMER_ID=<allowlisted-confirmer-id>
+QINTOPIA_QIWE_TEXT_SEND_ENABLED=1
+QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-text-send
+QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256=<approved-production-database-url-sha256>
+```
+
 ## Acceptance Scenarios
 
 - With confirmed same-day activities, the brief includes the activity announcement and
@@ -180,21 +206,27 @@ channel manually after the AgentOS evidence steps.
   does not approve or send it.
 - `--prepare-send-request` requires a UUID approved artifact id and binds the message
   text to `approved_artifact_content_hash`.
-- `external_send_executed` is always `false`; `requires_human_confirmation` is always
-  `true`.
+- CLI preview and preparation commands keep `external_send_executed=false` and
+  `requires_human_confirmation=true`.
+- Production auto-publish records `external_send_executed=true` only after the reviewed
+  QiWe text worker receives a successful business response from `/msg/sendHyperText`.
 
 ## Production Boundary
 
 - Reads Xiaoman activity records through the existing read-through boundary.
 - Reads QunMind public-source output only; it must not read local QunMind chat-history
   inputs for this workflow.
-- Writes no database rows unless `--execute-artifact-create --apply-artifact-create` or
-  `--execute-send-request --apply-send-request` is explicitly set.
-- The write path can only create a pending `text_announcement` artifact or an
-  `awaiting_publish` AgentOS `group_message_request`. Neither path approves, confirms,
-  queues, runs send-ready, calls Erhua, calls QiWe, or sends.
-- Does not call WeChat, Feishu, or public news sources directly. Network access, if any,
-  is owned by QunMind's reviewed public-source daily-report pipeline.
+- CLI writes no database rows unless `--execute-artifact-create --apply-artifact-create`
+  or `--execute-send-request --apply-send-request` is explicitly set.
+- The CLI write path can only create a pending `text_announcement` artifact or an
+  `awaiting_publish` AgentOS `group_message_request`; it does not approve, confirm,
+  queue, run send-ready, call Erhua, call QiWe, or send.
+- The release-managed worker may approve, confirm, queue, record send-ready, and call
+  QiWe only when the explicit auto-publish gates are present. It must use a runtime
+  target group id that is also present in `QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS`.
+- Does not call WeChat or Feishu. Public news network access, if any, is owned by
+  QunMind or the reviewed RSS fallback; QiWe text delivery is owned by the reviewed
+  sidecar companion.
 - Requires the same secrets as Xiaoman activity read-through plus the runtime-local
   QunMind config, but none of those values are committed to git.
 - Some historical Erhua/Xiaoman scheduled work may still live in Hermes profile
@@ -219,8 +251,8 @@ runtime values.
 
 The reviewed production shape:
 
-- installs a release-managed timer for `08:05 Asia/Shanghai`
-  (`OnCalendar=*-*-* 08:05:00`);
+- installs a release-managed timer for `08:10 Asia/Shanghai`
+  (`OnCalendar=*-*-* 08:10:00`);
 - keeps the morning brief after the Xiaoman daily case-report `07:45` window so the two
   morning group outputs do not start at the same minute;
 - includes the Sunday morning no-publishable-activity follow-up path after the Saturday
@@ -229,11 +261,13 @@ The reviewed production shape:
   collection surface before changing schedule ownership;
 - proves the reviewed absolute QunMind binary/config are available on the server;
 - creates a pending `text_announcement` artifact for the morning text;
-- leaves artifact approval, group-message request creation, final confirmation, and
-  send-ready recording as separate gates.
+- when auto-publish is disabled, leaves artifact approval, group-message request
+  creation, final confirmation, and send-ready recording as separate gates;
+- when auto-publish is enabled, completes those gates inside the release worker and
+  calls the reviewed QiWe text sender once.
 
 Use `docs/operations/erhua-morning-brief-production-activation-runbook.md` for the
 activation and rollback sequence.
 
-Do not activate this through a hand-copied cron, server-local script, or direct QiWe
-send.
+Do not activate this through a hand-copied cron, server-local script, or an unreviewed
+direct QiWe sender.

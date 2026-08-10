@@ -224,7 +224,7 @@ case "$1" in
     exit $?
     ;;
   show)
-    printf '%s\\n' "\${FAKE_TIMER_NEXT_ELAPSE:-Sun 2026-08-09 08:05:00 CST}"
+    printf '%s\\n' "\${FAKE_TIMER_NEXT_ELAPSE:-Sun 2026-08-09 08:10:00 CST}"
     exit 0
     ;;
   cat)
@@ -240,7 +240,7 @@ UNIT
     if [[ "$2" == "$timer" ]]; then
       cat <<'UNIT'
 [Timer]
-OnCalendar=*-*-* 08:05:00
+OnCalendar=*-*-* 08:10:00
 Persistent=true
 Unit=qintopia-agentos-erhua-morning-brief.service
 UNIT
@@ -250,7 +250,7 @@ UNIT
     ;;
   list-timers)
     echo "NEXT LEFT LAST PASSED UNIT ACTIVATES"
-    echo "2026-08-09 08:05:00 1h - - qintopia-agentos-erhua-morning-brief.timer qintopia-agentos-erhua-morning-brief.service"
+    echo "2026-08-09 08:10:00 1h - - qintopia-agentos-erhua-morning-brief.timer qintopia-agentos-erhua-morning-brief.service"
     exit 0
     ;;
   *) exit 64 ;;
@@ -270,6 +270,21 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
     QINTOPIA_SIDECAR_DATABASE_URL:
       "postgres://fixture-user:fixture-password@127.0.0.1/qintopia",
   };
+  const autoPublishLines = [
+    "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL=approved-production-erhua-morning-brief-auto-publish",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID=fixture-group-1",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_REVIEWER_ID=fixture-reviewer",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_CONFIRMER_ID=fixture-confirmer",
+    "QINTOPIA_QIWE_TEXT_SEND_ENABLED=1",
+    "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-text-send",
+    `QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256=${"a".repeat(64)}`,
+    "QIWE_API_URL=https://manager.qiweapi.com/qiwe/api/qw/doApi",
+    "QIWE_TOKEN=fixture-token",
+    "QIWE_GUID=fixture-guid",
+    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS=manager.qiweapi.com",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS=fixture-group-1,fixture-group-2",
+  ];
   const run = (script, extraEnv = {}, args = []) =>
     spawnSync("bash", [script, ...args], {
       cwd: repoRoot,
@@ -346,6 +361,17 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
   result = run(activation, {
     QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION: "approved-production-erhua-morning-brief",
   });
+  if (result.status === 0 || commandLog() !== "") {
+    throw new Error(
+      "activation must fail before side effects without auto-publish config"
+    );
+  }
+  fs.appendFileSync(sidecarEnv, `\n${autoPublishLines.join("\n")}\n`, "utf8");
+
+  resetLog();
+  result = run(activation, {
+    QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION: "approved-production-erhua-morning-brief",
+  });
   if (result.status !== 0) {
     throw new Error(
       `activation failed\n${result.stdout}\n${result.stderr}\ncommands:\n${commandLog()}`
@@ -360,7 +386,7 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
     "is-active --quiet qintopia-agentos-erhua-morning-brief.timer",
     "show --property=NextElapseUSecRealtime --value qintopia-agentos-erhua-morning-brief.timer",
     "show --property=ActiveEnterTimestamp --value qintopia-agentos-erhua-morning-brief.timer",
-    "journalctl -u qintopia-agentos-erhua-morning-brief.service --since Sun 2026-08-09 08:05:00 CST -n 80 --no-pager",
+    "journalctl -u qintopia-agentos-erhua-morning-brief.service --since Sun 2026-08-09 08:10:00 CST -n 80 --no-pager",
   ]) {
     if (!activationLog.includes(command)) {
       throw new Error(`activation is missing systemctl command: ${command}`);

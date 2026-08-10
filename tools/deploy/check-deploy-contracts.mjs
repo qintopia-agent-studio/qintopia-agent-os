@@ -319,6 +319,23 @@ if (!exists(deployBundleBuilderPath)) {
     "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh",
+    "deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh",
+    "tools/deploy/build-erhua-member-recognition-canary-evidence.mjs",
+    "tools/deploy/build-erhua-member-recognition-canary-mcp-input.mjs",
+    "tools/deploy/build-erhua-member-safe-alias-payload-template.mjs",
+    "tools/deploy/build-erhua-member-safe-identity-payload-template.mjs",
+    "tools/deploy/check-erhua-member-recognition-canary.mjs",
+    "tools/deploy/check-erhua-member-recognition-completion.mjs",
+    "tools/deploy/check-erhua-member-recognition-completion-summary.mjs",
+    "tools/deploy/check-erhua-member-recognition-coverage.mjs",
+    "tools/deploy/check-erhua-member-recognition-coverage-summary.mjs",
+    "tools/deploy/finalize-erhua-member-recognition-coverage.mjs",
+    "tools/deploy/finalize-erhua-member-recognition-completion.mjs",
+    "tools/deploy/check-erhua-member-safe-alias-payload.mjs",
+    "tools/deploy/check-erhua-member-safe-identity-payload.mjs",
+    "tools/deploy/check-erhua-room-member-sync.mjs",
+    "docs/operations/erhua-member-recognition-production-runbook.md",
     "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
     "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-production-config.sh",
     "deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh",
@@ -511,12 +528,603 @@ if (!exists(packageJsonPath)) {
     );
   }
   if (
+    scripts["deploy:erhua-member-recognition:local-check"] !==
+    "node tools/deploy/check-erhua-member-recognition-local.mjs"
+  ) {
+    addError(
+      "package.json: deploy:erhua-member-recognition:local-check must run node tools/deploy/check-erhua-member-recognition-local.mjs"
+    );
+  }
+  if (
+    scripts["deploy:erhua-member-recognition:coverage-finalize"] !==
+    "node tools/deploy/finalize-erhua-member-recognition-coverage.mjs"
+  ) {
+    addError(
+      "package.json: deploy:erhua-member-recognition:coverage-finalize must run node tools/deploy/finalize-erhua-member-recognition-coverage.mjs"
+    );
+  }
+  if (
+    scripts["deploy:erhua-member-recognition:finalize"] !==
+    "node tools/deploy/finalize-erhua-member-recognition-completion.mjs"
+  ) {
+    addError(
+      "package.json: deploy:erhua-member-recognition:finalize must run node tools/deploy/finalize-erhua-member-recognition-completion.mjs"
+    );
+  }
+  if (
     scripts["deploy:xiaoman-production-evidence:finalize"] !==
     "node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs"
   ) {
     addError(
       "package.json: deploy:xiaoman-production-evidence:finalize must run node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs"
     );
+  }
+}
+
+const erhuaMemberRecognitionLocalCheckPath =
+  "tools/deploy/check-erhua-member-recognition-local.mjs";
+if (!exists(erhuaMemberRecognitionLocalCheckPath)) {
+  addError(
+    `${erhuaMemberRecognitionLocalCheckPath}: missing Erhua member recognition local check`
+  );
+} else {
+  const script = readText(erhuaMemberRecognitionLocalCheckPath);
+  for (const fragment of [
+    '["cargo", ["check", "--manifest-path", "runtime/sidecar/Cargo.toml"]]',
+    "identity_alias",
+    "identity_bootstrap",
+    "context_tools",
+    "member_profile",
+    "RUST_MIN_STACK",
+    '["node", ["tools/deploy/test-erhua-room-member-sync.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-production-config.mjs"]]',
+    "tools/deploy/test-erhua-member-recognition-production-config-observation.mjs",
+    '["node", ["tools/deploy/test-erhua-member-recognition-coverage.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-coverage-summary.mjs"]]',
+    '["node", ["tools/deploy/test-finalize-erhua-member-recognition-coverage.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-safe-alias-payload.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-safe-alias-payload-template.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-safe-identity-payload.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-safe-identity-payload-template.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-canary.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-canary-builder.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-canary-mcp-input.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-completion.mjs"]]',
+    '["node", ["tools/deploy/test-erhua-member-recognition-completion-summary.mjs"]]',
+    '["node", ["tools/deploy/test-finalize-erhua-member-recognition-completion.mjs"]]',
+    '["node", ["tools/deploy/check-deploy-contracts.mjs"]]',
+    '["node", ["tools/deploy/build-deploy-bundle.mjs"]]',
+    "payload/tools/deploy/check-erhua-member-recognition-completion.mjs",
+    "payload/tools/deploy/check-erhua-member-recognition-completion-summary.mjs",
+    "payload/tools/deploy/check-erhua-member-recognition-coverage-summary.mjs",
+    "payload/tools/deploy/finalize-erhua-member-recognition-coverage.mjs",
+    "payload/tools/deploy/finalize-erhua-member-recognition-completion.mjs",
+    "payload/tools/deploy/build-erhua-member-safe-identity-payload-template.mjs",
+    "payload/tools/deploy/check-erhua-member-safe-identity-payload.mjs",
+    "payload/tools/deploy/check-erhua-room-member-sync.mjs",
+    "payload/deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh",
+    "payload/deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh",
+    "payload/docs/operations/erhua-member-recognition-production-runbook.md",
+    "Erhua member recognition local check passed",
+  ]) {
+    requireFragment(erhuaMemberRecognitionLocalCheckPath, script, fragment);
+  }
+}
+
+const erhuaIdentityBackfillPath = "runtime/sidecar/src/identity_backfill.rs";
+if (!exists(erhuaIdentityBackfillPath)) {
+  addError(
+    `${erhuaIdentityBackfillPath}: missing Erhua identity backfill implementation`
+  );
+} else {
+  const source = readText(erhuaIdentityBackfillPath);
+  for (const fragment of [
+    "stale_room_member_identities_marked",
+    '"current_qiwe_room_member": true',
+    "'current_qiwe_room_member', false",
+    "room member sync returned no members; refusing to mark roster",
+    "mark stale room member identities",
+  ]) {
+    requireFragment(erhuaIdentityBackfillPath, source, fragment);
+  }
+}
+
+const erhuaMemberRecognitionConfigPath =
+  "deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh";
+if (!exists(erhuaMemberRecognitionConfigPath)) {
+  addError(
+    `${erhuaMemberRecognitionConfigPath}: missing Erhua member recognition production config script`
+  );
+} else {
+  const script = readText(erhuaMemberRecognitionConfigPath);
+  for (const fragment of [
+    "approved-production-erhua-member-recognition-config",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    "QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CHAT_ID",
+    "QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CANARY_SENDER_ID",
+    "QINTOPIA_PROFILE_TARGET_CHAT_IDS",
+    "QINTOPIA_ERHUA_MEMBER_RECOGNITION_CANARY_CHAT_ID",
+    "QINTOPIA_ERHUA_MEMBER_RECOGNITION_CANARY_SENDER_ID",
+    "requires exactly one QINTOPIA_SIDECAR_DATABASE_URL",
+    "regular non-symlink file",
+    "must not have hard links",
+    "must not be group/world writable",
+    "must differ from the reviewed group id",
+    "chat_id=reviewed, canary_sender_id=reviewed",
+  ]) {
+    requireFragment(erhuaMemberRecognitionConfigPath, script, fragment);
+  }
+  for (const forbidden of ["QINTOPIA_SIDECAR_ENV_FILE", "SYSTEMCTL"]) {
+    if (script.includes(forbidden)) {
+      addError(
+        `${erhuaMemberRecognitionConfigPath}: must not accept caller override ${forbidden}`
+      );
+    }
+  }
+}
+
+const erhuaMemberRecognitionConfigTestPath =
+  "tools/deploy/test-erhua-member-recognition-production-config.mjs";
+if (!exists(erhuaMemberRecognitionConfigTestPath)) {
+  addError(
+    `${erhuaMemberRecognitionConfigTestPath}: missing Erhua member recognition production config test`
+  );
+} else {
+  const test = readText(erhuaMemberRecognitionConfigTestPath);
+  for (const fragment of [
+    "explicit owner approval",
+    "CONFIG_CANARY_SENDER_ID is required",
+    "must differ from the reviewed group id",
+    "exactly one reviewed group",
+    "regular non-symlink file",
+    "config apply output leaked reviewed ids",
+    "explicit chat id was not applied",
+  ]) {
+    requireFragment(erhuaMemberRecognitionConfigTestPath, test, fragment);
+  }
+}
+
+const erhuaMemberRecognitionConfigObservationPath =
+  "deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh";
+if (!exists(erhuaMemberRecognitionConfigObservationPath)) {
+  addError(
+    `${erhuaMemberRecognitionConfigObservationPath}: missing Erhua member recognition production config observation`
+  );
+} else {
+  const script = readText(erhuaMemberRecognitionConfigObservationPath);
+  for (const fragment of [
+    "QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_OBSERVATION_ENABLE",
+    'DEFAULT_ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    "ready_for_member_recognition_runbook",
+    "profile_target_matches_canary_chat",
+    "canary_sender_differs_from_chat",
+    "qintopia-erhua-member-recognition-scope-v1",
+    "does not print group id or sender id",
+    "does not call QiWe, Postgres, MCP, systemctl, or network",
+  ]) {
+    requireFragment(erhuaMemberRecognitionConfigObservationPath, script, fragment);
+  }
+}
+
+const erhuaMemberRecognitionConfigObservationTestPath =
+  "tools/deploy/test-erhua-member-recognition-production-config-observation.mjs";
+if (!exists(erhuaMemberRecognitionConfigObservationTestPath)) {
+  addError(
+    `${erhuaMemberRecognitionConfigObservationTestPath}: missing Erhua member recognition production config observation test`
+  );
+} else {
+  const test = readText(erhuaMemberRecognitionConfigObservationTestPath);
+  for (const fragment of [
+    "ready_for_member_recognition_runbook",
+    "profile_target_canary_chat_mismatch",
+    "canary_sender_equals_chat",
+    "env_file_not_regular",
+    "observation skipped",
+    "assertNoSecretOutput",
+  ]) {
+    requireFragment(erhuaMemberRecognitionConfigObservationTestPath, test, fragment);
+  }
+}
+
+const erhuaIdentityAliasPath = "runtime/sidecar/src/identity_alias.rs";
+if (!exists(erhuaIdentityAliasPath)) {
+  addError(`${erhuaIdentityAliasPath}: missing Erhua safe alias implementation`);
+} else {
+  const source = readText(erhuaIdentityAliasPath);
+  for (const fragment of [
+    "approved-production-erhua-member-safe-identity",
+    "current_qiwe_room_member",
+    "normalize_alias_key",
+    "duplicate safe_display_name",
+    "a.alias_type = $3",
+    "reviewed_safe_name",
+    "erhua_member_recognition_safe_identity",
+    "materialize_safe_identity_platform_identity",
+    "backfill_safe_identity_messages",
+  ]) {
+    requireFragment(erhuaIdentityAliasPath, source, fragment);
+  }
+}
+
+const erhuaIdentityBootstrapPath = "runtime/sidecar/src/identity_bootstrap.rs";
+if (!exists(erhuaIdentityBootstrapPath)) {
+  addError(
+    `${erhuaIdentityBootstrapPath}: missing Erhua identity bootstrap implementation`
+  );
+} else {
+  const source = readText(erhuaIdentityBootstrapPath);
+  for (const fragment of [
+    "ci.metadata->>'current_qiwe_room_member' = 'true'",
+    "metadata->>'current_qiwe_room_member' = 'true'",
+    "qiwe_room_potential_member_identities_unlinked",
+    "load_unlinked_potential_member_identity_samples",
+    "potential_member_identity_unlinked",
+  ]) {
+    requireFragment(erhuaIdentityBootstrapPath, source, fragment);
+  }
+}
+
+const erhuaContextToolsPath = "runtime/sidecar/src/context_tools.rs";
+if (!exists(erhuaContextToolsPath)) {
+  addError(`${erhuaContextToolsPath}: missing Erhua context tools implementation`);
+} else {
+  const source = readText(erhuaContextToolsPath);
+  for (const fragment of [
+    "ci.metadata->>'current_qiwe_room_member' = 'true'",
+    "metadata->>'current_qiwe_room_member' = 'true'",
+    "channel_identity_candidate_is_current",
+    "AND ci.id IS NOT NULL",
+    "chat_id.is_empty()",
+    "member_name_resolution_does_not_platform_fallback_for_current_chat_scope",
+    "answer_context_identity_ignores_stale_qiwe_room_member_exact_chat",
+    "member_safe_context_exact_scope_ignores_stale_qiwe_room_member",
+  ]) {
+    requireFragment(erhuaContextToolsPath, source, fragment);
+  }
+}
+
+const erhuaCoverageCheckPath =
+  "tools/deploy/check-erhua-member-recognition-coverage.mjs";
+if (!exists(erhuaCoverageCheckPath)) {
+  addError(
+    `${erhuaCoverageCheckPath}: missing Erhua member recognition coverage checker`
+  );
+} else {
+  const script = readText(erhuaCoverageCheckPath);
+  for (const fragment of [
+    "answer_context_canary_specs",
+    "answer_context_speaker_canary_specs",
+    "uniqueCanonicalKeyCount",
+    "qiwe_room_potential_member_identities_unlinked",
+    "unsafe-display potential member identities",
+    "required_profile_terms must be an array when present",
+    "--require-active-profiles",
+    "full-profile coverage requires active profiles",
+    "--summary-output",
+    "erhua_member_recognition_coverage_v1",
+    "retained_evidence_boundary",
+  ]) {
+    requireFragment(erhuaCoverageCheckPath, script, fragment);
+  }
+}
+
+const erhuaCoverageTestPath = "tools/deploy/test-erhua-member-recognition-coverage.mjs";
+if (!exists(erhuaCoverageTestPath)) {
+  addError(
+    `${erhuaCoverageTestPath}: missing Erhua member recognition coverage checker tests`
+  );
+} else {
+  const test = readText(erhuaCoverageTestPath);
+  for (const fragment of [
+    "current_qiwe_room_member",
+    "unsafe-potential-member-unlinked",
+    "missing-canary-spec-array",
+    "canary-spec-length-mismatch",
+    "speaker-canary-people-mismatch",
+    "requireActiveProfiles",
+    "full-profile coverage requires active profiles",
+    "valid-summary.json",
+    "strict-summary.json",
+    "retained_evidence_boundary.includes_person_id",
+  ]) {
+    requireFragment(erhuaCoverageTestPath, test, fragment);
+  }
+}
+
+const erhuaCoverageSummaryCheckPath =
+  "tools/deploy/check-erhua-member-recognition-coverage-summary.mjs";
+if (!exists(erhuaCoverageSummaryCheckPath)) {
+  addError(
+    `${erhuaCoverageSummaryCheckPath}: missing Erhua member recognition coverage summary checker`
+  );
+} else {
+  const script = readText(erhuaCoverageSummaryCheckPath);
+  for (const fragment of [
+    "erhua_member_recognition_coverage_v1",
+    "--expect-pass",
+    "--require-active-profiles",
+    "coverage summary contains forbidden sensitive fragment",
+    "retained_evidence_boundary",
+    "all_linked_people_have_active_profiles",
+  ]) {
+    requireFragment(erhuaCoverageSummaryCheckPath, script, fragment);
+  }
+}
+
+const erhuaCoverageSummaryTestPath =
+  "tools/deploy/test-erhua-member-recognition-coverage-summary.mjs";
+if (!exists(erhuaCoverageSummaryTestPath)) {
+  addError(
+    `${erhuaCoverageSummaryTestPath}: missing Erhua member recognition coverage summary checker tests`
+  );
+} else {
+  const test = readText(erhuaCoverageSummaryTestPath);
+  for (const fragment of [
+    "valid-failed",
+    "strict-failed",
+    "valid-passed",
+    "person-id-leak",
+    "readiness-mismatch",
+    "boundary-mismatch",
+  ]) {
+    requireFragment(erhuaCoverageSummaryTestPath, test, fragment);
+  }
+}
+
+const erhuaCoverageFinalizerPath =
+  "tools/deploy/finalize-erhua-member-recognition-coverage.mjs";
+if (!exists(erhuaCoverageFinalizerPath)) {
+  addError(
+    `${erhuaCoverageFinalizerPath}: missing Erhua member recognition coverage finalizer`
+  );
+} else {
+  const script = readText(erhuaCoverageFinalizerPath);
+  for (const fragment of [
+    "check-erhua-member-recognition-coverage.mjs",
+    "check-erhua-member-recognition-coverage-summary.mjs",
+    "--summary-output",
+    "--expect-pass",
+    "--require-active-profiles",
+    "coverage checker did not write summary output",
+    "sanitized summary written and verified",
+  ]) {
+    requireFragment(erhuaCoverageFinalizerPath, script, fragment);
+  }
+}
+
+const erhuaCoverageFinalizerTestPath =
+  "tools/deploy/test-finalize-erhua-member-recognition-coverage.mjs";
+if (!exists(erhuaCoverageFinalizerTestPath)) {
+  addError(
+    `${erhuaCoverageFinalizerTestPath}: missing Erhua member recognition coverage finalizer tests`
+  );
+} else {
+  const test = readText(erhuaCoverageFinalizerTestPath);
+  for (const fragment of [
+    "identity-gap",
+    "strict-passed",
+    "coverage summary check passed",
+    "coverage finalized",
+    "summary output directory does not exist",
+    "/dev/null",
+  ]) {
+    requireFragment(erhuaCoverageFinalizerTestPath, test, fragment);
+  }
+}
+
+const erhuaCanaryEvidenceBuilderPath =
+  "tools/deploy/build-erhua-member-recognition-canary-evidence.mjs";
+if (!exists(erhuaCanaryEvidenceBuilderPath)) {
+  addError(
+    `${erhuaCanaryEvidenceBuilderPath}: missing Erhua member recognition canary evidence builder`
+  );
+} else {
+  const script = readText(erhuaCanaryEvidenceBuilderPath);
+  for (const fragment of [
+    "createHash",
+    "person_ref: personRef",
+    "erhua-member-recognition-person-ref-v1",
+  ]) {
+    requireFragment(erhuaCanaryEvidenceBuilderPath, script, fragment);
+  }
+}
+
+const erhuaCanaryCheckPath = "tools/deploy/check-erhua-member-recognition-canary.mjs";
+if (!exists(erhuaCanaryCheckPath)) {
+  addError(`${erhuaCanaryCheckPath}: missing Erhua member recognition canary checker`);
+} else {
+  const script = readText(erhuaCanaryCheckPath);
+  for (const fragment of [
+    '/"person_id"\\s*:/',
+    "readPersonRef",
+    "missing a valid person_ref",
+    "isPersonRef",
+  ]) {
+    requireFragment(erhuaCanaryCheckPath, script, fragment);
+  }
+}
+
+const erhuaCanaryTestPath = "tools/deploy/test-erhua-member-recognition-canary.mjs";
+if (!exists(erhuaCanaryTestPath)) {
+  addError(`${erhuaCanaryTestPath}: missing Erhua member recognition canary tests`);
+} else {
+  const test = readText(erhuaCanaryTestPath);
+  for (const fragment of [
+    "person-id-leak.json",
+    "person_ref: personRef",
+    "erhua-member-recognition-person-ref-v1",
+  ]) {
+    requireFragment(erhuaCanaryTestPath, test, fragment);
+  }
+}
+
+const erhuaCanaryBuilderTestPath =
+  "tools/deploy/test-erhua-member-recognition-canary-builder.mjs";
+if (!exists(erhuaCanaryBuilderTestPath)) {
+  addError(
+    `${erhuaCanaryBuilderTestPath}: missing Erhua member recognition canary builder tests`
+  );
+} else {
+  const test = readText(erhuaCanaryBuilderTestPath);
+  for (const fragment of [
+    'assert.doesNotMatch(built, /"person_id"\\s*:/)',
+    "personRef(xiaoqiaoPersonId)",
+    "erhua-member-recognition-person-ref-v1",
+  ]) {
+    requireFragment(erhuaCanaryBuilderTestPath, test, fragment);
+  }
+}
+
+const erhuaCompletionCheckPath =
+  "tools/deploy/check-erhua-member-recognition-completion.mjs";
+if (!exists(erhuaCompletionCheckPath)) {
+  addError(
+    `${erhuaCompletionCheckPath}: missing Erhua member recognition completion checker`
+  );
+} else {
+  const script = readText(erhuaCompletionCheckPath);
+  for (const fragment of [
+    "MIN_PROFILE_REPAIR_MESSAGE_LIMIT = 5000",
+    "requested_message_limit",
+    "qiwe_room_potential_member_identities_unlinked",
+    "unlinked current-room potential member identities",
+    "member profile evidence must be generated with --limit",
+    "running_people_profile_missing_running_hint",
+    "answer-context speaker self-canary people must cover every linked person",
+    "--summary-output",
+    "erhua_member_recognition_completion_v1",
+    "retained_evidence_boundary",
+    "includes_person_id: false",
+    '/"person_id"\\s*:/',
+    "readPersonRef",
+    "missing a valid person_ref",
+    "--require-active-profiles",
+    "non-empty safe profile hints",
+    "linked_profile_hint_people",
+    "profile hint evidence must cover the same people",
+  ]) {
+    requireFragment(erhuaCompletionCheckPath, script, fragment);
+  }
+}
+
+const erhuaCompletionTestPath =
+  "tools/deploy/test-erhua-member-recognition-completion.mjs";
+if (!exists(erhuaCompletionTestPath)) {
+  addError(
+    `${erhuaCompletionTestPath}: missing Erhua member recognition completion checker tests`
+  );
+} else {
+  const test = readText(erhuaCompletionTestPath);
+  for (const fragment of [
+    "low-profile-scan-limit",
+    "requested_message_limit: 500",
+    "requested_message_limit: 5000",
+    "potential-member-unlinked",
+    "--limit 5000",
+    "valid-completion-summary.json",
+    "valid-active-profile-strict",
+    "requireActiveProfiles",
+    "fullProfileCanaries",
+    "profile-hint-route-mismatch",
+    "non-empty safe profile hints",
+    "identity-only canary people must be zero",
+    "profile hint evidence must cover the same people",
+    "retained_evidence_boundary.includes_person_id",
+    "person_ref: personRef",
+    'assert.doesNotMatch(JSON.stringify(summary), new RegExp(PERSON_PAXON, "i"))',
+  ]) {
+    requireFragment(erhuaCompletionTestPath, test, fragment);
+  }
+}
+
+const erhuaCompletionSummaryCheckPath =
+  "tools/deploy/check-erhua-member-recognition-completion-summary.mjs";
+if (!exists(erhuaCompletionSummaryCheckPath)) {
+  addError(
+    `${erhuaCompletionSummaryCheckPath}: missing Erhua member recognition completion summary checker`
+  );
+} else {
+  const script = readText(erhuaCompletionSummaryCheckPath);
+  for (const fragment of [
+    "erhua_member_recognition_completion_v1",
+    "retained_evidence_boundary",
+    "contains unsupported field",
+    "current-room raw identity count must match synced room roster",
+    "linked people must all have QiWe platform identities",
+    "completion summary contains forbidden sensitive fragment",
+    "--require-active-profiles",
+    "active reply_context profiles",
+    "identity-only canary people must be zero",
+    "linked_profile_hint_people",
+  ]) {
+    requireFragment(erhuaCompletionSummaryCheckPath, script, fragment);
+  }
+}
+
+const erhuaCompletionSummaryTestPath =
+  "tools/deploy/test-erhua-member-recognition-completion-summary.mjs";
+if (!exists(erhuaCompletionSummaryTestPath)) {
+  addError(
+    `${erhuaCompletionSummaryTestPath}: missing Erhua member recognition completion summary checker tests`
+  );
+} else {
+  const test = readText(erhuaCompletionSummaryTestPath);
+  for (const fragment of [
+    "person-id-leak",
+    "identity-count-mismatch",
+    "missing-speaker-route",
+    "unsafe-boundary",
+    "unsupported-display-name",
+    "unsupported-profile-note",
+    "identity-only-default-allowed",
+    "requireActiveProfiles",
+    "profile-hint-route-mismatch",
+    "mentioned_profile_hint_people",
+  ]) {
+    requireFragment(erhuaCompletionSummaryTestPath, test, fragment);
+  }
+}
+
+const erhuaCompletionFinalizerPath =
+  "tools/deploy/finalize-erhua-member-recognition-completion.mjs";
+if (!exists(erhuaCompletionFinalizerPath)) {
+  addError(
+    `${erhuaCompletionFinalizerPath}: missing Erhua member recognition completion finalizer`
+  );
+} else {
+  const script = readText(erhuaCompletionFinalizerPath);
+  for (const fragment of [
+    "check-erhua-member-recognition-completion.mjs",
+    "check-erhua-member-recognition-completion-summary.mjs",
+    "--summary-output",
+    "--require-active-profiles",
+    "summary output directory does not exist",
+    "sanitized summary written and verified",
+  ]) {
+    requireFragment(erhuaCompletionFinalizerPath, script, fragment);
+  }
+}
+
+const erhuaCompletionFinalizerTestPath =
+  "tools/deploy/test-finalize-erhua-member-recognition-completion.mjs";
+if (!exists(erhuaCompletionFinalizerTestPath)) {
+  addError(
+    `${erhuaCompletionFinalizerTestPath}: missing Erhua member recognition completion finalizer tests`
+  );
+} else {
+  const test = readText(erhuaCompletionFinalizerTestPath);
+  for (const fragment of [
+    "completion finalized",
+    "non-ambiguous unlinked identities",
+    "summary output directory does not exist",
+    "/dev/null",
+    "completion summary is not valid JSON",
+    "active-profile-strict",
+    "identity-only-strict",
+    "empty-hints-strict",
+    "non-empty safe profile hints",
+  ]) {
+    requireFragment(erhuaCompletionFinalizerTestPath, test, fragment);
   }
 }
 
@@ -529,10 +1137,16 @@ if (!exists(operationsReadmePath)) {
     "[xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md)",
     "owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,",
     "final completion-manifest sequence.",
+    "[erhua-member-recognition-production-runbook.md](erhua-member-recognition-production-runbook.md)",
+    "release-local production config observation",
+    "release-local QiWe room roster sync",
+    "safe profile refresh, coverage checker, sanitized answer-context",
+    "canary builder, canary checker, and final completion checker for Erhua member",
     "reviewed one-shot completion finalizer",
     "node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs",
     "repository-local Xiaoman production evidence chain verification bundle",
     "deploy:xiaoman-production-evidence:finalize",
+    "pnpm deploy:erhua-member-recognition:finalize -- --room-sync",
   ]) {
     requireFragment(operationsReadmePath, readme, fragment);
   }
@@ -550,8 +1164,81 @@ if (!exists(deployToolsReadmePath)) {
     "--staging-runtime-readiness <staging-runtime-readiness-output.txt>",
     "--production-real-activity <production-evidence-output.txt>",
     "--output <completed-xiaoman-production-completion-evidence.json>",
+    "node tools/deploy/check-erhua-room-member-sync.mjs",
+    "node tools/deploy/finalize-erhua-member-recognition-coverage.mjs",
+    "node tools/deploy/check-erhua-member-recognition-coverage-summary.mjs",
+    "deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh --apply",
+    "erhua-member-recognition-production-config-observation-smoke.sh",
+    "ready_for_member_recognition_runbook",
+    "QINTOPIA_ERHUA_MEMBER_RECOGNITION_PRODUCTION_CONFIG=approved-production-erhua-member-recognition-config",
+    "node tools/deploy/build-erhua-member-safe-identity-payload-template.mjs",
+    "node tools/deploy/check-erhua-member-safe-identity-payload.mjs",
+    "qintopia-message-sidecar erhua-member-safe-identity",
+    "node tools/deploy/build-erhua-member-safe-alias-payload-template.mjs",
+    "qintopia-message-sidecar erhua-member-safe-alias",
+    "qintopia-message-sidecar erhua-member-speaker-canary-sender-map",
+    "node tools/deploy/build-erhua-member-recognition-canary-mcp-input.mjs",
+    "node tools/deploy/build-erhua-member-recognition-canary-evidence.mjs",
+    "node tools/deploy/check-erhua-member-recognition-canary.mjs",
+    "node tools/deploy/finalize-erhua-member-recognition-completion.mjs",
+    "--summary-output <sanitized-coverage-summary.json>",
+    "--expect-pass",
+    "coverage summary is count-only retained evidence",
+    "`check-erhua-member-recognition-completion.mjs`",
+    "`check-erhua-member-recognition-completion-summary.mjs`",
+    "--summary-output <sanitized-completion-summary.json>",
+    "--require-active-profiles",
+    "active `reply_context` profile",
+    "`identity_only`",
+    "empty safe profile",
+    "non-sensitive scope/count fields",
+    "explicit no-secret",
+    "`qiwe_room_channel_identities_raw_total`",
+    "to equal the",
+    "applied room-sync",
+    "`room_members_discovered`",
+    "`linked_people_without_qiwe_platform_identity = 0`",
+    "`answer_context_speaker_canary_specs` resolving every linked current-room person",
+    "server-local `/tmp` only",
+    "`person_ref` SHA-256",
+    "must not contain",
   ]) {
     requireFragment(deployToolsReadmePath, readme, fragment);
+  }
+}
+
+const erhuaMemberRecognitionRunbookPath =
+  "docs/operations/erhua-member-recognition-production-runbook.md";
+if (!exists(erhuaMemberRecognitionRunbookPath)) {
+  addError(
+    `${erhuaMemberRecognitionRunbookPath}: missing Erhua member recognition production runbook`
+  );
+} else {
+  const runbook = readText(erhuaMemberRecognitionRunbookPath);
+  for (const fragment of [
+    "node tools/deploy/finalize-erhua-member-recognition-completion.mjs",
+    "QINTOPIA_ERHUA_MEMBER_RECOGNITION_PRODUCTION_CONFIG=approved-production-erhua-member-recognition-config",
+    "deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh --apply",
+    "erhua-member-recognition-production-config-observation-smoke.sh",
+    "ready_for_member_recognition_runbook",
+    "does not call QiWe, Postgres, MCP, systemctl, or the network",
+    "node tools/deploy/finalize-erhua-member-recognition-coverage.mjs",
+    "--summary-output /tmp/erhua-member-recognition-completion-summary.json",
+    "--require-active-profiles",
+    "`identity_only`",
+    "non-empty safe profile",
+    "/tmp/erhua-member-recognition-coverage-summary.json",
+    "node tools/deploy/check-erhua-member-recognition-coverage-summary.mjs",
+    "--expect-pass",
+    "sanitized count-only evidence",
+    "JSONL, checker output, completion summary, and finalizer output",
+    "wrong-room, incomplete, or extra sender",
+    "map must fail before raw MCP input is emitted",
+    "materialized QiWe platform identity",
+    "valid `speaker.person_ref`",
+    "must not contain `person_id`",
+  ]) {
+    requireFragment(erhuaMemberRecognitionRunbookPath, runbook, fragment);
   }
 }
 
@@ -3274,7 +3961,6 @@ for (const scriptPath of erhuaMorningBriefScripts) {
   }
 }
 for (const scriptPath of [
-  "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
 ]) {
@@ -3303,9 +3989,18 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     "refuses Xiaoman wrapper path override",
     'export QINTOPIA_XIAOMAN_ACTIVITY_WORKER_BIN="$SIDECAR_BIN"',
     "reviewed primary sidecar binary is missing",
+    'QIWE_BIN="${RELEASE_DIR}/sidecar-profiles/qiwe-production/qintopia-message-sidecar"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED",
+    "approved-production-erhua-morning-brief-auto-publish",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID",
+    "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL",
     "--prepare-artifact",
     "--execute-artifact-create",
     "--apply-artifact-create",
+    "operations-artifact-review-decision",
+    "operations-group-message-confirm",
+    "run-group-message-send-worker",
+    "run-qiwe-text-send-worker",
     '"external_send_executed": False',
     '"send_request_created": False',
   ]) {
@@ -3550,6 +4245,23 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.s
     timerObservation,
     '--since "$JOURNAL_DISABLED_SINCE" -n "$JOURNAL_LINES"'
   );
+  for (const fragment of [
+    "require_observed_auto_publish_boundary",
+    'require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED" "1"',
+    'require_observed_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL" "approved-production-erhua-morning-brief-auto-publish"',
+    'require_observed_env_value "QINTOPIA_QIWE_TEXT_SEND_ENABLED" "1"',
+    'require_observed_env_value "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-text-send"',
+    'require_observed_env_sha256 "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
+  ]) {
+    requireFragment(
+      "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
+      timerObservation,
+      fragment
+    );
+  }
   forbidFragment(
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     timerObservation,
@@ -3576,6 +4288,15 @@ if (exists("deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh"))
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE" "1"',
     'require_env_value "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE" "1"',
+    "require_auto_publish_boundary",
+    'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED" "1"',
+    'require_env_value "QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL" "approved-production-erhua-morning-brief-auto-publish"',
+    'require_env_value "QINTOPIA_QIWE_TEXT_SEND_ENABLED" "1"',
+    'require_env_value "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL" "approved-production-qiwe-text-send"',
+    'require_env_sha256 "QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256"',
+    "QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID",
+    "QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS",
+    "QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS",
   ]) {
     requireFragment(
       "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",

@@ -42,12 +42,14 @@ and historical source documents that still have audit or design value.
     [operations/qiwe-image-send-staging-runbook.md](operations/qiwe-image-send-staging-runbook.md)
 20. Xiaoman production evidence runbook:
     [operations/xiaoman-production-evidence-runbook.md](operations/xiaoman-production-evidence-runbook.md)
-21. Xiaoman Feishu poster production closeout:
+21. Erhua member recognition production runbook:
+    [operations/erhua-member-recognition-production-runbook.md](operations/erhua-member-recognition-production-runbook.md)
+22. Xiaoman Feishu poster production closeout:
     [operations/xiaoman-feishu-poster-production-closeout-runbook.md](operations/xiaoman-feishu-poster-production-closeout-runbook.md)
-22. Xiaoman weekly minimum loop runbook:
+23. Xiaoman weekly minimum loop runbook:
     [operations/xiaoman-weekly-minimum-loop-runbook.md](operations/xiaoman-weekly-minimum-loop-runbook.md)
-23. Reports index: [reports/README.md](reports/README.md)
-24. Completed migration archive:
+24. Reports index: [reports/README.md](reports/README.md)
+25. Completed migration archive:
     [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
 
 ## Package Entry Points

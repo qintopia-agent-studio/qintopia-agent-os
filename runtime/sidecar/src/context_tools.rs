@@ -154,6 +154,7 @@ pub(crate) fn tool_definitions() -> Value {
                     "platform": {"type": "string", "description": "Channel platform. Defaults to qiwe."},
                     "chat_id": {"type": "string", "description": "QiWe group/chat id."},
                     "sender_id": {"type": "string", "description": "Current QiWe sender/user id."},
+                    "referenced_sender_id": {"type": "string", "description": "Optional QiWe sender/user id from a referenced or replied-to message, used for pronoun identity questions such as 他是谁."},
                     "message_text": {"type": "string", "description": "Current inbound message text."},
                     "mentioned_member_names": {"type": "array", "items": {"type": "string"}, "description": "Optional high-confidence member display names or aliases extracted by the channel adapter, including QiWe atList display text."},
                     "purpose": {"type": "string", "description": "Why answer context is needed."}
@@ -330,13 +331,13 @@ async fn qintopia_member_context_lookup(
         "resolution_status": member_resolution.status.as_str(),
         "match_count": member_resolution.match_count,
         "person_id": context.person_id,
-        "display_name": context.display_name,
+        "display_name": context.display_name.as_deref().map(redact_sensitive_text),
         "identity_confidence": context.identity_confidence,
-        "safe_summary": context.safe_summary,
-        "communication_style": context.communication_style,
-        "safe_reply_hints": context.safe_reply_hints,
-        "relevant_recent_context": clean_text(&request.current_message_summary, 300),
-        "do_not_disclose": context.do_not_disclose,
+        "safe_summary": redact_sensitive_text(&context.safe_summary),
+        "communication_style": redact_sensitive_json(&context.communication_style),
+        "safe_reply_hints": redact_sensitive_json(&context.safe_reply_hints),
+        "relevant_recent_context": redact_sensitive_text(&clean_text(&request.current_message_summary, 300)),
+        "do_not_disclose": redact_sensitive_json(&context.do_not_disclose),
         "risk_flags": [],
         "redactions": redactions,
         "sources_used": {
@@ -371,6 +372,7 @@ async fn qintopia_answer_context_prepare(
     );
     let chat_id = clean_text(&request.chat_id, 120);
     let sender_id = clean_text(&request.sender_id, 120);
+    let referenced_sender_id = clean_text(&request.referenced_sender_id, 120);
     let message_text = clean_text(&request.message_text, 1000);
     let speaker_identity =
         resolve_answer_context_person_id_by_channel(pool, &platform, &chat_id, &sender_id).await?;
@@ -385,6 +387,30 @@ async fn qintopia_answer_context_prepare(
         },
         speaker_identity.person_id,
         speaker_identity.member_safe_identity_row_scope(),
+    )
+    .await?;
+    let referenced_identity = if referenced_sender_id.is_empty() {
+        AnswerContextIdentityResolution::unresolved()
+    } else {
+        resolve_answer_context_person_id_by_channel(
+            pool,
+            &platform,
+            &chat_id,
+            &referenced_sender_id,
+        )
+        .await?
+    };
+    let referenced_context = member_safe_context(
+        pool,
+        &platform,
+        &chat_id,
+        if referenced_sender_id.is_empty() {
+            None
+        } else {
+            Some(&referenced_sender_id)
+        },
+        referenced_identity.person_id,
+        referenced_identity.member_safe_identity_row_scope(),
     )
     .await?;
     let mut mention_texts = request.mentioned_member_names();
@@ -423,6 +449,46 @@ async fn qintopia_answer_context_prepare(
         .await?;
         mentioned_members.push(member_context_json(&mention_text, resolution, context));
     }
+    if !referenced_sender_id.is_empty() {
+        let referenced_fields_returned = if referenced_identity.person_id.is_some() {
+            json!([
+                "referenced_member",
+                "person_id",
+                "display_name",
+                "identity_confidence",
+                "safe_summary",
+                "safe_reply_hints",
+                "communication_style"
+            ])
+        } else {
+            json!(["referenced_member", "resolution_scope"])
+        };
+        let referenced_redactions = json!([
+            "raw_messages",
+            "hidden_profile_details",
+            "sensitive_facts",
+            "internal_labels",
+            "daily_digest_full_text"
+        ]);
+        let referenced_audit_purpose = format!(
+            "{}; referenced_member_resolution_scope={}",
+            clean_text(&purpose, 360),
+            referenced_identity.resolution_scope.as_str()
+        );
+        write_member_context_audit(
+            pool,
+            &caller,
+            &platform,
+            "",
+            &chat_id,
+            &referenced_audit_purpose,
+            referenced_identity.person_id,
+            referenced_fields_returned,
+            referenced_redactions,
+            "qintopia_answer_context_prepare.referenced_member",
+        )
+        .await?;
+    }
     let training_guidance = active_training_guidance(
         pool,
         &platform,
@@ -433,7 +499,9 @@ async fn qintopia_answer_context_prepare(
     .await?;
     let fields_returned = json!([
         "speaker",
+        "referenced_member",
         "mentioned_members",
+        "answer_route",
         "training_guidance",
         "answer_rules"
     ]);
@@ -460,6 +528,7 @@ async fn qintopia_answer_context_prepare(
     Ok(json!({
         "success": true,
         "speaker": speaker_context_json(speaker_context, &speaker_identity),
+        "referenced_member": speaker_context_json(referenced_context, &referenced_identity),
         "mentioned_members": mentioned_members,
         "answer_route": answer_route_json(&message_text),
         "training_guidance": training_guidance,
@@ -469,7 +538,9 @@ async fn qintopia_answer_context_prepare(
             "ask_clarification_when_ambiguous": true,
             "do_not_guess_member_state": true,
             "do_not_expose_raw_history": true,
-            "do_not_use_vector_search_to_guess_member_identity": true
+            "do_not_use_vector_search_to_guess_member_identity": true,
+            "do_not_claim_public_consensus_without_source": true,
+            "explain_public_sources_for_local_recommendations": true
         },
         "redactions": redactions
     }))
@@ -627,6 +698,11 @@ async fn resolve_answer_context_person_id_by_channel(
           AND ci.chat_id = $2
           AND ci.channel_user_id = $3
           AND ci.person_id IS NOT NULL
+          AND (
+            lower(ci.platform) <> 'qiwe'
+            OR ci.chat_id = ci.channel_user_id
+            OR ci.metadata->>'current_qiwe_room_member' = 'true'
+          )
         LIMIT 1
         "#,
     )
@@ -656,6 +732,11 @@ async fn resolve_answer_context_person_id_by_channel(
         WHERE ci.platform = 'qiwe'
           AND ci.channel_user_id = $1
           AND ci.person_id IS NOT NULL
+          AND (
+            ci.chat_id = ''
+            OR ci.chat_id = ci.channel_user_id
+            OR ci.metadata->>'current_qiwe_room_member' = 'true'
+          )
         GROUP BY ci.person_id
         ORDER BY max(ci.updated_at) DESC
         LIMIT 2
@@ -690,6 +771,15 @@ struct ChannelIdentityCandidate {
     channel_user_id: String,
     person_id: uuid::Uuid,
     updated_at: chrono::DateTime<chrono::Utc>,
+    current_qiwe_room_member: bool,
+}
+
+#[cfg(test)]
+fn channel_identity_candidate_is_current(candidate: &ChannelIdentityCandidate) -> bool {
+    !candidate.platform.eq_ignore_ascii_case("qiwe")
+        || candidate.chat_id.is_empty()
+        || candidate.chat_id == candidate.channel_user_id
+        || candidate.current_qiwe_room_member
 }
 
 #[cfg(test)]
@@ -707,6 +797,7 @@ fn select_answer_context_identity_candidate(
             && !chat_id.is_empty()
             && candidate.chat_id == chat_id
             && candidate.channel_user_id == channel_user_id
+            && channel_identity_candidate_is_current(candidate)
     }) {
         return AnswerContextIdentityResolution::resolved(
             candidate.person_id,
@@ -722,6 +813,7 @@ fn select_answer_context_identity_candidate(
         .iter()
         .filter(|candidate| candidate.platform == "qiwe")
         .filter(|candidate| candidate.channel_user_id == channel_user_id)
+        .filter(|candidate| channel_identity_candidate_is_current(candidate))
         .fold(
             Vec::<(uuid::Uuid, bool, chrono::DateTime<chrono::Utc>)>::new(),
             |mut acc, candidate| {
@@ -771,6 +863,7 @@ fn select_member_safe_identity_candidate<'a>(
         .iter()
         .filter(|candidate| candidate.person_id == person_id)
         .filter(|candidate| candidate.platform == platform)
+        .filter(|candidate| channel_identity_candidate_is_current(candidate))
         .filter(|candidate| match scope {
             MemberSafeIdentityRowScope::ExactChat => {
                 !chat_id.is_empty()
@@ -835,6 +928,11 @@ async fn resolve_person_id_by_channel_exact(
           AND ci.chat_id = $2
           AND ci.channel_user_id = $3
           AND ci.person_id IS NOT NULL
+          AND (
+            lower(ci.platform) <> 'qiwe'
+            OR ci.chat_id = ci.channel_user_id
+            OR ci.metadata->>'current_qiwe_room_member' = 'true'
+          )
         ORDER BY ci.updated_at DESC
         LIMIT 1
         "#,
@@ -970,6 +1068,12 @@ async fn member_safe_context(
             WHERE ci.person_id = p.id
               AND ci.platform = $2
               AND (
+                lower(ci.platform) <> 'qiwe'
+                OR ci.chat_id = ''
+                OR ci.chat_id = ci.channel_user_id
+                OR ci.metadata->>'current_qiwe_room_member' = 'true'
+              )
+              AND (
                 (
                   $5 = 'exact_chat'
                   AND $3 <> ''
@@ -1008,6 +1112,7 @@ async fn member_safe_context(
             LIMIT 1
         ) s ON true
         WHERE p.id = $1
+          AND ci.id IS NOT NULL
         LIMIT 1
         "#,
     )
@@ -1022,19 +1127,33 @@ async fn member_safe_context(
     let Some(row) = row else {
         return Ok(None);
     };
+    let display_name: Option<String> = row.try_get("display_name")?;
+    let snapshot_generated_at: Option<chrono::DateTime<chrono::Utc>> =
+        row.try_get("generated_at")?;
+    let profile_summary = row
+        .try_get::<Option<String>, _>("summary")?
+        .unwrap_or_default();
+    let has_active_profile = snapshot_generated_at.is_some();
+    let safe_summary = if profile_summary.trim().is_empty() {
+        identity_only_safe_summary(display_name.as_deref())
+    } else {
+        profile_summary
+    };
+    let mut safe_reply_hints = row
+        .try_get::<Option<Value>, _>("safe_reply_hints")?
+        .unwrap_or_else(|| json!({}));
+    if !has_active_profile {
+        safe_reply_hints = identity_only_safe_reply_hints(safe_reply_hints);
+    }
     Ok(Some(MemberSafeContext {
         person_id: Some(row.try_get("person_id")?),
-        display_name: row.try_get("display_name")?,
+        display_name,
         identity_confidence: row.try_get("identity_confidence")?,
-        safe_summary: row
-            .try_get::<Option<String>, _>("summary")?
-            .unwrap_or_default(),
+        safe_summary,
         communication_style: row
             .try_get::<Option<Value>, _>("communication_style")?
             .unwrap_or_else(|| json!({})),
-        safe_reply_hints: row
-            .try_get::<Option<Value>, _>("safe_reply_hints")?
-            .unwrap_or_else(|| json!({})),
+        safe_reply_hints,
         do_not_disclose: row
             .try_get::<Option<Value>, _>("do_not_disclose")?
             .unwrap_or_else(|| json!({})),
@@ -1044,8 +1163,32 @@ async fn member_safe_context(
         source_summary_ids: row
             .try_get::<Option<Vec<uuid::Uuid>>, _>("source_summary_ids")?
             .unwrap_or_default(),
-        snapshot_generated_at: row.try_get("generated_at")?,
+        snapshot_generated_at,
     }))
+}
+
+fn identity_only_safe_summary(display_name: Option<&str>) -> String {
+    let label = display_name
+        .map(redact_sensitive_text)
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| "该成员".to_string());
+    format!("{label} 已识别为群内成员，但暂无足够稳定的安全画像。")
+}
+
+fn identity_only_safe_reply_hints(existing: Value) -> Value {
+    let mut hints = match existing {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    hints.insert("profile_status".to_string(), json!("identity_only"));
+    hints
+        .entry("topics".to_string())
+        .or_insert_with(|| json!([]));
+    hints
+        .entry("stable_profile_notes".to_string())
+        .or_insert_with(|| json!([]));
+    hints.insert("do_not_infer_missing_profile".to_string(), json!(true));
+    Value::Object(hints)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1129,10 +1272,14 @@ fn select_member_name_resolution(
 fn select_scoped_member_name_resolution(
     current_chat_candidates: &[MemberNameCandidate],
     platform_candidates: &[MemberNameCandidate],
+    allow_platform_fallback: bool,
 ) -> MemberNameResolution {
     let current_chat_resolution = select_member_name_resolution(current_chat_candidates, 4);
     if current_chat_resolution.status != MemberNameResolutionStatus::Unresolved {
         return current_chat_resolution;
+    }
+    if !allow_platform_fallback {
+        return MemberNameResolution::unresolved();
     }
     select_member_name_resolution(platform_candidates, 4)
 }
@@ -1162,18 +1309,23 @@ async fn resolve_member_by_name(
         MemberNameLookupScope::CurrentChat,
     )
     .await?;
-    let platform_candidates = member_name_candidates(
-        pool,
-        platform,
-        chat_id,
-        member_name,
-        &normalized,
-        MemberNameLookupScope::Platform,
-    )
-    .await?;
+    let platform_candidates = if chat_id.is_empty() {
+        member_name_candidates(
+            pool,
+            platform,
+            chat_id,
+            member_name,
+            &normalized,
+            MemberNameLookupScope::Platform,
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
     Ok(select_scoped_member_name_resolution(
         &current_chat_candidates,
         &platform_candidates,
+        chat_id.is_empty(),
     ))
 }
 
@@ -1196,13 +1348,13 @@ async fn member_name_candidates(
                 ci.person_id,
                 ci.updated_at AS observed_at,
                 CASE
-                    WHEN ci.normalized_display_name = $3 THEN 100
-                    WHEN regexp_replace(btrim(coalesce(ci.display_name, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 98
-                    WHEN ci.display_name = $4 THEN 95
-                    WHEN regexp_replace(btrim(coalesce(p.display_name, '')), '[[:space:]]+', ' ', 'g') = $3
-                      OR regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g') = $3
-                      OR regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 90
-                    WHEN regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g') = $3 THEN 85
+                    WHEN lower(ci.normalized_display_name) = lower($3) THEN 100
+                    WHEN lower(regexp_replace(btrim(coalesce(ci.display_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3) THEN 98
+                    WHEN lower(ci.display_name) = lower($4) THEN 95
+                    WHEN lower(regexp_replace(btrim(coalesce(p.display_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3)
+                      OR lower(regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3)
+                      OR lower(regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3) THEN 90
+                    WHEN lower(regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g')) = lower($3) THEN 85
                     WHEN $6 = 'current_chat' AND ci.normalized_display_name ILIKE $5 THEN 70
                     WHEN $6 = 'current_chat' AND ci.display_name ILIKE $5 THEN 65
                     WHEN $6 = 'current_chat'
@@ -1215,17 +1367,26 @@ async fn member_name_candidates(
             LEFT JOIN qintopia_identity.person_aliases a ON a.person_id = p.id
             WHERE ci.platform = $1
               AND (
+                lower(ci.platform) <> 'qiwe'
+                OR ci.chat_id = ''
+                OR ci.chat_id = ci.channel_user_id
+                OR (
+                  $6 = 'current_chat'
+                  AND ci.metadata->>'current_qiwe_room_member' = 'true'
+                )
+              )
+              AND (
                 ($6 = 'current_chat' AND ($2 = '' OR ci.chat_id = $2))
                 OR (
                   $6 = 'platform'
                   AND (
                     ci.chat_id = ''
-                    OR ci.normalized_display_name = $3
-                    OR regexp_replace(btrim(coalesce(ci.display_name, '')), '[[:space:]]+', ' ', 'g') = $3
-                    OR regexp_replace(btrim(coalesce(p.display_name, '')), '[[:space:]]+', ' ', 'g') = $3
-                    OR regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g') = $3
-                    OR regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g') = $3
-                    OR regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g') = $3
+                    OR lower(ci.normalized_display_name) = lower($3)
+                    OR lower(regexp_replace(btrim(coalesce(ci.display_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3)
+                    OR lower(regexp_replace(btrim(coalesce(p.display_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3)
+                    OR lower(regexp_replace(btrim(coalesce(p.preferred_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3)
+                    OR lower(regexp_replace(btrim(coalesce(p.primary_name, '')), '[[:space:]]+', ' ', 'g')) = lower($3)
+                    OR lower(regexp_replace(btrim(coalesce(a.alias, '')), '[[:space:]]+', ' ', 'g')) = lower($3)
                   )
                 )
               )
@@ -1689,6 +1850,12 @@ async fn find_channel_identity_id(
           AND platform = $2
           AND ($3 = '' OR chat_id = $3)
           AND ($4 = '' OR channel_user_id = $4)
+          AND (
+            lower(platform) <> 'qiwe'
+            OR chat_id = ''
+            OR chat_id = channel_user_id
+            OR metadata->>'current_qiwe_room_member' = 'true'
+          )
         ORDER BY updated_at DESC
         LIMIT 1
         "#,
@@ -1830,6 +1997,7 @@ async fn qintopia_wenyuange_lookup(
                 "kind": intent.kind,
                 "requires_authoritative_source": intent.requires_authoritative_source,
                 "requires_live_operations": intent.requires_live_operations,
+                "requires_public_source_check": intent.requires_public_source_check,
                 "required_terms": intent.required_terms
             }
         }));
@@ -1923,6 +2091,46 @@ async fn qintopia_wenyuange_lookup(
                 "kind": intent.kind,
                 "requires_authoritative_source": intent.requires_authoritative_source,
                 "requires_live_operations": intent.requires_live_operations,
+                "requires_public_source_check": intent.requires_public_source_check,
+                "required_terms": intent.required_terms
+            }
+        }));
+    }
+    if intent.requires_public_source_check {
+        return Ok(json!({
+            "success": true,
+            "tool": WENYUANGE_LOOKUP_TOOL,
+            "query": query,
+            "purpose": purpose,
+            "audience": clean_text(&request.audience, 80),
+            "can_answer": false,
+            "answer_basis": {
+                "kind": "public_source_check_required",
+                "summary": "这个问题依赖当前公开信息、当期排期和可核验口碑；不能只用群聊记忆、人格口癖或泛化印象给出“最好”“公认”这类结论。",
+                "evidence_snippets": []
+            },
+            "sources": [],
+            "scope_used": [],
+            "confidence": "low",
+            "risk_flags": ["public_source_check_required"],
+            "safe_reply_guidance": {
+                "frontline_agent": "先说明需要按公开来源核验；可给出查找顺序：官方场地账号/公众号或小红书、票务平台排期、地图/点评和本地乐迷评论。没有已核验来源时，不要说“公认最棒”“错不了”，也不要装作自己听过。",
+                "external_customer": "可以给查找路径和待核验候选；已核验前不要承诺“最好”、营业/演出可用性、价格或实时排期。"
+            },
+            "not_accessed": ["current public web sources", "venue official accounts", "ticketing schedules", "map/review platforms", "QiWe group messages as authority"],
+            "retrieval_trace": [{
+                "search_method": "intent_router",
+                "success": true,
+                "skipped": true,
+                "detail": {
+                    "reason": "current local recommendation requires public-source verification outside the static context store"
+                }
+            }],
+            "intent": {
+                "kind": intent.kind,
+                "requires_authoritative_source": intent.requires_authoritative_source,
+                "requires_live_operations": intent.requires_live_operations,
+                "requires_public_source_check": intent.requires_public_source_check,
                 "required_terms": intent.required_terms
             }
         }));
@@ -2000,6 +2208,7 @@ async fn qintopia_wenyuange_lookup(
             "kind": intent.kind,
             "requires_authoritative_source": intent.requires_authoritative_source,
             "requires_live_operations": intent.requires_live_operations,
+            "requires_public_source_check": intent.requires_public_source_check,
             "required_terms": intent.required_terms
         },
         "retrieval_trace": search.retrieval_trace
@@ -2016,7 +2225,6 @@ fn classify_lookup_intent(query: &str, purpose: &str) -> LookupIntent {
         "谁问",
         "讨论过",
         "聊过",
-        "群里",
         "消息",
         "之前",
         "刚才",
@@ -2074,12 +2282,16 @@ fn classify_lookup_intent(query: &str, purpose: &str) -> LookupIntent {
         .iter()
         .any(|marker| text.contains(&marker.to_lowercase()))
         && !asks_discussion;
+    let requires_public_source_check =
+        public_source_recommendation_markers_match(&text) && !asks_discussion;
     let required_terms = required_authoritative_terms(&text);
     LookupIntent {
         kind: if requires_live_operations {
             "live_operations_status"
         } else if requires_authoritative_source {
             "authoritative_public_fact"
+        } else if requires_public_source_check {
+            "public_source_recommendation"
         } else if asks_discussion {
             "message_discussion_history"
         } else {
@@ -2087,8 +2299,64 @@ fn classify_lookup_intent(query: &str, purpose: &str) -> LookupIntent {
         },
         requires_authoritative_source,
         requires_live_operations,
+        requires_public_source_check,
         required_terms,
     }
+}
+
+fn public_source_recommendation_markers_match(text: &str) -> bool {
+    let recommendation_markers = [
+        "最好",
+        "最棒",
+        "推荐",
+        "值得",
+        "哪家好",
+        "哪场好",
+        "哪一个好",
+        "哪",
+        "哪里好",
+        "去哪",
+        "去哪里",
+        "好去处",
+        "best",
+        "recommend",
+    ];
+    let local_or_current_markers = [
+        "西安",
+        "北京",
+        "上海",
+        "深圳",
+        "广州",
+        "成都",
+        "杭州",
+        "南京",
+        "重庆",
+        "附近",
+        "本地",
+        "今天",
+        "今晚",
+        "明天",
+        "周末",
+        "这周",
+        "本周",
+        "最近",
+        "演出",
+        "展览",
+        "live",
+        "livehouse",
+        "爵士",
+        "咖啡",
+        "餐厅",
+        "酒吧",
+        "活动",
+        "票",
+    ];
+    recommendation_markers
+        .iter()
+        .any(|marker| text.contains(&marker.to_lowercase()))
+        && local_or_current_markers
+            .iter()
+            .any(|marker| text.contains(&marker.to_lowercase()))
 }
 
 fn required_authoritative_terms(text: &str) -> Vec<&'static str> {
@@ -2515,6 +2783,7 @@ enum AnswerRouteKind {
     MemberIdentity,
     LiveOperations,
     AuthoritativePublicFact,
+    PublicSourceRecommendation,
     DiscussionHistory,
     GeneralContext,
 }
@@ -2526,6 +2795,7 @@ impl AnswerRouteKind {
             Self::MemberIdentity => "member_identity",
             Self::LiveOperations => "live_operations",
             Self::AuthoritativePublicFact => "authoritative_public_fact",
+            Self::PublicSourceRecommendation => "public_source_recommendation",
             Self::DiscussionHistory => "discussion_history",
             Self::GeneralContext => "general_context",
         }
@@ -2551,6 +2821,8 @@ fn classify_answer_route(message_text: &str) -> AnswerRouteKind {
         AnswerRouteKind::LiveOperations
     } else if lookup.requires_authoritative_source {
         AnswerRouteKind::AuthoritativePublicFact
+    } else if lookup.requires_public_source_check {
+        AnswerRouteKind::PublicSourceRecommendation
     } else if lookup.kind == "message_discussion_history" {
         AnswerRouteKind::DiscussionHistory
     } else {
@@ -2566,6 +2838,7 @@ fn answer_route_json(message_text: &str) -> Value {
         "use_authoritative_knowledge": route == AnswerRouteKind::AuthoritativePublicFact,
         "use_message_history": route == AnswerRouteKind::DiscussionHistory,
         "requires_live_operations": route == AnswerRouteKind::LiveOperations,
+        "requires_public_source_check": route == AnswerRouteKind::PublicSourceRecommendation,
         "do_not_guess_identity": matches!(route, AnswerRouteKind::SpeakerIdentity | AnswerRouteKind::MemberIdentity)
     })
 }
@@ -2789,11 +3062,11 @@ fn speaker_context_json(
     json!({
         "resolved": context.person_id.is_some(),
         "resolution_scope": identity.resolution_scope.as_str(),
-        "display_name": context.display_name,
+        "display_name": context.display_name.as_deref().map(redact_sensitive_text),
         "person_id": context.person_id,
-        "safe_summary": context.safe_summary,
-        "safe_reply_hints": context.safe_reply_hints,
-        "communication_style": context.communication_style,
+        "safe_summary": redact_sensitive_text(&context.safe_summary),
+        "safe_reply_hints": redact_sensitive_json(&context.safe_reply_hints),
+        "communication_style": redact_sensitive_json(&context.communication_style),
         "identity_confidence": context.identity_confidence
     })
 }
@@ -2805,24 +3078,66 @@ fn member_context_json(
 ) -> Value {
     let Some(context) = context else {
         return json!({
-            "mention_text": mention_text,
+            "mention_text": redact_sensitive_text(mention_text),
             "resolved": false,
             "resolution_status": resolution.status.as_str(),
             "match_count": resolution.match_count
         });
     };
     json!({
-        "mention_text": mention_text,
+        "mention_text": redact_sensitive_text(mention_text),
         "resolved": context.person_id.is_some(),
         "resolution_status": resolution.status.as_str(),
         "match_count": resolution.match_count,
-        "display_name": context.display_name,
+        "display_name": context.display_name.as_deref().map(redact_sensitive_text),
         "person_id": context.person_id,
-        "safe_summary": context.safe_summary,
-        "safe_reply_hints": context.safe_reply_hints,
-        "communication_style": context.communication_style,
+        "safe_summary": redact_sensitive_text(&context.safe_summary),
+        "safe_reply_hints": redact_sensitive_json(&context.safe_reply_hints),
+        "communication_style": redact_sensitive_json(&context.communication_style),
         "identity_confidence": context.identity_confidence
     })
+}
+
+fn redact_sensitive_json(value: &Value) -> Value {
+    match value {
+        Value::String(text) => Value::String(redact_sensitive_text(text)),
+        Value::Array(items) => Value::Array(items.iter().map(redact_sensitive_json).collect()),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), redact_sensitive_json(value)))
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+
+fn redact_sensitive_text(text: &str) -> String {
+    let mut out = String::new();
+    let mut digit_run = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            digit_run.push(ch);
+            continue;
+        }
+        flush_digit_run(&mut out, &mut digit_run);
+        if !ch.is_control() {
+            out.push(ch);
+        }
+    }
+    flush_digit_run(&mut out, &mut digit_run);
+    out
+}
+
+fn flush_digit_run(out: &mut String, digit_run: &mut String) {
+    if digit_run.is_empty() {
+        return;
+    }
+    if digit_run.len() >= 7 {
+        out.push_str("[敏感数字]");
+    } else {
+        out.push_str(digit_run);
+    }
+    digit_run.clear();
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2846,6 +3161,7 @@ struct LookupIntent {
     kind: &'static str,
     requires_authoritative_source: bool,
     requires_live_operations: bool,
+    requires_public_source_check: bool,
     required_terms: Vec<&'static str>,
 }
 
@@ -2899,6 +3215,8 @@ struct AnswerContextPrepareRequest {
     chat_id: String,
     #[serde(default)]
     sender_id: String,
+    #[serde(default)]
+    referenced_sender_id: String,
     #[serde(default)]
     message_text: String,
     #[serde(default)]
@@ -2955,14 +3273,16 @@ struct Location {
 mod tests {
     use super::{
         classify_answer_route, classify_lookup_intent, classify_training_note, disclosure_hits,
-        is_erhua_trainer, knowledge_excerpt, parse_allowed_callers, qintopia_gis_location_lookup,
-        sanitize_training_summary, select_answer_context_identity_candidate,
-        select_member_name_resolution, select_member_safe_identity_candidate,
-        select_scoped_member_name_resolution, speaker_context_json, tool_definitions,
-        training_source_kind, validate_context_caller, AnswerContextIdentityResolution,
-        AnswerRouteKind, ChannelIdentityCandidate, ContextConfig, GisLocationLookupRequest,
-        IdentityResolutionScope, MemberNameCandidate, MemberNameResolutionStatus,
-        MemberSafeContext, MemberSafeIdentityRowScope, TrainingSourceKind,
+        identity_only_safe_reply_hints, identity_only_safe_summary, is_erhua_trainer,
+        knowledge_excerpt, member_context_json, parse_allowed_callers,
+        qintopia_gis_location_lookup, sanitize_training_summary,
+        select_answer_context_identity_candidate, select_member_name_resolution,
+        select_member_safe_identity_candidate, select_scoped_member_name_resolution,
+        speaker_context_json, tool_definitions, training_source_kind, validate_context_caller,
+        AnswerContextIdentityResolution, AnswerRouteKind, ChannelIdentityCandidate, ContextConfig,
+        GisLocationLookupRequest, IdentityResolutionScope, MemberNameCandidate,
+        MemberNameResolution, MemberNameResolutionStatus, MemberSafeContext,
+        MemberSafeIdentityRowScope, TrainingSourceKind,
     };
     use crate::message_search::SearchConfig;
     use chrono::{TimeZone, Utc};
@@ -3035,6 +3355,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
             },
             ChannelIdentityCandidate {
                 platform: "qiwe".to_string(),
@@ -3042,6 +3363,7 @@ mod tests {
                 channel_user_id: "user-2".to_string(),
                 person_id: other_person,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
             },
         ];
 
@@ -3066,6 +3388,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id: direct_person,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
             },
             ChannelIdentityCandidate {
                 platform: "qiwe".to_string(),
@@ -3073,6 +3396,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id: platform_person,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
             },
         ];
 
@@ -3096,6 +3420,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
             },
             ChannelIdentityCandidate {
                 platform: "qiwe".to_string(),
@@ -3103,6 +3428,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
             },
         ];
 
@@ -3127,6 +3453,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id: person_1,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+                current_qiwe_room_member: true,
             },
             ChannelIdentityCandidate {
                 platform: "qiwe".to_string(),
@@ -3134,6 +3461,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id: person_2,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+                current_qiwe_room_member: true,
             },
         ];
 
@@ -3153,6 +3481,7 @@ mod tests {
             channel_user_id: "user-1".to_string(),
             person_id,
             updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+            current_qiwe_room_member: false,
         }];
 
         let resolved =
@@ -3174,6 +3503,7 @@ mod tests {
             channel_user_id: "user-1".to_string(),
             person_id,
             updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+            current_qiwe_room_member: false,
         }];
 
         let resolved =
@@ -3187,6 +3517,39 @@ mod tests {
     }
 
     #[test]
+    fn answer_context_identity_ignores_stale_qiwe_room_member_exact_chat() {
+        let stale_person = Uuid::parse_str("00000000-0000-0000-0000-000000000053").unwrap();
+        let platform_person = Uuid::parse_str("00000000-0000-0000-0000-000000000054").unwrap();
+        let candidates = vec![
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: "group-1".to_string(),
+                channel_user_id: "user-1".to_string(),
+                person_id: stale_person,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
+            },
+            ChannelIdentityCandidate {
+                platform: "qiwe".to_string(),
+                chat_id: String::new(),
+                channel_user_id: "user-1".to_string(),
+                person_id: platform_person,
+                updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
+            },
+        ];
+
+        let resolved =
+            select_answer_context_identity_candidate("qiwe", "group-1", "user-1", &candidates);
+
+        assert_eq!(resolved.person_id, Some(platform_person));
+        assert_eq!(
+            resolved.resolution_scope,
+            IdentityResolutionScope::QiwePlatformUser
+        );
+    }
+
+    #[test]
     fn member_safe_context_platform_identity_scope_does_not_use_other_chat_identity() {
         let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000061").unwrap();
         let candidates = vec![
@@ -3196,6 +3559,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+                current_qiwe_room_member: false,
             },
             ChannelIdentityCandidate {
                 platform: "qiwe".to_string(),
@@ -3203,6 +3567,7 @@ mod tests {
                 channel_user_id: "user-1".to_string(),
                 person_id,
                 updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 10, 0, 0).unwrap(),
+                current_qiwe_room_member: true,
             },
         ];
 
@@ -3228,6 +3593,31 @@ mod tests {
             channel_user_id: "user-1".to_string(),
             person_id,
             updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+            current_qiwe_room_member: false,
+        }];
+
+        let selected = select_member_safe_identity_candidate(
+            "qiwe",
+            "group-1",
+            "user-1",
+            person_id,
+            MemberSafeIdentityRowScope::ExactChat,
+            &candidates,
+        );
+
+        assert!(selected.is_none());
+    }
+
+    #[test]
+    fn member_safe_context_exact_scope_ignores_stale_qiwe_room_member() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000063").unwrap();
+        let candidates = vec![ChannelIdentityCandidate {
+            platform: "qiwe".to_string(),
+            chat_id: "group-1".to_string(),
+            channel_user_id: "user-1".to_string(),
+            person_id,
+            updated_at: Utc.with_ymd_and_hms(2026, 7, 7, 9, 0, 0).unwrap(),
+            current_qiwe_room_member: false,
         }];
 
         let selected = select_member_safe_identity_candidate(
@@ -3270,6 +3660,53 @@ mod tests {
     }
 
     #[test]
+    fn answer_context_json_redacts_phone_like_display_text() {
+        let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000022").unwrap();
+        let context = MemberSafeContext {
+            person_id: Some(person_id),
+            display_name: Some("Joey17336786728".to_string()),
+            identity_confidence: Some(0.95),
+            safe_summary: "Joey17336786728 最近的安全画像。".to_string(),
+            communication_style: serde_json::json!({
+                "temporary_communication_notes": ["联系 17336786728"]
+            }),
+            safe_reply_hints: serde_json::json!({
+                "stable_profile_notes": ["不要复述 17336786728"]
+            }),
+            do_not_disclose: serde_json::json!({}),
+            source_fact_ids: Vec::new(),
+            source_summary_ids: Vec::new(),
+            snapshot_generated_at: None,
+        };
+        let identity = AnswerContextIdentityResolution {
+            person_id: Some(person_id),
+            resolution_scope: IdentityResolutionScope::QiwePlatformUser,
+        };
+
+        let value = speaker_context_json(Some(context.clone()), &identity);
+        let mentioned = member_context_json(
+            "Joey17336786728",
+            MemberNameResolution::resolved(person_id, 1),
+            Some(context),
+        );
+        let rendered = format!("{value}{mentioned}");
+
+        assert!(!rendered.contains("17336786728"));
+        assert!(rendered.contains("[敏感数字]"));
+    }
+
+    #[test]
+    fn identity_only_member_context_has_safe_nonempty_summary() {
+        let summary = identity_only_safe_summary(Some("Joey17336786728"));
+        let hints = identity_only_safe_reply_hints(serde_json::json!({}));
+
+        assert!(!summary.contains("17336786728"));
+        assert!(summary.contains("已识别为群内成员"));
+        assert_eq!(hints["profile_status"], "identity_only");
+        assert_eq!(hints["do_not_infer_missing_profile"], true);
+    }
+
+    #[test]
     fn training_tool_is_advertised() {
         let tools = tool_definitions();
         let names = tools
@@ -3279,6 +3716,21 @@ mod tests {
             .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
             .collect::<Vec<_>>();
         assert!(names.contains(&"qintopia_erhua_training_note_submit"));
+    }
+
+    #[test]
+    fn answer_context_tool_advertises_referenced_sender_id() {
+        let tools = tool_definitions();
+        let answer_context_tool = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "qintopia_answer_context_prepare")
+            .unwrap();
+        assert!(answer_context_tool["inputSchema"]["properties"]
+            .as_object()
+            .unwrap()
+            .contains_key("referenced_sender_id"));
     }
 
     #[test]
@@ -3389,9 +3841,23 @@ mod tests {
     }
 
     #[test]
+    fn mentioned_member_names_extracts_lowercase_ascii_identity_question() {
+        let names = super::mentioned_member_names("paxon是谁你知道吗", None);
+        assert_eq!(names, vec!["paxon"]);
+        let names = super::mentioned_member_names("谁是paxon呀", None);
+        assert_eq!(names, vec!["paxon"]);
+    }
+
+    #[test]
     fn mentioned_member_names_extracts_chinese_name_after_question_marker() {
         let names = super::mentioned_member_names("谁是小乔呀", None);
         assert_eq!(names, vec!["小乔"]);
+    }
+
+    #[test]
+    fn mentioned_member_names_do_not_extract_pronoun_identity_questions() {
+        assert!(super::mentioned_member_names("他是谁", None).is_empty());
+        assert!(super::mentioned_member_names("这个人是谁", None).is_empty());
     }
 
     #[test]
@@ -3425,12 +3891,20 @@ mod tests {
             AnswerRouteKind::MemberIdentity
         );
         assert_eq!(
+            classify_answer_route("他是谁"),
+            AnswerRouteKind::MemberIdentity
+        );
+        assert_eq!(
             classify_answer_route("你知道 WiFi 密码吗"),
             AnswerRouteKind::AuthoritativePublicFact
         );
         assert_eq!(
             classify_answer_route("还有空房吗"),
             AnswerRouteKind::LiveOperations
+        );
+        assert_eq!(
+            classify_answer_route("@二花 西安最好的爵士乐演出是哪"),
+            AnswerRouteKind::PublicSourceRecommendation
         );
     }
 
@@ -3458,7 +3932,7 @@ mod tests {
     }
 
     #[test]
-    fn member_name_resolution_falls_back_to_platform_scope() {
+    fn member_name_resolution_falls_back_to_platform_scope_when_allowed() {
         let person_id = Uuid::parse_str("00000000-0000-0000-0000-000000000073").unwrap();
         let resolution = select_scoped_member_name_resolution(
             &[],
@@ -3466,6 +3940,7 @@ mod tests {
                 person_id,
                 rank: 90,
             }],
+            true,
         );
 
         assert_eq!(resolution.status, MemberNameResolutionStatus::Resolved);
@@ -3493,6 +3968,7 @@ mod tests {
                 person_id: platform_person,
                 rank: 90,
             }],
+            true,
         );
 
         assert_eq!(resolution.status, MemberNameResolutionStatus::Ambiguous);
@@ -3502,7 +3978,24 @@ mod tests {
 
     #[test]
     fn member_name_resolution_does_not_platform_fallback_without_candidate() {
-        let resolution = select_scoped_member_name_resolution(&[], &[]);
+        let resolution = select_scoped_member_name_resolution(&[], &[], true);
+
+        assert_eq!(resolution.status, MemberNameResolutionStatus::Unresolved);
+        assert_eq!(resolution.person_id, None);
+        assert_eq!(resolution.match_count, 0);
+    }
+
+    #[test]
+    fn member_name_resolution_does_not_platform_fallback_for_current_chat_scope() {
+        let platform_person = Uuid::parse_str("00000000-0000-0000-0000-000000000077").unwrap();
+        let resolution = select_scoped_member_name_resolution(
+            &[],
+            &[MemberNameCandidate {
+                person_id: platform_person,
+                rank: 90,
+            }],
+            false,
+        );
 
         assert_eq!(resolution.status, MemberNameResolutionStatus::Unresolved);
         assert_eq!(resolution.person_id, None);
@@ -3540,6 +4033,23 @@ mod tests {
         assert_eq!(intent.kind, "live_operations_status");
         assert!(intent.requires_live_operations);
         assert!(!intent.requires_authoritative_source);
+    }
+
+    #[test]
+    fn local_public_recommendations_require_public_source_check() {
+        let intent = classify_lookup_intent("@二花 西安最好的爵士乐演出是哪", "reply");
+        assert_eq!(intent.kind, "public_source_recommendation");
+        assert!(intent.requires_public_source_check);
+        assert!(!intent.requires_authoritative_source);
+        assert!(!intent.requires_live_operations);
+
+        let current_event_intent = classify_lookup_intent("这周有什么演出值得去", "reply");
+        assert_eq!(current_event_intent.kind, "public_source_recommendation");
+        assert!(current_event_intent.requires_public_source_check);
+
+        let group_framed_intent = classify_lookup_intent("群里问西安哪场爵士演出好", "reply");
+        assert_eq!(group_framed_intent.kind, "public_source_recommendation");
+        assert!(group_framed_intent.requires_public_source_check);
     }
 
     #[test]

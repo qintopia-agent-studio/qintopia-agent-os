@@ -36,6 +36,7 @@ mod huabaosi_feishu_artifact_mirror;
 mod huabaosi_wecom_canary;
 mod huabaosi_wecom_policy;
 mod huabaosi_wecom_shadow;
+mod identity_alias;
 mod identity_backfill;
 mod identity_bootstrap;
 #[cfg_attr(
@@ -61,6 +62,7 @@ mod poster_delivery;
 mod poster_notification;
 mod qiwe_image_send;
 pub mod qiwe_image_send_state;
+mod qiwe_text_send;
 mod raw_archive;
 mod smoke;
 mod url_policy;
@@ -242,6 +244,7 @@ async fn main() -> Result<()> {
             chat_id,
             sender_id,
             request_delay_ms,
+            sync_room_members,
         } => {
             identity_backfill::run(
                 &cli,
@@ -253,6 +256,7 @@ async fn main() -> Result<()> {
                     chat_id,
                     sender_id,
                     request_delay_ms,
+                    sync_room_members,
                 },
             )
             .await
@@ -274,9 +278,51 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::ErhuaMemberSafeAlias {
+            apply,
+            dry_run,
+            payload_json,
+            payload_file,
+            approval,
+        } => {
+            identity_alias::run(
+                &cli,
+                identity_alias::SafeAliasOptions {
+                    apply,
+                    dry_run,
+                    payload_json,
+                    payload_file,
+                    approval,
+                },
+            )
+            .await
+        }
+        Command::ErhuaMemberSafeIdentity {
+            apply,
+            dry_run,
+            payload_json,
+            payload_file,
+            approval,
+        } => {
+            identity_alias::run_safe_identity(
+                &cli,
+                identity_alias::SafeIdentityOptions {
+                    apply,
+                    dry_run,
+                    payload_json,
+                    payload_file,
+                    approval,
+                },
+            )
+            .await
+        }
+        Command::ErhuaMemberSpeakerCanarySenderMap { chat_id } => {
+            identity_bootstrap::run_speaker_canary_sender_map(&cli, chat_id).await
+        }
         Command::MemberProfile {
             apply,
             dry_run,
+            quiet,
             chat_id,
             limit,
         } => {
@@ -285,6 +331,7 @@ async fn main() -> Result<()> {
                 member_profile::ProfileOptions {
                     apply,
                     dry_run,
+                    quiet,
                     chat_id,
                     limit,
                 },
@@ -694,6 +741,13 @@ async fn main() -> Result<()> {
         Command::ProcessQiweImageSendCallback { apply, dry_run } => {
             qiwe_image_send::run_callback_processor(&cli, apply, dry_run).await
         }
+        Command::RunQiweTextSendWorker {
+            once,
+            work_item_id,
+            apply,
+            dry_run,
+            fixture_mode,
+        } => qiwe_text_send::run(&cli, once, work_item_id, apply, dry_run, fixture_mode).await,
         Command::XiaomanRealActivityProductionEvidence {
             workflow_root_id,
             source_event_signal_id,

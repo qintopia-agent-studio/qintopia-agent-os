@@ -596,6 +596,10 @@ pub enum Command {
         /// Delay between QiWe identity API requests.
         #[arg(long, default_value_t = 0)]
         request_delay_ms: u64,
+
+        /// Sync the current QiWe room member roster into channel_identities. Requires --chat-id.
+        #[arg(long)]
+        sync_room_members: bool,
     },
     /// Create one person per QiWe channel identity and link captured messages.
     IdentityBootstrapPersons {
@@ -615,6 +619,56 @@ pub enum Command {
         #[arg(long)]
         limit: Option<i64>,
     },
+    /// Add reviewed safe aliases for linked Erhua members that cannot be canary-tested by their observed display name.
+    ErhuaMemberSafeAlias {
+        /// Apply changes. Without this flag the command is a dry run.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run mode even if --apply is not present.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// JSON payload containing reviewed aliases.
+        #[arg(long)]
+        payload_json: Option<String>,
+
+        /// Path to JSON payload containing reviewed aliases.
+        #[arg(long)]
+        payload_file: Option<std::path::PathBuf>,
+
+        /// Exact owner approval phrase required for --apply.
+        #[arg(long, env = "QINTOPIA_ERHUA_MEMBER_SAFE_ALIAS_APPROVAL")]
+        approval: Option<String>,
+    },
+    /// Link reviewed current-room Erhua member identities to people with safe names.
+    ErhuaMemberSafeIdentity {
+        /// Apply changes. Without this flag the command is a dry run.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run mode even if --apply is not present.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// JSON payload containing reviewed identities.
+        #[arg(long)]
+        payload_json: Option<String>,
+
+        /// Path to JSON payload containing reviewed identities.
+        #[arg(long)]
+        payload_file: Option<std::path::PathBuf>,
+
+        /// Exact owner approval phrase required for --apply.
+        #[arg(long, env = "QINTOPIA_ERHUA_MEMBER_SAFE_IDENTITY_APPROVAL")]
+        approval: Option<String>,
+    },
+    /// Build a private sender-id map for Erhua speaker self-recognition canaries.
+    ErhuaMemberSpeakerCanarySenderMap {
+        /// Reviewed Erhua QiWe group/chat id.
+        #[arg(long)]
+        chat_id: String,
+    },
     /// Dry-run or apply member profile extraction for target QiWe group messages.
     MemberProfile {
         /// Apply changes. Without this flag the command is a dry run.
@@ -624,6 +678,10 @@ pub enum Command {
         /// Force dry-run mode even if --apply is not present.
         #[arg(long)]
         dry_run: bool,
+
+        /// Print only aggregate counts and sanitized scope fingerprints.
+        #[arg(long)]
+        quiet: bool,
 
         /// Restrict to one configured QiWe group/chat id.
         #[arg(long)]
@@ -1327,6 +1385,28 @@ pub enum Command {
         work_item_id: Option<uuid::Uuid>,
 
         /// Apply changes. Apply only records send-readiness; it does not send.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run mode even if --apply is not present.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Use deterministic local fixture input instead of reading Postgres.
+        #[arg(long)]
+        fixture_mode: bool,
+    },
+    /// Send reviewed Erhua text announcements through QiWe.
+    RunQiweTextSendWorker {
+        /// Run one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Process one specific group-message work item instead of the oldest claimable item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Apply changes. Apply may call QiWe after all reviewed boundaries pass.
         #[arg(long)]
         apply: bool,
 
