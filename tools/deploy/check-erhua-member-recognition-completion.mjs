@@ -27,6 +27,10 @@ const roomSync = parseRoomSyncEvidence(roomSyncText);
 const profile = parseProfileEvidence(profileText);
 const coverage = parseCoverage(coverageText);
 const canaries = parseCanaryRecords(canaryText);
+assertNoVisiblePhoneLike(roomSync, "room member sync evidence");
+assertNoVisiblePhoneLike(profile, "member profile evidence");
+assertNoVisiblePhoneLike(coverage, "coverage evidence");
+assertNoVisiblePhoneLike(canaries, "canary evidence");
 const MIN_PROFILE_REPAIR_MESSAGE_LIMIT = 5000;
 
 const errors = [];
@@ -852,13 +856,42 @@ function readEvidence(file, label) {
     /"source_message_id"\s*:/,
     /"hidden_profile_details"\s*:/,
     /"raw"\s*:/,
-    /1[3-9]\d{9}/,
   ]) {
     if (pattern.test(text)) {
       fail(`${label} contains forbidden sensitive fragment: ${pattern}`);
     }
   }
   return text;
+}
+
+function assertNoVisiblePhoneLike(value, label) {
+  const visibleText = visibleTextFields(value).join("\n");
+  if (/1[3-9]\d{9}/.test(visibleText)) {
+    fail(`${label} contains forbidden sensitive fragment: /1[3-9]\\d{9}/`);
+  }
+}
+
+function visibleTextFields(value, key = "") {
+  if (
+    key === "person_ref" ||
+    key === "canonical_key" ||
+    key === "same_person_key" ||
+    key === "scope_fingerprint"
+  ) {
+    return [];
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => visibleTextFields(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([entryKey, entryValue]) =>
+      visibleTextFields(entryValue, entryKey)
+    );
+  }
+  return [];
 }
 
 function parseCoverage(text) {
