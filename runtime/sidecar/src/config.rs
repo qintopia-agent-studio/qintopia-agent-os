@@ -1338,6 +1338,28 @@ pub enum Command {
         #[arg(long)]
         fixture_mode: bool,
     },
+    /// Send reviewed Erhua text announcements through QiWe.
+    RunQiweTextSendWorker {
+        /// Run one batch and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Process one specific group-message work item instead of the oldest claimable item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Apply changes. Apply may call QiWe after all reviewed boundaries pass.
+        #[arg(long)]
+        apply: bool,
+
+        /// Force dry-run mode even if --apply is not present.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Use deterministic local fixture input instead of reading Postgres.
+        #[arg(long)]
+        fixture_mode: bool,
+    },
     /// Build sanitized Feishu Task mirror payloads without calling Feishu.
     RunWorkbenchMirrorWorker {
         /// Run one batch and exit.
