@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.98](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.97...v0.2.98) (2026-08-10)
+
+
+### Features
+
+* enable erhua morning brief auto publish ([dcffa65](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/dcffa6562b407e40d5fe4a47f4384805cf28fba9))
+
 ## [0.2.97](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.96...v0.2.97) (2026-08-09)
 
 
