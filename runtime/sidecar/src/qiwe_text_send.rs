@@ -385,7 +385,10 @@ async fn lock_work_item(
     let query = format!(
         r#"
         WITH claimable AS (
-            SELECT request.id
+            SELECT
+                request.id,
+                artifact.id AS artifact_id,
+                artifact.content_hash AS artifact_content_hash
             FROM qintopia_agent_os.work_items request
             JOIN qintopia_agent_os.artifacts artifact
               ON artifact.id::text = request.payload->>'approved_artifact_id'
@@ -427,7 +430,7 @@ async fn lock_work_item(
               )
             ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF request SKIP LOCKED
         )
         UPDATE qintopia_agent_os.work_items request
         SET status = 'processing',
@@ -437,11 +440,10 @@ async fn lock_work_item(
             attempts = attempts + 1,
             updated_at = now()
         FROM claimable
-        JOIN qintopia_agent_os.artifacts artifact
-          ON artifact.id::text = request.payload->>'approved_artifact_id'
         WHERE request.id = claimable.id
         RETURNING request.id, request.status, request.review_policy, request.payload,
-                  artifact.id AS artifact_id, artifact.content_hash AS artifact_content_hash
+                  claimable.artifact_id AS artifact_id,
+                  claimable.artifact_content_hash AS artifact_content_hash
         "#
     );
     let row = sqlx::query(&query)
@@ -1053,6 +1055,11 @@ fn sha256_hex(value: &str) -> String {
     format!("sha256:{:x}", Sha256::digest(value.as_bytes()))
 }
 
+fn database_hash_matches(database_url: &str, expected: &str) -> bool {
+    let actual = sha256_hex(database_url);
+    expected == actual || actual.strip_prefix("sha256:") == Some(expected)
+}
+
 fn contains_control(value: &str) -> bool {
     value
         .chars()
@@ -1086,7 +1093,7 @@ fn validate_production_owner_approval() -> Result<()> {
 #[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 fn validate_database_boundary(database_url: &str) -> Result<()> {
     let expected = required_env(DATABASE_URL_SHA256_ENV)?;
-    if sha256_hex(database_url) != expected {
+    if !database_hash_matches(database_url, &expected) {
         bail!("QiWe text-send database URL hash does not match owner-approved boundary");
     }
     Ok(())
@@ -1190,5 +1197,19 @@ mod tests {
         let report = empty_report(false, true, "text_send_disabled");
         assert!(!report.success);
         assert_eq!(report.external_send_executed, Some(false));
+    }
+
+    #[test]
+    fn database_hash_boundary_accepts_prefixed_or_bare_sha256() {
+        let database_url = "postgres://user:pass@example.invalid/qintopia";
+        let prefixed = sha256_hex(database_url);
+        let bare = prefixed.strip_prefix("sha256:").unwrap();
+
+        assert!(database_hash_matches(database_url, &prefixed));
+        assert!(database_hash_matches(database_url, bare));
+        assert!(!database_hash_matches(
+            database_url,
+            "0".repeat(64).as_str()
+        ));
     }
 }
