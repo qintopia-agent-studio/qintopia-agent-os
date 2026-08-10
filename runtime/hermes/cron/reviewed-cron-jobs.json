@@ -1,4 +1,15 @@
 {
   "schema_version": 1,
-  "reviewed_jobs": []
+  "reviewed_jobs": [
+    {
+      "profile": "xiaoman",
+      "name": "小满·周六活动招募",
+      "schedule_expr": "0 10 * * 6",
+      "script": "qintopia_xiaoman_weekly_recruitment.sh",
+      "no_agent": true,
+      "deliver": "origin",
+      "approved_at": "2026-08-10",
+      "plan": "docs/plans/active/hermes-cron-migration/task-2-xiaoman-weekly-recruitment.md"
+    }
+  ]
 }
