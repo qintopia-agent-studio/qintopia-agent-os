@@ -92,6 +92,12 @@
   people without useful profile signals should receive an active no-stable-profile
   `reply_context` snapshot with `do_not_infer_missing_profile=true`, not remain
   identity-only.
+- Erhua member recognition roster audit evidence:
+  `node tools/deploy/build-erhua-member-recognition-roster-audit.mjs`. It must derive
+  only from sanitized coverage, canary, and completion-summary evidence and may retain
+  safe names, canonical keys, `person_ref` hashes, profile status, required-term
+  matches, and route canary booleans; never rebuild it from raw DB rows, raw group
+  messages, real QiWe ids, person UUIDs, or raw profile text.
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:

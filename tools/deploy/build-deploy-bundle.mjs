@@ -127,6 +127,7 @@ const sourceFiles = [
   "tools/deploy/collect-release-deploy-results.mjs",
   "tools/deploy/build-erhua-member-recognition-canary-evidence.mjs",
   "tools/deploy/build-erhua-member-recognition-canary-mcp-input.mjs",
+  "tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
   "tools/deploy/build-erhua-member-safe-alias-payload-template.mjs",
   "tools/deploy/build-erhua-member-safe-identity-payload-template.mjs",
   "tools/deploy/check-erhua-member-recognition-canary.mjs",

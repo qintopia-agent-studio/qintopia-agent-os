@@ -485,12 +485,19 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
      --canary /tmp/erhua-member-recognition-canary.jsonl \
      --summary-output /tmp/erhua-member-recognition-completion-summary.json \
      --require-active-profiles
+
+   node tools/deploy/build-erhua-member-recognition-roster-audit.mjs \
+     --coverage /tmp/erhua-identity-bootstrap-dry-run.json \
+     --canary /tmp/erhua-member-recognition-canary.jsonl \
+     --completion-summary /tmp/erhua-member-recognition-completion-summary.json \
+     --output /tmp/erhua-member-recognition-roster-audit.json \
+     --require-active-profiles
    ```
 
    Do not copy `/tmp/erhua-member-speaker-sender-map.private.json` or
    `/tmp/erhua-member-recognition-context-mcp-input.jsonl` into retained evidence,
    chats, issues, or git. They contain raw sender ids. Retain only the sanitized canary
-   JSONL, checker output, completion summary, and finalizer output.
+   JSONL, checker output, completion summary, finalizer output, and roster audit.
 
    The final completion checker requires the room-sync `scope_fingerprint`, the single
    quiet member-profile `scope_fingerprints` entry, and bootstrap coverage
@@ -530,6 +537,13 @@ Run the release-local sidecar from `release/current`; do not hot-edit server fil
    community running-event language such as `跑步局`, `约跑`, route, pace, or `km`
    context as a safe running activity signal, while still ignoring object-only chatter
    such as running shoes.
+
+   The roster audit is the retained per-person proof. It is derived only from sanitized
+   coverage, canary JSONL, and completion summary evidence, and may retain safe names,
+   canonical keys, `person_ref` hashes, profile status, required-term matches, and
+   mentioned/speaker/referenced canary booleans. It must not be rebuilt from raw DB rows
+   and must not retain raw group ids, sender ids, QiWe user ids, person UUIDs, raw
+   messages, or raw profile text.
 
 ## Hold Conditions
 

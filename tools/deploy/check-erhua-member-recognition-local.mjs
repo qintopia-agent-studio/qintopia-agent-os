@@ -73,6 +73,7 @@ const commands = [
   ["node", ["tools/deploy/test-erhua-member-recognition-canary.mjs"]],
   ["node", ["tools/deploy/test-erhua-member-recognition-canary-builder.mjs"]],
   ["node", ["tools/deploy/test-erhua-member-recognition-canary-mcp-input.mjs"]],
+  ["node", ["tools/deploy/test-erhua-member-recognition-roster-audit.mjs"]],
   ["node", ["tools/deploy/test-erhua-member-recognition-completion.mjs"]],
   ["node", ["tools/deploy/test-erhua-member-recognition-completion-summary.mjs"]],
   ["node", ["tools/deploy/test-finalize-erhua-member-recognition-completion.mjs"]],
@@ -83,6 +84,7 @@ const commands = [
 const requiredBundlePaths = [
   "payload/tools/deploy/build-erhua-member-recognition-canary-evidence.mjs",
   "payload/tools/deploy/build-erhua-member-recognition-canary-mcp-input.mjs",
+  "payload/tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
   "payload/tools/deploy/build-erhua-member-safe-alias-payload-template.mjs",
   "payload/tools/deploy/build-erhua-member-safe-identity-payload-template.mjs",
   "payload/tools/deploy/check-erhua-member-recognition-canary.mjs",
