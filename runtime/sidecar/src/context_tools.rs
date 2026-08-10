@@ -525,12 +525,13 @@ async fn qintopia_answer_context_prepare(
         "qintopia_answer_context_prepare",
     )
     .await?;
-    Ok(json!({
+    let answer_route = answer_route_json(&message_text);
+    let mut response = json!({
         "success": true,
         "speaker": speaker_context_json(speaker_context, &speaker_identity),
         "referenced_member": speaker_context_json(referenced_context, &referenced_identity),
         "mentioned_members": mentioned_members,
-        "answer_route": answer_route_json(&message_text),
+        "answer_route": answer_route,
         "training_guidance": training_guidance,
         "answer_rules": {
             "do_not_disclose_profile_source": true,
@@ -543,7 +544,37 @@ async fn qintopia_answer_context_prepare(
             "explain_public_sources_for_local_recommendations": true
         },
         "redactions": redactions
-    }))
+    });
+    apply_public_source_lookup_enrichment(&mut response, &message_text);
+    Ok(response)
+}
+
+// The QiWe adapter keys its explicit public-source reply directives off
+// answer_basis/public_source_lookup_plan, so the prepare payload must carry
+// the same shape the wenyuange lookup returns for this route.
+fn apply_public_source_lookup_enrichment(response: &mut Value, message_text: &str) {
+    let requires_public_source_check = response
+        .get("answer_route")
+        .and_then(|route| route.get("requires_public_source_check"))
+        .and_then(Value::as_bool)
+        == Some(true);
+    if !requires_public_source_check {
+        return;
+    }
+    if let Some(object) = response.as_object_mut() {
+        object.insert(
+            "answer_basis".to_string(),
+            json!({
+                "kind": "public_source_check_required",
+                "summary": "这个问题依赖当前公开信息、当期排期和可核验口碑；不能只用群聊记忆、人格口癖或泛化印象给出“最好”“公认”这类结论。",
+                "evidence_snippets": []
+            }),
+        );
+        object.insert(
+            "public_source_lookup_plan".to_string(),
+            public_source_recommendation_lookup_plan(message_text),
+        );
+    }
 }
 
 async fn qintopia_erhua_training_note_submit(
@@ -3989,6 +4020,55 @@ mod tests {
         let names = super::mentioned_member_names("Cici 我是谁", Some(&speaker));
 
         assert!(names.is_empty());
+    }
+
+    #[test]
+    fn public_source_enrichment_adds_lookup_plan_for_event_recommendations() {
+        let mut response = serde_json::json!({
+            "answer_route": super::answer_route_json("@二花 西安最好的爵士乐演出是哪")
+        });
+        super::apply_public_source_lookup_enrichment(
+            &mut response,
+            "@二花 西安最好的爵士乐演出是哪",
+        );
+        assert_eq!(
+            response["answer_basis"]["kind"],
+            "public_source_check_required"
+        );
+        let plan = &response["public_source_lookup_plan"];
+        assert_eq!(plan["source_order"][0]["source"], "小红书");
+        assert!(plan["source_order"][0]["search_queries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|query| query.as_str().unwrap().contains("西安 爵士乐演出")));
+        assert_eq!(plan["source_order"][1]["source"], "大麦/秀动/猫眼");
+    }
+
+    #[test]
+    fn public_source_enrichment_routes_cafe_to_map_review_not_ticketing() {
+        let mut response = serde_json::json!({
+            "answer_route": super::answer_route_json("上海最好的咖啡馆是哪？")
+        });
+        super::apply_public_source_lookup_enrichment(&mut response, "上海最好的咖啡馆是哪？");
+        let plan = &response["public_source_lookup_plan"];
+        assert_eq!(plan["source_order"][0]["source"], "小红书");
+        assert_eq!(plan["source_order"][1]["source"], "地图/点评平台");
+        assert!(plan["source_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|source| source["source"] != "大麦/秀动/猫眼"));
+    }
+
+    #[test]
+    fn public_source_enrichment_skips_non_recommendation_routes() {
+        let mut response = serde_json::json!({
+            "answer_route": super::answer_route_json("我是谁")
+        });
+        super::apply_public_source_lookup_enrichment(&mut response, "我是谁");
+        assert!(response.get("answer_basis").is_none());
+        assert!(response.get("public_source_lookup_plan").is_none());
     }
 
     #[test]
