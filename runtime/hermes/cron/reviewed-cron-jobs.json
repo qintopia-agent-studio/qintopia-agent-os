@@ -35,6 +35,17 @@
       "plan": "docs/plans/active/hermes-cron-migration/task-3-xiaoman-weekly-plan-confirmation.md"
     },
     {
+      "profile": "xiaoman",
+      "name": "小满·每日案例日报",
+      "schedule_expr": "0 8 * * *",
+      "script": "qintopia_xiaoman_daily_case_report.sh",
+      "no_agent": true,
+      "deliver": "origin",
+      "origin_platform": "wecom",
+      "approved_at": "2026-08-11",
+      "plan": "docs/plans/active/hermes-cron-migration/task-4-xiaoman-daily-case-report.md"
+    },
+    {
       "profile": "erhua",
       "name": "二花·每日早报",
       "schedule_expr": "10 8 * * *",

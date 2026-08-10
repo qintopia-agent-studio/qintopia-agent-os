@@ -1,6 +1,12 @@
 # Xiaoman Daily Case-Report Auto Publish Cutover Runbook
 
-Updated: 2026-08-08
+Updated: 2026-08-11
+
+> Deprecated as the forward activation path. The daily 08:00 case-report auto-publish is
+> migrating to a Hermes cron job (task 4); use
+> `docs/operations/xiaoman-daily-case-report-hermes-cron-runbook.md` for cutover. This
+> systemd runbook is kept only as the rollback target until the Hermes cron is observed
+> healthy in production.
 
 This document records the reviewed cutover shape for promoting
 `workflows/xiaoman-daily-case-report` from a merged, `status: draft` workflow package

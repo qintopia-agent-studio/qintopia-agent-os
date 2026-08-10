@@ -1,0 +1,15 @@
+{
+  "name": "小满·每日案例日报",
+  "schedule": { "kind": "cron", "expr": "0 8 * * *", "display": "0 8 * * *" },
+  "no_agent": true,
+  "script": "qintopia_xiaoman_daily_case_report.sh",
+  "deliver": "origin",
+  "origin": {
+    "platform": "wecom",
+    "chat_id": "{{QINTOPIA_XIAOMAN_TECHNICAL_HOME_CHANNEL}}",
+    "chat_name": null,
+    "thread_id": null
+  },
+  "enabled": false,
+  "skills": []
+}
