@@ -463,6 +463,13 @@ function buildCompletionSummary({
       without_answer_context_canary_spec:
         values.linked_people_without_answer_context_canary_spec,
     },
+    qiwe_speaker_identities: {
+      materializable_users: values.qiwe_platform_identity_materializable_users,
+      platform_identities_missing: values.qiwe_platform_identities_missing,
+      ambiguous_users: values.qiwe_platform_identity_ambiguous_users,
+      linked_people_without_platform_identity:
+        values.linked_people_without_qiwe_platform_identity,
+    },
     profile_repair: {
       dry_run: false,
       requested_message_limit: profileStats.requestedMessageLimit,
