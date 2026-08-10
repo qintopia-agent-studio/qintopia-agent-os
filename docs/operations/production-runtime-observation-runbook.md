@@ -74,13 +74,15 @@ Successful evidence records only sanitized fields such as
 `erhua_morning_brief_worker_run_result=success`,
 `erhua_morning_brief_worker_run_epoch=<unix>`, and for weekly targets
 `xiaoman_weekly_preview_worker_summary_present=true` and
-`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. Failure evidence records only
-the fixed reason token, one of `systemctl_unavailable`, `timer_not_enabled`,
-`timer_not_active`, `service_never_started`, `worker_failed`, `summary_missing`,
-`summary_invalid`, or `python_unavailable`. `service_never_started` before the first
-scheduled trigger means the timer has not fired yet; rerun the observation after the
-scheduled time instead of treating it as a regression. The script echoes no journal
-output, env values, group ids, or summary text.
+`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. When the paired timer is
+enabled and active but the worker service has not started yet, the observation passes
+with `<key>_worker_run_result=not_started`: before the first scheduled trigger this
+means the timer has not fired yet, not a regression. Rerun the observation after the
+scheduled time; `not_started` after the scheduled time means the timer did not fire and
+needs reviewed investigation. Failure evidence records only the fixed reason token, one
+of `systemctl_unavailable`, `timer_not_enabled`, `timer_not_active`, `worker_failed`,
+`summary_missing`, `summary_invalid`, or `python_unavailable`. The script echoes no
+journal output, env values, group ids, or summary text.
 
 Worker-run evidence is read-only: it inspects systemd state and reads the worker's
 summary JSON only. It does not start or stop services, write state, or call QiWe,
