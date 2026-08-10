@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.100](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.99...v0.2.100) (2026-08-10)
+
+
+### Features
+
+* add erhua member recognition production flow ([4673071](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/46730716416288a7180a46d8699524fbb5f2c71b))
+
+
+### Bug Fixes
+
+* retain unsafe display recognition proof ([5a4278c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5a4278c4959efaedb78096e33aaccb68e28e24f0))
+
+
+### Maintenance
+
+* sync remote release branch ([d0f478c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d0f478cee74ab2f9e023b584cd5f2fefc2c1e1ed))
+
 ## [0.2.99](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.98...v0.2.99) (2026-08-10)
 
 
