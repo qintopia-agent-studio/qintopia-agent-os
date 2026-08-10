@@ -2334,50 +2334,91 @@ fn public_source_recommendation_lookup_plan(query: &str) -> Value {
             topic
         }
     };
+    let is_ticketed_event = [
+        "演出",
+        "live",
+        "livehouse",
+        "爵士",
+        "音乐会",
+        "话剧",
+        "展览",
+        "场次",
+        "门票",
+        "开票",
+    ]
+    .iter()
+    .any(|marker| search_topic.contains(&marker.to_lowercase()));
+    let xiaohongshu_source = json!({
+        "source": "小红书",
+        "role": "本地体验和口碑线索",
+        "search_queries": [
+            format!("{} 小红书", search_topic),
+            format!("{} 近期 真实体验", search_topic),
+            format!("{} 口碑", search_topic),
+            format!("{} 避雷", search_topic)
+        ],
+        "check": "看发布日期、评论新旧、是否多篇笔记交叉提到同一场地、门店或演出；小红书只能当口碑线索，不能单独当权威事实。"
+    });
+    let ticket_source = json!({
+        "source": "大麦/秀动/猫眼",
+        "role": "档期、票价、阵容和可购状态",
+        "search_queries": [
+            format!("{} 大麦", search_topic),
+            format!("{} 秀动", search_topic),
+            format!("{} 猫眼", search_topic)
+        ],
+        "check": "确认最近开票、演出时间、场地、阵容、价格和余票；这些实时信息优先于旧笔记。"
+    });
+    let map_review_source = json!({
+        "source": "地图/点评平台",
+        "role": "地址、营业状态和近期评价",
+        "search_queries": [
+            format!("{} 地址", search_topic),
+            format!("{} 评价", search_topic),
+            format!("{} 差评", search_topic)
+        ],
+        "check": "复核地址、营业状态、交通、近期评价和差评，避免推荐已停业或体验明显变差的地方。"
+    });
+    let official_source = if is_ticketed_event {
+        json!({
+            "source": "场地或主办官方账号",
+            "role": "官方排期和变更确认",
+            "search_queries": [
+                format!("{} 官方账号", search_topic),
+                format!("{} 主办方", search_topic)
+            ],
+            "check": "用官方公众号、视频号、小红书官方号或海报确认演出是否仍有效。"
+        })
+    } else {
+        json!({
+            "source": "门店或品牌官方账号",
+            "role": "官方信息和变更确认",
+            "search_queries": [
+                format!("{} 官方账号", search_topic),
+                format!("{} 门店", search_topic)
+            ],
+            "check": "用官方账号、门店页或近期公告确认门店是否仍有效。"
+        })
+    };
+    let source_order = if is_ticketed_event {
+        vec![
+            xiaohongshu_source,
+            ticket_source,
+            official_source,
+            map_review_source,
+        ]
+    } else {
+        vec![xiaohongshu_source, map_review_source, official_source]
+    };
+    let suggested_reply = if is_ticketed_event {
+        "我不直接说哪场“最好”，这个要看近期阵容和口碑。要查的话我会先用小红书搜近期真实体验，再到大麦/秀动/猫眼和场地官方账号核对档期、票价、阵容和是否还可去；如果当前不能实时搜，就先给你搜索词和筛选标准。"
+    } else {
+        "我不直接说哪家“最好”，这个很看个人口味和近期体验。要查的话我会先用小红书搜近期真实体验，再用地图/点评平台复核评分、差评、地址和营业状态；如果当前不能实时搜，就先给你搜索词和筛选标准。"
+    };
     json!({
         "reply_posture": "先给检索路径和判断标准，不要直接下“最好”结论。",
-        "suggested_reply": "我不直接说哪场“最好”，这个要看近期阵容和口碑。要查的话我会先用小红书搜近期真实体验，再到大麦/秀动/猫眼和场地官方账号核对档期、票价、阵容和是否还可去；如果当前不能实时搜，就先给你搜索词和筛选标准。",
-        "source_order": [
-            {
-                "source": "小红书",
-                "role": "本地体验和口碑线索",
-                "search_queries": [
-                    format!("{} 小红书", search_topic),
-                    format!("{} 近期 真实体验", search_topic),
-                    format!("{} 口碑", search_topic),
-                    format!("{} 避雷", search_topic)
-                ],
-                "check": "看发布日期、评论新旧、是否多篇笔记交叉提到同一场地或演出；小红书只能当口碑线索，不能单独当权威事实。"
-            },
-            {
-                "source": "大麦/秀动/猫眼",
-                "role": "档期、票价、阵容和可购状态",
-                "search_queries": [
-                    format!("{} 大麦", search_topic),
-                    format!("{} 秀动", search_topic),
-                    format!("{} 猫眼", search_topic)
-                ],
-                "check": "确认最近开票、演出时间、场地、阵容、价格和余票；这些实时信息优先于旧笔记。"
-            },
-            {
-                "source": "场地或主办官方账号",
-                "role": "官方排期和变更确认",
-                "search_queries": [
-                    format!("{} 官方账号", search_topic),
-                    format!("{} 主办方", search_topic)
-                ],
-                "check": "用官方公众号、视频号、小红书官方号或海报确认演出是否仍有效。"
-            },
-            {
-                "source": "地图/点评平台",
-                "role": "地址、营业状态和近期评价",
-                "search_queries": [
-                    format!("{} 地址", search_topic),
-                    format!("{} 评价", search_topic)
-                ],
-                "check": "复核地址、营业状态、交通和近期评价，避免推荐已停业或体验明显变差的场地。"
-            }
-        ],
+        "suggested_reply": suggested_reply,
+        "source_order": source_order,
         "do_not_claim": ["公认最好", "错不了", "我听过", "一定有票", "价格不变"]
     })
 }
@@ -4227,6 +4268,10 @@ mod tests {
             .any(|query| query.contains("上海") && query.contains("咖啡馆")));
         assert!(queries.iter().all(|query| !query.contains("西安")));
         assert!(queries.iter().all(|query| !query.contains("爵士")));
+        assert!(queries.iter().all(|query| !query.contains("大麦")));
+        assert!(queries.iter().all(|query| !query.contains("秀动")));
+        assert!(queries.iter().all(|query| !query.contains("猫眼")));
+        assert_eq!(plan["source_order"][1]["source"], "地图/点评平台");
     }
 
     #[test]

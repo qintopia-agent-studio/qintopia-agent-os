@@ -2145,6 +2145,36 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIn("回复示例", prompt)
         self.assertIn("不要逐字照搬", prompt)
 
+    def test_answer_context_prompt_injects_public_source_lookup_directive(self) -> None:
+        raw = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(raw, bot_names=["二花"], bot_user_id="1688857683805864")
+        prompt = _member_context_channel_prompt(
+            parsed,
+            None,
+            {
+                "success": True,
+                "answer_basis": {"kind": "public_source_check_required"},
+                "public_source_lookup_plan": {
+                    "source_order": [
+                        {
+                            "source": "小红书",
+                            "search_queries": [
+                                "西安 爵士乐演出 小红书",
+                                "西安 爵士乐演出 近期 真实体验",
+                                "西安 爵士乐演出 口碑",
+                            ],
+                        }
+                    ]
+                },
+            },
+        )
+
+        self.assertIn("本地公开推荐问题", prompt)
+        self.assertIn("不要直接判“最好”", prompt)
+        self.assertIn("回复必须明确提到小红书", prompt)
+        self.assertIn("西安 爵士乐演出 小红书", prompt)
+        self.assertIn("小红书不能单独当权威事实", prompt)
+
     def test_training_note_mcp_request_uses_real_sender_as_trainer(self) -> None:
         request = _training_note_mcp_request(
             chat_id="10859791146538059",
