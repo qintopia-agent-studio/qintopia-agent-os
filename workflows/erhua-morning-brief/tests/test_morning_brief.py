@@ -50,6 +50,8 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIn("发起一个小活动", result.stdout)
         self.assertIn("OpenAI 发布新的 Agent 编排实践", result.stdout)
         self.assertIn("Anthropic 更新企业安全评估", result.stdout)
+        self.assertIn("OpenAI launches realtime agent evaluations", result.stdout)
+        self.assertIn("OpenAI 发布实时 Agent 评估更新", result.stdout)
         self.assertNotIn("https://example.test", result.stdout)
         self.assertNotIn("链上治理工具更新", result.stdout)
         self.assertIn('"sunday_no_publishable_activity_followup": false', result.stdout)
@@ -100,7 +102,7 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("AI 工具共学", result.stdout)
         self.assertIn('"activity_publishable_count": 1', result.stdout)
-        self.assertIn('"ai_news_item_count": 3', result.stdout)
+        self.assertIn('"ai_news_item_count": 5', result.stdout)
         self.assertIn('"external_send_executed": false', result.stdout)
 
     def test_missing_news_fails_closed_by_default(self):
@@ -175,6 +177,26 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             ["OpenAI 发布新的研究更新", "Anthropic 更新企业安全实践"],
         )
         self.assertIn("工具调用", items[0].summary)
+
+    def test_rss_fallback_parser_skips_english_items_without_translation(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>OpenAI launches a new agent guide</title>
+      <description>Teams can use the guide before connecting agents to production systems.</description>
+    </item>
+    <item>
+      <title>Google 发布 Gemini 更新</title>
+      <description>面向开发者的模型工具更新。</description>
+    </item>
+  </channel>
+</rss>"""
+
+        items = module._extract_feed_news_items(rss, 5)
+
+        self.assertEqual([item.title for item in items], ["Google 发布 Gemini 更新"])
 
     def test_rss_fallback_parser_rejects_dtd_and_entities(self):
         module = load_module()
@@ -349,6 +371,34 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             ["OpenAI 发布新的 Agent 编排实践", "Anthropic 更新企业安全评估"],
         )
         self.assertIn("多工具协作", items[0].summary)
+
+    def test_ai_section_parser_keeps_chinese_translation_for_english_items(self):
+        module = load_module()
+        markdown = (FIXTURES / "qunmind-ai-report.md").read_text(encoding="utf-8")
+
+        items = module._extract_ai_news_items(markdown, 5)
+        translated = items[3]
+
+        self.assertEqual(translated.title, "OpenAI launches realtime agent evaluations")
+        self.assertEqual(translated.title_zh, "OpenAI 发布实时 Agent 评估更新")
+        self.assertIn("repeatable checks", translated.summary)
+        self.assertIn("可重复检查", translated.summary_zh)
+        self.assertIn(
+            "中文：OpenAI 发布实时 Agent 评估更新",
+            "\n".join(module._news_item_lines(4, translated)),
+        )
+
+    def test_ai_section_parser_rejects_english_items_without_chinese_translation(self):
+        module = load_module()
+        markdown = """## AI 前沿
+
+### AI｜OpenAI launches a new agent guide
+
+**Summary**: Teams can use the guide before connecting agents to production systems.
+"""
+
+        with self.assertRaisesRegex(RuntimeError, "requires Chinese"):
+            module._extract_ai_news_items(markdown, 5)
 
     def test_prepare_send_request_builds_text_announcement_group_payload(self):
         result = self.run_script(
