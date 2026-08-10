@@ -63,10 +63,11 @@ Runtime-local (never in git): live `jobs.json`, scripts deployed under
 
 ## Governance Notes
 
-- `xiaoman-legacy-cron-observation-smoke.sh` (and its Erhua sibling once migrated)
-  verifies that live declarations match the registry. It is the health signal for
-  conversational edits: an unreviewed schedule or script drift fails loudly, while
-  daemon runtime fields (`last_run_at`, `next_run_at`, `state`) are ignored.
+- `xiaoman-legacy-cron-observation-smoke.sh` and
+  `erhua-legacy-cron-observation-smoke.sh` verify that live declarations match the
+  registry. They are the health signal for conversational edits: an unreviewed schedule
+  or script drift fails loudly, while daemon runtime fields (`last_run_at`,
+  `next_run_at`, `state`) are ignored.
 - Conversational edits that only flip `enabled` or touch runtime fields do not trip the
   smoke. Conversational edits to `schedule.expr` or `script` intentionally do: they
   require a registry PR so schedule changes stay reviewed.

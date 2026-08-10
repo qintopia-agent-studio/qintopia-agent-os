@@ -3613,6 +3613,58 @@ for (const fragment of [
     fragment
   );
 }
+const erhuaMorningBriefHermesCronApplyPath =
+  "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh";
+if (!exists(erhuaMorningBriefHermesCronApplyPath)) {
+  addError(
+    `${erhuaMorningBriefHermesCronApplyPath}: missing morning brief Hermes cron apply`
+  );
+} else {
+  const apply = readText(erhuaMorningBriefHermesCronApplyPath);
+  for (const fragment of [
+    "approved-production-erhua-morning-brief-hermes-cron",
+    "usage: apply-erhua-morning-brief-hermes-cron.sh --install|--enable",
+    'RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'CRON_FILE="/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json"',
+    'PROFILE_ENV="/home/ubuntu/.hermes/profiles/erhua/.env"',
+    'WRAPPER_DEST="/home/ubuntu/.hermes/scripts/qintopia_erhua_morning_brief.sh"',
+    'SNAPSHOT_SYNC="${RELEASE_DIR}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
+    "WECOM_HOME_CHANNEL",
+    "origin_chat_id_sha256",
+    "updated_at_preserved",
+    "os.replace(temp_name, cron_file)",
+    "external_calls_executed",
+    "safe_for_chat",
+    'chmod 0700 "$WRAPPER_DEST"',
+  ]) {
+    requireFragment(erhuaMorningBriefHermesCronApplyPath, apply, fragment);
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON_FILE",
+    "QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON_PROFILE_DIR",
+    "QIWE_TOKEN",
+    "tenant_access_token",
+    "print(chat_id)",
+  ]) {
+    forbidFragment(erhuaMorningBriefHermesCronApplyPath, apply, fragment);
+  }
+}
+const deployBundleBuilderForErhuaMorningBrief = readText(
+  "tools/deploy/build-deploy-bundle.mjs"
+);
+for (const fragment of [
+  "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh",
+  "runtime/hermes/cron/erhua/morning-brief.job.json",
+  "runtime/hermes/scripts/qintopia_erhua_morning_brief.sh",
+]) {
+  requireFragment(
+    "tools/deploy/build-deploy-bundle.mjs",
+    deployBundleBuilderForErhuaMorningBrief,
+    fragment
+  );
+}
 const xiaomanWeeklyLoopWorkflowPath = "workflows/xiaoman-weekly-loop/weekly_loop.py";
 if (exists(xiaomanWeeklyLoopWorkflowPath)) {
   const workflow = readText(xiaomanWeeklyLoopWorkflowPath);
@@ -3999,6 +4051,7 @@ const erhuaMorningBriefScripts = [
   "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
   "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
   "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+  "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
   "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
   "deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh",
@@ -4237,16 +4290,44 @@ if (exists("deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh")) {
   const legacyCronObservation = readText(
     "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh"
   );
-  requireFragment(
-    "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
-    legacyCronObservation,
-    'PYTHON_BIN="/usr/bin/python3"'
-  );
-  forbidFragment(
-    "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
-    legacyCronObservation,
-    "\npython3 -"
-  );
+  for (const fragment of [
+    "QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE",
+    "/home/ubuntu/.hermes/profiles/erhua",
+    "/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json",
+    "runtime/hermes/cron/reviewed-cron-jobs.json",
+    'PYTHON_BIN="/usr/bin/python3"',
+    "reviewed_declarations_only",
+    "reviewed_decl_count",
+    "cron_decl_count",
+    "live_profile_modified",
+    "external_calls_executed",
+    "Erhua legacy cron observation found unreviewed cron job declarations",
+  ]) {
+    requireFragment(
+      "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+      legacyCronObservation,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "systemctl",
+    "rm ",
+    "mv ",
+    "cp ",
+    "source ",
+    "eval ",
+    "run-",
+    "send_executed=true",
+    "QIWE_TOKEN",
+    "tenant_access_token",
+    "\npython3 -",
+  ]) {
+    forbidFragment(
+      "deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh",
+      legacyCronObservation,
+      fragment
+    );
+  }
 }
 if (exists("deploy/sidecar/scripts/retire-erhua-legacy-cron-production.sh")) {
   const retirement = readText(
