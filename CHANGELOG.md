@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.99](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.98...v0.2.99) (2026-08-10)
+
+
+### Bug Fixes
+
+* update xiaoman legacy cron reviewed hash ([#451](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/451)) ([83e5f36](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/83e5f3650efa1363c5623a841daf596193def3a2))
+
 ## [0.2.98](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.97...v0.2.98) (2026-08-10)
 
 
