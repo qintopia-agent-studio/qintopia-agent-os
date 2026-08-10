@@ -2334,6 +2334,7 @@ fn public_source_recommendation_lookup_plan(query: &str) -> Value {
             topic
         }
     };
+    let search_topic_lower = search_topic.to_lowercase();
     let is_ticketed_event = [
         "演出",
         "live",
@@ -2347,7 +2348,7 @@ fn public_source_recommendation_lookup_plan(query: &str) -> Value {
         "开票",
     ]
     .iter()
-    .any(|marker| search_topic.contains(&marker.to_lowercase()));
+    .any(|marker| search_topic_lower.contains(&marker.to_lowercase()));
     let xiaohongshu_source = json!({
         "source": "小红书",
         "role": "本地体验和口碑线索",
@@ -4272,6 +4273,15 @@ mod tests {
         assert!(queries.iter().all(|query| !query.contains("秀动")));
         assert!(queries.iter().all(|query| !query.contains("猫眼")));
         assert_eq!(plan["source_order"][1]["source"], "地图/点评平台");
+    }
+
+    #[test]
+    fn public_source_recommendation_lookup_plan_detects_uppercase_ticketed_events() {
+        let plan = public_source_recommendation_lookup_plan("西安 LIVEHOUSE 推荐");
+
+        assert_eq!(plan["source_order"][0]["source"], "小红书");
+        assert_eq!(plan["source_order"][1]["source"], "大麦/秀动/猫眼");
+        assert_eq!(plan["source_order"][2]["source"], "场地或主办官方账号");
     }
 
     #[test]
