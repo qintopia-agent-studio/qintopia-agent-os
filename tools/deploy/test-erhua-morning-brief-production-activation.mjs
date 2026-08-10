@@ -171,6 +171,10 @@ try {
     erhuaCron,
     replaceAll(fs.readFileSync(sourceErhuaCron, "utf8"), [
       ["/home/ubuntu/.hermes/profiles/erhua", erhuaProfile],
+      [
+        "/home/ubuntu/qintopia-agent-os-releases/current/runtime/hermes/cron/reviewed-cron-jobs.json",
+        registryFixture,
+      ],
     ])
   );
   writeExecutable(
