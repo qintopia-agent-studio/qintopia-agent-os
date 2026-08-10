@@ -50,6 +50,7 @@ const requiredFiles = [
   ".github/workflows/deploy-production.yml",
   ".github/workflows/rollback-production.yml",
   ".github/workflows/activate-production-timers.yml",
+  ".github/workflows/observe-production-runtime.yml",
   ".github/workflows/retire-production-legacy-crons.yml",
   "deploy/runner/README.md",
   "deploy/runner/manifest.yaml",
@@ -84,6 +85,7 @@ const requiredFiles = [
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
   "tools/deploy/test-production-timer-activation-runner.mjs",
+  "tools/deploy/test-production-observation-runner.mjs",
   "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
@@ -97,6 +99,7 @@ const requiredFiles = [
   "tools/deploy/test-xiaoman-profile-bundle-observation.mjs",
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "docs/operations/production-timer-activation-runbook.md",
+  "docs/operations/production-runtime-observation-runbook.md",
   "docs/operations/production-legacy-cron-retirement-runbook.md",
 ];
 
@@ -366,6 +369,51 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     if (validateRequest(badRequest)) {
       addError(
         "deploy request schema must reject unsafe production activation variants"
+      );
+      break;
+    }
+  }
+  const productionObservationRequest = {
+    ...sampleRequest,
+    release_scope: ["production-observation"],
+    restart_targets: ["qintopia-system-services"],
+    dry_run: false,
+    rollback_on_smoke_failure: false,
+    observation: {
+      targets: ["qiwe-image-send", "xiaoman-daily-case-report-auto-publish"],
+    },
+  };
+  if (!validateRequest(productionObservationRequest)) {
+    addError(
+      `deploy request schema must accept fixed production observation requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
+  for (const badRequest of [
+    { ...sampleRequest, observation: { targets: ["qiwe-image-send"] } },
+    {
+      ...productionObservationRequest,
+      release_scope: ["production-observation", "deploy-bundle"],
+    },
+    {
+      ...productionObservationRequest,
+      restart_targets: ["hermes-xiaoman"],
+    },
+    { ...productionObservationRequest, dry_run: true },
+    { ...productionObservationRequest, rollback_on_smoke_failure: true },
+    {
+      ...productionObservationRequest,
+      observation: { targets: ["qiwe-image-send", "qiwe-image-send"] },
+    },
+    {
+      ...productionObservationRequest,
+      observation: { targets: ["unknown-target"] },
+    },
+  ]) {
+    if (validateRequest(badRequest)) {
+      addError(
+        "deploy request schema must reject unsafe production observation variants"
       );
       break;
     }
@@ -917,6 +965,96 @@ if (exists(".github/workflows/activate-production-timers.yml")) {
   }
 }
 
+if (exists(".github/workflows/observe-production-runtime.yml")) {
+  const workflow = YAML.parse(
+    readText(".github/workflows/observe-production-runtime.yml")
+  );
+  const workflowText = readText(".github/workflows/observe-production-runtime.yml");
+  const job = workflow?.jobs?.["request-observation"];
+  const observationTargetsInput =
+    workflow?.on?.workflow_dispatch?.inputs?.observation_targets;
+  const releaseShaInput = workflow?.on?.workflow_dispatch?.inputs?.release_sha;
+
+  if (!workflow?.on?.workflow_dispatch) {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: must use workflow_dispatch"
+    );
+  }
+  if (workflow?.concurrency?.group !== "production-deploy") {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: must share production-deploy concurrency"
+    );
+  }
+  if (job?.environment !== "production") {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: request-observation must use production environment"
+    );
+  }
+  if (job?.permissions?.contents !== "read") {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: request-observation must keep contents permission read-only"
+    );
+  }
+  if (releaseShaInput?.required !== true || releaseShaInput?.type !== "string") {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: release_sha must be a required string input"
+    );
+  }
+  if (
+    observationTargetsInput?.default !==
+    "qiwe-image-send,xiaoman-daily-case-report-auto-publish"
+  ) {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: default observation targets must stay limited to QiWe image-send and Xiaoman daily report"
+    );
+  }
+  const uploadJobNames = Object.entries(workflow?.jobs || {})
+    .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
+    .map(([jobName]) => jobName);
+  if (uploadJobNames.length !== 0) {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: observation must not require contents: write"
+    );
+  }
+  if (hasDangerousInputInterpolationInRun(workflowText)) {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
+    );
+  }
+  for (const forbidden of ["ssh ", "bash -c", "eval ", "gh release upload"]) {
+    if (workflowText.includes(forbidden)) {
+      addError(
+        `.github/workflows/observe-production-runtime.yml: forbidden ${forbidden}`
+      );
+    }
+  }
+  for (const fragment of [
+    "Observe Production Runtime",
+    "ref: master",
+    "require_single_line()",
+    "normalize_csv_allowlist()",
+    "release_sha must be a lowercase 40-character git SHA.",
+    "git merge-base --is-ancestor",
+    "qiwe-image-send,xiaoman-daily-case-report-auto-publish",
+    "pnpm deploy:runner:check",
+    "DEPLOY_RELEASE_SCOPE: production-observation",
+    "DEPLOY_RESTART_TARGETS: qintopia-system-services",
+    'DEPLOY_DRY_RUN: "false"',
+    'DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"',
+    "DEPLOY_OBSERVATION_TARGETS",
+    "DEPLOY_REQUEST_SIGNING_KEY",
+    "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "create-deploy-request.mjs",
+    "upload-deploy-request.sh",
+    "wait-deploy-result.sh",
+    "WAIT_FOR_SERVER_DEPLOY_RESULT",
+  ]) {
+    if (!workflowText.includes(fragment)) {
+      addError(`.github/workflows/observe-production-runtime.yml: missing ${fragment}`);
+    }
+  }
+}
+
 if (exists(".github/workflows/retire-production-legacy-crons.yml")) {
   const workflow = YAML.parse(
     readText(".github/workflows/retire-production-legacy-crons.yml")
@@ -1063,17 +1201,24 @@ for (const fragment of [
   "production-activation requires exactly qintopia-system-services",
   "production-activation requires rollback_on_smoke_failure=false",
   "activation metadata is only allowed for production-activation",
+  "production-observation must be the only release scope",
+  "production-observation requires exactly qintopia-system-services",
+  "production-observation requires rollback_on_smoke_failure=false",
+  "observation metadata is only allowed for production-observation",
   "production-legacy-cron-retirement must be the only release scope",
   "production-legacy-cron-retirement requires exactly qintopia-system-services",
   "production-legacy-cron-retirement requires rollback_on_smoke_failure=false",
   "legacy_cron_retirement metadata is only allowed for production-legacy-cron-retirement",
   "validate_current_activation_release",
+  "validate_current_observation_release",
   "validate_current_retirement_release",
   "observe_erhua_legacy_cron",
   "observe_xiaoman_legacy_cron",
   "run_production_activation",
+  "run_production_observation",
   "run_production_legacy_cron_retirement",
   "production-timer-activation",
+  "production-observation",
   "production-legacy-cron-retirement",
   "activate-erhua-morning-brief-production.sh",
   "retire-erhua-legacy-cron-production.sh",
@@ -1082,6 +1227,8 @@ for (const fragment of [
   "activate-xiaoman-weekly-plan-confirmation-production.sh",
   "activate-xiaoman-weekly-preview-production.sh",
   "activate-xiaoman-daily-case-report-auto-publish-production.sh",
+  "qiwe-image-send-production-observation-smoke.sh",
+  "xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
   "validate_current_profile_release",
   "activate-erhua-profile.sh",
   "rollback-erhua-profile.sh",
@@ -1239,6 +1386,8 @@ for (const fragment of [
   "canonicalJson",
   "signature",
   "DEPLOY_REQUEST_SIGNING_KEY_ID",
+  "DEPLOY_OBSERVATION_TARGETS",
+  "request.observation",
   "requireSha",
   "forbidCosPrefixOverride",
 ]) {
@@ -1583,6 +1732,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-production-timer-activation-runner.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-production-observation-runner.mjs"], {
     cwd: repoRoot,
   });
   execFileSync(

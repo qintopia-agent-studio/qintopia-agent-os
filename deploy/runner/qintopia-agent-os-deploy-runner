@@ -93,6 +93,7 @@ allowed_scope = {
     "hermes-plugins",
     "hermes-profile-erhua",
     "production-activation",
+    "production-observation",
     "production-legacy-cron-retirement",
 }
 allowed_runtime_artifact_profiles = {"huabaosi-production", "qiwe-production"}
@@ -106,6 +107,10 @@ allowed_activation_targets = {
 allowed_legacy_cron_retirement_targets = {
     "erhua-legacy-cron",
     "xiaoman-legacy-cron",
+}
+allowed_observation_targets = {
+    "qiwe-image-send",
+    "xiaoman-daily-case-report-auto-publish",
 }
 allowed_targets = {
     "qintopia-system-services",
@@ -220,6 +225,28 @@ if "production-activation" in release_scope:
 elif data.get("activation") is not None:
     fail("activation metadata is only allowed for production-activation")
 
+if "production-observation" in release_scope:
+    if release_scope != ["production-observation"]:
+        fail("production-observation must be the only release scope")
+    if restart_targets != ["qintopia-system-services"]:
+        fail("production-observation requires exactly qintopia-system-services")
+    if data.get("rollback_on_smoke_failure") is not False:
+        fail("production-observation requires rollback_on_smoke_failure=false")
+    if data.get("dry_run") is not False:
+        fail("production-observation does not support dry_run")
+    observation = data.get("observation")
+    if not isinstance(observation, dict):
+        fail("production-observation requires observation metadata")
+    targets = observation.get("targets")
+    if not isinstance(targets, list) or not targets:
+        fail("observation.targets must be a non-empty list")
+    if set(targets) - allowed_observation_targets or len(set(targets)) != len(targets):
+        fail("observation.targets contains unsupported or duplicate entries")
+    if data.get("profile_dry_run_request_id") is not None:
+        fail("production-observation must not set profile_dry_run_request_id")
+elif data.get("observation") is not None:
+    fail("observation metadata is only allowed for production-observation")
+
 if "production-legacy-cron-retirement" in release_scope:
     if release_scope != ["production-legacy-cron-retirement"]:
         fail("production-legacy-cron-retirement must be the only release scope")
@@ -316,6 +343,7 @@ dry_run="$(json_get dry_run)"
 rollback_on_smoke_failure="$(json_get rollback_on_smoke_failure)"
 profile_dry_run_request_id="$(json_get profile_dry_run_request_id)"
 activation_targets="$(json_get activation.targets)"
+observation_targets="$(json_get observation.targets)"
 legacy_cron_retirement_targets="$(json_get legacy_cron_retirement.targets)"
 if [[ "$force_dry_run" == true ]]; then
   dry_run=true
@@ -351,6 +379,7 @@ write_result() {
     "$release_scope" "$deploy_failure_stage" "$deploy_failure_status" \
     "$promoted_current" "$profile_activation_attempted" \
     "${RESULT_DIR}/${request_id}.activation.json" \
+    "${RESULT_DIR}/${request_id}.observation.json" \
     "${RESULT_DIR}/${request_id}.legacy-cron-retirement.json" <<'PY'
 import json
 import os
@@ -383,8 +412,9 @@ import sys
     promoted_current,
     profile_activation_attempted,
     activation_evidence_path,
+    observation_evidence_path,
     legacy_cron_retirement_evidence_path,
-) = sys.argv[1:28]
+) = sys.argv[1:29]
 
 runner_check = {
     "name": "deploy-runner",
@@ -454,6 +484,14 @@ if os.path.isfile(activation_evidence_path):
         "status": "passed" if status == "succeeded" else "failed",
         "detail": json.dumps(activation_evidence, separators=(",", ":")),
     })
+if os.path.isfile(observation_evidence_path):
+    with open(observation_evidence_path, encoding="utf-8") as fh:
+        observation_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "production-observation",
+        "status": "passed" if status == "succeeded" else "failed",
+        "detail": json.dumps(observation_evidence, separators=(",", ":")),
+    })
 if os.path.isfile(legacy_cron_retirement_evidence_path):
     with open(legacy_cron_retirement_evidence_path, encoding="utf-8") as fh:
         legacy_cron_retirement_evidence = json.load(fh)
@@ -510,6 +548,8 @@ assert_current_profile_release() {
 
 activation_release_dir=""
 activation_evidence_file="${RESULT_DIR}/${request_id}.activation.json"
+observation_release_dir=""
+observation_evidence_file="${RESULT_DIR}/${request_id}.observation.json"
 legacy_cron_retirement_release_dir=""
 legacy_cron_retirement_evidence_file="${RESULT_DIR}/${request_id}.legacy-cron-retirement.json"
 validate_current_activation_release() {
@@ -536,6 +576,32 @@ for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
         raise SystemExit(f"current release manifest {key} mismatch")
 PY
   activation_release_dir="$current_release"
+}
+
+validate_current_observation_release() {
+  local current_release=""
+  current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -z "$current_release" || ! -d "$current_release" ]]; then
+    echo "current release is unavailable for production observation" >&2
+    return 1
+  fi
+  python3 - "$request_file" "${current_release}/manifest.json" "$current_release" <<'PY'
+import json
+import os
+import sys
+
+request_path, manifest_path, current_release = sys.argv[1:4]
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if os.path.basename(current_release) != request["release_sha"]:
+    raise SystemExit("production observation request must target the current release SHA")
+for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
+    if manifest.get(key) != request.get(key):
+        raise SystemExit(f"current release manifest {key} mismatch")
+PY
+  observation_release_dir="$current_release"
 }
 
 validate_current_retirement_release() {
@@ -622,6 +688,35 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 }
 
+write_observation_evidence() {
+  local target="$1"
+  local status="$2"
+  local detail="${3:-}"
+  python3 - "$observation_evidence_file" "$target" "$status" "$detail" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+path, target, status, detail = sys.argv[1:5]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+if os.path.isfile(path):
+    with open(path, encoding="utf-8") as fh:
+        evidence = json.load(fh)
+else:
+    evidence = {"schema_version": 1, "targets": []}
+evidence["targets"].append({
+    "target": target,
+    "status": status,
+    "detail": detail,
+    "recorded_at": now,
+})
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(evidence, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
+
 activation_failure_detail() {
   local status="$1"
   local log_file="$2"
@@ -641,6 +736,62 @@ if path.is_file():
         tail = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", tail)
         detail = f"{detail}: {tail[:1200]}"
 print(detail)
+PY
+}
+
+observation_success_detail() {
+  local log_file="$1"
+  python3 - "$log_file" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+detail = ""
+if path.is_file():
+    lines = [line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()]
+    lines = [line for line in lines if line]
+    if lines:
+        detail = " | ".join(lines[-8:])
+        detail = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", detail)
+        detail = detail[:800]
+print(detail)
+PY
+}
+
+observation_failure_detail() {
+  local status="$1"
+  local primary_log_file="$2"
+  local secondary_log_file="$3"
+  python3 - "$status" "$primary_log_file" "$secondary_log_file" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+status, primary_path, secondary_path = sys.argv[1:4]
+
+def tail(path):
+    file_path = Path(path)
+    if not file_path.is_file():
+        return ""
+    lines = [line.strip() for line in file_path.read_text(encoding="utf-8", errors="replace").splitlines()]
+    lines = [line for line in lines if line]
+    if not lines:
+        return ""
+    return " | ".join(lines[-8:])
+
+parts = []
+primary = tail(primary_path)
+secondary = tail(secondary_path)
+if primary:
+    parts.append(f"enabled: {primary}")
+if secondary:
+    parts.append(f"disabled: {secondary}")
+detail = f"exit {status}"
+if parts:
+    detail = f"{detail}: " + " || ".join(parts)
+detail = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", detail)
+print(detail[:1200])
 PY
 }
 
@@ -745,6 +896,56 @@ run_activation_target() {
   esac
 }
 
+run_qiwe_image_send_observation() {
+  local script_dir="${observation_release_dir}/deploy/sidecar/scripts"
+  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_OBSERVATION_ENABLE=1 \
+    QINTOPIA_QIWE_IMAGE_SEND_EXPECTED_STATE=auto \
+    "${script_dir}/qiwe-image-send-production-observation-smoke.sh"
+}
+
+run_xiaoman_daily_case_report_observation() {
+  local script_dir="${observation_release_dir}/deploy/sidecar/scripts"
+  local enabled_log="$1"
+  local disabled_log="$2"
+  if env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_OBSERVATION_ENABLE=1 \
+    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=enabled \
+    "${script_dir}/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh" \
+    >"$enabled_log" 2>&1; then
+    echo "xiaoman_daily_case_report_auto_publish_observation_state=enabled" >>"$enabled_log"
+    return 0
+  fi
+  if env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_OBSERVATION_ENABLE=1 \
+    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=disabled \
+    "${script_dir}/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh" \
+    >"$disabled_log" 2>&1; then
+    echo "xiaoman_daily_case_report_auto_publish_observation_state=disabled" >>"$disabled_log"
+    cat "$disabled_log" >"$enabled_log"
+    return 0
+  fi
+  return 1
+}
+
+run_observation_target() {
+  local target="$1"
+  local log_file="$2"
+  local secondary_log_file="$3"
+  case "$target" in
+    qiwe-image-send)
+      run_qiwe_image_send_observation >"$log_file" 2>&1
+      ;;
+    xiaoman-daily-case-report-auto-publish)
+      run_xiaoman_daily_case_report_observation "$log_file" "$secondary_log_file"
+      ;;
+    *)
+      echo "unsupported production observation target: ${target}" >&2
+      return 2
+      ;;
+  esac
+}
+
 run_production_activation() {
   deploy_stage="validate-current-activation-release"
   validate_current_activation_release || return $?
@@ -767,6 +968,32 @@ run_production_activation() {
   done
   rm -rf "$activation_log_dir"
   deploy_stage="write-activation-success-result"
+  write_result succeeded
+}
+
+run_production_observation() {
+  deploy_stage="validate-current-observation-release"
+  validate_current_observation_release || return $?
+  rm -f "$observation_evidence_file"
+  local observation_log_dir
+  observation_log_dir="$(mktemp -d)"
+  IFS=',' read -r -a observation_target_list <<< "$observation_targets"
+  local target
+  for target in "${observation_target_list[@]}"; do
+    deploy_stage="observe-${target}"
+    local target_log="${observation_log_dir}/${target}.log"
+    local secondary_log="${observation_log_dir}/${target}.secondary.log"
+    if run_observation_target "$target" "$target_log" "$secondary_log"; then
+      write_observation_evidence "$target" passed "$(observation_success_detail "$target_log")"
+    else
+      local status=$?
+      write_observation_evidence "$target" failed "$(observation_failure_detail "$status" "$target_log" "$secondary_log")"
+      rm -rf "$observation_log_dir"
+      return "$status"
+    fi
+  done
+  rm -rf "$observation_log_dir"
+  deploy_stage="write-observation-success-result"
   write_result succeeded
 }
 
@@ -803,6 +1030,11 @@ run_promotion() {
 
   if [[ "$release_scope" == "production-activation" ]]; then
     run_production_activation
+    return
+  fi
+
+  if [[ "$release_scope" == "production-observation" ]]; then
+    run_production_observation
     return
   fi
 
