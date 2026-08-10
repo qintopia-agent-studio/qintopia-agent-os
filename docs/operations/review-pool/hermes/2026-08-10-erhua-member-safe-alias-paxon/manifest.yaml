@@ -1,0 +1,48 @@
+id: docs/operations/review-pool/hermes/2026-08-10-erhua-member-safe-alias-paxon
+type: reviewed-production-payload
+name: Erhua Member Safe Alias - Paxon
+owner: qiaopengjun
+status: review-pool
+risk_level: low
+description:
+  Owner-reviewed safe alias payload for the Erhua member-recognition coverage sample
+  with sanitized person_key fc2c1a46c0af and numeric-only source display name 000. The
+  owner-approved alias is paxon. This package is payload-only and does not apply
+  production state by itself.
+source:
+  repository: qintopia-agent-os
+  observed_at: 2026-08-10
+  disposition: review-pool
+  evidence_files:
+    - docs/operations/review-pool/hermes/2026-08-10-erhua-member-safe-alias-paxon/safe-alias.json
+production_boundary:
+  deployable: false
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+payload_boundary:
+  sanitized_person_key_only: true
+  includes_qiwe_user_ids: false
+  includes_chat_or_sender_ids: false
+  includes_raw_messages_or_profiles: false
+  includes_secrets_or_database_urls: false
+gates:
+  - id: owner-reviewed-alias
+    note: Owner confirmed alias paxon in the Codex task.
+  - id: payload-schema-check
+    note:
+      tools/deploy/check-erhua-member-safe-alias-payload.mjs must pass before any
+      database-backed dry-run or apply.
+pending_before_activation:
+  - Reviewed release containing qintopia-message-sidecar erhua-member-safe-alias
+  - Production dry-run of the safe-alias payload
+  - Owner-approved production apply with QINTOPIA_ERHUA_MEMBER_SAFE_ALIAS_APPROVAL
+  - Rerun Erhua member-recognition coverage, canary, and completion checks
+validation:
+  commands:
+    - node tools/deploy/check-erhua-member-safe-alias-payload.mjs
+      docs/operations/review-pool/hermes/2026-08-10-erhua-member-safe-alias-paxon/safe-alias.json
+rollback:
+  No runtime state is touched by this review-pool package. If applied incorrectly later,
+  remove or supersede the alias only through a separate owner-reviewed database change.

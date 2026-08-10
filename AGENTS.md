@@ -54,6 +54,37 @@
   (`OnCalendar=*-*-* 08:10:00`).
 - Erhua morning brief QiWe text-send fixture:
   `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
+- Erhua member recognition local release-current readiness check:
+  `node tools/deploy/check-erhua-member-recognition-local.mjs`. This proves the
+  release-current runbook, deploy bundle files, focused Rust tests, fixture checkers,
+  and completion finalizers are present; it does not prove production DB completion.
+- Erhua member recognition reviewed production config apply:
+
+  ```bash
+  QINTOPIA_ERHUA_MEMBER_RECOGNITION_PRODUCTION_CONFIG=approved-production-erhua-member-recognition-config \
+    deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh --apply
+  ```
+
+  Pass `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CHAT_ID` and
+  `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CANARY_SENDER_ID` only from reviewed
+  server-local values. Do not print, retain, paste, or commit the real group id or
+  sender id.
+
+- Erhua member recognition production config observation:
+  `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh`.
+  Continue only when it reports `action_status=ready_for_member_recognition_runbook`.
+- Erhua member recognition room roster sync evidence:
+  `qintopia-message-sidecar identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --apply`
+  then
+  `node tools/deploy/check-erhua-room-member-sync.mjs <identity-backfill-room-member-sync-output.json>`.
+- Erhua member recognition coverage and completion evidence:
+  `node tools/deploy/finalize-erhua-member-recognition-coverage.mjs` and
+  `node tools/deploy/finalize-erhua-member-recognition-completion.mjs`. Retained
+  evidence must keep only sanitized counts, route-level hint coverage, and
+  `scope_fingerprint`; never retain real group ids, QiWe user ids, sender ids, person
+  ids, DB URLs, tokens, raw messages, or raw profile text. Final completion must retain
+  `unsafe_display_unlinked = 0` so numeric or otherwise unsafe current-room display
+  names cannot disappear into `excluded`.
 - Erhua legacy Hermes cron observation:
   `QINTOPIA_ERHUA_LEGACY_CRON_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-legacy-cron-observation-smoke.sh`
 - Erhua legacy Hermes cron reviewed retirement:

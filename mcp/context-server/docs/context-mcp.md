@@ -58,6 +58,13 @@ Source-of-truth policy:
   `answer_basis.kind=live_operations_required` and guide the frontline Agent to
   ask 小客服/负责人/大总管 or a future realtime operations tool. Do not tell the user to
   inspect Feishu knowledge docs for realtime state.
+- Current public recommendations such as local performances, restaurants, cafes,
+  exhibitions, or "best" venues are not stable community facts. Return
+  `answer_basis.kind=public_source_check_required` when the context store has no current
+  public-source evidence. Erhua should explain the source path first: venue or organizer
+  official accounts, ticketing schedules, map/review platforms, and local audience
+  comments. It must not claim "公认最好", "错不了", or first-hand experience without
+  verified source evidence.
 
 Required inputs:
 
@@ -71,6 +78,34 @@ Optional inputs:
 - `chat_id`
 - `sender_id`
 - `limit`
+
+### `qintopia_answer_context_prepare`
+
+Prepares safe Erhua reply context for member identity, speaker identity, public-fact,
+discussion-history, and live-operations routes. It may return `speaker`,
+`referenced_member`, `mentioned_members`, `answer_route`, `training_guidance`, and
+`answer_rules`; it must not return raw messages, hidden profile details, sensitive
+facts, or profile-source internals.
+
+Required inputs:
+
+- `caller_profile`
+- `purpose`
+
+Optional inputs:
+
+- `platform`
+- `chat_id`
+- `sender_id`
+- `referenced_sender_id`
+- `message_text`
+- `mentioned_member_names`
+
+`sender_id` identifies the current speaker. `referenced_sender_id` identifies the sender
+of a replied-to or referenced message and is required for pronoun identity questions
+such as "他是谁" or "她是谁" when no explicit member name is present. Without that
+referenced sender id, Erhua must clarify which member is being asked about and must not
+use vector search, recent-message proximity, or pronouns to guess identity.
 
 ### `qintopia_gis_location_lookup`
 
@@ -270,6 +305,8 @@ Required source-of-truth checks after this policy:
   password as true.
 - `还有空房吗` must return `live_operations_required`; Erhua should not say to check
   Feishu knowledge docs for realtime room availability.
+- `西安最好的爵士乐演出是哪` must return `public_source_check_required`; Erhua should
+  give the public-source lookup path and avoid unsupported "公认最棒" claims.
 
 Erhua `SOUL.md` was tightened after the first offline check to avoid system-like
 phrasing such as "根据查到的信息" and to keep community-memory replies to the minimum

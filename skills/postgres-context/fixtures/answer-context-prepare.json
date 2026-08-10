@@ -6,6 +6,7 @@
     "platform": "qiwe",
     "chat_id": "room_example",
     "sender_id": "user_example",
+    "referenced_sender_id": "referenced_user_example",
     "message_text": "@二花 小乔是谁",
     "mentioned_member_names": ["小乔"],
     "purpose": "prepare safe answer context before replying"
@@ -14,6 +15,7 @@
     "writes_audit": "qintopia_identity.member_context_audit",
     "may_return": [
       "speaker",
+      "referenced_member",
       "mentioned_members",
       "answer_route",
       "training_guidance",
@@ -24,6 +26,7 @@
       "speaker_identity",
       "member_identity",
       "authoritative_public_fact",
+      "public_source_recommendation",
       "discussion_history",
       "live_operations",
       "general_context"
@@ -34,7 +37,9 @@
       "ask_clarification_when_ambiguous",
       "do_not_guess_member_state",
       "do_not_expose_raw_history",
-      "do_not_use_vector_search_to_guess_member_identity"
+      "do_not_use_vector_search_to_guess_member_identity",
+      "do_not_claim_public_consensus_without_source",
+      "explain_public_sources_for_local_recommendations"
     ],
     "must_not_return": [
       "raw_messages",

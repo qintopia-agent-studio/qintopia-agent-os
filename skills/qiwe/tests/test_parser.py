@@ -1870,6 +1870,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIn("https://example.com/article", event.text)
         self.assertIn("当前消息：把这篇文章可以转发到秦托邦的小伙伴群", event.text)
         self.assertEqual(event.raw_message["referenced_message"]["link"]["url"], "https://example.com/article")
+        self.assertEqual(event.raw_message["referenced_message"]["sender_id"], "7881303308049798")
         _RECENT_QIWE_MESSAGE_CONTEXTS.clear()
 
     def test_dispatch_uses_persisted_identity_cache_without_qiwe_lookup(self) -> None:
@@ -1925,7 +1926,21 @@ class QiWeParserTests(unittest.TestCase):
                             "resolved": True,
                             "display_name": "阿城",
                             "safe_summary": "阿城 最近的安全上下文主要与 活动、服务需求 有关。",
-                            "safe_reply_hints": {"topics": ["活动", "服务需求"]},
+                            "safe_reply_hints": {
+                                "topics": ["活动", "服务需求"],
+                                "stable_profile_notes": ["多次出现跑步活动相关信号，可自然理解为和社区跑步活动联系较多"],
+                            },
+                        },
+                        {
+                            "mention_text": "新朋友",
+                            "resolved": True,
+                            "display_name": "新朋友",
+                            "safe_summary": "新朋友 已识别为群内成员，但暂无足够稳定的安全画像。",
+                            "safe_reply_hints": {
+                                "profile_status": "identity_only",
+                                "topics": [],
+                                "stable_profile_notes": [],
+                            },
                         }
                     ],
                     "answer_rules": {"do_not_guess_member_state": True},
@@ -1953,9 +1968,159 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIn("trainer_user_id 必须使用上方 channel_user_id", prompt)
         self.assertIn("不要回答“我不知道”", prompt)
         self.assertIn("如果用户询问该成员的状态、原因、偏好或参与情况", prompt)
+        self.assertIn("稳定画像提示", prompt)
+        self.assertIn("社区跑步活动联系较多", prompt)
         self.assertIn("阿城 => 阿城", prompt)
+        self.assertIn("新朋友 => 新朋友", prompt)
+        self.assertIn("该成员仅完成身份解析，暂无稳定画像", prompt)
         self.assertIn('"mention_text": "阿城"', prompt)
         self.assertIn("服务需求", prompt)
+
+    def test_answer_context_prompt_injects_referenced_member_context(self) -> None:
+        raw = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(raw, bot_names=["二花"], bot_user_id="1688857683805864")
+        prompt = _member_context_channel_prompt(
+            parsed,
+            None,
+            {
+                "success": True,
+                "speaker": {"resolved": True},
+                "referenced_member": {
+                    "resolved": True,
+                    "resolution_scope": "exact_chat",
+                    "display_name": "小乔",
+                    "safe_summary": "小乔 最近的安全画像：多次出现跑步活动相关信号。",
+                    "safe_reply_hints": {
+                        "topics": ["跑步活动"],
+                        "stable_profile_notes": ["多次出现跑步活动相关信号"],
+                    },
+                },
+                "mentioned_members": [],
+            },
+        )
+
+        self.assertIn("当前回复/引用的消息发送者已解析", prompt)
+        self.assertIn("被回复对象 => 小乔", prompt)
+        self.assertIn("多次出现跑步活动相关信号", prompt)
+
+    def test_answer_context_prompt_referenced_member_wins_pronoun_question(self) -> None:
+        raw = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(raw, bot_names=["二花"], bot_user_id="1688857683805864")
+        prompt = _member_context_channel_prompt(
+            parsed,
+            None,
+            {
+                "success": True,
+                "speaker": {
+                    "resolved": True,
+                    "display_name": "提问者",
+                    "safe_summary": "提问者 已识别为群内成员。",
+                },
+                "referenced_member": {
+                    "resolved": True,
+                    "resolution_scope": "exact_chat",
+                    "display_name": "小乔",
+                    "safe_summary": "小乔 最近的安全画像：多次出现跑步活动相关信号。",
+                    "safe_reply_hints": {
+                        "topics": ["跑步活动"],
+                        "stable_profile_notes": ["多次出现跑步活动相关信号"],
+                    },
+                },
+                "mentioned_members": [
+                    {
+                        "mention_text": "阿城",
+                        "resolved": True,
+                        "display_name": "阿城",
+                        "safe_summary": "阿城 最近的安全上下文主要与活动有关。",
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("当前回复/引用的消息发送者已解析", prompt)
+        self.assertIn("代词默认指被回复对象", prompt)
+        self.assertIn("不要改用 speaker 或 mentioned_members", prompt)
+        self.assertIn("当前说话人 => 提问者", prompt)
+        self.assertIn("阿城 => 阿城", prompt)
+        self.assertIn("被回复对象 => 小乔", prompt)
+
+    def test_answer_context_prompt_injects_speaker_self_context(self) -> None:
+        raw = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(raw, bot_names=["二花"], bot_user_id="1688857683805864")
+        prompt = _member_context_channel_prompt(
+            parsed,
+            None,
+            {
+                "success": True,
+                "speaker": {
+                    "resolved": True,
+                    "resolution_scope": "exact_chat",
+                    "display_name": "小乔",
+                    "safe_summary": "小乔 最近的安全画像：多次出现跑步活动相关信号。",
+                    "safe_reply_hints": {
+                        "topics": ["跑步活动"],
+                        "stable_profile_notes": ["多次出现跑步活动相关信号"],
+                    },
+                },
+                "mentioned_members": [],
+            },
+        )
+
+        self.assertIn("当前说话人已解析", prompt)
+        self.assertIn("用户问“我是谁”", prompt)
+        self.assertIn("当前说话人 => 小乔", prompt)
+        self.assertIn("多次出现跑步活动相关信号", prompt)
+        self.assertIn("稳定画像提示", prompt)
+        self.assertNotIn("当前不能确认", prompt)
+
+    def test_answer_context_prompt_speaker_identity_only_does_not_infer_profile(self) -> None:
+        raw = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(raw, bot_names=["二花"], bot_user_id="1688857683805864")
+        prompt = _member_context_channel_prompt(
+            parsed,
+            None,
+            {
+                "success": True,
+                "speaker": {
+                    "resolved": True,
+                    "resolution_scope": "exact_chat",
+                    "display_name": "新朋友",
+                    "safe_summary": "新朋友 已识别为群内成员，但暂无足够稳定的安全画像。",
+                    "safe_reply_hints": {
+                        "profile_status": "identity_only",
+                        "topics": [],
+                        "stable_profile_notes": [],
+                    },
+                },
+                "mentioned_members": [],
+            },
+        )
+
+        self.assertIn("当前说话人 => 新朋友", prompt)
+        self.assertIn("当前说话人仅完成身份解析，暂无稳定画像", prompt)
+        self.assertIn("不要推断其偏好、状态或背景", prompt)
+
+    def test_answer_context_prompt_unresolved_speaker_self_question_must_not_guess(self) -> None:
+        raw = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(raw, bot_names=["二花"], bot_user_id="1688857683805864")
+        prompt = _member_context_channel_prompt(
+            parsed,
+            None,
+            {
+                "success": True,
+                "speaker": {
+                    "resolved": False,
+                    "display_name": "可能是小乔",
+                    "reason": "ambiguous",
+                },
+                "mentioned_members": [],
+            },
+        )
+
+        self.assertIn("当前说话人未能稳定解析", prompt)
+        self.assertIn("当前不能确认", prompt)
+        self.assertIn("不要用显示名或历史消息猜", prompt)
+        self.assertNotIn("当前说话人 => 可能是小乔", prompt)
 
     def test_answer_context_prompt_injects_training_guidance(self) -> None:
         raw = load_fixture("group_mention.json")
@@ -2068,6 +2233,21 @@ class QiWeParserTests(unittest.TestCase):
         args = call["params"]["arguments"]
 
         self.assertEqual(args["mentioned_member_names"], ["小乔"])
+
+    def test_answer_context_request_passes_referenced_sender_id(self) -> None:
+        request = _answer_context_mcp_request(
+            chat_id="room_example",
+            sender_id="user_example",
+            referenced_sender_id="referenced_user_example",
+            message_text="他是谁",
+        )
+        lines = [json.loads(line) for line in request.splitlines() if line.strip()]
+        call = next(item for item in lines if item.get("id") == 2)
+        args = call["params"]["arguments"]
+
+        self.assertEqual(args["referenced_sender_id"], "referenced_user_example")
+        self.assertEqual(args["message_text"], "他是谁")
+        self.assertNotIn("mentioned_member_names", args)
 
     def test_identity_cache_persists_and_loads_from_state_dir(self) -> None:
         class RecordingAdapter(QiWeAdapter):

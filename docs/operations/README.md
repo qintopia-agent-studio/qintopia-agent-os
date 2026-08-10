@@ -47,6 +47,12 @@ deployment docs.
 - [erhua-morning-brief-production-activation-runbook.md](erhua-morning-brief-production-activation-runbook.md):
   release-managed Erhua morning brief timer activation, observation, and rollback for
   the reviewed 08:10 text artifact workflow.
+- [erhua-member-recognition-production-runbook.md](erhua-member-recognition-production-runbook.md):
+  release-local production config observation, then release-local QiWe room roster sync,
+  identity bootstrap, safe profile refresh, coverage checker, sanitized answer-context
+  canary builder, canary checker, and final completion checker for Erhua member
+  recognition. Retained canary JSONL keeps irreversible `person_ref` markers only, never
+  database `person_id` values.
 - Xiaoman activity read-through production config is applied through the release-local
   `deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py`
   allowlist copier before release-managed Erhua or weekly-preview workers are manually
@@ -89,6 +95,9 @@ deployment docs.
 - `pnpm deploy:xiaoman-production-evidence:finalize -- --release-please-pr-number ...`:
   builds the final Xiaoman production completion manifest and immediately revalidates it
   against the retained staging and production evidence files.
+- `pnpm deploy:erhua-member-recognition:finalize -- --room-sync ...`: runs the reviewed
+  Erhua member-recognition completion checker and independently revalidates the retained
+  sanitized completion summary.
 - `pnpm deploy:postgres:schema:preflight`: runs the read-only Postgres schema gate for
   M9 after production env is loaded.
 - `pnpm deploy:systemd:check`: validates the M9.3 sidecar systemd unit renderer without

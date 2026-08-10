@@ -23,6 +23,18 @@
 - Test: `RUST_MIN_STACK=33554432 cargo test`
 - Local readiness: `cargo run -- check`
 - Run consumer: `cargo run -- run`
+- Erhua current room roster sync:
+  `cargo run -- identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --dry-run`
+  Retained evidence may keep `scope_fingerprint`; never retain the raw group id or QiWe
+  user ids.
+- Erhua scoped member profile refresh:
+  `cargo run -- member-profile --chat-id <reviewed-erhua-qiwe-group-id> --apply --quiet`
+  Retained evidence may keep aggregate counts and `scope_fingerprints`; never retain raw
+  chat ids or candidate facts.
+- Erhua speaker self-canary private sender map:
+  `cargo run -- erhua-member-speaker-canary-sender-map --chat-id <reviewed-erhua-qiwe-group-id>`.
+  Its output contains raw QiWe sender ids; keep it as a server-local temporary file only
+  and never retain it as evidence.
 - Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
 - Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
 - Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`

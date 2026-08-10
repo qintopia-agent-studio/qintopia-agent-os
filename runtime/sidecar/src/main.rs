@@ -36,6 +36,7 @@ mod huabaosi_feishu_artifact_mirror;
 mod huabaosi_wecom_canary;
 mod huabaosi_wecom_policy;
 mod huabaosi_wecom_shadow;
+mod identity_alias;
 mod identity_backfill;
 mod identity_bootstrap;
 #[cfg_attr(
@@ -243,6 +244,7 @@ async fn main() -> Result<()> {
             chat_id,
             sender_id,
             request_delay_ms,
+            sync_room_members,
         } => {
             identity_backfill::run(
                 &cli,
@@ -254,6 +256,7 @@ async fn main() -> Result<()> {
                     chat_id,
                     sender_id,
                     request_delay_ms,
+                    sync_room_members,
                 },
             )
             .await
@@ -275,9 +278,51 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::ErhuaMemberSafeAlias {
+            apply,
+            dry_run,
+            payload_json,
+            payload_file,
+            approval,
+        } => {
+            identity_alias::run(
+                &cli,
+                identity_alias::SafeAliasOptions {
+                    apply,
+                    dry_run,
+                    payload_json,
+                    payload_file,
+                    approval,
+                },
+            )
+            .await
+        }
+        Command::ErhuaMemberSafeIdentity {
+            apply,
+            dry_run,
+            payload_json,
+            payload_file,
+            approval,
+        } => {
+            identity_alias::run_safe_identity(
+                &cli,
+                identity_alias::SafeIdentityOptions {
+                    apply,
+                    dry_run,
+                    payload_json,
+                    payload_file,
+                    approval,
+                },
+            )
+            .await
+        }
+        Command::ErhuaMemberSpeakerCanarySenderMap { chat_id } => {
+            identity_bootstrap::run_speaker_canary_sender_map(&cli, chat_id).await
+        }
         Command::MemberProfile {
             apply,
             dry_run,
+            quiet,
             chat_id,
             limit,
         } => {
@@ -286,6 +331,7 @@ async fn main() -> Result<()> {
                 member_profile::ProfileOptions {
                     apply,
                     dry_run,
+                    quiet,
                     chat_id,
                     limit,
                 },

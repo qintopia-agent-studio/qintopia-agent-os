@@ -68,6 +68,7 @@ const DEFAULT_DAILY_DIGEST_DISPATCH_RULES_JSON: &str = r#"
 pub struct ProfileOptions {
     pub apply: bool,
     pub dry_run: bool,
+    pub quiet: bool,
     pub chat_id: Option<String>,
     pub limit: Option<i64>,
 }
@@ -104,6 +105,8 @@ pub struct DigestWorkerOptions {
 pub struct ProfileReport {
     dry_run: bool,
     target_chat_ids: Vec<String>,
+    scope_fingerprints: Vec<String>,
+    requested_message_limit: i64,
     messages_scanned: i64,
     messages_skipped_without_person: i64,
     messages_skipped_excluded_identity: i64,
@@ -181,7 +184,8 @@ impl From<&DigestReport> for DigestSummaryReport {
 #[derive(Debug, Clone, Serialize)]
 struct ProfileSummaryReport {
     dry_run: bool,
-    target_chat_ids: Vec<String>,
+    scope_fingerprints: Vec<String>,
+    requested_message_limit: i64,
     messages_scanned: i64,
     messages_skipped_without_person: i64,
     messages_skipped_excluded_identity: i64,
@@ -197,7 +201,8 @@ impl From<&ProfileReport> for ProfileSummaryReport {
     fn from(report: &ProfileReport) -> Self {
         Self {
             dry_run: report.dry_run,
-            target_chat_ids: report.target_chat_ids.clone(),
+            scope_fingerprints: report.scope_fingerprints.clone(),
+            requested_message_limit: report.requested_message_limit,
             messages_scanned: report.messages_scanned,
             messages_skipped_without_person: report.messages_skipped_without_person,
             messages_skipped_excluded_identity: report.messages_skipped_excluded_identity,
@@ -260,7 +265,14 @@ pub async fn run_profile(cli: &Cli, options: ProfileOptions) -> Result<()> {
     let database_url = cli.database_url_required()?;
     let pool = db::connect(database_url, cli.db_max_connections).await?;
     let report = run_profile_inner(&pool, cli, &options, apply).await?;
-    println!("{}", serde_json::to_string_pretty(&report)?);
+    if options.quiet {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&ProfileSummaryReport::from(&report))?
+        );
+    } else {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    }
     Ok(())
 }
 
@@ -271,6 +283,7 @@ pub async fn run_profile_worker(cli: &Cli, options: ProfileWorkerOptions) -> Res
     let profile_options = ProfileOptions {
         apply: true,
         dry_run: options.check_only,
+        quiet: options.quiet,
         chat_id: options.chat_id.clone(),
         limit: Some(options.batch_size.max(1)),
     };
@@ -379,10 +392,17 @@ async fn run_profile_inner(
     apply: bool,
 ) -> Result<ProfileReport> {
     let target_chat_ids = target_chat_ids(cli, options.chat_id.as_deref())?;
-    let rows = load_messages(pool, &target_chat_ids, options.limit.unwrap_or(500).max(1)).await?;
+    let scope_fingerprints = target_chat_ids
+        .iter()
+        .map(|chat_id| scope_fingerprint(chat_id))
+        .collect::<Vec<_>>();
+    let requested_message_limit = options.limit.unwrap_or(500).max(1);
+    let rows = load_messages(pool, &target_chat_ids, requested_message_limit).await?;
     let mut report = ProfileReport {
         dry_run: !apply,
         target_chat_ids,
+        scope_fingerprints,
+        requested_message_limit,
         messages_scanned: rows.len() as i64,
         messages_skipped_without_person: 0,
         messages_skipped_excluded_identity: 0,
@@ -763,6 +783,8 @@ fn log_profile_report(report: &ProfileReport, message: &str) {
         facts_inserted = report.facts_inserted,
         summaries_inserted = report.summaries_inserted,
         snapshots_inserted = report.snapshots_inserted,
+        requested_message_limit = report.requested_message_limit,
+        scope_fingerprints = ?report.scope_fingerprints,
         target_chat_ids = ?report.target_chat_ids,
         "{message}"
     );
@@ -1098,6 +1120,9 @@ fn classify_profile_fact_message(text: &str) -> Vec<String> {
     if !is_temporary_state && is_first_person_interest_or_skill(text) {
         labels.push("interest".to_string());
     }
+    if !is_temporary_state && is_running_activity_signal(text) {
+        labels.push("running_activity".to_string());
+    }
     if is_activity_organizer_signal(text) {
         labels.push("activity_organizer".to_string());
     } else if is_activity_participation_signal(text) {
@@ -1154,8 +1179,38 @@ fn is_temporary_communication_state(text: &str) -> bool {
 fn is_first_person_interest_or_skill(text: &str) -> bool {
     contains_any(
         text,
-        &["我喜欢", "我想学", "我擅长", "我会", "我可以帮", "我感兴趣"],
+        &[
+            "我喜欢",
+            "我爱",
+            "我的爱好",
+            "本人喜欢",
+            "我想学",
+            "我擅长",
+            "我会",
+            "我可以帮",
+            "我感兴趣",
+        ],
     )
+}
+
+fn is_running_activity_signal(text: &str) -> bool {
+    contains_any(text, &["跑步", "慢跑", "晨跑", "夜跑"])
+        && (is_solitaire_message(text)
+            || is_first_person_interest_or_skill(text)
+            || contains_any(
+                text,
+                &[
+                    "我平时",
+                    "我经常",
+                    "本人平时",
+                    "集合出发",
+                    "公里",
+                    "报名",
+                    "接龙",
+                    "跑步啦",
+                    "一起跑",
+                ],
+            ))
 }
 
 fn is_activity_organizer_signal(text: &str) -> bool {
@@ -1289,6 +1344,12 @@ fn candidate_fact_for_label(
             ),
             0.70,
         ),
+        "running_activity" => (
+            "activity_interest",
+            "running_activity",
+            format!("出现跑步活动相关信号：{}", clean_snippet(&row.text, 140)),
+            0.76,
+        ),
         "activity_organizer" => (
             "activity_organizer",
             "activity",
@@ -1358,6 +1419,7 @@ fn topic_for_label(label: &str) -> Option<&'static str> {
         "reply_style_preference" => Some("沟通偏好"),
         "temporary_communication_state" => Some("短期沟通状态"),
         "interest" => Some("兴趣技能"),
+        "running_activity" => Some("跑步活动"),
         "activity_organizer" | "activity_participation" => Some("活动"),
         "service_need" => Some("服务需求"),
         "unresolved_question" => Some("待回答问题"),
@@ -1379,7 +1441,8 @@ fn clean_snippet(text: &str, max_chars: usize) -> String {
 fn build_summary_text(aggregate: &PersonAggregate) -> String {
     let name = aggregate
         .sender_name
-        .clone()
+        .as_deref()
+        .map(redact_sensitive_text)
         .unwrap_or_else(|| "该成员".to_string());
     let topics = aggregate
         .topics
@@ -1399,7 +1462,8 @@ fn build_summary_text(aggregate: &PersonAggregate) -> String {
 fn build_safe_profile_summary(aggregate: &PersonAggregate) -> String {
     let name = aggregate
         .sender_name
-        .clone()
+        .as_deref()
+        .map(redact_sensitive_text)
         .unwrap_or_else(|| "这位成员".to_string());
     let topics = aggregate
         .topics
@@ -1407,11 +1471,96 @@ fn build_safe_profile_summary(aggregate: &PersonAggregate) -> String {
         .cloned()
         .collect::<Vec<_>>()
         .join("、");
-    if topics.is_empty() {
+    let stable_notes = stable_profile_notes(aggregate);
+    if !stable_notes.is_empty() {
+        let profile = stable_notes.join("；");
+        if topics.is_empty() {
+            format!("{name} 最近的安全画像：{profile}。回复时保持自然，不暴露画像来源。")
+        } else {
+            format!("{name} 最近的安全画像：{profile}。其他上下文主要与 {topics} 有关。回复时保持自然，不暴露画像来源。")
+        }
+    } else if topics.is_empty() {
         format!("{name} 暂无足够稳定的安全画像。")
     } else {
         format!("{name} 最近的安全上下文主要与 {topics} 有关。回复时保持自然，不暴露画像来源。")
     }
+}
+
+fn stable_profile_notes(aggregate: &PersonAggregate) -> Vec<String> {
+    let running_count = aggregate
+        .facts
+        .iter()
+        .filter(|fact| fact.fact_key == "running_activity" || fact.fact_text.contains("跑步"))
+        .count();
+    let organizer_count = aggregate
+        .facts
+        .iter()
+        .filter(|fact| fact.fact_type == "activity_organizer")
+        .count();
+    let interest_count = aggregate
+        .facts
+        .iter()
+        .filter(|fact| fact.fact_type == "interest")
+        .count();
+    let interest_terms = safe_interest_terms(aggregate);
+
+    let mut notes = Vec::new();
+    if running_count >= 2 {
+        notes.push("多次出现跑步活动相关信号，可自然理解为和社区跑步活动联系较多".to_string());
+    } else if running_count == 1 {
+        notes.push("出现过跑步活动相关信号".to_string());
+    }
+    if organizer_count >= 2 {
+        notes.push("多次出现活动发起或组织信号".to_string());
+    }
+    if !interest_terms.is_empty() {
+        let terms = interest_terms.join("、");
+        if interest_count >= 2 {
+            notes.push(format!("多次表达与 {terms} 相关的兴趣、技能或可提供帮助"));
+        } else {
+            notes.push(format!("表达过与 {terms} 相关的兴趣、技能或可提供帮助"));
+        }
+    } else if interest_count >= 2 {
+        notes.push("多次表达兴趣、技能或可提供帮助".to_string());
+    }
+    notes
+}
+
+fn safe_interest_terms(aggregate: &PersonAggregate) -> Vec<&'static str> {
+    let patterns: &[(&str, &[&str])] = &[
+        ("跑步", &["跑步", "慢跑", "晨跑", "夜跑"]),
+        ("徒步", &["徒步"]),
+        ("骑行", &["骑行", "骑车"]),
+        ("健身", &["健身", "力量训练"]),
+        ("瑜伽", &["瑜伽"]),
+        ("游泳", &["游泳"]),
+        ("羽毛球", &["羽毛球"]),
+        ("篮球", &["篮球"]),
+        ("足球", &["足球"]),
+        ("摄影", &["摄影", "拍照"]),
+        ("视频", &["视频", "剪辑"]),
+        ("写作", &["写作", "写文章"]),
+        ("阅读", &["阅读", "读书"]),
+        ("音乐", &["音乐", "唱歌", "乐器"]),
+        ("绘画", &["绘画", "画画"]),
+        ("AI", &["AI", "人工智能"]),
+        ("编程", &["编程", "写代码", "Python", "Rust", "Go"]),
+        ("小红书", &["小红书"]),
+        ("公众号", &["公众号"]),
+        ("英语", &["英语"]),
+    ];
+    let mut terms = BTreeSet::new();
+    for fact in &aggregate.facts {
+        if fact.fact_type != "interest" {
+            continue;
+        }
+        for (term, needles) in patterns {
+            if contains_any(&fact.fact_text, needles) {
+                terms.insert(*term);
+            }
+        }
+    }
+    terms.into_iter().collect()
 }
 
 fn communication_style(aggregate: &PersonAggregate) -> Value {
@@ -1423,7 +1572,7 @@ fn communication_style(aggregate: &PersonAggregate) -> Value {
         .facts
         .iter()
         .filter(|fact| fact.fact_type == "temporary_communication_state")
-        .map(|fact| fact.fact_text.clone())
+        .map(|fact| redact_sensitive_text(&fact.fact_text))
         .collect::<Vec<_>>();
     json!({
         "prefer_concise": prefers_concise,
@@ -1438,11 +1587,13 @@ fn safe_reply_hints(aggregate: &PersonAggregate) -> Value {
         .facts
         .iter()
         .filter(|fact| fact.fact_type == "temporary_communication_state")
-        .map(|fact| fact.fact_text.clone())
+        .map(|fact| redact_sensitive_text(&fact.fact_text))
         .collect::<Vec<_>>();
+    let stable_profile_notes = stable_profile_notes(aggregate);
     json!({
         "use_display_name_only_if_natural": true,
         "topics": aggregate.topics.iter().cloned().collect::<Vec<_>>(),
+        "stable_profile_notes": stable_profile_notes,
         "temporary_communication_notes": temporary_communication_notes,
         "do_not_quote_raw_history": true
     })
@@ -1459,6 +1610,42 @@ fn input_hash(aggregate: &PersonAggregate) -> String {
         hasher.update(fact.fact_text.as_bytes());
     }
     format!("{:x}", hasher.finalize())
+}
+
+fn scope_fingerprint(chat_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"qintopia-erhua-member-recognition-scope-v1\0");
+    hasher.update(chat_id.as_bytes());
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+fn redact_sensitive_text(text: &str) -> String {
+    let mut out = String::new();
+    let mut digit_run = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            digit_run.push(ch);
+            continue;
+        }
+        flush_digit_run(&mut out, &mut digit_run);
+        if !ch.is_control() {
+            out.push(ch);
+        }
+    }
+    flush_digit_run(&mut out, &mut digit_run);
+    out
+}
+
+fn flush_digit_run(out: &mut String, digit_run: &mut String) {
+    if digit_run.is_empty() {
+        return;
+    }
+    if digit_run.len() >= 7 {
+        out.push_str("[敏感数字]");
+    } else {
+        out.push_str(digit_run);
+    }
+    digit_run.clear();
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1775,6 +1962,214 @@ mod tests {
             classify_profile_fact_message("社区有没有特别擅长整理的人，可以帮我整理吧台吗");
         assert!(!labels.contains(&"interest".to_string()));
         assert!(labels.contains(&"service_need".to_string()));
+    }
+
+    #[test]
+    fn classifies_running_solitaire_as_specific_profile_signal() {
+        let labels = classify_profile_fact_message(
+            "#接龙 跑步接龙 明天早上7点社区门口集合出发，环绕村落慢跑一圈，全程约5公里\n1. 小乔",
+        );
+
+        assert!(labels.contains(&"running_activity".to_string()));
+        assert!(labels.contains(&"activity_participation".to_string()));
+    }
+
+    #[test]
+    fn classifies_first_person_running_interest_as_profile_signal() {
+        let labels = classify_profile_fact_message("我喜欢跑步，也想多参加社区晨跑");
+
+        assert!(labels.contains(&"interest".to_string()));
+        assert!(labels.contains(&"running_activity".to_string()));
+    }
+
+    #[test]
+    fn classifies_declared_running_hobby_as_profile_signal() {
+        let labels = classify_profile_fact_message("我的爱好是跑步，平时也会参加晨跑");
+
+        assert!(labels.contains(&"interest".to_string()));
+        assert!(labels.contains(&"running_activity".to_string()));
+    }
+
+    #[test]
+    fn classifies_first_person_running_habit_as_profile_signal() {
+        let labels = classify_profile_fact_message("我平时跑步比较多，周末会慢跑");
+
+        assert!(!labels.contains(&"interest".to_string()));
+        assert!(labels.contains(&"running_activity".to_string()));
+    }
+
+    #[test]
+    fn stable_profile_notes_summarize_repeated_running_activity() {
+        let aggregate = PersonAggregate {
+            person_id: Uuid::new_v4(),
+            sender_name: Some("小乔".to_string()),
+            topics: BTreeSet::from(["跑步活动".to_string(), "活动".to_string()]),
+            facts: vec![
+                CandidateFact {
+                    message_id: Uuid::new_v4(),
+                    person_id: Uuid::new_v4(),
+                    channel_identity_id: None,
+                    fact_type: "activity_interest".to_string(),
+                    fact_key: "running_activity".to_string(),
+                    fact_text: "出现跑步活动相关信号：跑步接龙".to_string(),
+                    confidence: 0.76,
+                    observed_at: Utc::now(),
+                    source_message_id: "m1".to_string(),
+                    sender_name: Some("小乔".to_string()),
+                },
+                CandidateFact {
+                    message_id: Uuid::new_v4(),
+                    person_id: Uuid::new_v4(),
+                    channel_identity_id: None,
+                    fact_type: "activity_interest".to_string(),
+                    fact_key: "running_activity".to_string(),
+                    fact_text: "出现跑步活动相关信号：跑步啦".to_string(),
+                    confidence: 0.76,
+                    observed_at: Utc::now(),
+                    source_message_id: "m2".to_string(),
+                    sender_name: Some("小乔".to_string()),
+                },
+            ],
+            ..PersonAggregate::default()
+        };
+
+        let summary = build_safe_profile_summary(&aggregate);
+        let hints = safe_reply_hints(&aggregate);
+
+        assert!(summary.contains("多次出现跑步活动相关信号"));
+        assert!(summary.contains("跑步活动"));
+        assert_eq!(
+            hints["stable_profile_notes"][0],
+            "多次出现跑步活动相关信号，可自然理解为和社区跑步活动联系较多"
+        );
+    }
+
+    #[test]
+    fn stable_profile_notes_keep_safe_interest_terms() {
+        let person_id = Uuid::new_v4();
+        let aggregate = PersonAggregate {
+            person_id,
+            sender_name: Some("小乔".to_string()),
+            topics: BTreeSet::from(["兴趣技能".to_string()]),
+            facts: vec![
+                CandidateFact {
+                    message_id: Uuid::new_v4(),
+                    person_id,
+                    channel_identity_id: None,
+                    fact_type: "interest".to_string(),
+                    fact_key: "interest_or_skill".to_string(),
+                    fact_text: "表达了兴趣、技能或可提供帮助：我喜欢摄影，也会拍照".to_string(),
+                    confidence: 0.70,
+                    observed_at: Utc::now(),
+                    source_message_id: "m1".to_string(),
+                    sender_name: Some("小乔".to_string()),
+                },
+                CandidateFact {
+                    message_id: Uuid::new_v4(),
+                    person_id,
+                    channel_identity_id: None,
+                    fact_type: "interest".to_string(),
+                    fact_key: "interest_or_skill".to_string(),
+                    fact_text: "表达了兴趣、技能或可提供帮助：我想学 AI 写作".to_string(),
+                    confidence: 0.70,
+                    observed_at: Utc::now(),
+                    source_message_id: "m2".to_string(),
+                    sender_name: Some("小乔".to_string()),
+                },
+            ],
+            ..PersonAggregate::default()
+        };
+
+        let summary = build_safe_profile_summary(&aggregate);
+        let hints = safe_reply_hints(&aggregate);
+
+        assert!(summary.contains("摄影"));
+        assert!(summary.contains("AI"));
+        assert!(summary.contains("写作"));
+        assert_eq!(
+            hints["stable_profile_notes"][0],
+            "多次表达与 AI、写作、摄影 相关的兴趣、技能或可提供帮助"
+        );
+    }
+
+    #[test]
+    fn profile_scope_fingerprint_is_stable_and_non_raw() {
+        let fingerprint = scope_fingerprint("room-1");
+
+        assert_eq!(
+            fingerprint,
+            "sha256:c5c4e70d823efa23b83de70ce5008d746e76bdce54e37605b967b4bfd4036356"
+        );
+        assert!(!fingerprint.contains("room-1"));
+    }
+
+    #[test]
+    fn profile_summary_report_omits_raw_scope_and_candidate_facts() {
+        let report = ProfileReport {
+            dry_run: false,
+            target_chat_ids: vec!["room-1".to_string()],
+            scope_fingerprints: vec![scope_fingerprint("room-1")],
+            requested_message_limit: 5000,
+            messages_scanned: 1,
+            messages_skipped_without_person: 0,
+            messages_skipped_excluded_identity: 0,
+            valuable_messages: 1,
+            candidate_facts: vec![CandidateFact {
+                message_id: Uuid::new_v4(),
+                person_id: Uuid::new_v4(),
+                channel_identity_id: None,
+                fact_type: "activity_interest".to_string(),
+                fact_key: "running_activity".to_string(),
+                fact_text: "raw profile fact from room-1".to_string(),
+                confidence: 0.76,
+                observed_at: Utc::now(),
+                source_message_id: "message-secret".to_string(),
+                sender_name: Some("小乔".to_string()),
+            }],
+            filtered_labels: BTreeMap::new(),
+            facts_inserted: 1,
+            summaries_inserted: 1,
+            snapshots_inserted: 1,
+        };
+
+        let rendered = serde_json::to_string(&ProfileSummaryReport::from(&report)).unwrap();
+
+        assert!(rendered.contains("scope_fingerprints"));
+        assert!(rendered.contains("candidate_fact_count"));
+        assert!(!rendered.contains("target_chat_ids"));
+        assert!(!rendered.contains("room-1"));
+        assert!(!rendered.contains("candidate_facts"));
+        assert!(!rendered.contains("raw profile fact"));
+        assert!(!rendered.contains("message-secret"));
+    }
+
+    #[test]
+    fn safe_profile_text_redacts_phone_like_display_name_and_notes() {
+        let aggregate = PersonAggregate {
+            person_id: Uuid::new_v4(),
+            sender_name: Some("Joey17336786728".to_string()),
+            topics: BTreeSet::from(["短期沟通状态".to_string()]),
+            facts: vec![CandidateFact {
+                message_id: Uuid::new_v4(),
+                person_id: Uuid::new_v4(),
+                channel_identity_id: None,
+                fact_type: "temporary_communication_state".to_string(),
+                fact_key: "temporary_communication_state".to_string(),
+                fact_text: "临时说明 17336786728".to_string(),
+                confidence: 0.76,
+                observed_at: Utc::now(),
+                source_message_id: "m1".to_string(),
+                sender_name: Some("Joey17336786728".to_string()),
+            }],
+            ..PersonAggregate::default()
+        };
+
+        let summary = build_safe_profile_summary(&aggregate);
+        let hints = safe_reply_hints(&aggregate);
+        let rendered = format!("{summary}{hints}");
+
+        assert!(!rendered.contains("17336786728"));
+        assert!(rendered.contains("[敏感数字]"));
     }
 
     #[test]
