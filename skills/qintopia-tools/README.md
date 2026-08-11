@@ -36,6 +36,12 @@ handoff, proposal/demo drafts, disclosure filtering, and conversation summaries 
 to `skills/operations-intake`. Change those behaviors there. This package keeps stable
 Hermes tool registration and runtime callback wiring only.
 
+Xiaoman activity now has a dedicated capability boundary at `skills/xiaoman-activity`.
+Change Xiaoman activity read-through, announcement, weekly preview, promotion-review,
+material-summary, and bounded update behavior there. The Xiaoman qintopia-tools variant
+keeps the stable Hermes registration shell while the legacy implementation is moved
+behind that package in tested slices.
+
 ## Boundary
 
 `skills/qintopia-tools` is a Hermes registration shell for delegated capabilities. Some
@@ -63,6 +69,7 @@ Not allowed:
 - new WenYuanGe/Dify retrieval behavior; use `skills/knowledge-retrieval`
 - new complaint, sales handoff, proposal/demo, or disclosure behavior; use
   `skills/operations-intake`
+- new Xiaoman activity behavior; use `skills/xiaoman-activity`
 
 ## Validation
 
@@ -91,8 +98,9 @@ Before any server repoint:
 
 4. Ensure the same release contains every delegated skill package:
    `skills/qintopia-weather` for Erhua weather, `skills/knowledge-retrieval` for
-   Dify/WenYuanGe lookup, and `skills/operations-intake` for complaint/sales/disclosure
-   handoff. If Hermes loads from a profile-local copy, set
+   Dify/WenYuanGe lookup, `skills/operations-intake` for complaint/sales/disclosure
+   handoff, and `skills/xiaoman-activity` for Xiaoman activity tools. If Hermes loads
+   from a profile-local copy, set
    `QINTOPIA_AGENT_OS_SKILLS_DIR=/home/ubuntu/qintopia-agent-os-releases/current/skills`
    in the profile or service environment.
 5. Verify Hermes service active state, plugin import, tool registration, and rollback.

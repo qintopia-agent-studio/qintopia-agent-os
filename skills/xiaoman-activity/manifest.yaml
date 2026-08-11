@@ -1,0 +1,41 @@
+id: skills/xiaoman-activity
+type: skill
+name: Xiaoman Activity
+owner: PatrickLiveCool
+status: adopting
+risk_level: medium
+description:
+  Dedicated Xiaoman activity read-through, announcement, weekly preview, promotion, and
+  bounded update capability previously embedded in qintopia-tools.
+source:
+  path: skills/xiaoman-activity/__init__.py
+  reference:
+    qintopia_xiaoman_activity_* and qintopia_xiaoman_weekly_poster_workflow_prepare
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: true
+  secrets: false
+validation:
+  commands:
+    - pnpm skills:xiaoman-activity:check
+    - pnpm skills:qintopia-tools:check
+dependencies:
+  - agents/xiaoman
+  - workflows/xiaoman-activity-signal
+  - workflows/xiaoman-weekly-preview
+  - workflows/xiaoman-weekly-loop
+  - workflows/xiaoman-daily-case-report
+  - runtime/sidecar
+tags:
+  - skill
+  - xiaoman
+  - activity
+  - announcement
+  - promotion
+next_actions:
+  - Move the remaining Xiaoman activity implementation out of the qintopia-tools variant
+    in tested slices while keeping stable Hermes tool names.
+  - Keep Feishu writes behind the bounded field-update worker command and QiWe sends
+    behind the separate send-ready adapter chain.
