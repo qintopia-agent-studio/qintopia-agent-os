@@ -23,6 +23,7 @@ WRAPPER_TARGET="${HERMES_SCRIPTS_DIR}/qintopia_xiaoman_daily_case_report.sh"
 SNAPSHOT_SYNC="${RELEASE_CURRENT}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "qintopia_hermes_cron_apply_safe_failure=xiaoman daily case report Hermes cron apply requires fixed python3" >&2
   echo "xiaoman daily case report Hermes cron apply requires fixed python3" >&2
   exit 1
 fi
@@ -64,7 +65,9 @@ MAX_WRAPPER_BYTES = 65536
 
 
 def fail(message: str) -> None:
-    raise SystemExit(f"xiaoman daily case report Hermes cron apply failed: {message}")
+    raise SystemExit(
+        f"qintopia_hermes_cron_apply_safe_failure=xiaoman daily case report Hermes cron apply failed: {message}"
+    )
 
 
 def safe_chown(path: str, uid: int, gid: int) -> None:

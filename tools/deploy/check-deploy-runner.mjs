@@ -1707,6 +1707,8 @@ for (const fragment of [
   "approved-production-xiaoman-weekly-recruitment-hermes-cron",
   "approved-production-xiaoman-weekly-plan-confirmation-hermes-cron",
   "approved-production-xiaoman-weekly-preview-hermes-cron",
+  "hermes_cron_apply_failure_detail",
+  "qintopia_hermes_cron_apply_safe_failure=",
   "hermes_cron_apply.mode",
   "run_worker_run_evidence_observation",
   "QINTOPIA_PRODUCTION_WORKER_RUN_EVIDENCE_ENABLE",
