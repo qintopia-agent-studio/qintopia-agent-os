@@ -38,6 +38,7 @@ no_restart_paths:
   - "tools/inventory/**"
   - "tools/policy/**"
   - "tools/security/**"
+  - "skills/qintopia-tools/manifest.yaml"
   - "agents/xiaoman/agent.yaml"
   - "agents/xiaoman/profile.template.yaml"
   - "agents/xiaoman/profile-bundle/**"
@@ -96,6 +97,7 @@ rules:
     paths:
       - "agents/xiaoman/**"
       - "skills/qintopia-tools/variants/xiaoman/**"
+      - "skills/xiaoman-activity/**"
       - "workflows/xiaoman-activity-signal/**"
       - "workflows/activity-promotion/**"
       - "workflows/xiaoman-weekly-loop/**"

@@ -68,6 +68,11 @@ assertSuccess(
   ["hermes-erhua"]
 );
 assertSuccess(
+  "qintopia-tools-manifest-metadata",
+  ["skills/qintopia-tools/manifest.yaml"],
+  []
+);
+assertSuccess(
   "erhua-runtime-validator",
   ["runtime/hermes/validate_hermes_python.py"],
   ["hermes-erhua"]
@@ -89,6 +94,16 @@ assertSuccess(
   "postgres-context-contract",
   ["skills/postgres-context/fixtures/answer-context-prepare.json"],
   ["hermes-erhua", "qintopia-system-services"]
+);
+assertSuccess(
+  "xiaoman-activity-skill",
+  [
+    "skills/xiaoman-activity/__init__.py",
+    "skills/xiaoman-activity/manifest.yaml",
+    "skills/xiaoman-activity/plugin.yaml",
+    "skills/xiaoman-activity/tests/test_xiaoman_activity.py",
+  ],
+  ["hermes-xiaoman"]
 );
 assertSuccess(
   "erhua-and-sidecar",
