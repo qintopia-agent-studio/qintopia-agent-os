@@ -87,6 +87,7 @@ const requiredFiles = [
   "tools/deploy/test-deploy-runner-promotion.mjs",
   "tools/deploy/test-production-timer-activation-runner.mjs",
   "tools/deploy/test-production-observation-runner.mjs",
+  "tools/deploy/test-production-worker-run-evidence-smoke.mjs",
   "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
   "tools/deploy/test-production-runtime-one-shot-runner.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
@@ -1981,6 +1982,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-production-observation-runner.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-production-worker-run-evidence-smoke.mjs"], {
     cwd: repoRoot,
   });
   execFileSync(

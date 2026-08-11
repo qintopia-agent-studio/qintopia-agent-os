@@ -28,10 +28,13 @@ fi
 export QINTOPIA_DEPLOYED_COMMIT_SHA="$release_sha"
 WORKER="${release_dir}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh"
 
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if output="$("$WORKER" 2>&1)"; then
+  printf '%s %s run=ok\n' "$started_at" "$TASK_NAME" >>"$LOG_FILE"
   printf '%s\n' "$output" >>"$LOG_FILE"
 else
   rc=$?
+  printf '%s %s run=failed exit=%s\n' "$started_at" "$TASK_NAME" "$rc" >>"$LOG_FILE"
   printf '%s\n' "$output" >>"$LOG_FILE"
   echo "${TASK_NAME} worker failed (exit=${rc}); evidence in server-local log"
   exit "$rc"

@@ -1,11 +1,11 @@
 # Production Runtime Observation Runbook
 
-Updated: 2026-08-10
+Updated: 2026-08-11
 
 This runbook sends signed, read-only production observation requests through the
 deploy-runner. It is for checking the current QiWe image-send and Xiaoman daily
 case-report runtime state before a reviewed activation decision, and for collecting
-worker-run evidence after a release-managed timer should have fired.
+worker-run evidence after a reviewed Hermes cron job should have fired.
 
 ## Workflow
 
@@ -57,14 +57,15 @@ without exposing raw secrets. Successful evidence includes
 
 ## Worker-Run Evidence
 
-The `*-worker-run` targets prove a timer actually fired and its worker finished
-successfully; the timer-state targets above only prove a timer is armed. Each worker-run
+The `*-worker-run` targets prove a reviewed Hermes cron wrapper actually reached its
+worker and the worker finished successfully; the timer-state targets above only prove
+the older systemd boundary is armed where that boundary still exists. Each worker-run
 target checks, through the fixed release-local
 `production-worker-run-evidence-smoke.sh`:
 
-- The paired timer is enabled and active.
-- The worker service has a non-empty `ExecMainStartTimestampUSec` (it started at least
-  once), `ExecMainStatus=0`, and `Result=success`.
+- The fixed server-local Hermes cron log for the target contains a latest
+  `<timestamp> <task> run=ok` sentinel. If the latest sentinel is `run=failed`, the
+  observation fails with `worker_failed`.
 - For the three Xiaoman weekly loop targets, the worker's fixed `latest-summary.json`
   exists and keeps the reviewed draft invariants (`requires_human_confirmation=true`,
   `external_send_executed=false`, `safe_for_member_chat=false`) plus a valid
@@ -74,19 +75,19 @@ Successful evidence records only sanitized fields such as
 `erhua_morning_brief_worker_run_result=success`,
 `erhua_morning_brief_worker_run_epoch=<unix>`, and for weekly targets
 `xiaoman_weekly_preview_worker_summary_present=true` and
-`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. When the paired timer is
-enabled and active but the worker service has not started yet, the observation passes
-with `<key>_worker_run_result=not_started`: before the first scheduled trigger this
-means the timer has not fired yet, not a regression. Rerun the observation after the
-scheduled time; `not_started` after the scheduled time means the timer did not fire and
-needs reviewed investigation. Failure evidence records only the fixed reason token, one
-of `systemctl_unavailable`, `timer_not_enabled`, `timer_not_active`, `worker_failed`,
-`summary_missing`, `summary_invalid`, or `python_unavailable`. The script echoes no
-journal output, env values, group ids, or summary text.
+`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. When the fixed Hermes cron
+log is absent or contains no reviewed sentinel for the task, the observation passes with
+`<key>_worker_run_result=not_started`: before the first scheduled trigger this means the
+Hermes job has not fired yet, not a regression. Rerun the observation after the
+scheduled time; `not_started` after the scheduled time means the Hermes job did not
+reach the reviewed wrapper and needs reviewed investigation. Failure evidence records
+only the fixed reason token, one of `worker_failed`, `summary_missing`,
+`summary_invalid`, or `python_unavailable`. The script echoes no log output, env values,
+group ids, or summary text.
 
-Worker-run evidence is read-only: it inspects systemd state and reads the worker's
-summary JSON only. It does not start or stop services, write state, or call QiWe,
-Feishu, or Postgres.
+Worker-run evidence is read-only: it inspects the fixed Hermes cron log and reads the
+worker's summary JSON only. It does not start or stop services, write state, or call
+QiWe, Feishu, or Postgres.
 
 ## Preconditions
 
