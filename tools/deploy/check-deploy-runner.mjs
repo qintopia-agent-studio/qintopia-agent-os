@@ -1963,13 +1963,53 @@ const runnerServiceText = exists(
 )
   ? readText("deploy/runner/qintopia-agent-os-deploy-runner.service")
   : "";
+const normalizeReadWritePathToken = (pathToken) => {
+  const token = pathToken.trim().replace(/^-/, "");
+  if (!token.startsWith("/")) {
+    return token.replace(/\/+$/, "") || "/";
+  }
+  return path.posix.normalize(token).replace(/\/+$/, "") || "/";
+};
+const readWritePathCovers = (candidatePath, targetPath) =>
+  candidatePath === targetPath || targetPath.startsWith(`${candidatePath}/`);
 const runnerReadWritePaths = runnerServiceText
   .split("\n")
   .filter((line) => line.startsWith("ReadWritePaths="))
   .flatMap((line) =>
     line.slice("ReadWritePaths=".length).trim().split(/\s+/).filter(Boolean)
   )
-  .map((pathToken) => pathToken.replace(/\/+$/, "") || "/");
+  .map(normalizeReadWritePathToken);
+const qintopiaAgentosStatePath = "/home/ubuntu/.local/state/qintopia-agentos";
+const hermesCronSnapshotPath =
+  "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot";
+for (const bypassFixture of [
+  "/home/ubuntu/.local/state/qintopia-agentos/",
+  "/home/ubuntu/.local/state//qintopia-agentos/.",
+  "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot/..",
+  "/home/ubuntu/.local/state/qintopia-agentos/../qintopia-agentos",
+  "/home/ubuntu/.local/state",
+]) {
+  if (
+    !readWritePathCovers(
+      normalizeReadWritePathToken(bypassFixture),
+      qintopiaAgentosStatePath
+    )
+  ) {
+    addError(
+      `deploy runner ReadWritePaths normalization missed unsafe state path fixture: ${bypassFixture}`
+    );
+  }
+}
+if (
+  readWritePathCovers(
+    normalizeReadWritePathToken(hermesCronSnapshotPath),
+    qintopiaAgentosStatePath
+  )
+) {
+  addError(
+    "deploy runner ReadWritePaths normalization rejected the fixed snapshot repo"
+  );
+}
 if (
   runnerServiceText &&
   !runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/erhua")
@@ -1992,12 +2032,7 @@ if (
     "deploy runner service must explicitly allow fixed Hermes cron wrapper installs"
   );
 }
-if (
-  runnerServiceText &&
-  !runnerReadWritePaths.includes(
-    "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"
-  )
-) {
+if (runnerServiceText && !runnerReadWritePaths.includes(hermesCronSnapshotPath)) {
   addError(
     "deploy runner service must explicitly allow fixed Hermes cron snapshot writes"
   );
@@ -2010,9 +2045,13 @@ if (
 }
 if (
   runnerServiceText &&
-  runnerReadWritePaths.includes("/home/ubuntu/.local/state/qintopia-agentos")
+  runnerReadWritePaths.some((candidatePath) =>
+    readWritePathCovers(candidatePath, qintopiaAgentosStatePath)
+  )
 ) {
-  addError("deploy runner service must not allow whole qintopia-agentos state writes");
+  addError(
+    "deploy runner service must not allow whole or parent qintopia-agentos state writes"
+  );
 }
 if (
   smokeText.includes('echo "Smoke checks passed') &&
