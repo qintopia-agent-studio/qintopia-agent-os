@@ -67,6 +67,8 @@ const buildRequest = (overrides = {}) => {
       targets: [
         "qiwe-image-send",
         "xiaoman-daily-case-report-auto-publish",
+        "hermes-cron-snapshot",
+        "hermes-cron-live-parity",
         "erhua-morning-brief-worker-run",
         "xiaoman-weekly-recruitment-worker-run",
       ],
@@ -240,6 +242,50 @@ case "\${1:-}" in
 esac
 `
   );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "hermes-cron-snapshot-observation-smoke.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'snapshot:%s\\n' "\${QINTOPIA_HERMES_CRON_SNAPSHOT_OBSERVATION_ENABLE:-}" >> ${JSON.stringify(
+      observationLog
+    )}
+if [[ "\${QINTOPIA_HERMES_CRON_SNAPSHOT_OBSERVATION_ENABLE:-}" != "1" ]]; then
+  echo "snapshot observation not enabled" >&2
+  exit 7
+fi
+echo "hermes_cron_snapshot_observation_result=success"
+echo "hermes_cron_snapshot_timer_unit_present=true"
+echo "hermes_cron_snapshot_service_unit_present=true"
+echo "hermes_cron_snapshot_repo_present=true"
+echo "hermes_cron_snapshot_remote_absent=true"
+echo "hermes_cron_snapshot_latest_commit_epoch=1786320600"
+echo "WECOM_HOME_CHANNEL=secret-group"
+`
+  );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "hermes-cron-live-parity-observation-smoke.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'parity:%s\\n' "\${QINTOPIA_HERMES_CRON_LIVE_PARITY_OBSERVATION_ENABLE:-}" >> ${JSON.stringify(
+      observationLog
+    )}
+if [[ "\${QINTOPIA_HERMES_CRON_LIVE_PARITY_OBSERVATION_ENABLE:-}" != "1" ]]; then
+  echo "live parity observation not enabled" >&2
+  exit 8
+fi
+echo "hermes_cron_live_parity_result=success"
+echo "hermes_cron_live_parity_reviewed_count=5"
+echo "hermes_cron_live_parity_live_count=5"
+echo "hermes_cron_live_parity_enabled_count=0"
+echo "chat_id=secret-group"
+`
+  );
 
   for (const scriptName of [
     "activate-qiwe-image-send-production.sh",
@@ -320,22 +366,42 @@ exit 99
     );
   }
   if (
-    passedTargets[2][0] !== "erhua-morning-brief-worker-run" ||
+    passedTargets[2][0] !== "hermes-cron-snapshot" ||
     passedTargets[2][1] !== "passed" ||
     passedTargets[2][2] !==
-      "erhua_morning_brief_worker_run_result=success; erhua_morning_brief_worker_run_epoch=1786320600"
+      "hermes_cron_snapshot_observation_result=success; hermes_cron_snapshot_timer_unit_present=true; hermes_cron_snapshot_service_unit_present=true; hermes_cron_snapshot_repo_present=true; hermes_cron_snapshot_remote_absent=true; hermes_cron_snapshot_latest_commit_epoch=1786320600"
   ) {
     throw new Error(
-      `unexpected worker-run observation evidence ${JSON.stringify(passedTargets[2])}`
+      `unexpected snapshot observation evidence ${JSON.stringify(passedTargets[2])}`
     );
   }
   if (
-    passedTargets[3][0] !== "xiaoman-weekly-recruitment-worker-run" ||
+    passedTargets[3][0] !== "hermes-cron-live-parity" ||
     passedTargets[3][1] !== "passed" ||
-    passedTargets[3][2] !== "xiaoman_weekly_recruitment_worker_run_result=not_started"
+    passedTargets[3][2] !==
+      "hermes_cron_live_parity_result=success; hermes_cron_live_parity_reviewed_count=5; hermes_cron_live_parity_live_count=5; hermes_cron_live_parity_enabled_count=0"
   ) {
     throw new Error(
-      `unexpected not-started worker-run evidence ${JSON.stringify(passedTargets[3])}`
+      `unexpected live parity observation evidence ${JSON.stringify(passedTargets[3])}`
+    );
+  }
+  if (
+    passedTargets[4][0] !== "erhua-morning-brief-worker-run" ||
+    passedTargets[4][1] !== "passed" ||
+    passedTargets[4][2] !==
+      "erhua_morning_brief_worker_run_result=success; erhua_morning_brief_worker_run_epoch=1786320600"
+  ) {
+    throw new Error(
+      `unexpected worker-run observation evidence ${JSON.stringify(passedTargets[4])}`
+    );
+  }
+  if (
+    passedTargets[5][0] !== "xiaoman-weekly-recruitment-worker-run" ||
+    passedTargets[5][1] !== "passed" ||
+    passedTargets[5][2] !== "xiaoman_weekly_recruitment_worker_run_result=not_started"
+  ) {
+    throw new Error(
+      `unexpected not-started worker-run evidence ${JSON.stringify(passedTargets[5])}`
     );
   }
   const serializedDeployResult = JSON.stringify(deployResult);
@@ -346,6 +412,7 @@ exit 99
     "QINTOPIA_SIDECAR_DATABASE_URL",
     "DATABASE_URL",
     "QIWE_TOKEN",
+    "secret-group",
   ]) {
     if (serializedDeployResult.includes(forbidden)) {
       throw new Error(`production observation leaked ${forbidden}`);
@@ -358,6 +425,8 @@ exit 99
       "qiwe:auto",
       "daily:enabled",
       "daily:disabled",
+      "snapshot:1",
+      "parity:1",
       "worker:erhua-morning-brief-worker-run",
       "worker:xiaoman-weekly-recruitment-worker-run",
     ].join("\n")

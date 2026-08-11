@@ -23,6 +23,8 @@ Allowed targets:
 ```text
 qiwe-image-send
 xiaoman-daily-case-report-auto-publish
+hermes-cron-snapshot
+hermes-cron-live-parity
 erhua-morning-brief-worker-run
 xiaoman-daily-case-report-worker-run
 xiaoman-weekly-recruitment-worker-run
@@ -54,6 +56,33 @@ failure tails for both attempts so the missing config or systemd boundary is vis
 without exposing raw secrets. Successful evidence includes
 `xiaoman_daily_case_report_auto_publish_observation_state=enabled` or
 `xiaoman_daily_case_report_auto_publish_observation_state=disabled`.
+
+## Hermes Cron Snapshot And Parity
+
+`hermes-cron-snapshot` checks only the fixed server-local snapshot boundary. Successful
+evidence is limited to:
+
+- `hermes_cron_snapshot_observation_result=success`
+- `hermes_cron_snapshot_timer_unit_present=true`
+- `hermes_cron_snapshot_service_unit_present=true`
+- `hermes_cron_snapshot_repo_present=true`
+- `hermes_cron_snapshot_remote_absent=true`
+- `hermes_cron_snapshot_latest_commit_epoch=<unix>`
+
+`hermes-cron-live-parity` compares the reviewed registry in `release/current` with the
+live Hermes profile `jobs.json` files. It verifies schedule, script, `no_agent`,
+`deliver`, and the fixed `origin` routing boundary, resolving live chat ids only from
+the reviewed server-local profile env files. Successful evidence is limited to:
+
+- `hermes_cron_live_parity_result=success`
+- `hermes_cron_live_parity_reviewed_count=5`
+- `hermes_cron_live_parity_live_count=5`
+- `hermes_cron_live_parity_enabled_count=<count>`
+
+Both targets emit only fixed failure reason tokens through
+`hermes_cron_snapshot_observation_error=<token>` or
+`hermes_cron_live_parity_observation_error=<token>`. They must not print live
+`jobs.json`, snapshot contents, group ids, prompts, env values, or raw script output.
 
 ## Worker-Run Evidence
 

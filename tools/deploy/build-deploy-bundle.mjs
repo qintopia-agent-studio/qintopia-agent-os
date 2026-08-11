@@ -76,6 +76,8 @@ const sourceFiles = [
   "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",
   "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh",
   "deploy/sidecar/scripts/production-worker-run-evidence-smoke.sh",
+  "deploy/sidecar/scripts/hermes-cron-snapshot-observation-smoke.sh",
+  "deploy/sidecar/scripts/hermes-cron-live-parity-observation-smoke.sh",
   "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-production-config.sh",
   "deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh",
   "deploy/sidecar/scripts/xiaoman-weekly-recruitment-production-observation-smoke.sh",

@@ -158,6 +158,8 @@
             "enum": [
               "qiwe-image-send",
               "xiaoman-daily-case-report-auto-publish",
+              "hermes-cron-snapshot",
+              "hermes-cron-live-parity",
               "erhua-morning-brief-worker-run",
               "xiaoman-daily-case-report-worker-run",
               "xiaoman-weekly-recruitment-worker-run",

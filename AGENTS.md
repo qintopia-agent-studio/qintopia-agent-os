@@ -426,22 +426,27 @@
 - Production runtime observation should use the `Observe Production Runtime` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-observation` deploy-runner request and accepts only these
-  fixed targets: `qiwe-image-send`, `xiaoman-daily-case-report-auto-publish`, and the
-  worker-run evidence targets `erhua-morning-brief-worker-run`,
-  `xiaoman-daily-case-report-worker-run`, `xiaoman-weekly-recruitment-worker-run`,
+  fixed targets: `qiwe-image-send`, `xiaoman-daily-case-report-auto-publish`,
+  `hermes-cron-snapshot`, `hermes-cron-live-parity`, and the worker-run evidence targets
+  `erhua-morning-brief-worker-run`, `xiaoman-daily-case-report-worker-run`,
+  `xiaoman-weekly-recruitment-worker-run`,
   `xiaoman-weekly-plan-confirmation-worker-run`, and
-  `xiaoman-weekly-preview-worker-run`. Migrated worker-run targets prove the reviewed
-  Hermes cron wrapper wrote a latest `<timestamp> <task> run=ok` sentinel and the worker
-  exited successfully (weekly targets also validate the worker's `latest-summary.json`
-  draft invariants). When the fixed Hermes cron log is absent or contains no reviewed
-  sentinel for the task, the observation passes with
+  `xiaoman-weekly-preview-worker-run`. `hermes-cron-snapshot` reports only safe
+  server-local snapshot unit/repo facts, and `hermes-cron-live-parity` reports only
+  reviewed/live/enabled counts after comparing the reviewed registry to live
+  declarations including `deliver` and `origin` boundaries. Migrated worker-run targets
+  prove the reviewed Hermes cron wrapper wrote a latest `<timestamp> <task> run=ok`
+  sentinel and the worker exited successfully (weekly targets also validate the worker's
+  `latest-summary.json` draft invariants). When the fixed Hermes cron log is absent or
+  contains no reviewed sentinel for the task, the observation passes with
   `<key>_worker_run_result=not_started`; before the first scheduled trigger this means
   the Hermes job has not fired yet, not a regression, while `not_started` after the
   scheduled time means the Hermes job did not reach the reviewed wrapper and needs
   reviewed investigation. Observation is read-only: it may run only fixed release-local
   observation scripts, must not enable or disable timers, write persistent config,
   retire legacy cron files, call QiWe/Feishu/Postgres mutation commands, or run
-  activation/rollback scripts.
+  activation/rollback scripts, and must not print live `jobs.json`, group ids, prompts,
+  env values, snapshot contents, or raw script output.
 - Production immediate worker/backfill runs should use the
   `Run Production Runtime One-Shot` GitHub workflow after the reviewed release
   containing the runner support is deployed and the corresponding release-managed timer
