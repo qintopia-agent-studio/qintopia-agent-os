@@ -365,8 +365,11 @@ If verification fails, restore the backed-up unit and reload systemd. Do not edi
 installed unit in place and do not source it from an unverified working tree.
 
 Keep `ProtectHome=read-only`. Xiaoman legacy cron retirement requires only the fixed
-`/home/ubuntu/.hermes/profiles/xiaoman/cron` directory in `ReadWritePaths`; do not grant
-write access to the whole Xiaoman Hermes profile.
+`/home/ubuntu/.hermes/profiles/xiaoman/cron` directory in `ReadWritePaths`; reviewed
+Hermes cron apply additionally needs the fixed `/home/ubuntu/.hermes/scripts` wrapper
+directory and `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` snapshot
+repo. Do not grant write access to the whole Xiaoman Hermes profile, the whole
+qintopia-agentos state directory, or the whole home.
 
 ## Validation
 

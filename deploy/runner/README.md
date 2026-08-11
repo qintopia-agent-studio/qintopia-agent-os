@@ -219,6 +219,9 @@ The target server currently has:
   cron retirement and Hermes cron apply only
 - runner `ReadWritePaths` access to `/home/ubuntu/.hermes/scripts` for reviewed Hermes
   cron wrapper installs
+- runner `ReadWritePaths` access to the fixed
+  `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` repo for reviewed
+  Hermes cron apply snapshot sync only
 
 The COS env file was observed as `root:ubuntu 0600`, so the production runner should run
 as a root-owned system service and execute only the fixed runner scripts. If a dedicated

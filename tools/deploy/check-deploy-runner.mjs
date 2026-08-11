@@ -1994,9 +1994,25 @@ if (
 }
 if (
   runnerServiceText &&
+  !runnerReadWritePaths.includes(
+    "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"
+  )
+) {
+  addError(
+    "deploy runner service must explicitly allow fixed Hermes cron snapshot writes"
+  );
+}
+if (
+  runnerServiceText &&
   runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/xiaoman")
 ) {
   addError("deploy runner service must not allow whole Xiaoman profile writes");
+}
+if (
+  runnerServiceText &&
+  runnerReadWritePaths.includes("/home/ubuntu/.local/state/qintopia-agentos")
+) {
+  addError("deploy runner service must not allow whole qintopia-agentos state writes");
 }
 if (
   smokeText.includes('echo "Smoke checks passed') &&

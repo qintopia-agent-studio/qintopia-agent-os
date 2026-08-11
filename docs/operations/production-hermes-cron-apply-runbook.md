@@ -77,6 +77,7 @@ a cryptographic signature over `jobs.json`.
   - `/home/ubuntu/.hermes/profiles/erhua`
   - `/home/ubuntu/.hermes/profiles/xiaoman/cron`
   - `/home/ubuntu/.hermes/scripts`
+  - `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`
 - The snapshot sync path must remain server-local and must not have a remote.
 
 ## Evidence
