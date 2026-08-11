@@ -16,6 +16,10 @@ const sourceApply = path.join(
   repoRoot,
   "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh"
 );
+const sourceWrapper = path.join(
+  repoRoot,
+  "runtime/hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh"
+);
 const fixedReleaseDir = "/home/ubuntu/qintopia-agent-os-releases/current";
 const fixedWrapperDest =
   "/home/ubuntu/.hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh";
@@ -278,6 +282,150 @@ try {
   });
   if (result.status === 0 || !result.stderr.includes("definition drifts")) {
     throw new Error("weekly plan confirmation apply accepted a drifted declaration");
+  }
+
+  driftJob.schedule = { kind: "cron", expr: "0 20 * * 0", display: "0 20 * * 0" };
+  driftJob.origin.thread_id = "unreviewed-thread";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error(
+      "weekly plan confirmation apply accepted drifted origin routing fields"
+    );
+  }
+
+  driftJob.origin.thread_id = null;
+  driftJob.deliver = "none";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error("weekly plan confirmation apply accepted drifted deliver mode");
+  }
+
+  driftJob.deliver = "origin";
+  driftJob.origin.platform = "feishu";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error("weekly plan confirmation apply accepted drifted origin platform");
+  }
+
+  driftJob.origin.platform = "wecom";
+  driftJob.origin.chat_id = "unreviewed-chat-id";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error("weekly plan confirmation apply accepted drifted origin chat id");
+  }
+
+  const staleSha = "9".repeat(40);
+  const sidecarEnvFile = path.join(tmpRoot, "message-sidecar.env");
+  fs.writeFileSync(
+    sidecarEnvFile,
+    [
+      "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_ENABLED=0",
+      "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_APPROVAL=approved-production-xiaoman-weekly-plan-confirmation",
+      "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1",
+      "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1",
+      "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE=1",
+      `QINTOPIA_DEPLOYED_COMMIT_SHA=${staleSha}`,
+      "PATH=/tmp/unreviewed",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  fs.chmodSync(sidecarEnvFile, 0o600);
+  const stateRoot = path.join(tmpRoot, "state");
+  const fakeWorker = path.join(
+    releaseDir,
+    "deploy",
+    "sidecar",
+    "scripts",
+    "xiaoman-weekly-plan-confirmation-worker.sh"
+  );
+  writeExecutable(
+    fakeWorker,
+    [
+      "#!/usr/bin/env bash",
+      'echo "enabled=${QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_ENABLED:-unset}"',
+      'echo "sha=${QINTOPIA_DEPLOYED_COMMIT_SHA:-unset}"',
+      'echo "path=${PATH}"',
+      'echo "release_dir_defined=${QINTOPIA_RELEASE_DIR+yes}"',
+      'echo "wrapper_path_defined=${QINTOPIA_XIAOMAN_WRAPPER_PATH+yes}"',
+      'echo "python_defined=${QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PYTHON+yes}"',
+      'echo "output_dir_defined=${QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_OUTPUT_DIR+yes}"',
+      "",
+    ].join("\n")
+  );
+  const wrapperFixture = fs
+    .readFileSync(sourceWrapper, "utf8")
+    .replaceAll(fixedReleaseDir, releaseCurrent)
+    .replaceAll("/etc/qintopia/message-sidecar.env", sidecarEnvFile)
+    .replaceAll("/home/ubuntu/.local/state/qintopia-agentos", stateRoot);
+  if (
+    !fs
+      .readFileSync(sourceWrapper, "utf8")
+      .includes(
+        'WORKER="${release_dir}/deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh"'
+      )
+  ) {
+    throw new Error(
+      "weekly plan confirmation wrapper must execute the worker from the resolved release dir"
+    );
+  }
+  const wrapperPath = path.join(
+    scriptsDir,
+    "qintopia_xiaoman_weekly_plan_confirmation.sh"
+  );
+  writeExecutable(wrapperPath, wrapperFixture);
+  const wrapperRun = spawnSync("bash", [wrapperPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_RELEASE_DIR: "/unreviewed/release",
+      QINTOPIA_XIAOMAN_WRAPPER_PATH: "/unreviewed/wrapper",
+      QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PYTHON: "/unreviewed/python",
+      QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_OUTPUT_DIR: "/unreviewed/output",
+    },
+    encoding: "utf8",
+  });
+  if (wrapperRun.status !== 0 || wrapperRun.stdout !== "" || wrapperRun.stderr !== "") {
+    throw new Error(
+      `weekly plan confirmation wrapper failed or leaked output\n${wrapperRun.stdout}\n${wrapperRun.stderr}`
+    );
+  }
+  const wrapperLog = fs.readFileSync(
+    path.join(stateRoot, "xiaoman-weekly-plan-confirmation", "hermes-cron.log"),
+    "utf8"
+  );
+  for (const expected of [
+    "run=ok",
+    "enabled=1",
+    `sha=${releaseSha}`,
+    "path=/usr/bin:/bin:/usr/sbin:/sbin",
+    "release_dir_defined=",
+    "wrapper_path_defined=",
+    "python_defined=",
+    "output_dir_defined=",
+  ]) {
+    if (!wrapperLog.includes(expected)) {
+      throw new Error(
+        `weekly plan confirmation wrapper log missed ${expected}\n${wrapperLog}`
+      );
+    }
+  }
+  if (wrapperLog.includes(`sha=${staleSha}`)) {
+    throw new Error(
+      "weekly plan confirmation wrapper let stale persistent release SHA win"
+    );
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

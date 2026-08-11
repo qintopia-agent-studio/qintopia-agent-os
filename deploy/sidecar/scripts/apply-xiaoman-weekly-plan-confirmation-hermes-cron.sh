@@ -148,6 +148,8 @@ def job_def_matches(job) -> bool:
         and isinstance(job.get("origin"), dict)
         and job["origin"].get("platform") == "wecom"
         and job["origin"].get("chat_id") == chat_id
+        and job["origin"].get("chat_name") is None
+        and job["origin"].get("thread_id") is None
     )
 
 

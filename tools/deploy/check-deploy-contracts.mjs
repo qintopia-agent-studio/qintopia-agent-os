@@ -3662,6 +3662,39 @@ for (const fragment of [
     fragment
   );
 }
+const xiaomanPlanConfirmationWrapperPath =
+  "runtime/hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh";
+if (!exists(xiaomanPlanConfirmationWrapperPath)) {
+  addError(
+    `${xiaomanPlanConfirmationWrapperPath}: missing plan confirmation Hermes wrapper`
+  );
+} else {
+  const wrapper = readText(xiaomanPlanConfirmationWrapperPath);
+  for (const fragment of [
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'export PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'release_dir="$(cd "$RELEASE_CURRENT" && pwd -P)"',
+    'release_sha="${release_dir##*/}"',
+    'export QINTOPIA_DEPLOYED_COMMIT_SHA="$release_sha"',
+    'WORKER="${release_dir}/deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh"',
+  ]) {
+    requireFragment(xiaomanPlanConfirmationWrapperPath, wrapper, fragment);
+  }
+  const envSource = wrapper.indexOf('. "$ENV_FILE"');
+  const pathExport = wrapper.lastIndexOf('export PATH="/usr/bin:/bin:/usr/sbin:/sbin"');
+  const shaExport = wrapper.indexOf("export QINTOPIA_DEPLOYED_COMMIT_SHA");
+  if (envSource === -1 || pathExport === -1 || envSource > pathExport) {
+    addError(
+      `${xiaomanPlanConfirmationWrapperPath}: must export fixed PATH after sourcing the persistent env`
+    );
+  }
+  if (envSource === -1 || shaExport === -1 || envSource > shaExport) {
+    addError(
+      `${xiaomanPlanConfirmationWrapperPath}: must export QINTOPIA_DEPLOYED_COMMIT_SHA after sourcing the persistent env`
+    );
+  }
+}
 const erhuaMorningBriefHermesCronApplyPath =
   "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh";
 if (!exists(erhuaMorningBriefHermesCronApplyPath)) {
@@ -3723,13 +3756,22 @@ if (!exists(erhuaMorningBriefWrapperPath)) {
   for (const fragment of [
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
     'RELEASE_LINK="/home/ubuntu/qintopia-agent-os-releases/current"',
-    "erhua-morning-brief-worker.sh",
-    'export QINTOPIA_DEPLOYED_COMMIT_SHA="$(basename "$(readlink -f "$RELEASE_LINK")")"',
+    'export PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'release_dir="$(cd "$RELEASE_LINK" && pwd -P)"',
+    'release_sha="${release_dir##*/}"',
+    'export QINTOPIA_DEPLOYED_COMMIT_SHA="$release_sha"',
+    'WORKER="${release_dir}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh"',
   ]) {
     requireFragment(erhuaMorningBriefWrapperPath, wrapper, fragment);
   }
   const envSource = wrapper.indexOf('. "$ENV_FILE"');
+  const pathExport = wrapper.lastIndexOf('export PATH="/usr/bin:/bin:/usr/sbin:/sbin"');
   const shaExport = wrapper.indexOf("export QINTOPIA_DEPLOYED_COMMIT_SHA");
+  if (envSource === -1 || pathExport === -1 || envSource > pathExport) {
+    addError(
+      `${erhuaMorningBriefWrapperPath}: must export fixed PATH after sourcing the persistent env`
+    );
+  }
   if (envSource === -1 || shaExport === -1 || envSource > shaExport) {
     addError(
       `${erhuaMorningBriefWrapperPath}: must export QINTOPIA_DEPLOYED_COMMIT_SHA after sourcing the persistent env`
