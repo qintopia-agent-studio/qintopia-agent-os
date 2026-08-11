@@ -362,6 +362,62 @@ try {
     "enable accepted a drifted schedule expression"
   );
 
+  // --enable must refuse delivery-boundary drift: a job with the reviewed name,
+  // schedule, and script but a changed delivery target or mode must not activate.
+  const reviewedJob = () => ({
+    id: "abcdef012345",
+    name: jobName,
+    schedule: { kind: "cron", expr: jobExpr, display: jobExpr },
+    no_agent: true,
+    script: jobScript,
+    deliver: "origin",
+    origin: {
+      platform: "wecom",
+      chat_id: chatIdFixture,
+      chat_name: null,
+      thread_id: null,
+    },
+    enabled: false,
+    skills: [],
+  });
+  const enableWithJob = (job) => {
+    const envelope = emptyEnvelope();
+    envelope.jobs = [job];
+    writeCron(envelope);
+    return runApproved(["--enable"]);
+  };
+
+  result = enableWithJob({ ...reviewedJob(), deliver: "none" });
+  check(
+    result.status !== 0 && result.stderr.includes("deliver mode does not match"),
+    "enable accepted a drifted deliver mode"
+  );
+
+  const platformDrift = reviewedJob();
+  platformDrift.origin = { ...platformDrift.origin, platform: "feishu" };
+  result = enableWithJob(platformDrift);
+  check(
+    result.status !== 0 && result.stderr.includes("origin platform does not match"),
+    "enable accepted a drifted origin platform"
+  );
+
+  const threadDrift = reviewedJob();
+  threadDrift.origin = { ...threadDrift.origin, thread_id: "thread-1" };
+  result = enableWithJob(threadDrift);
+  check(
+    result.status !== 0 && result.stderr.includes("origin routing fields do not match"),
+    "enable accepted drifted origin routing fields"
+  );
+
+  const chatDrift = reviewedJob();
+  chatDrift.origin = { ...chatDrift.origin, chat_id: "unreviewed-chat-id" };
+  result = enableWithJob(chatDrift);
+  check(
+    result.status !== 0 &&
+      result.stderr.includes("origin chat id drifted from the Xiaoman profile env"),
+    "enable accepted a drifted origin chat id"
+  );
+
   // The wrapper must stay silent on success: Hermes delivers any stdout straight to the
   // origin chat, and the worker prints an operations-review summary that must not leak.
   const wrapperStateRoot = path.join(tmpRoot, "state");
