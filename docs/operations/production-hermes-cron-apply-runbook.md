@@ -47,9 +47,10 @@ This is a production write to live Hermes state:
   mode, origin platform, and resolved chat id before flipping `enabled`.
 - The request never accepts chat ids, cron JSON, script paths, approval strings, env
   files, systemctl commands, or arbitrary shell from workflow inputs.
-- The deploy result records only target, mode, status, and fixed failure exit code. It
-  does not record script stdout/stderr, live `jobs.json`, group ids, prompts, env
-  values, or snapshot contents.
+- The deploy result records only target, mode, status, fixed failure exit code, and a
+  bounded failure reason when the apply script emits the explicit
+  `qintopia_hermes_cron_apply_safe_failure=` marker. It does not record raw script
+  stdout/stderr, live `jobs.json`, group ids, prompts, env values, or snapshot contents.
 
 The approval string authorizes the production action and boundary commitment. It is not
 a cryptographic signature over `jobs.json`.

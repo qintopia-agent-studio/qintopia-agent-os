@@ -22,6 +22,7 @@ SNAPSHOT_SYNC="${RELEASE_DIR}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.s
 WRAPPER_MODE="${1}"
 
 fail() {
+  echo "qintopia_hermes_cron_apply_safe_failure=$1" >&2
   echo "Erhua morning brief Hermes cron apply failed: $1" >&2
   exit 1
 }
@@ -62,7 +63,7 @@ job_script = "qintopia_erhua_morning_brief.sh"
 
 
 def fail(message: str) -> None:
-    raise SystemExit(message)
+    raise SystemExit(f"qintopia_hermes_cron_apply_safe_failure={message}")
 
 
 def safe_chown(path: str, uid: int, gid: int) -> None:
@@ -131,7 +132,7 @@ payload = cron_file.read_bytes()
 try:
     value = json.loads(payload.decode("utf-8"))
 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-    raise SystemExit("Erhua cron jobs.json must be JSON") from exc
+    fail("Erhua cron jobs.json must be JSON")
 
 if not isinstance(value, dict) or not isinstance(value.get("jobs"), list):
     fail("Erhua cron jobs.json must be an envelope with a jobs list")
@@ -265,6 +266,9 @@ print(
 )
 PY
 
-QINTOPIA_HERMES_CRON_SNAPSHOT="approved-production-hermes-cron-snapshot" "$SNAPSHOT_SYNC" >/dev/null
+if ! QINTOPIA_HERMES_CRON_SNAPSHOT="approved-production-hermes-cron-snapshot" \
+  "$SNAPSHOT_SYNC" >/dev/null; then
+  fail "snapshot sync failed"
+fi
 
 echo "Erhua morning brief Hermes cron apply passed"

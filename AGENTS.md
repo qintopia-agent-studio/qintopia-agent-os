@@ -130,7 +130,10 @@
   boundary, not a cryptographic signature over `jobs.json`. The workflow must not accept
   chat ids, cron JSON, script paths, approval strings, env-file paths, systemctl
   commands, or arbitrary shell from inputs, and deploy results must not record live cron
-  content, group ids, prompts, env values, or script output.
+  content, group ids, prompts, env values, or raw script output. Apply scripts may emit
+  a bounded safe failure reason only through the explicit
+  `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must ignore all
+  other stdout/stderr for result details.
 - Production legacy Hermes cron retirement should use the
   `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
   the runner support is deployed. It creates a signed

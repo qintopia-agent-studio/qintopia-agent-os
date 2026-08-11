@@ -381,6 +381,68 @@ exit 42
     throw new Error(`unexpected failed Hermes cron apply detail ${failedCheck.detail}`);
   }
 
+  const safeFailedRequestId = "deploy-20260811T010004Z-abcdef123456";
+  const safeFailureMessage =
+    "reviewed weekly preview job schedule does not match the reviewed declaration";
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "apply-xiaoman-weekly-preview-hermes-cron.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+echo "raw live cron secret group-id-fixture" >&2
+echo "qintopia_hermes_cron_apply_safe_failure=${safeFailureMessage}" >&2
+exit 45
+`
+  );
+  const safeFailedRequestPath = path.join(
+    tmpRoot,
+    "safe-failed-hermes-cron-apply-request.json"
+  );
+  fs.writeFileSync(
+    safeFailedRequestPath,
+    `${JSON.stringify(
+      buildRequest({
+        request_id: safeFailedRequestId,
+        hermes_cron_apply: {
+          mode: "install",
+          targets: ["xiaoman-weekly-preview"],
+        },
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  const safeFailed = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", safeFailedRequestPath],
+    {
+      cwd: stateDir,
+      env,
+      encoding: "utf8",
+    }
+  );
+  if (safeFailed.status !== 45) {
+    throw new Error(
+      `expected safe failed Hermes cron apply to exit 45, got ${safeFailed.status}\nstdout:\n${safeFailed.stdout}\nstderr:\n${safeFailed.stderr}`
+    );
+  }
+  const safeFailedDeployResult = readDeployResult(stateDir, safeFailedRequestId);
+  const safeFailedCheck = safeFailedDeployResult.checks.find(
+    (check) => check.name === "production-hermes-cron-apply"
+  );
+  if (safeFailedCheck.detail.includes("group-id-fixture")) {
+    throw new Error("safe failed Hermes cron apply leaked raw script stderr");
+  }
+  const safeFailedDetail = JSON.parse(safeFailedCheck.detail);
+  if (safeFailedDetail.targets[0].detail !== `exit 45: ${safeFailureMessage}`) {
+    throw new Error(
+      `unexpected safe failed Hermes cron apply detail ${safeFailedCheck.detail}`
+    );
+  }
+
   const ordinaryRequestPath = path.join(tmpRoot, "ordinary-request.json");
   fs.writeFileSync(
     ordinaryRequestPath,
