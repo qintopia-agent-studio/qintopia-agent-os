@@ -5377,7 +5377,7 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
 } else {
   const checker = readText(xiaomanProductionCompletionEvidenceCheckPath);
   for (const fragment of [
-    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completed-xiaoman-production-completion-evidence.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>",
+    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completed-xiaoman-production-completion-evidence.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --daily-case-report-observation <production-observation-deploy-result.json>",
     "xiaoman-production-completion-evidence-v1",
     "check-huabaosi-image-staging-evidence.mjs",
     "check-qiwe-image-staging-evidence.mjs",
@@ -5388,6 +5388,13 @@ if (!exists(xiaomanProductionCompletionEvidenceCheckPath)) {
     "huabaosi_image_generation_production_canary_evidence=",
     "--huabaosi-production-canary",
     "--qiwe-group-arrival-confirmation",
+    "--daily-case-report-observation",
+    "daily_case_report_confirmation",
+    "xiaoman-daily-case-report-worker-run",
+    "xiaoman-character-universe-v1",
+    "daily_case_report_second_pass",
+    "raw_messages_included",
+    "profile_fact_text_included",
     "xiaoman_qiwe_group_arrival_confirmation_evidence=",
     "does not bind to QiWe group arrival evidence",
     "prerequisite",
@@ -5444,7 +5451,7 @@ if (!exists(xiaomanProductionCompletionManifestBuilderPath)) {
 } else {
   const builder = readText(xiaomanProductionCompletionManifestBuilderPath);
   for (const fragment of [
-    "usage: node tools/deploy/build-xiaoman-production-completion-manifest.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> [--output <completed-xiaoman-production-completion-evidence.json>]",
+    "usage: node tools/deploy/build-xiaoman-production-completion-manifest.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --daily-case-report-observation <production-observation-deploy-result.json> [--output <completed-xiaoman-production-completion-evidence.json>]",
     "xiaoman-production-completion-evidence-v1",
     "check-huabaosi-image-production-canary-evidence.mjs",
     "check-xiaoman-real-activity-production-evidence.mjs",
@@ -5488,6 +5495,12 @@ if (!exists(xiaomanProductionCompletionManifestBuilderPath)) {
     "--huabaosi-production-canary <huabaosi-production-canary-output.txt>",
     "--production-real-activity <production-evidence-output.txt>",
     "--qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>",
+    "--daily-case-report-observation <production-observation-deploy-result.json>",
+    "daily_case_report_confirmation",
+    "extractDailyCaseReportObservation",
+    "xiaoman-daily-case-report-worker-run",
+    "xiaoman-character-universe-v1",
+    "daily_case_report_second_pass",
     "--output <completed-xiaoman-production-completion-evidence.json>",
     "assertNoSensitiveOutput(output)",
     "forbiddenOutputPatterns",
@@ -5583,7 +5596,7 @@ if (!exists(xiaomanProductionCompletionFinalizerPath)) {
 } else {
   const finalizer = readText(xiaomanProductionCompletionFinalizerPath);
   for (const fragment of [
-    "usage: node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --staging-runtime-readiness <staging-runtime-readiness-output.txt> --huabaosi-staging <huabaosi-staging-output.txt> --qiwe-staging <qiwe-staging-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --output <completed-xiaoman-production-completion-evidence.json>",
+    "usage: node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --staging-runtime-readiness <staging-runtime-readiness-output.txt> --huabaosi-staging <huabaosi-staging-output.txt> --qiwe-staging <qiwe-staging-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --daily-case-report-observation <production-observation-deploy-result.json> --output <completed-xiaoman-production-completion-evidence.json>",
     "build-xiaoman-production-completion-manifest.mjs",
     "check-xiaoman-production-completion-evidence.mjs",
     "--staging-runtime-readiness",
@@ -5592,6 +5605,7 @@ if (!exists(xiaomanProductionCompletionFinalizerPath)) {
     "--huabaosi-production-canary",
     "--production-real-activity",
     "--qiwe-group-arrival-confirmation",
+    "--daily-case-report-observation",
     "--output",
     "Xiaoman production completion evidence finalized:",
   ]) {
@@ -6426,6 +6440,12 @@ if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
     "sidecar_binary_sha256",
     "database_url_sha256",
     "qiwe_group_arrival_confirmed",
+    "daily_case_report_confirmation",
+    "xiaoman-character-universe-v1",
+    "daily_case_report_second_pass",
+    "raw_messages_included",
+    "profile_fact_text_included",
+    "character_universe_people_count",
   ]) {
     requireFragment(
       xiaomanProductionCompletionEvidenceTemplatePath,

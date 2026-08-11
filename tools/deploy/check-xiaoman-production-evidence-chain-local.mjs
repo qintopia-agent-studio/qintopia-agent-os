@@ -52,6 +52,14 @@ const checks = [
     ],
   ],
   [
+    "node",
+    [
+      "tools/agents/pr-doctor.mjs",
+      "--body-only",
+      "docs/reports/2026-08-11-xiaoman-character-universe-daily-report-pr-body.md",
+    ],
+  ],
+  [
     "cargo",
     [
       "test",

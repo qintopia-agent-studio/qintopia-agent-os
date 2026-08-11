@@ -68,6 +68,31 @@ try {
     confirmed_by: "owner",
     confirmed_at: "2026-07-20T06:30:00Z",
   });
+  assert.deepEqual(generated.daily_case_report_confirmation, {
+    release_sha: productionReleaseSha,
+    runtime_artifact_profile: "qiwe-production",
+    observation_status: "passed",
+    auto_publish_observation_state: "disabled",
+    hermes_snapshot_observed: true,
+    hermes_live_parity_observed: true,
+    worker_run_result: "success",
+    worker_run_epoch: 1786320660,
+    worker_summary_present: true,
+    message_count: 118,
+    participant_count: 24,
+    case_count: 6,
+    character_count: 4,
+    hot_topic_count: 3,
+    character_universe_schema_version: "xiaoman-character-universe-v1",
+    character_universe_source: "daily_case_report_second_pass",
+    raw_messages_included: false,
+    profile_fact_text_included: false,
+    character_universe_people_count: 4,
+    character_universe_topic_count: 3,
+    character_universe_event_count: 6,
+    character_universe_storyline_candidate_count: 5,
+    character_universe_edge_count: 7,
+  });
 
   result = runBuilder(
     files,
@@ -201,6 +226,8 @@ function runBuilder(files, output, env = {}) {
       files.production,
       "--qiwe-group-arrival-confirmation",
       files.qiweGroupArrivalConfirmation,
+      "--daily-case-report-observation",
+      files.dailyCaseReportObservation,
       "--output",
       output,
     ],
@@ -235,6 +262,8 @@ function runCompletionChecker(files) {
       files.production,
       "--qiwe-group-arrival-confirmation",
       files.qiweGroupArrivalConfirmation,
+      "--daily-case-report-observation",
+      files.dailyCaseReportObservation,
     ],
     { cwd: repoRoot, encoding: "utf8" }
   );
@@ -418,6 +447,10 @@ function writeEvidenceFiles(overrides = {}) {
       tmpRoot,
       `confirmation-${cryptoSuffix()}.txt`
     ),
+    dailyCaseReportObservation: path.join(
+      tmpRoot,
+      `daily-report-observation-${cryptoSuffix()}.json`
+    ),
   };
   fs.writeFileSync(
     files.stagingRuntime,
@@ -441,11 +474,85 @@ function writeEvidenceFiles(overrides = {}) {
     qiweGroupArrivalConfirmationOutput(overrides.qiweGroupArrivalConfirmation ?? {}),
     "utf8"
   );
+  fs.writeFileSync(
+    files.dailyCaseReportObservation,
+    `${JSON.stringify(
+      dailyCaseReportObservationResult(overrides.dailyCaseReportObservation ?? {})
+    )}\n`,
+    "utf8"
+  );
   return files;
 }
 
 function cryptoSuffix() {
   return Math.random().toString(16).slice(2);
+}
+
+function dailyCaseReportObservationResult(overrides = {}) {
+  const observationDetail = {
+    schema_version: 1,
+    targets: [
+      {
+        target: "xiaoman-daily-case-report-auto-publish",
+        status: "passed",
+        detail: "xiaoman_daily_case_report_auto_publish_observation_state=disabled",
+        recorded_at: "2026-08-11T00:10:00Z",
+      },
+      {
+        target: "hermes-cron-snapshot",
+        status: "passed",
+        detail:
+          "hermes_cron_snapshot_observation_result=success; hermes_cron_snapshot_timer_unit_present=true; hermes_cron_snapshot_service_unit_present=true; hermes_cron_snapshot_repo_present=true; hermes_cron_snapshot_remote_absent=true; hermes_cron_snapshot_latest_commit_epoch=1786320600",
+        recorded_at: "2026-08-11T00:10:01Z",
+      },
+      {
+        target: "hermes-cron-live-parity",
+        status: "passed",
+        detail:
+          "hermes_cron_live_parity_result=success; hermes_cron_live_parity_reviewed_count=5; hermes_cron_live_parity_live_count=5; hermes_cron_live_parity_enabled_count=1",
+        recorded_at: "2026-08-11T00:10:02Z",
+      },
+      {
+        target: "xiaoman-daily-case-report-worker-run",
+        status: "passed",
+        detail:
+          "xiaoman_daily_case_report_worker_run_result=success; xiaoman_daily_case_report_worker_run_epoch=1786320660; xiaoman_daily_case_report_worker_summary_present=true; xiaoman_daily_case_report_worker_message_count=118; xiaoman_daily_case_report_worker_participant_count=24; xiaoman_daily_case_report_worker_case_count=6; xiaoman_daily_case_report_worker_character_count=4; xiaoman_daily_case_report_worker_hot_topic_count=3; xiaoman_daily_case_report_worker_character_universe_schema_version=xiaoman-character-universe-v1; xiaoman_daily_case_report_worker_character_universe_source=daily_case_report_second_pass; xiaoman_daily_case_report_worker_character_universe_raw_messages_included=false; xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included=false; xiaoman_daily_case_report_worker_character_universe_people_count=4; xiaoman_daily_case_report_worker_character_universe_topic_count=3; xiaoman_daily_case_report_worker_character_universe_event_count=6; xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5; xiaoman_daily_case_report_worker_character_universe_edge_count=7",
+        recorded_at: "2026-08-11T00:10:03Z",
+      },
+    ],
+  };
+  return deepMerge(
+    {
+      schema_version: 1,
+      request_id: "daily-report-observation",
+      environment: "production",
+      status: "succeeded",
+      started_at: "2026-08-11T00:09:00Z",
+      finished_at: "2026-08-11T00:11:00Z",
+      release_sha: productionReleaseSha,
+      commit_sha: productionReleaseSha,
+      runtime_sha: productionReleaseSha,
+      runtime_artifact_profile: "qiwe-production",
+      deploy_bundle_sha: "6".repeat(64),
+      release_scope: ["production-observation"],
+      previous_sha: productionReleaseSha,
+      current_target: productionReleaseSha,
+      restart_targets: ["qintopia-system-services"],
+      checks: [
+        { name: "deploy-runner", status: "passed" },
+        {
+          name: "production-observation",
+          status: "passed",
+          detail: JSON.stringify(observationDetail),
+        },
+      ],
+      rollback: {
+        attempted: false,
+        status: "not_required",
+      },
+    },
+    overrides
+  );
 }
 
 function stagingRuntimeReadiness() {

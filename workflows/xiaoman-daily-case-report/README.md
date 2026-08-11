@@ -27,17 +27,31 @@ observation, rollback, and send boundaries still run from the immutable release.
   or synthetic fallback commentary.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
+- Add a `今日人物群像` section from the same latest message window. When production
+  read-through is active, the ranking may use sanitized long-term role recurrence counts
+  from `qintopia_identity.member_facts`, but it never displays `fact_text` or hidden
+  profile snapshot content.
 - Show a keyword hotlist only from repeated source-message tokens or repeated complete
   Chinese phrases, together with the matching message and participant counts. A phrase
   must occur in at least two distinct source messages; omit the hotlist when the report
   window has no qualifying keyword.
 - Keep the battle-report body intact: headline metrics, 24H activity, source-message
-  highlight, "今日局势" case cards, and "今日 MVP" remain the primary sections. The
-  compact hotlist appears after the highlight and before the case cards as a supplement.
+  highlight, "今日人物群像", "今日局势" case cards, and "今日 MVP" remain the primary
+  sections. The compact hotlist appears after the highlight and before the character
+  notes as a supplement.
+- Write a private Markdown daily report alongside the poster so downstream operators can
+  review a text日报, not only the image artifact.
+- Write a private `.character-universe.json` second-pass export alongside the poster and
+  Markdown. It keeps people, topics, events, storyline candidates, and graph edges from
+  curated report content only; it does not retain raw messages or hidden profile fact
+  text.
 - Render a mobile-friendly JPEG poster from the black-and-yellow community-scoreboard
   template. The HTML preview and production image share the same battle-report layout.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
   downstream sendable artifact boundary.
+- Bind safe production metadata for the new report shape: content counts,
+  character-universe schema/source, and node counts only. Do not persist Markdown body,
+  raw character-universe nodes, member names, or excerpts in send-ready metadata.
 - Publish once per daily window to the reviewed QiWe target group after production
   activation.
 - Never send from a local image path, a conversation-created cron, or an unreviewed
@@ -75,6 +89,15 @@ Promotional payment/copy-token redirects remain counted in raw activity totals, 
 are not allowed to become the daily highlight, topic cards, or MVP entries. This keeps
 the workflow deterministic and free of LLM costs. A future iteration can add an optional
 LLM-based case title step behind an explicit flag.
+
+Character notes follow the reference `wx-cli` project’s useful pattern: daily output
+separates current-window behavior from long-term character memory. The displayed role is
+derived from today’s source messages; long-term Postgres profile facts only contribute
+bounded recurrence counts and a coarse role label such as `活动推进者` or `故事线雷达`.
+The workflow also emits a private `xiaoman-daily-case-report-*.character-universe.json`
+file, matching the reference project's Wiki/graph idea with a safer source policy:
+people, topics, events, storyline candidates, and edges come from the generated daily
+report layer, not from raw chat archives.
 
 ## Running it
 
@@ -179,6 +202,16 @@ systemd timer is retained only as a rollback target after the Hermes job is disa
   can contain real member names and message excerpts, so it is written only into a
   `0700` output directory as a `0600` file and is removed after image rendering or
   failure.
+- The private Markdown日报 is generated in the same `0700` output directory with mode
+  `0600`. The production auto-publish worker runs in a temporary directory and removes
+  it after upload/publish creation; retained production evidence must keep only
+  sanitized metrics and artifact identity.
+- The private character-universe JSON is generated in the same `0700` output directory
+  with mode `0600`. It may contain member display names and curated report excerpts, so
+  it follows the same temporary production cleanup policy as Markdown and HTML.
+- Auto-publish metadata retains only safe counters and schema flags from the private
+  Markdown/universe outputs. Production evidence can prove the upgraded character
+  universe path ran, without retaining people labels, story labels, or source excerpts.
 - Production JPEG/database runs use fixed local runtime tools only. Database
   read-through prefers `psycopg` when already present and otherwise falls back to the
   reviewed `/usr/bin/psql` boundary without placing the database URL in command
@@ -203,5 +236,8 @@ systemd timer is retained only as a rollback target after the Hermes job is disa
 - `pnpm workflows:check` validates the workflow manifest.
 - `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/xiaoman-daily-case-report/tests -v`
   validates the local render boundary and date/output contracts.
+- `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
+  validates the character-universe generation, private-output boundary, worker metadata,
+  production observation allowlist, and runbook coverage needed before release.
 - `python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html`
   validates the template generation path without image rendering dependencies.

@@ -112,6 +112,126 @@ check(
 );
 
 writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-10T01:30:00Z xiaoman-daily-case-report run=ok",
+    JSON.stringify(
+      {
+        success: true,
+        worker: "xiaoman-daily-case-report-auto-publish-worker",
+        media_uploaded: true,
+        auto_publish_created: true,
+        external_send_executed: false,
+        content_metrics: {
+          message_count: 118,
+          participant_count: 24,
+          case_count: 6,
+          character_count: 4,
+          hot_topic_count: 3,
+        },
+        character_universe: {
+          schema_version: "xiaoman-character-universe-v1",
+          source: "daily_case_report_second_pass",
+          retained_source_policy: "curated_summary_only",
+          raw_messages_included: false,
+          profile_fact_text_included: false,
+          people_count: 4,
+          topic_count: 3,
+          event_count: 6,
+          storyline_candidate_count: 5,
+          edge_count: 7,
+        },
+      },
+      null,
+      2
+    ),
+    "raw worker output with group-id-fixture",
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 0, "daily case report success summary");
+expectNoLeak(result, "daily case report success summary");
+check(
+  result.stdout.includes("xiaoman_daily_case_report_worker_run_result=success") &&
+    result.stdout.includes("xiaoman_daily_case_report_worker_character_count=4") &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_schema_version=xiaoman-character-universe-v1"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_raw_messages_included=false"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included=false"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5"
+    ),
+  `daily case report success emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-10T01:30:00Z xiaoman-daily-case-report run=ok",
+    "raw worker output with group-id-fixture",
+    "2026-08-10T01:31:00Z xiaoman-weekly-preview run=ok",
+    JSON.stringify(
+      {
+        worker: "xiaoman-daily-case-report-auto-publish-worker",
+        content_metrics: { character_count: 99 },
+        character_universe: {
+          schema_version: "xiaoman-character-universe-v1",
+          source: "daily_case_report_second_pass",
+          raw_messages_included: false,
+          profile_fact_text_included: false,
+        },
+      },
+      null,
+      2
+    ),
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 0, "daily summary stops at next sentinel");
+expectNoLeak(result, "daily summary stops at next sentinel");
+check(
+  result.stdout.includes("xiaoman_daily_case_report_worker_run_result=success") &&
+    result.stdout.includes("xiaoman_daily_case_report_worker_summary_present=false") &&
+    !result.stdout.includes("xiaoman_daily_case_report_worker_character_count=99"),
+  `daily parser crossed next sentinel\n${result.stdout}`
+);
+
+writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-10T01:30:00Z xiaoman-daily-case-report run=ok",
+    JSON.stringify(
+      {
+        worker: "xiaoman-daily-case-report-auto-publish-worker",
+        content_metrics: { character_count: 1 },
+        character_universe: {
+          raw_messages_included: true,
+          profile_fact_text_included: false,
+        },
+      },
+      null,
+      2
+    ),
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 1, "unsafe daily case report summary");
+expectNoLeak(result, "unsafe daily case report summary");
+check(
+  result.stdout.trim() ===
+    "xiaoman_daily_case_report_worker_run_error=daily_case_report_summary_invalid",
+  `unsafe daily summary emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
   "state/erhua-morning-brief/hermes-cron.log",
   [
     "raw worker output with postgres://secret@example.invalid/qintopia",

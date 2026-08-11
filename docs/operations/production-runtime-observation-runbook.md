@@ -99,20 +99,26 @@ target checks, through the fixed release-local
   exists and keeps the reviewed draft invariants (`requires_human_confirmation=true`,
   `external_send_executed=false`, `safe_for_member_chat=false`) plus a valid
   `date`/`week_start`.
+- For `xiaoman-daily-case-report-worker-run`, a new worker summary is optional for
+  backward-compatible observation. When present, it is parsed only for safe counters and
+  character-universe schema flags, and the observation fails if the summary claims
+  `raw_messages_included=true` or `profile_fact_text_included=true`.
 
 Successful evidence records only sanitized fields such as
 `erhua_morning_brief_worker_run_result=success`,
 `erhua_morning_brief_worker_run_epoch=<unix>`, and for weekly targets
 `xiaoman_weekly_preview_worker_summary_present=true` and
-`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. When the fixed Hermes cron
-log is absent or contains no reviewed sentinel for the task, the observation passes with
-`<key>_worker_run_result=not_started`: before the first scheduled trigger this means the
-Hermes job has not fired yet, not a regression. Rerun the observation after the
-scheduled time; `not_started` after the scheduled time means the Hermes job did not
-reach the reviewed wrapper and needs reviewed investigation. Failure evidence records
-only the fixed reason token, one of `worker_failed`, `summary_missing`,
-`summary_invalid`, or `python_unavailable`. The script echoes no log output, env values,
-group ids, or summary text.
+`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. For the daily case report,
+new runs may also record `xiaoman_daily_case_report_worker_character_count=<count>` and
+`xiaoman_daily_case_report_worker_character_universe_schema_version=<schema>`. When the
+fixed Hermes cron log is absent or contains no reviewed sentinel for the task, the
+observation passes with `<key>_worker_run_result=not_started`: before the first
+scheduled trigger this means the Hermes job has not fired yet, not a regression. Rerun
+the observation after the scheduled time; `not_started` after the scheduled time means
+the Hermes job did not reach the reviewed wrapper and needs reviewed investigation.
+Failure evidence records only the fixed reason token, one of `worker_failed`,
+`summary_missing`, `summary_invalid`, or `python_unavailable`. The script echoes no log
+output, env values, group ids, or summary text.
 
 Worker-run evidence is read-only: it inspects the fixed Hermes cron log and reads the
 worker's summary JSON only. It does not start or stop services, write state, or call

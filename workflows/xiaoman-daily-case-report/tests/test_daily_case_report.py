@@ -105,7 +105,17 @@ class DailyCaseReportTest(unittest.TestCase):
                 captured["params"] = params
 
             def fetchall(self):
-                return [("m1", "u1", "张三", "只有 received_at", "text", report_time)]
+                return [
+                    (
+                        "m1",
+                        "u1",
+                        "张三",
+                        "只有 received_at",
+                        "text",
+                        report_time,
+                        "11111111-1111-1111-1111-111111111111",
+                    )
+                ]
 
         class FakeConnection:
             def __enter__(self):
@@ -134,6 +144,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("m.message_kind = 'text'", captured["sql"])
         self.assertIn("NULLIF(BTRIM(m.text), '') IS NOT NULL", captured["sql"])
         self.assertEqual(messages[0].sent_at, report_time)
+        self.assertEqual(messages[0].person_id, "11111111-1111-1111-1111-111111111111")
 
     def test_fetch_messages_psql_fallback_uses_fixed_psql_stdin_and_minimal_env(self) -> None:
         report_time = datetime(2026, 8, 8, 9, 30, tzinfo=timezone.utc)
@@ -160,6 +171,7 @@ class DailyCaseReportTest(unittest.TestCase):
                             "text": "活动安排",
                             "message_kind": "text",
                             "report_time": report_time.isoformat(),
+                            "sender_person_id": "11111111-1111-1111-1111-111111111111",
                         }
                     ]
                 ),
@@ -183,6 +195,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 os.environ["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL"] = old_psql_override
 
         self.assertEqual(messages[0].sent_at, report_time)
+        self.assertEqual(messages[0].person_id, "11111111-1111-1111-1111-111111111111")
         self.assertEqual(captured["args"][0], "/usr/bin/psql")
         self.assertEqual(captured["env"]["PATH"], "/usr/bin:/bin")
         self.assertEqual(captured["env"]["PGDATABASE"], "qintopia")
@@ -478,12 +491,289 @@ class DailyCaseReportTest(unittest.TestCase):
         filtered = daily_case_report._discussion_messages(messages)
         cases = daily_case_report._cluster_cases(filtered)
         suspects = daily_case_report._compute_suspects(filtered)
+        characters = daily_case_report._compute_characters(filtered)
         highlight = daily_case_report._extract_highlight(filtered)
 
         self.assertNotIn(promo, filtered)
         self.assertNotIn("订单在30分钟内有效", highlight)
         self.assertTrue(cases)
         self.assertNotIn("促销号", {suspect.name for suspect in suspects})
+        self.assertNotIn("促销号", {character.name for character in characters})
+
+    def test_character_cards_use_public_daily_role_signals(self) -> None:
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="本周活动预告：周六晚 8 点有 AMA，我来收集大家的问题。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id="11111111-1111-1111-1111-111111111111",
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="我把报名表发群里了，大家填一下，明天提醒一次。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id="11111111-1111-1111-1111-111111111111",
+            ),
+            daily_case_report.ReportMessage(
+                id="m3",
+                sender_id="u2",
+                sender_name="阿杰",
+                text="收到，我准备一个 RWA 合规边界的问题。",
+                sent_at=datetime(2026, 8, 8, 9, 6, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+        ]
+
+        characters = daily_case_report._compute_characters(messages)
+
+        self.assertTrue(characters)
+        self.assertEqual(characters[0].name, "小雨")
+        self.assertEqual(characters[0].role_label, "活动推进者")
+        self.assertIn("活动预告", characters[0].evidence)
+        self.assertGreaterEqual(characters[0].topic_count, 1)
+
+    def test_character_cards_use_long_term_memory_counts_without_fact_text(self) -> None:
+        person_id = "11111111-1111-1111-1111-111111111111"
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="今天活动我来提醒大家报名。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="活动表单也同步到群里了。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=person_id,
+            ),
+        ]
+        memory = {
+            person_id: daily_case_report.CharacterMemory(
+                person_id=person_id,
+                recent_fact_count=7,
+                lifetime_fact_count=18,
+                dominant_role_label="活动推进者",
+            )
+        }
+
+        characters = daily_case_report._compute_characters(messages, memory)
+
+        self.assertEqual(characters[0].memory_label, "近90天 7 次角色复现 · 长期偏「活动推进者」")
+        self.assertNotIn("fact_text", characters[0].memory_label)
+
+    def test_character_cards_do_not_merge_same_display_name_people(self) -> None:
+        first_person_id = "11111111-1111-1111-1111-111111111111"
+        second_person_id = "22222222-2222-2222-2222-222222222222"
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="今晚活动我来提醒大家报名。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=first_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="报名表和活动问题收集我都同步一下。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=first_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m3",
+                sender_id="u2",
+                sender_name="小雨",
+                text="我来整理今天的内容复盘和案例素材。",
+                sent_at=datetime(2026, 8, 8, 10, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=second_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m4",
+                sender_id="u2",
+                sender_name="小雨",
+                text="复盘里会把内容结构和故事线标出来。",
+                sent_at=datetime(2026, 8, 8, 10, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=second_person_id,
+            ),
+        ]
+        memory = {
+            first_person_id: daily_case_report.CharacterMemory(
+                person_id=first_person_id,
+                recent_fact_count=7,
+                lifetime_fact_count=18,
+                dominant_role_label="活动推进者",
+            )
+        }
+
+        characters = daily_case_report._compute_characters(messages, memory)
+        universe = daily_case_report._build_character_universe([], [], characters, "2026年08月08日")
+
+        self.assertEqual([character.name for character in characters].count("小雨"), 2)
+        self.assertEqual([character.message_count for character in characters], [2, 2])
+        self.assertEqual(
+            sum(1 for character in characters if "长期偏「活动推进者」" in character.memory_label),
+            1,
+        )
+        people_keys = [person["key"] for person in universe["people"]]
+        self.assertEqual(len(people_keys), len(set(people_keys)))
+        self.assertNotIn(first_person_id, json.dumps(universe, ensure_ascii=False))
+        self.assertNotIn(second_person_id, json.dumps(universe, ensure_ascii=False))
+
+    def test_character_memory_rows_map_only_allowed_role_labels(self) -> None:
+        memory = daily_case_report._character_memory_from_rows(
+            [
+                (
+                    "11111111-1111-1111-1111-111111111111",
+                    3,
+                    12,
+                    "content_story_lead",
+                )
+            ]
+        )
+
+        self.assertEqual(
+            memory["11111111-1111-1111-1111-111111111111"].dominant_role_label,
+            "故事线雷达",
+        )
+
+    def test_build_report_keeps_latest_messages_when_character_memory_fails(self) -> None:
+        args = argparse.Namespace(
+            dry_run=False,
+            fixture=None,
+            chat_id="chat-1",
+            date="2026-08-08",
+            timezone="Asia/Shanghai",
+            group_name="group",
+            report_title="case file",
+        )
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="活动预告：今晚我来收集大家的问题。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id="11111111-1111-1111-1111-111111111111",
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="报名表我也同步到群里，明天再提醒一次。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id="11111111-1111-1111-1111-111111111111",
+            ),
+        ]
+        old_require = daily_case_report._require_read_through
+        old_fetch_messages = daily_case_report._fetch_messages
+        old_fetch_memory = daily_case_report._fetch_character_memory
+        daily_case_report._require_read_through = lambda: True
+        daily_case_report._fetch_messages = lambda *_args: messages
+        daily_case_report._fetch_character_memory = lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("member profile memory query failed")
+        )
+        try:
+            report = daily_case_report._build_report(args)
+        finally:
+            daily_case_report._require_read_through = old_require
+            daily_case_report._fetch_messages = old_fetch_messages
+            daily_case_report._fetch_character_memory = old_fetch_memory
+
+        self.assertEqual(report.message_count, 2)
+        self.assertEqual(report.character_count, 1)
+        self.assertEqual(report.characters[0].name, "小雨")
+        self.assertEqual(report.characters[0].memory_label, "")
+
+    def test_character_universe_uses_curated_second_pass_nodes(self) -> None:
+        case = daily_case_report.CaseCard(
+            case_no="CASE 01",
+            title="活动讨论",
+            time_label="10:00-11:00",
+            summary="3 条消息，2 人参与",
+            bullets=["活动报名节奏已经确认", "明天提醒一次"],
+            message_count=3,
+            participant_count=2,
+            color_bg="#fff0a6",
+            color_text="#111111",
+            top_speaker="小雨",
+        )
+        topic = daily_case_report.HotTopic(
+            rank=1,
+            keyword="活动报名",
+            message_count=3,
+            participant_count=2,
+        )
+        character = daily_case_report.CharacterCard(
+            rank=1,
+            name="小雨",
+            role_label="活动推进者",
+            one_liner="把松散聊天推成下一步行动",
+            evidence="活动报名节奏已经确认",
+            message_count=2,
+            topic_count=1,
+            memory_label="近90天 7 次角色复现 · 长期偏「活动推进者」",
+        )
+
+        universe = daily_case_report._build_character_universe(
+            [case],
+            [topic],
+            [character],
+            "2026年08月08日",
+        )
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="case file",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=2,
+            message_count=3,
+            participant_count=2,
+            case_count=1,
+            suspect_count=0,
+            hourly_counts=[0] * 24,
+            cases=[case],
+            suspects=[],
+            highlight=None,
+            hot_topics=[topic],
+            character_count=1,
+            characters=[character],
+            character_universe=universe,
+        )
+
+        self.assertEqual(universe["schema_version"], "xiaoman-character-universe-v1")
+        self.assertEqual(universe["source"], "daily_case_report_second_pass")
+        self.assertFalse(universe["raw_messages_included"])
+        self.assertFalse(universe["profile_fact_text_included"])
+        self.assertEqual(universe["people"][0]["label"], "小雨")
+        self.assertEqual(universe["topics"][0]["label"], "活动报名")
+        self.assertEqual(universe["events"][0]["case_no"], "CASE 01")
+        self.assertEqual(universe["storyline_candidates"][0]["label"], "活动讨论")
+        self.assertTrue(any(edge["relation"] == "appears_in" for edge in universe["edges"]))
+
+        markdown = daily_case_report._render_daily_markdown(report)
+        self.assertIn("## 可沉淀故事线", markdown)
+        self.assertIn("[[活动讨论]]：3 条消息，2 人参与", markdown)
 
     def test_missing_highlight_is_omitted_instead_of_synthesized(self) -> None:
         self.assertIsNone(
@@ -710,6 +1000,16 @@ class DailyCaseReportTest(unittest.TestCase):
                 message_count=2,
                 participant_count=2,
             )],
+            character_count=1,
+            characters=[daily_case_report.CharacterCard(
+                rank=1,
+                name="成员",
+                role_label="活动推进者",
+                one_liner="把松散聊天推成下一步行动",
+                evidence="活动安排已经确认",
+                message_count=2,
+                topic_count=1,
+            )],
         )
 
         rendered = daily_case_report._render_html(report, 750)
@@ -719,8 +1019,14 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("DAILY COMMUNITY REPORT", rendered)
         self.assertLess(rendered.index("24H 活跃节奏"), rendered.index("今日高亮"))
         self.assertLess(rendered.index("今日高亮"), rendered.index("群聊热榜"))
-        self.assertLess(rendered.index("群聊热榜"), rendered.index("今日局势"))
+        self.assertLess(rendered.index("群聊热榜"), rendered.index("今日人物群像"))
+        self.assertLess(rendered.index("今日人物群像"), rendered.index("今日局势"))
         self.assertLess(rendered.index("今日局势"), rendered.index("今日 MVP"))
+
+        markdown = daily_case_report._render_daily_markdown(report)
+        self.assertIn("## 今日人物群像", markdown)
+        self.assertIn("成员｜活动推进者", markdown)
+        self.assertIn("本日报由小满根据最新群聊窗口自动整理", markdown)
 
     def test_render_image_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
@@ -933,6 +1239,16 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertIsNone(result["png_path"])
             self.assertIsNone(result["image_path"])
             self.assertIsNone(result["artifact_candidate"])
+            self.assertTrue(Path(result["daily_report_markdown_path"]).is_file())
+            self.assertTrue(Path(result["character_universe_path"]).is_file())
+            universe = json.loads(Path(result["character_universe_path"]).read_text(encoding="utf-8"))
+            self.assertEqual(universe, result["character_universe"])
+            self.assertFalse(universe["raw_messages_included"])
+            self.assertFalse(universe["profile_fact_text_included"])
+            self.assertIn("people", universe)
+            self.assertIn("events", universe)
+            self.assertIn("storyline_candidates", universe)
+            self.assertIn("## 今日人物群像", result["daily_report_markdown"])
             self.assertFalse(result["requires_human_confirmation"])
             self.assertFalse(result["auto_publish_ready"])
             self.assertNotIn("回复「发」", result["operator_review_message"])
@@ -984,6 +1300,7 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertEqual(artifact["render"]["image_format"], "jpeg")
             self.assertEqual(artifact["render"]["width"], 750)
             self.assertEqual(artifact["render"]["jpeg_quality"], 92)
+            self.assertEqual(artifact["content_metrics"]["character_count"], 0)
             self.assertEqual(artifact["report_window"]["start"], "2026-08-07T07:45:00+08:00")
             self.assertEqual(artifact["report_window"]["end"], "2026-08-08T07:45:00+08:00")
             self.assertEqual(artifact["report_window"]["timezone"], "Asia/Shanghai")
@@ -1032,6 +1349,9 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertEqual(result["image_mime_type"], "image/jpeg")
             self.assertTrue(result["image_path"].endswith(".jpg"))
             self.assertIsNone(result["png_path"])
+            self.assertTrue(Path(result["daily_report_markdown_path"]).is_file())
+            self.assertTrue(Path(result["character_universe_path"]).is_file())
+            self.assertFalse(result["character_universe"]["raw_messages_included"])
             self.assertFalse(result["requires_human_confirmation"])
             self.assertFalse(result["auto_publish_ready"])
             self.assertEqual(result["artifact_candidate"]["workflow_type"], "daily_case_report")

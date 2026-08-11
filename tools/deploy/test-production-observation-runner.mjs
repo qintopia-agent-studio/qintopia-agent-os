@@ -70,6 +70,7 @@ const buildRequest = (overrides = {}) => {
         "hermes-cron-snapshot",
         "hermes-cron-live-parity",
         "erhua-morning-brief-worker-run",
+        "xiaoman-daily-case-report-worker-run",
         "xiaoman-weekly-recruitment-worker-run",
       ],
     },
@@ -226,6 +227,26 @@ case "\${1:-}" in
     echo "erhua_morning_brief_worker_run_result=success"
     echo "erhua_morning_brief_worker_run_epoch=1786320600"
     echo "DATABASE_URL=postgres://secret@example.invalid/qintopia"
+    ;;
+  xiaoman-daily-case-report-worker-run)
+    echo "xiaoman_daily_case_report_worker_run_result=success"
+    echo "xiaoman_daily_case_report_worker_run_epoch=1786320660"
+    echo "xiaoman_daily_case_report_worker_summary_present=true"
+    echo "xiaoman_daily_case_report_worker_message_count=118"
+    echo "xiaoman_daily_case_report_worker_participant_count=24"
+    echo "xiaoman_daily_case_report_worker_case_count=6"
+    echo "xiaoman_daily_case_report_worker_character_count=4"
+    echo "xiaoman_daily_case_report_worker_hot_topic_count=3"
+    echo "xiaoman_daily_case_report_worker_character_universe_schema_version=xiaoman-character-universe-v1"
+    echo "xiaoman_daily_case_report_worker_character_universe_source=daily_case_report_second_pass"
+    echo "xiaoman_daily_case_report_worker_character_universe_raw_messages_included=false"
+    echo "xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included=false"
+    echo "xiaoman_daily_case_report_worker_character_universe_people_count=4"
+    echo "xiaoman_daily_case_report_worker_character_universe_topic_count=3"
+    echo "xiaoman_daily_case_report_worker_character_universe_event_count=6"
+    echo "xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5"
+    echo "xiaoman_daily_case_report_worker_character_universe_edge_count=7"
+    echo "raw universe label group-id-fixture"
     ;;
   xiaoman-weekly-recruitment-worker-run)
     echo "xiaoman_weekly_recruitment_worker_run_result=not_started"
@@ -396,12 +417,22 @@ exit 99
     );
   }
   if (
-    passedTargets[5][0] !== "xiaoman-weekly-recruitment-worker-run" ||
+    passedTargets[5][0] !== "xiaoman-daily-case-report-worker-run" ||
     passedTargets[5][1] !== "passed" ||
-    passedTargets[5][2] !== "xiaoman_weekly_recruitment_worker_run_result=not_started"
+    passedTargets[5][2] !==
+      "xiaoman_daily_case_report_worker_run_result=success; xiaoman_daily_case_report_worker_run_epoch=1786320660; xiaoman_daily_case_report_worker_summary_present=true; xiaoman_daily_case_report_worker_message_count=118; xiaoman_daily_case_report_worker_participant_count=24; xiaoman_daily_case_report_worker_case_count=6; xiaoman_daily_case_report_worker_character_count=4; xiaoman_daily_case_report_worker_hot_topic_count=3; xiaoman_daily_case_report_worker_character_universe_schema_version=xiaoman-character-universe-v1; xiaoman_daily_case_report_worker_character_universe_source=daily_case_report_second_pass; xiaoman_daily_case_report_worker_character_universe_raw_messages_included=false; xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included=false; xiaoman_daily_case_report_worker_character_universe_people_count=4; xiaoman_daily_case_report_worker_character_universe_topic_count=3; xiaoman_daily_case_report_worker_character_universe_event_count=6; xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5; xiaoman_daily_case_report_worker_character_universe_edge_count=7"
   ) {
     throw new Error(
-      `unexpected not-started worker-run evidence ${JSON.stringify(passedTargets[5])}`
+      `unexpected daily worker-run observation evidence ${JSON.stringify(passedTargets[5])}`
+    );
+  }
+  if (
+    passedTargets[6][0] !== "xiaoman-weekly-recruitment-worker-run" ||
+    passedTargets[6][1] !== "passed" ||
+    passedTargets[6][2] !== "xiaoman_weekly_recruitment_worker_run_result=not_started"
+  ) {
+    throw new Error(
+      `unexpected not-started worker-run evidence ${JSON.stringify(passedTargets[6])}`
     );
   }
   const serializedDeployResult = JSON.stringify(deployResult);
@@ -428,6 +459,7 @@ exit 99
       "snapshot:1",
       "parity:1",
       "worker:erhua-morning-brief-worker-run",
+      "worker:xiaoman-daily-case-report-worker-run",
       "worker:xiaoman-weekly-recruitment-worker-run",
     ].join("\n")
   ) {

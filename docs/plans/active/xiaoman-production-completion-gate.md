@@ -83,6 +83,10 @@ All gates are required before a Release is called Xiaoman production complete:
    and `artifact_content_hash`. The retained evidence must also prove the Huabaosi
    first-record canary ran on `runtime_artifact_profile=huabaosi-production` and the
    real QiWe delivery evidence ran on `runtime_artifact_profile=qiwe-production`.
+   Xiaoman daily case-report production completion also requires the retained production
+   observation deploy result for `xiaoman-daily-case-report-worker-run`, proving
+   `xiaoman-character-universe-v1`, `daily_case_report_second_pass`,
+   `raw_messages_included=false`, and `profile_fact_text_included=false`.
 9. The final production completion checker passes against the owner-retained evidence
    bundle:
 
@@ -94,7 +98,8 @@ All gates are required before a Release is called Xiaoman production complete:
      --qiwe-staging <qiwe-staging-output.txt> \
      --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
      --production-real-activity <production-evidence-output.txt> \
-     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>
+     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+     --daily-case-report-observation <production-observation-deploy-result.json>
    ```
 
 ## Non-Completion Cases
@@ -165,6 +170,7 @@ These are useful but not completion:
      --huabaosi-production-canary <production-canary-output.txt> \
      --production-real-activity <production-evidence-output.txt> \
      --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+     --daily-case-report-observation <production-observation-deploy-result.json> \
      --output <completed-xiaoman-production-completion-evidence.json>
    ```
 
@@ -185,6 +191,7 @@ These are useful but not completion:
      --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
      --production-real-activity <production-evidence-output.txt> \
      --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+     --daily-case-report-observation <production-observation-deploy-result.json> \
      --output <completed-xiaoman-production-completion-evidence.json>
    ```
 

@@ -9,6 +9,10 @@ URLs, tokens, raw logs, or raw script output.
 ## Release State
 
 - Latest published Release tag in git: `v0.2.117`.
+- Repository-local Xiaoman production evidence chain check passed on 2026-08-11 with
+  `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`. This proves
+  local contracts, fixtures, and the character-universe daily-report PR body only; it is
+  not production deployment evidence.
 - Production deploy evidence in this repo-local status page still needs to be refreshed
   after `v0.2.117`.
 - Master after Release: `#516` is merged after `v0.2.117`; publish the next Release
@@ -37,7 +41,10 @@ URLs, tokens, raw logs, or raw script output.
 - Live declaration parity observation: implemented in code. Use the
   `hermes-cron-live-parity` observation target after install and before enablement.
 - Worker-run observation: implemented. Use `Observe Production Runtime` worker-run
-  targets after scheduled triggers.
+  targets after scheduled triggers. The Xiaoman daily case-report completion path now
+  requires the retained production observation deploy result so the final checker can
+  verify `xiaoman-character-universe-v1`, `daily_case_report_second_pass`,
+  `raw_messages_included=false`, and `profile_fact_text_included=false`.
 
 ## Reviewed Recurring Jobs
 
@@ -63,6 +70,10 @@ URLs, tokens, raw logs, or raw script output.
    target groups.
 5. Run `Observe Production Runtime` after the first scheduled trigger for each enabled
    target.
+6. For Xiaoman daily case-report completion, retain the production observation deploy
+   result that includes `xiaoman-daily-case-report-worker-run` and pass it as
+   `--daily-case-report-observation` to the final production completion evidence
+   builder/checker.
 
 ## Improvement Backlog
 

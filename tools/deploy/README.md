@@ -346,6 +346,7 @@ pnpm deploy:xiaoman-production-evidence:finalize -- \
   --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
   --production-real-activity <production-evidence-output.txt> \
   --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+  --daily-case-report-observation <production-observation-deploy-result.json> \
   --output <completed-xiaoman-production-completion-evidence.json>
 ```
 

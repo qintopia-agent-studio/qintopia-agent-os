@@ -1036,6 +1036,10 @@ safe_patterns = [
     re.compile(r"^([a-z0-9_]+_worker_run_epoch)=([0-9]{9,12})$"),
     re.compile(r"^([a-z0-9_]+_worker_summary_present)=(true)$"),
     re.compile(r"^([a-z0-9_]+_worker_summary_date)=([0-9]{4}-[0-9]{2}-[0-9]{2})$"),
+    re.compile(r"^(xiaoman_daily_case_report_worker_(?:message_count|participant_count|case_count|character_count|hot_topic_count))=([0-9]{1,6})$"),
+    re.compile(r"^(xiaoman_daily_case_report_worker_character_universe_(?:schema_version|source))=([A-Za-z0-9_.-]{1,80})$"),
+    re.compile(r"^(xiaoman_daily_case_report_worker_character_universe_(?:raw_messages_included|profile_fact_text_included))=(false)$"),
+    re.compile(r"^(xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|storyline_candidate_count|edge_count))=([0-9]{1,6})$"),
 ]
 details = []
 seen = set()

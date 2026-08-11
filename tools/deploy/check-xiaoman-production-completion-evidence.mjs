@@ -45,6 +45,9 @@ for (const [label, file] of Object.entries(options)) {
   if (label === "qiweGroupArrivalConfirmation") {
     text = stripAllowedGroupArrivalTemplateLines(text);
   }
+  if (label === "dailyCaseReportObservation") {
+    text = stripAllowedDailyObservationResultText(text);
+  }
   assertNoSensitiveText(label, text);
 }
 
@@ -96,6 +99,9 @@ const qiweGroupArrivalConfirmation = singlePrefixedRecord(
   options.qiweGroupArrivalConfirmation,
   "xiaoman_qiwe_group_arrival_confirmation_evidence="
 );
+const dailyCaseReportObservation = assertDailyCaseReportProductionObservation(
+  options.dailyCaseReportObservation
+);
 
 const huabaosiGeneration = single(
   huabaosiRecords.filter((record) => record.phase === "generation"),
@@ -127,6 +133,10 @@ assertRealActivityConfirmationBinding(
   completion.real_activity_confirmation,
   qiweGroupArrivalConfirmation
 );
+assertDailyCaseReportConfirmationBinding(
+  completion.daily_case_report_confirmation,
+  dailyCaseReportObservation
+);
 
 if (
   stagingRuntime.packaged_sidecar_sha256 !== huabaosiGeneration.sidecar_binary_sha256 ||
@@ -148,6 +158,10 @@ assertCompletionReleaseBinding(completion, production.release_sha);
 assertCompletionReleaseBinding(
   completion,
   completion.real_activity_confirmation.release_sha
+);
+assertCompletionReleaseBinding(
+  completion,
+  completion.daily_case_report_confirmation.release_sha
 );
 if (
   production.release_sha !== huabaosiProductionCanary.release_sha ||
@@ -232,6 +246,7 @@ function parseArgs(argv) {
     "huabaosi-production-canary",
     "production-real-activity",
     "qiwe-group-arrival-confirmation",
+    "daily-case-report-observation",
   ];
   for (const key of required) {
     if (!parsed[key] || !fs.existsSync(parsed[key])) {
@@ -246,12 +261,13 @@ function parseArgs(argv) {
     huabaosiProductionCanary: parsed["huabaosi-production-canary"],
     productionRealActivity: parsed["production-real-activity"],
     qiweGroupArrivalConfirmation: parsed["qiwe-group-arrival-confirmation"],
+    dailyCaseReportObservation: parsed["daily-case-report-observation"],
   };
 }
 
 function usage() {
   fail(
-    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completed-xiaoman-production-completion-evidence.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>"
+    "usage: node tools/deploy/check-xiaoman-production-completion-evidence.mjs --manifest <completed-xiaoman-production-completion-evidence.json> --staging-runtime-readiness <readiness-output.txt> --huabaosi-staging <huabaosi-output.txt> --qiwe-staging <qiwe-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --daily-case-report-observation <production-observation-deploy-result.json>"
   );
 }
 
@@ -468,6 +484,7 @@ function assertCompletionManifest(manifest) {
       "qiwe_production_enablement",
       "huabaosi_production_activation",
       "real_activity_confirmation",
+      "daily_case_report_confirmation",
     ]),
     "completion manifest"
   );
@@ -478,6 +495,7 @@ function assertCompletionManifest(manifest) {
   assertQiweProductionEnablement(manifest.qiwe_production_enablement);
   assertHuabaosiProductionActivation(manifest.huabaosi_production_activation);
   assertRealActivityConfirmation(manifest.real_activity_confirmation);
+  assertDailyCaseReportConfirmation(manifest.daily_case_report_confirmation);
 }
 
 function assertReleasePlease(record) {
@@ -614,6 +632,66 @@ function assertRealActivityConfirmation(record) {
   }
 }
 
+function assertDailyCaseReportConfirmation(record) {
+  assertExactKeys(
+    record,
+    new Set([
+      "release_sha",
+      "runtime_artifact_profile",
+      "observation_status",
+      "auto_publish_observation_state",
+      "hermes_snapshot_observed",
+      "hermes_live_parity_observed",
+      "worker_run_result",
+      "worker_run_epoch",
+      "worker_summary_present",
+      "message_count",
+      "participant_count",
+      "case_count",
+      "character_count",
+      "hot_topic_count",
+      "character_universe_schema_version",
+      "character_universe_source",
+      "raw_messages_included",
+      "profile_fact_text_included",
+      "character_universe_people_count",
+      "character_universe_topic_count",
+      "character_universe_event_count",
+      "character_universe_storyline_candidate_count",
+      "character_universe_edge_count",
+    ]),
+    "daily case report confirmation"
+  );
+  if (
+    !isGitSha(record.release_sha) ||
+    record.runtime_artifact_profile !== "qiwe-production" ||
+    record.observation_status !== "passed" ||
+    record.auto_publish_observation_state !== "disabled" ||
+    record.hermes_snapshot_observed !== true ||
+    record.hermes_live_parity_observed !== true ||
+    record.worker_run_result !== "success" ||
+    !positiveInteger(record.worker_run_epoch) ||
+    record.worker_summary_present !== true ||
+    !positiveInteger(record.message_count) ||
+    !positiveInteger(record.participant_count) ||
+    !safeCount(record.case_count) ||
+    !positiveInteger(record.character_count) ||
+    !safeCount(record.hot_topic_count) ||
+    record.character_count !== record.character_universe_people_count ||
+    record.character_universe_schema_version !== "xiaoman-character-universe-v1" ||
+    record.character_universe_source !== "daily_case_report_second_pass" ||
+    record.raw_messages_included !== false ||
+    record.profile_fact_text_included !== false ||
+    !positiveInteger(record.character_universe_people_count) ||
+    !safeCount(record.character_universe_topic_count) ||
+    !safeCount(record.character_universe_event_count) ||
+    !safeCount(record.character_universe_storyline_candidate_count) ||
+    !safeCount(record.character_universe_edge_count)
+  ) {
+    fail("daily case report production confirmation is incomplete");
+  }
+}
+
 function assertRealActivityConfirmationBinding(manifestRecord, confirmationRecord) {
   assertExactKeys(
     confirmationRecord,
@@ -652,6 +730,258 @@ function assertRealActivityConfirmationBinding(manifestRecord, confirmationRecor
       "real activity confirmation manifest does not bind to QiWe group arrival evidence"
     );
   }
+}
+
+function assertDailyCaseReportConfirmationBinding(manifestRecord, observationRecord) {
+  if (manifestRecord.release_sha !== observationRecord.release_sha) {
+    fail("daily case report confirmation release SHA does not bind observation");
+  }
+  const comparableKeys = [
+    "runtime_artifact_profile",
+    "observation_status",
+    "auto_publish_observation_state",
+    "hermes_snapshot_observed",
+    "hermes_live_parity_observed",
+    "worker_run_result",
+    "worker_run_epoch",
+    "worker_summary_present",
+    "message_count",
+    "participant_count",
+    "case_count",
+    "character_count",
+    "hot_topic_count",
+    "character_universe_schema_version",
+    "character_universe_source",
+    "raw_messages_included",
+    "profile_fact_text_included",
+    "character_universe_people_count",
+    "character_universe_topic_count",
+    "character_universe_event_count",
+    "character_universe_storyline_candidate_count",
+    "character_universe_edge_count",
+  ];
+  for (const key of comparableKeys) {
+    if (manifestRecord[key] !== observationRecord[key]) {
+      fail(`daily case report confirmation does not bind observation key: ${key}`);
+    }
+  }
+}
+
+function assertDailyCaseReportProductionObservation(file) {
+  const result = JSON.parse(fs.readFileSync(file, "utf8"));
+  assertExactKeys(
+    result,
+    new Set([
+      "schema_version",
+      "request_id",
+      "environment",
+      "status",
+      "started_at",
+      "finished_at",
+      "release_sha",
+      "commit_sha",
+      "runtime_sha",
+      "runtime_artifact_profile",
+      "deploy_bundle_sha",
+      "release_scope",
+      "previous_sha",
+      "current_target",
+      "restart_targets",
+      "checks",
+      "rollback",
+    ]),
+    "daily case report production observation deploy result"
+  );
+  if (
+    result.schema_version !== 1 ||
+    result.environment !== "production" ||
+    result.status !== "succeeded" ||
+    !isGitSha(result.release_sha) ||
+    result.runtime_artifact_profile !== "qiwe-production" ||
+    !Array.isArray(result.release_scope) ||
+    !result.release_scope.includes("production-observation") ||
+    !Array.isArray(result.restart_targets) ||
+    result.restart_targets.length !== 1 ||
+    result.restart_targets[0] !== "qintopia-system-services" ||
+    !Array.isArray(result.checks) ||
+    result.rollback?.attempted !== false
+  ) {
+    fail("daily case report production observation deploy result is incomplete");
+  }
+
+  const check = single(
+    result.checks.filter((entry) => entry.name === "production-observation"),
+    "expected one production-observation check"
+  );
+  assertExactKeys(
+    check,
+    new Set(["name", "status", "detail"]),
+    "daily case report production observation check"
+  );
+  if (check.status !== "passed") {
+    fail("daily case report production observation check did not pass");
+  }
+
+  const detail = JSON.parse(check.detail);
+  assertExactKeys(
+    detail,
+    new Set(["schema_version", "targets"]),
+    "daily case report production observation detail"
+  );
+  if (detail.schema_version !== 1 || !Array.isArray(detail.targets)) {
+    fail("daily case report production observation detail is incomplete");
+  }
+
+  const autoPublish = observationTarget(
+    detail.targets,
+    "xiaoman-daily-case-report-auto-publish"
+  );
+  const snapshot = observationTarget(detail.targets, "hermes-cron-snapshot");
+  const liveParity = observationTarget(detail.targets, "hermes-cron-live-parity");
+  const workerRun = observationTarget(
+    detail.targets,
+    "xiaoman-daily-case-report-worker-run"
+  );
+
+  const autoPublishFields = parseObservationDetail(autoPublish.detail);
+  const snapshotFields = parseObservationDetail(snapshot.detail);
+  const liveParityFields = parseObservationDetail(liveParity.detail);
+  const workerFields = parseObservationDetail(workerRun.detail);
+
+  if (
+    autoPublishFields.xiaoman_daily_case_report_auto_publish_observation_state !==
+      "disabled" ||
+    snapshotFields.hermes_cron_snapshot_observation_result !== "success" ||
+    liveParityFields.hermes_cron_live_parity_result !== "success" ||
+    workerFields.xiaoman_daily_case_report_worker_run_result !== "success" ||
+    workerFields.xiaoman_daily_case_report_worker_summary_present !== "true" ||
+    workerFields.xiaoman_daily_case_report_worker_character_universe_raw_messages_included !==
+      "false" ||
+    workerFields.xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included !==
+      "false"
+  ) {
+    fail(
+      "daily case report production observation did not prove the reviewed boundary"
+    );
+  }
+
+  const confirmation = {
+    release_sha: result.release_sha,
+    runtime_artifact_profile: result.runtime_artifact_profile,
+    observation_status: "passed",
+    auto_publish_observation_state:
+      autoPublishFields.xiaoman_daily_case_report_auto_publish_observation_state,
+    hermes_snapshot_observed: true,
+    hermes_live_parity_observed: true,
+    worker_run_result: workerFields.xiaoman_daily_case_report_worker_run_result,
+    worker_run_epoch: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_run_epoch"
+    ),
+    worker_summary_present: true,
+    message_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_message_count"
+    ),
+    participant_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_participant_count"
+    ),
+    case_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_case_count"
+    ),
+    character_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_count"
+    ),
+    hot_topic_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_hot_topic_count"
+    ),
+    character_universe_schema_version:
+      workerFields.xiaoman_daily_case_report_worker_character_universe_schema_version ??
+      "",
+    character_universe_source:
+      workerFields.xiaoman_daily_case_report_worker_character_universe_source ?? "",
+    raw_messages_included: false,
+    profile_fact_text_included: false,
+    character_universe_people_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_people_count"
+    ),
+    character_universe_topic_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_topic_count"
+    ),
+    character_universe_event_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_event_count"
+    ),
+    character_universe_storyline_candidate_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count"
+    ),
+    character_universe_edge_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_edge_count"
+    ),
+  };
+  assertDailyCaseReportConfirmation(confirmation);
+  return confirmation;
+}
+
+function observationTarget(targets, target) {
+  const record = single(
+    targets.filter((entry) => entry.target === target),
+    `expected one production observation target: ${target}`
+  );
+  assertExactKeys(
+    record,
+    new Set(["target", "status", "detail", "recorded_at"]),
+    `production observation target ${target}`
+  );
+  if (record.status !== "passed" || !isUtcSecondTimestamp(record.recorded_at)) {
+    fail(`production observation target did not pass: ${target}`);
+  }
+  return record;
+}
+
+function parseObservationDetail(detail) {
+  if (typeof detail !== "string" || detail.length > 4096) {
+    fail("production observation detail is invalid");
+  }
+  const fields = {};
+  for (const part of detail.split(";")) {
+    const item = part.trim();
+    if (!item) {
+      continue;
+    }
+    const match = item.match(/^([a-z0-9_]+)=([A-Za-z0-9_.-]+)$/);
+    if (!match) {
+      fail("production observation detail contains an unsafe field");
+    }
+    fields[match[1]] = match[2];
+  }
+  return fields;
+}
+
+function numericField(fields, key) {
+  const value = fields[key];
+  if (!/^[0-9]{1,12}$/.test(String(value ?? ""))) {
+    fail(`production observation detail is missing numeric field: ${key}`);
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!safeCount(parsed) && key !== "xiaoman_daily_case_report_worker_run_epoch") {
+    fail(`production observation count field is invalid: ${key}`);
+  }
+  if (
+    key === "xiaoman_daily_case_report_worker_run_epoch" &&
+    !positiveInteger(parsed)
+  ) {
+    fail("production observation worker epoch is invalid");
+  }
+  return parsed;
 }
 
 function assertStagingRuntime(record) {
@@ -734,6 +1064,19 @@ function stripAllowedGroupArrivalTemplateLines(text) {
   return stripped.join("\n");
 }
 
+function stripAllowedDailyObservationResultText(text) {
+  try {
+    const result = JSON.parse(text);
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      delete result.request_id;
+      return JSON.stringify(result);
+    }
+  } catch {
+    return text;
+  }
+  return text;
+}
+
 function prefixedRecords(file, prefix) {
   return fs
     .readFileSync(file, "utf8")
@@ -801,6 +1144,10 @@ function isSha256(value) {
 
 function positiveInteger(value) {
   return Number.isInteger(value) && value > 0;
+}
+
+function safeCount(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 100000;
 }
 
 function isSafeLabel(value) {

@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-08-11 Xiaoman character-universe daily report PR body](2026-08-11-xiaoman-character-universe-daily-report-pr-body.md)
 - [2026-08-09 Xiaoman weekly activation legacy cron drift](2026-08-09-xiaoman-weekly-activation-legacy-cron-drift.md)
 - [2026-08-03 Xiaoman shared database rollover gap](2026-08-03-xiaoman-shared-database-rollover-gap.md)
 - [2026-08-03 Production sidecar env metadata repair](2026-08-03-production-sidecar-env-metadata-repair.md)
