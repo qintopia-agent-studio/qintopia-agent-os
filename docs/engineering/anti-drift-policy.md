@@ -32,6 +32,11 @@ The check currently enforces:
   or Huabaosi shadow material without the correct disposition.
 - Agent packages cannot include live Hermes runtime state such as `.env`, auth files,
   memories, sessions, caches, logs, state databases, request dumps, or secrets.
+- Reviewed recurring Agent jobs in `runtime/hermes/cron/reviewed-cron-jobs.json` must
+  keep matching Hermes wrapper scripts, declaration templates, and migration plans. The
+  current-state workflow and registry docs for those migrated jobs must describe Hermes
+  cron as the forward scheduler; release-managed systemd timer wording is allowed only
+  in explicit rollback, retired, or historical context.
 
 ## Why This Exists
 
@@ -45,6 +50,9 @@ Without executable checks, future contributors can accidentally:
 - add migrations without design notes
 - bypass review-pool classification for high-risk runtime work
 - commit live profile state into `agents/*` while trying to template a profile
+- reintroduce the temporary release-managed systemd timer direction after the owner has
+  restored Hermes cron as the conversation-editable source of truth for recurring Agent
+  tasks
 
 The check is intentionally narrow. It catches direction changes that should require an
 owner decision, not every possible style or quality issue.

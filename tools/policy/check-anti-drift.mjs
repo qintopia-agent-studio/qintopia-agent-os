@@ -314,6 +314,93 @@ for (const registryPath of domainRegistries) {
   }
 }
 
+const reviewedCronRegistryPath = "runtime/hermes/cron/reviewed-cron-jobs.json";
+const reviewedCronRegistry = JSON.parse(readText(reviewedCronRegistryPath));
+if (reviewedCronRegistry.schema_version !== 1) {
+  addError(`${reviewedCronRegistryPath}: schema_version must be 1`);
+}
+
+const reviewedCronJobs = reviewedCronRegistry.reviewed_jobs ?? [];
+if (!Array.isArray(reviewedCronJobs) || reviewedCronJobs.length === 0) {
+  addError(`${reviewedCronRegistryPath}: reviewed_jobs must not be empty`);
+}
+
+for (const job of reviewedCronJobs) {
+  if (!job.profile || !job.script || !job.plan) {
+    addError(
+      `${reviewedCronRegistryPath}: reviewed job is missing profile, script, or plan`
+    );
+    continue;
+  }
+
+  if (!exists(job.plan)) {
+    addError(`${reviewedCronRegistryPath}: plan ${job.plan} does not exist`);
+  }
+
+  const scriptPath = `runtime/hermes/scripts/${job.script}`;
+  if (!exists(scriptPath)) {
+    addError(`${reviewedCronRegistryPath}: script ${scriptPath} does not exist`);
+  }
+
+  const profileCronDir = `runtime/hermes/cron/${job.profile}`;
+  const matchingDeclaration = listFiles(profileCronDir, (file) =>
+    file.endsWith(".job.json")
+  ).find((file) => {
+    const declaration = JSON.parse(readText(file));
+    return declaration.script === job.script;
+  });
+
+  if (!matchingDeclaration) {
+    addError(
+      `${reviewedCronRegistryPath}: ${job.profile}/${job.script} has no matching ${profileCronDir}/*.job.json declaration`
+    );
+  }
+}
+
+const hermesRecurringCurrentStateFiles = [
+  "docs/operations/README.md",
+  "registry/workflows.yaml",
+  "workflows/erhua-morning-brief/README.md",
+  "workflows/erhua-morning-brief/workflow.yaml",
+  "workflows/xiaoman-daily-case-report/README.md",
+  "workflows/xiaoman-daily-case-report/workflow.yaml",
+  "workflows/xiaoman-weekly-loop/README.md",
+  "workflows/xiaoman-weekly-loop/workflow.yaml",
+  "workflows/xiaoman-weekly-preview/README.md",
+  "workflows/xiaoman-weekly-preview/workflow.yaml",
+];
+
+const forbiddenHermesRecurringForwardPatterns = [
+  /release-managed\s+(?:daily\s+)?(?:production\s+)?(?:systemd\s+)?timer/i,
+  /production\s+timer\s+activation/i,
+  /activate\s+production\s+timers/i,
+  /timer\s+activation\s+is\s+release-managed/i,
+  /not\s+a\s+Hermes\s+conversation\s+cron/i,
+  /legacy\s+Hermes\s+cron\s+observation\s+(?:finds|passes|empty)/i,
+  /systemd\s+timer\s+is\s+rendered\s+as/i,
+];
+
+const hermesRollbackContextPattern =
+  /rollback|rollback-only|retired|historical|old systemd|old release-managed|old production activation/i;
+
+for (const file of hermesRecurringCurrentStateFiles) {
+  const lines = readText(file).split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (hermesRollbackContextPattern.test(line)) {
+      return;
+    }
+
+    const matchedPattern = forbiddenHermesRecurringForwardPatterns.find((pattern) =>
+      pattern.test(line)
+    );
+    if (matchedPattern) {
+      addError(
+        `${file}:${index + 1}: migrated recurring Agent tasks must describe Hermes cron as the forward scheduler; systemd timer wording is allowed only in explicit rollback/retired context`
+      );
+    }
+  });
+}
+
 if (errors.length > 0) {
   console.error("Anti-drift policy check failed:");
   for (const error of errors) {
