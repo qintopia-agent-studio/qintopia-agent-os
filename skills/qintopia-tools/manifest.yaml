@@ -8,7 +8,8 @@ description:
   Profile-scoped Hermes registration shell and remaining broad Qintopia tools for GIS
   lookup, message-store search, complaint intake, Xiaoman activity helpers, and
   controlled business wrappers. Weather and WenYuanGe/Dify retrieval behavior now live
-  in dedicated capability packages.
+  in dedicated capability packages; Xiaoman activity now has its own package boundary
+  while this package keeps stable Hermes registration.
 source:
   path: /home/ubuntu/.hermes/profiles/*/plugins/qintopia-tools
   reference: server-runtime-2026-07-05
@@ -30,6 +31,7 @@ dependencies:
   - mcp/context-server
   - skills/qintopia-weather
   - skills/knowledge-retrieval
+  - skills/xiaoman-activity
 tags:
   - hermes-plugin
   - qintopia
@@ -42,6 +44,8 @@ next_actions:
     the legacy Hermes registration shell for qintopia_weather_lookup.
   - Keep WenYuanGe/Dify retrieval behavior in skills/knowledge-retrieval; qintopia-tools
     should only expose stable Hermes tool registration for those tool names.
+  - Keep new Xiaoman activity behavior in skills/xiaoman-activity; qintopia-tools should
+    only expose stable Hermes tool registration for those tool names.
   - Keep Xiaoqin out of active migration scope.
   - Add release packaging and rollback notes before replacing profile-local plugin
     directories on the server.

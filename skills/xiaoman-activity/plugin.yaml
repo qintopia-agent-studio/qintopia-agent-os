@@ -1,0 +1,35 @@
+id: qintopia-xiaoman-activity
+package: skills/xiaoman-activity
+runtime: hermes-python-plugin
+status: adopting
+tools:
+  - qintopia_xiaoman_activity_record_get
+  - qintopia_xiaoman_activity_list_by_date
+  - qintopia_xiaoman_activity_plan_table_probe
+  - qintopia_xiaoman_activity_announcement_prepare
+  - qintopia_xiaoman_activity_text_group_message_request_prepare
+  - qintopia_xiaoman_weekly_poster_workflow_prepare
+  - qintopia_xiaoman_public_reply_rewrite
+  - qintopia_xiaoman_activity_status_update
+  - qintopia_xiaoman_activity_gap_update
+  - qintopia_xiaoman_activity_phase_update
+  - qintopia_xiaoman_activity_feishu_field_update
+  - qintopia_xiaoman_activity_handoff_create
+  - qintopia_xiaoman_activity_promotion_review_draft
+  - qintopia_xiaoman_activity_material_summary
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: true
+  secrets: false
+registration:
+  stable_entrypoint: skills/qintopia-tools/variants/xiaoman/__init__.py
+  notes:
+    - qintopia-tools keeps the Hermes registration shell until profile repoint.
+    - This package provides the dedicated Xiaoman activity capability boundary.
+    - The current implementation is bridged from the legacy variant to avoid two active
+      implementations during extraction.
+validation:
+  commands:
+    - pnpm skills:xiaoman-activity:check
+    - pnpm skills:qintopia-tools:check

@@ -46,3 +46,11 @@ entries:
       Active capability for controlled complaint intake, customer/sales handoff,
       proposal/demo drafts, disclosure filtering, and conversation summaries;
       qintopia-tools keeps stable Hermes registration.
+  - id: skills/xiaoman-activity
+    path: skills/xiaoman-activity
+    manifest: skills/xiaoman-activity/manifest.yaml
+    status: adopting
+    notes:
+      Dedicated Xiaoman activity read-through, announcement, weekly preview, promotion,
+      and bounded update capability; qintopia-tools keeps stable Hermes registration
+      while the legacy implementation is extracted.
