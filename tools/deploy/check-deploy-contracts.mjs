@@ -18,6 +18,8 @@ const packages = {
 const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));
 const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+const isExecutable = (relativePath) =>
+  (fs.statSync(path.join(repoRoot, relativePath)).mode & 0o111) !== 0;
 const addError = (message) => errors.push(message);
 const requireFragment = (relativePath, text, fragment) => {
   if (!text.includes(fragment)) {
@@ -27,6 +29,13 @@ const requireFragment = (relativePath, text, fragment) => {
 const forbidFragment = (relativePath, text, fragment) => {
   if (text.includes(fragment)) {
     addError(`${relativePath}: must not include ${fragment}`);
+  }
+};
+const requireExecutable = (relativePath) => {
+  if (!exists(relativePath)) {
+    addError(`${relativePath}: missing executable file`);
+  } else if (!isExecutable(relativePath)) {
+    addError(`${relativePath}: must be executable`);
   }
 };
 
@@ -6435,6 +6444,16 @@ if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
   ]) {
     forbidFragment(xiaomanProductionCompletionEvidenceTemplatePath, template, fragment);
   }
+}
+
+for (const hermesCronApplyScript of [
+  "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh",
+  "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh",
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh",
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh",
+]) {
+  requireExecutable(hermesCronApplyScript);
 }
 
 if (errors.length > 0) {

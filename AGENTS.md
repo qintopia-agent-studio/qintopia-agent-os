@@ -144,6 +144,11 @@
   sanitized `actual_sha256`, reviewed `expected_sha256`, and declaration-count evidence;
   use that evidence for a follow-up reviewed expected-hash PR, never to bypass review or
   retire an unreviewed cron file.
+- Hermes cron production apply scripts under
+  `deploy/sidecar/scripts/apply-*-hermes-cron.sh` must remain executable (`100755`): the
+  deploy runner executes the fixed script path directly, so a missing execute bit fails
+  production apply with exit 126. Keep `tools/deploy/check-deploy-contracts.mjs`
+  enforcing this.
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
