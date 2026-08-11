@@ -148,7 +148,10 @@
   `sync-hermes-cron-snapshot.sh`, the deploy-runner service must grant `ReadWritePaths`
   to the fixed server-local snapshot repo
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; do not broaden this
-  to the whole qintopia-agentos state directory or whole home.
+  to the whole qintopia-agentos state directory or whole home. Live Hermes cron
+  `jobs.json` envelopes may exceed 64 KiB after multiple reviewed jobs are installed;
+  apply and live-parity observation should accept the fixed 1 MiB ceiling, while
+  wrappers and bounded evidence files keep their smaller limits.
 - Production legacy Hermes cron retirement should use the
   `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
   the runner support is deployed. It creates a signed
