@@ -8,12 +8,14 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Release State
 
-- Latest published Release: `v0.2.116`.
-- Production deploy: `v0.2.116` deploy workflow succeeded on 2026-08-11.
-- Master after Release: `#514` is merged after `v0.2.116`; publish the next Release
-  before relying on its runner-path normalization in production.
-- Hermes cron live apply: not complete after `v0.2.116`; the latest three
-  `Apply Production Hermes Crons` runs failed before this page was added.
+- Latest published Release tag in git: `v0.2.117`.
+- Production deploy evidence in this repo-local status page still needs to be refreshed
+  after `v0.2.117`.
+- Master after Release: `#516` is merged after `v0.2.117`; publish the next Release
+  before relying on the production status page and new observation targets in
+  production.
+- Hermes cron live apply: no successful apply is recorded in this status page; the
+  latest three `Apply Production Hermes Crons` runs failed before this page was added.
 - Hermes cron enablement: not complete; run only after install and declaration parity
   pass.
 
@@ -25,13 +27,15 @@ URLs, tokens, raw logs, or raw script output.
   bind workers to `release/current`.
 - Apply workflow: implemented. `Apply Production Hermes Crons` accepts only fixed
   targets and `install` or `enable`.
-- Apply runner: implemented, latest hardening pending Release after `v0.2.116`. `#514`
-  normalizes deploy-runner write paths.
+- Apply runner: implemented. `v0.2.117` includes `#514` deploy-runner write-path
+  normalization; production deploy evidence still needs to be refreshed.
 - Live `jobs.json` install: pending production apply success. Install should write
   reviewed jobs disabled first.
 - Live enablement: pending. Enable only after live declaration parity is proven.
-- Snapshot sync: implemented in code. Production timer installation and recent commit
-  evidence still need an explicit observation path.
+- Snapshot sync: implemented in code. Use the `hermes-cron-snapshot` observation target
+  after the release containing it is deployed.
+- Live declaration parity observation: implemented in code. Use the
+  `hermes-cron-live-parity` observation target after install and before enablement.
 - Worker-run observation: implemented. Use `Observe Production Runtime` worker-run
   targets after scheduled triggers.
 
@@ -49,11 +53,12 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Next Production Actions
 
-1. Publish and deploy the next Release after `v0.2.116` so the merged `#514` runner path
-   normalization is active in production.
+1. Publish and deploy the next Release so the new observation targets are active in
+   production.
 2. Run `Apply Production Hermes Crons` with `apply_mode=install` for the selected fixed
    targets.
-3. Verify live declarations through a reviewed read-only path before enabling.
+3. Run `Observe Production Runtime` with `hermes-cron-snapshot` and
+   `hermes-cron-live-parity`.
 4. Run `Apply Production Hermes Crons` with `apply_mode=enable`, preferably in small
    target groups.
 5. Run `Observe Production Runtime` after the first scheduled trigger for each enabled
@@ -61,10 +66,10 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Improvement Backlog
 
-- Add a read-only snapshot timer observation target that reports only safe facts: timer
-  state, snapshot repo existence, remote absence, and latest commit time.
-- Add a read-only live declaration parity observation target for
-  `reviewed-cron-jobs.json` versus live Hermes `jobs.json`.
+- Run the read-only snapshot timer observation target after the release containing it is
+  deployed.
+- Run the read-only live declaration parity observation target after the reviewed Hermes
+  install path succeeds.
 - Keep Hermes cron apply script boundary checks centralized in
   `tools/deploy/check-deploy-contracts.mjs` so the five apply scripts cannot drift
   silently.
