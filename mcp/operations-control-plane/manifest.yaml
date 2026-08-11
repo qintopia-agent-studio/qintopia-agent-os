@@ -1,0 +1,34 @@
+id: mcp/operations-control-plane
+type: mcp
+name: Operations Control Plane MCP
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Schema-bound MCP surface for starting AgentOS workflows, creating controlled work
+  items, and reading operations status without direct shell, SQL, or prompt handoff.
+source:
+  path: mcp/operations-control-plane/bin/qintopia-operations-control-plane-mcp
+  reference: runtime/postgres/docs/data-design/2026-06-30-operations-control-plane.md
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - pnpm mcp:operations-control-plane:check
+    - pnpm mcp:adapters:check
+dependencies:
+  - runtime/postgres
+  - runtime/sidecar
+tags:
+  - mcp
+  - operations
+  - control-plane
+next_actions:
+  - Replace dry-run previews with audited sidecar-backed apply/status calls after the
+    database policy boundary is reviewed for this MCP surface.
+  - Keep external sends and Feishu/QiWe writes behind their existing work-item,
+    artifact-review, final-confirmation, and adapter gates.

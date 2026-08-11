@@ -7,7 +7,12 @@ import YAML from "yaml";
 
 const repoRoot = process.cwd();
 const errors = [];
-const packages = ["mcp/feishu", "mcp/postgres", "mcp/weather-provider"];
+const packages = [
+  "mcp/feishu",
+  "mcp/postgres",
+  "mcp/weather-provider",
+  "mcp/operations-control-plane",
+];
 
 const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));
 const readText = (relativePath) =>

@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""Dry-run Operations Control Plane MCP wrapper."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from typing import Any
+
+
+TOOLS = [
+    "qintopia_operations_workflow_start",
+    "qintopia_operations_work_item_create",
+    "qintopia_operations_status",
+]
+CAPABILITIES = {
+    "huabaosi.create_visual_asset",
+    "erhua.send_group_message",
+    "wenyuange.retrieve_evidence",
+    "xiaoman.create_activity_request",
+}
+SOURCE_TYPES = {
+    "manual_request",
+    "apply_smoke",
+    "xiaoman_activity",
+    "event_signal",
+    "operations_workflow",
+}
+AGENTS = {"xiaoman", "huabaosi", "erhua", "wenyuange", "default", "silaoshi"}
+
+
+def clean_text(value: Any, max_len: int = 500) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()[:max_len]
+
+
+def json_response(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def error(tool: str, message: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "success": False,
+        "tool": tool,
+        "dry_run": True,
+        "error": message,
+        **extra,
+    }
+
+
+def source_refs(args: dict[str, Any]) -> tuple[dict[str, str], str]:
+    refs = args.get("source_refs")
+    if not isinstance(refs, dict):
+        return {}, "source_refs must be an object"
+    cleaned = {
+        clean_text(key, 80): clean_text(value, 300)
+        for key, value in refs.items()
+        if clean_text(key, 80) and clean_text(value, 300)
+    }
+    if not cleaned.get("source_record_ref") and not cleaned.get("source_event_signal_id"):
+        return {}, "source_refs.source_record_ref or source_refs.source_event_signal_id is required"
+    return cleaned, ""
+
+
+def validate_common(tool: str, args: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any] | None]:
+    if bool(args.get("apply")):
+        return {}, error(tool, "apply mode is not available on the dry-run MCP wrapper")
+    source_type = clean_text(args.get("source_type"), 80)
+    if source_type not in SOURCE_TYPES:
+        return {}, error(tool, "source_type is not allowed", allowed_source_types=sorted(SOURCE_TYPES))
+    refs, refs_error = source_refs(args)
+    if refs_error:
+        return {}, error(tool, refs_error)
+    return refs, None
+
+
+def request_id(prefix: str, args: dict[str, Any]) -> str:
+    digest = hashlib.sha256(json.dumps(args, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}:dry-run:{digest}"
+
+
+def work_item_preview(
+    *,
+    args: dict[str, Any],
+    work_item_type: str,
+    capability_key: str,
+    requester_agent: str,
+    target_agent: str,
+    source_refs_value: dict[str, str],
+    parent_ref: str = "",
+) -> dict[str, Any]:
+    status = "awaiting_publish" if capability_key == "erhua.send_group_message" else "queued"
+    return {
+        "work_item_ref": request_id(work_item_type, {**args, "capability_key": capability_key, "parent_ref": parent_ref}),
+        "work_item_type": work_item_type,
+        "capability_key": capability_key,
+        "requester_agent": requester_agent,
+        "target_agent": target_agent,
+        "status": status,
+        "source_refs": source_refs_value,
+        "parent_ref": parent_ref or None,
+        "external_send_executed": False,
+        "database_write_executed": False,
+    }
+
+
+def workflow_start(args: dict[str, Any]) -> dict[str, Any]:
+    tool = "qintopia_operations_workflow_start"
+    refs, common_error = validate_common(tool, args)
+    if common_error:
+        return common_error
+    workflow_type = clean_text(args.get("workflow_type"), 80)
+    requester_agent = clean_text(args.get("requester_agent") or "xiaoman", 80)
+    if workflow_type != "activity_promotion":
+        return error(tool, "workflow_type is not allowed", allowed_workflow_types=["activity_promotion"])
+    if requester_agent not in AGENTS:
+        return error(tool, "requester_agent is not allowed", allowed_agents=sorted(AGENTS))
+
+    parent = work_item_preview(
+        args=args,
+        work_item_type="activity_promotion_request",
+        capability_key="xiaoman.create_activity_request",
+        requester_agent=requester_agent,
+        target_agent="xiaoman",
+        source_refs_value=refs,
+    )
+    children = [
+        work_item_preview(
+            args=args,
+            work_item_type="evidence_request",
+            capability_key="wenyuange.retrieve_evidence",
+            requester_agent=requester_agent,
+            target_agent="wenyuange",
+            source_refs_value=refs,
+            parent_ref=parent["work_item_ref"],
+        ),
+        work_item_preview(
+            args=args,
+            work_item_type="visual_asset_request",
+            capability_key="huabaosi.create_visual_asset",
+            requester_agent=requester_agent,
+            target_agent="huabaosi",
+            source_refs_value=refs,
+            parent_ref=parent["work_item_ref"],
+        ),
+    ]
+    return {
+        "success": True,
+        "tool": tool,
+        "dry_run": True,
+        "workflow_type": workflow_type,
+        "workflow_root": parent,
+        "initial_work_items": children,
+        "guardrails": [
+            "dry-run only; no Postgres writes",
+            "does not pre-create group_message_request",
+            "does not execute workers, create Feishu tasks, publish artifacts, or send messages",
+        ],
+    }
+
+
+def work_item_create(args: dict[str, Any]) -> dict[str, Any]:
+    tool = "qintopia_operations_work_item_create"
+    refs, common_error = validate_common(tool, args)
+    if common_error:
+        return common_error
+    capability_key = clean_text(args.get("capability_key"), 120)
+    if capability_key not in CAPABILITIES:
+        return error(tool, "capability_key is not allowed", allowed_capabilities=sorted(CAPABILITIES))
+    requester_agent = clean_text(args.get("requester_agent"), 80)
+    target_agent = clean_text(args.get("target_agent"), 80)
+    if requester_agent not in AGENTS or target_agent not in AGENTS:
+        return error(tool, "requester_agent and target_agent must be allowed Agent ids", allowed_agents=sorted(AGENTS))
+    work_item_type = clean_text(args.get("work_item_type"), 120)
+    if not work_item_type:
+        return error(tool, "work_item_type is required")
+
+    return {
+        "success": True,
+        "tool": tool,
+        "dry_run": True,
+        "work_item": work_item_preview(
+            args=args,
+            work_item_type=work_item_type,
+            capability_key=capability_key,
+            requester_agent=requester_agent,
+            target_agent=target_agent,
+            source_refs_value=refs,
+            parent_ref=clean_text(args.get("parent_ref"), 160),
+        ),
+        "guardrails": [
+            "dry-run only; no Postgres writes",
+            "external sends require artifact approval and final confirmation before adapter execution",
+        ],
+    }
+
+
+def parse_max_events(value: Any) -> tuple[int, str]:
+    if value in (None, ""):
+        return 20, ""
+    try:
+        return min(max(int(value), 1), 100), ""
+    except (TypeError, ValueError):
+        return 0, "max_events must be an integer between 1 and 100"
+
+
+def status(args: dict[str, Any]) -> dict[str, Any]:
+    tool = "qintopia_operations_status"
+    if bool(args.get("apply")):
+        return error(tool, "status is read-only; apply is not accepted")
+    work_item_id = clean_text(args.get("work_item_id"), 160)
+    workflow_root_id = clean_text(args.get("workflow_root_id"), 160)
+    if not work_item_id and not workflow_root_id:
+        return error(tool, "work_item_id or workflow_root_id is required")
+    max_events, max_events_error = parse_max_events(args.get("max_events"))
+    if max_events_error:
+        return error(tool, max_events_error)
+    return {
+        "success": True,
+        "tool": tool,
+        "dry_run": True,
+        "status_lookup": {
+            "work_item_id": work_item_id or None,
+            "workflow_root_id": workflow_root_id or None,
+            "include_events": bool(args.get("include_events")),
+            "max_events": max_events,
+        },
+        "action": {
+            "requires_sidecar_status_reader": True,
+            "database_read_executed": False,
+            "external_send_executed": False,
+        },
+    }
+
+
+HANDLERS = {
+    "qintopia_operations_workflow_start": workflow_start,
+    "qintopia_operations_work_item_create": work_item_create,
+    "qintopia_operations_status": status,
+}
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tool", choices=TOOLS, required=True)
+    parser.add_argument("--args-json", default="{}")
+    parsed = parser.parse_args(argv)
+    try:
+        args = json.loads(parsed.args_json)
+    except json.JSONDecodeError as exc:
+        print(json_response(error(parsed.tool, f"args-json must be valid JSON: {exc.msg}")))
+        return 1
+    if not isinstance(args, dict):
+        print(json_response(error(parsed.tool, "args-json must decode to an object")))
+        return 1
+    payload = HANDLERS[parsed.tool](args)
+    payload["generated_at"] = datetime.now(timezone.utc).isoformat()
+    print(json_response(payload))
+    return 0 if payload.get("success") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

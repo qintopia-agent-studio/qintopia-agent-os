@@ -16,6 +16,13 @@ entries:
     manifest: mcp/qintopia-collab/manifest.yaml
     status: adopting
     notes: Release-managed package boundary for Hermes qintopia-collab MCP migration.
+  - id: mcp/operations-control-plane
+    path: mcp/operations-control-plane
+    manifest: mcp/operations-control-plane/manifest.yaml
+    status: draft
+    notes:
+      Schema-bound dry-run MCP surface for AgentOS workflow start, work-item create, and
+      status preview.
   - id: mcp/feishu
     path: mcp/feishu
     manifest: mcp/feishu/manifest.yaml
