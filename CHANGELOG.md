@@ -6,6 +6,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.112](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.111...v0.2.112) (2026-08-11)
+
+
+### Features
+
+* add operations control plane mcp ([#503](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/503)) ([357c217](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/357c2173c81ff36a1fbcedbe7877fb9968d41de6))
+* add xiaoman activity skill boundary ([#502](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/502)) ([ba83626](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ba8362669d8dc90cdddebbc66766bef354d2eb8a))
+* **hermes-cron:** move Xiaoman daily case report auto-publish to Hermes cron (task 4) ([#496](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/496)) ([a398625](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a39862501f1d437acb68d0f84ee2f6995c83f22e))
+* **hermes-cron:** move Xiaoman Monday weekly preview to Hermes cron (task 1) ([#495](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/495)) ([f503267](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f503267ea33f3937da7e0c7d7de9d31c10320d52))
+* **hermes-cron:** move Xiaoman Saturday 10:00 weekly recruitment to Hermes cron ([#492](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/492)) ([f5fbb29](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f5fbb29d24b5d126529b8d049664e2ec0ccadc27))
+* migrate Erhua morning brief to Hermes cron (task 5) ([#493](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/493)) ([a6da037](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a6da037f40aef7a833a6740de9ac1a5e14bb635e))
+* migrate Sunday plan confirmation to Hermes cron (task 3) ([#490](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/490)) ([231496c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/231496c4c39e0758fa3ea216f5a0c6649f34775c))
+
+
+### Bug Fixes
+
+* **hermes-cron:** reject origin routing field drift on enable ([#498](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/498)) ([f4b8fc9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f4b8fc9521a3b6fb4ebea72a7ab7d0676e91a937))
+* **hermes-cron:** verify delivery boundary on weekly recruitment enable ([#497](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/497)) ([8b66622](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8b666222cd2f7de34dd58cbab22724eee0129349))
+* move collab direct calls to control plane ([#504](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/504)) ([7232c1f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7232c1ff3a10a835c4862604c071f2712d8ba427))
+* pin Hermes cron delivery boundary and release SHA binding ([#494](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/494)) ([bf3fc3f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bf3fc3f609952ef8e3bb0e35c9296ba1a2b1e7e6))
+* read xiaoman announcement records once ([#501](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/501)) ([257f47f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/257f47fca116220c9a6c4c13f607327c74b972cb))
+
+
+### CI / Deployment
+
+* guard hermes cron recurrence drift ([#500](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/500)) ([ad87d88](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ad87d8821545d02ff767556f230651fb3e0efaea))
+
+
+### Documentation
+
+* align recurring agent tasks with hermes cron ([#499](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/499)) ([d4cfbb4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d4cfbb43ebc0f862faec0694c13a0b6085acc590))
+
 ## [0.2.111](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.110...v0.2.111) (2026-08-10)
 
 
