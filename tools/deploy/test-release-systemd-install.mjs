@@ -114,6 +114,15 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       `expected systemd install to pass, got ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
     );
   }
+  if (
+    !result.stdout.includes(
+      "Hermes cron snapshot root preparation skipped outside production release root"
+    )
+  ) {
+    throw new Error(
+      "release installer must not touch the production Hermes snapshot root in local fixtures"
+    );
+  }
   const envMetadata = fs.readFileSync(envMetadataLog, "utf8");
   if (!envMetadata.includes(`chown root:ubuntu ${envFile}`)) {
     throw new Error("release installer must normalize sidecar env owner");

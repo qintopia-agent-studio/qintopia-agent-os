@@ -774,6 +774,12 @@ Use `rg` and `rg --files` for search.
   `deploy/runner/qintopia-agent-os-deploy-runner.service` `ReadWritePaths`. Xiaoman
   legacy cron retirement needs `/home/ubuntu/.hermes/profiles/xiaoman/cron` there;
   without it backups and retired manifests fail with a read-only filesystem error.
+- A new `ReadWritePaths` entry under `/home/ubuntu` must have its fixed target directory
+  prepared before installing the updated deploy-runner unit. A missing non-optional path
+  can prevent the next runner service start before `ExecStart`, so the release systemd
+  installer owns the fixed Hermes cron snapshot root preparation. Root-owned preparation
+  must reject symlinks in every fixed parent path component before create/chown, not
+  only check the final directory.
 - Any script expected to exist under `/home/ubuntu/qintopia-agent-os-releases/current`
   after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
   guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does
