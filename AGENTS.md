@@ -121,7 +121,13 @@
   install:
   `QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot deploy/sidecar/scripts/install-hermes-cron-snapshot-timer.sh`.
   The snapshot repo holds real chat ids and prompts; it has no remote, stays `0700`, and
-  only sanitized counts may leave the server.
+  only sanitized counts may leave the server. Snapshot sync may be invoked by the root
+  deploy-runner apply path or by the ubuntu user timer; keep the script validating the
+  git repo with `rev-parse --show-toplevel` bound exactly to the fixed snapshot root
+  plus `rev-parse --git-dir`, rejecting remotes, and normalizing the fixed repo
+  owner/modes back to `/home/ubuntu` ownership with `0700` directories and `0600` files.
+  Root deploy-runner Git operations should run as the fixed ubuntu user rather than
+  broadening Git trust or writing to a parent repository.
 - Production Hermes cron live apply should use the `Apply Production Hermes Crons`
   GitHub workflow after the reviewed release containing the runner support is deployed.
   It creates a signed `production-hermes-cron-apply` deploy-runner request and accepts

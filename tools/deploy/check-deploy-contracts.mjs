@@ -6514,6 +6514,34 @@ for (const hermesCronApplyScript of hermesCronApplyScripts) {
   }
 }
 
+const hermesCronSnapshotSyncScript =
+  "deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh";
+requireExecutable(hermesCronSnapshotSyncScript);
+if (exists(hermesCronSnapshotSyncScript)) {
+  const snapshotSync = readText(hermesCronSnapshotSyncScript);
+  for (const fragment of [
+    "rev-parse --git-dir",
+    "rev-parse --show-toplevel",
+    "/usr/sbin/runuser",
+    'HOME="$HOME_DIR"',
+    'PATH="/usr/bin:/bin"',
+    "/home/ubuntu | /home/ubuntu/* | /usr/bin/* | /usr/sbin/*",
+    "normalize_snapshot_permissions",
+    '-c "%u"',
+    '-c "%g"',
+    "chown",
+    "chmod",
+    "snapshot repo must not have a remote",
+    "snapshot_commit=skipped-no-changes",
+    "snapshot_commit=created",
+  ]) {
+    requireFragment(hermesCronSnapshotSyncScript, snapshotSync, fragment);
+  }
+  for (const fragment of ["git remote add", "https://", "QINTOPIA_HERMES_CRON_FILE"]) {
+    forbidFragment(hermesCronSnapshotSyncScript, snapshotSync, fragment);
+  }
+}
+
 if (errors.length > 0) {
   console.error("Deploy contract check failed:");
   for (const error of errors) {
