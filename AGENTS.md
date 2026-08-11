@@ -341,18 +341,36 @@
   Feishu-backed publish idempotency may reuse only an existing artifact whose id matches
   the reviewed upload evidence; reject conflicting random-id artifacts instead of
   writing an `artifact_uri` whose Feishu suffix no longer matches `artifacts.id`.
-- Xiaoman daily case-report production auto-publish uses a release-managed timer, not
-  cron or hand-copied unit files. Production configuration must be applied before
-  activation through the fixed release-local config entrypoint:
+- Xiaoman daily case-report auto-publish now uses a Hermes cron job (task 4), not the
+  release-managed daily timer. The reviewed declaration is
+  `runtime/hermes/cron/xiaoman/daily-case-report.job.json`, the wrapper is
+  `runtime/hermes/scripts/qintopia_xiaoman_daily_case_report.sh`, and the registry entry
+  pins expr `0 8 * * *`. Install and enable the Hermes job with
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_HERMES_CRON=approved-production-xiaoman-daily-case-report-hermes-cron`
+  plus `apply-xiaoman-daily-case-report-hermes-cron.sh --install` then `--enable`.
+  Disable the old timer with
+  `rollback-xiaoman-daily-case-report-auto-publish-production.sh` before enabling the
+  job; the rollback script requires
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0` in the sidecar env while
+  the worker requires `1`, so the wrapper exports that flag itself and the env file
+  keeps `0` for the retired systemd path. Production configuration still goes through
+  the fixed release-local config entrypoint:
   `deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py --stdin --apply --approval approved-production-xiaoman-daily-case-report-config-v1`.
-  Activation, observation, and rollback are:
-  `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
-  `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`, and
-  `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
+  Observation and rollback for the retired systemd path are
+  `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh` and
+  `rollback-xiaoman-daily-case-report-auto-publish-production.sh`; the systemd
+  activation script is kept only as the rollback target. Follow
+  `docs/operations/xiaoman-daily-case-report-hermes-cron-runbook.md`. The send chain is
+  unchanged: the worker uploads through the Huabaosi Feishu primary-storage boundary and
+  records the `generated_image` artifact plus one automatic `group_message_request`;
+  actual QiWe delivery rides the separate `operations-group-send-ready` chain. The
+  `xiaoman-daily-case-report-auto-publish-backfill` one-shot workflow target stays valid
+  after migration because it calls the worker boundary directly.
 - The Xiaoman daily case-report worker uploads through the Huabaosi Feishu primary
-  storage boundary. Its systemd `ExecStart` must bind
-  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}` at the release exec
-  boundary alongside `QINTOPIA_DEPLOYED_COMMIT_SHA`; do not rely on stale persistent env
+  storage boundary. Its release SHA binding now lives in the Hermes wrapper: after
+  sourcing the persistent env, the wrapper derives the release SHA from
+  `release/current` and exports it as both `QINTOPIA_DEPLOYED_COMMIT_SHA` and
+  `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA`; do not rely on stale persistent env
   release keys from `/etc/qintopia/message-sidecar.env`.
 - The Xiaoman daily case-report production host does not provide Python `psycopg`,
   Python Playwright, or a Playwright browser binary by default. The reviewed production

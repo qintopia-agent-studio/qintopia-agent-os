@@ -3343,6 +3343,7 @@ for (const fragment of [
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
   xiaomanDailyCaseReportRollbackPath,
+  "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh",
   "workflows/xiaoman-daily-case-report",
 ]) {
   requireFragment(
@@ -3350,6 +3351,48 @@ for (const fragment of [
     deployBundleBuilderForDailyReport,
     fragment
   );
+}
+const xiaomanDailyCaseReportHermesCronApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh";
+if (!exists(xiaomanDailyCaseReportHermesCronApplyPath)) {
+  addError(
+    `${xiaomanDailyCaseReportHermesCronApplyPath}: missing daily case report Hermes cron apply`
+  );
+} else {
+  const apply = readText(xiaomanDailyCaseReportHermesCronApplyPath);
+  for (const fragment of [
+    "approved-production-xiaoman-daily-case-report-hermes-cron",
+    "usage: apply-xiaoman-daily-case-report-hermes-cron.sh [--install|--enable]",
+    'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"',
+    'PROFILE_ENV_FILE="/home/ubuntu/.hermes/profiles/xiaoman/.env"',
+    'WRAPPER_TARGET="${HERMES_SCRIPTS_DIR}/qintopia_xiaoman_daily_case_report.sh"',
+    'SNAPSHOT_SYNC="${RELEASE_CURRENT}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
+    "WECOM_HOME_CHANNEL",
+    "origin_chat_id_resolved",
+    "verify_installed_wrapper",
+    "atomic_replace",
+    "external_calls_executed",
+    "safe_for_chat",
+    "daily_case_report_hermes_cron_installed",
+    "daily_case_report_hermes_cron_enabled",
+    "daily_case_report_hermes_cron_already_enabled",
+    "reviewed daily case report job deliver mode does not match the reviewed declaration",
+    "reviewed daily case report job origin platform does not match the reviewed declaration",
+    "reviewed daily case report job origin chat id drifted from the Xiaoman profile env",
+  ]) {
+    requireFragment(xiaomanDailyCaseReportHermesCronApplyPath, apply, fragment);
+  }
+  for (const fragment of [
+    "eval ",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_HERMES_CRON_FILE",
+    "QINTOPIA_XIAOMAN_PROFILE_DIR",
+    "QIWE_TOKEN",
+    "tenant_access_token",
+    "print(chat_id)",
+  ]) {
+    forbidFragment(xiaomanDailyCaseReportHermesCronApplyPath, apply, fragment);
+  }
 }
 
 const xiaomanWeeklyLoopTimers = [
