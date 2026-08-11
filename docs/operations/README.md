@@ -15,6 +15,9 @@ deployment docs.
   server and local documents reviewed during the documentation organization pass.
 - [runtime-baseline.md](runtime-baseline.md): current production runtime baseline,
   release/current state, and remaining profile/plugin or archive-retention work.
+- [production-current-status.md](production-current-status.md): sanitized current
+  production status index for release, Hermes cron apply, enablement, snapshot sync, and
+  next operator actions.
 - [server-directory-plan.md](server-directory-plan.md): target server filesystem shape,
   transition directories, legacy cleanup candidates, and Hermes runtime boundary.
 - [release-current-model.md](release-current-model.md): active release directory,

@@ -6446,14 +6446,52 @@ if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
   }
 }
 
-for (const hermesCronApplyScript of [
+const hermesCronApplyScripts = [
   "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh",
-]) {
+];
+
+for (const hermesCronApplyScript of hermesCronApplyScripts) {
   requireExecutable(hermesCronApplyScript);
+  if (!exists(hermesCronApplyScript)) {
+    continue;
+  }
+  const apply = readText(hermesCronApplyScript);
+  for (const fragment of [
+    "set -euo pipefail",
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'PYTHON_BIN="/usr/bin/python3"',
+    "/home/ubuntu/qintopia-agent-os-releases/current",
+    "/home/ubuntu/.hermes/scripts",
+    "sync-hermes-cron-snapshot.sh",
+    "QINTOPIA_HERMES_CRON_SNAPSHOT",
+    "approved-production-hermes-cron-snapshot",
+    "qintopia_hermes_cron_apply_safe_failure=",
+    "--install",
+    "--enable",
+    "WECOM_HOME_CHANNEL",
+    '"deliver": "origin"',
+    '"platform": "wecom"',
+    "external_calls_executed",
+    "safe_for_chat",
+    "os.replace",
+  ]) {
+    requireFragment(hermesCronApplyScript, apply, fragment);
+  }
+  for (const fragment of [
+    "eval ",
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "tenant_access_token",
+    "print(chat_id)",
+    "QINTOPIA_HERMES_CRON_FILE",
+    "QINTOPIA_HERMES_PROFILE_DIR",
+  ]) {
+    forbidFragment(hermesCronApplyScript, apply, fragment);
+  }
 }
 
 if (errors.length > 0) {

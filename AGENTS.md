@@ -10,6 +10,7 @@
 - Product scope: `docs/product/agent-os-prd.md`
 - Agent OS design: `docs/agent-os/README.md`
 - Runtime baseline: `docs/operations/runtime-baseline.md`
+- Production current status: `docs/operations/production-current-status.md`
 - Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`
 - Xiaoman weekly minimum loop runbook:
   `docs/operations/xiaoman-weekly-minimum-loop-runbook.md`
@@ -19,6 +20,8 @@
 - Programming agent guardrails: `docs/engineering/programming-agent-guardrails.md`
 - Change routing index: `docs/engineering/change-routing-index.md`
 - Current roadmap: `docs/plans/active/current-roadmap.md`
+- Xiaoman character-universe daily report migration:
+  `docs/plans/active/xiaoman-character-universe-daily-report.md`
 - Source document inventory: `docs/operations/source-document-inventory.md`
 - Registry indexes: `registry/`
 - Agent packages: `agents/`
