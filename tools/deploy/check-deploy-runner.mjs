@@ -2542,6 +2542,19 @@ if (exists("deploy/runner/install-release-systemd-units.sh")) {
     "normalize_production_sidecar_env_metadata",
     'chown root:ubuntu "$env_file"',
     'chmod 0640 "$env_file"',
+    'hermes_cron_snapshot_root="/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"',
+    "prepare_hermes_cron_snapshot_root",
+    "flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC",
+    "os.O_NOFOLLOW",
+    'current_fd = os.open("/", flags)',
+    "next_fd = os.open(segment, flags, dir_fd=current_fd)",
+    "os.mkdir(segment, 0o700 if is_snapshot_root else 0o755, dir_fd=current_fd)",
+    "Hermes cron snapshot path components must be non-symlink directories",
+    "os.fchown(snapshot_fd, ubuntu_uid, ubuntu_gid)",
+    "os.fchmod(snapshot_fd, 0o700)",
+    'pwd.getpwnam("ubuntu")',
+    'grp.getgrnam("ubuntu")',
+    'prepare_hermes_cron_snapshot_root "$hermes_cron_snapshot_root"',
   ]) {
     if (!installer.includes(fragment)) {
       addError(`release systemd installer is missing ${fragment}`);
