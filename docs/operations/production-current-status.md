@@ -18,8 +18,8 @@ URLs, tokens, raw logs, or raw script output.
 - Master after Release: `#516` is merged after `v0.2.117`; publish the next Release
   before relying on the production status page and new observation targets in
   production.
-- Hermes cron live apply: not complete after `v0.2.116`; the latest three
-  `Apply Production Hermes Crons` runs failed before this page was added.
+- Hermes cron live apply: no successful apply is recorded in this status page; the
+  latest three `Apply Production Hermes Crons` runs failed before this page was added.
 - Hermes cron enablement: not complete; run only after install and declaration parity
   pass.
 

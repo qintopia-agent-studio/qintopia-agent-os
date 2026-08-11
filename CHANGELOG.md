@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.119](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.118...v0.2.119) (2026-08-11)
+
+
+### Features
+
+* add Hermes cron observation targets ([65f7cd3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/65f7cd3451703f2221a981941e3ceb61bc694209))
+
+## [0.2.118](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.117...v0.2.118) (2026-08-11)
+
+
+### Bug Fixes
+
+* prepare deploy runner snapshot path ([#518](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/518)) ([5d515d5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5d515d50591d94d2dc3c434fd86b100af3c12044))
+
+
+### Documentation
+
+* track Hermes cron production status ([#516](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/516)) ([9ca8f31](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9ca8f316b9e63fc8a1922f58c6b8e2803e4a5a53))
+
 ## [0.2.117](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.116...v0.2.117) (2026-08-11)
 
 

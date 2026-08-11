@@ -56,4 +56,3 @@ echo "hermes_cron_snapshot_service_unit_present=true"
 echo "hermes_cron_snapshot_repo_present=true"
 echo "hermes_cron_snapshot_remote_absent=true"
 echo "hermes_cron_snapshot_latest_commit_epoch=${latest_commit_epoch}"
-
