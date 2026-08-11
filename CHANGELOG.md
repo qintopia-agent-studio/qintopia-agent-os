@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.115](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.114...v0.2.115) (2026-08-11)
+
+
+### Bug Fixes
+
+* surface safe Hermes cron apply failures ([#510](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/510)) ([224b521](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/224b521d2c987edc143ec4bdced5e57292e20ba7))
+
 ## [0.2.114](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.113...v0.2.114) (2026-08-11)
 
 
