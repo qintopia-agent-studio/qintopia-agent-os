@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sqlite3
 import sys
 import time
@@ -22,12 +21,13 @@ SERVER_NAME = "qintopia-collab-mcp"
 SERVER_VERSION = "0.1.0"
 DEFAULT_DB = "/home/ubuntu/.hermes/collab.db"
 ALLOWED_CALLERS = {"xiaoman", "huabaosi", "silaoshi", "erhua", "wenyuange"}
-ALLOWED_DIRECT_CALLS = {
-    "xiaoman": {"huabaosi"},
+ALLOWED_DIRECT_CALL_TARGETS = {"xiaoman": {"huabaosi"}}
+MOVED_CAPABILITIES = {
+    "poster_brief_review",
+    "visual_material_gap_check",
+    "lightweight_design_proposal",
+    "poster_production_request",
 }
-HERMES_AGENT_ROOT = Path("/home/ubuntu/.hermes/hermes-agent")
-HERMES_PYTHON = HERMES_AGENT_ROOT / "venv/bin/python"
-HERMES_MAIN_MODULE = "hermes_cli.main"
 ALLOWED_EVENT_TYPES = {
     "task.created",
     "task.claimed",
@@ -182,7 +182,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "qintopia_collab_call_agent",
-            "description": "Synchronously call a short-running whitelisted Qintopia capability. Poster production has moved to Xiaoman's durable AgentOS intake tool and never starts a Hermes oneshot here.",
+            "description": "Deprecated compatibility surface for direct Agent calls. It returns the AgentOS control-plane migration path and never starts a Hermes oneshot.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -191,7 +191,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "target_agent": {"type": "string", "enum": ["huabaosi"]},
                     "capability": {
                         "type": "string",
-                        "enum": ["poster_brief_review", "visual_material_gap_check", "lightweight_design_proposal", "poster_production_request"],
+                        "enum": sorted(MOVED_CAPABILITIES),
                     },
                     "request": {"type": "string"},
                     "payload": {"type": "object"},
@@ -355,138 +355,31 @@ def call_agent(conn: sqlite3.Connection, args: dict[str, Any]) -> dict[str, Any]
     require_allowed(caller)
     source_agent = clean_text(args.get("source_agent"), 80) or caller
     target_agent = clean_text(args.get("target_agent"), 80)
-    allowed_targets = ALLOWED_DIRECT_CALLS.get(caller, set())
+    allowed_targets = ALLOWED_DIRECT_CALL_TARGETS.get(caller, set())
     if target_agent not in allowed_targets:
         raise ValueError(f"direct call not allowed: {caller} -> {target_agent}")
     capability = clean_text(args.get("capability"), 80)
-    request_text = clean_text(args.get("request"), 12000)
-    payload = args.get("payload") or {}
-    if not isinstance(payload, dict):
-        raise ValueError("payload must be an object")
-    timeout = int(args.get("timeout_seconds") or 120)
-    timeout = max(10, min(timeout, 900))
-    idem = clean_text(args.get("idempotency_key"), 240)
-
+    if capability not in MOVED_CAPABILITIES:
+        raise ValueError(f"capability not allowed: {capability}")
     if capability == "poster_production_request":
-        return {
-            "success": False,
-            "error": "poster_production_moved_to_agentos_intake",
-            "message": "Use qintopia_xiaoman_poster_production_request from a trusted Xiaoman Feishu conversation.",
-            "target_agent": target_agent,
-            "capability": capability,
-            "retryable": False,
-            "external_send_executed": False,
-        }
-
-    if idem:
-        existing = conn.execute("SELECT * FROM collab_events WHERE idempotency_key = ?", (idem,)).fetchone()
-        if existing:
-            event = event_to_dict(existing)
-            return {"success": True, "deduped": True, "event": event, "response": event.get("payload", {}).get("response", "")}
-
-    production_note = ""
-
-    prompt = f"""你是被小满直接调用的能力 Agent：阿靓 · 画报司。
-
-这不是 Kanban 任务，也不是对外发布指令。请只完成本次能力调用，并返回结构化、可读的中文结果。
-{production_note}
-
-事实源自查要求：
-- 如果结构化上下文里给了小满活动日记本 `record_id` / `activity_record_id`，请优先调用 `qintopia_xiaoman_activity_record_get` 读取真实活动记录，再回答“你读到的活动事实”。
-- 如果结构化上下文里给了画报司设计产出库 `poster_record_id` / `design_record_id`，请调用 `qintopia_huabaosi_design_record_get` 回读真实生产记录，再回答生产状态。
-- 只有工具返回成功，才能说“我读到了”；如果工具不可用或读取失败，要把失败原因说清楚，不能伪造已读结果。
-
-调用来源：{source_agent}
-能力类型：{capability}
-
-小满请求：
-{request_text}
-
-结构化上下文 JSON：
-{json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)}
-
-请按以下格式回复：
-1. 你读到的活动事实
-2. 你判断能做什么 / 不能做什么
-3. 还缺什么
-4. 给小满的下一步建议
-5. 如果是正式生产请求：生产台账记录 ID、任务编号、成品图路径/附件状态，或明确 blocked 原因
-
-不要创建 Kanban 任务；不要声称已经对外发布；不要伪造图片已经生成。"""
-
-    cmd = [
-        str(HERMES_PYTHON),
-        "-m",
-        HERMES_MAIN_MODULE,
-        "--profile",
-        target_agent,
-        "-z",
-        prompt,
-    ]
-    env = os.environ.copy()
-    env.setdefault("HERMES_YOLO_MODE", "1")
-    env.setdefault("HERMES_ACCEPT_HOOKS", "1")
-    started = now_ts()
-    try:
-        completed = subprocess.run(
-            cmd,
-            cwd="/tmp",
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-        )
-        response = clean_text(completed.stdout, 12000)
-        stderr = clean_text(completed.stderr, 4000)
-        ok = completed.returncode == 0 and bool(response)
-        error_note = "" if ok else (stderr or f"agent exited with code {completed.returncode}")
-    except subprocess.TimeoutExpired as exc:
-        response = clean_text(getattr(exc, "stdout", "") or "", 12000)
-        stderr = clean_text(getattr(exc, "stderr", "") or "", 4000)
-        ok = False
-        error_note = f"agent call timed out after {timeout}s"
-
-    event_type = "task.completed" if ok else "task.blocked"
-    event = emit_event(
-        conn,
-        {
-            "caller": caller,
-            "event_type": event_type,
-            "source_agent": source_agent,
-            "target_agent": target_agent,
-            "summary": f"direct capability call {source_agent}->{target_agent}: {capability}",
-            "payload": {
-                "mode": "direct_agent_call",
-                "capability": capability,
-                "request": request_text,
-                "input": payload,
-                "response": response,
-                "stderr": stderr,
-                "ok": ok,
-                "error": error_note,
-                "started_at": started,
-                "finished_at": now_ts(),
-            },
-            "idempotency_key": idem,
-        },
-    )["event"]
-    add_receipt(
-        conn,
-        {
-            "caller": caller,
-            "event_id": event["event_id"],
-            "agent": target_agent,
-            "receipt_type": "done" if ok else "blocked",
-            "note": response[:1000] if ok else error_note,
-        },
-    )
+        message = "Use qintopia_xiaoman_poster_production_request from a trusted Xiaoman Feishu conversation."
+        error_code = "poster_production_moved_to_agentos_intake"
+        recommended_tool = "qintopia_xiaoman_poster_production_request"
+    else:
+        message = "Use AgentOS operations control-plane work items instead of direct Hermes prompt handoff."
+        error_code = "direct_agent_call_moved_to_agentos_control_plane"
+        recommended_tool = "qintopia_operations_work_item_create"
     return {
-        "success": ok,
-        "event": event,
+        "success": False,
+        "error": error_code,
+        "message": message,
+        "source_agent": source_agent,
         "target_agent": target_agent,
         "capability": capability,
-        "response": response,
-        "error": error_note,
+        "recommended_tool": recommended_tool,
+        "retryable": False,
+        "external_send_executed": False,
+        "agent_subprocess_executed": False,
     }
 
 

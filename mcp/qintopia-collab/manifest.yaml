@@ -6,7 +6,8 @@ status: adopting
 risk_level: medium
 description:
   Release-managed wrapper and package boundary for the Hermes qintopia-collab MCP used
-  by selected profiles.
+  by selected profiles. Structured event, receipt, and confirmation tools remain; direct
+  Agent prompt handoff is deprecated in favor of AgentOS work items.
 source:
   path: mcp/qintopia-collab/bin/qintopia-collab-mcp
   reference: sha256:3240bebd6288e9a1b9abe2b42fd2408e41d0a88f36ba510ccccca41a6b5bcb83
@@ -33,3 +34,5 @@ next_actions:
     process-path validation.
   - Replace the direct server script path with the release bundle path after deploy
     bundle publication.
+  - Remove qintopia_collab_call_agent after active profiles use AgentOS control-plane
+    work items for capability handoff.

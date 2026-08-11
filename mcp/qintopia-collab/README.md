@@ -39,11 +39,11 @@ not contain:
 - generated runtime memory
 - server-local credentials
 
-`poster_production_request` is intentionally no longer executed by
-`qintopia_collab_call_agent`. It returns `poster_production_moved_to_agentos_intake`
-immediately and never starts `hermes_cli.main --profile huabaosi -z`. Xiaoman must use
-the trusted-session `qintopia_xiaoman_poster_production_request` tool instead. Other
-short-running whitelisted collaboration calls keep their existing behavior.
+`qintopia_collab_call_agent` is intentionally no longer a direct Agent execution path.
+It returns a migration response immediately and never starts
+`hermes_cli.main --profile huabaosi -z`. Poster production must use the trusted-session
+`qintopia_xiaoman_poster_production_request` tool. Other capability handoffs must move
+through AgentOS operations control-plane work items rather than raw prompt handoff.
 
 ## Migration Plan
 
@@ -59,7 +59,8 @@ short-running whitelisted collaboration calls keep their existing behavior.
 
 ## Validation
 
-Repository validation includes a subprocess-negative regression test:
+Repository validation includes negative regression tests proving the direct Agent call
+surface returns migration responses instead of starting a Hermes subprocess:
 
 ```bash
 pnpm mcp:collab:check
