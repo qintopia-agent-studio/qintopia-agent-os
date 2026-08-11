@@ -35,7 +35,8 @@ tags:
   - activity
   - weekly-loop
 next_actions:
-  - Activate Saturday recruitment and Sunday plan confirmation only through
-    release-local config, activation, observation, and rollback scripts.
+  - Keep Saturday recruitment and Sunday plan confirmation scheduled by the reviewed
+    Xiaoman Hermes cron declarations; the release-local systemd activation scripts are
+    rollback targets only.
   - Keep Monday confirmed preview in workflows/xiaoman-weekly-preview.
   - Keep the human confirmation gate; these timers generate review drafts only.

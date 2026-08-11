@@ -33,20 +33,23 @@ python workflows/xiaoman-weekly-loop/weekly_loop.py \
 ```
 
 Without `--date`, the script targets the next ISO week. This matches the production
-timers: Saturday and Sunday prepare drafts for the following Monday-Sunday week.
+Hermes cron jobs: Saturday and Sunday prepare drafts for the following Monday-Sunday
+week.
 
 ## Production Boundary
 
-- Release units:
-  - `qintopia-agentos-xiaoman-weekly-recruitment.timer`
-  - `qintopia-agentos-xiaoman-weekly-plan-confirmation.timer`
+- Hermes cron jobs:
+  - `runtime/hermes/cron/xiaoman/weekly-recruitment.job.json`
+  - `runtime/hermes/cron/xiaoman/weekly-plan-confirmation.job.json`
 - Workers:
   - `deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh`
   - `deploy/sidecar/scripts/xiaoman-weekly-plan-confirmation-worker.sh`
 
-Production activation is release-managed only: apply config, activate, observe, and
-rollback through the reviewed release-local scripts. Do not recreate Hermes cron entries
-or hot-edit production units.
+Production recurrence is Hermes-owned and conversation-editable through live
+`jobs.json`; the repository keeps only reviewed templates, wrappers, and the allowlist
+registry. Business logic still runs through the release-managed workers above. The old
+systemd activation path is retained only as a rollback target; do not enable both paths
+at once or hot-edit production units.
 
 ## Acceptance Scenarios
 

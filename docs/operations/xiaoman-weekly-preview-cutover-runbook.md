@@ -2,17 +2,16 @@
 
 Updated: 2026-08-11
 
-> Deprecated as the forward activation path. The Monday 09:30 weekly preview is
-> migrating to a Hermes cron job (task 1); use
-> `docs/operations/xiaoman-weekly-preview-hermes-cron-runbook.md` for cutover. This
-> systemd runbook is kept only as the rollback target until the Hermes cron is observed
-> healthy in production.
+> **Status: rollback-only.** The Monday 09:30 weekly preview lives in a Xiaoman Hermes
+> cron job; use `docs/operations/xiaoman-weekly-preview-hermes-cron-runbook.md` for
+> cutover. This systemd runbook is kept only as the rollback target after the Hermes job
+> is disabled.
 
-This runbook activates the reviewed Xiaoman weekly activity-preview timer. It reads the
-next Monday-Sunday activity window through the Xiaoman read-through path, writes the
-latest operator-review draft to server-local state, and prints only sanitized counts to
-the journal. It never sends to QiWe, calls Erhua, writes Feishu, or marks a group
-message ready.
+This runbook restores the retired Xiaoman weekly activity-preview systemd timer during a
+rollback. It reads the next Monday-Sunday activity window through the Xiaoman
+read-through path, writes the latest operator-review draft to server-local state, and
+prints only sanitized counts to the journal. It never sends to QiWe, calls Erhua, writes
+Feishu, or marks a group message ready.
 
 ## Reviewed Assets
 
@@ -62,17 +61,17 @@ sudo -n /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/a
 
 ## Pre-activation Checks
 
-The reviewed baseline requires the live Xiaoman Hermes cron file to contain no runtime
-cron declarations before enabling the systemd timer:
+Rollback requires the live Xiaoman Hermes cron file to contain no enabled weekly-preview
+job before enabling the systemd timer:
 
 ```bash
 QINTOPIA_XIAOMAN_LEGACY_CRON_OBSERVATION_ENABLE=1 \
   /home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/xiaoman-legacy-cron-observation-smoke.sh
 ```
 
-If this fails, stop. Retire the old Hermes cron only through a separate reviewed
-retirement path for the exact observed `jobs.json` hash. Do not edit
-`/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json` manually.
+If this fails, stop. Disable or change the Hermes job only through the reviewed Hermes
+cron apply path. Do not edit `/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json`
+manually.
 
 ## Activate
 
@@ -146,8 +145,9 @@ QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_PRODUCTION_RELEASE_SHA=<published-production-rel
 
 ## Acceptance
 
-- The weekly preview is a release-managed systemd timer, not a Hermes conversation cron.
-- The old Xiaoman Hermes cron observation passes before activation.
+- The forward weekly-preview path is Hermes cron.
+- This retired systemd timer is restored only after the Hermes job is disabled through
+  the reviewed Hermes cron apply path.
 - The timer generates an operations-review draft and never performs external send.
 - Human confirmation remains required before Erhua handoff or any group message.
 - Activation, observation, and rollback scripts all pass from `release/current`.

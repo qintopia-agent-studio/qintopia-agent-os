@@ -1,7 +1,8 @@
 # Workflow: Xiaoman Weekly Activity Preview
 
-`workflows/xiaoman-weekly-preview` replaces the old natural-language Monday cron task
-with a deterministic, reviewable script.
+`workflows/xiaoman-weekly-preview` keeps the Monday preview business logic in a
+deterministic, reviewable worker while Hermes cron owns the live schedule, enablement,
+and delivery target.
 
 ## Responsibility
 
@@ -104,17 +105,17 @@ node tools/deploy/check-deploy-contracts.mjs
   send.
 - Requires the same secrets as the Xiaoman read-through path.
 
-## Production Activation
+## Production Recurrence
 
-This workflow replaces the legacy natural-language Monday cron task. Activation is
-performed only through the reviewed release-local production scripts:
+This workflow is scheduled by the reviewed Xiaoman Hermes cron declaration. Install and
+enable it through the Hermes cron runbook:
 
 - Runbook:
-  [`docs/operations/xiaoman-weekly-preview-cutover-runbook.md`](../operations/xiaoman-weekly-preview-cutover-runbook.md)
-- Release unit: `qintopia-agentos-xiaoman-weekly-preview.timer`
+  [`docs/operations/xiaoman-weekly-preview-hermes-cron-runbook.md`](../operations/xiaoman-weekly-preview-hermes-cron-runbook.md)
+- Declaration: `runtime/hermes/cron/xiaoman/weekly-preview.job.json`
+- Wrapper: `runtime/hermes/scripts/qintopia_xiaoman_weekly_preview.sh`
 - Worker: `deploy/sidecar/scripts/xiaoman-weekly-preview-worker.sh`
 
-The timer keeps the human confirmation gate and refuses activation while the old Xiaoman
-Hermes cron observation finds runtime job declarations. Installing the unit is done by
-the normal Release deploy; enabling it requires the owner-approved config, activation,
-observation, and rollback scripts. Do not hot-edit production units.
+The Hermes job keeps the human confirmation gate. The old systemd cutover runbook is
+kept only as a rollback target after the Hermes job is disabled; do not enable both
+paths at once or hot-edit production units.
