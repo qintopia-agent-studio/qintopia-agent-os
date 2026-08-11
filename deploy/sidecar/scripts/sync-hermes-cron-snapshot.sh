@@ -9,7 +9,13 @@ set -euo pipefail
 PATH="/usr/bin:/bin"
 PYTHON_BIN="/usr/bin/python3"
 GIT_BIN="/usr/bin/git"
+STAT_BIN="/usr/bin/stat"
+CHMOD_BIN="/usr/bin/chmod"
+CHOWN_BIN="/usr/bin/chown"
+FIND_BIN="/usr/bin/find"
+RUNUSER_BIN="/usr/sbin/runuser"
 HERMES_HOME="/home/ubuntu/.hermes"
+HOME_DIR="/home/ubuntu"
 SNAPSHOT_ROOT="/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"
 
 fail() {
@@ -17,31 +23,83 @@ fail() {
   exit 1
 }
 
-if [[ ! -d "$SNAPSHOT_ROOT/.git" ]]; then
-  if [[ "${QINTOPIA_HERMES_CRON_SNAPSHOT:-}" != "approved-production-hermes-cron-snapshot" ]]; then
-    fail "first snapshot init requires QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot"
+git_snapshot() {
+  if [[ "$(id -u)" == "0" ]]; then
+    "$RUNUSER_BIN" -u ubuntu -- /usr/bin/env -i HOME="$HOME_DIR" PATH="/usr/bin:/bin" \
+      "$GIT_BIN" -C "$SNAPSHOT_ROOT" "$@"
+  else
+    "$GIT_BIN" -C "$SNAPSHOT_ROOT" "$@"
   fi
-fi
+}
 
-for fixed_path in "$HERMES_HOME" "$SNAPSHOT_ROOT" "$PYTHON_BIN" "$GIT_BIN"; do
+snapshot_git_valid() {
+  local git_top
+  local git_dir
+  local snapshot_top
+  [[ -d "$SNAPSHOT_ROOT" ]] || return 1
+  snapshot_top="$(cd "$SNAPSHOT_ROOT" && pwd -P)" || return 1
+  git_top="$(git_snapshot rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [[ "$git_top" == "$SNAPSHOT_ROOT" || "$git_top" == "$snapshot_top" ]] || return 1
+  git_dir="$(git_snapshot rev-parse --git-dir 2>/dev/null)" || return 1
+  case "$git_dir" in
+    .git | "$SNAPSHOT_ROOT/.git") ;;
+    *) return 1 ;;
+  esac
+  [[ -d "$SNAPSHOT_ROOT/.git" ]] || return 1
+}
+
+normalize_snapshot_permissions() {
+  if [[ "$(id -u)" == "0" ]]; then
+    "$CHOWN_BIN" -R "$SNAPSHOT_UID:$SNAPSHOT_GID" "$SNAPSHOT_ROOT"
+  fi
+  "$CHMOD_BIN" 0700 "$SNAPSHOT_ROOT"
+  for scoped_dir in .git profiles scripts; do
+    if [[ -d "$SNAPSHOT_ROOT/$scoped_dir" ]]; then
+      "$FIND_BIN" "$SNAPSHOT_ROOT/$scoped_dir" -type d -exec "$CHMOD_BIN" 0700 {} +
+      "$FIND_BIN" "$SNAPSHOT_ROOT/$scoped_dir" -type f -exec "$CHMOD_BIN" 0600 {} +
+    fi
+  done
+}
+
+for fixed_path in "$HERMES_HOME" "$SNAPSHOT_ROOT" "$HOME_DIR" "$PYTHON_BIN" "$GIT_BIN" "$STAT_BIN" "$CHMOD_BIN" "$CHOWN_BIN" "$FIND_BIN" "$RUNUSER_BIN"; do
   case "$fixed_path" in
-    /home/ubuntu/* | /usr/bin/*) ;;
+    /home/ubuntu | /home/ubuntu/* | /usr/bin/* | /usr/sbin/*) ;;
     *) fail "unexpected fixed path $fixed_path" ;;
   esac
 done
 
 [[ -x "$PYTHON_BIN" ]] || fail "fixed python3 is required"
 [[ -x "$GIT_BIN" ]] || fail "fixed git is required"
+[[ -x "$STAT_BIN" ]] || fail "fixed stat is required"
+[[ -x "$CHMOD_BIN" ]] || fail "fixed chmod is required"
+[[ -x "$CHOWN_BIN" ]] || fail "fixed chown is required"
+[[ -x "$FIND_BIN" ]] || fail "fixed find is required"
+[[ -x "$RUNUSER_BIN" ]] || fail "fixed runuser is required"
 [[ -d "$HERMES_HOME/profiles" ]] || fail "Hermes profiles directory is missing"
+[[ -d "$HOME_DIR" ]] || fail "ubuntu home directory is missing"
+
+SNAPSHOT_UID="$("$STAT_BIN" -c "%u" "$HOME_DIR")"
+SNAPSHOT_GID="$("$STAT_BIN" -c "%g" "$HOME_DIR")"
+
+if ! snapshot_git_valid; then
+  if [[ "${QINTOPIA_HERMES_CRON_SNAPSHOT:-}" != "approved-production-hermes-cron-snapshot" ]]; then
+    fail "first snapshot init requires QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot"
+  fi
+fi
 
 umask 077
+mkdir -p "$SNAPSHOT_ROOT"
+normalize_snapshot_permissions
 
-if [[ ! -d "$SNAPSHOT_ROOT/.git" ]]; then
-  mkdir -p "$SNAPSHOT_ROOT"
-  chmod 0700 "$SNAPSHOT_ROOT"
-  "$GIT_BIN" -C "$SNAPSHOT_ROOT" init --quiet >/dev/null
-  "$GIT_BIN" -C "$SNAPSHOT_ROOT" config user.name "hermes-cron-snapshot"
-  "$GIT_BIN" -C "$SNAPSHOT_ROOT" config user.email "hermes-cron-snapshot@localhost"
+if ! snapshot_git_valid; then
+  git_snapshot init --quiet >/dev/null
+  git_snapshot config user.name "hermes-cron-snapshot"
+  git_snapshot config user.email "hermes-cron-snapshot@localhost"
+  normalize_snapshot_permissions
+fi
+
+if [[ -n "$(git_snapshot remote)" ]]; then
+  fail "snapshot repo must not have a remote"
 fi
 
 "$PYTHON_BIN" - "$HERMES_HOME" "$SNAPSHOT_ROOT" <<'PY'
@@ -115,13 +173,16 @@ for existing in sorted(snapshot_root.rglob("*")):
 print(f"snapshot_files_copied={copied} snapshot_files_removed={removed}")
 PY
 
-changed_count="$("$GIT_BIN" -C "$SNAPSHOT_ROOT" status --porcelain -- profiles scripts | wc -l | tr -d ' ')"
+normalize_snapshot_permissions
+changed_count="$(git_snapshot status --porcelain -- profiles scripts | wc -l | tr -d ' ')"
 if [[ "$changed_count" == "0" ]]; then
   echo "snapshot_commit=skipped-no-changes"
+  normalize_snapshot_permissions
   exit 0
 fi
 
-"$GIT_BIN" -C "$SNAPSHOT_ROOT" add -A -- profiles scripts
+git_snapshot add -A -- profiles scripts
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-"$GIT_BIN" -C "$SNAPSHOT_ROOT" commit --quiet -m "snapshot ${timestamp}" >/dev/null
+git_snapshot commit --quiet -m "snapshot ${timestamp}" >/dev/null
+normalize_snapshot_permissions
 echo "snapshot_commit=created snapshot_entries=${changed_count}"
