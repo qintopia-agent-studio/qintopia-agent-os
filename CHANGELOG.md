@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.117](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.116...v0.2.117) (2026-08-11)
+
+
+### Bug Fixes
+
+* normalize deploy runner write paths ([#514](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/514)) ([ed59579](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ed59579957d3240ebaef4f57857d54bebe72e373))
+
 ## [0.2.116](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.115...v0.2.116) (2026-08-11)
 
 
